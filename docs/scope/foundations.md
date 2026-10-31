@@ -16,7 +16,7 @@ Spec [0001](../specs/0001-stack-architecture/index.md) · code in `apps/`, `pack
 ### 2. Coding standards & tooling
 Capture conventions, then install lint, format, type checks, pre commit hooks, and CI from the real scaffolded project.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit run clean.
-- [ ] Capture conventions + tooling choices: `/audit`
+- [x] Capture conventions + tooling choices: `/audit`
 
 ### 3. Data model · needs a decision · GA
 Core entities every module builds on: products and variants, locations (warehouse, showroom, bin), an append only stock ledger, lots and serials, parties (suppliers, factories, customers), and cost and price on every transaction.
