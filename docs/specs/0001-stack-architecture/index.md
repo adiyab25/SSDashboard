@@ -1,7 +1,7 @@
 # 0001. Adopt a TypeScript modular monolith on PostgreSQL, shipped as one container set per client
 
 **Date**: 2026-10-31
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

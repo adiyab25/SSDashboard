@@ -4,12 +4,12 @@ The ground every slice stands on. Back to [index](index.md).
 
 ## Foundations
 
-### 1. Stack & architecture · in-progress
+### 1. Stack & architecture · done
 Decide the stack and how one shared core ships as separate installs per client, then scaffold a runnable project.
 **Done when:** the stack and the per client deployment model (own install and database per client, settings and module toggles) are recorded in a spec, and the empty scaffold boots locally and passes build. (basis: one codebase, many deploys, configuration per deployment)
 - [x] Decide the stack (spec): `/architect stack & architecture`
 - [x] Scaffold from the decision: `/develop stack & architecture`
-- [ ] Verify it: `/check verify stack & architecture`
+- [x] Verify it: `/check verify stack & architecture`
 - [x] Test it: `/test stack & architecture`
 Spec [0001](../specs/0001-stack-architecture/index.md) · code in `apps/`, `packages/`, `deploy/`
 
