@@ -11,6 +11,8 @@ concurrency:
 
 env:
   TURBO_TELEMETRY_DISABLED: 1
+  # Stream task output as it happens; grouped logs hide long running dev servers.
+  TURBO_LOG_ORDER: stream
 
 jobs:
   checks:
