@@ -31,7 +31,7 @@ A warehouse and ERP system for an ecommerce business with thousands to 100,000+ 
 | # | Feature | Phase | Status |
 |---|---------|-------|--------|
 | 1 | [Stack & architecture](foundations.md) | Foundation | done |
-| 2 | [Coding standards & tooling](foundations.md) | Foundation | planned |
+| 2 | [Coding standards & tooling](foundations.md) | Foundation | in-progress |
 | 3 | [Data model](foundations.md) | Foundation | planned |
 | 4 | [Design system & UI foundation](foundations.md) | Foundation | planned |
 | 5 | [Localization (English & Arabic)](foundations.md) | Foundation | planned |

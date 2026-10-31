@@ -13,10 +13,15 @@ Decide the stack and how one shared core ships as separate installs per client, 
 - [x] Test it: `/test stack & architecture`
 Spec [0001](../specs/0001-stack-architecture/index.md) · code in `apps/`, `packages/`, `deploy/`
 
-### 2. Coding standards & tooling
+### 2. Coding standards & tooling · in-progress
 Capture conventions, then install lint, format, type checks, pre commit hooks, and CI from the real scaffolded project.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit run clean.
 - [x] Capture conventions + tooling choices: `/audit`
+- [x] Build it: `/develop tooling`
+  - [x] ESLint and Prettier, shared from `packages/config`
+  - [x] Pre commit hook (lint-staged, then typecheck)
+  - [x] CI on GitHub Actions
+Code in `packages/config/eslint/`, `.husky/`, `.github/workflows/`
 
 ### 3. Data model · needs a decision · GA
 Core entities every module builds on: products and variants, locations (warehouse, showroom, bin), an append only stock ledger, lots and serials, parties (suppliers, factories, customers), and cost and price on every transaction.
