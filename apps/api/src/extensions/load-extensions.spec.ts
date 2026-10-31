@@ -21,7 +21,10 @@ describe('loadExtensions', () => {
   });
 
   it('imports every listed package, in the listed order', async () => {
-    const [first, second] = (await loadExtensions(['node:path', 'node:url'])) as [typeof nodePath, typeof nodeUrl];
+    const [first, second] = (await loadExtensions(['node:path', 'node:url'])) as [
+      typeof nodePath,
+      typeof nodeUrl,
+    ];
 
     expect(first.join).toBe(nodePath.join);
     expect(second.fileURLToPath).toBe(nodeUrl.fileURLToPath);

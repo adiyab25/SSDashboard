@@ -14,7 +14,8 @@ export const UNREACHABLE_DB = 'postgres://nobody:nothing@127.0.0.1:1/none';
 
 export function requireBuild(entry: string): string {
   const path = `${DIST}${entry}`;
-  if (!existsSync(path)) throw new Error(`${path} is missing. Run \`pnpm build\` before the e2e tests.`);
+  if (!existsSync(path))
+    throw new Error(`${path} is missing. Run \`pnpm build\` before the e2e tests.`);
   return path;
 }
 
@@ -25,7 +26,9 @@ export function devDatabaseUrl(): string {
   return url;
 }
 
-export async function withAdmin<T>(run: (admin: DatabaseConnection['pool']) => Promise<T>): Promise<T> {
+export async function withAdmin<T>(
+  run: (admin: DatabaseConnection['pool']) => Promise<T>,
+): Promise<T> {
   const { pool } = createDatabase(devDatabaseUrl(), { max: 1 });
   try {
     return await run(pool);
@@ -66,25 +69,39 @@ export interface RunningProcess {
 /** Starts a built entry point with exactly the given env (plus PATH), like a container. */
 export function start(entry: string, env: Record<string, string>): RunningProcess {
   const child = spawn(process.execPath, [requireBuild(entry)], {
-    env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', NODE_ENV: 'production', ...env },
+    env: {
+      PATH: process.env.PATH ?? '',
+      SYSTEMROOT: process.env.SYSTEMROOT ?? '',
+      NODE_ENV: 'production',
+      ...env,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
   child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+  const exited = new Promise<number | null>((resolve) =>
+    child.once('exit', (code) => resolve(code)),
+  );
   return { child, output: () => output, exited };
 }
 
 /** Runs a built entry point to completion and returns its exit code and output. */
-export async function run(entry: string, env: Record<string, string>): Promise<{ code: number | null; output: string }> {
+export async function run(
+  entry: string,
+  env: Record<string, string>,
+): Promise<{ code: number | null; output: string }> {
   const proc = start(entry, env);
   const code = await proc.exited;
   return { code, output: proc.output() };
 }
 
 /** Polls the URL until it answers, or fails early if the process exits. */
-export async function waitForHttp(url: string, proc: RunningProcess, timeoutMs = 20_000): Promise<void> {
+export async function waitForHttp(
+  url: string,
+  proc: RunningProcess,
+  timeoutMs = 20_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (proc.child.exitCode !== null) throw new Error(`process exited early:\n${proc.output()}`);

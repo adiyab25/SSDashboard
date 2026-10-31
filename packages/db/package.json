@@ -3,7 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "files": ["dist", "migrations"],
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -11,11 +14,12 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate": "drizzle-kit generate",
     "test": "vitest run",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "lint": "eslint ."
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
@@ -26,6 +30,7 @@
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "drizzle-kit": "catalog:",
+    "eslint": "catalog:",
     "typescript": "catalog:",
     "vitest": "^4.1.12"
   }

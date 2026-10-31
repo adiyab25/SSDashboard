@@ -15,7 +15,12 @@ describe('HealthResponse', () => {
   });
 
   it('drops fields the contract does not declare', () => {
-    const parsed = HealthResponse.parse({ status: 'ok', version: '1.0.0', database: 'up', secret: 'x' });
+    const parsed = HealthResponse.parse({
+      status: 'ok',
+      version: '1.0.0',
+      database: 'up',
+      secret: 'x',
+    });
 
     expect(parsed).not.toHaveProperty('secret');
   });

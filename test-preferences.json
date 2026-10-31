@@ -1,7 +1,11 @@
 {
   "tool": "vitest",
   "gate": null,
-  "additionalTools": ["@testing-library/react", "@testing-library/user-event", "@testing-library/jest-dom"],
+  "additionalTools": [
+    "@testing-library/react",
+    "@testing-library/user-event",
+    "@testing-library/jest-dom"
+  ],
   "e2eTool": "playwright",
   "testDir": "beside the source in apps (src/**/*.spec.ts); test/ in packages and for database backed e2e (*.e2e-spec.ts); apps/web/e2e for Playwright",
   "filePattern": "*.spec.ts",
