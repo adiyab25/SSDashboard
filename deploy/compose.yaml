@@ -1,0 +1,81 @@
+# One client install. Versioned with the release; ships alongside it.
+# Run from this folder:  docker compose --env-file .env up -d
+# Client installs pin SSD_VERSION to an exact release (never `latest`).
+
+name: ssdashboard-${CLIENT_ID:?set CLIENT_ID in .env}
+
+x-app: &app
+  image: ${SSD_REGISTRY:-ghcr.io/adiyab25}/ssdashboard-app:${SSD_VERSION:?set SSD_VERSION in .env}
+  env_file: .env
+  environment:
+    DATABASE_URL: postgres://ssdashboard:${POSTGRES_PASSWORD}@postgres:5432/ssdashboard
+    APP_VERSION: ${SSD_VERSION}
+  restart: unless-stopped
+
+services:
+  postgres:
+    # One pinned major per release. PostgreSQL 18 keeps its data under /var/lib/postgresql/18.
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ssdashboard
+      POSTGRES_USER: ssdashboard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssdashboard -d ssdashboard"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 1g
+    restart: unless-stopped
+
+  # One off: applies migrations and exits. The api starts only after it succeeds.
+  migrate:
+    <<: *app
+    command: ["node", "dist/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: "no"
+
+  api:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 512m
+
+  web:
+    image: ${SSD_REGISTRY:-ghcr.io/adiyab25}/ssdashboard-web:${SSD_VERSION}
+    env_file: .env
+    environment:
+      API_INTERNAL_URL: http://api:3001
+    depends_on:
+      - api
+    mem_limit: 512m
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+      - api
+    mem_limit: 128m
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

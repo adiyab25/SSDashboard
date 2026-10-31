@@ -1,0 +1,13 @@
+# One domain per client. SITE_ADDRESS is the bare host (erp.client.com) for automatic
+# HTTPS, or `:80` for an on premises install behind the client's own TLS.
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

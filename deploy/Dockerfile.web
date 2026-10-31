@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+# The `web` image: the Next.js back office as a standalone server.
+# One image serves every client: no per client value is baked in at build time.
+# Build from the repo root:
+#   docker build -f deploy/Dockerfile.web -t ghcr.io/<owner>/ssdashboard-web:1.0.0 .
+
+ARG NODE_VERSION=26
+
+FROM node:${NODE_VERSION}-alpine AS base
+# Keep these in step with `packageManager` and the turbo catalog entry.
+ARG PNPM_VERSION=12.16.1
+ARG TURBO_VERSION=2.11.10
+RUN npm install -g pnpm@${PNPM_VERSION} turbo@${TURBO_VERSION}
+ENV TURBO_TELEMETRY_DISABLED=1 \
+    NEXT_TELEMETRY_DISABLED=1
+WORKDIR /repo
+
+FROM base AS prune
+COPY . .
+RUN turbo prune @ssdashboard/web --docker
+
+FROM base AS build
+COPY --from=prune /repo/out/json/ .
+RUN pnpm install --frozen-lockfile
+COPY --from=prune /repo/out/full/ .
+RUN turbo run build --filter=@ssdashboard/web
+
+FROM node:${NODE_VERSION}-alpine AS runtime
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+WORKDIR /app
+COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
+COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+CMD ["node", "apps/web/server.js"]

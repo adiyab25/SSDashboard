@@ -1,0 +1,21 @@
+{
+  "name": "ssdashboard",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @ssdashboard/db run generate",
+    "db:migrate": "turbo run build --filter=@ssdashboard/api && pnpm --filter @ssdashboard/api run migrate",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm build && pnpm -r --workspace-concurrency=1 test:e2e"
+  },
+  "devDependencies": {
+    "turbo": "catalog:"
+  }
+}

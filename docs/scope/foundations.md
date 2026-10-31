@@ -8,10 +8,10 @@ The ground every slice stands on. Back to [index](index.md).
 Decide the stack and how one shared core ships as separate installs per client, then scaffold a runnable project.
 **Done when:** the stack and the per client deployment model (own install and database per client, settings and module toggles) are recorded in a spec, and the empty scaffold boots locally and passes build. (basis: one codebase, many deploys, configuration per deployment)
 - [x] Decide the stack (spec): `/architect stack & architecture`
-- [ ] Scaffold from the decision: `/develop stack & architecture`
+- [x] Scaffold from the decision: `/develop stack & architecture`
 - [ ] Verify it: `/check verify stack & architecture`
-- [ ] Test it: `/test stack & architecture`
-Spec [0001](../specs/0001-stack-architecture/index.md)
+- [x] Test it: `/test stack & architecture`
+Spec [0001](../specs/0001-stack-architecture/index.md) · code in `apps/`, `packages/`, `deploy/`
 
 ### 2. Coding standards & tooling
 Capture conventions, then install lint, format, type checks, pre commit hooks, and CI from the real scaffolded project.
