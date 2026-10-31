@@ -29,5 +29,7 @@ export default defineConfig({
         url: 'http://localhost:3001/api/health',
         reuseExistingServer: true,
         timeout: 180_000,
+        // Show the dev servers' output, so a server that never comes up explains itself.
+        stdout: 'pipe',
       },
 });
