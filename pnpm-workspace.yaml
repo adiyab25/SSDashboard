@@ -1,0 +1,22 @@
+packages:
+  - apps/*
+  - packages/*
+  - extensions/*
+
+# One version of each shared dependency for the whole repo.
+catalog:
+  "@types/node": ^26.0.0
+  drizzle-kit: ^0.31.11
+  drizzle-orm: ^0.45.4
+  pg: ^8.23.1
+  "@types/pg": ^8.23.1
+  turbo: ^2.11.10
+  typescript: ^6.0.2
+  zod: ^4.6.7
+
+# Install scripts run only for packages reviewed here.
+allowBuilds:
+  "@nestjs/core": false
+  esbuild: true
+  sharp: false
+  unrs-resolver: false

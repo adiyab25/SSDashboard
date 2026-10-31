@@ -5,4 +5,4 @@ A warehouse and ERP system for multi channel ecommerce: stock across warehouses 
 - Product scope: [docs/scope/index.md](docs/scope/index.md)
 - Stack decision: [docs/specs/0001-stack-architecture/index.md](docs/specs/0001-stack-architecture/index.md)
 
-Status: planning. The stack is decided; the scaffold is next.
+Status: scaffolded. The workspace builds and boots; the first features (tooling, data model) are next.

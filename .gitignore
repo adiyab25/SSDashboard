@@ -11,3 +11,5 @@ coverage/
 Thumbs.db
 .claude/settings.local.json
 docs/.agent-cache/
+*.tsbuildinfo
+next-env.d.ts
