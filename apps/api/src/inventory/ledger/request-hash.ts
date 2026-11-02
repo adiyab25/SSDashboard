@@ -1,0 +1,63 @@
+import { createHash } from 'node:crypto';
+
+export interface HashedLine {
+  variantId: string;
+  locationId: string;
+  binId?: string | undefined;
+  lotId?: string | undefined;
+  quantity: number;
+  unitCost?: string | undefined;
+  sourceLineId?: string | undefined;
+  serials?: readonly string[] | undefined;
+  reservationId?: string | undefined;
+  reasonCode?: string | undefined;
+}
+
+export interface HashedRequest {
+  operation: 'post' | 'reverse';
+  sourceType: string;
+  sourceId: string;
+  reversesGroupId: string | null;
+  /** Only an explicit date: a retry that leaves it to default must still match. */
+  effectiveAt?: Date | undefined;
+  lines: readonly HashedLine[];
+}
+
+function compare(a: string | undefined, b: string | undefined): number {
+  if (a === b) return 0;
+  if (a === undefined) return -1;
+  if (b === undefined) return 1;
+  return a < b ? -1 : 1;
+}
+
+/** Canonical JSON: keys sorted at every level, undefined dropped. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : 1));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * SHA-256 of what a posting asks for (spec 0002, Value sourcing): never the key,
+ * `postedBy`, or a defaulted date, and lines sorted so their order does not matter.
+ */
+export function requestHash(request: HashedRequest): string {
+  const lines = [...request.lines].sort(
+    (a, b) =>
+      compare(a.variantId, b.variantId) ||
+      compare(a.locationId, b.locationId) ||
+      compare(a.binId, b.binId) ||
+      compare(a.lotId, b.lotId) ||
+      compare(a.sourceLineId, b.sourceLineId) ||
+      canonical(a).localeCompare(canonical(b)),
+  );
+  return createHash('sha256')
+    .update(canonical({ ...request, lines }))
+    .digest('hex');
+}

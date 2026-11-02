@@ -1,0 +1,174 @@
+import { z } from 'zod';
+import { MoneyString, UnitCostString } from './money.js';
+
+/** What a posting comes from. Matches the `movement_source_type` enum. */
+export const LedgerSourceType = z.enum([
+  'opening_balance',
+  'purchase_receipt',
+  'purchase_return',
+  'sales_shipment',
+  'sales_return',
+  'transfer_out',
+  'transfer_in',
+  'adjustment',
+  'count',
+  'production_consume',
+  'production_output',
+]);
+export type LedgerSourceType = z.infer<typeof LedgerSourceType>;
+
+const MAX_INT = 2_147_483_647;
+const Uuid = z.uuid();
+
+/** One line of a posting, already in the SKU's base unit. */
+export const PostingLine = z.object({
+  variantId: Uuid,
+  locationId: Uuid,
+  binId: Uuid.optional(),
+  lotId: Uuid.optional(),
+  /** Signed whole units: positive in, negative out. Never zero. */
+  quantity: z
+    .number()
+    .int()
+    .min(-MAX_INT)
+    .max(MAX_INT)
+    .refine((value) => value !== 0, 'Quantity cannot be zero'),
+  /** Inbound only: cost per base unit, at most 4 decimals. Rejected on outbound lines. */
+  unitCost: UnitCostString.optional(),
+  sourceLineId: Uuid.optional(),
+  /** Serial tracked SKUs only: exactly as many serials as the absolute quantity. */
+  serials: z.array(z.string().trim().min(1).max(200)).optional(),
+  /** Outbound only: the reservation this line fulfils. */
+  reservationId: Uuid.optional(),
+  reasonCode: z.string().trim().min(1).max(100).optional(),
+});
+export type PostingLine = z.infer<typeof PostingLine>;
+
+export const PostingInput = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  sourceType: LedgerSourceType,
+  sourceId: Uuid,
+  /** Defaults to now. May be in the past, never more than 5 minutes ahead. */
+  effectiveAt: z.coerce.date().optional(),
+  postedBy: Uuid.optional(),
+  lines: z.array(PostingLine).min(1).max(1000),
+});
+export type PostingInput = z.input<typeof PostingInput>;
+
+export const ReverseInput = z.object({
+  groupId: Uuid,
+  idempotencyKey: z.string().min(1).max(200),
+  effectiveAt: z.coerce.date().optional(),
+  postedBy: Uuid.optional(),
+  reasonCode: z.string().trim().min(1).max(100),
+});
+export type ReverseInput = z.input<typeof ReverseInput>;
+
+export const PostedMovement = z.object({
+  id: Uuid,
+  variantId: Uuid,
+  locationId: Uuid,
+  binId: Uuid.nullable(),
+  lotId: Uuid.nullable(),
+  quantity: z.number().int(),
+  unitCost: UnitCostString,
+  totalCost: MoneyString,
+  costVariance: MoneyString,
+  costUnknown: z.boolean(),
+  sourceLineId: Uuid.nullable(),
+  reasonCode: z.string().nullable(),
+  serials: z.array(z.string()),
+});
+export type PostedMovement = z.infer<typeof PostedMovement>;
+
+/** The stored posting: the same shape on the first call and on every replay of its key. */
+export const PostingResult = z.object({
+  groupId: Uuid,
+  reversesGroupId: Uuid.nullable(),
+  sourceType: LedgerSourceType,
+  sourceId: Uuid,
+  effectiveAt: z.iso.datetime({ offset: true }),
+  recordedAt: z.iso.datetime({ offset: true }),
+  postedBy: Uuid.nullable(),
+  movements: z.array(PostedMovement),
+});
+export type PostingResult = z.infer<typeof PostingResult>;
+
+export const GetLevelsInput = z.object({
+  variantId: Uuid.optional(),
+  locationId: Uuid.optional(),
+  cursor: Uuid.optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+});
+export type GetLevelsInput = z.input<typeof GetLevelsInput>;
+
+export const StockLevel = z.object({
+  id: Uuid,
+  variantId: Uuid,
+  locationId: Uuid,
+  binId: Uuid.nullable(),
+  lotId: Uuid.nullable(),
+  onHand: z.number().int(),
+  avgUnitCost: UnitCostString,
+  totalValue: MoneyString,
+});
+export type StockLevel = z.infer<typeof StockLevel>;
+
+/** Per SKU, location, and lot: on hand in sellable bins of a sellable location, less reservations. */
+export const Availability = z.object({
+  variantId: Uuid,
+  locationId: Uuid,
+  lotId: Uuid.nullable(),
+  onHand: z.number().int(),
+  reserved: z.number().int(),
+  available: z.number().int(),
+});
+export type Availability = z.infer<typeof Availability>;
+
+export const LevelsPage = z.object({
+  levels: z.array(StockLevel),
+  /** Reserved and available for each SKU, location, and lot on this page. */
+  availability: z.array(Availability),
+  nextCursor: Uuid.nullable(),
+});
+export type LevelsPage = z.infer<typeof LevelsPage>;
+
+export const GetAvailableInput = z.object({
+  variantId: Uuid,
+  locationId: Uuid.optional(),
+});
+export type GetAvailableInput = z.input<typeof GetAvailableInput>;
+
+export const ReserveInput = z.object({
+  variantId: Uuid,
+  locationId: Uuid,
+  lotId: Uuid.optional(),
+  quantity: z.number().int().min(1).max(MAX_INT),
+  sourceType: z.string().trim().min(1).max(50),
+  sourceId: Uuid,
+  sourceLineId: Uuid,
+});
+export type ReserveInput = z.input<typeof ReserveInput>;
+
+export const ReleaseInput = z.object({
+  reservationId: Uuid,
+  /** Partial release; defaults to everything still open. */
+  quantity: z.number().int().min(1).max(MAX_INT).optional(),
+});
+export type ReleaseInput = z.input<typeof ReleaseInput>;
+
+export const ReservationStatus = z.enum(['active', 'released', 'fulfilled']);
+
+export const Reservation = z.object({
+  id: Uuid,
+  variantId: Uuid,
+  locationId: Uuid,
+  lotId: Uuid.nullable(),
+  quantity: z.number().int(),
+  openQuantity: z.number().int(),
+  sourceType: z.string(),
+  sourceId: Uuid,
+  sourceLineId: Uuid,
+  status: ReservationStatus,
+});
+export type Reservation = z.infer<typeof Reservation>;
