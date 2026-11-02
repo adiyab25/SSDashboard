@@ -8,6 +8,13 @@
       "when": 1793435703070,
       "tag": "0000_enable_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793654391571,
+      "tag": "0001_core_data_model",
+      "breakpoints": true
     }
   ]
 }

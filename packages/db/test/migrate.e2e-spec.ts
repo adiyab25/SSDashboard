@@ -46,7 +46,7 @@ describe('runMigrations', () => {
 
     await runMigrations(url);
 
-    expect(await countMigrations(url)).toBe('1');
+    expect(await countMigrations(url)).toBe('2');
   });
 
   it('does nothing when run again on an up to date database', async () => {
@@ -55,7 +55,7 @@ describe('runMigrations', () => {
 
     await runMigrations(url);
 
-    expect(await countMigrations(url)).toBe('1');
+    expect(await countMigrations(url)).toBe('2');
   });
 
   // Two installs' migrate containers (or a retry) must never apply the same migration twice.
@@ -64,7 +64,7 @@ describe('runMigrations', () => {
 
     await Promise.all([runMigrations(url), runMigrations(url), runMigrations(url)]);
 
-    expect(await countMigrations(url)).toBe('1');
+    expect(await countMigrations(url)).toBe('2');
   });
 
   it('releases the advisory lock when it finishes', async () => {

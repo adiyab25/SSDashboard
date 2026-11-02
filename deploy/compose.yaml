@@ -8,7 +8,8 @@ x-app: &app
   image: ${SSD_REGISTRY:-ghcr.io/adiyab25}/ssdashboard-app:${SSD_VERSION:?set SSD_VERSION in .env}
   env_file: .env
   environment:
-    DATABASE_URL: postgres://ssdashboard:${POSTGRES_PASSWORD}@postgres:5432/ssdashboard
+    # The application role: it can never update or delete stock movements (spec 0002).
+    DATABASE_URL: postgres://ssdashboard_app:${APP_DB_PASSWORD}@postgres:5432/ssdashboard
     APP_VERSION: ${SSD_VERSION}
   restart: unless-stopped
 
@@ -34,6 +35,12 @@ services:
   migrate:
     <<: *app
     command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://ssdashboard_app:${APP_DB_PASSWORD}@postgres:5432/ssdashboard
+      # Only migrate connects as the owner. It also sets the application role's login password.
+      MIGRATION_DATABASE_URL: postgres://ssdashboard:${POSTGRES_PASSWORD}@postgres:5432/ssdashboard
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      APP_VERSION: ${SSD_VERSION}
     depends_on:
       postgres:
         condition: service_healthy

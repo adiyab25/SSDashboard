@@ -28,7 +28,7 @@ Core entities every module builds on: products and variants, locations (warehous
 **Done when:** stock on hand per SKU per location is derived from immutable movements; movements carry quantity, unit cost, lot or serial, and source document; purchase and sales lines carry price, discount, and tax amount; the model handles 100,000+ SKUs and supports purchasing, sales, production, and the accounting export without a breaking migration. (basis: data model is the costliest thing to redo; stock as an append only ledger)
 - [x] Design it (spec): `/architect data model`
 - [ ] Build it: `/develop data model`
-  - [ ] Schema, value objects, and database roles (AC-2, AC-3, AC-12, AC-13)
+  - [x] Schema, value objects, and database roles (AC-2, AC-3, AC-12, AC-13)
   - [ ] Ledger posting core: inbound, outbound, costing, dates, reversals, reads (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-12)
   - [ ] Lots, serials, and reservations (AC-4, AC-8, AC-9)
   - [ ] Numbering, nightly reconciliation, and scale check (AC-10, AC-11, AC-14)

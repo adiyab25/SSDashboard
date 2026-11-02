@@ -4,7 +4,12 @@ import { z } from 'zod';
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
+  /** The application role's connection (`ssdashboard_app`), used by the api and worker. */
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  /** The owner role's connection, used only by the `migrate` entry point. */
+  MIGRATION_DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
+  /** Deploy only: `migrate` gives the application role a login with this password. */
+  APP_DB_PASSWORD: z.string().min(1).optional(),
   /** Comma separated extension package names, loaded at startup. */
   EXTENSIONS: z
     .string()

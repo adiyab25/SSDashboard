@@ -26,10 +26,16 @@ export function devDatabaseUrl(): string {
   return url;
 }
 
+/** The owner role's URL: it creates scratch databases and migrates them. */
+export function ownerDatabaseUrl(): string {
+  devDatabaseUrl();
+  return process.env.MIGRATION_DATABASE_URL ?? devDatabaseUrl();
+}
+
 export async function withAdmin<T>(
   run: (admin: DatabaseConnection['pool']) => Promise<T>,
 ): Promise<T> {
-  const { pool } = createDatabase(devDatabaseUrl(), { max: 1 });
+  const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
   try {
     return await run(pool);
   } finally {
@@ -40,7 +46,7 @@ export async function withAdmin<T>(
 export async function createScratchDatabase(): Promise<{ name: string; url: string }> {
   const name = `ssd_test_${randomBytes(4).toString('hex')}`;
   await withAdmin((client) => client.query(`CREATE DATABASE ${name}`));
-  const url = new URL(devDatabaseUrl());
+  const url = new URL(ownerDatabaseUrl());
   url.pathname = `/${name}`;
   return { name, url: url.toString() };
 }
