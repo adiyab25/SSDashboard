@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { schema, type DatabaseConnection } from '@ssdashboard/db';
-import { inArray } from 'drizzle-orm';
+import { inArray, schema, type DatabaseConnection } from '@ssdashboard/db';
 import { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
 import type { Executor } from '../database/sql.js';

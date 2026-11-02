@@ -20,6 +20,11 @@ const EnvSchema = z.object({
         .map((name) => name.trim())
         .filter(Boolean),
     ),
+  /** When the nightly ledger reconciliation runs (`worker`), in the `timezone` setting. */
+  LEDGER_RECONCILE_CRON: z
+    .string()
+    .regex(/^\S+( \S+){4}$/, 'A 5 field cron expression, like "0 2 * * *"')
+    .default('0 2 * * *'),
   /** The release version, set in the app image. */
   APP_VERSION: z.string().default('0.0.0-dev'),
 });

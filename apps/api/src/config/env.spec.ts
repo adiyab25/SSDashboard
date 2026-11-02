@@ -11,7 +11,16 @@ describe('loadEnv', () => {
   let errorLog: MockInstance<typeof console.error>;
 
   beforeEach(() => {
-    for (const name of ['NODE_ENV', 'PORT', 'DATABASE_URL', 'EXTENSIONS', 'APP_VERSION']) {
+    for (const name of [
+      'NODE_ENV',
+      'PORT',
+      'DATABASE_URL',
+      'MIGRATION_DATABASE_URL',
+      'APP_DB_PASSWORD',
+      'EXTENSIONS',
+      'LEDGER_RECONCILE_CRON',
+      'APP_VERSION',
+    ]) {
       vi.stubEnv(name, undefined);
     }
     vi.stubEnv('DATABASE_URL', VALID_URL);
@@ -34,6 +43,7 @@ describe('loadEnv', () => {
         PORT: 3001,
         DATABASE_URL: VALID_URL,
         EXTENSIONS: [],
+        LEDGER_RECONCILE_CRON: '0 2 * * *',
         APP_VERSION: '0.0.0-dev',
       });
     });
@@ -78,6 +88,7 @@ describe('loadEnv', () => {
       ['a PORT that is not a number', 'PORT', 'http', 'PORT'],
       ['a PORT of zero', 'PORT', '0', 'PORT'],
       ['an unknown NODE_ENV', 'NODE_ENV', 'staging', 'NODE_ENV'],
+      ['a cron with too few fields', 'LEDGER_RECONCILE_CRON', '0 2 *', 'LEDGER_RECONCILE_CRON'],
     ])('stops the process for %s', (_case, name, value, reported) => {
       vi.stubEnv(name, value);
 

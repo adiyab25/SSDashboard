@@ -38,5 +38,5 @@ USER node
 EXPOSE 3001
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
-# `migrate` runs this same image with: node dist/migrate.js
+# `migrate` and `worker` run this same image with: node dist/migrate.js, node dist/worker.js
 CMD ["node", "dist/main.js"]

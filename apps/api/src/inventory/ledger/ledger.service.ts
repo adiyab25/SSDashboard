@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   GetAvailableInput,
@@ -15,8 +14,7 @@ import {
   type PostingResult,
   type Reservation,
 } from '@ssdashboard/contracts';
-import type { DatabaseConnection } from '@ssdashboard/db';
-import { sql, type SQL } from 'drizzle-orm';
+import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { DATABASE } from '../../database/database.module.js';
 import {
@@ -30,6 +28,7 @@ import {
 import { SettingsService } from '../../platform/settings.service.js';
 import { costInbound, costOutbound, type BalanceState, type CostedLine } from './costing.js';
 import { LedgerError } from './ledger.errors.js';
+import { lockPairs } from './locks.js';
 import { requestHash, type HashedLine } from './request-hash.js';
 
 /** How far ahead of the database clock a posting may be dated. */
@@ -138,12 +137,6 @@ function compareLines(a: Line, b: Line): number {
     compareNullable(a.lotId, b.lotId) ||
     a.index - b.index
   );
-}
-
-/** A stable 64 bit lock key per SKU and location, so lock order is the same for everyone. */
-function lockKey(variantId: string, locationId: string): bigint {
-  const digest = createHash('sha256').update(`${variantId}:${locationId}`).digest();
-  return digest.readBigInt64BE(0);
 }
 
 /** `to_char` format for an exact UTC ISO 8601 timestamp, microseconds included. */
@@ -376,7 +369,7 @@ export class LedgerService {
         throw new LedgerError('UnknownReference', 'The lot does not belong to this SKU');
       }
 
-      await this.lockPairs(tx, [[parsed.variantId, parsed.locationId]]);
+      await lockPairs(tx, [[parsed.variantId, parsed.locationId]]);
       const available =
         (await this.availability(tx, null, parsed.variantId, parsed.locationId)).find(
           (row) => row.lotId === lotId,
@@ -494,7 +487,7 @@ export class LedgerService {
     this.checkLines(op.lines, master);
 
     const lines = [...op.lines].sort(compareLines);
-    await this.lockPairs(
+    await lockPairs(
       tx,
       lines.map((line) => [line.variantId, line.locationId]),
     );
@@ -634,20 +627,6 @@ export class LedgerService {
         throw new LedgerError('TrackingMismatch', `${at}: this SKU is not serial tracked`);
       }
     }
-  }
-
-  /**
-   * Takes a transaction lock per SKU and location, in one global order, before touching
-   * balances or reservations. This keeps the cross bin reserved stock check exact and means
-   * postings in opposite orders queue instead of deadlocking.
-   */
-  private async lockPairs(tx: Transaction, pairs: readonly [string, string][]): Promise<void> {
-    const keys = [...new Set(pairs.map(([variant, location]) => lockKey(variant, location)))].sort(
-      (a, b) => (a < b ? -1 : a > b ? 1 : 0),
-    );
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(k) FROM unnest(${pgArray(keys)}::bigint[]) AS k`,
-    );
   }
 
   /** Upserts and locks each distinct balance once, in sorted order, then reads the rest of each SKU and location. */
