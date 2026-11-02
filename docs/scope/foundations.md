@@ -29,7 +29,7 @@ Core entities every module builds on: products and variants, locations (warehous
 - [x] Design it (spec): `/architect data model`
 - [ ] Build it: `/develop data model`
   - [ ] Schema, value objects, and database roles (AC-2, AC-3, AC-12, AC-13)
-  - [ ] Ledger posting core: inbound, outbound, costing, dates, reversals, reads (AC-1, AC-4, AC-5, AC-6, AC-7, AC-12)
+  - [ ] Ledger posting core: inbound, outbound, costing, dates, reversals, reads (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-12)
   - [ ] Lots, serials, and reservations (AC-4, AC-8, AC-9)
   - [ ] Numbering, nightly reconciliation, and scale check (AC-10, AC-11, AC-14)
 - [ ] Verify it: `/check verify data model`

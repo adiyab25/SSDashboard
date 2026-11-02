@@ -92,11 +92,34 @@ An independent review on another model found 12 places where the builder would h
 - **Two database roles**, so the append only rule holds even for a bug that tries to update a movement.
 - **Dates** are compared in Cairo time, and costs follow recorded order.
 - **Reconciliation** runs in one snapshot and also checks reservations and serial counts, with at most one open discrepancy per balance.
-- **Inputs**: cost is per base unit and given only on inbound lines; duplicate balance lines are merged.
+- **Inputs**: cost is per base unit and given only on inbound lines. (Merging duplicate balance lines was dropped on 2026-11-02, see below.)
 - **Serials** arrive as strings and are created or returned in the posting.
 - **Numbering** is the last step of a document save, with counters created per year and full numbers stored.
 - **Archived** SKUs, locations, and bins cannot be posted or reserved.
 - **No partitioning** of movements for now; revisit at about 50 million rows. Runner up: partition by year now, which adds migration and query complexity before it pays off.
+
+## Inbound cost into negative stock (fixed 2026-11-02)
+
+The first version set a balance's value directly when a receipt landed on a negative balance (`new on_hand × unit_cost`, or 0), while the movement recorded the full receipt price. Those two disagreed whenever the units shipped into negative stock had been costed at a different average, so AC-1 (value equals the sum of movement costs) and AC-12 (an empty balance holds 0.00) could not both hold, and the nightly reconcile would have flagged a false mismatch.
+
+You chose:
+
+- **Close the shortfall at its own value.** An inbound line into a negative balance mirrors the outbound rule: the units that fill the shortfall take its value (proportionally, or exactly the rest when the line reaches zero), and only the units beyond zero cost at the receipt price. The balance value then changes only by the movement's `total_cost`, always. Runner up: a separate zero quantity revaluation movement, which reads well for accounting but breaks the non zero quantity check, the serial count rules, and AC-3, and needs a new source type.
+- **Store the variance on the movement** as `cost_variance` (receipt price minus ledger value), so the accounting export sums one column instead of repeating a formula. Runner up: derive it on read, which is leaner but easy to get wrong in every report.
+
+Side effect: the average after an inbound is always `round(total_value / on_hand, 4)`, the same formula a rebuild uses, so right after a receipt the average matches a rebuild. A receipt of 10 at 3.3333 now shows an average of 3.3330 (value 33.33 is the authority). After a shipment the kept average can differ from a rebuild by rounding (ship 4 of those 10: the kept 3.3330 against a rebuilt 3.3333). That is accepted: value is the authority, reconcile compares only on hand and value, and the average only prices shipments into negative stock.
+
+### Fixes from the second cross check (2026-11-02)
+
+An independent review on another model then checked the arithmetic and found that the old reversal rule (remove the original `total_cost`, plus a residue rule) could give a balance a value of the wrong sign (3 on hand at −22.00), and could leave an empty balance holding value after reversing a shipment. It also found smaller gaps a builder would have to invent. You chose to apply every recommended fix:
+
+- **Reversals are costed by the normal rules for their direction**, at the original unit cost, and the gap to the original cost goes to `cost_variance`. Values always keep the sign of their on hand, and the residue special case is gone. Tradeoff: a reversal no longer restores the original value exactly unless it empties the balance, and the difference is visible as variance. Runner up: keep the residue rule and add clamps, which patches each bad sequence separately and is harder to prove correct.
+- **Lines are never merged.** Each balance is locked once, and its lines are applied one by one as their own movements. Merging lost each line's `source_line_id` and needed a cost rule for mixed directions or mixed prices.
+- **Inbound `unit_cost` is always the price paid**, even when `total_cost` differs.
+- **`cost_unknown` is its own column**, so the caller's `reason_code` is never overwritten.
+- **A `CHECK` constraint** enforces that `total_cost` is 0 or has the sign of the quantity.
+- **Shares are computed in exact `numeric`** and rounded once.
+- **A receipt at cost 0** follows the same rules, with a negative variance when it fills a shortfall.
 
 ## Comparison with Shopify's model
 
