@@ -48,15 +48,19 @@ describe.skipIf(!hasShell)('deploy/bootstrap.sh', () => {
     bootstrap();
 
     const example = readFileSync(join(dir, '.env.example'), 'utf8');
-    const strip = (text: string) => text.replace(/^(POSTGRES_PASSWORD|BETTER_AUTH_SECRET)=.*$/gm, '');
+    const strip = (text: string) =>
+      text.replace(/^(POSTGRES_PASSWORD|BETTER_AUTH_SECRET)=.*$/gm, '');
     expect(strip(readEnv())).toBe(strip(example));
   });
 
-  it.skipIf(process.platform === 'win32')('makes .env readable by its owner only (mode 600)', () => {
-    bootstrap();
+  it.skipIf(process.platform === 'win32')(
+    'makes .env readable by its owner only (mode 600)',
+    () => {
+      bootstrap();
 
-    expect(statSync(join(dir, '.env')).mode & 0o777).toBe(0o600);
-  });
+      expect(statSync(join(dir, '.env')).mode & 0o777).toBe(0o600);
+    },
+  );
 
   it('refuses to overwrite an existing .env and leaves it untouched', () => {
     bootstrap();

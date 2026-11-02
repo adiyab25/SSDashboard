@@ -9,7 +9,10 @@ export interface DatabaseConnection {
   pool: pg.Pool;
 }
 
-export function createDatabase(connectionString: string, options: { max?: number } = {}): DatabaseConnection {
+export function createDatabase(
+  connectionString: string,
+  options: { max?: number } = {},
+): DatabaseConnection {
   const pool = new pg.Pool({ connectionString, max: options.max ?? 10 });
   // An idle client loses its connection when PostgreSQL restarts or goes away. The pool already
   // discards that client; without a listener the 'error' event would crash the process.

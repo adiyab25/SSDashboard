@@ -1,3 +1,4 @@
+import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { HealthResponse } from '@ssdashboard/contracts';
@@ -9,7 +10,7 @@ import { HealthController } from './health.controller.js';
 
 type Execute = () => Promise<unknown>;
 
-async function createApp(execute: Execute): Promise<INestApplication> {
+async function createApp(execute: Execute): Promise<INestApplication<Server>> {
   const moduleRef = await Test.createTestingModule({
     controllers: [HealthController],
     providers: [
@@ -17,13 +18,13 @@ async function createApp(execute: Execute): Promise<INestApplication> {
       { provide: ENV, useValue: { APP_VERSION: '1.2.3' } },
     ],
   }).compile();
-  const app = moduleRef.createNestApplication({ logger: false });
+  const app = moduleRef.createNestApplication<INestApplication<Server>>({ logger: false });
   await app.init();
   return app;
 }
 
 describe('GET /health', () => {
-  let app: INestApplication | undefined;
+  let app: INestApplication<Server> | undefined;
 
   afterEach(async () => {
     vi.useRealTimers();
@@ -50,7 +51,9 @@ describe('GET /health', () => {
   });
 
   it('does not leak the database error in the response', async () => {
-    app = await createApp(() => Promise.reject(new Error('password authentication failed for user "ssd"')));
+    app = await createApp(() =>
+      Promise.reject(new Error('password authentication failed for user "ssd"')),
+    );
 
     const response = await request(app.getHttpServer()).get('/health');
 
@@ -75,17 +78,27 @@ describe('HealthController.check', () => {
 
   it('gives up on a database that hangs and reports degraded after 2 seconds', async () => {
     vi.useFakeTimers();
-    const controller = new HealthController({ db: { execute: () => new Promise(() => {}) } } as never, env);
+    const controller = new HealthController(
+      { db: { execute: () => new Promise(() => {}) } } as never,
+      env,
+    );
 
     const result = controller.check();
     await vi.advanceTimersByTimeAsync(2_000);
 
-    await expect(result).resolves.toEqual({ status: 'degraded', version: '1.2.3', database: 'down' });
+    await expect(result).resolves.toEqual({
+      status: 'degraded',
+      version: '1.2.3',
+      database: 'down',
+    });
   });
 
   it('is still waiting just before the 2 second limit', async () => {
     vi.useFakeTimers();
-    const controller = new HealthController({ db: { execute: () => new Promise(() => {}) } } as never, env);
+    const controller = new HealthController(
+      { db: { execute: () => new Promise(() => {}) } } as never,
+      env,
+    );
     let settled = false;
 
     void controller.check().then(() => (settled = true));
@@ -98,7 +111,10 @@ describe('HealthController.check', () => {
 
   it('leaves no timer running once the database has answered', async () => {
     vi.useFakeTimers();
-    const controller = new HealthController({ db: { execute: () => Promise.resolve({}) } } as never, env);
+    const controller = new HealthController(
+      { db: { execute: () => Promise.resolve({}) } } as never,
+      env,
+    );
 
     await controller.check();
 

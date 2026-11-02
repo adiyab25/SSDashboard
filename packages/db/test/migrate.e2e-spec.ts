@@ -14,7 +14,8 @@ async function query<T extends pg.QueryResultRow>(url: string, sql: string): Pro
 }
 
 const countMigrations = async (url: string) =>
-  (await query<{ count: string }>(url, 'SELECT count(*) FROM drizzle.__drizzle_migrations'))[0]?.count;
+  (await query<{ count: string }>(url, 'SELECT count(*) FROM drizzle.__drizzle_migrations'))[0]
+    ?.count;
 
 describe('runMigrations', () => {
   const scratch: string[] = [];
@@ -35,7 +36,9 @@ describe('runMigrations', () => {
     await runMigrations(url);
 
     const extensions = await query<{ extname: string }>(url, 'SELECT extname FROM pg_extension');
-    expect(extensions.map((row) => row.extname)).toEqual(expect.arrayContaining(['pg_trgm', 'unaccent']));
+    expect(extensions.map((row) => row.extname)).toEqual(
+      expect.arrayContaining(['pg_trgm', 'unaccent']),
+    );
   });
 
   it('records each applied migration once', async () => {

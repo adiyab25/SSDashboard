@@ -9,7 +9,8 @@
     "start": "next start --port 3000",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@ssdashboard/contracts": "workspace:*",
@@ -28,6 +29,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "catalog:",
     "jsdom": "^30.1.3",
     "tailwindcss": "^4",
     "typescript": "catalog:",

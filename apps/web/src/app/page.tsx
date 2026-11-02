@@ -1,4 +1,4 @@
-import { ApiStatus } from "./api-status";
+import { ApiStatus } from './api-status';
 
 // Server components render only the shell; data loads in client components.
 export default function Home() {

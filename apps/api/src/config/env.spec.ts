@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { loadEnv } from './env.js';
 
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
@@ -8,7 +8,7 @@ const VALID_URL = 'postgres://ssdashboard:secret@localhost:5433/ssdashboard';
 
 describe('loadEnv', () => {
   let exit: ReturnType<typeof vi.spyOn>;
-  let errorLog: ReturnType<typeof vi.spyOn>;
+  let errorLog: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     for (const name of ['NODE_ENV', 'PORT', 'DATABASE_URL', 'EXTENSIONS', 'APP_VERSION']) {

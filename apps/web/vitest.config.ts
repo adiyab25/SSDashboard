@@ -1,13 +1,13 @@
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [react()],
   resolve: { tsconfigPaths: true },
   test: {
-    environment: "jsdom",
-    setupFiles: ["./vitest.setup.ts"],
+    environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts'],
     // Playwright owns e2e/.
-    include: ["src/**/*.spec.{ts,tsx}"],
+    include: ['src/**/*.spec.{ts,tsx}'],
   },
 });

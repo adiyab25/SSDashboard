@@ -42,7 +42,11 @@ describe('api entry point (dist/main.js)', { timeout: 30_000 }, () => {
     const response = await fetch(`${base}/api/health`);
 
     expect(response.status).toBe(200);
-    expect(HealthResponse.parse(await response.json())).toEqual({ status: 'ok', version: '9.9.9', database: 'up' });
+    expect(HealthResponse.parse(await response.json())).toEqual({
+      status: 'ok',
+      version: '9.9.9',
+      database: 'up',
+    });
   });
 
   it('serves routes only under the /api prefix that Caddy forwards', async () => {
@@ -56,7 +60,7 @@ describe('api entry point (dist/main.js)', { timeout: 30_000 }, () => {
   it('starts and reports degraded when the database is unreachable', async () => {
     const base = await startApi({ DATABASE_URL: UNREACHABLE_DB });
 
-    const body = await (await fetch(`${base}/api/health`)).json();
+    const body: unknown = await (await fetch(`${base}/api/health`)).json();
 
     expect(body).toMatchObject({ status: 'degraded', database: 'down' });
     expect(api?.child.exitCode).toBeNull();
@@ -70,13 +74,16 @@ describe('api entry point (dist/main.js)', { timeout: 30_000 }, () => {
     await fetch(`${base}/api/health`);
 
     const terminated = await withAdmin((admin) =>
-      admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1', [tag]),
+      admin.query(
+        'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1',
+        [tag],
+      ),
     );
     expect(terminated.rowCount).toBeGreaterThan(0);
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     expect(api?.child.exitCode).toBeNull();
-    const body = await (await fetch(`${base}/api/health`)).json();
+    const body: unknown = await (await fetch(`${base}/api/health`)).json();
     expect(body).toMatchObject({ status: 'ok', database: 'up' });
   });
 
