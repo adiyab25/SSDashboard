@@ -34,6 +34,12 @@ describe('SignInForm', () => {
     expect(screen.getByLabelText('Password(Required)')).toBeRequired();
   });
 
+  it('never puts the email or password in the address if submitted before the page is ready', () => {
+    const { container } = render(<SignInForm />);
+
+    expect(container.querySelector('form')).toHaveAttribute('method', 'post');
+  });
+
   it('lets a password manager fill the form and never blocks paste (AC-8)', () => {
     render(<SignInForm />);
 

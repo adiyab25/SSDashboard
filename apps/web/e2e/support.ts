@@ -1,8 +1,8 @@
-import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
+import { ownerDatabaseUrl } from './auth';
 
 export type Theme = 'light' | 'dark';
 export type TextDirection = 'ltr' | 'rtl';
@@ -83,16 +83,6 @@ export async function expectNoAxeViolations(page: Page) {
       `${violation.id}: ${violation.help}\n  ${violation.nodes.map((node) => node.target.join(' ')).join('\n  ')}`,
   );
   expect(summary).toEqual([]);
-}
-
-/** The owner connection to the dev database, for seeding test rows. */
-function ownerDatabaseUrl(): string {
-  const rootEnv = new URL('../../../.env', import.meta.url);
-  if (!process.env.MIGRATION_DATABASE_URL && existsSync(rootEnv)) process.loadEnvFile(rootEnv);
-  const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!url)
-    throw new Error('Set MIGRATION_DATABASE_URL (or create the root .env) to seed locations.');
-  return url;
 }
 
 export interface SeededLocations {

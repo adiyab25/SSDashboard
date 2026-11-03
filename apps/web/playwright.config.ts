@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { STORAGE_STATE } from './e2e/auth';
 
 // Default: starts `pnpm dev` (api + web) from the repo root, which needs the dev
 // database running. Set E2E_BASE_URL (e.g. http://localhost for a Compose install
@@ -15,6 +16,8 @@ const prodBaseURL = externalProdUrl ?? `http://localhost:${prodPort}`;
 
 export default defineConfig({
   testDir: './e2e',
+  // Seeds an admin and signs it in once; the shell projects reuse that cookie (spec 0005).
+  globalSetup: './e2e/global-setup.ts',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   use: { baseURL, trace: 'on-first-retry' },
@@ -22,7 +25,11 @@ export default defineConfig({
     {
       name: 'desktop',
       testIgnore: /production\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1280, height: 800 },
+        storageState: STORAGE_STATE,
+      },
     },
     {
       name: 'mobile',
@@ -32,6 +39,7 @@ export default defineConfig({
         viewport: { width: 375, height: 740 },
         isMobile: true,
         hasTouch: true,
+        storageState: STORAGE_STATE,
       },
     },
     {

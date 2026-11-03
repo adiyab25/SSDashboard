@@ -95,7 +95,12 @@ export function SignInForm() {
   }
 
   return (
-    <form noValidate onSubmit={(event) => void submit(event)} aria-labelledby="sign-in-title">
+    <form
+      method="post"
+      noValidate
+      onSubmit={(event) => void submit(event)}
+      aria-labelledby="sign-in-title"
+    >
       <FieldGroup className="gap-6">
         <div className="flex flex-col gap-1.5">
           <h1 id="sign-in-title" className="text-xl font-semibold">
