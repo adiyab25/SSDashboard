@@ -190,5 +190,41 @@ describe('numbering and reconciliation', { timeout: 60_000 }, () => {
         await h.owner.pool.query('DELETE FROM reservations WHERE id = $1', [rows[0]?.id]);
       }
     });
+
+    it('fails a rebuild with LockTimeout while the balance is held, then rebuilds once free', async () => {
+      const key = { variantId: await make.variant(), locationId: await make.location() };
+      await h.ledger.post(posting([{ ...key, quantity: 5, unitCost: '1.0000' }]));
+      await h.owner.pool.query('UPDATE stock_levels SET on_hand = 6 WHERE variant_id = $1', [
+        key.variantId,
+      ]);
+      await reconciliation.reconcile();
+      const { rows } = await h.owner.pool.query<{ id: string }>(
+        `SELECT id FROM stock_level_discrepancies
+         WHERE kind = 'balance' AND variant_id = $1 AND resolved_at IS NULL`,
+        [key.variantId],
+      );
+      const discrepancyId = rows[0]?.id ?? '';
+      const blocker = await h.owner.pool.connect();
+      try {
+        await blocker.query('BEGIN');
+        await blocker.query('SELECT 1 FROM stock_levels WHERE variant_id = $1 FOR UPDATE', [
+          key.variantId,
+        ]);
+
+        await expect(
+          reconciliation.rebuildLevel({ discrepancyId, resolvedBy: randomUUID() }),
+        ).rejects.toMatchObject({ code: 'LockTimeout' });
+      } finally {
+        await blocker.query('ROLLBACK');
+        blocker.release();
+      }
+
+      const rebuilt = await reconciliation.rebuildLevel({
+        discrepancyId,
+        resolvedBy: randomUUID(),
+      });
+
+      expect(rebuilt).toMatchObject({ onHand: 5, totalValue: '5.00' });
+    });
   });
 });

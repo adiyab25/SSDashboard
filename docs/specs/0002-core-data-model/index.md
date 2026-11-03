@@ -280,7 +280,7 @@ Tracer Bullet: first one real inbound posting through schema, service, and tests
 - [ ] Feature 13: hide unit cost and stock value from roles without cost permission.
 - [ ] Feature 25: admin screen for open discrepancies and the rebuild action, plus a dismiss action: reservation and serial discrepancies cannot be rebuilt, and no function sets the `dismissed` resolution yet.
 - [ ] Feature 7: map `LockTimeout` to a retryable HTTP error (503 with a retry hint) when the ledger gets endpoints.
-- [ ] `/develop data model`: `rebuildLevel` runs its own transaction, so it neither maps PostgreSQL code 55P03 to `LockTimeout` nor gets the single 40P01/40001 retry the Key invariants require. Route it through the same retry and error mapping as `LedgerService`, with a test.
+- [x] `/develop data model`: `rebuildLevel` runs its own transaction, so it neither maps PostgreSQL code 55P03 to `LockTimeout` nor gets the single 40P01/40001 retry the Key invariants require. Route it through the same retry and error mapping as `LedgerService`, with a test.
 - [ ] Feature 23: alert on newly opened discrepancies, not on the nightly count, which stays above zero while reservation or serial discrepancies wait for the feature 25 dismiss action.
 - [ ] Feature 34: confirm the average cost scope (per balance row, per location, or per SKU) or switch to FIFO `cost_layers`.
 - [ ] Feature 46: validate `custom_fields` against `custom_field_definitions` and add the admin screens.

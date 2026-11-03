@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { sql } from '@ssdashboard/db';
-import { pgArray, pgErrorCode, type Transaction } from '../../database/sql.js';
+import { sql, type Database } from '@ssdashboard/db';
+import { isRetryable, pgArray, pgErrorCode, type Transaction } from '../../database/sql.js';
 import { LedgerError } from './ledger.errors.js';
 
 /**
@@ -9,15 +9,36 @@ import { LedgerError } from './ledger.errors.js';
  */
 export const LOCK_TIMEOUT_MS = 5_000;
 
-/** Caps lock waits for the rest of this transaction only (`SET LOCAL`). */
-export async function limitLockWait(tx: Transaction, timeoutMs = LOCK_TIMEOUT_MS): Promise<void> {
-  await tx.execute(sql`SELECT set_config('lock_timeout', ${`${timeoutMs}ms`}, true)`);
-}
-
 /** Turns PostgreSQL's lock timeout (55P03) into a ledger error the caller can retry later. */
-export function asLockTimeout(error: unknown): unknown {
+function asLockTimeout(error: unknown): unknown {
   if (pgErrorCode(error) !== '55P03') return error;
   return new LedgerError('LockTimeout', 'Stock is busy with another posting. Try again.');
+}
+
+/**
+ * Runs one ledger write transaction (spec 0002, Key invariants): READ COMMITTED, lock waits
+ * capped at `LOCK_TIMEOUT_MS` each, the whole transaction retried once on a deadlock or
+ * serialization failure, and a lock timeout raised as `LockTimeout`. Every writer of
+ * balances, reservations, or discrepancies goes through here.
+ */
+export async function ledgerTransaction<T>(
+  db: Database,
+  work: (tx: Transaction) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await db.transaction(
+        async (tx) => {
+          await tx.execute(sql`SELECT set_config('lock_timeout', ${`${LOCK_TIMEOUT_MS}ms`}, true)`);
+          return work(tx);
+        },
+        { isolationLevel: 'read committed' },
+      );
+    } catch (error) {
+      if (attempt === 0 && isRetryable(error)) continue;
+      throw asLockTimeout(error);
+    }
+  }
 }
 
 /** A stable 64 bit lock key per SKU and location, so lock order is the same for everyone. */

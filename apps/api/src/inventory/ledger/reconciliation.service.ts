@@ -3,7 +3,7 @@ import type { StockLevel } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../../database/database.module.js';
 import { LedgerError } from './ledger.errors.js';
-import { limitLockWait, lockPairs } from './locks.js';
+import { ledgerTransaction, lockPairs } from './locks.js';
 
 /** What one place should hold according to its movements, and what the balance says. */
 const KEY = 'variant_id, location_id, bin_id, lot_id';
@@ -115,45 +115,43 @@ export class ReconciliationService {
    * round(total_value / on_hand, 4) when on hand is above 0, else the kept one.
    */
   async rebuildLevel(input: { discrepancyId: string; resolvedBy: string }): Promise<StockLevel> {
-    return this.connection.db.transaction(
-      async (tx) => {
-        await limitLockWait(tx);
-        const discrepancy = (
-          await tx.execute<{
-            variant_id: string;
-            location_id: string;
-            bin_id: string | null;
-            lot_id: string | null;
-            kind: 'balance' | 'reservation' | 'serial';
-            resolved: boolean;
-          }>(sql`
+    return ledgerTransaction(this.connection.db, async (tx) => {
+      const discrepancy = (
+        await tx.execute<{
+          variant_id: string;
+          location_id: string;
+          bin_id: string | null;
+          lot_id: string | null;
+          kind: 'balance' | 'reservation' | 'serial';
+          resolved: boolean;
+        }>(sql`
             SELECT variant_id, location_id, bin_id, lot_id, kind,
                    resolved_at IS NOT NULL AS resolved
             FROM stock_level_discrepancies WHERE id = ${input.discrepancyId} FOR UPDATE`)
-        ).rows[0];
-        if (!discrepancy) {
-          throw new LedgerError('NotFound', `Discrepancy ${input.discrepancyId} not found`);
-        }
-        if (discrepancy.resolved) {
-          throw new LedgerError('DiscrepancyClosed', 'This discrepancy is already resolved');
-        }
-        // Recomputing a balance cannot fix a reservation total or a serial count, so marking
-        // those "rebuilt" would record a fix that never happened.
-        if (discrepancy.kind !== 'balance') {
-          throw new LedgerError(
-            'NotRebuildable',
-            `A ${discrepancy.kind} discrepancy is not fixed by rebuilding a balance`,
-          );
-        }
-        const { variant_id: variantId, location_id: locationId } = discrepancy;
-        await lockPairs(tx, [[variantId, locationId]]);
-        const level = (
-          await tx.execute<{
-            id: string;
-            on_hand: number;
-            avg_unit_cost: string;
-            total_value: string;
-          }>(sql`
+      ).rows[0];
+      if (!discrepancy) {
+        throw new LedgerError('NotFound', `Discrepancy ${input.discrepancyId} not found`);
+      }
+      if (discrepancy.resolved) {
+        throw new LedgerError('DiscrepancyClosed', 'This discrepancy is already resolved');
+      }
+      // Recomputing a balance cannot fix a reservation total or a serial count, so marking
+      // those "rebuilt" would record a fix that never happened.
+      if (discrepancy.kind !== 'balance') {
+        throw new LedgerError(
+          'NotRebuildable',
+          `A ${discrepancy.kind} discrepancy is not fixed by rebuilding a balance`,
+        );
+      }
+      const { variant_id: variantId, location_id: locationId } = discrepancy;
+      await lockPairs(tx, [[variantId, locationId]]);
+      const level = (
+        await tx.execute<{
+          id: string;
+          on_hand: number;
+          avg_unit_cost: string;
+          total_value: string;
+        }>(sql`
             WITH sums AS (
               SELECT coalesce(sum(quantity), 0)::int AS on_hand,
                      coalesce(sum(total_cost), 0) AS total_value
@@ -175,26 +173,24 @@ export class ReconciliationService {
                                      ELSE stock_levels.avg_unit_cost END,
                 updated_at = now()
             RETURNING id, on_hand, avg_unit_cost, total_value`)
-        ).rows[0];
-        if (!level) throw new Error('The rebuild returned no balance');
-        await tx.execute(sql`
+      ).rows[0];
+      if (!level) throw new Error('The rebuild returned no balance');
+      await tx.execute(sql`
           UPDATE stock_level_discrepancies
           SET resolved_at = now(), resolved_by = ${input.resolvedBy}, resolution = 'rebuilt',
               stock_level_id = ${level.id}
           WHERE id = ${input.discrepancyId}`);
-        return {
-          id: level.id,
-          variantId,
-          locationId,
-          binId: discrepancy.bin_id,
-          lotId: discrepancy.lot_id,
-          onHand: level.on_hand,
-          avgUnitCost: level.avg_unit_cost,
-          totalValue: level.total_value,
-        };
-      },
-      { isolationLevel: 'read committed' },
-    );
+      return {
+        id: level.id,
+        variantId,
+        locationId,
+        binId: discrepancy.bin_id,
+        lotId: discrepancy.lot_id,
+        onHand: level.on_hand,
+        avgUnitCost: level.avg_unit_cost,
+        totalValue: level.total_value,
+      };
+    });
   }
 
   /** Inserts the `found` rows as open discrepancies, at most one open per balance and kind. */

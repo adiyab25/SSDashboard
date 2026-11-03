@@ -18,7 +18,6 @@ import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { DATABASE } from '../../database/database.module.js';
 import {
-  isRetryable,
   pgArray,
   pgConstraint,
   pgErrorCode,
@@ -28,7 +27,7 @@ import {
 import { SettingsService } from '../../platform/settings.service.js';
 import { costInbound, costOutbound, type BalanceState, type CostedLine } from './costing.js';
 import { LedgerError } from './ledger.errors.js';
-import { asLockTimeout, limitLockWait, lockPairs } from './locks.js';
+import { ledgerTransaction, lockPairs } from './locks.js';
 import { requestHash, type HashedLine } from './request-hash.js';
 
 /** How far ahead of the database clock a posting may be dated. */
@@ -441,22 +440,8 @@ export class LedgerService {
     });
   }
 
-  /** Runs `work` in a READ COMMITTED transaction, retrying once on a deadlock or serialization failure. */
-  private async transact<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await this.connection.db.transaction(
-          async (tx) => {
-            await limitLockWait(tx);
-            return work(tx);
-          },
-          { isolationLevel: 'read committed' },
-        );
-      } catch (error) {
-        if (attempt === 0 && isRetryable(error)) continue;
-        throw asLockTimeout(error);
-      }
-    }
+  private transact<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
+    return ledgerTransaction(this.connection.db, work);
   }
 
   /** The posting transaction (spec 0002, Key invariants). */
