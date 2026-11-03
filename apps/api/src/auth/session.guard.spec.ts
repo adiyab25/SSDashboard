@@ -9,6 +9,8 @@ import { SessionGuard } from './session.guard.js';
 const ORIGIN = 'https://erp.example.com';
 const env = { PUBLIC_URL: `${ORIGIN}` } as Env;
 
+const liveSession = (createdAt = new Date()) => ({ id: 's1', token: 't1', createdAt });
+
 const USER = {
   id: '0190c0de-0000-7000-8000-000000000001',
   name: 'Sam',
@@ -26,7 +28,7 @@ function setup(options: {
   origin?: string;
   cookie?: string;
   isPublic?: boolean;
-  session?: { user: typeof USER; session: { id: string } } | null;
+  session?: { user: typeof USER; session: { id: string; token: string; createdAt: Date } } | null;
   setCookies?: string[];
 }) {
   const getSession = vi.fn(() =>
@@ -51,8 +53,13 @@ function setup(options: {
     getHandler: () => undefined,
     getClass: () => undefined,
   } as unknown as ExecutionContext;
-  const guard = new SessionGuard(reflector, { api: { getSession } } as unknown as Auth, env);
-  return { guard, context, request, response, getSession };
+  const deleteSession = vi.fn(() => Promise.resolve());
+  const auth = {
+    api: { getSession },
+    $context: Promise.resolve({ internalAdapter: { deleteSession } }),
+  } as unknown as Auth;
+  const guard = new SessionGuard(reflector, auth, env);
+  return { guard, context, request, response, getSession, deleteSession };
 }
 
 describe('SessionGuard', () => {
@@ -95,7 +102,7 @@ describe('SessionGuard', () => {
   it('treats a disabled person as signed out even when the session row is live', async () => {
     const { guard, context } = setup({
       cookie: 'better-auth.session_token=abc',
-      session: { user: { ...USER, banned: true }, session: { id: 's1' } },
+      session: { user: { ...USER, banned: true }, session: liveSession() },
     });
 
     await expect(guard.canActivate(context)).rejects.toMatchObject({
@@ -106,7 +113,7 @@ describe('SessionGuard', () => {
   it('attaches the person and passes a renewed cookie on', async () => {
     const { guard, context, request, response } = setup({
       cookie: 'better-auth.session_token=abc',
-      session: { user: USER, session: { id: 's1' } },
+      session: { user: USER, session: liveSession() },
       setCookies: ['better-auth.session_token=renewed; Path=/; HttpOnly'],
     });
 
@@ -130,10 +137,37 @@ describe('SessionGuard', () => {
     );
   });
 
+  describe('the 7 day cap (AC-5)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const withAge = (ms: number) =>
+      setup({
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession(new Date(Date.now() - ms)) },
+        setCookies: ['better-auth.session_token=renewed; Path=/'],
+      });
+
+    it('lets a session just under 7 days old through', async () => {
+      const { guard, context, deleteSession } = withAge(7 * DAY - 60_000);
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(deleteSession).not.toHaveBeenCalled();
+    });
+
+    it('ends a session older than 7 days even though it was just used', async () => {
+      const { guard, context, deleteSession, response } = withAge(7 * DAY + 60_000);
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'SESSION_EXPIRED' },
+      });
+      expect(deleteSession).toHaveBeenCalledWith('t1');
+      expect(response.append).not.toHaveBeenCalled();
+    });
+  });
+
   it('falls back to the staff role for a role it does not know', async () => {
     const { guard, context, request } = setup({
       cookie: 'better-auth.session_token=abc',
-      session: { user: { ...USER, role: 'owner' }, session: { id: 's1' } },
+      session: { user: { ...USER, role: 'owner' }, session: liveSession() },
     });
 
     await guard.canActivate(context);

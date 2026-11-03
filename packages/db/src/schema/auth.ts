@@ -1,8 +1,11 @@
 import {
+  bigint,
   boolean,
   check,
+  integer,
   index,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -107,4 +110,34 @@ export const verifications = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index('verifications_identifier_idx').on(t.identifier, t.expiresAt)],
+);
+
+/** Better Auth's per address and path counters, kept here so a restart does not reset them. */
+export const rateLimits = pgTable(
+  'rate_limits',
+  {
+    id: id(),
+    key: text('key').notNull(),
+    count: integer('count').notNull(),
+    /** Milliseconds since the epoch, as Better Auth writes it. */
+    lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
+  },
+  (t) => [uniqueIndex('rate_limits_key_unique').on(t.key)],
+);
+
+/**
+ * Failed sign in counters (spec 0005, AC-3). One row per lowercase trimmed email text (real or
+ * not, so an unknown email behaves like a real one) and scope: the client IP, or `*` for the
+ * row that counts every address. Both rows are written by one atomic upsert.
+ */
+export const signInAttempts = pgTable(
+  'sign_in_attempts',
+  {
+    emailKey: text('email_key').notNull(),
+    scope: text('scope').notNull(),
+    failures: integer('failures').notNull(),
+    windowStartedAt: timestamp('window_started_at', { withTimezone: true }).notNull(),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.emailKey, t.scope] })],
 );

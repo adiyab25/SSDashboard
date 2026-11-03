@@ -36,6 +36,13 @@
       "when": 1793723309514,
       "tag": "0004_staff_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793727076721,
+      "tag": "0005_staff_sign_in_lockout",
+      "breakpoints": true
     }
   ]
 }

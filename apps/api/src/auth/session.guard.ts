@@ -15,6 +15,7 @@ import type { Env } from '../config/env.js';
 import type { CurrentStaff } from './current-staff.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { AUTH, type Auth } from './auth.tokens.js';
+import { pastAbsoluteCap } from './session-policy.js';
 
 /** Better Auth's session cookie, with or without the `__Secure-` prefix it uses over https. */
 const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=/;
@@ -60,6 +61,14 @@ export class SessionGuard implements CanActivate {
     const found = result.response;
     if (!found || found.user.banned) {
       throw this.unauthenticated(SESSION_COOKIE.test(request.headers.cookie ?? ''));
+    }
+
+    // Never longer than 7 days from sign in, however recently it was used (AC-5). The row is
+    // removed so the old cookie keeps failing, and the answer is the same as for any ended session.
+    if (pastAbsoluteCap(found.session.createdAt)) {
+      const { internalAdapter } = await this.auth.$context;
+      await internalAdapter.deleteSession(found.session.token);
+      throw this.unauthenticated(true);
     }
 
     // A used session renews its cookie (at most hourly); pass Better Auth's Set-Cookie on.
