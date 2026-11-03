@@ -5,6 +5,7 @@ import { Button } from '@ssdashboard/ui/components/button';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@ssdashboard/ui/components/field';
 import { Input } from '@ssdashboard/ui/components/input';
 import { LoaderCircleIcon } from 'lucide-react';
+import Link from 'next/link';
 import { useRef, useState, type FocusEvent, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authClient } from './auth-client';
@@ -161,6 +162,11 @@ export function SignInForm() {
           <FieldError id="sign-in-password-error">
             {errors.password ? messages.password[errors.password] : null}
           </FieldError>
+          <div>
+            <Button asChild variant="link" size="sm" className="px-0">
+              <Link href="/forgot-password">{t('auth.signIn.forgot')}</Link>
+            </Button>
+          </div>
         </Field>
 
         <Button type="submit" size="lg" disabled={pending} aria-busy={pending}>

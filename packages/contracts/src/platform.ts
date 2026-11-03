@@ -16,6 +16,8 @@ export const ConfigResponse = z.object({
   languages: z.array(z.string()).min(1).default(['en']),
   /** The language a first visit opens in; one of `languages`. */
   defaultLanguage: z.string().default('en'),
+  /** Whether this install sends email. False hides the reset by mail wording (spec 0005, AC-10). */
+  mailEnabled: z.boolean().default(false),
 });
 
 export type ConfigResponse = z.infer<typeof ConfigResponse>;

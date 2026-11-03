@@ -4,7 +4,7 @@ import type { Env } from '../config/env.js';
 import { ConfigController } from './config.controller.js';
 import type { SettingsService } from './settings.service.js';
 
-const env = { CLIENT_DISPLAY_NAME: 'Acme Home', APP_VERSION: '1.2.3' } as Env;
+const env = { CLIENT_DISPLAY_NAME: 'Acme Home', APP_VERSION: '1.2.3', MAIL_DRIVER: 'none' } as Env;
 
 /** A settings service holding these values; a key left out reads as missing. */
 function settingsWith(values: Record<string, unknown>): SettingsService {
@@ -35,6 +35,7 @@ describe('ConfigController', () => {
       timezone: 'Africa/Cairo',
       languages: ['en', 'ar'],
       defaultLanguage: 'en',
+      mailEnabled: false,
     });
   });
 
@@ -46,7 +47,21 @@ describe('ConfigController', () => {
       version: '1.2.3',
       languages: ['en'],
       defaultLanguage: 'en',
+      mailEnabled: false,
     });
+  });
+
+  it.each([
+    ['none', false],
+    ['smtp', true],
+    ['postmark', true],
+  ] as const)('reports mailEnabled for MAIL_DRIVER %s (AC-10)', async (driver, enabled) => {
+    const controller = new ConfigController(
+      { ...env, MAIL_DRIVER: driver },
+      settingsWith(installed),
+    );
+
+    expect((await controller.read()).mailEnabled).toBe(enabled);
   });
 
   it('keeps the settings it can read when one is missing', async () => {

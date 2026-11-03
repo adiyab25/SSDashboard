@@ -30,7 +30,18 @@ export class AccountLocked {
   ) {}
 }
 
-export type AuthEvent = SignedIn | SignInFailed | AccountLocked;
+/** Someone asked to reset a password. `targetId` is null for an email that matches no account. */
+export class PasswordResetRequested {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** A password was set from a reset or invite link. `actorId` and `targetId` are that person. */
+export class PasswordResetCompleted {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+export type AuthEvent =
+  SignedIn | SignInFailed | AccountLocked | PasswordResetRequested | PasswordResetCompleted;
 
 /** The event names `@OnEvent` listens for: the class name, past tense. */
 export const eventName = (event: AuthEvent): string => event.constructor.name;

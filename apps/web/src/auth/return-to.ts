@@ -7,6 +7,11 @@ const AUTH_PATHS = [
   '/change-password',
 ];
 
+/** True for a path that belongs to the screens outside the shell, where nobody has a session yet. */
+export function isAuthPath(pathname: string): boolean {
+  return AUTH_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
 /**
  * Where to send the browser after sign in (spec 0005, AC-7). Only a path on this site is
  * accepted: it must start with one `/` (not `//` or `/\`), carry no control characters or
@@ -28,9 +33,7 @@ export function safeReturnTo(
     return '/';
   }
   if (url.origin !== origin) return '/';
-  if (AUTH_PATHS.some((path) => url.pathname === path || url.pathname.startsWith(`${path}/`))) {
-    return '/';
-  }
+  if (isAuthPath(url.pathname)) return '/';
   return `${url.pathname}${url.search}${url.hash}`;
 }
 

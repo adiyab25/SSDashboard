@@ -90,3 +90,61 @@ _AC-2, AC-3, AC-4, AC-5, AC-8, AC-23. Run against a throwaway database. Every re
 - AC-5 … 12 hour sliding session, 7 day cap, `SESSION_EXPIRED` and the client redirect · covered by UI step 4 and Commands steps 9 to 11 and Value sourcing step 5
 - AC-8 … password rule · covered by the unit step, the temporary password test, and the 422 step to run in slices 3 and 4
 - AC-23 … logging and events for sign in outcomes · covered by Commands steps 13, 14 (the staff, reset and two factor events arrive with their slices)
+
+# Slice 3: mail and password reset · updated 2026-11-03
+
+_AC-9, AC-10, AC-11, and the rest of AC-4 and AC-8 for the reset routes. Run against a throwaway database with the api and the worker both running (`node dist/main.js` and `node dist/worker.js`, same environment). For mail, point `MAIL_DRIVER=smtp` at any SMTP catcher (MailHog on port 1025, or a local test server) with `SMTP_SECURITY=none`. The sign in and reset pages are best checked in a real browser at `PUBLIC_URL`._
+
+## UI / manual
+
+- [ ] Open `/sign-in` → expect a "Forgot your password?" link under the password field, left aligned (English) and right aligned (Arabic) → AC-9, AC-24
+- [ ] Open `/forgot-password` with mail on, enter a real email → expect the "Check your email" screen, the heading focused, and the same screen for an email with no account → AC-9
+- [ ] Open the catcher → expect one email within a few seconds, from the `MAIL_FROM` sender, with a button and a plain link → AC-9, AC-11
+- [ ] Click the link → expect the "Choose a new password" page with the rules list, all unticked → AC-9, AC-8
+- [ ] Type `abc` then `Abcdefg1`, one key at a time → expect each rule to tick off as it is met, with an icon change and not only a colour change → AC-8, AC-24
+- [ ] Submit `abc` → expect nothing sent, focus on the field, and the "does not meet the rules" message → AC-8
+- [ ] Paste a strong password with a password manager or the clipboard → expect it to be accepted (paste is never blocked), and `autocomplete="new-password"` on the field → AC-8, AC-24
+- [ ] Submit a strong password → expect "Your password is set" with the heading focused, then sign in with the new password → expect success; the old password → expect the generic error → AC-9
+- [ ] Click the same email link again → expect the "This link is no longer valid" screen with a "Request a new link" button, before any typing → AC-9
+- [ ] Set the language to Arabic and repeat the forgot, reset and invalid link screens → expect right to left, every string translated, and a left to right link in the email body → AC-24, AC-11
+- [ ] Run the api with `MAIL_DRIVER=none` and open `/forgot-password` → expect "Ask an administrator" with no email field → AC-10
+- [ ] Press Tab through each new screen with no mouse → expect every control reachable in a sensible order with a visible focus ring → AC-24
+- [ ] Open `/reset-password?token=abc&invite=1` → expect the heading "Set your password" and the invite wording → AC-13 (the invite email itself arrives in slice 4)
+
+## Commands
+
+- [ ] `POST /api/auth/request-password-reset` for a real and an unknown email, with timing → expect the same 200 body for both and at least 500 ms each → AC-9
+- [ ] A disabled person requests a reset → expect the same 200 body, no email in the catcher, and no row left in `verifications` for them → AC-9
+- [ ] An account that has never signed in requests a reset → expect an email (invited accounts are included) → AC-9
+- [ ] Request twice for one person → expect two emails, only the second link working, and one `reset-password:%` row left in `verifications` → AC-9
+- [ ] `GET /api/auth/reset-password/<token>?callbackURL=<PUBLIC_URL>/reset-password` with `-i` and no redirect following → expect 302 to `.../reset-password?token=<token>`, and `?error=INVALID_TOKEN` for a wrong, used or expired token → AC-9
+- [ ] `POST /api/auth/reset-password` with `abc`, `alllowercase1`, `ALLUPPERCASE1`, `NoDigitsHere` → expect 422 `WEAK_PASSWORD` with the matching `unmet` list each time, and the token still usable → AC-8
+- [ ] `POST /api/auth/reset-password` with a strong password → expect 200, all that person's sessions gone (`GET /api/me` with an old cookie is 401), `users.email_verified = true`, `must_change_password = false`, and no `sign_in_attempts` rows for them → AC-9
+- [ ] Use the same token again → expect 400 `INVALID_TOKEN` → AC-9
+- [ ] Four more `request-password-reset` calls from one address inside 15 minutes → expect 429 with `X-Retry-After` on the fourth; six `reset-password` calls → expect 429 on the sixth → AC-4
+- [ ] `POST /api/auth/reset-password` with `origin: https://evil.example` → expect 403 → AC-7
+- [ ] `curl http://localhost:3001/api/config` with mail on and with `MAIL_DRIVER=none` → expect `mailEnabled` true, then false → AC-10
+- [ ] With `MAIL_DRIVER=none`, request a reset → expect the same 200 body, no job in `pgboss.job` for `mail.send`, and no `reset-password:%` row left → AC-10, AC-11
+- [ ] `SELECT data FROM pgboss.job WHERE name = 'mail.send'` → expect only `userId`, `kind` and `tokenId`, never a token or link → AC-11
+- [ ] Stop the mail server, request a reset → expect 200 at once, and the worker log to say `failed (try 1), will retry` with the job id and no link; start the server again before the retry → expect the email to arrive → AC-11
+- [ ] Read the api and worker logs → expect `PasswordResetRequested` and `PasswordResetCompleted` lines with actor, target, `ip` and `userAgent`, and no token, link, password or email text → AC-23, AC-11
+- [ ] `MAIL_DRIVER=smtp` with no `MAIL_FROM`, then with no `SMTP_HOST`, then with only `SMTP_USER` → expect the process to stop at startup naming the missing setting; `MAIL_DRIVER=postmark` with no token → same → AC-11
+- [ ] `pnpm --filter @ssdashboard/api test:e2e` → expect every suite to pass, `password-reset` included → AC-9, AC-10, AC-11
+
+## Value sourcing
+
+- [ ] Send a reset request with `x-forwarded-host: evil.example` or a `redirectTo` on another site → expect the email link to still start with `PUBLIC_URL` (the base comes from the env, never a header) and an off site `redirectTo` to be refused → AC-9
+- [ ] Give one person `language = 'ar'` and another none, with the install default set to `ar` → expect Arabic for both; set the install default to `en` → expect English for the second only (saved language, then install default, then English) → AC-11
+- [ ] Set `CLIENT_DISPLAY_NAME=Acme Home` → expect it in the subject, the footer and the sender display name via `MAIL_FROM` → AC-11
+- [ ] Read `verifications.expires_at` for a reset token → expect about 1 hour after the request (invite tokens will show 7 days from slice 4) → AC-9
+- [ ] Set `MAIL_DRIVER=postmark` with a token and a verified sender → expect the same email through Postmark; with an unverified sender → expect a worker log line with Postmark's error code and message → AC-11
+- [ ] Rotate nothing, but read `GET /api/config` from a web page served by an older api image → expect `mailEnabled` to default to false and the forgot page to say to ask an administrator → AC-10
+
+## Acceptance-criteria coverage
+
+- AC-9 … neutral answer and timing, older tokens deleted, one use, session and lockout clearing, invalid link screen · covered by UI steps 1 to 9 and Commands steps 1 to 8
+- AC-10 … no mail mode · covered by UI step 11 and Commands steps 11, 12
+- AC-11 … queue holding ids only, worker send, retries, language, no link in logs · covered by UI steps 3, 10 and Commands steps 13 to 16 and Value sourcing steps 2 to 5 (the final retry log line is covered by the worker unit tests, since a real run takes about 15 minutes)
+- AC-8 … rule shown before submit, paste allowed, 422 `WEAK_PASSWORD` on reset · covered by UI steps 5 to 7 and Commands step 6 (change password is checked in slice 4)
+- AC-4 … reset limits · covered by Commands step 9
+- AC-23 … reset events · covered by Commands step 15

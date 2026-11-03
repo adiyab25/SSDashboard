@@ -5,6 +5,7 @@ import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
+import { MailModule } from './mail/mail.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 
 @Module({
@@ -12,6 +13,7 @@ import { PlatformModule } from './platform/platform.module.js';
     EventEmitterModule.forRoot(),
     ConfigModule,
     DatabaseModule,
+    MailModule,
     AuthModule,
     HealthModule,
     PlatformModule,

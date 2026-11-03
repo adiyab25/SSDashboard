@@ -1,4 +1,4 @@
-import { signInUrl } from './return-to';
+import { isAuthPath, signInUrl } from './return-to';
 
 /** Browser state for the redirect, kept apart so a second 401 does not start a second one. */
 let redirecting = false;
@@ -7,7 +7,8 @@ let redirecting = false;
 export function redirectToSignIn(): void {
   if (redirecting) return;
   const { pathname, search } = window.location;
-  if (pathname === '/sign-in') return;
+  // The screens outside the shell (sign in, reset) are where a signed out person belongs.
+  if (isAuthPath(pathname)) return;
   redirecting = true;
   window.location.assign(signInUrl(`${pathname}${search}`));
 }

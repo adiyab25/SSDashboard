@@ -10,6 +10,7 @@ const config = {
   timezone: 'Africa/Cairo',
   languages: ['en', 'ar'],
   defaultLanguage: 'ar',
+  mailEnabled: true,
 };
 
 beforeEach(() => {
@@ -40,6 +41,8 @@ describe('loadConfig', () => {
     await expect(loadConfig()).resolves.toMatchObject({
       languages: ['en'],
       defaultLanguage: 'en',
+      // An older api that does not know about mail is treated as having none.
+      mailEnabled: false,
     });
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { safeReturnTo, signInUrl } from './return-to';
+import { isAuthPath, safeReturnTo, signInUrl } from './return-to';
 
 const ORIGIN = 'https://erp.example.com';
 
@@ -56,4 +56,16 @@ describe('signInUrl', () => {
   it('leaves returnTo off when the page is the home page', () => {
     expect(signInUrl('/')).toBe('/sign-in');
   });
+});
+
+describe('isAuthPath', () => {
+  it.each(['/sign-in', '/forgot-password', '/reset-password', '/two-factor', '/change-password'])(
+    'is true for %s',
+    (path) => expect(isAuthPath(path)).toBe(true),
+  );
+
+  it.each(['/', '/staff', '/signin', '/reset-passwords', '/account/change-password'])(
+    'is false for %s',
+    (path) => expect(isAuthPath(path)).toBe(false),
+  );
 });

@@ -1,7 +1,17 @@
 import { APIError } from 'better-auth/api';
 import { describe, expect, it, vi } from 'vitest';
-import { AccountLocked, SignedIn, SignInFailed } from '../platform/events/auth-events.js';
-import { createAfterHook, createBeforeHook, type HookContext } from './auth-hooks.js';
+import {
+  AccountLocked,
+  PasswordResetRequested,
+  SignedIn,
+  SignInFailed,
+} from '../platform/events/auth-events.js';
+import {
+  createAfterHook,
+  createBeforeHook,
+  RESET_RESPONSE_FLOOR_MS,
+  type HookContext,
+} from './auth-hooks.js';
 
 const ORIGIN = 'https://erp.example.com';
 const NOW = new Date('2026-11-03T10:00:00Z');
@@ -228,5 +238,103 @@ describe('after hook', () => {
 
     expect(lockout.recordFailure).toHaveBeenCalledWith('nobody@example.com', '203.0.113.7');
     expect(audit.record.mock.calls[0]?.[0]).toMatchObject({ context: { targetId: null } });
+  });
+});
+
+describe('password reset request (AC-9)', () => {
+  function resetSetup(found: { user: { id: string } } | null) {
+    let clock = NOW.getTime();
+    const sleep = vi.fn((ms: number) => {
+      clock += ms;
+      return Promise.resolve();
+    });
+    const audit = { record: vi.fn<(event: unknown) => void>() };
+    const deps = {
+      origin: ORIGIN,
+      lockout: { isLocked: vi.fn(), recordFailure: vi.fn(), reset: vi.fn() },
+      audit,
+      now: () => new Date(clock),
+      sleep,
+    } as unknown as Parameters<typeof createBeforeHook>[0];
+    const request = new Request(`${ORIGIN}/api/auth/request-password-reset`, { method: 'POST' });
+    const ctx = (returned?: unknown): HookContext => ({
+      path: '/request-password-reset',
+      headers: new Headers({ origin: ORIGIN, 'x-forwarded-for': '203.0.113.7' }),
+      request,
+      body: { email: 'Sam@Example.com' },
+      context: {
+        returned,
+        internalAdapter: {
+          updateUser: vi.fn(),
+          findUserByEmail: vi.fn(() => Promise.resolve(found)),
+          deleteSession: vi.fn(),
+        },
+      },
+    });
+    return {
+      before: createBeforeHook(deps),
+      after: createAfterHook(deps),
+      sleep,
+      audit,
+      ctx,
+      advance: (ms: number) => (clock += ms),
+    };
+  }
+
+  it('pads a quick answer up to 500 ms, whether or not the account exists', async () => {
+    for (const found of [{ user: { id: USER_ID } }, null]) {
+      const { before, after, sleep, ctx } = resetSetup(found);
+
+      await before(ctx());
+      await after(ctx({ status: true }));
+
+      expect(sleep).toHaveBeenCalledWith(RESET_RESPONSE_FLOOR_MS);
+    }
+  });
+
+  it('waits only for what is left when the answer was already slow', async () => {
+    const { before, after, sleep, ctx, advance } = resetSetup({ user: { id: USER_ID } });
+
+    await before(ctx());
+    advance(420);
+    await after(ctx({ status: true }));
+
+    expect(sleep).toHaveBeenCalledWith(80);
+  });
+
+  it('does not wait when the answer already took longer than 500 ms', async () => {
+    const { before, after, sleep, ctx, advance } = resetSetup(null);
+
+    await before(ctx());
+    advance(900);
+    await after(ctx({ status: true }));
+
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('records the request with the target for a real email and none for an unknown one', async () => {
+    const real = resetSetup({ user: { id: USER_ID } });
+    await real.before(real.ctx());
+    await real.after(real.ctx({ status: true }));
+    expect(real.audit.record.mock.calls[0]?.[0]).toBeInstanceOf(PasswordResetRequested);
+    expect(real.audit.record.mock.calls[0]?.[0]).toMatchObject({
+      context: { actorId: null, targetId: USER_ID, ip: '203.0.113.7' },
+    });
+
+    const unknown = resetSetup(null);
+    await unknown.before(unknown.ctx());
+    await unknown.after(unknown.ctx({ status: true }));
+    expect(unknown.audit.record.mock.calls[0]?.[0]).toMatchObject({ context: { targetId: null } });
+  });
+
+  it('lets the token check through with no session', async () => {
+    const { before } = resetSetup(null);
+    const check: HookContext = {
+      ...resetSetup(null).ctx(),
+      path: '/reset-password/:token',
+      request: new Request(`${ORIGIN}/api/auth/reset-password/abc?callbackURL=x`),
+    };
+
+    await expect(before(check)).resolves.toBeUndefined();
   });
 });

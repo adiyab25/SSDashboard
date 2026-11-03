@@ -36,6 +36,7 @@ export class ConfigController {
       ...(timezone !== undefined && { timezone }),
       languages: enabled,
       defaultLanguage,
+      mailEnabled: this.env.MAIL_DRIVER !== 'none',
     };
   }
 

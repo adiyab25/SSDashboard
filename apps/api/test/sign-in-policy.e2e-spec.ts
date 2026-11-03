@@ -457,12 +457,7 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
 
   describe('the route allowlist', () => {
     it('keeps routes that later slices open closed for now', async () => {
-      for (const path of [
-        '/reset-password',
-        '/change-password',
-        '/get-session',
-        '/sign-up/email',
-      ]) {
+      for (const path of ['/change-password', '/get-session', '/sign-up/email']) {
         const response = await fetch(`${base}/api/auth${path}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', origin: base },

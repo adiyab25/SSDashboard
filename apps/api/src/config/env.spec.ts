@@ -24,6 +24,14 @@ describe('loadEnv', () => {
       'CLIENT_DISPLAY_NAME',
       'PUBLIC_URL',
       'BETTER_AUTH_SECRET',
+      'MAIL_DRIVER',
+      'MAIL_FROM',
+      'SMTP_HOST',
+      'SMTP_PORT',
+      'SMTP_SECURITY',
+      'SMTP_USER',
+      'SMTP_PASSWORD',
+      'POSTMARK_SERVER_TOKEN',
     ]) {
       vi.stubEnv(name, undefined);
     }
@@ -54,6 +62,9 @@ describe('loadEnv', () => {
         CLIENT_DISPLAY_NAME: 'SSDashboard',
         PUBLIC_URL: 'https://erp.example.com',
         BETTER_AUTH_SECRET: VALID_SECRET,
+        MAIL_DRIVER: 'none',
+        SMTP_PORT: 587,
+        SMTP_SECURITY: 'starttls',
       });
     });
 
@@ -175,6 +186,72 @@ describe('loadEnv', () => {
 
       expect(() => loadEnv()).toThrow('process.exit(1)');
       expect(errorLog.mock.calls[0]?.[0]).not.toContain('hunter2');
+    });
+  });
+
+  describe('mail settings (spec 0005)', () => {
+    const failsWith = (message: string) => {
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      expect(errorLog.mock.calls.flat().join(' ')).toContain(message);
+    };
+
+    it('needs nothing when the driver is none, even if blank values are present', () => {
+      vi.stubEnv('MAIL_FROM', '  ');
+      vi.stubEnv('SMTP_HOST', '');
+
+      expect(loadEnv()).toMatchObject({ MAIL_DRIVER: 'none', MAIL_FROM: undefined });
+    });
+
+    it('accepts a complete smtp setup, with or without a login', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('MAIL_FROM', 'ERP <no-reply@client.com>');
+      vi.stubEnv('SMTP_HOST', 'mail.client.com');
+
+      expect(loadEnv()).toMatchObject({ SMTP_HOST: 'mail.client.com', SMTP_PORT: 587 });
+
+      vi.stubEnv('SMTP_USER', 'robot');
+      vi.stubEnv('SMTP_PASSWORD', 'hunter2');
+      vi.stubEnv('SMTP_SECURITY', 'tls');
+      vi.stubEnv('SMTP_PORT', '465');
+      expect(loadEnv()).toMatchObject({ SMTP_USER: 'robot', SMTP_SECURITY: 'tls', SMTP_PORT: 465 });
+    });
+
+    it('stops when a sender is missing for a mail driver', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('SMTP_HOST', 'mail.client.com');
+
+      failsWith('MAIL_FROM');
+    });
+
+    it('stops when smtp has no host', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('MAIL_FROM', 'no-reply@client.com');
+
+      failsWith('SMTP_HOST');
+    });
+
+    it('stops when only one of the smtp user and password is set', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('MAIL_FROM', 'no-reply@client.com');
+      vi.stubEnv('SMTP_HOST', 'mail.client.com');
+      vi.stubEnv('SMTP_USER', 'robot');
+
+      failsWith('set together');
+    });
+
+    it('stops when postmark has no token, and accepts it with one', () => {
+      vi.stubEnv('MAIL_DRIVER', 'postmark');
+      vi.stubEnv('MAIL_FROM', 'no-reply@client.com');
+      failsWith('POSTMARK_SERVER_TOKEN');
+
+      vi.stubEnv('POSTMARK_SERVER_TOKEN', 'token');
+      expect(loadEnv().MAIL_DRIVER).toBe('postmark');
+    });
+
+    it('rejects a driver it does not know', () => {
+      vi.stubEnv('MAIL_DRIVER', 'carrier-pigeon');
+
+      failsWith('MAIL_DRIVER');
     });
   });
 

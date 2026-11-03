@@ -1,7 +1,12 @@
 import { unmetPasswordRules } from '@ssdashboard/contracts';
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { hashPassword } from 'better-auth/crypto';
-import { AccountLocked, SignedIn, SignInFailed } from '../platform/events/auth-events.js';
+import {
+  AccountLocked,
+  PasswordResetRequested,
+  SignedIn,
+  SignInFailed,
+} from '../platform/events/auth-events.js';
 import type { AuthAudit } from './auth-audit.service.js';
 import { clientIp, emailKey, userAgent } from './client-info.js';
 import { pastAbsoluteCap } from './session-policy.js';
@@ -29,9 +34,16 @@ export interface AuthHookDeps {
   lockout: Pick<SignInLockout, 'isLocked' | 'recordFailure' | 'reset'>;
   audit: Pick<AuthAudit, 'record'>;
   now?: () => Date;
+  /** Waits this many milliseconds; replaced in tests. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const SIGN_IN = '/sign-in/email';
+const REQUEST_RESET = '/request-password-reset';
+/** A reset request answers no faster than this, so the time cannot tell a real email from a fake one. */
+export const RESET_RESPONSE_FLOOR_MS = 500;
+/** When each reset request started, from the before hook to the after hook. */
+const resetStartedAt = new WeakMap<object, number>();
 /** Routes that start with no session, so there is nothing to cap or gate. */
 const NO_SESSION_YET = new Set([
   SIGN_IN,
@@ -86,6 +98,8 @@ export function createBeforeHook(deps: AuthHookDeps) {
       throw APIError.from('FORBIDDEN', { code: 'FORBIDDEN_ORIGIN', message: 'Origin not allowed' });
     }
 
+    if (path === REQUEST_RESET) resetStartedAt.set(ctx.request, now().getTime());
+
     if (NEW_PASSWORD_PATHS.has(path)) {
       const unmet = unmetPasswordRules(bodyField(ctx.body, 'newPassword') ?? '');
       if (unmet.length > 0) {
@@ -113,7 +127,10 @@ export function createBeforeHook(deps: AuthHookDeps) {
       return;
     }
 
-    if (NO_SESSION_YET.has(path) || path === '/sign-out') return;
+    // The token check (`GET /reset-password/:token`) runs before anyone has a session.
+    if (NO_SESSION_YET.has(path) || path.startsWith('/reset-password/') || path === '/sign-out') {
+      return;
+    }
 
     // Routes that need a session: the 7 day cap and the must change rule.
     const session = await getSessionFromCtx(ctx as never);
@@ -142,8 +159,27 @@ export function createBeforeHook(deps: AuthHookDeps) {
  */
 export function createAfterHook(deps: AuthHookDeps) {
   const now = deps.now ?? (() => new Date());
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+
+  /** Pads the answer to the floor, and records the request (with no target for an unknown email). */
+  async function afterResetRequest(ctx: HookContext): Promise<void> {
+    const email = bodyField(ctx.body, 'email');
+    if (email !== undefined && !(ctx.context.returned instanceof APIError)) {
+      const found = await ctx.context.internalAdapter.findUserByEmail(emailKey(email));
+      deps.audit.record(
+        new PasswordResetRequested(eventContext(ctx, null, found?.user.id ?? null, now())),
+      );
+    }
+    const started = ctx.request ? resetStartedAt.get(ctx.request) : undefined;
+    if (started === undefined) return;
+    const wait = RESET_RESPONSE_FLOOR_MS - (now().getTime() - started);
+    if (wait > 0) await sleep(wait);
+  }
+
   return async function afterAuth(ctx: HookContext): Promise<void> {
-    if (ctx.request === undefined || ctx.path !== SIGN_IN) return;
+    if (ctx.request === undefined) return;
+    if (ctx.path === REQUEST_RESET) return afterResetRequest(ctx);
+    if (ctx.path !== SIGN_IN) return;
     const email = bodyField(ctx.body, 'email');
     if (email === undefined) return;
     const key = emailKey(email);

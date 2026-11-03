@@ -47,12 +47,15 @@ describe('apiFetch (AC-5)', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('does not redirect from the sign in page itself', async () => {
-    atPage('/sign-in');
-    fetchMock.mockResolvedValue(new Response('{}', { status: 401 }));
+  it.each(['/sign-in', '/forgot-password', '/reset-password', '/two-factor', '/change-password'])(
+    'does not redirect from %s, a screen outside the shell',
+    async (path) => {
+      atPage(path);
+      fetchMock.mockResolvedValue(new Response('{}', { status: 401 }));
 
-    await apiFetch('/api/me');
+      await apiFetch('/api/me');
 
-    expect(assign).not.toHaveBeenCalled();
-  });
+      expect(assign).not.toHaveBeenCalled();
+    },
+  );
 });
