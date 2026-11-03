@@ -63,7 +63,7 @@ Every screen in English and Arabic, with direction, numbers, and dates formatted
   - [x] Literal string lint and mixed direction text (AC-5, AC-10)
   - [x] Client languages, tests, and docs (AC-11, AC-12)
 - [ ] Verify it: `/check verify localization`
-- [ ] Test it: `/test localization`
+- [x] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/contracts/src/platform.ts`, `packages/ui/src/components/ltr-text.tsx`, `packages/config/eslint/i18n.js`, `deploy/`
 
 ### 6. Staff sign in · needs a decision · GA
