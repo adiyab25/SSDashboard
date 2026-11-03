@@ -38,7 +38,7 @@ Core entities every module builds on: products and variants, locations (warehous
 - [x] Document it: `/document data model`
 Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`
 
-### 4. Design system & UI foundation · in-progress
+### 4. Design system & UI foundation · done
 Visual language, layout, and base components for a dense, data heavy back office (tables, forms, scan screens), mirrored correctly for right to left.
 **Done when:** `design.md` covers type, color, spacing, and components; base components work with keyboard and focus, meet WCAG 2.2 AA, and render correctly in both left to right and right to left layouts. (basis: WCAG 2.2 AA)
 - [x] Design it (spec): `/architect design system & UI foundation`
@@ -49,7 +49,7 @@ Visual language, layout, and base components for a dense, data heavy back office
   - [x] Location switcher and `GET /api/locations` (AC-10)
   - [x] `/design` gallery, `DESIGN.md`, and the Playwright accessibility suite (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-13, AC-14)
 - [x] Verify it: `/check verify design system & UI foundation`
-- [ ] Test it: `/test design system & UI foundation`
+- [ ] Test it: `/test design system & UI foundation` (skipped)
 Spec [0003](../specs/0003-design-system-ui-foundation/index.md) · code in `packages/ui`, `apps/web/src/shell`, `apps/web/src/design`, `apps/api/src/inventory/locations`
 
 ### 5. Localization (English & Arabic) · needs a decision
