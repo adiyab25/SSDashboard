@@ -62,6 +62,13 @@ function SidebarProvider({
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen);
   const open = openProp ?? _open;
+
+  // Read on the client only, so server layouts never touch cookies (they stay static).
+  // A collapsed sidebar can show expanded for one frame on reload.
+  React.useEffect(() => {
+    const stored = /(?:^|;\s*)sidebar_state=(true|false)/.exec(document.cookie)?.[1];
+    if (openProp === undefined && stored) _setOpen(stored === 'true');
+  }, []);
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
@@ -72,7 +79,7 @@ function SidebarProvider({
       }
 
       // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; samesite=lax`;
     },
     [setOpenProp, open],
   );
@@ -261,7 +268,7 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <PanelLeftIcon className="rtl:rotate-180" />
+      <PanelLeftIcon className="rtl:-scale-x-100" />
       <span className="sr-only">{label}</span>
     </Button>
   );

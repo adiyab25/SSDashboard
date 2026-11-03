@@ -2,6 +2,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import RootLayout, { metadata } from './layout';
 
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock('next/font/google', () => ({
   IBM_Plex_Sans: () => ({ variable: 'plex-sans' }),
   IBM_Plex_Sans_Arabic: () => ({ variable: 'plex-arabic' }),
@@ -26,6 +31,10 @@ describe('RootLayout', () => {
 
   it('sets the stored direction before first paint outside production', () => {
     expect(render('page')).toContain("localStorage.getItem('ss_dir')");
+  });
+
+  it('makes the skip link the first element in the body', () => {
+    expect(render('page')).toMatch(/<body><a href="#main-content"[^>]*>Skip to main content<\/a>/);
   });
 
   it('renders the page inside the body', () => {

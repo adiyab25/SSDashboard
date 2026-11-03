@@ -33,6 +33,7 @@ function CommandDialog({
   children,
   className,
   closeLabel,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   /** Screen reader title and description of the dialog. */
@@ -40,6 +41,8 @@ function CommandDialog({
   description: string;
   className?: string;
   closeLabel?: string;
+  /** Where focus goes on close; a palette opened by shortcut has no trigger to return to. */
+  onCloseAutoFocus?: React.ComponentProps<typeof DialogContent>['onCloseAutoFocus'];
 }) {
   return (
     <Dialog {...props}>
@@ -50,6 +53,7 @@ function CommandDialog({
       <DialogContent
         className={cn('top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0', className)}
         closeLabel={closeLabel}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
         {children}
       </DialogContent>

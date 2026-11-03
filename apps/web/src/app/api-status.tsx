@@ -48,7 +48,10 @@ export function ApiStatus() {
             <dt className="font-medium">{t('home.status.database')}</dt>
             <dd>{state.health.database}</dd>
             <dt className="font-medium">{t('home.status.version')}</dt>
-            <dd className="tabular-nums">{state.health.version}</dd>
+            <dd className="tabular-nums">
+              {/* Isolated so "0.0.0-dev" keeps its order in right to left. */}
+              <bdi>{state.health.version}</bdi>
+            </dd>
           </>
         )}
       </dl>

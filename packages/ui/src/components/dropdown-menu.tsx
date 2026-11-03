@@ -210,7 +210,7 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRightIcon className="rtl:rotate-180 ms-auto" />
+      <ChevronRightIcon className="ms-auto rtl:-scale-x-100" />
     </DropdownMenuPrimitive.SubTrigger>
   );
 }

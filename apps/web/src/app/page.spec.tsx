@@ -21,18 +21,6 @@ describe('Home page', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument();
   });
 
-  it('shows the install name in the header, SSDashboard until the config loads', () => {
-    render(<Home />);
-
-    expect(screen.getByRole('banner')).toHaveTextContent('SSDashboard');
-  });
-
-  it('puts the content in the main landmark', () => {
-    render(<Home />);
-
-    expect(screen.getByRole('main')).toContainElement(screen.getByRole('heading', { level: 1 }));
-  });
-
   it('includes the api status', () => {
     render(<Home />);
 
