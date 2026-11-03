@@ -48,6 +48,17 @@ export const messages = {
       ltr: 'Left to right',
       rtl: 'Right to left',
     },
+    locations: {
+      label: 'Location',
+      all: 'All locations',
+      noneYet: 'No locations yet',
+      loading: 'Loading locations…',
+      error: 'Locations unavailable',
+      errorDetail: 'The locations could not be loaded.',
+      retry: 'Try again',
+      search: 'Search locations…',
+      noResults: 'No locations match.',
+    },
   },
   home: {
     title: 'Overview',

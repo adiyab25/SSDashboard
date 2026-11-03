@@ -7,6 +7,7 @@ import { t } from '@/i18n/t';
 import { AppSidebar } from './app-sidebar';
 import { ClientName } from './client-name';
 import { CommandPalette } from './command-palette';
+import { LocationSwitcher } from './location-switcher';
 import { UserMenu } from './user-menu';
 
 function TopBar() {
@@ -32,6 +33,7 @@ function TopBar() {
       />
       <ClientName className="min-w-0 truncate font-semibold" />
       <div className="ms-auto flex items-center gap-2">
+        <LocationSwitcher />
         <CommandPalette />
         <UserMenu />
       </div>
