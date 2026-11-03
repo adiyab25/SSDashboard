@@ -23,7 +23,7 @@ Capture conventions, then install lint, format, type checks, pre commit hooks, a
   - [x] CI on GitHub Actions
 Code in `packages/config/eslint/`, `.husky/`, `.github/workflows/`
 
-### 3. Data model · GA · in-progress
+### 3. Data model · GA · done
 Core entities every module builds on: products and variants, locations (warehouse, showroom, bin), an append only stock ledger, lots and serials, parties (suppliers, factories, customers), and cost and price on every transaction.
 **Done when:** stock on hand per SKU per location is derived from immutable movements; movements carry quantity, unit cost, lot or serial, and source document; purchase and sales lines carry price, discount, and tax amount; the model handles 100,000+ SKUs and supports purchasing, sales, production, and the accounting export without a breaking migration. (basis: data model is the costliest thing to redo; stock as an append only ledger)
 - [x] Design it (spec): `/architect data model`

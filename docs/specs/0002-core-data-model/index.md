@@ -1,7 +1,7 @@
 # 0002. Build the core data model around an append only stock ledger with maintained balances
 
 **Date**: 2026-11-02
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

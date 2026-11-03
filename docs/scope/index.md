@@ -17,7 +17,7 @@ A warehouse and ERP system for an ecommerce business with thousands to 100,000+ 
 
 ## Epics
 
-- [Foundations](foundations.md): 6 features, stack, data model, design system, languages, sign in. 2 of 6 done.
+- [Foundations](foundations.md): 6 features, stack, data model, design system, languages, sign in. 3 of 6 done.
 - [Inventory](inventory.md): 9 features, core stock loop, catalog, locations, transfers, scanning, lots, serials. 0 of 9 done.
 - [Platform](platform.md): 10 features, roles, audit trail, import, operations, alerts, dashboard, client setup, API. 0 of 10 done.
 - [Purchasing](purchasing.md): 4 features, suppliers, purchase orders, receiving, reorder. 0 of 4 done.
@@ -32,7 +32,7 @@ A warehouse and ERP system for an ecommerce business with thousands to 100,000+ 
 |---|---------|-------|--------|
 | 1 | [Stack & architecture](foundations.md) | Foundation | done |
 | 2 | [Coding standards & tooling](foundations.md) | Foundation | done |
-| 3 | [Data model](foundations.md) | Foundation | in-progress |
+| 3 | [Data model](foundations.md) | Foundation | done |
 | 4 | [Design system & UI foundation](foundations.md) | Foundation | planned |
 | 5 | [Localization (English & Arabic)](foundations.md) | Foundation | planned |
 | 6 | [Staff sign in](foundations.md) | Foundation | planned |
