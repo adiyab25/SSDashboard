@@ -38,10 +38,19 @@ Core entities every module builds on: products and variants, locations (warehous
 - [x] Document it: `/document data model`
 Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`
 
-### 4. Design system & UI foundation · needs a decision
+### 4. Design system & UI foundation · in-progress
 Visual language, layout, and base components for a dense, data heavy back office (tables, forms, scan screens), mirrored correctly for right to left.
 **Done when:** `design.md` covers type, color, spacing, and components; base components work with keyboard and focus, meet WCAG 2.2 AA, and render correctly in both left to right and right to left layouts. (basis: WCAG 2.2 AA)
-- [ ] Design it (spec): `/architect design system & UI foundation`
+- [x] Design it (spec): `/architect design system & UI foundation`
+- [ ] Build it: `/develop design system & UI foundation`
+  - [ ] Thin thread: `packages/ui`, `GET /api/config`, client name in a minimal shell header (AC-2, AC-5, AC-9, AC-12)
+  - [ ] Foundations: tokens, fonts, theme, dev direction switch, typed strings, logical CSS check (AC-2, AC-5, AC-6, AC-11, AC-12, AC-13)
+  - [ ] App shell: sidebar, mobile sheet, top bar, skip link, user menu, command palette (AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-14)
+  - [ ] Location switcher and `GET /api/locations` (AC-10)
+  - [ ] `/design` gallery, `DESIGN.md`, and the Playwright accessibility suite (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-13, AC-14)
+- [ ] Verify it: `/check verify design system & UI foundation`
+- [ ] Test it: `/test design system & UI foundation`
+Spec [0003](../specs/0003-design-system-ui-foundation/index.md)
 
 ### 5. Localization (English & Arabic) · needs a decision
 Every screen in English and Arabic, with direction, numbers, and dates formatted per language, and room for future client languages.
