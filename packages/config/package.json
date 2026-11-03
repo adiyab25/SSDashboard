@@ -5,7 +5,8 @@
   "type": "module",
   "files": [
     "tsconfig",
-    "eslint"
+    "eslint",
+    "scripts"
   ],
   "exports": {
     "./tsconfig/*.json": "./tsconfig/*.json",
@@ -25,7 +26,8 @@
     "eslint": "catalog:"
   },
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --test scripts/check-logical-css.test.mjs"
   },
   "devDependencies": {
     "eslint": "catalog:",

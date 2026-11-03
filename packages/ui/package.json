@@ -12,7 +12,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint ."
+    "lint": "eslint . && node ../../packages/config/scripts/check-logical-css.mjs src"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

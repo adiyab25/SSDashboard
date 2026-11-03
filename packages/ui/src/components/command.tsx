@@ -28,17 +28,18 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
 }
 
 function CommandDialog({
-  title = 'Command Palette',
-  description = 'Search for a command to run...',
+  title,
+  description,
   children,
   className,
-  showCloseButton = false,
+  closeLabel,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
-  title?: string;
-  description?: string;
+  /** Screen reader title and description of the dialog. */
+  title: string;
+  description: string;
   className?: string;
-  showCloseButton?: boolean;
+  closeLabel?: string;
 }) {
   return (
     <Dialog {...props}>
@@ -48,7 +49,7 @@ function CommandDialog({
       </DialogHeader>
       <DialogContent
         className={cn('top-1/3 translate-y-0 overflow-hidden rounded-xl! p-0', className)}
-        showCloseButton={showCloseButton}
+        closeLabel={closeLabel}
       >
         {children}
       </DialogContent>
@@ -62,7 +63,7 @@ function CommandInput({
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
-      <InputGroup className="h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:ps-2!">
+      <InputGroup className="h-8! rounded-lg! border-input bg-transparent shadow-none! *:data-[slot=input-group-addon]:ps-2!">
         <CommandPrimitive.Input
           data-slot="command-input"
           className={cn(
@@ -143,7 +144,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:**:[svg]:text-foreground",
+        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground data-selected:inset-ring-2 data-selected:inset-ring-ring [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:**:[svg]:text-foreground",
         className,
       )}
       {...props}

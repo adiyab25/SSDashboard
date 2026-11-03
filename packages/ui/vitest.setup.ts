@@ -5,7 +5,7 @@ import { afterEach, vi } from 'vitest';
 /** Adds the browser APIs Radix and cmdk reach for that jsdom lacks. */
 function stubMissing(target: object, stubs: Record<string, unknown>) {
   for (const [name, value] of Object.entries(stubs)) {
-    if (!(name in target)) {
+    if ((target as Record<string, unknown>)[name] === undefined) {
       Object.defineProperty(target, name, { value, configurable: true, writable: true });
     }
   }
