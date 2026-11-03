@@ -48,7 +48,7 @@ Visual language, layout, and base components for a dense, data heavy back office
   - [x] App shell: sidebar, mobile sheet, top bar, skip link, user menu, command palette (AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-14)
   - [x] Location switcher and `GET /api/locations` (AC-10)
   - [x] `/design` gallery, `DESIGN.md`, and the Playwright accessibility suite (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-13, AC-14)
-- [ ] Verify it: `/check verify design system & UI foundation`
+- [x] Verify it: `/check verify design system & UI foundation`
 - [ ] Test it: `/test design system & UI foundation`
 Spec [0003](../specs/0003-design-system-ui-foundation/index.md) · code in `packages/ui`, `apps/web/src/shell`, `apps/web/src/design`, `apps/api/src/inventory/locations`
 

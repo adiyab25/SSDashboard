@@ -50,6 +50,19 @@ test.describe('accessibility matrix (AC-2, AC-5, AC-11)', () => {
 test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
   test.beforeEach(({}, info) => desktopOnly(info.project.name));
 
+  test('the page h1 is the first heading, with no hidden overlay headings in the shell', async ({
+    page,
+  }) => {
+    await openShell(page);
+
+    const headings = await page
+      .locator('h1, h2, h3, h4, h5, h6')
+      .evaluateAll((list) => list.map((heading) => `${heading.tagName} ${heading.textContent}`));
+
+    expect(headings[0]).toBe('H1 Overview');
+    expect(await page.getByRole('banner').getByText('Go to a page').count()).toBe(0);
+  });
+
   test('the skip link comes first and moves focus to the main content', async ({ page }) => {
     await openShell(page);
 

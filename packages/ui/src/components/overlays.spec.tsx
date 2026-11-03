@@ -147,6 +147,21 @@ describe('overlays', () => {
     expect(screen.queryByRole('option', { name: 'Home' })).not.toBeInTheDocument();
   });
 
+  it('CommandDialog leaves no hidden title or description on the page while closed', () => {
+    render(
+      <CommandDialog open={false} title="Go to" description="Search pages">
+        <Command label="Pages">
+          <CommandInput />
+          <CommandList />
+        </Command>
+      </CommandDialog>,
+    );
+
+    expect(screen.queryByText('Go to')).not.toBeInTheDocument();
+    expect(screen.queryByText('Search pages')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
   it('CommandDialog takes its title and description from props', async () => {
     render(
       <CommandDialog open title="Go to" description="Search pages">
