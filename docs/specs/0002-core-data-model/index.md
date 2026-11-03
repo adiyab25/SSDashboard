@@ -198,8 +198,8 @@ No HTTP surface in this feature, so nothing is reachable from outside. Two datab
 ### Configuration required
 
 - `LEDGER_RECONCILE_CRON`: when the nightly reconciliation runs, optional, default `0 2 * * *` (2am, in the `timezone` setting).
-- `MIGRATION_DATABASE_URL`: the owner role's connection, used only by the `migrate` entry point. `DATABASE_URL` becomes the application role's connection. The owner must be able to create a role and a schema owned by it: a superuser (the Compose `postgres` user is one), or on a managed database a role with `CREATEROLE` that is a member of `ssdashboard_app`.
-- `APP_DB_PASSWORD`: the application role's password. `migrate` sets the login from it, and Compose builds every app service's `DATABASE_URL` from it, refusing to start when it is missing. In `env.ts` it stays optional: an install outside Compose that leaves it unset gets no app role login from `migrate`, and creates it itself. An install whose `.env` predates it adds a long random value by hand (documented in `deploy/.env.example`).
+- `MIGRATION_DATABASE_URL`: the owner role's connection, used only by the `migrate` entry point. `DATABASE_URL` becomes the application role's connection. The owner must be able to create a role and a schema owned by it: a superuser (the Compose `postgres` user is one). On a managed database, create `ssdashboard_app` ahead of time and grant it to the owner as [spec 0001](../0001-stack-architecture/index.md) (Configuration & secrets) describes.
+- `APP_DB_PASSWORD`: the application role's password. `migrate` sets the login from it, and Compose builds every app service's `DATABASE_URL` from it, refusing to start when it is missing. In `env.ts` it stays optional: an install outside Compose that leaves it unset gets no app role login from `migrate`, and creates it itself. An install whose `.env` predates it adds a long random hex value by hand (documented in `deploy/.env.example`). It must be hex only, because Compose puts it into the URL without encoding it (spec 0001, Configuration & secrets).
 All added to `apps/api/src/config/env.ts`, `.env.example`, and `deploy/` Compose files.
 
 ### Critical test scenarios

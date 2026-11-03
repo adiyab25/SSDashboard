@@ -100,7 +100,41 @@ The shape every later feature builds inside. `/develop` derives the exact files 
 - No destructive change ships in one release: add the new column or table, move the data, and drop the old one at least one minor version later (the expand and contract approach). Data moves always happen inside SQL migrations, never in app code or background jobs, so a client who skips versions still gets them.
 - The first migration enables `pg_trgm` and `unaccent`.
 
-**Configuration & secrets**: each install is configured only by environment variables (`DATABASE_URL`, `PUBLIC_URL`, `API_INTERNAL_URL`, storage, mail, `BETTER_AUTH_SECRET`, Sentry DSN, client id, `EXTENSIONS`). The same images run for every client. On a new install the `deploy/` bootstrap script generates a `.env` file (permissions 600, never committed) with random secrets (auth secret, database password, storage keys), and Compose reads it with `env_file`. To rotate a secret, edit the file and restart. Rotating `BETTER_AUTH_SECRET` signs every user out.
+**Configuration & secrets**
+
+Each install is configured only by environment variables. The same images run for every client. The api, worker, and migrate validate their variables at startup in `apps/api/src/config/env.ts` and stop with `Invalid environment` if a required one is missing.
+
+*Two database roles* (the reasoning and the ledger grants are in [spec 0002](../0002-core-data-model/index.md), Security model)
+- **Owner** (`ssdashboard`, the Compose `postgres` user): owns the schema and runs migrations. Only `migrate` connects as it, through `MIGRATION_DATABASE_URL`. Its password is `POSTGRES_PASSWORD`. Migration `0001_core_data_model.sql` creates the application role (it skips that step if the role already exists), `0002_job_queue_schema.sql` creates the `pgboss` schema owned by that role, and every `migrate` run changes that role's password. The Compose owner is a superuser, so all three just work. On a managed database the owner is usually not a superuser, and on PostgreSQL 16 and later a role it creates does not let it act as that role. So before the first `migrate` you run, as an admin: `CREATE ROLE ssdashboard_app NOLOGIN;` then `GRANT ssdashboard_app TO <owner> WITH ADMIN OPTION, SET TRUE;`. This has not been tried on a live managed database yet (see Follow-up).
+- **Application** (`ssdashboard_app`): the api and worker connect as it, through `DATABASE_URL`. It can only insert and read the stock ledger history, and reads and writes normally elsewhere. The migration `0001_core_data_model.sql` creates it with its grants and default privileges (the rules new tables inherit). Each `migrate` run then sets its login password from `APP_DB_PASSWORD`, so the password lives in `.env` and nowhere else. `env.ts` keeps `APP_DB_PASSWORD` optional: an install outside Compose that leaves it unset gets no login from `migrate` and creates one itself.
+
+*How `.env` reaches the containers*: Compose reads `.env` only to fill in values (`docker compose --env-file .env up -d`). No service loads the whole file with `env_file`. Each service gets an explicit `environment` list with only what it needs, so the owner password reaches `postgres` and `migrate` and nothing else. A bug or a compromised dependency in the api cannot find the owner secret in its own environment. Every required variable is guarded with `${NAME:?message}` at least once in the file, so Compose refuses to start when one is missing instead of starting with an empty value. The `app` image fixes `NODE_ENV=production` and `PORT=3001` (`deploy/Dockerfile.app`). Neither is set per install: Caddy and `API_INTERNAL_URL` expect port 3001, and `NODE_ENV=production` stops the api from loading a stray `.env` file inside the container.
+
+*What each service receives* (`deploy/compose.yaml`)
+
+| Service | Variables | Owner password? |
+|---|---|---|
+| `postgres` | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | yes |
+| `migrate` | the shared app list, plus `MIGRATION_DATABASE_URL` (built from `POSTGRES_PASSWORD`) and `APP_DB_PASSWORD` | yes |
+| `api` | the shared app list, plus `PUBLIC_URL` and `BETTER_AUTH_SECRET` (both read from feature 6, sign in) | no |
+| `worker` | the shared app list, plus `LEDGER_RECONCILE_CRON` | no |
+| `web` | `API_INTERNAL_URL` only (today only the dev server reads it; production reads it from feature 6, for the session check). It never sees a database URL or the auth secret | no |
+| `caddy` | `SITE_ADDRESS` only | no |
+
+The shared app list (the `x-app-env` block, given to `migrate`, `api`, and `worker`) is `DATABASE_URL` (the application role, built from `APP_DB_PASSWORD`), `APP_VERSION` (from `SSD_VERSION`), and `EXTENSIONS`. `CLIENT_ID`, `SSD_VERSION`, and `SSD_REGISTRY` are used by Compose itself (the project name and the image tags) and reach no container as their own variables.
+
+*Adding a variable*: add it to `env.ts` (or the web's runtime config), to both `.env.example` files, and to the `environment` list of only the services that read it. Never switch a service to `env_file` to save typing. Variables still to come follow the same rule: storage keys go to `api` and `worker`, mail settings to `api` and `worker`, and the Sentry DSN to every app service and `web`, each added by the feature that first needs it.
+
+*Local development* uses the same split. The root `.env` (copied from `.env.example`) holds `DATABASE_URL` as `ssdashboard_app`, `MIGRATION_DATABASE_URL` as the owner, and `APP_DB_PASSWORD`, against the dev database from `deploy/compose.dev.yaml` on port 5433. `pnpm db:migrate` connects as the owner. The api and worker connect as the application role, so local runs hit the same permission errors production would.
+
+*Creating the secrets*: on a new install, `deploy/bootstrap.sh` copies `deploy/.env.example` to `.env` (permissions 600, never committed, kept in the private per client store) and fills `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, and `BETTER_AUTH_SECRET` with random 64 character hex values. It refuses to overwrite an existing `.env`. An install whose `.env` predates `APP_DB_PASSWORD` adds a value by hand before upgrading: `od -An -N32 -tx1 /dev/urandom | tr -d ' \n'`. The next `migrate` sets the login, and Compose refuses to start until the value is there.
+
+`APP_DB_PASSWORD` must be hex only (`0-9`, `a-f`), because Compose puts it into `DATABASE_URL` without encoding it, and a character like `@`, `/`, or `#` would break the URL. `migrate` checks this and stops with a clear message if the value has any other character (to build: see Follow-up).
+
+*Rotating a secret*
+- `APP_DB_PASSWORD`: edit `.env` (a new hex value) and run `docker compose --env-file .env up -d`. `migrate` runs first and sets the new login, then `api` and `worker` restart with it. Their open connections drop for a few seconds and requests in flight fail, so do this in a quiet window.
+- `POSTGRES_PASSWORD`: the `postgres` image reads this value only when it first creates the data volume, so editing `.env` alone breaks `migrate`. First keep a copy of the current `.env`. Then change the role with `docker compose exec postgres psql -U ssdashboard -d ssdashboard -c '\password ssdashboard'` (it prompts for the new value, so it never lands in shell history). Then put the same value in `.env` and run `up -d`. That restarts `postgres` and runs `migrate` again, so expect a short outage. Delete the old copy only after `migrate` succeeds.
+- `BETTER_AUTH_SECRET`: edit `.env` and restart `api`. This signs every user out.
 
 ## Consequences
 
@@ -130,4 +164,6 @@ The shape every later feature builds inside. `/develop` derives the exact files 
 - [ ] Better Auth skill conventions (six skills) belong in the auth area's nested `AGENTS.md` (e.g. `apps/api/src/auth/AGENTS.md`), not root.
 - [ ] MCP servers you chose to connect yourself (a user config step): shadcn registry (`npx shadcn@latest mcp init`), Better Auth docs (`https://mcp.better-auth.com/mcp`), Next.js devtools (`vercel/next-devtools-mcp`), and a community Postgres MCP (dev data only). `/audit` should list them on the `MCP servers:` line in `AGENTS.md`.
 - [ ] The TanStack Table install also added framework variant skills not used here (`devtools`, `migrate-v8-to-v9`, `custom-features`, `fuzzy-ranking`). Remove them if they add noise.
+- [ ] Build the `APP_DB_PASSWORD` check: `migrate` stops with a clear message when the value is not hex only. Small change in `apps/api/src/config/env.ts` (a hex rule on `APP_DB_PASSWORD`) and `deploy/.env.example` (say hex only).
+- [ ] Try the managed database setup (create the app role ahead of time, then `GRANT … WITH ADMIN OPTION, SET TRUE`) on a real managed PostgreSQL 16+ before the first cloud client uses one, then remove the "not tried yet" note.
 - [ ] Decisions owed to later features: translation library and locale handling (feature 5), design tokens and grid patterns (feature 4), sign in flows and session policy (feature 6), money and quantity number types and custom field storage (feature 3), Arabic text normalization details (feature 9), the extension hook contract and module toggles (feature 46), monitoring, automatic pre upgrade backups, and restore tooling (feature 16).
