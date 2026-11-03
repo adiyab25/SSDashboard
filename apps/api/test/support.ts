@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
+import { hashPassword } from 'better-auth/crypto';
 
 // These suites run the built entry points exactly as the image does, so build first:
 // `pnpm build`. They need the dev database (deploy/compose.dev.yaml) for DATABASE_URL.
@@ -79,6 +80,9 @@ export function start(entry: string, env: Record<string, string>): RunningProces
       PATH: process.env.PATH ?? '',
       SYSTEMROOT: process.env.SYSTEMROOT ?? '',
       NODE_ENV: 'production',
+      // Required at startup since spec 0005; suites that test sign in pass their own.
+      PUBLIC_URL: 'http://localhost:3000',
+      BETTER_AUTH_SECRET: 'e2e-secret-e2e-secret-e2e-secret-e2e',
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -125,4 +129,35 @@ export async function stop(proc: RunningProcess | undefined): Promise<void> {
   if (!proc || proc.child.exitCode !== null) return;
   proc.child.kill();
   await proc.exited;
+}
+
+/**
+ * Adds a staff account straight to the database and signs it in through the running api, so a
+ * suite can call guarded routes. `base` must be the api's `PUBLIC_URL`. Returns the cookie header.
+ */
+export async function signInAs(
+  base: string,
+  owner: DatabaseConnection['pool'],
+  options: { email?: string; role?: 'admin' | 'staff' } = {},
+): Promise<string> {
+  const email = options.email ?? 'tester@example.com';
+  const password = 'Test-Password-1';
+  const { rows } = await owner.query<{ id: string }>(
+    `INSERT INTO users (name, email, role) VALUES ('Test Person', $1, $2) RETURNING id`,
+    [email, options.role ?? 'staff'],
+  );
+  const userId = rows[0]?.id as string;
+  await owner.query(
+    `INSERT INTO accounts (user_id, provider_id, account_id, password)
+     VALUES ($1::uuid, 'credential', $1::text, $2)`,
+    [userId, await hashPassword(password)],
+  );
+  const response = await fetch(`${base}/api/auth/sign-in/email`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: base },
+    body: JSON.stringify({ email, password }),
+  });
+  const cookie = response.headers.getSetCookie().find((c) => c.includes('session_token'));
+  if (!cookie) throw new Error(`sign in failed with ${response.status}`);
+  return cookie.split(';')[0] as string;
 }

@@ -1,12 +1,14 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import type { HealthResponse } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
+import { Public } from '../auth/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';
 
 const DB_PROBE_TIMEOUT_MS = 2_000;
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(

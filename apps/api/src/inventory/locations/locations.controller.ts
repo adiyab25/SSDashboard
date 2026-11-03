@@ -4,8 +4,8 @@ import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { InvalidCursorError, LocationsService } from './locations.service.js';
 
 /**
- * Read only list for the shell's location switcher. Open until feature 6 adds the
- * session guard to every `/api` route except config, health, and auth.
+ * Read only list for the shell's location switcher. Behind the session guard like every
+ * `/api` route except config, health, and auth.
  */
 @Controller('locations')
 export class LocationsController {

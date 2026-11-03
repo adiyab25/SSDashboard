@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from 'next/font/google';
 import { languageScript } from '@/i18n/language-config';
-import { AppShell } from '@/shell/app-shell';
 import { SkipLink } from '@/shell/skip-link';
 import { Providers } from './providers';
 import './globals.css';
@@ -46,7 +45,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
       <body>
         <Providers>
           <SkipLink />
-          <AppShell>{children}</AppShell>
+          {children}
         </Providers>
       </body>
     </html>

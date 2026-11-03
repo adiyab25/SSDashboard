@@ -25,6 +25,19 @@ const EnvSchema = z.object({
     .string()
     .regex(/^\S+( \S+){4}$/, 'A 5 field cron expression, like "0 2 * * *"')
     .default('0 2 * * *'),
+  /**
+   * The browser facing address (spec 0005): the auth base URL, the trusted origin, the
+   * cookie `Secure` flag, and the links in emails. A trailing slash is dropped.
+   */
+  PUBLIC_URL: z
+    .url({ protocol: /^https?$/ })
+    .transform((value) => value.replace(/\/+$/, ''))
+    .refine((value) => new URL(value).pathname === '/', 'PUBLIC_URL must not have a path'),
+  /**
+   * Signs sessions and encrypts two factor secrets. Rotating it signs everyone out and makes
+   * every enrolled two factor secret and backup code unreadable.
+   */
+  BETTER_AUTH_SECRET: z.string().min(32, 'At least 32 characters'),
   /** The release version, set in the app image. */
   APP_VERSION: z.string().default('0.0.0-dev'),
   /** The install's name shown in the back office header. Blank counts as unset. */

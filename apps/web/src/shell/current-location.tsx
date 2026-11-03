@@ -2,6 +2,7 @@
 
 import { LocationListResponse, type LocationSummary } from '@ssdashboard/contracts';
 import { createContext, use, useCallback, useEffect, useMemo, useState } from 'react';
+import { apiFetch } from '@/auth/api-fetch';
 import { localizedText, type LanguageOrder } from '@/i18n/localized-text';
 
 /** A location id, or `'all'`. Spelled out so readers see the special value. */
@@ -29,7 +30,7 @@ async function fetchAllLocations(signal: AbortSignal): Promise<LocationSummary[]
   let cursor: string | null = null;
   for (let page = 0; page < MAX_PAGES; page++) {
     const query: string = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
-    const response = await fetch(`/api/locations${query}`, { signal });
+    const response = await apiFetch(`/api/locations${query}`, { signal });
     if (!response.ok) throw new Error(`api answered ${response.status}`);
     const body = LocationListResponse.parse(await response.json());
     items.push(...body.items);

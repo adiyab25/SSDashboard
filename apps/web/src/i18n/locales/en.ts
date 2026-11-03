@@ -36,13 +36,15 @@ export const en = {
     },
     user: {
       menu: 'User menu',
-      placeholderName: 'Staff',
-      placeholderInitial: 'S',
       theme: 'Theme',
       language: 'Language',
       languageError: 'Could not load {{language}}. Try again.',
       signOut: 'Sign out',
-      signOutHint: 'Available after sign in',
+      signOutError: 'Could not sign out. Try again.',
+      roles: {
+        admin: 'Administrator',
+        staff: 'Staff',
+      },
     },
     theme: {
       light: 'Light',
@@ -61,6 +63,23 @@ export const en = {
       noResults: 'No locations match.',
       count_one: '{{count}} location',
       count_other: '{{count}} locations',
+    },
+  },
+  auth: {
+    required: 'Required',
+    signIn: {
+      title: 'Sign in',
+      description: 'Use the email and password your administrator gave you.',
+      email: 'Email',
+      password: 'Password',
+      submit: 'Sign in',
+      emailRequired: 'Enter your email address.',
+      emailInvalid: 'Enter a valid email address, like name@example.com.',
+      passwordRequired: 'Enter your password.',
+      invalidCredentials: 'The email or password is not right. Check both and try again.',
+      disabled: 'This account is disabled. Ask an administrator for help.',
+      rateLimited: 'Too many attempts. Wait a minute, then try again.',
+      failed: 'Could not sign in. Check your connection and try again.',
     },
   },
   home: {

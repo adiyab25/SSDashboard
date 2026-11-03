@@ -37,13 +37,15 @@ export const ar: Catalog = {
     },
     user: {
       menu: 'قائمة المستخدم',
-      placeholderName: 'الموظف',
-      placeholderInitial: 'م',
       theme: 'المظهر',
       language: 'اللغة',
       languageError: 'تعذّر تحميل {{language}}. حاول مرة أخرى.',
       signOut: 'تسجيل الخروج',
-      signOutHint: 'متاح بعد تسجيل الدخول',
+      signOutError: 'تعذّر تسجيل الخروج. حاول مرة أخرى.',
+      roles: {
+        admin: 'مسؤول',
+        staff: 'موظف',
+      },
     },
     theme: {
       light: 'فاتح',
@@ -66,6 +68,23 @@ export const ar: Catalog = {
       count_few: '{{count}} مواقع',
       count_many: '{{count}} موقعًا',
       count_other: '{{count}} موقع',
+    },
+  },
+  auth: {
+    required: 'مطلوب',
+    signIn: {
+      title: 'تسجيل الدخول',
+      description: 'استخدم البريد الإلكتروني وكلمة المرور اللذين أعطاك إياهما المسؤول.',
+      email: 'البريد الإلكتروني',
+      password: 'كلمة المرور',
+      submit: 'تسجيل الدخول',
+      emailRequired: 'أدخل بريدك الإلكتروني.',
+      emailInvalid: 'أدخل بريدًا إلكترونيًا صالحًا، مثل name@example.com.',
+      passwordRequired: 'أدخل كلمة المرور.',
+      invalidCredentials: 'البريد الإلكتروني أو كلمة المرور غير صحيحة. تحقق منهما وحاول مرة أخرى.',
+      disabled: 'هذا الحساب معطّل. اطلب المساعدة من المسؤول.',
+      rateLimited: 'محاولات كثيرة. انتظر دقيقة ثم حاول مرة أخرى.',
+      failed: 'تعذّر تسجيل الدخول. تحقق من اتصالك وحاول مرة أخرى.',
     },
   },
   home: {

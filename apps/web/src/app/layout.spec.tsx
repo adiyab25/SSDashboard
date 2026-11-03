@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { AppShell } from '@/shell/app-shell';
 import RootLayout, { metadata } from './layout';
 
 vi.mock('next/navigation', () => ({
@@ -38,13 +39,25 @@ describe('RootLayout', () => {
   });
 
   it('puts the skip link before the navigation and the page', () => {
-    const html = render('page');
+    // The shell lives in the (app) layout; the skip link stays here, ahead of every route group.
+    const html = render(
+      <AppShell>
+        <h1>page</h1>
+      </AppShell>,
+    );
     const skip = html.indexOf('<a href="#main-content"');
 
     expect(html).toMatch(/<a href="#main-content"[^>]*>Skip to main content<\/a>/);
     expect(skip).toBeGreaterThan(-1);
     expect(skip).toBeLessThan(html.indexOf('<header'));
     expect(skip).toBeLessThan(html.indexOf('<main'));
+  });
+
+  it('does not draw the app shell itself, so the sign in screens stay outside it', () => {
+    const html = render(<p>sign in</p>);
+
+    expect(html).not.toContain('<header');
+    expect(html).not.toContain('<nav');
   });
 
   it('renders the page inside the body', () => {

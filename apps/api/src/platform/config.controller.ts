@@ -1,5 +1,6 @@
 import { Controller, Get, Inject, Logger } from '@nestjs/common';
 import type { ConfigResponse } from '@ssdashboard/contracts';
+import { Public } from '../auth/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { SettingsService, type Settings } from './settings.service.js';
@@ -7,6 +8,7 @@ import { SettingsService, type Settings } from './settings.service.js';
 const FALLBACK_LANGUAGE = 'en';
 
 /** Public by design: the shell and the sign in page need it, and it holds nothing secret. */
+@Public()
 @Controller('config')
 export class ConfigController {
   private readonly logger = new Logger(ConfigController.name);

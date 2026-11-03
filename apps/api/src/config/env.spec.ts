@@ -5,6 +5,7 @@ import { loadEnv } from './env.js';
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
 
 const VALID_URL = 'postgres://ssdashboard:secret@localhost:5433/ssdashboard';
+const VALID_SECRET = 'x'.repeat(32);
 
 describe('loadEnv', () => {
   let exit: ReturnType<typeof vi.spyOn>;
@@ -21,10 +22,14 @@ describe('loadEnv', () => {
       'LEDGER_RECONCILE_CRON',
       'APP_VERSION',
       'CLIENT_DISPLAY_NAME',
+      'PUBLIC_URL',
+      'BETTER_AUTH_SECRET',
     ]) {
       vi.stubEnv(name, undefined);
     }
     vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('PUBLIC_URL', 'https://erp.example.com');
+    vi.stubEnv('BETTER_AUTH_SECRET', VALID_SECRET);
     exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit(${code})`);
     }) as never);
@@ -38,7 +43,7 @@ describe('loadEnv', () => {
   });
 
   describe('with valid settings', () => {
-    it('fills in the defaults when only DATABASE_URL is set', () => {
+    it('fills in the defaults when only the required settings are set', () => {
       expect(loadEnv()).toEqual({
         NODE_ENV: 'development',
         PORT: 3001,
@@ -47,7 +52,15 @@ describe('loadEnv', () => {
         LEDGER_RECONCILE_CRON: '0 2 * * *',
         APP_VERSION: '0.0.0-dev',
         CLIENT_DISPLAY_NAME: 'SSDashboard',
+        PUBLIC_URL: 'https://erp.example.com',
+        BETTER_AUTH_SECRET: VALID_SECRET,
       });
+    });
+
+    it('drops a trailing slash from PUBLIC_URL', () => {
+      vi.stubEnv('PUBLIC_URL', 'http://localhost:3000/');
+
+      expect(loadEnv().PUBLIC_URL).toBe('http://localhost:3000');
     });
 
     it('turns PORT into a number', () => {
@@ -126,6 +139,14 @@ describe('loadEnv', () => {
         'MIGRATION_DATABASE_URL',
       ],
       ['an empty APP_DB_PASSWORD', 'APP_DB_PASSWORD', '', 'APP_DB_PASSWORD'],
+      ['a PUBLIC_URL that is not a URL', 'PUBLIC_URL', 'erp.example.com', 'PUBLIC_URL'],
+      ['a PUBLIC_URL with a path', 'PUBLIC_URL', 'https://erp.example.com/app', 'PUBLIC_URL'],
+      [
+        'a BETTER_AUTH_SECRET under 32 characters',
+        'BETTER_AUTH_SECRET',
+        'short',
+        'BETTER_AUTH_SECRET',
+      ],
       [
         'an install name over 80 characters',
         'CLIENT_DISPLAY_NAME',
@@ -138,6 +159,16 @@ describe('loadEnv', () => {
       expect(() => loadEnv()).toThrow('process.exit(1)');
       expect(errorLog.mock.calls[0]?.[0]).toContain(reported);
     });
+
+    it.each(['PUBLIC_URL', 'BETTER_AUTH_SECRET'])(
+      'stops the process when %s is missing',
+      (name) => {
+        vi.stubEnv(name, undefined);
+
+        expect(() => loadEnv()).toThrow('process.exit(1)');
+        expect(errorLog.mock.calls[0]?.[0]).toContain(name);
+      },
+    );
 
     it('does not print the database password when the URL is rejected', () => {
       vi.stubEnv('DATABASE_URL', 'mysql://u:hunter2@localhost/app');

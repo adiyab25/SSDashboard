@@ -15,6 +15,7 @@
   "dependencies": {
     "@ssdashboard/contracts": "workspace:*",
     "@ssdashboard/ui": "workspace:*",
+    "better-auth": "^1.7.15",
     "i18next": "catalog:",
     "lucide-react": "^1.66.0",
     "next": "16.4.3",

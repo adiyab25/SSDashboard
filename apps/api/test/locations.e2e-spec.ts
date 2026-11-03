@@ -5,6 +5,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  signInAs,
   start,
   stop,
   waitForHttp,
@@ -17,6 +18,7 @@ describe('GET /api/locations', { timeout: 60_000 }, () => {
   let owner: DatabaseConnection;
   let api: RunningProcess | undefined;
   let base: string;
+  let cookie: string;
 
   beforeAll(async () => {
     scratch = await createScratchDatabase();
@@ -37,8 +39,13 @@ describe('GET /api/locations', { timeout: 60_000 }, () => {
     appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
-    api = start('main.js', { PORT: String(port), DATABASE_URL: appUrl.toString() });
+    api = start('main.js', {
+      PORT: String(port),
+      DATABASE_URL: appUrl.toString(),
+      PUBLIC_URL: base,
+    });
     await waitForHttp(`${base}/api/health`, api);
+    cookie = await signInAs(base, owner.pool);
   });
 
   afterAll(async () => {
@@ -48,7 +55,7 @@ describe('GET /api/locations', { timeout: 60_000 }, () => {
   });
 
   async function list(query = '') {
-    const response = await fetch(`${base}/api/locations${query}`);
+    const response = await fetch(`${base}/api/locations${query}`, { headers: { cookie } });
     return { status: response.status, body: (await response.json()) as unknown };
   }
 
