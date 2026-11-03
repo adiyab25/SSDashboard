@@ -1,5 +1,5 @@
 import { HomeIcon, PaletteIcon, type LucideIcon } from 'lucide-react';
-import type { MessageKey } from '@/i18n/t';
+import type { MessageKey } from '@/i18n/message-key';
 
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
 export type NavGroup = 'general';

@@ -84,7 +84,7 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 - Weights 400, 500, and 600 only.
 - IBM Plex Sans for Latin text. Anything under `lang="ar"` switches to IBM Plex Sans Arabic with one more step of line height. Both are served by the app (`next/font`), never from a font host at runtime.
 - Numbers in columns, totals, and quantities use `tabular-nums` so digits line up.
-- Codes and versions that mix digits and letters (`0.0.0-dev`, SKUs) sit in `<bdi>` so right to left pages keep their order.
+- Every code that must read left to right (SKU, barcode, document number, email, URL, version such as `0.0.0-dev`) sits in `LtrText` (`@ssdashboard/ui/components/ltr-text`), never bare text, so right to left pages keep its order.
 
 ## Spacing, radius, density
 
@@ -156,6 +156,7 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 
 ## Right to left
 
-- `dir` on `<html>` drives layout; Radix reads its own `DirectionProvider`, so both always change together. Until feature 5 ships, a development only switch (user menu, and `/design`) stores the direction in `ss_dir`.
+- `dir` on `<html>` drives layout; Radix reads its own `DirectionProvider`, so both always change together. Direction follows the language: Arabic is right to left, English left to right. The language switch (user menu, Language) changes `lang`, `dir`, and the Radix direction at once and saves the choice in the `ss_lang` cookie (spec 0004).
+- Components take all text through props (labels, titles, `aria-label`, `placeholder`, `alt`); `lint` fails on a raw literal. Numbers, money, and dates are formatted by the app through its shared formatters (Western digits in both languages), never inside a component.
 - Write layout once with logical sides; it mirrors on its own. Sheets and sidebars take `side="start" | "end"`.
 - Tab order follows DOM order, so it mirrors with the layout.

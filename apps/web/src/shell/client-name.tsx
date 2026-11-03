@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { t } from '@/i18n/t';
+import { useTranslation } from 'react-i18next';
 import { loadConfig } from './client-config';
 
 /** The install's display name from `/api/config`, with the product name as fallback. */
 export function ClientName({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const [name, setName] = useState<string | null>(null);
 
   useEffect(() => {

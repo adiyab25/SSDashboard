@@ -51,7 +51,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@ssdashboard/ui/compone
 import { ChevronRightIcon, Loader2Icon, SearchIcon, StarIcon } from 'lucide-react';
 import { Direction } from 'radix-ui';
 import { useEffect, useState } from 'react';
-import { useDirectionSetting } from '@/shell/direction';
 import { tokenContrast } from './contrast';
 
 /** Text pairs need 4.5:1, control boundaries and the focus ring 3:1 (WCAG 2.2 AA). */
@@ -398,7 +397,6 @@ function RightToLeftRow() {
 
 export function DesignGallery() {
   const version = useThemeVersion();
-  const { dir, setDir } = useDirectionSetting();
 
   return (
     <div data-gallery className="flex max-w-5xl flex-col gap-10">
@@ -409,19 +407,6 @@ export function DesignGallery() {
             Tokens and components from packages/ui. The written rules are in packages/ui/DESIGN.md.
           </p>
         </div>
-        <fieldset className="flex items-center gap-2">
-          <legend className="sr-only">Page direction</legend>
-          {(['ltr', 'rtl'] as const).map((value) => (
-            <Button
-              key={value}
-              variant={dir === value ? 'default' : 'outline'}
-              aria-pressed={dir === value}
-              onClick={() => setDir(value)}
-            >
-              {value === 'ltr' ? 'Left to right' : 'Right to left'}
-            </Button>
-          ))}
-        </fieldset>
       </header>
 
       <Section id="colors" title="Color roles and live contrast">

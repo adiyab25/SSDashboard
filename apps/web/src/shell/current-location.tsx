@@ -2,6 +2,7 @@
 
 import { LocationListResponse, type LocationSummary } from '@ssdashboard/contracts';
 import { createContext, use, useCallback, useEffect, useMemo, useState } from 'react';
+import { localizedText, type LanguageOrder } from '@/i18n/localized-text';
 
 /** A location id, or `'all'`. Spelled out so readers see the special value. */
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
@@ -39,9 +40,9 @@ async function fetchAllLocations(signal: AbortSignal): Promise<LocationSummary[]
   return items;
 }
 
-/** The label for a location: English name, else Arabic, else its code. */
-export function locationName(location: LocationSummary): string {
-  return location.name.en?.trim() || location.name.ar?.trim() || location.code;
+/** The label for a location in the active language, else the install default's, else its code. */
+export function locationName(location: LocationSummary, order: LanguageOrder): string {
+  return localizedText(location.name, order, location.code);
 }
 
 interface CurrentLocation {

@@ -15,12 +15,14 @@
   "dependencies": {
     "@ssdashboard/contracts": "workspace:*",
     "@ssdashboard/ui": "workspace:*",
+    "i18next": "catalog:",
     "lucide-react": "^1.66.0",
     "next": "16.4.3",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-i18next": "catalog:"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

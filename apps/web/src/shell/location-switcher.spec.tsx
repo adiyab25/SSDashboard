@@ -132,12 +132,21 @@ describe('location switcher', () => {
   });
 });
 
+// AC-9: the active language first, then the install default, then the code.
 describe('locationName', () => {
-  it('uses the English name, then the Arabic one, then the code', () => {
-    const base = { id: MAIN.id, code: 'WH-A', type: 'warehouse' as const };
+  const base = { id: MAIN.id, code: 'WH-A', type: 'warehouse' as const };
+  const english = { active: 'en', fallback: 'en' };
 
-    expect(locationName({ ...base, name: { en: ' Main ', ar: 'المخزن' } })).toBe('Main');
-    expect(locationName({ ...base, name: { en: '  ', ar: ' المخزن ' } })).toBe('المخزن');
-    expect(locationName({ ...base, name: {} })).toBe('WH-A');
+  it('uses the active language, trimmed, then the other language, then the code', () => {
+    expect(locationName({ ...base, name: { en: ' Main ', ar: 'المخزن' } }, english)).toBe('Main');
+    expect(locationName({ ...base, name: { en: '  ', ar: ' المخزن ' } }, english)).toBe('المخزن');
+    expect(locationName({ ...base, name: {} }, english)).toBe('WH-A');
+  });
+
+  it('prefers Arabic when Arabic is active', () => {
+    const arabic = { active: 'ar', fallback: 'en' };
+
+    expect(locationName({ ...base, name: { en: 'Main', ar: 'المخزن' } }, arabic)).toBe('المخزن');
+    expect(locationName({ ...base, name: { en: 'Main' } }, arabic)).toBe('Main');
   });
 });

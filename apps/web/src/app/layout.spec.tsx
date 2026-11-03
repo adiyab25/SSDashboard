@@ -20,7 +20,7 @@ describe('RootLayout', () => {
     expect(metadata.title).toBe('SSDashboard');
   });
 
-  // Feature 5 (localization) will switch these; until then English, left to right.
+  // The server markup is always English left to right; the saved language is applied after hydration.
   it('declares English and left to right on the document', () => {
     expect(render('page')).toMatch(/^<html lang="en" dir="ltr"/);
   });
@@ -29,12 +29,22 @@ describe('RootLayout', () => {
     expect(render('page')).toMatch(/^<html[^>]* class="plex-sans plex-arabic"/);
   });
 
-  it('sets the stored direction before first paint outside production', () => {
-    expect(render('page')).toContain("localStorage.getItem('ss_dir')");
+  it('sets the saved language and direction before first paint, in every build', () => {
+    const html = render('page');
+
+    expect(html).toContain('ss_lang');
+    expect(html).toContain('data-i18n');
+    expect(html).not.toContain('ss_dir');
   });
 
-  it('makes the skip link the first element in the body', () => {
-    expect(render('page')).toMatch(/<body><a href="#main-content"[^>]*>Skip to main content<\/a>/);
+  it('puts the skip link before the navigation and the page', () => {
+    const html = render('page');
+    const skip = html.indexOf('<a href="#main-content"');
+
+    expect(html).toMatch(/<a href="#main-content"[^>]*>Skip to main content<\/a>/);
+    expect(skip).toBeGreaterThan(-1);
+    expect(skip).toBeLessThan(html.indexOf('<header'));
+    expect(skip).toBeLessThan(html.indexOf('<main'));
   });
 
   it('renders the page inside the body', () => {

@@ -13,11 +13,12 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
-import { t } from '@/i18n/t';
+import { useTranslation } from 'react-i18next';
 import { isActive, navGroups, visibleNavItems } from './nav';
 
 /** The navigation registry grouped by module; an icon rail when collapsed, a sheet on phones. */
 export function AppSidebar() {
+  const { t } = useTranslation();
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
   const items = visibleNavItems();

@@ -3,7 +3,7 @@
 import { Button } from '@ssdashboard/ui/components/button';
 import { SidebarProvider, SidebarTrigger, useSidebar } from '@ssdashboard/ui/components/sidebar';
 import { MenuIcon } from 'lucide-react';
-import { t } from '@/i18n/t';
+import { useTranslation } from 'react-i18next';
 import { AppSidebar } from './app-sidebar';
 import { ClientName } from './client-name';
 import { CommandPalette } from './command-palette';
@@ -11,6 +11,7 @@ import { LocationSwitcher } from './location-switcher';
 import { UserMenu } from './user-menu';
 
 function TopBar() {
+  const { t } = useTranslation();
   const { open, openMobile, setOpenMobile } = useSidebar();
 
   return (

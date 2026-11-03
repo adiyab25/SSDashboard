@@ -2,8 +2,9 @@
 
 import { HealthResponse } from '@ssdashboard/contracts';
 import { Button } from '@ssdashboard/ui/components/button';
+import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { useEffect, useState } from 'react';
-import { t } from '@/i18n/t';
+import { useTranslation } from 'react-i18next';
 
 type State =
   | { kind: 'loading' }
@@ -12,6 +13,7 @@ type State =
 
 /** Calls the api through the relative `/api` path, the same way every install does. */
 export function ApiStatus() {
+  const { t } = useTranslation();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
@@ -50,7 +52,7 @@ export function ApiStatus() {
             <dt className="font-medium">{t('home.status.version')}</dt>
             <dd className="tabular-nums">
               {/* Isolated so "0.0.0-dev" keeps its order in right to left. */}
-              <bdi>{state.health.version}</bdi>
+              <LtrText>{state.health.version}</LtrText>
             </dd>
           </>
         )}

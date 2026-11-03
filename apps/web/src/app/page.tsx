@@ -1,11 +1,11 @@
-import { t } from '@/i18n/t';
 import { ApiStatus } from './api-status';
+import { HomeTitle } from './home-title';
 
-// Server components render only the shell; data loads in client components.
+// Server components render only the shell; text and data load in client components.
 export default function Home() {
   return (
     <>
-      <h1 className="text-xl font-semibold">{t('home.title')}</h1>
+      <HomeTitle />
       <ApiStatus />
     </>
   );

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// Spec 0003, AC-11 and AC-13: what a production build must and must not contain.
+// Spec 0003 AC-13 and spec 0004 AC-2: what a production build must and must not contain.
 test.describe('production build', () => {
   test('/design answers a real 404', async ({ page }) => {
     const response = await page.goto('/design');
@@ -8,14 +8,29 @@ test.describe('production build', () => {
     expect(response?.status()).toBe(404);
   });
 
-  test('has no direction switch and is always left to right', async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('ss_dir', 'rtl'));
+  // Spec 0004 AC-2: the cookie is honoured in production, and the old switch is gone.
+  test('honours the saved language, with no development direction switch', async ({
+    page,
+    baseURL,
+  }) => {
+    await page.context().addCookies([{ name: 'ss_lang', value: 'ar', url: baseURL ?? '' }]);
+    await page.addInitScript(() => localStorage.setItem('ss_dir', 'ltr'));
+    await page.goto('/');
+
+    // No api runs behind this server: the saved language is kept when config cannot load.
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('نظرة عامة');
+    await page.getByRole('button', { name: /قائمة المستخدم/ }).click();
+    await expect(page.getByRole('menuitem', { name: 'المظهر' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Direction|الاتجاه/ })).toHaveCount(0);
+  });
+
+  test('opens left to right in English when nothing is saved', async ({ page }) => {
     await page.goto('/');
 
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await page.getByRole('button', { name: /User menu/ }).click();
-    await expect(page.getByRole('menuitem', { name: 'Theme' })).toBeVisible();
-    await expect(page.getByRole('menuitem', { name: 'Direction' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Overview');
   });
 
   test('never links the development only gallery', async ({ page }) => {

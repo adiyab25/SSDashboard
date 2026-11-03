@@ -52,10 +52,19 @@ Visual language, layout, and base components for a dense, data heavy back office
 - [ ] Test it: `/test design system & UI foundation` (skipped)
 Spec [0003](../specs/0003-design-system-ui-foundation/index.md) · code in `packages/ui`, `apps/web/src/shell`, `apps/web/src/design`, `apps/api/src/inventory/locations`
 
-### 5. Localization (English & Arabic) · needs a decision
+### 5. Localization (English & Arabic) · in-progress
 Every screen in English and Arabic, with direction, numbers, and dates formatted per language, and room for future client languages.
 **Done when:** a user can switch language and the whole interface flips direction; no hard coded strings; dates and numbers format per locale; adding a third language needs only translations.
-- [ ] Design it (spec): `/architect localization`
+- [x] Design it (spec): `/architect localization`
+- [x] Build it: `/develop localization`
+  - [x] Thin thread: language cookie, config fields, switch, direction (AC-1, AC-2, AC-3, AC-4, AC-13)
+  - [x] Full catalogs, typed keys, plurals (AC-5, AC-6, AC-7)
+  - [x] Formatting and bilingual text (AC-8, AC-9)
+  - [x] Literal string lint and mixed direction text (AC-5, AC-10)
+  - [x] Client languages, tests, and docs (AC-11, AC-12)
+- [ ] Verify it: `/check verify localization`
+- [ ] Test it: `/test localization`
+Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/contracts/src/platform.ts`, `packages/ui/src/components/ltr-text.tsx`, `packages/config/eslint/i18n.js`, `deploy/`
 
 ### 6. Staff sign in · needs a decision · GA
 Real staff accounts and sessions so every slice runs as a known user from day one.

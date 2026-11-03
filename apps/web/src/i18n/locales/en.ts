@@ -1,5 +1,9 @@
-/** Every English UI string. Feature 5 moves these into the localization library. */
-export const messages = {
+/**
+ * Every English UI string. It is the source language: bundled in the main chunk, the type
+ * source for `useTranslation()` keys, and the fallback for any key another language lacks.
+ * Plural keys end in `_one` and `_other`; Arabic needs all six forms (see `ar.ts`).
+ */
+export const en = {
   shell: {
     skipLink: 'Skip to main content',
     clientNameFallback: 'SSDashboard',
@@ -35,7 +39,8 @@ export const messages = {
       placeholderName: 'Staff',
       placeholderInitial: 'S',
       theme: 'Theme',
-      direction: 'Direction',
+      language: 'Language',
+      languageError: 'Could not load {{language}}. Try again.',
       signOut: 'Sign out',
       signOutHint: 'Available after sign in',
     },
@@ -43,10 +48,6 @@ export const messages = {
       light: 'Light',
       dark: 'Dark',
       system: 'System',
-    },
-    direction: {
-      ltr: 'Left to right',
-      rtl: 'Right to left',
     },
     locations: {
       label: 'Location',
@@ -58,6 +59,8 @@ export const messages = {
       retry: 'Try again',
       search: 'Search locations…',
       noResults: 'No locations match.',
+      count_one: '{{count}} location',
+      count_other: '{{count}} locations',
     },
   },
   home: {

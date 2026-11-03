@@ -1,21 +1,63 @@
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
 
 export type Theme = 'light' | 'dark';
 export type TextDirection = 'ltr' | 'rtl';
+export type Language = 'en' | 'ar';
 
-/** Stores the theme and development direction before the page loads, as a returning user. */
+/** The core language that reads in each direction. */
+const LANGUAGE_FOR_DIRECTION = { ltr: 'en', rtl: 'ar' } as const satisfies Record<
+  TextDirection,
+  Language
+>;
+
+/**
+ * Stores the theme and the language (cookie `ss_lang`) before the page loads, as a returning
+ * user. `dir` is a shortcut for the core language that reads in that direction.
+ */
 export async function useBrowserState(
   page: Page,
-  state: { theme?: Theme | 'system'; dir?: TextDirection },
+  state: { theme?: Theme | 'system'; language?: Language; dir?: TextDirection },
 ) {
-  await page.addInitScript((value) => {
-    if (value.theme) localStorage.setItem('theme', value.theme);
-    if (value.dir) localStorage.setItem('ss_dir', value.dir);
-  }, state);
+  const { theme } = state;
+  if (theme) await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
+  const language = state.language ?? (state.dir ? LANGUAGE_FOR_DIRECTION[state.dir] : undefined);
+  if (language) await setLanguageCookie(page, language);
+}
+
+/** Saves the language the way the app does, so the next load opens in it. */
+export async function setLanguageCookie(page: Page, language: string) {
+  const url = test.info().project.use.baseURL ?? 'http://localhost:3000';
+  await page.context().addCookies([{ name: 'ss_lang', value: language, url }]);
+}
+
+/** The `ss_lang` cookie the page currently holds. */
+export async function languageCookie(page: Page): Promise<string | undefined> {
+  const cookies = await page.context().cookies();
+  return cookies.find((cookie) => cookie.name === 'ss_lang')?.value;
+}
+
+/** Answers `GET /api/config` with these install settings. */
+export async function stubConfig(
+  page: Page,
+  config: { languages?: string[]; defaultLanguage?: string } = {},
+) {
+  await page.route('**/api/config', (route) =>
+    route.fulfill({
+      json: {
+        clientName: 'Acme',
+        version: '1.0.0',
+        currency: 'EGP',
+        timezone: 'Africa/Cairo',
+        languages: ['en', 'ar'],
+        defaultLanguage: 'en',
+        ...config,
+      },
+    }),
+  );
 }
 
 /**

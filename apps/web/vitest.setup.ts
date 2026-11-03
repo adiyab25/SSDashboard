@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
+import { setI18n } from 'react-i18next';
 import { afterEach, vi } from 'vitest';
+import { createI18n } from './src/i18n/create-i18n';
+
+// Components under test read English text without a provider.
+setI18n(createI18n());
 
 /** Adds the browser APIs next-themes, Radix, and cmdk reach for that jsdom lacks. */
 function stubMissing(target: object, stubs: Record<string, unknown>) {

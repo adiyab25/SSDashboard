@@ -4,15 +4,34 @@ import { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
 import type { Executor } from '../database/sql.js';
 
+/** A language code: two or three lowercase letters. */
+const LanguageCode = z.string().regex(/^[a-z]{2,3}$/);
+
 /** The install settings other modules read, with their stored shapes. */
 const SettingShapes = {
-  currency: z.string(),
-  timezone: z.string(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  timezone: z.string().refine(isTimeZone, 'Not a time zone name'),
   prices_include_vat: z.boolean(),
   /** `YYYY-MM-DD`; postings must be dated after it in `timezone`. */
   inventory_lock_date: z.iso.date().nullable(),
   document_prefixes: z.record(z.string(), z.string()),
+  /** Enabled language codes in switcher order; at least one, no repeats. */
+  languages: z
+    .array(LanguageCode)
+    .min(1)
+    .refine((codes) => new Set(codes).size === codes.length, 'Languages must not repeat'),
+  /** The language a first visit opens in; the config endpoint checks it is in `languages`. */
+  default_language: LanguageCode,
 };
+
+function isTimeZone(name: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export type SettingKey = keyof typeof SettingShapes;
 export type Settings = { [K in SettingKey]: z.infer<(typeof SettingShapes)[K]> };

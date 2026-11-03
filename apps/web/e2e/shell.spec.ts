@@ -190,6 +190,7 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
   });
 });
 
+// Arabic is the right to left language: the cookie `ss_lang=ar` gives the mirrored page.
 test.describe('right to left (AC-5)', () => {
   test('the sidebar sits on the right and directional icons are mirrored', async ({
     page,
@@ -202,25 +203,11 @@ test.describe('right to left (AC-5)', () => {
     const width = page.viewportSize()?.width ?? 0;
     expect(Math.round((box?.x ?? 0) + (box?.width ?? 0))).toBe(width);
 
-    await page.getByRole('button', { name: /User menu/ }).click();
-    const chevron = page.getByRole('menuitem', { name: 'Theme' }).locator('svg').last();
+    await page.getByRole('button', { name: /قائمة المستخدم/ }).click();
+    const chevron = page.getByRole('menuitem', { name: 'المظهر' }).locator('svg').last();
     // Tailwind v4 mirrors with the CSS `scale` property.
     const scale = await chevron.evaluate((element) => getComputedStyle(element).scale);
     expect(scale).toBe('-1 1');
-  });
-
-  test('the direction switch in the user menu flips the page without a reload', async ({
-    page,
-  }, info) => {
-    desktopOnly(info.project.name);
-    await openShell(page);
-
-    await page.getByRole('button', { name: /User menu/ }).click();
-    await page.getByRole('menuitem', { name: 'Direction' }).click();
-    await page.getByRole('menuitemradio', { name: 'Right to left' }).click();
-
-    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    expect(await page.evaluate(() => localStorage.getItem('ss_dir'))).toBe('rtl');
   });
 });
 
@@ -247,8 +234,9 @@ test.describe('phones (AC-5, AC-7, AC-14)', () => {
       await useBrowserState(page, { dir });
       await openShell(page);
 
-      await page.getByRole('button', { name: 'Open navigation' }).click();
-      const sheet = page.getByRole('dialog', { name: 'Navigation' });
+      const names = dir === 'ltr' ? ['Open navigation', 'Navigation'] : ['فتح التنقل', 'التنقل'];
+      await page.getByRole('button', { name: names[0] }).click();
+      const sheet = page.getByRole('dialog', { name: names[1] });
       await expect(sheet).toHaveAttribute('data-side', 'start');
       await page.waitForTimeout(400); // let the slide in animation finish
       const box = await sheet.boundingBox();

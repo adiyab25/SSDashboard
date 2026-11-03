@@ -104,13 +104,13 @@ describe('AppShell', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('offers theme, the development direction switch, and a disabled sign out', async () => {
+  it('offers theme, language, and a disabled sign out', async () => {
     renderShell();
 
     await userEvent.click(screen.getByRole('button', { name: /User menu/ }));
 
     expect(screen.getByRole('menuitem', { name: 'Theme' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'Direction' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Language' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /Sign out/ })).toHaveAttribute(
       'aria-disabled',
       'true',

@@ -9,14 +9,23 @@ import {
   CommandItem,
   CommandList,
 } from '@ssdashboard/ui/components/command';
+import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { Popover, PopoverContent, PopoverTrigger } from '@ssdashboard/ui/components/popover';
 import { CheckIcon, ChevronsUpDownIcon, MapPinIcon, TriangleAlertIcon } from 'lucide-react';
 import { useState } from 'react';
-import { t } from '@/i18n/t';
+import { useTranslation } from 'react-i18next';
+import { useLanguage } from '@/i18n/language-provider';
 import { locationName, useLocationSwitcher, type LocationChoice } from './current-location';
 
 /** Pick the warehouse or showroom you're working in; searchable, with "All locations" first. */
 export function LocationSwitcher() {
+  const { t } = useTranslation();
+  const { language, config } = useLanguage();
+  const order = {
+    active: language,
+    fallback: config?.defaultLanguage ?? 'en',
+    enabled: config?.languages,
+  };
   const { current, locations, status, retry, setCurrentLocation } = useLocationSwitcher();
   const [open, setOpen] = useState(false);
 
@@ -27,7 +36,7 @@ export function LocationSwitcher() {
       : status === 'error'
         ? t('shell.locations.error')
         : selected
-          ? locationName(selected)
+          ? locationName(selected, order)
           : t('shell.locations.all');
 
   const choose = (choice: LocationChoice) => {
@@ -75,7 +84,7 @@ export function LocationSwitcher() {
                   ? t('shell.locations.loading')
                   : t('shell.locations.noResults')}
               </CommandEmpty>
-              <CommandGroup>
+              <CommandGroup heading={t('shell.locations.count', { count: locations.length })}>
                 <CommandItem
                   value={`all ${t('shell.locations.all')}`}
                   className="coarse:min-h-touch"
@@ -87,13 +96,15 @@ export function LocationSwitcher() {
                 {locations.map((location) => (
                   <CommandItem
                     key={location.id}
-                    value={`${location.code} ${locationName(location)}`}
+                    value={`${location.code} ${locationName(location, order)}`}
                     className="coarse:min-h-touch"
                     onSelect={() => choose(location.id)}
                   >
                     <CheckIcon aria-hidden className={current === location.id ? '' : 'invisible'} />
-                    <span className="truncate">{locationName(location)}</span>
-                    <span className="ms-auto text-xs text-muted-foreground">{location.code}</span>
+                    <span className="truncate">{locationName(location, order)}</span>
+                    <LtrText className="ms-auto text-xs text-muted-foreground">
+                      {location.code}
+                    </LtrText>
                   </CommandItem>
                 ))}
               </CommandGroup>

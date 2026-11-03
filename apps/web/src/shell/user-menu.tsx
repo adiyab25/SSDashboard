@@ -16,23 +16,31 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@ssdashboard/ui/components/dropdown-menu';
-import { ArrowLeftRightIcon, LogOutIcon, SunMoonIcon } from 'lucide-react';
+import { LanguagesIcon, LogOutIcon, SunMoonIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { t } from '@/i18n/t';
-import { DIRECTION_SWITCH, useDirectionSetting, type TextDirection } from './direction';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useLanguage } from '@/i18n/language-provider';
 
 const THEMES = ['light', 'dark', 'system'] as const;
-const DIRECTIONS: readonly TextDirection[] = ['ltr', 'rtl'];
 const ITEM = 'coarse:min-h-touch';
 
-/** Placeholder identity until feature 6, plus the theme and (in development) direction. */
+/** Placeholder identity until feature 6, plus the theme and language switches. */
 export function UserMenu() {
   const { theme, setTheme } = useTheme();
-  const { dir, setDir } = useDirectionSetting();
+  const { t } = useTranslation();
+  const { language, options, failedLanguage, setLanguage, clearFailure } = useLanguage();
+  const [open, setOpen] = useState(false);
   const name = t('shell.user.placeholderName');
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) clearFailure();
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="coarse:min-h-touch coarse:min-w-touch gap-2 px-1.5">
           <Avatar aria-hidden className="size-6">
@@ -63,25 +71,40 @@ export function UserMenu() {
               </DropdownMenuRadioGroup>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-          {DIRECTION_SWITCH && (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className={ITEM}>
-                <ArrowLeftRightIcon aria-hidden />
-                {t('shell.user.direction')}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup
-                  value={dir}
-                  onValueChange={(value) => setDir(value === 'rtl' ? 'rtl' : 'ltr')}
-                >
-                  {DIRECTIONS.map((value) => (
-                    <DropdownMenuRadioItem key={value} value={value} className={ITEM}>
-                      {t(`shell.direction.${value}`)}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className={ITEM}>
+              <LanguagesIcon aria-hidden />
+              {t('shell.user.language')}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={language}
+                onValueChange={(code) => {
+                  // Closes on success; on failure the menu stays open to show the error.
+                  void setLanguage(code).then((applied) => applied && setOpen(false));
+                }}
+              >
+                {options.map((option) => (
+                  // Each option is in its own language and direction, whatever the page is in.
+                  <DropdownMenuRadioItem
+                    key={option.code}
+                    value={option.code}
+                    lang={option.code}
+                    dir={option.dir}
+                    onSelect={(event) => event.preventDefault()}
+                    className={ITEM}
+                  >
+                    {option.nativeName}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          {/* Beside the Language row, not inside its submenu: that closes on the click. */}
+          {failedLanguage && (
+            <p role="alert" className="px-2 py-1.5 text-xs text-destructive">
+              {t('shell.user.languageError', { language: failedLanguage.nativeName })}
+            </p>
           )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

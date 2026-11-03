@@ -14,8 +14,11 @@ import { Kbd } from '@ssdashboard/ui/components/kbd';
 import { SearchIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { t } from '@/i18n/t';
+import { useTranslation } from 'react-i18next';
 import { navGroups, visibleNavItems } from './nav';
+
+/** The palette shortcut as drawn on the key: not text to translate. */
+const SHORTCUT = { apple: '⌘ K', other: 'Ctrl K' } as const;
 
 const noSubscribe = () => () => {};
 const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
@@ -25,6 +28,7 @@ const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
  * fields included; Esc closes it and focus goes back where it was.
  */
 export function CommandPalette() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -61,7 +65,7 @@ export function CommandPalette() {
         <SearchIcon aria-hidden data-icon="inline-start" />
         <span className="max-sm:sr-only">{t('shell.topbar.palette')}</span>
         <Kbd aria-hidden className="max-sm:hidden">
-          {apple ? '⌘ K' : 'Ctrl K'}
+          {apple ? SHORTCUT.apple : SHORTCUT.other}
         </Kbd>
       </Button>
       <CommandDialog

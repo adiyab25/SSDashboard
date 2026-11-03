@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from 'next/font/google';
-import { t } from '@/i18n/t';
+import { languageScript } from '@/i18n/language-config';
 import { AppShell } from '@/shell/app-shell';
-import { DIRECTION_SWITCH, directionScript } from '@/shell/direction-config';
+import { SkipLink } from '@/shell/skip-link';
 import { Providers } from './providers';
 import './globals.css';
 
@@ -28,9 +28,10 @@ export const metadata: Metadata = {
   description: 'Warehouse and ERP back office',
 };
 
-// Static under cacheComponents: no cookies() or headers() here. Theme and direction are
-// browser state, applied before paint by next-themes and the development direction script.
-// Language and direction switching come with feature 5 (localization).
+// Static under cacheComponents: no cookies() or headers() here. Theme, language, and
+// direction are browser state, applied before paint by next-themes and the language script.
+// The server markup is always English left to right; the saved language is applied after
+// hydration (spec 0004), so the markup and the first client render match.
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html
@@ -40,16 +41,11 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
       suppressHydrationWarning
     >
       <head>
-        {DIRECTION_SWITCH && <script dangerouslySetInnerHTML={{ __html: directionScript }} />}
+        <script dangerouslySetInnerHTML={{ __html: languageScript }} />
       </head>
       <body>
-        <a
-          href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:shadow-md"
-        >
-          {t('shell.skipLink')}
-        </a>
         <Providers>
+          <SkipLink />
           <AppShell>{children}</AppShell>
         </Providers>
       </body>
