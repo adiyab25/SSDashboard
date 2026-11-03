@@ -32,7 +32,7 @@ Core entities every module builds on: products and variants, locations (warehous
   - [x] Ledger posting core: inbound, outbound, costing, dates, reversals, reads (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-12)
   - [x] Lots, serials, and reservations (AC-4, AC-8, AC-9)
   - [x] Numbering, nightly reconciliation, and scale check (AC-10, AC-11, AC-14)
-- [ ] Verify it: `/check verify data model`
+- [x] Verify it: `/check verify data model`
 - [ ] Test it: `/test data model`
 - [ ] Review it (fresh model): `/check review data model`
 - [ ] Document it: `/document data model`
