@@ -35,7 +35,7 @@ Core entities every module builds on: products and variants, locations (warehous
 - [x] Verify it: `/check verify data model`
 - [x] Test it: `/test data model`
 - [x] Review it (fresh model): `/check review data model`
-- [ ] Document it: `/document data model`
+- [x] Document it: `/document data model`
 Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`
 
 ### 4. Design system & UI foundation · needs a decision
