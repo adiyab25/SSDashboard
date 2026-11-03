@@ -20,6 +20,10 @@ pnpm --filter @ssdashboard/db test:e2e           # Against Postgres from deploy/
 
 - Tables live under `src/schema/`, one file per module, re-exported from `src/schema/index.ts`.
 - Review every generated SQL migration before committing it; migrations are plain SQL and part of the release.
+- What Drizzle cannot express (triggers, grants, roles, a partial unique index with `NULLS NOT DISTINCT`, seeds) is written by hand after the generated statements, separated by `--> statement-breakpoint`. `drizzle-kit generate --custom --name <x>` makes an empty migration for hand written SQL only.
+- New tables are readable and writable by `ssdashboard_app` through default privileges. An append only table must `REVOKE UPDATE, DELETE, TRUNCATE` from it and get the `ledger_reject_change` triggers, like the ledger history in `0001`.
+- Composite foreign keys keep a bin in its row's location and a lot on its row's SKU; reuse `(bin_id, location_id)` and `(lot_id, variant_id)` for new tables that reference them.
+- The package also re-exports Drizzle's `sql`, `inArray`, and `SQL` so the api uses this package's single drizzle-orm copy.
 
 ## Gotchas
 
@@ -27,6 +31,8 @@ pnpm --filter @ssdashboard/db test:e2e           # Against Postgres from deploy/
 - Each migration runs in a transaction. Anything that cannot (`CREATE INDEX CONCURRENTLY`) goes in its own small migration that is safe to run twice.
 - Expand and contract: add the new column, move data in SQL, drop the old one at least one minor release later.
 - Extensions keep their own tables in their own schema and never migrate core tables.
+- Migrations create a role and a schema owned by it, so the owner (`MIGRATION_DATABASE_URL`) must be a superuser, or on a managed database hold `CREATEROLE` and membership in `ssdashboard_app`. The e2e suites create scratch databases with that owner URL.
+- `uuidv7()` (the default for every `id`) needs PostgreSQL 18.
 
 ## Agent skills
 

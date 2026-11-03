@@ -21,5 +21,6 @@ pnpm --filter @ssdashboard/contracts test   # test/*.spec.ts
 - Schemas are the source of truth; export types with `z.infer`, never a hand written duplicate.
 - The generated OpenAPI document and client (`openapi-typescript`, added with the first real endpoint) live here and are committed; CI fails if they are stale.
 - ESM with NodeNext resolution: relative imports need the `.js` suffix.
+- Money never touches a float. Amounts and unit costs cross boundaries as `numeric` text (`MoneyString`, `UnitCostString`) and are parsed into `Money` (cents) and `UnitCost` (ten thousandths) on bigints; every rounding is half away from zero, once. Line totals come from `LineAmounts.compute` (`src/money.ts`).
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

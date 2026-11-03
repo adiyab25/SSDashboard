@@ -67,6 +67,12 @@
       "skillPath": "better-auth/organization/SKILL.md",
       "computedHash": "f03e41bc2995c4fceec98f3db85f9638d71cc391fb10f9d85460304d6642efc2"
     },
+    "pg-boss-v12": {
+      "source": "sncollective/snc-platform",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/pg-boss-v12/SKILL.md",
+      "computedHash": "fdf5a8c41409a29ac619be333bac91b910dd2e530021c9e0564f0ff2cf684f43"
+    },
     "pnpm": {
       "source": "antfu/skills",
       "sourceType": "github",
@@ -102,6 +108,12 @@
       "sourceType": "github",
       "skillPath": "skills/tailwind-4-docs/SKILL.md",
       "computedHash": "4900f575f24641b1af459cda37cbb8438ecf3f8f1a63148384197cb730895093"
+    },
+    "tl-pg-boss": {
+      "source": "toddlevy/tl-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/tl-pg-boss/SKILL.md",
+      "computedHash": "1228ca51c4ab35efb0b83c7c86d1f716f915af7b953dbba9f329c2752d1a2bbb"
     },
     "turborepo": {
       "source": "vercel/turborepo",

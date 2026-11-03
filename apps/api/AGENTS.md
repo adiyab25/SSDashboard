@@ -2,14 +2,18 @@
 
 ## Overview
 
-The NestJS backend that holds every business rule. One codebase, three entry points in the `app` image: `api` (HTTP, `src/main.ts`), `worker` (pg-boss jobs, added when the first job lands), and `migrate` (`src/migrate.ts`, runs migrations and exits).
+The NestJS backend that holds every business rule. One codebase, three entry points in the `app` image: `api` (HTTP, `src/main.ts`), `worker` (pg-boss jobs, `src/worker.ts`), and `migrate` (`src/migrate.ts`, runs migrations and exits).
 
 ## Key files
 
 | File | Owns |
 |---|---|
 | `src/main.ts` | HTTP bootstrap: `/api` prefix, trust proxy, extension loading |
-| `src/migrate.ts` | The migrate entry point (the only place migrations run) |
+| `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD` |
+| `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, runs pg-boss jobs (the nightly ledger reconciliation) |
+| `src/database/sql.ts` | `Transaction`/`Executor` types, `pgArray` (arrays as one bound literal), PostgreSQL error code helpers |
+| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers) |
+| `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
 | `src/app.module.ts` | Root module, imports each business module |
 | `src/config/env.ts` | Zod env schema, validated at startup |
 | `src/database/database.module.ts` | Drizzle client provider |
@@ -21,6 +25,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 pnpm --filter @ssdashboard/api dev        # Watch mode on port 3001
 pnpm --filter @ssdashboard/api test       # Unit tests (src/**/*.spec.ts)
 pnpm --filter @ssdashboard/api test:e2e   # test/*.e2e-spec.ts against Postgres (build first)
+pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 ```
 
 ## Conventions
@@ -28,6 +33,8 @@ pnpm --filter @ssdashboard/api test:e2e   # test/*.e2e-spec.ts against Postgres 
 - One folder per business module under `src/<module>/`, holding its module, services, controllers, and specs side by side.
 - Read config only through the injected `ENV` token, never `process.env` directly; add every new variable to `env.ts` and `.env.example`.
 - Database access goes through the Drizzle client from `database.module.ts`; tables are defined in `packages/db`, not here.
+- Import Drizzle helpers (`sql`, `inArray`, `SQL`) from `@ssdashboard/db`, never from `drizzle-orm`: pg-boss's `@opentelemetry/api` peer makes pnpm create a second drizzle-orm copy whose types do not match.
+- Pass an array to raw SQL as one literal, `${pgArray(ids)}::uuid[]`; Drizzle expands a plain JS array into a list of parameters.
 
 ## Gotchas
 
@@ -35,15 +42,20 @@ pnpm --filter @ssdashboard/api test:e2e   # test/*.e2e-spec.ts against Postgres 
 - The api never migrates on boot. Run `pnpm db:migrate`, which builds the api first.
 - Better Auth (feature 6) needs NestJS's body parser off for `/api/auth`, and its cookie stays host only, `Secure`, `HttpOnly`, `SameSite=Lax`.
 - The core never imports an extension; extensions load by dynamic import only.
+- `DATABASE_URL` is the application role, which cannot create databases. The e2e helpers create scratch databases with `MIGRATION_DATABASE_URL` (the owner) and run the ledger as the app role with `options=-c role=ssdashboard_app`.
+- `test/scale.e2e-spec.ts` seeds 100,000 SKUs and 1,000,000 movements; it adds about 1m45s to `test:e2e`.
 
 ## Agent skills
 
 - [nestjs-best-practices](../../.claude/skills/nestjs-best-practices/): `kadajett/agent-nestjs-skills`, modules, DI, security, performance
 - [drizzle-orm-patterns](../../.claude/skills/drizzle-orm-patterns/): `giuseppe-trisciuoglio/developer-kit`, queries, transactions, row locks
+- [pg-boss-v12](../../.claude/skills/pg-boss-v12/): `sncollective/snc-platform`, pg-boss v12 API reference (send, work, schedule, createQueue). Written inside another project: its version notes describe that project, not ours
+- [tl-pg-boss](../../.claude/skills/tl-pg-boss/): `toddlevy/tl-agent-skills`, pg-boss job patterns (cron, retries, exactly once, testing, monitoring)
 - Auth work (feature 6), from `better-auth/skills`: [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/), [better-auth-security-best-practices](../../.claude/skills/better-auth-security-best-practices/), [email-and-password-best-practices](../../.claude/skills/email-and-password-best-practices/), [two-factor-authentication-best-practices](../../.claude/skills/two-factor-authentication-best-practices/), [organization-best-practices](../../.claude/skills/organization-best-practices/), [create-auth](../../.claude/skills/create-auth/). Move these to `src/auth/AGENTS.md` once that folder exists.
 
 ## Related specs
 
 - [0001 Stack & architecture](../../docs/specs/0001-stack-architecture/index.md)
+- [0002 Core data model](../../docs/specs/0002-core-data-model/index.md)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
