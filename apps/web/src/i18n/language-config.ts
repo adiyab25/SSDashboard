@@ -16,7 +16,7 @@ export function directionOf(code: string): TextDirection {
 }
 
 /** How long the page stays hidden while a language other than English loads. */
-export const HIDE_CAP_MS = 2000;
+export const HIDE_CAP_MS = 10_000;
 
 /**
  * Runs in `<head>` before first paint, in production too. Sets `lang` and `dir` from the

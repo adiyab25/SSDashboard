@@ -4,14 +4,14 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 ## UI / manual
 - [x] Open the user menu → Language lists "English" and "العربية", each with its own `lang` and `dir` → AC-1
 - [x] Choose العربية → all shell text, `<html lang>`, `<html dir>`, menus, popovers, and the sidebar flip with no reload; type in the `/design` search box first and confirm the text stays → AC-1, AC-2
-- [ ] Reload → the page opens in Arabic with no English flash (throttle the network to Slow 3G and watch the first paint) → AC-3
+- [x] Reload → the page opens in Arabic with no English flash (throttle the network to Slow 3G and watch the first paint) → AC-3
 - [x] Clear cookies, set the `default_language` setting to `ar`, load → Arabic, and cookie `ss_lang=ar` is written → AC-3, AC-4
 - [x] Set cookie `ss_lang=fr` (not enabled) → the page opens in the default language and the cookie is rewritten → AC-4
 - [x] Block `/api/config` (offline) with `ss_lang=ar` set → Arabic stays; with no cookie → English left to right → AC-4
 - [x] Block the Arabic chunk, then choose العربية → English stays, cookie unchanged, the error line appears under Language, and it clears when the menu is reopened → AC-13
 - [x] Choose العربية then English quickly on a slow network → ends in English → AC-13
 - [x] Load with `ss_lang=ar` and watch the console → no hydration warning → AC-3
-- [ ] Add `extensions/<client>/locales/fr.json` (with `_meta`) and `fr` to `languages` → "Français" appears; translated keys show French, the rest English → AC-11
+- [x] Add `extensions/<client>/locales/fr.json` (with `_meta`) and `fr` to `languages` → "Français" appears; translated keys show French, the rest English → AC-11
 - [x] Break that file (invalid JSON, or remove `_meta`) → the language is hidden, a console warning appears, the shell works → AC-11
 - [x] At 375px wide in Arabic → no sideways scroll, header controls do not overlap; run axe in light and dark, English and Arabic → AC-12
 - [x] In Arabic, the version on the home page keeps `0.0.0-dev` order (computed `direction: ltr`) → AC-10
