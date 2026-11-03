@@ -33,7 +33,7 @@ Core entities every module builds on: products and variants, locations (warehous
   - [x] Lots, serials, and reservations (AC-4, AC-8, AC-9)
   - [x] Numbering, nightly reconciliation, and scale check (AC-10, AC-11, AC-14)
 - [x] Verify it: `/check verify data model`
-- [ ] Test it: `/test data model`
+- [x] Test it: `/test data model`
 - [ ] Review it (fresh model): `/check review data model`
 - [ ] Document it: `/document data model`
 Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`

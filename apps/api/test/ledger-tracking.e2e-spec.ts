@@ -421,5 +421,87 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
 
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(5);
     });
+
+    it('sums on hand over every bin when protecting reserved stock (covers: AC-4)', async () => {
+      const variantId = await make.variant();
+      const locationId = await make.location();
+      const [binA, binB] = [await make.bin(locationId), await make.bin(locationId)];
+      await h.ledger.post(
+        posting([
+          { variantId, locationId, binId: binA, quantity: 4, unitCost: '1' },
+          { variantId, locationId, binId: binB, quantity: 4, unitCost: '1' },
+        ]),
+      );
+      await reservation({ variantId, locationId }, 6);
+
+      // 8 on hand across both bins, 6 reserved: 2 may leave without the reservation.
+      await h.ledger.post(posting([{ variantId, locationId, binId: binA, quantity: -2 }]));
+      await rejects(
+        h.ledger.post(posting([{ variantId, locationId, binId: binB, quantity: -1 }])),
+        'InsufficientStock',
+      );
+    });
+
+    it('serializes unreserved shipments from two bins against one reservation (covers: AC-4)', async () => {
+      const variantId = await make.variant();
+      const locationId = await make.location();
+      const [binA, binB] = [await make.bin(locationId), await make.bin(locationId)];
+      await h.ledger.post(
+        posting([
+          { variantId, locationId, binId: binA, quantity: 5, unitCost: '1' },
+          { variantId, locationId, binId: binB, quantity: 5, unitCost: '1' },
+        ]),
+      );
+      await reservation({ variantId, locationId }, 6);
+
+      // 10 on hand, 6 reserved: only 4 of 6 parallel unreserved shipments may leave,
+      // whichever bin each takes from.
+      const results = await Promise.allSettled(
+        Array.from({ length: 6 }, (_, i) =>
+          h.ledger.post(
+            posting([{ variantId, locationId, binId: i % 2 ? binA : binB, quantity: -1 }]),
+          ),
+        ),
+      );
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(4);
+      const { rows } = await h.owner.pool.query<{ on_hand: number }>(
+        'SELECT sum(on_hand)::int AS on_hand FROM stock_levels WHERE variant_id = $1',
+        [variantId],
+      );
+      expect(rows[0]?.on_hand).toBe(6);
+    });
+
+    it('rejects a reservation for a lot of another SKU', async () => {
+      const key = await stocked(5);
+      const foreignLot = await make.lot(await make.variant({ tracking: 'lot' }));
+
+      await rejects(
+        h.ledger.reserve({
+          ...key,
+          lotId: foreignLot,
+          quantity: 1,
+          sourceType: 'sales_order',
+          sourceId: randomUUID(),
+          sourceLineId: randomUUID(),
+        }),
+        'UnknownReference',
+      );
+    });
+
+    it('rejects releasing a reservation that does not exist', async () => {
+      await rejects(h.ledger.release({ reservationId: randomUUID() }), 'NotFound');
+    });
+
+    it('lets an allow_negative location reserve beyond what is available (covers: AC-9)', async () => {
+      const key = {
+        variantId: await make.variant(),
+        locationId: await make.location({ allowNegative: true }),
+      };
+
+      const held = await reservation(key, 3);
+
+      expect(held).toMatchObject({ quantity: 3, openQuantity: 3, status: 'active' });
+    });
   });
 });

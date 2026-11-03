@@ -533,7 +533,78 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
     });
   });
 
+  describe('input and reference errors', () => {
+    it('rejects a zero quantity before touching the database (covers: AC-3)', async () => {
+      const key = await sku();
+
+      await rejects(h.ledger.post(posting([{ ...key, quantity: 0 }])), 'InvalidInput');
+    });
+
+    it('rejects a bin that belongs to another location', async () => {
+      const key = await sku();
+      const elsewhere = await make.bin(await make.location());
+
+      await rejects(
+        h.ledger.post(posting([{ ...key, binId: elsewhere, quantity: 1, unitCost: '1' }])),
+        'UnknownReference',
+      );
+    });
+
+    it('rejects an unknown SKU', async () => {
+      const locationId = await make.location();
+
+      await rejects(
+        h.ledger.post(
+          posting([{ variantId: randomUUID(), locationId, quantity: 1, unitCost: '1' }]),
+        ),
+        'UnknownReference',
+      );
+    });
+
+    it('rejects reversing a group that does not exist', async () => {
+      await rejects(
+        h.ledger.reverse({ groupId: randomUUID(), idempotencyKey: randomUUID(), reasonCode: 'x' }),
+        'NotFound',
+      );
+    });
+
+    it('keeps a unit cost exactly as given, to 4 decimals (covers: AC-3)', async () => {
+      const key = await sku();
+
+      const result = await h.ledger.post(posting([{ ...key, quantity: 3, unitCost: '0.0001' }]));
+
+      expect(result.movements[0]).toMatchObject({ unitCost: '0.0001', totalCost: '0.00' });
+    });
+  });
+
+  describe('concurrent repeats of one key (AC-5)', () => {
+    it('moves stock once when the same key arrives many times at once (covers: AC-5)', async () => {
+      const key = await sku();
+      const input = posting([{ ...key, quantity: 7, unitCost: '1.0000' }]);
+
+      const results = await Promise.all(Array.from({ length: 10 }, () => h.ledger.post(input)));
+
+      expect(new Set(results.map((r) => r.groupId)).size).toBe(1);
+      expect((await level(h.owner, key)).onHand).toBe(7);
+    });
+  });
+
   describe('reads (AC-1, AC-9)', () => {
+    it('filters balances by location', async () => {
+      const variantId = await make.variant();
+      const [here, there] = [await make.location(), await make.location()];
+      await h.ledger.post(
+        posting([
+          { variantId, locationId: here, quantity: 1, unitCost: '1' },
+          { variantId, locationId: there, quantity: 2, unitCost: '1' },
+        ]),
+      );
+
+      const page = await h.ledger.getLevels({ variantId, locationId: there });
+
+      expect(page.levels.map((l) => [l.locationId, l.onHand])).toEqual([[there, 2]]);
+    });
+
     it('pages balances by cursor with reserved and available per SKU, location, and lot', async () => {
       const variantId = await make.variant();
       const locations = [await make.location(), await make.location(), await make.location()];
