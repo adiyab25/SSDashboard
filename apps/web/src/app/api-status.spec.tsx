@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiStatus } from './api-status';
 
@@ -93,6 +94,20 @@ describe('ApiStatus', () => {
 
     expect(await screen.findByText(/^unreachable \(/)).toBeInTheDocument();
     expect(screen.queryByText('starting')).not.toBeInTheDocument();
+  });
+
+  it('checks again when asked, and shows the new answer', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ status: 'ok', version: '0.1.0', database: 'up' }),
+    );
+    render(<ApiStatus />);
+    await screen.findByText('unreachable (Failed to fetch)');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Check again' }));
+
+    expect(await valueOf('API')).toBe('ok');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('cancels the request when it leaves the page', () => {

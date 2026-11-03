@@ -20,6 +20,7 @@ describe('loadEnv', () => {
       'EXTENSIONS',
       'LEDGER_RECONCILE_CRON',
       'APP_VERSION',
+      'CLIENT_DISPLAY_NAME',
     ]) {
       vi.stubEnv(name, undefined);
     }
@@ -45,6 +46,7 @@ describe('loadEnv', () => {
         EXTENSIONS: [],
         LEDGER_RECONCILE_CRON: '0 2 * * *',
         APP_VERSION: '0.0.0-dev',
+        CLIENT_DISPLAY_NAME: 'SSDashboard',
       });
     });
 
@@ -82,6 +84,18 @@ describe('loadEnv', () => {
       expect(loadEnv().LEDGER_RECONCILE_CRON).toBe('15 1 * * 1');
     });
 
+    it('keeps the install name, trimmed', () => {
+      vi.stubEnv('CLIENT_DISPLAY_NAME', '  Acme Home  ');
+
+      expect(loadEnv().CLIENT_DISPLAY_NAME).toBe('Acme Home');
+    });
+
+    it('falls back to SSDashboard when the install name is blank', () => {
+      vi.stubEnv('CLIENT_DISPLAY_NAME', '   ');
+
+      expect(loadEnv().CLIENT_DISPLAY_NAME).toBe('SSDashboard');
+    });
+
     it('keeps the release version set in the image', () => {
       vi.stubEnv('APP_VERSION', '1.4.2');
 
@@ -112,6 +126,12 @@ describe('loadEnv', () => {
         'MIGRATION_DATABASE_URL',
       ],
       ['an empty APP_DB_PASSWORD', 'APP_DB_PASSWORD', '', 'APP_DB_PASSWORD'],
+      [
+        'an install name over 80 characters',
+        'CLIENT_DISPLAY_NAME',
+        'x'.repeat(81),
+        'CLIENT_DISPLAY_NAME',
+      ],
     ])('stops the process for %s', (_case, name, value, reported) => {
       vi.stubEnv(name, value);
 

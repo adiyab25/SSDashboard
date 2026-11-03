@@ -54,6 +54,7 @@ services:
     environment:
       <<: *app-env
       PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+      CLIENT_DISPLAY_NAME: ${CLIENT_DISPLAY_NAME:-}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
     depends_on:
       migrate:

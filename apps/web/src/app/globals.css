@@ -1,1 +1,4 @@
-@import 'tailwindcss';
+@import '@ssdashboard/ui/globals.css';
+
+/* Tailwind v4 does not scan linked workspace packages on its own. */
+@source '../../../../packages/ui/src';

@@ -20,8 +20,12 @@
         "PORT",
         "API_INTERNAL_URL",
         "EXTENSIONS",
-        "APP_VERSION"
+        "APP_VERSION",
+        "CLIENT_DISPLAY_NAME"
       ]
+    },
+    "test": {
+      "dependsOn": ["^build"]
     },
     "lint": {
       "dependsOn": ["^build"]

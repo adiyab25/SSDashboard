@@ -27,6 +27,13 @@ const EnvSchema = z.object({
     .default('0 2 * * *'),
   /** The release version, set in the app image. */
   APP_VERSION: z.string().default('0.0.0-dev'),
+  /** The install's name shown in the back office header. Blank counts as unset. */
+  CLIENT_DISPLAY_NAME: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(80))
+    .optional()
+    .transform((value) => value || 'SSDashboard'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

@@ -10,7 +10,8 @@
   "exports": {
     "./tsconfig/*.json": "./tsconfig/*.json",
     "./eslint/base": "./eslint/base.js",
-    "./eslint/next": "./eslint/next.js"
+    "./eslint/next": "./eslint/next.js",
+    "./eslint/react": "./eslint/react.js"
   },
   "dependencies": {
     "@eslint/js": "^9.39.5",

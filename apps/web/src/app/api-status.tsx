@@ -1,7 +1,9 @@
 'use client';
 
 import { HealthResponse } from '@ssdashboard/contracts';
+import { Button } from '@ssdashboard/ui/components/button';
 import { useEffect, useState } from 'react';
+import { t } from '@/i18n/t';
 
 type State =
   | { kind: 'loading' }
@@ -11,6 +13,7 @@ type State =
 /** Calls the api through the relative `/api` path, the same way every install does. */
 export function ApiStatus() {
   const [state, setState] = useState<State>({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -27,26 +30,38 @@ export function ApiStatus() {
         });
       });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
 
   return (
-    <dl className="mt-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1" aria-live="polite">
-      <dt className="font-medium">API</dt>
-      <dd>
-        {state.kind === 'loading'
-          ? 'checking…'
-          : state.kind === 'error'
-            ? `unreachable (${state.message})`
-            : state.health.status}
-      </dd>
-      {state.kind === 'ready' && (
-        <>
-          <dt className="font-medium">Database</dt>
-          <dd>{state.health.database}</dd>
-          <dt className="font-medium">Version</dt>
-          <dd>{state.health.version}</dd>
-        </>
-      )}
-    </dl>
+    <div className="mt-6 flex flex-col items-start gap-4">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1" aria-live="polite">
+        <dt className="font-medium">{t('home.status.api')}</dt>
+        <dd>
+          {state.kind === 'loading'
+            ? t('home.status.checking')
+            : state.kind === 'error'
+              ? `${t('home.status.unreachable')} (${state.message})`
+              : state.health.status}
+        </dd>
+        {state.kind === 'ready' && (
+          <>
+            <dt className="font-medium">{t('home.status.database')}</dt>
+            <dd>{state.health.database}</dd>
+            <dt className="font-medium">{t('home.status.version')}</dt>
+            <dd className="tabular-nums">{state.health.version}</dd>
+          </>
+        )}
+      </dl>
+      <Button
+        variant="outline"
+        disabled={state.kind === 'loading'}
+        onClick={() => {
+          setState({ kind: 'loading' });
+          setAttempt((count) => count + 1);
+        }}
+      >
+        {t('home.status.checkAgain')}
+      </Button>
+    </div>
   );
 }

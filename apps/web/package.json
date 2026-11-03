@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@ssdashboard/contracts": "workspace:*",
+    "@ssdashboard/ui": "workspace:*",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"

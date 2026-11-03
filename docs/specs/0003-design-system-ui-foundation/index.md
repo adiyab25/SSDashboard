@@ -1,7 +1,7 @@
 # 0003. Build the back office design system on shadcn/ui (Radix, Vega, zinc) in a shared `packages/ui`, with the app shell as its first real screen
 
 **Date**: 2026-11-03
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 
