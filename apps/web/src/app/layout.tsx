@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from 'next/font/google';
 import { t } from '@/i18n/t';
 import { AppShell } from '@/shell/app-shell';
-import { DIRECTION_SWITCH, directionScript } from '@/shell/direction';
+import { DIRECTION_SWITCH, directionScript } from '@/shell/direction-config';
 import { Providers } from './providers';
 import './globals.css';
 

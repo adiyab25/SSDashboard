@@ -5,6 +5,29 @@
 /* Touch screens: shell controls grow to 44px (spec 0003, AC-14). */
 @custom-variant coarse (@media (pointer: coarse));
 
+/*
+ * The /design gallery pins states with `data-state-preview="hover|focus|active"`. Only
+ * inside its `[data-gallery]` wrapper, so the attribute does nothing anywhere else.
+ */
+@custom-variant hover {
+  @media (hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+  &:where([data-gallery] [data-state-preview~='hover']) {
+    @slot;
+  }
+}
+@custom-variant active {
+  &:active {
+    @slot;
+  }
+  &:where([data-gallery] [data-state-preview~='active']) {
+    @slot;
+  }
+}
+
 /* The state variants shadcn components use (vendored from `shadcn/tailwind.css`). */
 @custom-variant data-open {
   &:where([data-state='open']),
@@ -193,7 +216,8 @@
 
 /* One focus style everywhere: a 2px ring outline with a 2px gap. */
 @utility focus-ring {
-  &:focus-visible {
+  &:focus-visible,
+  [data-gallery] &[data-state-preview~='focus'] {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
@@ -201,7 +225,8 @@
 
 /* The same ring drawn inside, for items in menus and lists that clip their overflow. */
 @utility focus-ring-inset {
-  &:focus-visible {
+  &:focus-visible,
+  [data-gallery] &[data-state-preview~='focus'] {
     outline: 2px solid var(--ring);
     outline-offset: -2px;
   }

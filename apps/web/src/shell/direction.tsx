@@ -2,19 +2,11 @@
 
 import { Direction } from 'radix-ui';
 import { createContext, use, useCallback, useMemo, useSyncExternalStore } from 'react';
+import { DIRECTION_STORAGE_KEY as STORAGE_KEY, DIRECTION_SWITCH } from './direction-config';
 
 export type TextDirection = 'ltr' | 'rtl';
 
-/**
- * Development only, until feature 5 replaces it with the language switch. Inlined at
- * build time, so production builds carry neither the switch nor the head script.
- */
-export const DIRECTION_SWITCH = process.env.NODE_ENV !== 'production';
-
-const STORAGE_KEY = 'ss_dir';
-
-/** Runs in `<head>` before first paint so a right to left page never flashes left to right. */
-export const directionScript = `try{var d=localStorage.getItem('${STORAGE_KEY}');if(d==='rtl'||d==='ltr')document.documentElement.dir=d}catch(e){}`;
+export { DIRECTION_SWITCH } from './direction-config';
 
 const listeners = new Set<() => void>();
 

@@ -13,6 +13,7 @@
 | `src/lib/utils.ts` | `cn()` |
 | `src/hooks/*.ts` | Hooks the components use (`use-mobile`) |
 | `src/test/axe.ts` | `expectNoAxeViolations()` for component tests |
+| `DESIGN.md` | The written design standard: color roles with measured contrast, type, density, focus, icons, and table, form, and feedback rules |
 
 ## Commands
 
