@@ -49,7 +49,9 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:5433/ssdashboard
+      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:5433/ssdashboard
+      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:5433/ssdashboard
+      APP_DB_PASSWORD: ssdashboard_app
       API_INTERNAL_URL: http://localhost:3001
     steps:
       - uses: actions/checkout@v5

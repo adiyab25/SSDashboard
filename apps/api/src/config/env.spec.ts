@@ -11,7 +11,16 @@ describe('loadEnv', () => {
   let errorLog: MockInstance<typeof console.error>;
 
   beforeEach(() => {
-    for (const name of ['NODE_ENV', 'PORT', 'DATABASE_URL', 'EXTENSIONS', 'APP_VERSION']) {
+    for (const name of [
+      'NODE_ENV',
+      'PORT',
+      'DATABASE_URL',
+      'MIGRATION_DATABASE_URL',
+      'APP_DB_PASSWORD',
+      'EXTENSIONS',
+      'LEDGER_RECONCILE_CRON',
+      'APP_VERSION',
+    ]) {
       vi.stubEnv(name, undefined);
     }
     vi.stubEnv('DATABASE_URL', VALID_URL);
@@ -34,6 +43,7 @@ describe('loadEnv', () => {
         PORT: 3001,
         DATABASE_URL: VALID_URL,
         EXTENSIONS: [],
+        LEDGER_RECONCILE_CRON: '0 2 * * *',
         APP_VERSION: '0.0.0-dev',
       });
     });
@@ -54,6 +64,22 @@ describe('loadEnv', () => {
       vi.stubEnv('EXTENSIONS', ' @acme/pricing, @acme/labels ,, ');
 
       expect(loadEnv().EXTENSIONS).toEqual(['@acme/pricing', '@acme/labels']);
+    });
+
+    it('reads the owner role URL and app role password that only migrate uses', () => {
+      vi.stubEnv('MIGRATION_DATABASE_URL', 'postgres://owner:pw@localhost:5433/ssdashboard');
+      vi.stubEnv('APP_DB_PASSWORD', 'secret');
+
+      expect(loadEnv()).toMatchObject({
+        MIGRATION_DATABASE_URL: 'postgres://owner:pw@localhost:5433/ssdashboard',
+        APP_DB_PASSWORD: 'secret',
+      });
+    });
+
+    it('keeps a custom reconciliation schedule', () => {
+      vi.stubEnv('LEDGER_RECONCILE_CRON', '15 1 * * 1');
+
+      expect(loadEnv().LEDGER_RECONCILE_CRON).toBe('15 1 * * 1');
     });
 
     it('keeps the release version set in the image', () => {
@@ -78,6 +104,14 @@ describe('loadEnv', () => {
       ['a PORT that is not a number', 'PORT', 'http', 'PORT'],
       ['a PORT of zero', 'PORT', '0', 'PORT'],
       ['an unknown NODE_ENV', 'NODE_ENV', 'staging', 'NODE_ENV'],
+      ['a cron with too few fields', 'LEDGER_RECONCILE_CRON', '0 2 *', 'LEDGER_RECONCILE_CRON'],
+      [
+        'a non postgres MIGRATION_DATABASE_URL',
+        'MIGRATION_DATABASE_URL',
+        'mysql://u:p@localhost/app',
+        'MIGRATION_DATABASE_URL',
+      ],
+      ['an empty APP_DB_PASSWORD', 'APP_DB_PASSWORD', '', 'APP_DB_PASSWORD'],
     ])('stops the process for %s', (_case, name, value, reported) => {
       vi.stubEnv(name, value);
 

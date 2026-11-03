@@ -7,9 +7,11 @@ import pg from 'pg';
 const ROOT_ENV = new URL('../../../.env', import.meta.url);
 
 export function adminUrl(): string {
-  if (!process.env.DATABASE_URL && existsSync(ROOT_ENV)) process.loadEnvFile(ROOT_ENV);
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Set DATABASE_URL (or create the root .env) to run the e2e tests.');
+  if (!process.env.MIGRATION_DATABASE_URL && existsSync(ROOT_ENV)) process.loadEnvFile(ROOT_ENV);
+  // Scratch databases are created by the owner role; DATABASE_URL is the application role.
+  const url = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!url)
+    throw new Error('Set MIGRATION_DATABASE_URL (or create the root .env) to run the e2e tests.');
   return url;
 }
 

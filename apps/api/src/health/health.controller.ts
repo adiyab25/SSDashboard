@@ -1,7 +1,6 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import type { HealthResponse } from '@ssdashboard/contracts';
-import type { DatabaseConnection } from '@ssdashboard/db';
-import { sql } from 'drizzle-orm';
+import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';

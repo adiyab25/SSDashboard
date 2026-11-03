@@ -27,3 +27,26 @@ export async function runMigrations(connectionString: string): Promise<void> {
     await client.end();
   }
 }
+
+/** The role the api and worker connect as (spec 0002). The core data model migration creates it. */
+export const APP_ROLE = 'ssdashboard_app';
+
+/**
+ * Lets the application role log in with the given password. Runs as the owner role after
+ * migrating, so each install sets (or rotates) the password from its own secret.
+ */
+export async function setAppRoleLogin(connectionString: string, password: string): Promise<void> {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ statement: string }>(
+      "SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', $1::text, $2::text) AS statement",
+      [APP_ROLE, password],
+    );
+    const statement = rows[0]?.statement;
+    if (!statement) throw new Error('Could not build the application role statement');
+    await client.query(statement);
+  } finally {
+    await client.end();
+  }
+}

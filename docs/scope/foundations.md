@@ -23,10 +23,20 @@ Capture conventions, then install lint, format, type checks, pre commit hooks, a
   - [x] CI on GitHub Actions
 Code in `packages/config/eslint/`, `.husky/`, `.github/workflows/`
 
-### 3. Data model · needs a decision · GA
+### 3. Data model · GA · done
 Core entities every module builds on: products and variants, locations (warehouse, showroom, bin), an append only stock ledger, lots and serials, parties (suppliers, factories, customers), and cost and price on every transaction.
 **Done when:** stock on hand per SKU per location is derived from immutable movements; movements carry quantity, unit cost, lot or serial, and source document; purchase and sales lines carry price, discount, and tax amount; the model handles 100,000+ SKUs and supports purchasing, sales, production, and the accounting export without a breaking migration. (basis: data model is the costliest thing to redo; stock as an append only ledger)
-- [ ] Design it (spec): `/architect data model`
+- [x] Design it (spec): `/architect data model`
+- [x] Build it: `/develop data model`
+  - [x] Schema, value objects, and database roles (AC-2, AC-3, AC-12, AC-13)
+  - [x] Ledger posting core: inbound, outbound, costing, dates, reversals, reads (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-12)
+  - [x] Lots, serials, and reservations (AC-4, AC-8, AC-9)
+  - [x] Numbering, nightly reconciliation, and scale check (AC-10, AC-11, AC-14)
+- [x] Verify it: `/check verify data model`
+- [x] Test it: `/test data model`
+- [x] Review it (fresh model): `/check review data model`
+- [x] Document it: `/document data model`
+Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`
 
 ### 4. Design system & UI foundation · needs a decision
 Visual language, layout, and base components for a dense, data heavy back office (tables, forms, scan screens), mirrored correctly for right to left.

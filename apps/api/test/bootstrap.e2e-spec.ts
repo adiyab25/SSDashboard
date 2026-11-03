@@ -34,6 +34,7 @@ describe.skipIf(!hasShell)('deploy/bootstrap.sh', () => {
     const env = readEnv();
     expect(value(env, 'POSTGRES_PASSWORD')).toMatch(/^[0-9a-f]{64}$/);
     expect(value(env, 'BETTER_AUTH_SECRET')).toMatch(/^[0-9a-f]{64}$/);
+    expect(value(env, 'APP_DB_PASSWORD')).toMatch(/^[0-9a-f]{64}$/);
     expect(env).not.toContain('__GENERATED__');
   });
 
@@ -41,7 +42,10 @@ describe.skipIf(!hasShell)('deploy/bootstrap.sh', () => {
     bootstrap();
 
     const env = readEnv();
-    expect(value(env, 'POSTGRES_PASSWORD')).not.toBe(value(env, 'BETTER_AUTH_SECRET'));
+    const secrets = ['POSTGRES_PASSWORD', 'APP_DB_PASSWORD', 'BETTER_AUTH_SECRET'].map((key) =>
+      value(env, key),
+    );
+    expect(new Set(secrets).size).toBe(3);
   });
 
   it('keeps every other setting from .env.example unchanged', () => {
@@ -49,7 +53,7 @@ describe.skipIf(!hasShell)('deploy/bootstrap.sh', () => {
 
     const example = readFileSync(join(dir, '.env.example'), 'utf8');
     const strip = (text: string) =>
-      text.replace(/^(POSTGRES_PASSWORD|BETTER_AUTH_SECRET)=.*$/gm, '');
+      text.replace(/^(POSTGRES_PASSWORD|APP_DB_PASSWORD|BETTER_AUTH_SECRET)=.*$/gm, '');
     expect(strip(readEnv())).toBe(strip(example));
   });
 

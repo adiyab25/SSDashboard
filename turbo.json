@@ -12,7 +12,16 @@
       "dependsOn": ["^build"],
       "cache": false,
       "persistent": true,
-      "passThroughEnv": ["DATABASE_URL", "PORT", "API_INTERNAL_URL", "EXTENSIONS", "APP_VERSION"]
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "MIGRATION_DATABASE_URL",
+        "APP_DB_PASSWORD",
+        "LEDGER_RECONCILE_CRON",
+        "PORT",
+        "API_INTERNAL_URL",
+        "EXTENSIONS",
+        "APP_VERSION"
+      ]
     },
     "lint": {
       "dependsOn": ["^build"]

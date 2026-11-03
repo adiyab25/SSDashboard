@@ -1,3 +1,7 @@
-// Drizzle tables for every module live here (and in files this re-exports).
-// Each feature adds its own tables; the scaffold ships none.
-export {};
+// Drizzle tables for every module, one file per module.
+export * from './catalog.js';
+export type { LocalizedText } from './columns.js';
+export * from './inventory.js';
+export * from './locations.js';
+export * from './parties.js';
+export * from './platform.js';
