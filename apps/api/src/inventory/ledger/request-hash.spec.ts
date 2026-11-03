@@ -47,6 +47,17 @@ describe('requestHash', () => {
     expect(requestHash(request({ effectiveAt: undefined }))).toBe(requestHash(request()));
   });
 
+  it('treats the same cost written two ways as one request (covers: AC-5)', () => {
+    const plain = request({
+      lines: [{ variantId: A, locationId: L, quantity: 5, unitCost: '10' }],
+    });
+    const padded = request({
+      lines: [{ variantId: A, locationId: L, quantity: 5, unitCost: '10.0000' }],
+    });
+
+    expect(requestHash(plain)).toBe(requestHash(padded));
+  });
+
   it('includes an explicit date', () => {
     const dated = request({ effectiveAt: new Date('2026-11-01T10:00:00Z') });
 

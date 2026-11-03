@@ -503,5 +503,29 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
 
       expect(held).toMatchObject({ quantity: 3, openQuantity: 3, status: 'active' });
     });
+
+    it('reserves a lot tracked SKU only by lot, even where stock may go negative (covers: AC-8)', async () => {
+      const variantId = await make.variant({ tracking: 'lot' });
+      const locationId = await make.location({ allowNegative: true });
+
+      await rejects(reservation({ variantId, locationId }, 1), 'TrackingMismatch');
+    });
+
+    it('refuses a lot on a reservation for a SKU that is not lot tracked (covers: AC-8)', async () => {
+      const key = await stocked(5);
+      const lotId = await make.lot(key.variantId);
+
+      await rejects(
+        h.ledger.reserve({
+          ...key,
+          lotId,
+          quantity: 1,
+          sourceType: 'sales_order',
+          sourceId: randomUUID(),
+          sourceLineId: randomUUID(),
+        }),
+        'TrackingMismatch',
+      );
+    });
   });
 });

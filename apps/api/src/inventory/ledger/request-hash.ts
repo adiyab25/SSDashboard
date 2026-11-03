@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { UnitCost } from '@ssdashboard/contracts';
 
 export interface HashedLine {
   variantId: string;
@@ -48,15 +49,22 @@ function canonical(value: unknown): string {
  * `postedBy`, or a defaulted date, and lines sorted so their order does not matter.
  */
 export function requestHash(request: HashedRequest): string {
-  const lines = [...request.lines].sort(
-    (a, b) =>
-      compare(a.variantId, b.variantId) ||
-      compare(a.locationId, b.locationId) ||
-      compare(a.binId, b.binId) ||
-      compare(a.lotId, b.lotId) ||
-      compare(a.sourceLineId, b.sourceLineId) ||
-      canonical(a).localeCompare(canonical(b)),
-  );
+  const lines = request.lines
+    // `10` and `10.0000` are the same cost, so a retry that formats it differently matches.
+    .map((line) =>
+      line.unitCost === undefined
+        ? line
+        : { ...line, unitCost: UnitCost.of(line.unitCost).toString() },
+    )
+    .sort(
+      (a, b) =>
+        compare(a.variantId, b.variantId) ||
+        compare(a.locationId, b.locationId) ||
+        compare(a.binId, b.binId) ||
+        compare(a.lotId, b.lotId) ||
+        compare(a.sourceLineId, b.sourceLineId) ||
+        compare(canonical(a), canonical(b)),
+    );
   return createHash('sha256')
     .update(canonical({ ...request, lines }))
     .digest('hex');

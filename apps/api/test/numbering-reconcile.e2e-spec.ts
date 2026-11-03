@@ -155,6 +155,12 @@ describe('numbering and reconciliation', { timeout: 60_000 }, () => {
         expect(
           (await openDiscrepancies('serial')).map(({ expected, actual }) => ({ expected, actual })),
         ).toEqual([{ expected: { inStockSerials: 2 }, actual: { inStockSerials: 1 } }]);
+        // A balance rebuild cannot fix a serial count, so it refuses and leaves it open.
+        const [open] = await openDiscrepancies('serial');
+        await expect(
+          reconciliation.rebuildLevel({ discrepancyId: open?.id ?? '', resolvedBy: randomUUID() }),
+        ).rejects.toMatchObject({ code: 'NotRebuildable' });
+        expect(await openDiscrepancies('serial')).toHaveLength(1);
       } finally {
         await h.owner.pool.query(
           `UPDATE serials SET status = 'in_stock', location_id = $2 WHERE variant_id = $1`,

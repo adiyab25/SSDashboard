@@ -28,7 +28,7 @@ import {
 import { SettingsService } from '../../platform/settings.service.js';
 import { costInbound, costOutbound, type BalanceState, type CostedLine } from './costing.js';
 import { LedgerError } from './ledger.errors.js';
-import { lockPairs } from './locks.js';
+import { asLockTimeout, limitLockWait, lockPairs } from './locks.js';
 import { requestHash, type HashedLine } from './request-hash.js';
 
 /** How far ahead of the database clock a posting may be dated. */
@@ -368,6 +368,14 @@ export class LedgerService {
       if (lotId && master.lots.get(lotId) !== parsed.variantId) {
         throw new LedgerError('UnknownReference', 'The lot does not belong to this SKU');
       }
+      // The same lot rules as posting (AC-8): a reservation a shipment can never match
+      // would hold stock forever.
+      if (variant.tracking === 'lot' && !lotId) {
+        throw new LedgerError('TrackingMismatch', 'A lot tracked SKU is reserved by lot');
+      }
+      if (variant.tracking !== 'lot' && lotId) {
+        throw new LedgerError('TrackingMismatch', 'This SKU is not lot tracked');
+      }
 
       await lockPairs(tx, [[parsed.variantId, parsed.locationId]]);
       const available =
@@ -437,10 +445,16 @@ export class LedgerService {
   private async transact<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.connection.db.transaction(work, { isolationLevel: 'read committed' });
+        return await this.connection.db.transaction(
+          async (tx) => {
+            await limitLockWait(tx);
+            return work(tx);
+          },
+          { isolationLevel: 'read committed' },
+        );
       } catch (error) {
         if (attempt === 0 && isRetryable(error)) continue;
-        throw error;
+        throw asLockTimeout(error);
       }
     }
   }
@@ -554,19 +568,27 @@ export class LedgerService {
     const ids = (pick: (line: (typeof lines)[number]) => string | null) => [
       ...new Set(lines.map(pick).filter((id): id is string => id !== null)),
     ];
-    const [variants, locations, bins, lots] = await Promise.all([
-      executor.execute<{ id: string; kind: string; tracking: string; archived: boolean }>(sql`
-        SELECT id, kind, tracking, archived_at IS NOT NULL AS archived
-        FROM product_variants WHERE id = ANY(${pgArray(ids((l) => l.variantId))}::uuid[])`),
-      executor.execute<{ id: string; allow_negative: boolean; archived: boolean }>(sql`
-        SELECT id, allow_negative, archived_at IS NOT NULL AS archived
-        FROM locations WHERE id = ANY(${pgArray(ids((l) => l.locationId))}::uuid[])`),
-      executor.execute<{ id: string; location_id: string; archived: boolean }>(sql`
-        SELECT id, location_id, archived_at IS NOT NULL AS archived
-        FROM bins WHERE id = ANY(${pgArray(ids((l) => l.binId))}::uuid[])`),
-      executor.execute<{ id: string; variant_id: string }>(sql`
-        SELECT id, variant_id FROM lots WHERE id = ANY(${pgArray(ids((l) => l.lotId))}::uuid[])`),
-    ]);
+    // One after another: a transaction is one connection, and pg 9 drops queued queries.
+    const variants = await executor.execute<{
+      id: string;
+      kind: string;
+      tracking: string;
+      archived: boolean;
+    }>(sql`
+      SELECT id, kind, tracking, archived_at IS NOT NULL AS archived
+      FROM product_variants WHERE id = ANY(${pgArray(ids((l) => l.variantId))}::uuid[])`);
+    const locations = await executor.execute<{
+      id: string;
+      allow_negative: boolean;
+      archived: boolean;
+    }>(sql`
+      SELECT id, allow_negative, archived_at IS NOT NULL AS archived
+      FROM locations WHERE id = ANY(${pgArray(ids((l) => l.locationId))}::uuid[])`);
+    const bins = await executor.execute<{ id: string; location_id: string; archived: boolean }>(sql`
+      SELECT id, location_id, archived_at IS NOT NULL AS archived
+      FROM bins WHERE id = ANY(${pgArray(ids((l) => l.binId))}::uuid[])`);
+    const lots = await executor.execute<{ id: string; variant_id: string }>(sql`
+      SELECT id, variant_id FROM lots WHERE id = ANY(${pgArray(ids((l) => l.lotId))}::uuid[])`);
     return {
       variants: new Map(variants.rows.map((row) => [row.id, row])),
       locations: new Map(

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
 import type { SettingsService } from '../../platform/settings.service.js';
-import { JOB_SCHEMA, RECONCILE_QUEUE, ReconcileJob } from './reconcile.job.js';
+import {
+  JOB_SCHEMA,
+  RECONCILE_EXPIRY_SECONDS,
+  RECONCILE_QUEUE,
+  ReconcileJob,
+} from './reconcile.job.js';
 import type { ReconciliationService } from './reconciliation.service.js';
 
 // pg-boss is the boundary: a fake records what the job asks of it.
@@ -60,7 +65,10 @@ describe('ReconcileJob', () => {
   it('runs one reconciliation at a time (covers: AC-11)', async () => {
     await makeJob().job.onApplicationBootstrap();
 
-    expect(boss.createQueue).toHaveBeenCalledWith(RECONCILE_QUEUE, { policy: 'singleton' });
+    expect(boss.createQueue).toHaveBeenCalledWith(RECONCILE_QUEUE, {
+      policy: 'singleton',
+      expireInSeconds: RECONCILE_EXPIRY_SECONDS,
+    });
   });
 
   it('schedules the job on LEDGER_RECONCILE_CRON in the install time zone (covers: AC-11)', async () => {

@@ -4,14 +4,17 @@
 
 name: ssdashboard-${CLIENT_ID:?set CLIENT_ID in .env}
 
+# No service loads the whole .env: each gets only the variables it needs, so the owner
+# password (POSTGRES_PASSWORD) reaches postgres and migrate only (spec 0002, AC-2).
 x-app: &app
   image: ${SSD_REGISTRY:-ghcr.io/adiyab25}/ssdashboard-app:${SSD_VERSION:?set SSD_VERSION in .env}
-  env_file: .env
-  environment:
-    # The application role: it can never update or delete stock movements (spec 0002).
-    DATABASE_URL: postgres://ssdashboard_app:${APP_DB_PASSWORD}@postgres:5432/ssdashboard
-    APP_VERSION: ${SSD_VERSION}
   restart: unless-stopped
+
+# DATABASE_URL is the application role: it can never update or delete stock movements.
+x-app-env: &app-env
+  DATABASE_URL: postgres://ssdashboard_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}@postgres:5432/ssdashboard
+  APP_VERSION: ${SSD_VERSION}
+  EXTENSIONS: ${EXTENSIONS:-}
 
 services:
   postgres:
@@ -36,11 +39,10 @@ services:
     <<: *app
     command: ["node", "dist/migrate.js"]
     environment:
-      DATABASE_URL: postgres://ssdashboard_app:${APP_DB_PASSWORD}@postgres:5432/ssdashboard
+      <<: *app-env
       # Only migrate connects as the owner. It also sets the application role's login password.
       MIGRATION_DATABASE_URL: postgres://ssdashboard:${POSTGRES_PASSWORD}@postgres:5432/ssdashboard
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
-      APP_VERSION: ${SSD_VERSION}
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +51,10 @@ services:
 
   api:
     <<: *app
+    environment:
+      <<: *app-env
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -58,6 +64,9 @@ services:
   worker:
     <<: *app
     command: ["node", "dist/worker.js"]
+    environment:
+      <<: *app-env
+      LEDGER_RECONCILE_CRON: ${LEDGER_RECONCILE_CRON:-0 2 * * *}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -65,7 +74,6 @@ services:
 
   web:
     image: ${SSD_REGISTRY:-ghcr.io/adiyab25}/ssdashboard-web:${SSD_VERSION}
-    env_file: .env
     environment:
       API_INTERNAL_URL: http://api:3001
     depends_on:

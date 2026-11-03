@@ -3,7 +3,7 @@ import type { StockLevel } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../../database/database.module.js';
 import { LedgerError } from './ledger.errors.js';
-import { lockPairs } from './locks.js';
+import { limitLockWait, lockPairs } from './locks.js';
 
 /** What one place should hold according to its movements, and what the balance says. */
 const KEY = 'variant_id, location_id, bin_id, lot_id';
@@ -27,7 +27,7 @@ export class ReconciliationService {
       async (tx) => {
         const balances = await tx.execute<{ found: number }>(sql`
           WITH sums AS (
-            SELECT ${sql.raw(KEY)}, sum(quantity)::int AS on_hand, sum(total_cost) AS total_value
+            SELECT ${sql.raw(KEY)}, sum(quantity) AS on_hand, sum(total_cost) AS total_value
             FROM stock_movements GROUP BY 1, 2, 3, 4
           ), found AS (
             SELECT sl.id AS stock_level_id,
@@ -53,10 +53,10 @@ export class ReconciliationService {
         // Reserved stock never exceeds on hand (summed over bins) where stock cannot go negative.
         const reservations = await tx.execute<{ found: number }>(sql`
           WITH reserved AS (
-            SELECT variant_id, location_id, lot_id, sum(open_quantity)::int AS reserved
+            SELECT variant_id, location_id, lot_id, sum(open_quantity) AS reserved
             FROM reservations WHERE status = 'active' GROUP BY 1, 2, 3
           ), on_hand AS (
-            SELECT variant_id, location_id, lot_id, sum(on_hand)::int AS on_hand
+            SELECT variant_id, location_id, lot_id, sum(on_hand) AS on_hand
             FROM stock_levels GROUP BY 1, 2, 3
           ), found AS (
             SELECT NULL::uuid AS stock_level_id, r.variant_id, r.location_id, NULL::uuid AS bin_id,
@@ -117,15 +117,18 @@ export class ReconciliationService {
   async rebuildLevel(input: { discrepancyId: string; resolvedBy: string }): Promise<StockLevel> {
     return this.connection.db.transaction(
       async (tx) => {
+        await limitLockWait(tx);
         const discrepancy = (
           await tx.execute<{
             variant_id: string;
             location_id: string;
             bin_id: string | null;
             lot_id: string | null;
+            kind: 'balance' | 'reservation' | 'serial';
             resolved: boolean;
           }>(sql`
-            SELECT variant_id, location_id, bin_id, lot_id, resolved_at IS NOT NULL AS resolved
+            SELECT variant_id, location_id, bin_id, lot_id, kind,
+                   resolved_at IS NOT NULL AS resolved
             FROM stock_level_discrepancies WHERE id = ${input.discrepancyId} FOR UPDATE`)
         ).rows[0];
         if (!discrepancy) {
@@ -133,6 +136,14 @@ export class ReconciliationService {
         }
         if (discrepancy.resolved) {
           throw new LedgerError('DiscrepancyClosed', 'This discrepancy is already resolved');
+        }
+        // Recomputing a balance cannot fix a reservation total or a serial count, so marking
+        // those "rebuilt" would record a fix that never happened.
+        if (discrepancy.kind !== 'balance') {
+          throw new LedgerError(
+            'NotRebuildable',
+            `A ${discrepancy.kind} discrepancy is not fixed by rebuilding a balance`,
+          );
         }
         const { variant_id: variantId, location_id: locationId } = discrepancy;
         await lockPairs(tx, [[variantId, locationId]]);

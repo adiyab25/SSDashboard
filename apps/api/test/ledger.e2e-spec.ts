@@ -577,6 +577,29 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
     });
   });
 
+  describe('a stuck transaction', () => {
+    it('fails a posting with LockTimeout instead of waiting forever on a held balance', async () => {
+      const key = await sku();
+      await h.ledger.post(posting([{ ...key, quantity: 1, unitCost: '1' }]));
+      const blocker = await h.owner.pool.connect();
+      try {
+        await blocker.query('BEGIN');
+        await blocker.query('SELECT 1 FROM stock_levels WHERE variant_id = $1 FOR UPDATE', [
+          key.variantId,
+        ]);
+        const started = Date.now();
+
+        await rejects(h.ledger.post(posting([{ ...key, quantity: -1 }])), 'LockTimeout');
+
+        expect(Date.now() - started).toBeLessThan(15_000);
+      } finally {
+        await blocker.query('ROLLBACK');
+        blocker.release();
+      }
+      expect((await level(h.owner, key)).onHand).toBe(1);
+    });
+  });
+
   describe('concurrent repeats of one key (AC-5)', () => {
     it('moves stock once when the same key arrives many times at once (covers: AC-5)', async () => {
       const key = await sku();
