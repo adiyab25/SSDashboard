@@ -20,12 +20,12 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 ## Value sourcing (vary the input and check the output)
 - [x] Language list: change `languages` to `["en"]` → the menu shows only English → AC-4
 - [x] First visit language: change `default_language` → a clean browser opens in it → AC-4
-- [ ] Money: change `currency` to `USD` → amounts show USD in both languages, 2 digits for amounts and 4 for unit costs → AC-8
-- [ ] Instant: change `timezone` to `UTC` → `2026-11-03T22:30:00Z` shows `3 Nov 2026, 22:30` (Cairo shows `4 Nov 2026, 00:30`), the same for English and Arabic users → AC-8
-- [ ] Date only value: a `YYYY-MM-DD` value shows the same day under every `timezone` → AC-8
-- [ ] Clock: English reads 24 hour, Arabic 12 hour with ص/م → AC-8
+- [x] Money: change `currency` to `USD` → amounts show USD in both languages, 2 digits for amounts and 4 for unit costs → AC-8 (checked on the real format module, no screen uses it yet)
+- [x] Instant: change `timezone` to `UTC` → `2026-11-03T22:30:00Z` shows `3 Nov 2026, 22:30` (Cairo shows `4 Nov 2026, 00:30`), the same for English and Arabic users → AC-8 (checked on the real format module, no screen uses it yet)
+- [x] Date only value: a `YYYY-MM-DD` value shows the same day under every `timezone` → AC-8 (checked on the real format module, no screen uses it yet)
+- [x] Clock: English reads 24 hour, Arabic 12 hour with ص/م → AC-8 (checked on the real format module, no screen uses it yet)
 - [ ] Bilingual name: a location with only an Arabic name shows it in English mode; with no names it shows its code → AC-9
-- [ ] Digits: Arabic shows Western digits for numbers, quantities, percents, money, and dates → AC-8
+- [x] Digits: Arabic shows Western digits for numbers, quantities, percents, money, and dates → AC-8 (checked on the real format module, no screen uses it yet)
 
 ## Commands
 - [x] `pnpm lint` → passes, and a raw JSX string, `toLocaleString`, or `new Intl.NumberFormat` outside `format.ts` fails it → AC-5, AC-8
@@ -35,7 +35,7 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 - [x] `pnpm --filter @ssdashboard/api test` → config endpoint defaults and settings validation → AC-4
 - [x] `pnpm db:migrate` then `select key, value from settings` → `languages` and `default_language` exist and re-running keeps edited values → AC-4
 - [x] `pnpm test:e2e` (desktop, mobile, production projects) → all pass; production honours the cookie → AC-2
-- [ ] `docker run ... caddy validate` on `deploy/Caddyfile`, then `curl /locales/<code>.json` → 200 with `Cache-Control: no-cache`; a missing file is 404 → AC-11
+- [x] `docker run ... caddy validate` on `deploy/Caddyfile`, then `curl /locales/<code>.json` → 200 with `Cache-Control: no-cache`; a missing file is 404 → AC-11
 
 ## Acceptance-criteria coverage
 - AC-1 … Language menu, switch without reload · AC-2 … direction follows language, dev switch gone · AC-3 … cookie, head script, no flash, no hydration warning · AC-4 … settings, config fallbacks · AC-5 … typed keys, literal string lint · AC-6 … catalog parity, English fallback · AC-7 … plurals and interpolation · AC-8 … formatting module and lint ban · AC-9 … bilingual text rule · AC-10 … LtrText · AC-11 … client language files and Caddy route · AC-12 … axe and 375px Arabic · AC-13 … load failure and overlapping choices
