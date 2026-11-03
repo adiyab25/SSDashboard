@@ -28,6 +28,9 @@ pnpm --filter @ssdashboard/api test:e2e   # test/*.e2e-spec.ts against Postgres 
 - One folder per business module under `src/<module>/`, holding its module, services, controllers, and specs side by side.
 - Read config only through the injected `ENV` token, never `process.env` directly; add every new variable to `env.ts` and `.env.example`.
 - Database access goes through the Drizzle client from `database.module.ts`; tables are defined in `packages/db`, not here.
+- Validate query strings with `new ZodQueryPipe(<contract schema>)` (`src/platform/zod-query.pipe.ts`); a bad query answers 400 with the stable code `INVALID_QUERY`.
+- List endpoints page with a keyset cursor (the last row's sort key, base64url encoded) and compare and order with `COLLATE "C"`, so pages never skip or repeat rows (`src/inventory/locations/locations.service.ts`).
+- Query helpers (`and`, `inArray`, `isNull`, `sql`) come from `@ssdashboard/db`, never straight from `drizzle-orm`, so the repo shares one Drizzle copy.
 
 ## Gotchas
 

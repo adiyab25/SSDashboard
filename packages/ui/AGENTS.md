@@ -35,3 +35,10 @@ pnpm --filter @ssdashboard/ui typecheck
 
 - `shadcn add` run inside this folder writes to the wrong place in this repo. Generate components in a scratch shadcn monorepo (`init --template next --monorepo --base radix --preset vega --rtl`), copy them into `src/components/`, rewrite `@workspace/ui/` to `@ssdashboard/ui/`, then run Prettier and the logical CSS check.
 - `shadcn init --rtl` leaves some physical side classes behind (sheet, sidebar, popper animations); convert them when you copy a component in.
+
+## Agent skills
+
+- [shadcn](../../.claude/skills/shadcn/): `shadcn-ui/ui`, components, composition rules, theming
+- [tailwind-4-docs](../../.claude/skills/tailwind-4-docs/): `lombiq/tailwind-agent-skills`, Tailwind v4 utilities, variants, `@theme`
+
+Declined: Radix UI, next-themes, cmdk, and axe specific skills (no strong match, 2026-11-03; the shadcn and Playwright skills cover them). MCP servers: none credible for these tools.
