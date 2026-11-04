@@ -62,10 +62,15 @@ const handedOut = new Set<number>();
  * A free local port. Suites run in parallel workers, and asking the system for port 0 then
  * closing it lets two workers get the same number before either starts its server. Each worker
  * draws from its own block instead, and never repeats a port within its run.
+ *
+ * The blocks (10000 to 29999) sit below every OS's ephemeral range (Linux starts at 32768,
+ * Windows and macOS at 49152). Ports in that range are handed to outgoing connections, so a
+ * database pool or a fetch in the same run could take the port between the probe and the
+ * server's listen (EADDRINUSE in CI).
  */
 export async function freePort(): Promise<number> {
   const worker = Number(process.env.VITEST_POOL_ID ?? process.env.VITEST_WORKER_ID ?? 0);
-  const blockStart = 30_000 + (worker % 20) * 1_000;
+  const blockStart = 10_000 + (worker % 20) * 1_000;
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const port = blockStart + Math.floor(Math.random() * 1_000);
     if (handedOut.has(port) || !(await canListen(port))) continue;
@@ -75,11 +80,12 @@ export async function freePort(): Promise<number> {
   throw new Error(`No free port found in ${blockStart} to ${blockStart + 999}`);
 }
 
+/** Probes the same address the api binds (all interfaces), so a port taken on any of them fails. */
 function canListen(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
     server.once('error', () => resolve(false));
-    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+    server.listen(port, '0.0.0.0', () => server.close(() => resolve(true)));
   });
 }
 
