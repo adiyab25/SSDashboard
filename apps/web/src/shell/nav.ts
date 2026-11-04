@@ -51,9 +51,9 @@ export const navItems: readonly NavItem[] = [
     group: 'inventory',
   },
   {
-    id: 'receive',
-    labelKey: 'shell.nav.items.receive',
-    href: '/stock-receipts/new',
+    id: 'receipts',
+    labelKey: 'shell.nav.items.receipts',
+    href: '/stock-receipts',
     icon: PackagePlusIcon,
     group: 'inventory',
   },

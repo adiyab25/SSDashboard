@@ -98,6 +98,14 @@ describe('dates and times (AC-8)', () => {
     expect(plain(createFormat(arabic).dateOnly('2026-11-03'))).toBe('3 نوفمبر 2026');
   });
 
+  it('gives the calendar date in the install time zone, Western digits in any language', () => {
+    // 22:30 UTC on 3 November is already 4 November in Cairo (UTC+2).
+    const late = '2026-11-03T22:30:00Z';
+    expect(createFormat(english).calendarDate(late)).toBe('2026-11-04');
+    expect(createFormat(arabic).calendarDate(late)).toBe('2026-11-04');
+    expect(createFormat({ ...english, timezone: undefined }).calendarDate(late)).toBeNull();
+  });
+
   it('returns the raw value for input that is not a date, without marking an error', () => {
     const format = createFormat(english);
 

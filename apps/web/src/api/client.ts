@@ -4,6 +4,8 @@ import { apiFetch } from '@/auth/api-fetch';
 export interface ApiErrorBody {
   code: string;
   lineErrors?: { index: number; code: string }[];
+  /** `INSUFFICIENT_STOCK` on a void: the SKUs that would go below zero. */
+  skuIds?: string[];
 }
 
 /** A failed call. `status` 0 means the request never got an answer. */
@@ -36,7 +38,11 @@ function errorBody(json: unknown): ApiErrorBody {
             typeof (item as { code?: unknown }).code === 'string',
         )
       : undefined;
-  return { code, ...(lineErrors && { lineErrors }) };
+  const skuIds =
+    'skuIds' in json && Array.isArray(json.skuIds)
+      ? json.skuIds.filter((id): id is string => typeof id === 'string')
+      : undefined;
+  return { code, ...(lineErrors && { lineErrors }), ...(skuIds && { skuIds }) };
 }
 
 /**
@@ -75,4 +81,24 @@ export async function apiRequest<T>(
     );
   }
   return schema.parse(json);
+}
+
+/** Seconds to wait before the one automatic retry when the api sends no `Retry-After`. */
+const DEFAULT_BUSY_SECONDS = 2;
+
+/**
+ * Runs a stock write, and when the api answers 503 `BUSY` waits for its `Retry-After` and sends
+ * the very same request once more (spec 0006, AC-14). A second `BUSY` is thrown for the screen
+ * to show its busy message and a Retry button. The caller passes the same idempotency key both
+ * times, so a retry can never post twice.
+ */
+export async function withBusyRetry<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.code !== 'BUSY') throw error;
+    const seconds = error.retryAfter ?? DEFAULT_BUSY_SECONDS;
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+    return run();
+  }
 }

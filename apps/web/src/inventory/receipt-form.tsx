@@ -16,7 +16,7 @@ import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -42,6 +42,7 @@ const Sku = z.object({
 /** The form, built from the contract's field rules (spec 0006, AC-5). */
 const ReceiptForm = z.object({
   locationId: z.string().min(1, 'locationRequired'),
+  receiptDate: z.iso.date(),
   reference: z.string().trim().max(64),
   note: z.string().trim().max(500),
   lines: z
@@ -84,14 +85,9 @@ const LINE_CODES = new Set([
   'DUPLICATE_SKU',
   'LINE_TOTAL_TOO_LARGE',
 ]);
-const FORM_CODES = new Set([
-  'INVALID_LINES',
-  'INVALID_LOCATION',
-  'FUTURE_DATE',
-  'PERIOD_LOCKED',
-  'BUSY',
-  'IDEMPOTENCY_CONFLICT',
-]);
+/** Answers shown in the alert above the form; date faults show on the date field instead. */
+const FORM_CODES = new Set(['INVALID_LINES', 'INVALID_LOCATION', 'BUSY', 'IDEMPOTENCY_CONFLICT']);
+const DATE_CODES = new Set(['FUTURE_DATE', 'PERIOD_LOCKED']);
 
 /**
  * Receive stock (spec 0006, AC-5 to AC-7): one location, a reference and note, and 1 to 200
@@ -114,12 +110,15 @@ export function ReceiptFormPage() {
     enabled: config?.languages,
   };
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  // Today in the install's time zone; null until the settings load.
+  const today = format.calendarDate(new Date());
 
   const form = useForm<ReceiptInput, unknown, ReceiptOutput>({
     resolver: zodResolver(ReceiptForm),
     mode: 'onTouched',
     defaultValues: {
       locationId: current === 'all' ? '' : current,
+      receiptDate: '',
       reference: '',
       note: '',
       lines: [NEW_LINE],
@@ -129,10 +128,19 @@ export function ReceiptFormPage() {
   const lines = useFieldArray({ control: form.control, name: 'lines' });
   const watched = useWatch({ control: form.control, name: 'lines' });
 
+  // The date starts at today once it is known, and stays the person's choice after that.
+  useEffect(() => {
+    if (today && !form.getFieldState('receiptDate').isDirty) {
+      form.resetField('receiptDate', { defaultValue: today });
+    }
+  }, [today, form]);
+
   const mutation = useMutation({
     mutationFn: (values: ReceiptOutput) =>
       postReceipt(idempotencyKey, {
         locationId: values.locationId,
+        // Sent only when the person changed it, so a retry after midnight keeps the same body.
+        ...(form.getFieldState('receiptDate').isDirty && { receiptDate: values.receiptDate }),
         ...(values.reference && { reference: values.reference }),
         ...(values.note && { note: values.note }),
         lines: values.lines.map((line) => ({
@@ -162,15 +170,30 @@ export function ReceiptFormPage() {
       if (error.code === 'INVALID_LOCATION') {
         form.setError('locationId', { message: 'INVALID_LOCATION' }, { shouldFocus: true });
       }
+      if (DATE_CODES.has(error.code)) {
+        form.setError('receiptDate', { message: error.code }, { shouldFocus: true });
+      }
     },
   });
 
+  const errorCode = mutation.error instanceof ApiError ? mutation.error.code : null;
   const failure =
-    mutation.error instanceof ApiError && FORM_CODES.has(mutation.error.code)
-      ? (`inventory.receipt.errors.${mutation.error.code}` as MessageKey)
-      : mutation.error
-        ? 'inventory.receipt.errors.generic'
-        : null;
+    errorCode && FORM_CODES.has(errorCode)
+      ? (`inventory.receipt.errors.${errorCode}` as MessageKey)
+      : errorCode && DATE_CODES.has(errorCode)
+        ? null
+        : mutation.error
+          ? 'inventory.receipt.errors.generic'
+          : null;
+
+  /** Checks the date against today, then posts. The same idempotency key every time. */
+  const submit = form.handleSubmit((values) => {
+    if (today && values.receiptDate > today) {
+      form.setError('receiptDate', { message: 'dateInvalid' }, { shouldFocus: true });
+      return;
+    }
+    mutation.mutate(values);
+  });
 
   const message = (code: string | undefined): string =>
     code ? t(`inventory.receipt.errors.${code}` as MessageKey) : '';
@@ -184,13 +207,22 @@ export function ReceiptFormPage() {
     .reduce((sum, total) => (total === null ? sum : sum.plus(Money.of(total))), Money.zero)
     .toString();
 
+  const dateCode = errors.receiptDate?.message;
+  const dateError = errors.receiptDate
+    ? t(
+        dateCode && DATE_CODES.has(dateCode)
+          ? (`inventory.receipt.errors.${dateCode}` as MessageKey)
+          : 'inventory.receipt.errors.dateInvalid',
+      )
+    : null;
+
   const noLocations = locationsStatus === 'empty';
 
   return (
     <form
       noValidate
       className="flex min-w-0 flex-col gap-6"
-      onSubmit={(event) => void form.handleSubmit((values) => mutation.mutate(values))(event)}
+      onSubmit={(event) => void submit(event)}
     >
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold">{t('inventory.receipt.newTitle')}</h1>
@@ -199,7 +231,20 @@ export function ReceiptFormPage() {
 
       {failure && (
         <Alert variant="destructive" role="alert">
-          <AlertDescription>{t(failure)}</AlertDescription>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            {t(failure)}
+            {errorCode === 'BUSY' && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={mutation.isPending}
+                onClick={() => void submit()}
+              >
+                {t('inventory.receipt.retry')}
+              </Button>
+            )}
+          </AlertDescription>
         </Alert>
       )}
       {noLocations && (
@@ -215,7 +260,7 @@ export function ReceiptFormPage() {
         <h2 id="receipt-details" className="text-base font-semibold">
           {t('inventory.receipt.details')}
         </h2>
-        <FieldGroup className="grid gap-4 md:grid-cols-3">
+        <FieldGroup className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Field data-invalid={!!errors.locationId}>
             <FieldLabel htmlFor="receipt-location">
               {t('inventory.receipt.location')}
@@ -240,6 +285,27 @@ export function ReceiptFormPage() {
             <FieldError id="receipt-location-error">
               {errors.locationId ? message(errors.locationId.message) : null}
             </FieldError>
+          </Field>
+
+          <Field data-invalid={!!errors.receiptDate}>
+            <FieldLabel htmlFor="receipt-date">{t('inventory.receipt.date')}</FieldLabel>
+            <Input
+              id="receipt-date"
+              type="date"
+              dir="ltr"
+              max={today ?? undefined}
+              className="tabular-nums"
+              aria-invalid={!!errors.receiptDate}
+              aria-describedby={errors.receiptDate ? 'receipt-date-error' : 'receipt-date-hint'}
+              {...form.register('receiptDate')}
+            />
+            {errors.receiptDate ? (
+              <FieldError id="receipt-date-error">{dateError}</FieldError>
+            ) : (
+              <FieldDescription id="receipt-date-hint">
+                {t('inventory.receipt.dateHint')}
+              </FieldDescription>
+            )}
           </Field>
 
           <Field data-invalid={!!errors.reference}>

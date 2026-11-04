@@ -260,10 +260,10 @@ Tracer Bullet: Milestone 1 is the whole scope "done when" thread, thin but real 
 8. [x] Playwright thread test in both languages and a direct reconciliation check, satisfies **AC-17**
 
 **Milestone 2: Receipts in full**
-9. Receipt list with location filter, search, and paging (api and web), satisfies **AC-12**
-10. Void: `POST /stock-receipts/:id/void` (row lock, status check, `ledger.reverse` with `within`), admin only, the void dialog with reason, and the void value test, satisfies **AC-8**, **AC-15**
-11. Web busy handling: one automatic retry after `Retry-After`, then the busy message with Retry, satisfies **AC-14**
-12. Backdating with `receiptDate` (date field sent only when changed, the SQL noon rule, future and lock date errors on the field), satisfies **AC-5**, **AC-7**
+9. [x] Receipt list with location filter, search, and paging (api and web), satisfies **AC-12**
+10. [x] Void: `POST /stock-receipts/:id/void` (row lock, status check, `ledger.reverse` with `within`), admin only, the void dialog with reason, and the void value test, satisfies **AC-8**, **AC-15**
+11. [x] Web busy handling: one automatic retry after `Retry-After`, then the busy message with Retry, satisfies **AC-14**
+12. [x] Backdating with `receiptDate` (date field sent only when changed, the SQL noon rule, future and lock date errors on the field), satisfies **AC-5**, **AC-7**
 
 **Milestone 3: Master data in full**
 13. `GET /skus` paging and the archived filter, `%`, `_`, and `\` escaping, and the SKU list page, satisfies **AC-13**

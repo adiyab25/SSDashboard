@@ -16,15 +16,17 @@ import {
   TableRow,
 } from '@ssdashboard/ui/components/table';
 import { useQuery } from '@tanstack/react-query';
-import { PackagePlusIcon } from 'lucide-react';
+import { PackagePlusIcon, Undo2Icon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '@/api/client';
 import { useMe } from '@/auth/use-me';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { getReceipt, inventoryKeys } from './inventory-api';
+import { VoidReceiptDialog } from './void-receipt-dialog';
 
 /** One stock receipt: its number, status, details, and lines (spec 0006). */
 export function ReceiptDetailPage() {
@@ -76,6 +78,7 @@ function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
   const text = useLocalizedText();
   const me = useMe();
   const isAdmin = me?.role === 'admin' && receipt.referenceValue !== undefined;
+  const [voiding, setVoiding] = useState(false);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -92,8 +95,14 @@ function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/stock">{t('inventory.receiptDetail.backToStock')}</Link>
+            <Link href="/stock-receipts">{t('inventory.receiptDetail.allReceipts')}</Link>
           </Button>
+          {me?.role === 'admin' && receipt.status === 'posted' && (
+            <Button variant="outline" onClick={() => setVoiding(true)}>
+              <Undo2Icon aria-hidden data-icon="inline-start" className="rtl:-scale-x-100" />
+              {t('inventory.void.open')}
+            </Button>
+          )}
           <Button asChild>
             <Link href="/stock-receipts/new">
               <PackagePlusIcon aria-hidden data-icon="inline-start" />
@@ -126,6 +135,22 @@ function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
           <dt className="text-muted-foreground">{t('inventory.receiptDetail.postedBy')}</dt>
           <dd className="font-medium">{receipt.postedBy.name}</dd>
         </div>
+        {receipt.void && (
+          <>
+            <div className="flex flex-col gap-1">
+              <dt className="text-muted-foreground">{t('inventory.receiptDetail.voidedAt')}</dt>
+              <dd className="font-medium">{format.dateTime(receipt.void.voidedAt)}</dd>
+            </div>
+            <div className="flex flex-col gap-1">
+              <dt className="text-muted-foreground">{t('inventory.receiptDetail.voidedBy')}</dt>
+              <dd className="font-medium">{receipt.void.voidedBy.name}</dd>
+            </div>
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <dt className="text-muted-foreground">{t('inventory.receiptDetail.voidReason')}</dt>
+              <dd className="whitespace-pre-line">{receipt.void.reason}</dd>
+            </div>
+          </>
+        )}
         {receipt.note && (
           <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <dt className="text-muted-foreground">{t('inventory.receiptDetail.note')}</dt>
@@ -215,6 +240,8 @@ function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
           </Table>
         </div>
       </section>
+
+      {voiding && <VoidReceiptDialog receipt={receipt} onClose={() => setVoiding(false)} />}
     </div>
   );
 }

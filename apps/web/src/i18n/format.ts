@@ -31,6 +31,11 @@ export interface Format {
   dateOnly: (value: string) => string;
   time: (instant: Date | string | number) => string;
   dateTime: (instant: Date | string | number) => string;
+  /**
+   * The calendar date of an instant in the install's time zone, as `YYYY-MM-DD` (for date
+   * inputs and api fields, not for display). Null until the time zone is known.
+   */
+  calendarDate: (instant: Date | string | number) => string | null;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -170,6 +175,24 @@ export function createFormat(context: FormatContext, settings: FormatStatus = 'r
     time: (value) => instant('time', hourMinute, value),
 
     dateTime: (value) => instant('dateTime', { ...dayMonthYear, ...hourMinute }, value),
+
+    calendarDate: (value) => {
+      const date = toDate(value);
+      if (!timezone || !date) return null;
+      try {
+        const parts = dates(
+          'calendar',
+          { year: 'numeric', month: '2-digit', day: '2-digit' },
+          timezone,
+        ).formatToParts(date);
+        const part = (type: Intl.DateTimeFormatPartTypes) =>
+          parts.find((item) => item.type === type)?.value ?? '';
+        return `${part('year')}-${part('month')}-${part('day')}`;
+      } catch {
+        failed = true;
+        return null;
+      }
+    },
   };
 
   return format;

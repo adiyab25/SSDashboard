@@ -4,11 +4,12 @@ import {
   SkuListResponse,
   StockListResponse,
   StockReceiptDetail,
+  StockReceiptListResponse,
   type CreateLocationRequest,
   type CreateProductRequest,
   type CreateStockReceiptRequest,
 } from '@ssdashboard/contracts';
-import { apiRequest } from '@/api/client';
+import { apiRequest, withBusyRetry } from '@/api/client';
 import type { LocationChoice } from '@/shell/current-location';
 
 /** Query keys, so a write invalidates exactly what it changed. */
@@ -18,6 +19,9 @@ export const inventoryKeys = {
   skuSearch: (q: string) => ['skus', 'search', q] as const,
   skus: ['skus'] as const,
   receipt: (id: string) => ['stock-receipts', id] as const,
+  receipts: (locationId: LocationChoice, q: string) =>
+    ['stock-receipts', 'list', locationId, q] as const,
+  receiptsAll: ['stock-receipts', 'list'] as const,
 };
 
 export function listStock(
@@ -46,10 +50,33 @@ export const createLocation = (body: CreateLocationRequest) =>
 
 /** `key` is the form's idempotency key, kept across retries of the same receipt (AC-6). */
 export const postReceipt = (key: string, body: CreateStockReceiptRequest) =>
-  apiRequest('POST', '/api/stock-receipts', StockReceiptDetail, {
-    body,
-    headers: { 'idempotency-key': key },
-  });
+  withBusyRetry(() =>
+    apiRequest('POST', '/api/stock-receipts', StockReceiptDetail, {
+      body,
+      headers: { 'idempotency-key': key },
+    }),
+  );
+
+export function listReceipts(
+  locationId: LocationChoice,
+  q: string,
+  cursor: string | undefined,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: '50' });
+  if (locationId !== 'all') params.set('locationId', locationId);
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  return apiRequest('GET', `/api/stock-receipts?${params}`, StockReceiptListResponse, { signal });
+}
+
+/** Admin only (AC-8). A void is keyed by the receipt, so the busy retry is safe too. */
+export const voidReceipt = (id: string, reason: string) =>
+  withBusyRetry(() =>
+    apiRequest('POST', `/api/stock-receipts/${encodeURIComponent(id)}/void`, StockReceiptDetail, {
+      body: { reason },
+    }),
+  );
 
 export const getReceipt = (id: string, signal?: AbortSignal) =>
   apiRequest('GET', `/api/stock-receipts/${encodeURIComponent(id)}`, StockReceiptDetail, {

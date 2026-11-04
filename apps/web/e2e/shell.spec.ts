@@ -111,7 +111,7 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Staff',
       // The inventory group (spec 0006).
       'Stock on hand',
-      'Receive stock',
+      'Stock receipts',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

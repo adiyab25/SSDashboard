@@ -5,10 +5,13 @@ import {
   SkuStockResponse,
   StockListResponse,
   StockReceiptDetail,
+  StockReceiptListResponse,
 } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
+import { SettingsService } from '../src/platform/settings.service.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,
@@ -375,6 +378,163 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
     expect(await search('أزرق')).toEqual(['SRCH-ALPHA']);
     expect(await search('0%')).toEqual(['SRCH-BETA']);
     expect(await search('%')).toEqual(['SRCH-BETA']);
+  });
+
+  async function receiveOne(
+    locationId: string,
+    skuId: string,
+    quantity: number,
+    unitCost: string,
+    extra: object = {},
+  ) {
+    const response = await receipt(randomUUID(), {
+      locationId,
+      lines: [{ skuId, quantity, unitCost }],
+      ...extra,
+    });
+    expect(response.status).toBe(201);
+    return StockReceiptDetail.parse(response.body);
+  }
+
+  const voidReceipt = (id: string, cookie = admin, reason = 'Entered twice') =>
+    call('POST', `/stock-receipts/${id}/void`, { cookie, body: { reason } });
+
+  async function onHand(skuId: string) {
+    const stock = StockListResponse.parse(
+      (await call('GET', `/stock?skuId=${skuId}&includeZero=true`, { cookie: admin })).body,
+    );
+    return stock.items[0];
+  }
+
+  it('lists receipts newest first, by location and by number or reference (AC-12)', async () => {
+    const sku = await newSku('LIST-1');
+    const north = await newLocation('WH-NORTH');
+    const south = await newLocation('WH-SOUTH');
+    const older = await receiveOne(north.id, sku.id, 1, '1', {
+      receiptDate: '2026-01-15',
+      reference: 'INV-778',
+    });
+    const newer = await receiveOne(north.id, sku.id, 2, '1', { reference: 'DN-42' });
+    await receiveOne(south.id, sku.id, 3, '1');
+
+    const list = async (query: string) =>
+      StockReceiptListResponse.parse(
+        (await call('GET', `/stock-receipts${query}`, { cookie: staff })).body,
+      );
+    const northOnly = await list(`?locationId=${north.id}`);
+    expect(northOnly.items.map((item) => item.id)).toEqual([newer.id, older.id]);
+    expect(northOnly.items[0]).toMatchObject({
+      reference: 'DN-42',
+      lineCount: 1,
+      status: 'posted',
+      postedBy: { name: 'Test Person' },
+      location: { code: 'WH-NORTH' },
+    });
+    expect((await list('?q=inv-77')).items.map((item) => item.id)).toEqual([older.id]);
+    expect((await list(`?q=${older.number.slice(-6)}`)).items.map((item) => item.id)).toContain(
+      older.id,
+    );
+
+    // One row a page walks every receipt once.
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: StockReceiptListResponse = await list(
+        `?locationId=${north.id}&limit=1${cursor ? `&cursor=${cursor}` : ''}`,
+      );
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(seen).toEqual([newer.id, older.id]);
+    expect((await call('GET', '/stock-receipts?cursor=nope', { cookie: staff })).status).toBe(400);
+  });
+
+  it('voids a receipt once, back to 0, admins only (AC-8, AC-15)', async () => {
+    const sku = await newSku('VOID-1');
+    const warehouse = await newLocation('WH-VOID');
+    const posted = await receiveOne(warehouse.id, sku.id, 10, '5');
+
+    expect((await voidReceipt(posted.id, staff)).status).toBe(403);
+    expect((await voidReceipt(posted.id, admin, '')).body).toMatchObject({ code: 'INVALID_INPUT' });
+
+    const voided = await voidReceipt(posted.id);
+    expect(voided.status).toBe(200);
+    expect(StockReceiptDetail.parse(voided.body)).toMatchObject({
+      status: 'voided',
+      void: { reason: 'Entered twice', voidedBy: { name: 'Test Person' } },
+    });
+    expect(await onHand(sku.id)).toMatchObject({ onHand: 0, totalValue: '0.00' });
+    expect((await voidReceipt(posted.id)).body).toMatchObject({ code: 'ALREADY_VOIDED' });
+
+    // The list badges it.
+    const list = StockReceiptListResponse.parse(
+      (await call('GET', `/stock-receipts?locationId=${warehouse.id}`, { cookie: staff })).body,
+    );
+    expect(list.items[0]).toMatchObject({ id: posted.id, status: 'voided' });
+
+    // The reversal group points at the receipt's posting, and one void row per line.
+    const { rows } = await owner.pool.query<{ quantity: number }>(
+      `SELECT m.quantity FROM stock_movements m
+       JOIN stock_receipts r ON r.void_group_id = m.group_id WHERE r.id = $1`,
+      [posted.id],
+    );
+    expect(rows).toEqual([{ quantity: -10 }]);
+    expect(await new ReconciliationService(app).reconcile()).toBe(0);
+  });
+
+  it('lets one of two voids at the same moment win (AC-8)', async () => {
+    const sku = await newSku('VOID-RACE');
+    const warehouse = await newLocation('WH-RACE');
+    const posted = await receiveOne(warehouse.id, sku.id, 4, '2');
+
+    const results = await Promise.all([voidReceipt(posted.id), voidReceipt(posted.id)]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+    expect(results.find((result) => result.status === 409)?.body).toMatchObject({
+      code: 'ALREADY_VOIDED',
+    });
+    expect(await onHand(sku.id)).toMatchObject({ onHand: 0 });
+  });
+
+  it('refuses a void whose stock already left, naming the SKUs, and changes nothing (AC-8)', async () => {
+    const sku = await newSku('VOID-GONE');
+    const warehouse = await newLocation('WH-GONE');
+    const posted = await receiveOne(warehouse.id, sku.id, 5, '3');
+    // Another document takes the stock out (an adjustment through the ledger itself).
+    const ledger = new LedgerService(app, new SettingsService(app));
+    await ledger.post({
+      idempotencyKey: randomUUID(),
+      sourceType: 'adjustment',
+      sourceId: randomUUID(),
+      postedBy: null,
+      lines: [{ variantId: sku.id, locationId: warehouse.id, quantity: -4 }],
+    });
+
+    const refused = await voidReceipt(posted.id);
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: 'INSUFFICIENT_STOCK', skuIds: [sku.id] });
+    const detail = StockReceiptDetail.parse(
+      (await call('GET', `/stock-receipts/${posted.id}`, { cookie: admin })).body,
+    );
+    expect(detail.status).toBe('posted');
+    expect(await onHand(sku.id)).toMatchObject({ onHand: 1 });
+  });
+
+  it('removes value at the current average, not the receipt value (AC-8)', async () => {
+    const sku = await newSku('VOID-AVG');
+    const warehouse = await newLocation('WH-AVG');
+    const first = await receiveOne(warehouse.id, sku.id, 10, '5');
+    await receiveOne(warehouse.id, sku.id, 10, '7');
+    expect(await onHand(sku.id)).toMatchObject({ onHand: 20, totalValue: '120.00' });
+
+    expect((await voidReceipt(first.id)).status).toBe(200);
+
+    // 60.00 left at 6.0000: the void took 10 at the average, not receipt A's 50.00.
+    expect(await onHand(sku.id)).toMatchObject({
+      onHand: 10,
+      totalValue: '60.00',
+      avgUnitCost: '6.0000',
+    });
+    expect(await new ReconciliationService(app).reconcile()).toBe(0);
   });
 
   it('answers 401 without a session', async () => {

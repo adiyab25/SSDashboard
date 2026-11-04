@@ -85,6 +85,7 @@ test.describe('core stock loop', () => {
     await clerkPage.getByRole('button', { name: 'Post receipt' }).click();
 
     await expect(clerkPage).toHaveURL(/\/stock-receipts\/[0-9a-f-]{36}$/);
+    const receiptPath = new URL(clerkPage.url()).pathname;
     const number = clerkPage.getByRole('heading', { level: 1 });
     await expect(number).toHaveText(/^SR-\d{4}-\d{6}$/);
     await expect(clerkPage.getByRole('columnheader', { name: 'Unit cost' })).toHaveCount(0);
@@ -112,9 +113,118 @@ test.describe('core stock loop', () => {
     await expect(arabicRow).toContainText(`مخزن القاهرة ${tag}`);
     await expect(arabicRow).toContainText('50.00');
     await expectNoAxeViolations(page);
+
+    // The admin voids it from the receipt page; stock goes back to 0 and the list badges it.
+    await useBrowserState(page, { language: 'en' });
+    await openShell(page, receiptPath);
+    await page.getByRole('button', { name: 'Void receipt' }).click();
+    const voidDialog = page.getByRole('dialog', { name: /Void receipt SR-/ });
+    await voidDialog.getByRole('button', { name: 'Void receipt' }).click();
+    await expect(voidDialog.getByText('Give a reason, up to 500 characters.')).toBeVisible();
+    await voidDialog.getByLabel('Reason').fill('Entered twice');
+    await expectNoAxeViolations(page);
+    await voidDialog.getByRole('button', { name: 'Void receipt' }).click();
+    await expect(page.getByText(/Receipt SR-\d{4}-\d{6} voided\./)).toBeVisible();
+    await expect(page.getByText('Voided', { exact: true })).toBeVisible();
+    await expect(page.getByText('Entered twice')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Void receipt' })).toHaveCount(0);
+
+    await openShell(page, '/stock-receipts');
+    const listRow = page.getByRole('row', { name: new RegExp(`Cairo ${tag}`) });
+    await expect(listRow).toContainText('Voided');
+    await expectNoAxeViolations(page);
+
+    await openShell(page, '/stock');
+    await expect(page.getByRole('row', { name: new RegExp(skuCode) })).toHaveCount(0);
   });
 
-  test('keeps the ledger balanced: the balance equals its movements (AC-17)', async () => {
+  test('retries a busy post once, then offers Retry with the form kept (AC-14)', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    let calls = 0;
+    const keys: (string | undefined)[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    await page.route('**/api/stock-receipts', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      calls += 1;
+      keys.push(route.request().headers()['idempotency-key']);
+      bodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 503,
+        headers: { 'retry-after': '1' },
+        json: { code: 'BUSY', message: 'busy' },
+      });
+    });
+
+    await openShell(page, '/stock-receipts/new');
+    await waitForFormHydration(page);
+    await page.getByLabel('Receive into').selectOption({ label: `Cairo ${tag} · ${locationCode}` });
+    await page.getByRole('combobox', { name: 'SKU' }).click();
+    await page.getByPlaceholder('Search by code or name…').fill(skuCode);
+    await page.getByRole('option', { name: new RegExp(skuCode) }).click();
+    await page.getByLabel('Quantity').fill('3');
+    await page.getByLabel('Unit cost').fill('2.5');
+    await page.getByRole('button', { name: 'Post receipt' }).click();
+
+    const alert = page.getByRole('alert').filter({ hasText: 'Stock is busy' });
+    await expect(alert).toBeVisible();
+    // The first answer, then one automatic retry after Retry-After, with the same key and body.
+    expect(calls).toBe(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+    expect(bodies[1]).toEqual(bodies[0]);
+    // The date was left at today, so it is not sent (spec 0006, Value sourcing).
+    expect(bodies[0]).not.toHaveProperty('receiptDate');
+    await expect(page.getByLabel('Quantity')).toHaveValue('3');
+
+    // The stock is free again: Retry posts with the same key.
+    await page.unroute('**/api/stock-receipts');
+    await alert.getByRole('button', { name: 'Try again' }).click();
+    await expect(page).toHaveURL(/\/stock-receipts\/[0-9a-f-]{36}$/);
+    expect(new URL(page.url()).pathname.endsWith(keys[0] ?? 'none')).toBe(true);
+  });
+
+  test('backdates a receipt to an earlier day, and refuses a later one (AC-5, AC-7)', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openShell(page, '/stock-receipts/new');
+    await waitForFormHydration(page);
+    const date = page.getByLabel('Receipt date');
+    const today = await date.inputValue();
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const shift = (days: number) => {
+      const at = new Date(`${today}T12:00:00Z`);
+      at.setUTCDate(at.getUTCDate() + days);
+      return at.toISOString().slice(0, 10);
+    };
+
+    await page.getByLabel('Receive into').selectOption({ label: `Cairo ${tag} · ${locationCode}` });
+    await page.getByRole('combobox', { name: 'SKU' }).click();
+    await page.getByPlaceholder('Search by code or name…').fill(skuCode);
+    await page.getByRole('option', { name: new RegExp(skuCode) }).click();
+    await page.getByLabel('Quantity').fill('1');
+    await page.getByLabel('Unit cost').fill('1');
+
+    await date.fill(shift(1));
+    await page.getByRole('button', { name: 'Post receipt' }).click();
+    await expect(page.getByText('Choose today or an earlier day.')).toBeVisible();
+    await expect(page).toHaveURL(/\/stock-receipts\/new$/);
+
+    const sent = page.waitForRequest(
+      (request) => request.method() === 'POST' && request.url().endsWith('/api/stock-receipts'),
+    );
+    await date.fill(shift(-1));
+    await page.getByRole('button', { name: 'Post receipt' }).click();
+    expect((await sent).postDataJSON()).toMatchObject({ receiptDate: shift(-1) });
+    await expect(page).toHaveURL(/\/stock-receipts\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      new RegExp(`^SR-${shift(-1).slice(0, 4)}-\\d{6}$`),
+    );
+  });
+
+  test('keeps the ledger balanced: each balance equals its movements (AC-17)', async () => {
     const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
     try {
       const { rows } = await pool.query<{ on_hand: number; total_value: string; moved: string }>(
@@ -126,7 +236,8 @@ test.describe('core stock loop', () => {
          WHERE v.sku = $1`,
         [skuCode],
       );
-      expect(rows).toEqual([{ on_hand: 10, total_value: '50.00', moved: '10' }]);
+      // 10 received and voided, then 3 after the busy retry and 1 backdated.
+      expect(rows).toEqual([{ on_hand: 4, total_value: '8.50', moved: '4' }]);
     } finally {
       await pool.end();
     }

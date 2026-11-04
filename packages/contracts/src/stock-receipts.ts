@@ -90,3 +90,37 @@ export const StockReceiptDetail = z.object({
   void: z.object({ voidedAt: z.string(), voidedBy: PersonRef, reason: z.string() }).nullable(),
 });
 export type StockReceiptDetail = z.infer<typeof StockReceiptDetail>;
+
+/** Query of `GET /api/stock-receipts`. No `locationId` means all locations (AC-12). */
+export const StockReceiptListQuery = z.object({
+  locationId: z.uuid().optional(),
+  q: z.string().trim().min(1).max(100).optional(),
+  cursor: z.string().min(1).max(400).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+});
+export type StockReceiptListQuery = z.infer<typeof StockReceiptListQuery>;
+
+/** A row of the receipt list, newest first. */
+export const StockReceiptSummary = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  status: StockReceiptStatus,
+  location: LocationRef,
+  effectiveAt: z.string(),
+  reference: z.string().nullable(),
+  lineCount: z.number().int(),
+  postedBy: PersonRef,
+});
+export type StockReceiptSummary = z.infer<typeof StockReceiptSummary>;
+
+export const StockReceiptListResponse = z.object({
+  items: z.array(StockReceiptSummary),
+  nextCursor: z.string().nullable(),
+});
+export type StockReceiptListResponse = z.infer<typeof StockReceiptListResponse>;
+
+/** `POST /api/stock-receipts/:id/void` (admin, AC-8). */
+export const VoidStockReceiptRequest = z
+  .object({ reason: z.string().trim().min(1).max(500) })
+  .strict();
+export type VoidStockReceiptRequest = z.input<typeof VoidStockReceiptRequest>;

@@ -9,15 +9,20 @@ import {
   type StaffRole,
   type StockReceiptDetail,
   type StockReceiptLineError,
+  type StockReceiptListQuery,
+  type StockReceiptListResponse,
+  type StockReceiptSummary,
 } from '@ssdashboard/contracts';
-import { sql, type DatabaseConnection } from '@ssdashboard/db';
+import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
-import { CatalogService } from '../../catalog/catalog.service.js';
+import { CatalogService, escapeLike } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
+import { decodeKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { NumberingService } from '../../platform/numbering.service.js';
 import { SettingsService } from '../../platform/settings.service.js';
 import { StaffDirectory } from '../../staff/staff-directory.js';
+import { LedgerError } from '../ledger/ledger.errors.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { receiptLineId } from './line-id.js';
 
@@ -29,7 +34,13 @@ const MAX_LINE_TOTAL_CENTS = 999_999_999_999n;
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
 export type ReceiptErrorCode =
-  'NotFound' | 'IdempotencyConflict' | 'InvalidLines' | 'InvalidLocation' | 'FutureDate';
+  | 'NotFound'
+  | 'IdempotencyConflict'
+  | 'InvalidLines'
+  | 'InvalidLocation'
+  | 'FutureDate'
+  | 'AlreadyVoided'
+  | 'InsufficientStock';
 
 /** A receipt rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class ReceiptError extends Error {
@@ -37,6 +48,8 @@ export class ReceiptError extends Error {
     readonly code: ReceiptErrorCode,
     message: string,
     readonly lineErrors: StockReceiptLineError[] = [],
+    /** `InsufficientStock` only: the SKUs a void would take below zero. */
+    readonly skuIds: string[] = [],
   ) {
     super(message);
     this.name = 'ReceiptError';
@@ -202,6 +215,152 @@ export class ReceiptsService {
     const stored = await this.find(this.connection.db, id);
     if (!stored) throw new ReceiptError('NotFound', 'Stock receipt not found');
     return serializeReceipt(stored.detail, caller.role);
+  }
+
+  /**
+   * Receipts newest first (`effective_at`, then id), 50 a page, optionally for one location and
+   * matching `q` in the number or reference, ignoring case (AC-12).
+   */
+  async list(query: StockReceiptListQuery): Promise<StockReceiptListResponse> {
+    const filters: SQL[] = [];
+    if (query.locationId) filters.push(sql`r.location_id = ${query.locationId}`);
+    if (query.q) {
+      const pattern = `%${escapeLike(query.q)}%`;
+      filters.push(sql`(r.number ILIKE ${pattern} OR r.reference ILIKE ${pattern})`);
+    }
+    if (query.cursor) {
+      const [effectiveAt, id] = decodeKeyset(query.cursor, 2);
+      filters.push(
+        sql`(r.effective_at, r.id) < (${effectiveAt ?? ''}::timestamptz, ${id ?? ''}::uuid)`,
+      );
+    }
+    const where = filters.length ? sql`WHERE ${sql.join(filters, sql` AND `)}` : sql``;
+    const { rows } = await this.connection.db.execute<{
+      id: string;
+      number: string;
+      status: 'posted' | 'voided';
+      location_id: string;
+      location_code: string;
+      location_name: LocalizedText;
+      effective_at: string;
+      reference: string | null;
+      line_count: number;
+      posted_by: string;
+    }>(sql`
+      SELECT r.id, r.number, r.status, r.location_id, l.code AS location_code,
+             l.name AS location_name,
+             to_char(r.effective_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS effective_at,
+             r.reference, r.posted_by,
+             (SELECT count(*)::int FROM stock_receipt_lines sl WHERE sl.receipt_id = r.id)
+               AS line_count
+      FROM stock_receipts r JOIN locations l ON l.id = r.location_id
+      ${where}
+      ORDER BY r.effective_at DESC NULLS LAST, r.id DESC NULLS LAST
+      LIMIT ${query.limit + 1}`);
+    const page = rows.slice(0, query.limit);
+    const names = await this.staff.namesByIds(page.map((row) => row.posted_by));
+    const last = page.at(-1);
+    return {
+      items: page.map((row): StockReceiptSummary => ({
+        id: row.id,
+        number: row.number,
+        status: row.status,
+        location: {
+          id: row.location_id,
+          code: row.location_code,
+          name: { en: row.location_name.en, ar: row.location_name.ar },
+        },
+        effectiveAt: row.effective_at,
+        reference: row.reference,
+        lineCount: row.line_count,
+        postedBy: { id: row.posted_by, name: names.get(row.posted_by) ?? '' },
+      })),
+      nextCursor:
+        rows.length > query.limit && last ? encodeKeyset([last.effective_at, last.id]) : null,
+    };
+  }
+
+  /**
+   * Voids a posted receipt with a ledger reversal dated now (AC-8). The value removed follows the
+   * ledger's average cost rules. Two voids at once: the second waits on the reversal's
+   * idempotency key, then finds the receipt voided and answers `AlreadyVoided`.
+   */
+  async void(id: string, reason: string, caller: ReceiptCaller): Promise<StockReceiptDetail> {
+    const current = (
+      await this.connection.db.execute<{ status: 'posted' | 'voided'; group_id: string }>(
+        sql`SELECT status, movement_group_id AS group_id FROM stock_receipts WHERE id = ${id}`,
+      )
+    ).rows[0];
+    if (!current) throw new ReceiptError('NotFound', 'Stock receipt not found');
+    if (current.status === 'voided') {
+      throw new ReceiptError('AlreadyVoided', 'This receipt is already voided');
+    }
+
+    let outcome;
+    try {
+      outcome = await this.ledger.reverse(
+        {
+          groupId: current.group_id,
+          idempotencyKey: `stock_receipt_void:${id}`,
+          postedBy: caller.id,
+          reasonCode: 'stock_receipt_void',
+        },
+        {
+          // Reruns whole on the ledger's deadlock retry; it keeps no state.
+          within: async (tx, result) => {
+            const locked = (
+              await tx.execute<{ status: 'posted' | 'voided' }>(
+                sql`SELECT status FROM stock_receipts WHERE id = ${id} FOR UPDATE`,
+              )
+            ).rows[0];
+            if (locked?.status !== 'posted') {
+              throw new ReceiptError('AlreadyVoided', 'This receipt is already voided');
+            }
+            await tx.execute(sql`
+              UPDATE stock_receipts
+              SET status = 'voided', voided_at = now(), voided_by = ${caller.id},
+                  void_reason = ${reason}, void_group_id = ${result.groupId}, updated_at = now()
+              WHERE id = ${id}`);
+          },
+        },
+      );
+    } catch (error) {
+      if (error instanceof LedgerError && error.code === 'InsufficientStock') {
+        throw new ReceiptError(
+          'InsufficientStock',
+          'Some of this stock has already left, so the receipt cannot be voided',
+          [],
+          await this.shortSkus(id),
+        );
+      }
+      if (error instanceof LedgerError && error.code === 'AlreadyReversed') {
+        throw new ReceiptError('AlreadyVoided', 'This receipt is already voided');
+      }
+      throw error;
+    }
+    // A concurrent void with the same key won: this call changed nothing.
+    if (outcome.replayed) throw new ReceiptError('AlreadyVoided', 'This receipt is already voided');
+
+    this.logger.log({
+      event: 'stock_receipt.voided',
+      receiptId: id,
+      userId: caller.id,
+    });
+    return this.get(id, caller);
+  }
+
+  /** The receipt's SKUs whose on hand at its location is below the line's quantity now. */
+  private async shortSkus(id: string): Promise<string[]> {
+    const { rows } = await this.connection.db.execute<{ variant_id: string }>(sql`
+      SELECT l.variant_id
+      FROM stock_receipt_lines l
+      JOIN stock_receipts r ON r.id = l.receipt_id
+      WHERE l.receipt_id = ${id}
+        AND coalesce((SELECT sum(s.on_hand) FROM stock_levels s
+                      WHERE s.variant_id = l.variant_id AND s.location_id = r.location_id), 0)
+            < l.quantity
+      ORDER BY l.position`);
+    return rows.map((row) => row.variant_id);
   }
 
   private replayOf(stored: StoredReceipt, hash: string, caller: ReceiptCaller) {
