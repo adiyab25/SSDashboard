@@ -4,6 +4,7 @@ import { E2E_ADMIN } from './auth';
 import {
   expectNoAxeViolations,
   stubConfig,
+  textFor,
   useBrowserState,
   type TextDirection,
   type Theme,
@@ -223,7 +224,7 @@ test.describe('staff page', () => {
         await useBrowserState(page, { theme, dir });
         await page.goto('/staff');
         await expect(page.getByRole('row', { name: new RegExp(E2E_ADMIN.name) })).toBeVisible();
-        await page.getByRole('button', { name: 'Add staff' }).click();
+        await page.getByRole('button', { name: textFor(dir, 'staff.add') }).click();
         await page.locator('[role=dialog] form button[type=submit]').click();
         await expect(page.locator('#staff-name')).toHaveAttribute('aria-invalid', 'true');
         await expect(page.locator('#staff-name')).toBeFocused();

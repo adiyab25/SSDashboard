@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
+import type { MessageKey } from '../src/i18n/message-key';
+import { ar } from '../src/i18n/locales/ar';
+import { en } from '../src/i18n/locales/en';
 import { ownerDatabaseUrl } from './auth';
 
 export type Theme = 'light' | 'dark';
@@ -26,6 +29,17 @@ export async function useBrowserState(
   if (theme) await page.addInitScript((value) => localStorage.setItem('theme', value), theme);
   const language = state.language ?? (state.dir ? LANGUAGE_FOR_DIRECTION[state.dir] : undefined);
   if (language) await setLanguageCookie(page, language);
+}
+
+/**
+ * The text of a catalog entry in the language a direction opens in, so a locator keeps working
+ * when `dir: 'rtl'` makes the app render in Arabic. Reads the same catalogs the app ships.
+ */
+export function textFor(dir: TextDirection, key: MessageKey): string {
+  let node: unknown = dir === 'rtl' ? ar : en;
+  for (const part of key.split('.')) node = (node as Record<string, unknown> | undefined)?.[part];
+  if (typeof node !== 'string') throw new Error(`No catalog text for ${key}`);
+  return node;
 }
 
 /** Saves the language the way the app does, so the next load opens in it. */

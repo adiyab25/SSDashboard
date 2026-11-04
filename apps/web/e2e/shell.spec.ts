@@ -4,6 +4,7 @@ import {
   expectNoAxeViolations,
   openShell,
   seedLocations,
+  textFor,
   useBrowserState,
   type SeededLocations,
   type TextDirection,
@@ -36,7 +37,9 @@ test.describe('accessibility matrix (AC-2, AC-5, AC-11)', () => {
           await openShell(page, path);
           if (path === '/') {
             // The status panel disables its button while it loads; axe runs once it has settled.
-            await expect(page.getByRole('button', { name: 'Check again' })).toBeEnabled();
+            await expect(
+              page.getByRole('button', { name: textFor(dir, 'home.status.checkAgain') }),
+            ).toBeEnabled();
           }
           await expect(page.locator('html')).toHaveAttribute('dir', dir);
           await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
