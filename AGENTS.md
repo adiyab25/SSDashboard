@@ -19,7 +19,7 @@ Tracer Bullet: prove one real thread through every layer first, then thicken one
 ```bash
 pnpm install                                  # Install
 docker compose -f deploy/compose.dev.yaml up -d   # Local Postgres on port 5433 (copy .env.example to .env)
-pnpm db:migrate                               # Apply migrations
+pnpm db:migrate                               # Apply migrations (as the owner, MIGRATION_DATABASE_URL)
 pnpm dev                                      # api on 3001, web on 3000
 pnpm build && pnpm typecheck                  # Build, type check
 pnpm test                                     # Unit tests (Vitest)
@@ -35,6 +35,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationa
 
 - **Domain driven modules.** Each business area (catalog, inventory, purchasing, sales, production, costing, platform) is one bounded NestJS module owning its tables, services, and controllers. Modules talk only through exported services or past tense domain events (`StockMoved`, `OrderPlaced`), never by reading another module's tables. Use the business's words in code; immutable value objects (`Money`, `Quantity`) validate on construction.
 - **The stock ledger is append only.** Every stock change goes through the inventory ledger service, the single writer of movements. Never update or delete a movement; correct with a new one. Every movement, order line, and receipt carries cost and price.
+- **Two database roles.** The api and worker connect as `ssdashboard_app` (`DATABASE_URL`), which can only insert and read the ledger history; only `migrate` connects as the owner (`MIGRATION_DATABASE_URL`). Never give an app service the owner password; Compose passes each service an explicit env list. Full rules: [spec 0002](docs/specs/0002-core-data-model/index.md).
 - **Folder by feature.** Colocate a feature's module, schema, contract, and screens; no global `services/` or `controllers/` folders.
 - **Strict types.** No `any` (use `unknown` and narrow), exhaustive `switch` on unions; keep `strict` and `noUncheckedIndexedAccess` on.
 - **One schema per shape.** Request and response shapes are Zod schemas in `packages/contracts`; the api validates with them and the web calls the generated client. Never hand write a duplicate type.
@@ -75,6 +76,7 @@ MCP servers: shadcn registry (recommended), Better Auth docs `https://mcp.better
 ## Context files
 
 - [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS api, worker, and migrate entry points; module, config, and extension rules
+- [apps/api/src/inventory/AGENTS.md](apps/api/src/inventory/AGENTS.md): the stock ledger service, its locking, costing, and reconciliation rules
 - [apps/api/src/auth/AGENTS.md](apps/api/src/auth/AGENTS.md): staff sign in, session guard, lockout, two factor, and the create-admin commands
 - [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js back office (this Next.js version differs from training data, read its docs first)
 - [packages/contracts/AGENTS.md](packages/contracts/AGENTS.md): Zod schemas, OpenAPI document, generated client

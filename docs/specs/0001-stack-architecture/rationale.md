@@ -74,3 +74,7 @@ The engineer also chose pinned versions per client over one shared release line.
 ### Cross check (independent model review)
 
 A fresh model reviewed the first draft and found the stack sound but 13 scaffold decisions unsettled: the migration runner, the image and version model, runtime config versus the Next.js build, the auth path and cookies, extension loading, the contract toolchain, secrets, PostgreSQL setup, and offline installs. The engineer accepted the recommended fix for each, and they are now in `index.md` (Architecture shape). The review also noted that a static frontend served by Caddy would remove the `web` container. That was considered and set aside, because Next.js was chosen knowingly.
+
+### Update, 2026-11-03: two database roles and per service env lists
+
+The data model (spec 0002) split the database into an owner role and an application role, so the append only ledger holds even against a bug in the api. Its fresh model review (`docs/reviews/2026-11-03-feat-data-model.md`) then found that every service loaded the whole `.env` with `env_file`, which put the owner password inside the api and worker and undid the split. The fix, already shipped in `deploy/compose.yaml`, gives each service an explicit env list. This spec's configuration section described the old `env_file` setup, so it now records the two roles, the list each service receives, the owner privileges a managed database needs, and how to rotate each secret. Nothing about the stack itself changed.
