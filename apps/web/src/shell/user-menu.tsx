@@ -17,10 +17,12 @@ import {
   DropdownMenuTrigger,
 } from '@ssdashboard/ui/components/dropdown-menu';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
-import { LanguagesIcon, LogOutIcon, SunMoonIcon } from 'lucide-react';
+import { LanguagesIcon, LogOutIcon, SunMoonIcon, UserRoundIcon } from 'lucide-react';
+import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { saveLanguageToAccount } from '@/auth/account-api';
 import { authClient } from '@/auth/auth-client';
 import { useMe } from '@/auth/use-me';
 import { useLanguage } from '@/i18n/language-provider';
@@ -113,7 +115,12 @@ export function UserMenu() {
                 value={language}
                 onValueChange={(code) => {
                   // Closes on success; on failure the menu stays open to show the error.
-                  void setLanguage(code).then((applied) => applied && setOpen(false));
+                  void setLanguage(code).then((applied) => {
+                    if (!applied) return;
+                    setOpen(false);
+                    // Also saved to the account, so the next device opens in it (AC-19).
+                    void saveLanguageToAccount(code);
+                  });
                 }}
               >
                 {options.map((option) => (
@@ -140,6 +147,12 @@ export function UserMenu() {
           )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className={ITEM}>
+          <Link href="/account">
+            <UserRoundIcon aria-hidden />
+            {t('shell.user.account')}
+          </Link>
+        </DropdownMenuItem>
         {signOutFailed && (
           <p role="alert" className="px-2 py-1.5 text-xs text-destructive">
             {t('shell.user.signOutError')}

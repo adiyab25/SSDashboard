@@ -75,10 +75,10 @@ Real staff accounts and sessions so every slice runs as a known user from day on
   - [x] Session policy and lockout: 12 hour sliding session with the 7 day cap, five strikes lockout, rate limits in PostgreSQL, password rule (AC-2, AC-3, AC-4, AC-5, AC-8, AC-23)
   - [x] Mail and password reset: SMTP and Postmark adapters, mail queue and worker, forgot and reset pages (AC-9, AC-10, AC-11)
   - [x] Staff administration: create, edit, disable, invite and reset, last admin rule, forced password change, Staff page (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18)
-  - [ ] Account page and language sync (AC-19)
+  - [x] Account page and language sync: edit your own name, phone and language, change your password, saved language applied at sign in (AC-19)
   - [ ] Two factor, ledger link, cleanup, and hardening (AC-20, AC-22, AC-24, AC-21, AC-7)
 - [ ] Verify it: `/check verify staff sign in`
 - [ ] Test it: `/test staff sign in`
 - [ ] Review it (fresh model): `/check review staff sign in`
 - [ ] Document it: `/document staff sign in`
-Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`
+Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/account`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`

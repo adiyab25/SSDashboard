@@ -40,6 +40,11 @@ export function useMe(): MeResponse | null {
   return current;
 }
 
+/** Replaces the cached answer, after the person edits their own profile. */
+export function setMe(next: MeResponse): void {
+  me = Promise.resolve(next);
+}
+
 /** Forgets the cached answer, so a test starts from a fresh load. */
 export function resetMeForTests(): void {
   me = undefined;

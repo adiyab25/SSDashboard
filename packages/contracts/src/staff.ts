@@ -111,3 +111,18 @@ export const StaffErrorCode = z.enum([
   'NOT_FOUND',
 ]);
 export type StaffErrorCode = z.infer<typeof StaffErrorCode>;
+
+/**
+ * `PATCH /api/me` (spec 0005, AC-19): a person edits their own name, phone and language. Empty
+ * text clears a phone or a language. Email, role and staff code are not here on purpose, and any
+ * other field is refused rather than ignored, so an attempt to change them is never silent.
+ */
+export const UpdateMeRequest = z
+  .object({
+    name: StaffName,
+    phone: StaffPhone.or(z.literal('')).transform((value) => value || null),
+    language: StaffLanguage.or(z.literal('')).transform((value) => value || null),
+  })
+  .partial()
+  .strict();
+export type UpdateMeRequest = z.infer<typeof UpdateMeRequest>;

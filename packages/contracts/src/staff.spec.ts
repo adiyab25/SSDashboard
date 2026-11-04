@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CreateStaffRequest, StaffListQuery, UpdateStaffRequest } from './staff.js';
+import {
+  CreateStaffRequest,
+  StaffListQuery,
+  UpdateMeRequest,
+  UpdateStaffRequest,
+} from './staff.js';
 
 const valid = { name: 'Sam', email: 'sam@example.com', role: 'staff' } as const;
 
@@ -74,4 +79,33 @@ describe('StaffListQuery (AC-15)', () => {
     expect(StaffListQuery.safeParse({ status: 'invited' }).success).toBe(true);
     expect(StaffListQuery.safeParse({ status: 'banned' }).success).toBe(false);
   });
+});
+
+describe('UpdateMeRequest (AC-19)', () => {
+  it('accepts a name, phone and language, trimmed, and turns empty text into a cleared field', () => {
+    expect(
+      UpdateMeRequest.parse({ name: ' Sam ', phone: ' +20 100 123 4567 ', language: ' ar ' }),
+    ).toEqual({
+      name: 'Sam',
+      phone: '+20 100 123 4567',
+      language: 'ar',
+    });
+    expect(UpdateMeRequest.parse({ phone: '', language: '' })).toEqual({
+      phone: null,
+      language: null,
+    });
+    expect(UpdateMeRequest.parse({})).toEqual({});
+  });
+
+  it('cannot clear a name, and checks the other fields', () => {
+    expect(UpdateMeRequest.safeParse({ name: '   ' }).success).toBe(false);
+    expect(UpdateMeRequest.safeParse({ phone: '12' }).success).toBe(false);
+  });
+
+  it.each(['email', 'role', 'staffCode', 'banned', 'mustChangePassword'])(
+    'refuses %s rather than ignoring it',
+    (field) => {
+      expect(UpdateMeRequest.safeParse({ name: 'Sam', [field]: 'x' }).success).toBe(false);
+    },
+  );
 });

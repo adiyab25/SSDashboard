@@ -6,8 +6,10 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@ssdashboard/ui/compo
 import { Input } from '@ssdashboard/ui/components/input';
 import { LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
+import { MeResponse } from '@ssdashboard/contracts';
 import { useRef, useState, type FocusEvent, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { writeLanguageCookie } from '@/i18n/language-cookie';
 import { authClient } from './auth-client';
 import { safeReturnTo } from './return-to';
 
@@ -26,6 +28,22 @@ function check(name: FieldName, value: string): FieldErrors[FieldName] {
     return LOOKS_LIKE_EMAIL.test(value.trim()) ? undefined : 'invalid';
   }
   return value ? undefined : 'required';
+}
+
+/**
+ * After a full sign in, a saved account language wins over one chosen on this screen, so it
+ * is set through the same function the language switcher uses (AC-19). Any failure is ignored:
+ * the person is signed in either way, and the language just stays as it is.
+ */
+async function applySavedLanguage(): Promise<void> {
+  try {
+    const response = await fetch('/api/me', { cache: 'no-store' });
+    if (!response.ok) return;
+    const me = MeResponse.safeParse(await response.json());
+    if (me.success && me.data.language) writeLanguageCookie(me.data.language);
+  } catch {
+    // keep the current language
+  }
 }
 
 /** The sign in form (spec 0005, AC-1, AC-2, AC-8, AC-24): email and password, nothing else. */
@@ -79,6 +97,7 @@ export function SignInForm() {
         setPending(false);
         return;
       }
+      await applySavedLanguage();
       // A full load, so the shell starts from the new session with no state from before.
       const returnTo = new URLSearchParams(window.location.search).get('returnTo');
       window.location.assign(safeReturnTo(returnTo, window.location.origin));

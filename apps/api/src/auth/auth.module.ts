@@ -5,11 +5,13 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { PlatformModule } from '../platform/platform.module.js';
 import { AuthAudit } from './auth-audit.service.js';
 import { AuthMail } from './auth-mail.service.js';
 import { createAuth } from './auth.factory.js';
 import { AUTH, type Auth } from './auth.tokens.js';
 import { MeController } from './me.controller.js';
+import { ProfileService } from './profile.service.js';
 import { RolesGuard } from './roles.guard.js';
 import { SessionGuard } from './session.guard.js';
 import { SignInLockout } from './sign-in-lockout.js';
@@ -20,12 +22,13 @@ import { SignInLockout } from './sign-in-lockout.js';
  */
 @Global()
 @Module({
-  imports: [MailModule],
+  imports: [MailModule, PlatformModule],
   controllers: [MeController],
   providers: [
     SignInLockout,
     AuthAudit,
     AuthMail,
+    ProfileService,
     {
       provide: AUTH,
       inject: [ENV, DATABASE, SignInLockout, AuthAudit, AuthMail],

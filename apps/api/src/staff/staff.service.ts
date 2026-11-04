@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
   CreateStaffRequest,
   CreateStaffResponse,
@@ -44,6 +38,7 @@ import {
   type AuthEvent,
   type AuthEventContext,
 } from '../platform/events/auth-events.js';
+import { assertLanguageEnabled } from '../platform/languages.js';
 import { SettingsService } from '../platform/settings.service.js';
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -420,20 +415,8 @@ export class StaffService {
     }
   }
 
-  private async assertLanguage(language: string | undefined): Promise<void> {
-    if (language === undefined) return;
-    let enabled: string[] = ['en'];
-    try {
-      enabled = (await this.settings.read(['languages'])).languages ?? enabled;
-    } catch {
-      // Settings unreadable: only the built in English is certain.
-    }
-    if (!enabled.includes(language)) {
-      throw new UnprocessableEntityException({
-        code: 'INVALID_LANGUAGE',
-        message: `Language "${language}" is not enabled on this install`,
-      });
-    }
+  private assertLanguage(language: string | undefined): Promise<void> {
+    return assertLanguageEnabled(this.settings, language);
   }
 
   private rethrowUnique(error: unknown): void {

@@ -217,3 +217,47 @@ _AC-12 to AC-18, AC-14 on the web, and AC-23 for the staff events. Run against a
 - AC-18 … admin reset and revoke · covered by UI step 12 and Commands steps 16, 17, 20
 - AC-23 … staff events and logs · covered by Commands step 21
 - AC-24, AC-25 … covered by UI steps 4, 5, 15, 16 (the Account link arrives in slice 5)
+
+# Slice 5: account page and language sync · updated 2026-11-04
+
+_AC-19, AC-25 (the Account link), and AC-8 for the self service password change. Run against a throwaway database with the api and web both running._
+
+## UI / manual
+
+- [ ] Open the user menu → expect an "Account" item between the language rows and Sign out, opening `/account` → AC-25
+- [ ] On `/account` → expect one `h1`, your email (left to right), role and staff code as plain text, and editable name, phone and language only, with the note that an administrator changes the rest → AC-19, AC-24
+- [ ] Change the name and phone, press Save → expect "Your details are saved.", and the new name in the user menu after a reload → AC-19
+- [ ] Empty the name, then enter a phone of 4 characters → expect each error linked to its field with focus on it, and nothing sent → AC-19
+- [ ] Empty the phone and press Save → expect the phone cleared (it shows empty after a reload) → AC-19
+- [ ] Choose a language in the user menu, then reload on another browser profile and sign in → expect that browser to open in the saved language → AC-19
+- [ ] Sign in on a screen set to English with an account saved as Arabic → expect the app to open in Arabic and right to left, with the saved language beating the one picked on the sign in screen → AC-19
+- [ ] Sign in with an account that has no saved language, with the screen set to Arabic → expect Arabic to stay → AC-19
+- [ ] Change your password with a wrong current password, a weak new one, then a good one → expect the matching messages, the rules list ticking as you type, and a success note that says the other sessions were signed out → AC-8, AC-19
+- [ ] After the change, open the app on another browser that was signed in → expect it to be sent to sign in → AC-19
+- [ ] Press Tab through the page and use the language select with the keyboard → expect a visible focus ring and nothing that needs a mouse → AC-24
+- [ ] Switch to Arabic → expect the page to flip right to left with every string translated, and the email left to right → AC-24
+
+## Commands
+
+- [ ] `PATCH /api/me` with `{"name":"  Samira Ali ","phone":"+20 100 123 4567","language":"ar"}` → expect 200 with the trimmed name, and `GET /api/me` to show the same → AC-19
+- [ ] `PATCH /api/me` with `{"phone":"","language":""}` → expect both `null`; with `{"name":"Only"}` → expect the other fields untouched → AC-19
+- [ ] `PATCH /api/me` with `{"language":"xx"}` → expect 422 `INVALID_LANGUAGE`; with an empty name or a 4 character phone → expect 422 `VALIDATION_FAILED` → AC-19
+- [ ] `PATCH /api/me` with `email`, `role`, `staffCode`, `banned` or `mustChangePassword` in the body → expect 422 `VALIDATION_FAILED` and the stored values unchanged → AC-19
+- [ ] `PATCH /api/me` naming another person's id or fields → expect only your own row to change → AC-19
+- [ ] `PATCH /api/me` with no cookie, and with a temporary password still in force → expect 401, then 403 `PASSWORD_CHANGE_REQUIRED` → AC-14, AC-19
+- [ ] As an admin, search `/api/staff?q=<new name>` after a person renamed themselves → expect the new name → AC-19
+- [ ] `POST /api/auth/change-password` with a wrong current, a weak new, then a good one with `revokeOtherSessions` → expect 400 `INVALID_PASSWORD`, 422 `WEAK_PASSWORD`, then 200, with another session's `GET /api/me` now 401 → AC-8, AC-19
+- [ ] `pnpm --filter @ssdashboard/api test:e2e` → expect every suite to pass, `profile` included → AC-19
+
+## Value sourcing
+
+- [ ] Save a language on one device, then `GET /api/me` from a new session → expect `language` to be the saved value (the account row, not a cookie) → AC-19
+- [ ] After sign in, read the `ss_lang` cookie → expect it to equal `users.language` when set, written by the same function the language switcher uses → AC-19
+- [ ] Disable a language in the `languages` setting, then save it from the account page → expect 422 `INVALID_LANGUAGE` (the allowed set is the install's enabled languages) → AC-19
+- [ ] Read the Account page's role and staff code after an admin changes them → expect the new values on the next load (they come from `GET /api/me`, never from the form) → AC-19
+
+## Acceptance-criteria coverage
+
+- AC-19 … own name, phone and language; own password with the current one; no email, role or staff code; language saved from the menu and applied at sign in · covered by every step above
+- AC-25 … the Account link · covered by UI step 1 (the admin only Staff page was covered in slice 4)
+- AC-8 … rules before submit, paste allowed, right autocomplete values on the self service form · covered by UI steps 9, 11 and Commands step 8
