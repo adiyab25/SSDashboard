@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CreateStaffRequest,
+  StaffErrorCode,
   StaffListQuery,
   UpdateMeRequest,
   UpdateStaffRequest,
@@ -108,4 +109,10 @@ describe('UpdateMeRequest (AC-19)', () => {
       expect(UpdateMeRequest.safeParse({ name: 'Sam', [field]: 'x' }).success).toBe(false);
     },
   );
+});
+
+describe('StaffErrorCode', () => {
+  it('lists the self action refusal next to the self disable one (AC-17, AC-18, AC-20)', () => {
+    expect(StaffErrorCode.options).toEqual(expect.arrayContaining(['SELF_DISABLE', 'SELF_ACTION']));
+  });
 });

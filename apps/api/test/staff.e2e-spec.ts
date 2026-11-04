@@ -282,6 +282,26 @@ describe('staff administration', { timeout: 300_000 }, () => {
       expect((await login(base, email, NEW_PASSWORD)).status).toBe(200);
     });
 
+    it('ends the other sessions on a password change even when the client asks it not to', async () => {
+      const admin = await adminCookie();
+      const made = await create(admin.cookie, {});
+      const email = staff(made).email as string;
+      const temporary = setup(made).temporaryPassword as string;
+      const first = cookieOf(await login(base, email, temporary));
+      const second = cookieOf(await login(base, email, temporary));
+
+      const changed = await call(base, first, 'POST', '/api/auth/change-password', {
+        currentPassword: temporary,
+        newPassword: NEW_PASSWORD,
+        revokeOtherSessions: false,
+      });
+
+      expect(changed.status).toBe(200);
+      expect((await call(base, second, 'GET', '/api/me')).status).toBe(401);
+      // The session that made the change goes on, under its new cookie.
+      expect((await call(base, cookieOf(changed), 'GET', '/api/me')).status).toBe(200);
+    });
+
     it('counts wrong current passwords toward the same lock as sign in (AC-3)', async () => {
       const admin = await adminCookie();
       const made = await create(admin.cookie, {});
@@ -470,6 +490,95 @@ describe('staff administration', { timeout: 300_000 }, () => {
       expect(taken.body).toMatchObject({ code: 'EMAIL_TAKEN' });
     });
 
+    it('ends a link sent to the old address when an invited email changes', async () => {
+      const admin = await adminCookie();
+      const invited = await addPerson({ signedIn: false });
+      const old = 'OldInviteLink0000000000A';
+      await owner.pool.query(
+        `INSERT INTO verifications (identifier, value, expires_at)
+         VALUES ($1, $2, now() + interval '7 days')`,
+        [`reset-password:${old}`, invited.id],
+      );
+
+      const changed = await call(base, admin.cookie, 'PATCH', `/api/staff/${invited.id}`, {
+        email: `moved${(counter += 1)}@example.com`,
+      });
+      expect(changed.status).toBe(200);
+
+      const redeem = await call(base, undefined, 'POST', '/api/auth/reset-password', {
+        token: old,
+        newPassword: NEW_PASSWORD,
+      });
+      expect(redeem.status).toBe(400);
+      expect(redeem.body).toMatchObject({ code: 'INVALID_TOKEN' });
+      // With mail off no new link is made.
+      const left = await owner.pool.query(`SELECT 1 FROM verifications WHERE value = $1`, [
+        invited.id,
+      ]);
+      expect(left.rows).toHaveLength(0);
+    });
+
+    it('stops a password set through the old link once an invited email changes', async () => {
+      const admin = await adminCookie();
+      const invited = await addPerson({ signedIn: false });
+      const link = 'RedeemedInviteLink00000A';
+      await owner.pool.query(
+        `INSERT INTO verifications (identifier, value, expires_at)
+         VALUES ($1, $2, now() + interval '7 days')`,
+        [`reset-password:${link}`, invited.id],
+      );
+      // Whoever holds the old address follows the link and sets a password of their own.
+      const redeemed = await call(base, undefined, 'POST', '/api/auth/reset-password', {
+        token: link,
+        newPassword: NEW_PASSWORD,
+      });
+      expect(redeemed.status).toBe(200);
+      await owner.pool.query(
+        `INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, now() + interval '1 hour')`,
+        [invited.id, `stray-session-${counter}`],
+      );
+
+      const moved = `moved${(counter += 1)}@example.com`;
+      const changed = await call(base, admin.cookie, 'PATCH', `/api/staff/${invited.id}`, {
+        email: moved,
+      });
+      expect(changed.status).toBe(200);
+      expect(changed.body).toMatchObject({ email: moved, status: 'invited' });
+
+      expect((await login(base, moved, NEW_PASSWORD)).status).toBe(401);
+      expect((await login(base, invited.email, NEW_PASSWORD)).status).toBe(401);
+      const { rows } = await owner.pool.query<{ must: boolean; sessions: number }>(
+        `SELECT must_change_password AS must,
+                (SELECT count(*)::int FROM sessions WHERE user_id = $1::uuid) AS sessions
+           FROM users WHERE id = $1::uuid`,
+        [invited.id],
+      );
+      expect(rows[0]).toEqual({ must: true, sessions: 0 });
+
+      // With mail off the update shows no password: Reset password issues the temporary one.
+      const reset = await call(
+        base,
+        admin.cookie,
+        'POST',
+        `/api/staff/${invited.id}/reset-password`,
+      );
+      expect(reset.status).toBe(200);
+      const temporary = (reset.body.setup as Record<string, string>).temporaryPassword as string;
+      expect((await login(base, moved, temporary)).status).toBe(200);
+    });
+
+    it('changes only the details when an edit repeats the same email', async () => {
+      const admin = await adminCookie();
+      const invited = await addPerson({ signedIn: false });
+
+      const edited = await call(base, admin.cookie, 'PATCH', `/api/staff/${invited.id}`, {
+        email: invited.email.toUpperCase(),
+        name: 'Same Email',
+      });
+      expect(edited.status).toBe(200);
+      expect((await login(base, invited.email)).status).toBe(200);
+    });
+
     it('refuses to demote the last active admin, and counts an invited admin as active', async () => {
       // A database of its own would be cleaner; here every other admin is disabled first.
       await owner.pool.query(`UPDATE users SET banned = true WHERE role = 'admin'`);
@@ -542,6 +651,21 @@ describe('staff administration', { timeout: 300_000 }, () => {
 
       expect(reply.status).toBe(409);
       expect(reply.body).toMatchObject({ code: 'SELF_DISABLE' });
+    });
+
+    it('stops an admin resetting or signing out their own account from the staff page', async () => {
+      const admin = await adminCookie();
+
+      for (const action of ['reset-password', 'reset-two-factor', 'revoke-sessions']) {
+        const reply = await call(base, admin.cookie, 'POST', `/api/staff/${admin.id}/${action}`);
+        expect(reply.status, action).toBe(409);
+        expect(reply.body, action).toMatchObject({ code: 'SELF_ACTION' });
+      }
+      // Nothing changed: the session still works and the password still signs in.
+      expect((await call(base, admin.cookie, 'GET', '/api/me')).body).toMatchObject({
+        mustChangePassword: false,
+      });
+      expect((await login(base, admin.email)).status).toBe(200);
     });
 
     it('leaves one admin when two disable each other at the same moment', async () => {
@@ -617,11 +741,49 @@ describe('staff administration', { timeout: 300_000 }, () => {
 
     it('answers 404 for an unknown person on every action', async () => {
       const admin = await adminCookie();
-      const id = '0190c0de-0000-7000-8000-00000000dead';
-      for (const action of ['enable', 'reset-password', 'revoke-sessions', 'disable']) {
-        const reply = await call(base, admin.cookie, 'POST', `/api/staff/${id}/${action}`, {});
-        expect(reply.status, action).toBe(404);
+      const actions = [
+        'enable',
+        'reset-password',
+        'reset-two-factor',
+        'revoke-sessions',
+        'disable',
+      ];
+      for (const id of ['0190c0de-0000-7000-8000-00000000dead', 'not-a-uuid']) {
+        for (const action of actions) {
+          const reply = await call(base, admin.cookie, 'POST', `/api/staff/${id}/${action}`, {});
+          expect(reply.status, `${action} ${id}`).toBe(404);
+          expect(reply.body, `${action} ${id}`).toMatchObject({ code: 'NOT_FOUND' });
+        }
       }
+    });
+
+    it('ends pending two factor sign ins on a password or two factor reset, for that person only', async () => {
+      const admin = await adminCookie();
+      const person = await addPerson();
+      const bystander = await addPerson();
+      const challenge = (identifier: string, userId: string) =>
+        owner.pool.query(
+          `INSERT INTO verifications (identifier, value, expires_at)
+           VALUES ($1, $2, now() + interval '10 minutes'), ($3, '0', now() + interval '10 minutes')`,
+          [identifier, userId, `2fa-attempts-${identifier}`],
+        );
+      const left = async (identifier: string) =>
+        (
+          await owner.pool.query(`SELECT 1 FROM verifications WHERE identifier LIKE $1`, [
+            `%${identifier}`,
+          ])
+        ).rows.length;
+
+      const other = `2fa-bystander${bystander.id}`;
+      await challenge(other, bystander.id);
+      for (const action of ['reset-password', 'reset-two-factor']) {
+        const pending = `2fa-${action}-${person.id}`;
+        await challenge(pending, person.id);
+        const reply = await call(base, admin.cookie, 'POST', `/api/staff/${person.id}/${action}`);
+        expect(reply.status, action).toBe(200);
+        expect(await left(pending), action).toBe(0);
+      }
+      expect(await left(other)).toBe(2);
     });
 
     it('refuses to re-invite with no mail, or someone who has already signed in', async () => {
@@ -720,6 +882,34 @@ describe('staff administration', { timeout: 300_000 }, () => {
       });
       expect(reuse.status).toBe(400);
       expect(reuse.body).toMatchObject({ code: 'INVALID_TOKEN' });
+    });
+
+    it('sends a fresh invite to the new address when an invited email changes, ending the old link', async () => {
+      const admin = await adminCookie(mailBase);
+      const made = await create(admin.cookie, {}, mailBase);
+      const id = staff(made).id as string;
+      const first = tokenOf(await mailTo(staff(made).email as string));
+      const moved = `moved${(counter += 1)}@example.com`;
+
+      const changed = await call(mailBase, admin.cookie, 'PATCH', `/api/staff/${id}`, {
+        email: moved,
+      });
+      expect(changed.status).toBe(200);
+
+      const reuse = await call(mailBase, undefined, 'POST', '/api/auth/reset-password', {
+        token: first,
+        newPassword: NEW_PASSWORD,
+      });
+      expect(reuse.status).toBe(400);
+      expect(reuse.body).toMatchObject({ code: 'INVALID_TOKEN' });
+      const second = tokenOf(await mailTo(moved));
+      expect(second).not.toBe(first);
+      const done = await call(mailBase, undefined, 'POST', '/api/auth/reset-password', {
+        token: second,
+        newPassword: NEW_PASSWORD,
+      });
+      expect(done.status).toBe(200);
+      expect((await login(mailBase, moved, NEW_PASSWORD)).status).toBe(200);
     });
 
     it('sends a reset link for an admin reset, and the old password stops working at once', async () => {

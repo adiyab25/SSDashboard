@@ -59,8 +59,15 @@ interface Props {
   editId: string | null;
   /** Language codes enabled on the install (`GET /api/config`). */
   languages: readonly string[];
-  /** Called after a save. A new account also hands back how the person gets their password. */
-  onSaved: (result: { staff: StaffDetail; created?: CreateStaffResponse['setup'] }) => void;
+  /**
+   * Called after a save. A new account also hands back how the person gets their password.
+   * `emailChanged` is true when the email of an invited account was changed by this save.
+   */
+  onSaved: (result: {
+    staff: StaffDetail;
+    created?: CreateStaffResponse['setup'];
+    emailChanged?: boolean;
+  }) => void;
   onClose: () => void;
 }
 
@@ -170,10 +177,14 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
     }
     const result = editId === null ? await createStaff(body) : await updateStaff(editId, body);
     if (result.ok) {
+      const emailChanged =
+        editId !== null &&
+        detail?.status === 'invited' &&
+        values.email.trim().toLowerCase() !== detail.email.trim().toLowerCase();
       onSaved(
         'staff' in result.data
           ? { staff: result.data.staff, created: result.data.setup }
-          : { staff: result.data },
+          : { staff: result.data, ...(emailChanged && { emailChanged }) },
       );
       return;
     }

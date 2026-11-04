@@ -104,6 +104,7 @@ services:
       - "443:443/udp"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Client language files, served at /locales/<code>.json. Add one by dropping the file in.

@@ -119,6 +119,21 @@ async function endChallenge(ctx: HookContext, challenge: string): Promise<void> 
   }
 }
 
+/** What a before hook hands back to Better Auth to change the request it is about to run. */
+export interface BeforeHookResult {
+  context: { body: Record<string, unknown> };
+}
+
+/**
+ * A password change always ends the person's other sessions (spec 0005, AC-14, AC-19), whatever
+ * the client sent: a stolen session must not outlive the change. `undefined` leaves a body that is
+ * not an object for Better Auth to refuse.
+ */
+export function forceRevokeOtherSessions(body: unknown): BeforeHookResult | undefined {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return undefined;
+  return { context: { body: { ...(body as Record<string, unknown>), revokeOtherSessions: true } } };
+}
+
 /**
  * Runs before every Better Auth route that the allowlist lets through (spec 0005, AC-2, AC-3,
  * AC-7, AC-8): the Origin check, the weak password answer, the 7 day cap, the must change rule,
@@ -128,7 +143,14 @@ export function createBeforeHook(deps: AuthHookDeps) {
   const now = deps.now ?? (() => new Date());
   return beforeAuth;
 
-  async function beforeAuth(ctx: HookContext): Promise<void> {
+  async function beforeAuth(ctx: HookContext): Promise<BeforeHookResult | undefined> {
+    await checkBefore(ctx);
+    return ctx.request !== undefined && ctx.path === CHANGE_PASSWORD
+      ? forceRevokeOtherSessions(ctx.body)
+      : undefined;
+  }
+
+  async function checkBefore(ctx: HookContext): Promise<void> {
     // Our own guard calls `getSession` through the same pipeline with no HTTP request. That call
     // is the guard's to judge, so only a request that came in over HTTP is checked here.
     if (ctx.request === undefined) return;

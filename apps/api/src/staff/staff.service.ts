@@ -19,7 +19,12 @@ import { randomBytes } from 'node:crypto';
 import { AuthAudit } from '../auth/auth-audit.service.js';
 import { emailKey } from '../auth/client-info.js';
 import { ADMIN_RULE_LOCK } from '../auth/locks.js';
-import { deleteTokens, issueToken } from '../auth/reset-tokens.js';
+import {
+  deleteTokens,
+  deleteTwoFactorChallenges,
+  issueToken,
+  type Executor,
+} from '../auth/reset-tokens.js';
 import { SignInLockout } from '../auth/sign-in-lockout.js';
 import { generateTemporaryPassword } from '../auth/temporary-password.js';
 import { ENV } from '../config/config.module.js';
@@ -133,6 +138,12 @@ function uniqueViolation(error: unknown): string | undefined {
 const conflict = (code: string, message: string) => new ConflictException({ code, message });
 const notFound = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'No such staff account' });
+/** An admin resets or signs out someone else from the staff page, never themselves (no password check there). */
+const refuseSelf = (id: string, actor: Actor, action: string): void => {
+  if (id === actor.id) {
+    throw conflict('SELF_ACTION', `You cannot ${action} your own account from the staff page`);
+  }
+};
 
 /**
  * Staff administration (spec 0005, AC-12 to AC-18). Every change that could remove the last
@@ -222,8 +233,8 @@ export class StaffService {
           sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
               VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})`,
         );
-        const token = this.mailOn ? await issueToken(tx, id, 'invite') : undefined;
-        return { id, ...(token && { tokenId: token.tokenId }) };
+        const tokenId = await this.replaceInvite(tx, id);
+        return { id, ...(tokenId && { tokenId }) };
       });
     } catch (error) {
       this.rethrowUnique(error);
@@ -241,8 +252,16 @@ export class StaffService {
 
   async update(id: string, input: UpdateStaffRequest, actor: Actor): Promise<StaffDetail> {
     if (input.language) await this.assertLanguage(input.language);
+    // Hashing is slow and must not hold any lock, so the unusable password an email change needs
+    // is made first, and only when the email looks set to change.
+    const current = input.email === undefined ? undefined : await this.find(this.db, id);
+    let unusableHash =
+      current && input.email !== current.email.toLowerCase()
+        ? await hashPassword(randomBytes(32).toString('base64url'))
+        : undefined;
     let roleChanged = false;
     let otherChanged = false;
+    let inviteTokenId: string | undefined;
 
     try {
       await this.db.transaction(async (tx) => {
@@ -251,6 +270,7 @@ export class StaffService {
         if (!target) throw notFound();
 
         const sets: SQL[] = [];
+        let emailChanged = false;
         if (input.email !== undefined && input.email !== target.email.toLowerCase()) {
           if (statusOf(target) !== 'invited') {
             throw conflict(
@@ -258,8 +278,9 @@ export class StaffService {
               'The email can only change while the account is invited',
             );
           }
-          sets.push(sql`email = ${input.email}`);
+          sets.push(sql`email = ${input.email}`, sql`must_change_password = true`);
           otherChanged = true;
+          emailChanged = true;
         }
         if (input.role !== undefined && input.role !== target.role) {
           if (target.role === 'admin' && !target.banned) await this.assertAnotherAdmin(tx, id);
@@ -283,12 +304,24 @@ export class StaffService {
             sql`UPDATE users SET ${sql.join(sets, sql`, `)}, updated_at = now() WHERE id = ${id}::uuid`,
           );
         }
+        if (emailChanged) {
+          // Whoever held the old address may have set a password through its link already: that
+          // password stops working, with any session, as an admin reset does (AC-18). With mail on
+          // a new link goes to the new address, exactly as a re-invite would. With mail off no
+          // password is shown here; the admin issues one with Reset password (AC-13).
+          unusableHash ??= await hashPassword(randomBytes(32).toString('base64url'));
+          await this.replacePassword(tx, id, unusableHash);
+          await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+          await deleteTwoFactorChallenges(tx, id);
+          inviteTokenId = await this.replaceInvite(tx, id);
+        }
       });
     } catch (error) {
       this.rethrowUnique(error);
       throw error;
     }
 
+    if (inviteTokenId) await this.queue(id, 'invite', inviteTokenId);
     if (roleChanged) {
       const detail = await this.get(id);
       this.emit(new StaffRoleChanged(this.context(actor, id), detail.role));
@@ -318,6 +351,7 @@ export class StaffService {
   }
 
   async enable(id: string, actor: Actor): Promise<StaffDetail> {
+    if (!(await this.find(this.db, id))) throw notFound();
     const result = await this.db.execute(
       sql`UPDATE users SET banned = false, ban_reason = NULL, ban_expires = NULL, updated_at = now()
            WHERE id = ${id}::uuid`,
@@ -333,6 +367,7 @@ export class StaffService {
    * person follows the emailed link. Sessions and older links go, and the lockout clears.
    */
   async resetPassword(id: string, actor: Actor): Promise<ResetStaffPasswordResponse> {
+    refuseSelf(id, actor, 'reset the password of');
     const temporaryPassword = this.mailOn ? undefined : generateTemporaryPassword();
     const passwordHash = await hashPassword(
       temporaryPassword ?? randomBytes(32).toString('base64url'),
@@ -341,15 +376,12 @@ export class StaffService {
     const done = await this.db.transaction(async (tx) => {
       const target = await this.find(tx, id, true);
       if (!target) throw notFound();
-      await tx.execute(
-        sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
-            VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})
-            ON CONFLICT (provider_id, account_id) DO UPDATE SET password = excluded.password, updated_at = now()`,
-      );
+      await this.replacePassword(tx, id, passwordHash);
       await tx.execute(
         sql`UPDATE users SET must_change_password = true, updated_at = now() WHERE id = ${id}::uuid`,
       );
       await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+      await deleteTwoFactorChallenges(tx, id);
       let tokenId: string | undefined;
       if (this.mailOn) tokenId = (await issueToken(tx, id, 'reset')).tokenId;
       else await deleteTokens(tx, id);
@@ -380,6 +412,7 @@ export class StaffService {
   }
 
   async revokeSessions(id: string, actor: Actor): Promise<RevokeSessionsResponse> {
+    refuseSelf(id, actor, 'sign out every session of');
     const target = await this.find(this.db, id);
     if (!target) throw notFound();
     const result = await this.db.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
@@ -392,6 +425,7 @@ export class StaffService {
    * their phone. Their password is untouched, so they sign in with it and can enroll again.
    */
   async resetTwoFactor(id: string, actor: Actor): Promise<StaffDetail> {
+    refuseSelf(id, actor, 'reset the two factor of');
     await this.db.transaction(async (tx) => {
       const target = await this.find(tx, id, true);
       if (!target) throw notFound();
@@ -400,6 +434,7 @@ export class StaffService {
         sql`UPDATE users SET two_factor_enabled = false, updated_at = now() WHERE id = ${id}::uuid`,
       );
       await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+      await deleteTwoFactorChallenges(tx, id);
     });
     this.emit(new StaffTwoFactorReset(this.context(actor, id)));
     return this.get(id);
@@ -446,6 +481,27 @@ export class StaffService {
     if (constraint === 'users_staff_code_unique') {
       throw conflict('STAFF_CODE_TAKEN', 'Another account already uses this staff code');
     }
+  }
+
+  /** Sets the stored hash of the person's one `credential` account, making it if it is missing. */
+  private async replacePassword(tx: Tx, id: string, passwordHash: string): Promise<void> {
+    await tx.execute(
+      sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
+          VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})
+          ON CONFLICT (provider_id, account_id) DO UPDATE SET password = excluded.password, updated_at = now()`,
+    );
+  }
+
+  /**
+   * Ends the person's older links and, with mail on, issues a fresh invite token. Returns its id
+   * for `queue`, which runs after the commit so the worker reads the committed row.
+   */
+  private async replaceInvite(executor: Executor, id: string): Promise<string | undefined> {
+    if (!this.mailOn) {
+      await deleteTokens(executor, id);
+      return undefined;
+    }
+    return (await issueToken(executor, id, 'invite')).tokenId;
   }
 
   private async queue(userId: string, kind: MailKind, tokenId: string): Promise<void> {

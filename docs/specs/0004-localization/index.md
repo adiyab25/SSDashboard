@@ -1,7 +1,7 @@
 # 0004. Localize the back office with client side i18next, a language cookie, and one shared formatting module
 
 **Date**: 2026-11-03
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

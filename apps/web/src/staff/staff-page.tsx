@@ -330,22 +330,26 @@ export function StaffPage() {
                           >
                             {t('staff.row.edit')}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => confirm('reset', row)}>
-                            {t('staff.row.resetPassword')}
-                          </DropdownMenuItem>
+                          {row.id !== me?.id && (
+                            <DropdownMenuItem onSelect={() => confirm('reset', row)}>
+                              {t('staff.row.resetPassword')}
+                            </DropdownMenuItem>
+                          )}
                           {row.status === 'invited' && mailEnabled && (
                             <DropdownMenuItem onSelect={() => void invite(row)}>
                               {t('staff.row.resendInvite')}
                             </DropdownMenuItem>
                           )}
-                          {row.twoFactorEnabled && (
+                          {row.twoFactorEnabled && row.id !== me?.id && (
                             <DropdownMenuItem onSelect={() => confirm('twoFactor', row)}>
                               {t('staff.row.resetTwoFactor')}
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onSelect={() => confirm('revoke', row)}>
-                            {t('staff.row.revokeSessions')}
-                          </DropdownMenuItem>
+                          {row.id !== me?.id && (
+                            <DropdownMenuItem onSelect={() => confirm('revoke', row)}>
+                              {t('staff.row.revokeSessions')}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           {row.status === 'disabled' ? (
                             <DropdownMenuItem onSelect={() => void enable(row)}>
@@ -395,14 +399,22 @@ export function StaffPage() {
           editId={dialog.editId}
           languages={languages}
           onClose={() => setDialog(null)}
-          onSaved={({ staff, created }) => {
+          onSaved={({ staff, created, emailChanged }) => {
             setReload((count) => count + 1);
             if (created) {
               setDialog({ kind: 'setup', setup: created, reason: 'invite', name: staff.name });
               setMessage(t('staff.messages.created'));
             } else {
               setDialog(null);
-              setMessage(t('staff.messages.saved'));
+              setMessage(
+                emailChanged
+                  ? t(
+                      mailEnabled
+                        ? 'staff.messages.emailChangedInvite'
+                        : 'staff.messages.emailChangedReset',
+                    )
+                  : t('staff.messages.saved'),
+              );
             }
           }}
         />
