@@ -6,6 +6,8 @@ export default function config(phase: string): NextConfig {
   return {
     // One image for every client: nothing per client is baked in at build time.
     output: 'standalone',
+    // packages/ui ships TypeScript source; Next compiles it with the app.
+    transpilePackages: ['@ssdashboard/ui'],
     outputFileTracingRoot: fileURLToPath(new URL('../..', import.meta.url)),
     cacheComponents: true,
     partialPrefetching: true,

@@ -60,6 +60,33 @@ describe('SettingsService.read', () => {
       ),
     ).rejects.toThrow();
   });
+
+  // Spec 0004 AC-4 and AC-8: a bad language, currency, or time zone is rejected on read.
+  it.each([
+    ['currency', 'egp'],
+    ['currency', 'EGPP'],
+    ['timezone', 'Mars/Olympus'],
+    ['languages', []],
+    ['languages', ['en', 'en']],
+    ['languages', ['english']],
+    ['default_language', 'EN'],
+  ])('rejects %s = %j', async (key, value) => {
+    await expect(
+      service.read([key as 'currency'], executorWith([{ key, value }])),
+    ).rejects.toThrow();
+  });
+
+  it('reads the language settings in their stored shapes', async () => {
+    const result = await service.read(
+      ['languages', 'default_language'],
+      executorWith([
+        { key: 'languages', value: ['en', 'ar', 'fr'] },
+        { key: 'default_language', value: 'ar' },
+      ]),
+    );
+
+    expect(result).toEqual({ languages: ['en', 'ar', 'fr'], default_language: 'ar' });
+  });
 });
 
 // Spec 0002: the lock date and document year are taken in the install's time zone (AC-6, AC-10).

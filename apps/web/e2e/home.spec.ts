@@ -8,7 +8,7 @@ test.describe('home page', () => {
   test('shows the api, database, and version loaded through /api', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { level: 1, name: 'SSDashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
     await expect(valueOf(page, 'API')).toHaveText('ok');
     await expect(valueOf(page, 'Database')).toHaveText('up');
     await expect(valueOf(page, 'Version')).not.toBeEmpty();
@@ -29,7 +29,7 @@ test.describe('home page', () => {
 
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { level: 1, name: 'SSDashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
     await expect(valueOf(page, 'API')).toHaveText(/^unreachable \(/);
     await expect(page.locator('dt', { hasText: 'Database' })).toHaveCount(0);
   });
@@ -42,6 +42,25 @@ test.describe('home page', () => {
     await page.goto('/');
 
     await expect(valueOf(page, 'API')).toHaveText('unreachable (api answered 502)');
+  });
+
+  test('shows the install name from /api/config in the header', async ({ page }) => {
+    await page.route('**/api/config', (route) =>
+      route.fulfill({ json: { clientName: 'Acme Home', version: '1.0.0' } }),
+    );
+
+    await page.goto('/');
+
+    await expect(page.getByRole('banner')).toContainText('Acme Home');
+  });
+
+  test('falls back to SSDashboard in the header when /api/config fails', async ({ page }) => {
+    await page.route('**/api/config', (route) => route.fulfill({ status: 500, body: '' }));
+
+    await page.goto('/');
+
+    await expect(page.getByRole('banner')).toContainText('SSDashboard');
+    await expect(valueOf(page, 'API')).toHaveText('ok');
   });
 
   test('shows degraded when the api reports the database down', async ({ page }) => {

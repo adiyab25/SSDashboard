@@ -3,9 +3,11 @@ import {
   GetLevelsInput,
   PostingInput,
   PostingLine,
+  PostingRequest,
   ReleaseInput,
   ReserveInput,
   ReverseInput,
+  ReverseRequest,
 } from '../src/index.js';
 
 const ID = '01a1a04f-4735-7039-83da-13951ed11650';
@@ -14,6 +16,7 @@ const posting = {
   idempotencyKey: 'k1',
   sourceType: 'purchase_receipt',
   sourceId: ID,
+  postedBy: null,
   lines: [line],
 };
 
@@ -45,6 +48,15 @@ describe('PostingLine', () => {
 });
 
 describe('PostingInput', () => {
+  it('requires postedBy to be explicit, a user id or null (covers: AC-22)', () => {
+    const { postedBy: _omitted, ...withoutPoster } = posting;
+
+    expect(PostingInput.safeParse(withoutPoster).success).toBe(false);
+    expect(PostingInput.safeParse({ ...posting, postedBy: null }).success).toBe(true);
+    expect(PostingInput.safeParse({ ...posting, postedBy: ID }).success).toBe(true);
+    expect(PostingInput.safeParse({ ...posting, postedBy: 'nope' }).success).toBe(false);
+  });
+
   it('accepts a posting and turns an ISO date into a Date (covers: AC-6)', () => {
     const parsed = PostingInput.parse({ ...posting, effectiveAt: '2026-11-01T10:00:00Z' });
 
@@ -67,10 +79,42 @@ describe('PostingInput', () => {
 
 describe('ReverseInput', () => {
   it('needs a reason code (covers: AC-2)', () => {
-    expect(ReverseInput.safeParse({ groupId: ID, idempotencyKey: 'r1' }).success).toBe(false);
     expect(
-      ReverseInput.safeParse({ groupId: ID, idempotencyKey: 'r1', reasonCode: 'mistake' }).success,
+      ReverseInput.safeParse({ groupId: ID, idempotencyKey: 'r1', postedBy: null }).success,
+    ).toBe(false);
+    expect(
+      ReverseInput.safeParse({
+        groupId: ID,
+        idempotencyKey: 'r1',
+        postedBy: null,
+        reasonCode: 'mistake',
+      }).success,
     ).toBe(true);
+  });
+
+  it('requires postedBy to be explicit, a user id or null (covers: AC-22)', () => {
+    const base = { groupId: ID, idempotencyKey: 'r1', reasonCode: 'mistake' };
+
+    expect(ReverseInput.safeParse(base).success).toBe(false);
+    expect(ReverseInput.safeParse({ ...base, postedBy: ID }).success).toBe(true);
+    expect(ReverseInput.safeParse({ ...base, postedBy: 'nope' }).success).toBe(false);
+  });
+});
+
+describe('PostingRequest / ReverseRequest (HTTP bodies) (covers: AC-22)', () => {
+  const { postedBy: _poster, ...request } = posting;
+  const reverseRequest = { groupId: ID, idempotencyKey: 'r1', reasonCode: 'mistake' };
+
+  it('parse a body without postedBy', () => {
+    expect(PostingRequest.safeParse(request).success).toBe(true);
+    expect(ReverseRequest.safeParse(reverseRequest).success).toBe(true);
+  });
+
+  it('reject a smuggled postedBy (a user id or null) instead of stripping it', () => {
+    expect(PostingRequest.safeParse({ ...request, postedBy: ID }).success).toBe(false);
+    expect(PostingRequest.safeParse({ ...request, postedBy: null }).success).toBe(false);
+    expect(ReverseRequest.safeParse({ ...reverseRequest, postedBy: ID }).success).toBe(false);
+    expect(ReverseRequest.safeParse({ ...reverseRequest, postedBy: null }).success).toBe(false);
   });
 });
 

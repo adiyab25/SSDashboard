@@ -83,7 +83,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       const key = await sku();
       const sourceId = randomUUID();
       const sourceLineId = randomUUID();
-      const postedBy = randomUUID();
+      const postedBy = await make.user();
 
       const result = await h.ledger.post(
         posting([{ ...key, quantity: 3, unitCost: '1.5', sourceLineId, reasonCode: 'found' }], {
@@ -102,6 +102,27 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
         [result.groupId],
       );
       expect(rows).toEqual([{ same: true }]);
+    });
+
+    it('stores the posting user as posted_by and rejects an unknown user (AC-22)', async () => {
+      const key = await sku();
+      const postedBy = await make.user();
+
+      const result = await h.ledger.post(
+        posting([{ ...key, quantity: 1, unitCost: '1.0000' }], { postedBy }),
+      );
+
+      const { rows } = await h.owner.pool.query(
+        `SELECT posted_by FROM movement_groups WHERE id = $1`,
+        [result.groupId],
+      );
+      expect(rows).toEqual([{ posted_by: postedBy }]);
+      await rejects(
+        h.ledger.post(
+          posting([{ ...key, quantity: 1, unitCost: '1.0000' }], { postedBy: randomUUID() }),
+        ),
+        'UnknownReference',
+      );
     });
 
     it('rejects a unit cost on an outbound line and a missing one on an inbound line', async () => {
@@ -299,6 +320,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
 
       await rejects(
         h.ledger.reverse({
+          postedBy: null,
           groupId: first.groupId,
           idempotencyKey: input.idempotencyKey,
           reasonCode: 'mistake',
@@ -372,6 +394,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       expect(await level(h.owner, key)).toMatchObject({ onHand: 8, totalValue: '78.00' });
 
       const reversal = await h.ledger.reverse({
+        postedBy: null,
         groupId: receipt.groupId,
         idempotencyKey: randomUUID(),
         reasonCode: 'wrong supplier',
@@ -400,6 +423,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       await h.ledger.post(posting([{ ...key, quantity: -5 }]));
 
       await h.ledger.reverse({
+        postedBy: null,
         groupId: shipment.groupId,
         idempotencyKey: randomUUID(),
         reasonCode: 'cancelled',
@@ -412,6 +436,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       const key = await sku();
       const receipt = await h.ledger.post(posting([{ ...key, quantity: 2, unitCost: '1.0000' }]));
       const reversal = await h.ledger.reverse({
+        postedBy: null,
         groupId: receipt.groupId,
         idempotencyKey: randomUUID(),
         reasonCode: 'mistake',
@@ -419,6 +444,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
 
       await rejects(
         h.ledger.reverse({
+          postedBy: null,
           groupId: receipt.groupId,
           idempotencyKey: randomUUID(),
           reasonCode: 'x',
@@ -427,6 +453,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       );
       await rejects(
         h.ledger.reverse({
+          postedBy: null,
           groupId: reversal.groupId,
           idempotencyKey: randomUUID(),
           reasonCode: 'x',
@@ -440,6 +467,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       const receipt = await h.ledger.post(posting([{ ...key, quantity: 2, unitCost: '1.0000' }]));
       const input = {
         groupId: receipt.groupId,
+        postedBy: null,
         idempotencyKey: randomUUID(),
         reasonCode: 'mistake',
       };
@@ -464,6 +492,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       try {
         await rejects(
           h.ledger.reverse({
+            postedBy: null,
             groupId: receipt.groupId,
             idempotencyKey: randomUUID(),
             reasonCode: 'late',
@@ -472,6 +501,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
           'PeriodLocked',
         );
         const reversal = await h.ledger.reverse({
+          postedBy: null,
           groupId: receipt.groupId,
           idempotencyKey: randomUUID(),
           reasonCode: 'late',
@@ -563,7 +593,12 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
 
     it('rejects reversing a group that does not exist', async () => {
       await rejects(
-        h.ledger.reverse({ groupId: randomUUID(), idempotencyKey: randomUUID(), reasonCode: 'x' }),
+        h.ledger.reverse({
+          postedBy: null,
+          groupId: randomUUID(),
+          idempotencyKey: randomUUID(),
+          reasonCode: 'x',
+        }),
         'NotFound',
       );
     });

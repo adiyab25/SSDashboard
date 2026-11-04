@@ -38,6 +38,18 @@ describe.skipIf(!hasShell)('deploy/bootstrap.sh', () => {
     expect(env).not.toContain('__GENERATED__');
   });
 
+  it('prints the create-admin command as the next step, with the no capture warning', () => {
+    const result = bootstrap();
+
+    expect(result.stdout).toContain(
+      'docker compose --env-file .env run --rm api node dist/create-admin.js --email <email> --name <name>',
+    );
+    expect(result.stdout).toContain('do not capture or log that output.');
+    expect(result.stdout).toContain("docker info --format '{{.LoggingDriver}}'");
+    expect(result.stdout).toContain('prints json-file or local');
+    expect(result.stdout).not.toMatch(/[0-9a-f]{64}/);
+  });
+
   it('generates a different value for each secret', () => {
     bootstrap();
 

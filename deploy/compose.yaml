@@ -16,6 +16,21 @@ x-app-env: &app-env
   APP_VERSION: ${SSD_VERSION}
   EXTENSIONS: ${EXTENSIONS:-}
 
+# Auth and mail settings (spec 0005). The api queues emails and the worker sends them, and both
+# validate the same environment at startup, so both get all of these.
+x-auth-env: &auth-env
+  PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+  CLIENT_DISPLAY_NAME: ${CLIENT_DISPLAY_NAME:-}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+  MAIL_DRIVER: ${MAIL_DRIVER:-none}
+  MAIL_FROM: ${MAIL_FROM:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
+
 services:
   postgres:
     # One pinned major per release. PostgreSQL 18 keeps its data under /var/lib/postgresql/18.
@@ -52,21 +67,20 @@ services:
   api:
     <<: *app
     environment:
-      <<: *app-env
-      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      <<: [*app-env, *auth-env]
     depends_on:
       migrate:
         condition: service_completed_successfully
     mem_limit: 512m
 
-  # Background jobs (pg-boss): the nightly ledger reconciliation.
+  # Background jobs (pg-boss): the nightly ledger reconciliation and the email queue.
   worker:
     <<: *app
     command: ["node", "dist/worker.js"]
     environment:
-      <<: *app-env
+      <<: [*app-env, *auth-env]
       LEDGER_RECONCILE_CRON: ${LEDGER_RECONCILE_CRON:-0 2 * * *}
+      AUTH_CLEANUP_CRON: ${AUTH_CLEANUP_CRON:-0 3 * * *}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -83,6 +97,7 @@ services:
 
   caddy:
     image: caddy:2.11-alpine
+    # Only caddy may publish ports: the api trusts the X-Forwarded-For that Caddy sets (enforced by apps/api/test/compose-ports.spec.ts).
     ports:
       - "80:80"
       - "443:443"
@@ -91,6 +106,8 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Client language files, served at /locales/<code>.json. Add one by dropping the file in.
+      - ../extensions/${CLIENT_ID}/locales:/srv/locales:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

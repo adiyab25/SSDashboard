@@ -204,7 +204,7 @@ export class LedgerService {
       sourceId: parsed.sourceId,
       reversesGroupId: null,
       effectiveAt: parsed.effectiveAt,
-      postedBy: parsed.postedBy ?? null,
+      postedBy: parsed.postedBy,
       lines,
     };
     return this.transact((tx) => this.apply(tx, operation));
@@ -296,7 +296,7 @@ export class LedgerService {
         sourceId: original.source_id,
         reversesGroupId: parsed.groupId,
         effectiveAt: parsed.effectiveAt,
-        postedBy: parsed.postedBy ?? null,
+        postedBy: parsed.postedBy,
         lines,
       });
     });
@@ -471,6 +471,9 @@ export class LedgerService {
     } catch (error) {
       if (pgConstraint(error) === 'movement_groups_reverses_group_id_unique') {
         throw new LedgerError('AlreadyReversed', 'This posting has already been reversed');
+      }
+      if (pgConstraint(error) === 'movement_groups_posted_by_users_id_fk') {
+        throw new LedgerError('UnknownReference', 'The posting user does not exist');
       }
       throw error;
     }

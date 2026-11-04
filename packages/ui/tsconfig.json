@@ -1,0 +1,10 @@
+{
+  "extends": "@ssdashboard/config/tsconfig/react-library.json",
+  "compilerOptions": {
+    "paths": {
+      "@ssdashboard/ui/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "*.ts"],
+  "exclude": ["node_modules"]
+}

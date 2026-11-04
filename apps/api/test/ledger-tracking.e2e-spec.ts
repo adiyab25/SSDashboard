@@ -232,6 +232,7 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       );
 
       const reversal = await h.ledger.reverse({
+        postedBy: null,
         groupId: shipment.groupId,
         idempotencyKey: randomUUID(),
         reasonCode: 'cancelled',
@@ -254,6 +255,7 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       const shipment = await h.ledger.post(posting([{ ...place, quantity: -4 }]));
 
       await h.ledger.reverse({
+        postedBy: null,
         groupId: shipment.groupId,
         idempotencyKey: randomUUID(),
         reasonCode: 'cancelled',
@@ -338,6 +340,7 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
         posting([{ ...key, quantity: -2, reservationId: held.id }]),
       );
       await h.ledger.reverse({
+        postedBy: null,
         groupId: shipment.groupId,
         idempotencyKey: randomUUID(),
         reasonCode: 'cancelled',

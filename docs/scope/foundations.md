@@ -38,17 +38,48 @@ Core entities every module builds on: products and variants, locations (warehous
 - [x] Document it: `/document data model`
 Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`
 
-### 4. Design system & UI foundation · needs a decision
+### 4. Design system & UI foundation · done
 Visual language, layout, and base components for a dense, data heavy back office (tables, forms, scan screens), mirrored correctly for right to left.
 **Done when:** `design.md` covers type, color, spacing, and components; base components work with keyboard and focus, meet WCAG 2.2 AA, and render correctly in both left to right and right to left layouts. (basis: WCAG 2.2 AA)
-- [ ] Design it (spec): `/architect design system & UI foundation`
+- [x] Design it (spec): `/architect design system & UI foundation`
+- [x] Build it: `/develop design system & UI foundation`
+  - [x] Thin thread: `packages/ui`, `GET /api/config`, client name in a minimal shell header (AC-2, AC-5, AC-9, AC-12)
+  - [x] Foundations: tokens, fonts, theme, dev direction switch, typed strings, logical CSS check (AC-2, AC-5, AC-6, AC-11, AC-12, AC-13)
+  - [x] App shell: sidebar, mobile sheet, top bar, skip link, user menu, command palette (AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-14)
+  - [x] Location switcher and `GET /api/locations` (AC-10)
+  - [x] `/design` gallery, `DESIGN.md`, and the Playwright accessibility suite (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-13, AC-14)
+- [x] Verify it: `/check verify design system & UI foundation`
+- [ ] Test it: `/test design system & UI foundation` (skipped)
+Spec [0003](../specs/0003-design-system-ui-foundation/index.md) · code in `packages/ui`, `apps/web/src/shell`, `apps/web/src/design`, `apps/api/src/inventory/locations`
 
-### 5. Localization (English & Arabic) · needs a decision
+### 5. Localization (English & Arabic) · in-progress
 Every screen in English and Arabic, with direction, numbers, and dates formatted per language, and room for future client languages.
 **Done when:** a user can switch language and the whole interface flips direction; no hard coded strings; dates and numbers format per locale; adding a third language needs only translations.
-- [ ] Design it (spec): `/architect localization`
+- [x] Design it (spec): `/architect localization`
+- [x] Build it: `/develop localization`
+  - [x] Thin thread: language cookie, config fields, switch, direction (AC-1, AC-2, AC-3, AC-4, AC-13)
+  - [x] Full catalogs, typed keys, plurals (AC-5, AC-6, AC-7)
+  - [x] Formatting and bilingual text (AC-8, AC-9)
+  - [x] Literal string lint and mixed direction text (AC-5, AC-10)
+  - [x] Client languages, tests, and docs (AC-11, AC-12)
+- [ ] Verify it: `/check verify localization`
+- [x] Test it: `/test localization`
+Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/contracts/src/platform.ts`, `packages/ui/src/components/ltr-text.tsx`, `packages/config/eslint/i18n.js`, `deploy/`
 
-### 6. Staff sign in · needs a decision · GA
+### 6. Staff sign in · in-progress · GA
 Real staff accounts and sessions so every slice runs as a known user from day one.
 **Done when:** staff can sign in, sign out, and reset a password; sessions expire; an admin can create and disable staff accounts.
-- [ ] Design it (spec): `/architect staff sign in`
+- [x] Design it (spec): `/architect staff sign in`
+- [x] Build it: `/develop staff sign in`
+  - [x] Thin thread: sign in and out end to end, guard, `GET /api/me`, first admin command (AC-1, AC-6, AC-7, AC-21, AC-25)
+  - [x] Session policy and lockout: 12 hour sliding session with the 7 day cap, five strikes lockout, rate limits in PostgreSQL, password rule (AC-2, AC-3, AC-4, AC-5, AC-8, AC-23)
+  - [x] Mail and password reset: SMTP and Postmark adapters, mail queue and worker, forgot and reset pages (AC-9, AC-10, AC-11)
+  - [x] Staff administration: create, edit, disable, invite and reset, last admin rule, forced password change, Staff page (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18)
+  - [x] Account page and language sync: edit your own name, phone and language, change your password, saved language applied at sign in (AC-19)
+  - [x] Two factor: authenticator app and backup codes, the code step at sign in, wrong codes counted toward the lock, admin reset (AC-20, AC-3)
+  - [x] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
+- [x] Verify it: `/check verify staff sign in`
+- [x] Test it: `/test staff sign in`
+- [ ] Review it (fresh model): `/check review staff sign in`
+- [x] Document it: `/document staff sign in`
+Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/account`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`

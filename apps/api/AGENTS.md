@@ -35,6 +35,8 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - Database access goes through the Drizzle client from `database.module.ts`; tables are defined in `packages/db`, not here.
 - Import Drizzle helpers (`sql`, `inArray`, `SQL`) from `@ssdashboard/db`, never from `drizzle-orm`: pg-boss's `@opentelemetry/api` peer makes pnpm create a second drizzle-orm copy whose types do not match.
 - Pass an array to raw SQL as one literal, `${pgArray(ids)}::uuid[]`; Drizzle expands a plain JS array into a list of parameters.
+- Validate query strings with `new ZodQueryPipe(<contract schema>)` (`src/platform/zod-query.pipe.ts`); a bad query answers 400 with the stable code `INVALID_QUERY`.
+- List endpoints page with a keyset cursor (the last row's sort key, base64url encoded) and compare and order with `COLLATE "C"`, so pages never skip or repeat rows (`src/inventory/locations/locations.service.ts`).
 
 ## Gotchas
 

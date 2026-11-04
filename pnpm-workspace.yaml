@@ -9,6 +9,9 @@ catalog:
   eslint: ^9.39.5
   drizzle-kit: ^0.31.11
   drizzle-orm: ^0.45.4
+  eslint-plugin-i18next: ^6.1.5
+  i18next: ^26.7.1
+  react-i18next: ^17.1.12
   prettier: ^3.9.10
   pg: ^8.23.1
   "@types/pg": ^8.23.1
@@ -23,3 +26,6 @@ allowBuilds:
   esbuild: true
   sharp: false
   unrs-resolver: false
+
+minimumReleaseAgeExclude:
+  - react-i18next@17.1.12

@@ -50,19 +50,40 @@ export const PostingInput = z.object({
   sourceId: Uuid,
   /** Defaults to now. May be in the past, never more than 5 minutes ahead. */
   effectiveAt: z.coerce.date().optional(),
-  postedBy: Uuid.optional(),
+  /**
+   * Required, never defaulted. Null only for system jobs with no signed in user. HTTP request
+   * schemas must omit this field; the controller takes it from the guard's signed in user.
+   */
+  postedBy: Uuid.nullable(),
   lines: z.array(PostingLine).min(1).max(1000),
 });
 export type PostingInput = z.input<typeof PostingInput>;
+
+/**
+ * The only schemas an HTTP route may validate a body with; the controller adds postedBy from the
+ * signed in user (request.staff.id, see apps/api/src/auth/current-staff.ts). `.strict()` rejects
+ * any unknown top level key, postedBy included, instead of stripping it; the objects inside
+ * `lines` are not strict.
+ */
+export const PostingRequest = PostingInput.omit({ postedBy: true }).strict();
+export type PostingRequest = z.input<typeof PostingRequest>;
 
 export const ReverseInput = z.object({
   groupId: Uuid,
   idempotencyKey: z.string().min(1).max(200),
   effectiveAt: z.coerce.date().optional(),
-  postedBy: Uuid.optional(),
+  /**
+   * Required, never defaulted. Null only for system jobs with no signed in user. HTTP request
+   * schemas must omit this field; the controller takes it from the guard's signed in user.
+   */
+  postedBy: Uuid.nullable(),
   reasonCode: z.string().trim().min(1).max(100),
 });
 export type ReverseInput = z.input<typeof ReverseInput>;
+
+/** The HTTP body for a reversal; see PostingRequest. The controller adds postedBy. */
+export const ReverseRequest = ReverseInput.omit({ postedBy: true }).strict();
+export type ReverseRequest = z.input<typeof ReverseRequest>;
 
 export const PostedMovement = z.object({
   id: Uuid,
