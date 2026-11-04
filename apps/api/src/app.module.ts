@@ -6,6 +6,7 @@ import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { MailModule } from './mail/mail.module.js';
+import { StaffModule } from './staff/staff.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 
 @Module({
@@ -15,6 +16,7 @@ import { PlatformModule } from './platform/platform.module.js';
     DatabaseModule,
     MailModule,
     AuthModule,
+    StaffModule,
     HealthModule,
     PlatformModule,
     InventoryModule,

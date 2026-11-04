@@ -5,3 +5,4 @@ export * from './localized-text.js';
 export * from './locations.js';
 export * from './money.js';
 export * from './platform.js';
+export * from './staff.js';

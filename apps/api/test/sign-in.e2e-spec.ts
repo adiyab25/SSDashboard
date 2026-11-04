@@ -200,7 +200,9 @@ describe('staff sign in (thin thread)', { timeout: 90_000 }, () => {
       const locations = await fetch(`${base}/api/locations`, {
         headers: { cookie: sessionCookie(signIn) },
       });
-      expect(locations.status).toBe(200);
+      // The first admin still has a temporary password, so every other route waits (AC-14).
+      expect(locations.status).toBe(403);
+      expect(await locations.json()).toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' });
     });
 
     it('signs out only that session, and the old cookie then fails (AC-6)', async () => {

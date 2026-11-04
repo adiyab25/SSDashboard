@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useMe } from '@/auth/use-me';
 import { isActive, navGroups, visibleNavItems } from './nav';
 
 /** The navigation registry grouped by module; an icon rail when collapsed, a sheet on phones. */
@@ -21,7 +22,8 @@ export function AppSidebar() {
   const { t } = useTranslation();
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
-  const items = visibleNavItems();
+  const me = useMe();
+  const items = visibleNavItems(me?.role);
 
   // The phone sheet closes once a page is picked.
   useEffect(() => {

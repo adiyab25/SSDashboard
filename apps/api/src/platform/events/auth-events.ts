@@ -40,8 +40,63 @@ export class PasswordResetCompleted {
   constructor(readonly context: AuthEventContext) {}
 }
 
+/** A signed in person changed their own password. */
+export class PasswordChanged {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** An admin created an account. `targetId` is the new account. */
+export class StaffCreated {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** An admin changed a person's details, other than their role. */
+export class StaffUpdated {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+export class StaffRoleChanged {
+  constructor(
+    readonly context: AuthEventContext,
+    readonly reason: string,
+  ) {}
+}
+
+/** `reason` is what the admin wrote, when they wrote one. */
+export class StaffDisabled {
+  constructor(
+    readonly context: AuthEventContext,
+    readonly reason: string | null,
+  ) {}
+}
+
+export class StaffEnabled {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** An admin reset someone else's password (by email or with a temporary password). */
+export class StaffPasswordReset {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+export class StaffSessionsRevoked {
+  constructor(readonly context: AuthEventContext) {}
+}
+
 export type AuthEvent =
-  SignedIn | SignInFailed | AccountLocked | PasswordResetRequested | PasswordResetCompleted;
+  | SignedIn
+  | SignInFailed
+  | AccountLocked
+  | PasswordResetRequested
+  | PasswordResetCompleted
+  | PasswordChanged
+  | StaffCreated
+  | StaffUpdated
+  | StaffRoleChanged
+  | StaffDisabled
+  | StaffEnabled
+  | StaffPasswordReset
+  | StaffSessionsRevoked;
 
 /** The event names `@OnEvent` listens for: the class name, past tense. */
 export const eventName = (event: AuthEvent): string => event.constructor.name;

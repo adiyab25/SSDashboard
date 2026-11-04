@@ -88,6 +88,15 @@ export class SessionGuard implements CanActivate {
       mustChangePassword: user.mustChangePassword,
       sessionId: session.id,
     };
+
+    // A temporary password must be changed first (AC-14): only "who am I" works until then. Change
+    // password and sign out are Better Auth routes, which their own before hook lets through.
+    if (user.mustChangePassword && !(request.method === 'GET' && request.path === '/api/me')) {
+      throw new ForbiddenException({
+        code: 'PASSWORD_CHANGE_REQUIRED',
+        message: 'Change your password to continue.',
+      });
+    }
     return true;
   }
 

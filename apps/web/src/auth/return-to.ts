@@ -37,6 +37,13 @@ export function safeReturnTo(
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+/** The forced change password page, which brings the person back to `path` afterwards. */
+export function changePasswordUrl(path: string): string {
+  return path === '/'
+    ? '/change-password'
+    : `/change-password?returnTo=${encodeURIComponent(path)}`;
+}
+
 /** The sign in page address that brings the person back to `path` afterwards. */
 export function signInUrl(path: string): string {
   return path === '/' ? '/sign-in' : `/sign-in?returnTo=${encodeURIComponent(path)}`;

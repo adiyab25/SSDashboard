@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { safeReturnTo, signInUrl } from './return-to';
+import { changePasswordUrl, safeReturnTo, signInUrl } from './return-to';
 
 const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
@@ -22,5 +22,12 @@ export async function SessionGate({ children }: { children: React.ReactNode }) {
     redirect(signInUrl(safeReturnTo(incoming.get('x-pathname'))));
   }
   if (!response.ok) throw new Error(`The api answered ${response.status} to the session check`);
+
+  // A temporary password must be changed before anything else (AC-14); the api refuses every
+  // other route until then, so the pages would only show errors.
+  const me = (await response.json()) as { mustChangePassword?: boolean };
+  if (me.mustChangePassword) {
+    redirect(changePasswordUrl(safeReturnTo(incoming.get('x-pathname'))));
+  }
   return children;
 }

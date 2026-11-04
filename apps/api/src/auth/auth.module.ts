@@ -10,6 +10,7 @@ import { AuthMail } from './auth-mail.service.js';
 import { createAuth } from './auth.factory.js';
 import { AUTH, type Auth } from './auth.tokens.js';
 import { MeController } from './me.controller.js';
+import { RolesGuard } from './roles.guard.js';
 import { SessionGuard } from './session.guard.js';
 import { SignInLockout } from './sign-in-lockout.js';
 
@@ -37,7 +38,9 @@ import { SignInLockout } from './sign-in-lockout.js';
       ): Auth => createAuth(env, connection.db, { lockout, audit, mail }),
     },
     { provide: APP_GUARD, useClass: SessionGuard },
+    // Registered after the session guard, which puts the person on the request first.
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [AUTH],
+  exports: [AUTH, SignInLockout, AuthAudit],
 })
 export class AuthModule {}

@@ -25,6 +25,7 @@ const USER = {
 
 function setup(options: {
   method?: string;
+  path?: string;
   origin?: string;
   cookie?: string;
   isPublic?: boolean;
@@ -45,6 +46,7 @@ function setup(options: {
   );
   const request = {
     method: options.method ?? 'GET',
+    path: options.path ?? '/api/things',
     headers: { ...(options.origin && { origin: options.origin }), cookie: options.cookie },
   } as Record<string, unknown>;
   const response = { append: vi.fn() };
@@ -135,6 +137,48 @@ describe('SessionGuard', () => {
       'set-cookie',
       'better-auth.session_token=renewed; Path=/; HttpOnly',
     );
+  });
+
+  describe('a temporary password that must be changed (AC-14)', () => {
+    const forced = { ...USER, mustChangePassword: true };
+    const run = (method: string, path: string) =>
+      setup({
+        method,
+        path,
+        origin: ORIGIN,
+        cookie: 'better-auth.session_token=abc',
+        session: { user: forced, session: liveSession() },
+      });
+
+    it('lets only GET /api/me through', async () => {
+      const { guard, context } = run('GET', '/api/me');
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it.each([
+      ['GET', '/api/locations'],
+      ['GET', '/api/staff'],
+      ['POST', '/api/staff'],
+      ['PATCH', '/api/me'],
+      ['POST', '/api/me'],
+    ])('answers 403 PASSWORD_CHANGE_REQUIRED to %s %s', async (method, path) => {
+      const { guard, context } = run(method, path);
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'PASSWORD_CHANGE_REQUIRED' },
+      });
+    });
+
+    it('does not gate a person with no forced change', async () => {
+      const { guard, context } = setup({
+        path: '/api/locations',
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession() },
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
   });
 
   describe('the 7 day cap (AC-5)', () => {

@@ -69,7 +69,7 @@ describe('password reset by mail', { timeout: 240_000 }, () => {
     });
     await waitForHttp(`${noMailBase}/api/health`, noMailApi);
     hash = await hashPassword(PASSWORD);
-  });
+  }, 90_000);
 
   afterAll(async () => {
     await stop(noMailApi);

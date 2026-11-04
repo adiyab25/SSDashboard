@@ -39,6 +39,22 @@ describe('SessionGate (AC-7)', () => {
     });
   });
 
+  it('sends a person with a temporary password to change it first, bringing the page along (AC-14)', async () => {
+    fetchMock.mockResolvedValue(Response.json({ mustChangePassword: true }));
+    setRequest({ cookie: 'better-auth.session_token=abc', 'x-pathname': '/staff?q=sam' });
+
+    await expect(SessionGate({ children: 'page' })).rejects.toThrow(
+      'redirect:/change-password?returnTo=%2Fstaff%3Fq%3Dsam',
+    );
+  });
+
+  it('lets a person with no forced change through', async () => {
+    fetchMock.mockResolvedValue(Response.json({ mustChangePassword: false }));
+    setRequest({ cookie: 'better-auth.session_token=abc', 'x-pathname': '/' });
+
+    await expect(SessionGate({ children: 'page' })).resolves.toBe('page');
+  });
+
   it('sends a person without a session to sign in, bringing the page along', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 401 }));
     setRequest({ 'x-pathname': '/staff?q=sam' });

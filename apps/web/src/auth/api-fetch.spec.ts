@@ -47,6 +47,27 @@ describe('apiFetch (AC-5)', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
+  it('sends a 403 PASSWORD_CHANGE_REQUIRED to change the password, bringing the page along (AC-14)', async () => {
+    atPage('/staff', '?q=sam');
+    fetchMock.mockResolvedValue(
+      Response.json({ code: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 }),
+    );
+
+    const response = await apiFetch('/api/staff');
+
+    expect(response.status).toBe(403);
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/change-password?returnTo=%2Fstaff%3Fq%3Dsam');
+  });
+
+  it('leaves any other 403 alone', async () => {
+    atPage('/staff');
+    fetchMock.mockResolvedValue(Response.json({ code: 'FORBIDDEN' }, { status: 403 }));
+
+    await apiFetch('/api/staff');
+
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it.each(['/sign-in', '/forgot-password', '/reset-password', '/two-factor', '/change-password'])(
     'does not redirect from %s, a screen outside the shell',
     async (path) => {

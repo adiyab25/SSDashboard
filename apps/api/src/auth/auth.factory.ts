@@ -56,6 +56,9 @@ export function createAuth(
       customRules: {
         // A shared warehouse network must survive a shift change: 30 attempts a minute.
         '/sign-in/email': { window: 60, max: 30 },
+        // Better Auth limits this to 3 every 10 seconds by default. The per account lock (5 wrong
+        // current passwords, AC-3) is the real control, so a person who mistypes is not shut out.
+        '/change-password': { window: 60, max: 30 },
         '/request-password-reset': { window: 15 * 60, max: 3 },
         '/reset-password': { window: 15 * 60, max: 5 },
         '/two-factor/verify-totp': { window: 10 * 60, max: 15 },

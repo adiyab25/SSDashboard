@@ -3,6 +3,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/a
 import { hashPassword } from 'better-auth/crypto';
 import {
   AccountLocked,
+  PasswordChanged,
   PasswordResetRequested,
   SignedIn,
   SignInFailed,
@@ -40,6 +41,9 @@ export interface AuthHookDeps {
 
 const SIGN_IN = '/sign-in/email';
 const REQUEST_RESET = '/request-password-reset';
+const CHANGE_PASSWORD = '/change-password';
+/** Who is changing their password, from the before hook to the after hook. */
+const changing = new WeakMap<object, { id: string; email: string }>();
 /** A reset request answers no faster than this, so the time cannot tell a real email from a fake one. */
 export const RESET_RESPONSE_FLOOR_MS = 500;
 /** When each reset request started, from the before hook to the after hook. */
@@ -149,6 +153,20 @@ export function createBeforeHook(deps: AuthHookDeps) {
         message: 'Change your password to continue.',
       });
     }
+
+    if (path === CHANGE_PASSWORD) {
+      const who = { id: session.user.id, email: session.user.email };
+      changing.set(ctx.request, who);
+      // A wrong current password counts toward the same lock as sign in (AC-3), so a stolen
+      // session cannot be used to guess the password. During a lock the answer is the same
+      // as for a wrong one.
+      if (await deps.lockout.isLocked(emailKey(who.email), clientIp(requestHeaders(ctx)))) {
+        throw APIError.from('BAD_REQUEST', {
+          code: 'INVALID_PASSWORD',
+          message: 'Invalid password',
+        });
+      }
+    }
   };
 }
 
@@ -176,9 +194,33 @@ export function createAfterHook(deps: AuthHookDeps) {
     if (wait > 0) await sleep(wait);
   }
 
+  /** Counts a wrong current password toward the lock; a good change clears the forced change. */
+  async function afterChangePassword(ctx: HookContext): Promise<void> {
+    const who = ctx.request ? changing.get(ctx.request) : undefined;
+    if (!who) return;
+    const { returned } = ctx.context;
+    if (returned instanceof APIError) {
+      if (errorCode(returned) !== 'INVALID_PASSWORD') return;
+      const outcome = await deps.lockout.recordFailure(
+        emailKey(who.email),
+        clientIp(requestHeaders(ctx)),
+      );
+      if (outcome.pairLocked) {
+        deps.audit.record(new AccountLocked(eventContext(ctx, who.id, who.id, now()), 'pair'));
+      }
+      if (outcome.emailLocked) {
+        deps.audit.record(new AccountLocked(eventContext(ctx, who.id, who.id, now()), 'email'));
+      }
+      return;
+    }
+    await ctx.context.internalAdapter.updateUser(who.id, { mustChangePassword: false });
+    deps.audit.record(new PasswordChanged(eventContext(ctx, who.id, who.id, now())));
+  }
+
   return async function afterAuth(ctx: HookContext): Promise<void> {
     if (ctx.request === undefined) return;
     if (ctx.path === REQUEST_RESET) return afterResetRequest(ctx);
+    if (ctx.path === CHANGE_PASSWORD) return afterChangePassword(ctx);
     if (ctx.path !== SIGN_IN) return;
     const email = bodyField(ctx.body, 'email');
     if (email === undefined) return;

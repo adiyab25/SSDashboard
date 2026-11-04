@@ -1,4 +1,4 @@
-import { isAuthPath, signInUrl } from './return-to';
+import { changePasswordUrl, isAuthPath, signInUrl } from './return-to';
 
 /** Browser state for the redirect, kept apart so a second 401 does not start a second one. */
 let redirecting = false;
@@ -13,13 +13,30 @@ export function redirectToSignIn(): void {
   window.location.assign(signInUrl(`${pathname}${search}`));
 }
 
+/** Sends a person with a temporary password to change it first (spec 0005, AC-14). */
+export function redirectToChangePassword(): void {
+  if (redirecting) return;
+  const { pathname, search } = window.location;
+  if (isAuthPath(pathname)) return;
+  redirecting = true;
+  window.location.assign(changePasswordUrl(`${pathname}${search}`));
+}
+
 /**
  * `fetch` for `/api` calls that need a session. A 401 (no session, or an expired one) sends the
- * person to sign in; the response is still returned so the caller can stop quietly.
+ * person to sign in, and a 403 `PASSWORD_CHANGE_REQUIRED` sends them to change their password;
+ * the response is still returned so the caller can stop quietly.
  */
 export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(input, init);
   if (response.status === 401) redirectToSignIn();
+  else if (response.status === 403) {
+    const body = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { code?: string } | null;
+    if (body?.code === 'PASSWORD_CHANGE_REQUIRED') redirectToChangePassword();
+  }
   return response;
 }
 
