@@ -15,7 +15,7 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 - [x] Break that file (invalid JSON, or remove `_meta`) → the language is hidden, a console warning appears, the shell works → AC-11
 - [x] At 375px wide in Arabic → no sideways scroll, header controls do not overlap; run axe in light and dark, English and Arabic → AC-12
 - [x] In Arabic, the version on the home page keeps `0.0.0-dev` order (computed `direction: ltr`) → AC-10
-- [ ] Ask an Arabic speaker to read the Arabic catalog and the Arabic money, date, and time output → AC-6, AC-8
+- [ ] Ask an Arabic speaker to read the Arabic catalog and the Arabic money, date, and time output → AC-6, AC-8 (not done: the owner accepted the feature without this read on 2026-11-04; do it before a client in Arabic goes live)
 
 ## Value sourcing (vary the input and check the output)
 - [x] Language list: change `languages` to `["en"]` → the menu shows only English → AC-4
