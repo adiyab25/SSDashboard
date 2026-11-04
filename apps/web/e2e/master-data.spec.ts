@@ -40,6 +40,19 @@ async function openSkus(page: Page, search: string, status: 'Active' | 'Archived
   await expect(page.getByRole('table', { name: 'SKUs' }).getByRole('row')).toHaveCount(2);
 }
 
+/**
+ * Types into the SKU search and waits for the debounced request with that text, so a later row
+ * count is read from the filtered list and not the list that was showing before the debounce.
+ */
+async function searchSkus(page: Page, text: string) {
+  const answered = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/skus' && url.searchParams.get('q') === text.trim();
+  });
+  await page.getByLabel('Search SKUs').fill(text);
+  await answered;
+}
+
 async function openEditor(page: Page, skuCode: string, status: 'Active' | 'Archived' = 'Active') {
   await openSkus(page, skuCode, status);
   await page.getByRole('button', { name: `Edit ${skuCode}` }).click();
@@ -288,7 +301,7 @@ test.describe('SKU list: search, archived filter, Load more (AC-13)', () => {
     await openShell(page, '/skus');
     const table = page.getByRole('table', { name: 'SKUs' });
     // A lower case prefix still finds the codes (stored in capitals).
-    await page.getByLabel('Search SKUs').fill(prefix.toLowerCase());
+    await searchSkus(page, prefix.toLowerCase());
     await expect(table.getByRole('row', { name: new RegExp(`${prefix}-02`) })).toBeVisible();
     await expect(table.getByRole('row')).toHaveCount(51); // header + 50
     await expect(table.getByRole('row', { name: new RegExp(`${prefix}-01`) })).toHaveCount(0);
@@ -297,21 +310,21 @@ test.describe('SKU list: search, archived filter, Load more (AC-13)', () => {
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
 
     // Name search: English contains, case ignored, and an Arabic fragment.
-    await page.getByLabel('Search SKUs').fill(`bulk ${tag.toLowerCase()} 07`);
+    await searchSkus(page, `bulk ${tag.toLowerCase()} 07`);
     await expect(table.getByRole('row')).toHaveCount(2);
     await expect(table.getByRole('row', { name: new RegExp(`${prefix}-07`) })).toBeVisible();
-    await page.getByLabel('Search SKUs').fill(`مميز ${tag}`);
+    await searchSkus(page, `مميز ${tag}`);
     await expect(table.getByRole('row')).toHaveCount(2);
     await expect(table.getByRole('row', { name: new RegExp(`${prefix}-03`) })).toBeVisible();
 
     // No match says so; a LIKE wildcard is a literal, not "everything".
-    await page.getByLabel('Search SKUs').fill(`ZZZ${tag}`);
+    await searchSkus(page, `ZZZ${tag}`);
     await expect(page.getByText('No SKU matches this search.')).toBeVisible();
-    await page.getByLabel('Search SKUs').fill('%');
+    await searchSkus(page, '%');
     await expect(table.getByRole('row', { name: new RegExp(prefix) })).toHaveCount(0);
 
     // The Archived filter shows the archived one, badged, and hides the active ones.
-    await page.getByLabel('Search SKUs').fill(prefix);
+    await searchSkus(page, prefix);
     await page.getByRole('button', { name: 'Archived' }).click();
     await expect(page.getByRole('button', { name: 'Archived' })).toHaveAttribute(
       'aria-pressed',
@@ -734,7 +747,9 @@ test.describe('Locations page: edit, archive, delete (AC-4)', () => {
     await expect(stale.getByLabel('Name in English')).toHaveValue(`Theirs ${tag}`);
     await stale.getByLabel('Name in English').fill(`Final ${tag}`);
     await stale.getByRole('button', { name: 'Save changes' }).click();
-    await expect(page.getByText(`Location ${newCode} saved.`)).toBeVisible();
+    // The first save's message can still be showing, so read the newest one; the row check below
+    // proves this save landed.
+    await expect(page.getByText(`Location ${newCode} saved.`).last()).toBeVisible();
     await expect(await findRow(page, 'Locations', new RegExp(newCode))).toContainText(
       `Final ${tag}`,
     );
