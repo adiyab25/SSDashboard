@@ -1,4 +1,5 @@
 export * from './auth.js';
+export * from './catalog.js';
 export * from './health.js';
 export * from './inventory.js';
 export * from './localized-text.js';
@@ -6,3 +7,5 @@ export * from './locations.js';
 export * from './money.js';
 export * from './platform.js';
 export * from './staff.js';
+export * from './stock.js';
+export * from './stock-receipts.js';

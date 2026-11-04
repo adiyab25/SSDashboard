@@ -28,3 +28,37 @@ export const LocationListResponse = z.object({
 });
 
 export type LocationListResponse = z.infer<typeof LocationListResponse>;
+
+/** Location codes are trimmed and uppercased before the pattern check (spec 0006, AC-4). */
+export const LocationCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z0-9._-]{1,16}$/, 'Letters, digits, dot, dash, and underscore, up to 16');
+
+const LocationNameText = z.string().trim().min(1).max(200);
+
+/** A location name in English and/or Arabic: at least one language. Empty strings count as absent. */
+export const LocationName = z
+  .object({
+    en: LocationNameText.optional().or(z.literal('').transform(() => undefined)),
+    ar: LocationNameText.optional().or(z.literal('').transform(() => undefined)),
+  })
+  .refine((name) => name.en !== undefined || name.ar !== undefined, {
+    message: 'Give a name in at least one language',
+    path: ['en'],
+  });
+
+/** `POST /api/locations` (admin). */
+export const CreateLocationRequest = z
+  .object({ code: LocationCode, name: LocationName, type: WorkLocationType })
+  .strict();
+export type CreateLocationRequest = z.input<typeof CreateLocationRequest>;
+
+/** One location as the management endpoints return it. */
+export const LocationDetail = LocationSummary.extend({
+  archived: z.boolean(),
+  /** The microsecond UTC string the stale check compares. */
+  updatedAt: z.string(),
+});
+export type LocationDetail = z.infer<typeof LocationDetail>;

@@ -1,7 +1,7 @@
 # 0006. Build the core stock loop as a numbered stock receipt posted through the ledger in one transaction
 
 **Date**: 2026-11-04
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 
@@ -250,14 +250,14 @@ None. The `SR` prefix is a seeded setting, not an environment variable.
 Tracer Bullet: Milestone 1 is the whole scope "done when" thread, thin but real through every layer (one SKU, one location, one receipt, stock on hand, both languages). Later milestones thicken each segment end to end.
 
 **Milestone 1: The thin thread**
-1. Migration `0008`: `stock_receipt` source type (and the Zod `LedgerSourceType`), `stock_receipt_status`, `stock_receipts` with `request_hash`, `stock_receipt_lines`, the three indexes, the revokes, and the `SR` prefix merged into `document_prefixes`, satisfies **AC-5**, **AC-13**
-2. `LedgerService` `within` callback and `replayed` flag on `post` and `reverse`, with tests for commit, rollback on throw, rerun on the deadlock retry, and no run on replay, satisfies **AC-5**, **AC-6**
-3. `catalog` module and contracts: `POST /products`, `GET /skus/:id`, and `GET /skus?q` (code prefix and name contains, active only, for the line picker), satisfies **AC-1**, **AC-13**
-4. Location create (`POST /locations`, admin) on the existing locations service, satisfies **AC-4**
-5. `POST /stock-receipts`: idempotency (id pre check, `request_hash`, replay comparison), line and location pre checks with all faults, the line total cap, deterministic line ids, numbering inside `within`, `ledger-http.ts` with the full error table and `Retry-After`; `GET /stock-receipts/:id`, satisfies **AC-5**, **AC-6**, **AC-7**, **AC-14**
-6. `ledger.listStock` and `GET /stock`, plus `GET /skus/:id/stock`, with the role based cost serializers, satisfies **AC-9**, **AC-10**, **AC-11**
-7. Web: add TanStack Query (provider in `providers.tsx`) and React Hook Form with the Zod resolver; the inventory nav group; minimal New SKU dialog, New location dialog, receipt form (SKU combobox, lines), receipt detail, and Stock page, all strings in English and Arabic, satisfies **AC-1**, **AC-4**, **AC-5**, **AC-9**, **AC-16**
-8. Playwright thread test in both languages and a direct reconciliation check, satisfies **AC-17**
+1. [x] Migration `0008`: `stock_receipt` source type (and the Zod `LedgerSourceType`), `stock_receipt_status`, `stock_receipts` with `request_hash`, `stock_receipt_lines`, the three indexes, the revokes, and the `SR` prefix merged into `document_prefixes`, satisfies **AC-5**, **AC-13**
+2. [x] `LedgerService` `within` callback and `replayed` flag on `post` and `reverse`, with tests for commit, rollback on throw, rerun on the deadlock retry, and no run on replay, satisfies **AC-5**, **AC-6**
+3. [x] `catalog` module and contracts: `POST /products`, `GET /skus/:id`, and `GET /skus?q` (code prefix and name contains, active only, for the line picker), satisfies **AC-1**, **AC-13**
+4. [x] Location create (`POST /locations`, admin) on the existing locations service, satisfies **AC-4**
+5. [x] `POST /stock-receipts`: idempotency (id pre check, `request_hash`, replay comparison), line and location pre checks with all faults, the line total cap, deterministic line ids, numbering inside `within`, `ledger-http.ts` with the full error table and `Retry-After`; `GET /stock-receipts/:id`, satisfies **AC-5**, **AC-6**, **AC-7**, **AC-14**
+6. [x] `ledger.listStock` and `GET /stock`, plus `GET /skus/:id/stock`, with the role based cost serializers, satisfies **AC-9**, **AC-10**, **AC-11**
+7. [x] Web: add TanStack Query (provider in `providers.tsx`) and React Hook Form with the Zod resolver; the inventory nav group; minimal New SKU dialog, New location dialog, receipt form (SKU combobox, lines), receipt detail, and Stock page, all strings in English and Arabic, satisfies **AC-1**, **AC-4**, **AC-5**, **AC-9**, **AC-16**
+8. [x] Playwright thread test in both languages and a direct reconciliation check, satisfies **AC-17**
 
 **Milestone 2: Receipts in full**
 9. Receipt list with location filter, search, and paging (api and web), satisfies **AC-12**

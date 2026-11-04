@@ -138,6 +138,32 @@ function compareLines(a: Line, b: Line): number {
   );
 }
 
+/**
+ * Caller code run inside a posting's own transaction, after the movements and balances are
+ * written (spec 0006). It writes only the caller's own rows and issues the document number
+ * last. A throw rolls the whole posting back. On the one deadlock retry the transaction reruns,
+ * this callback included, so it must keep no state across attempts. It never runs on a replay.
+ */
+export type WithinPosting = (tx: Transaction, result: PostingResult) => Promise<void>;
+
+export interface PostingOptions {
+  within?: WithinPosting;
+}
+
+/** One balance row as the Stock page reads it. */
+export interface StockListRow {
+  id: string;
+  variantId: string;
+  locationId: string;
+  onHand: number;
+  totalValue: string;
+  /** Microsecond UTC string, also the keyset cursor's first part. */
+  updatedAt: string;
+}
+
+/** A posting's stored result, plus whether this call replayed an earlier one by its key. */
+export type PostingOutcome = PostingResult & { replayed: boolean };
+
 /** `to_char` format for an exact UTC ISO 8601 timestamp, microseconds included. */
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
@@ -153,7 +179,7 @@ export class LedgerService {
   ) {}
 
   /** Posts one atomic group of movements. Replaying the same key returns the stored result. */
-  async post(input: PostingInput): Promise<PostingResult> {
+  async post(input: PostingInput, options: PostingOptions = {}): Promise<PostingOutcome> {
     const parsed = parse(PostingInput, input);
     const lines = parsed.lines.map((line, index): Line => {
       const inbound = line.quantity > 0;
@@ -207,14 +233,14 @@ export class LedgerService {
       postedBy: parsed.postedBy,
       lines,
     };
-    return this.transact((tx) => this.apply(tx, operation));
+    return this.transact((tx) => this.apply(tx, operation, options.within));
   }
 
   /**
    * Reverses a whole posting with a new group of opposite movements, costed by the normal
    * rules for each row's direction. A group is reversed at most once; a reversal never is.
    */
-  async reverse(input: ReverseInput): Promise<PostingResult> {
+  async reverse(input: ReverseInput, options: PostingOptions = {}): Promise<PostingOutcome> {
     const parsed = parse(ReverseInput, input);
     return this.transact(async (tx) => {
       const original = (
@@ -282,23 +308,27 @@ export class LedgerService {
         serials: line.serials,
         reasonCode: parsed.reasonCode,
       }));
-      return this.apply(tx, {
-        idempotencyKey: parsed.idempotencyKey,
-        requestHash: requestHash({
-          operation: 'reverse',
+      return this.apply(
+        tx,
+        {
+          idempotencyKey: parsed.idempotencyKey,
+          requestHash: requestHash({
+            operation: 'reverse',
+            sourceType: original.source_type,
+            sourceId: original.source_id,
+            reversesGroupId: parsed.groupId,
+            effectiveAt: parsed.effectiveAt,
+            lines: hashed,
+          }),
           sourceType: original.source_type,
           sourceId: original.source_id,
           reversesGroupId: parsed.groupId,
           effectiveAt: parsed.effectiveAt,
-          lines: hashed,
-        }),
-        sourceType: original.source_type,
-        sourceId: original.source_id,
-        reversesGroupId: parsed.groupId,
-        effectiveAt: parsed.effectiveAt,
-        postedBy: parsed.postedBy,
-        lines,
-      });
+          postedBy: parsed.postedBy,
+          lines,
+        },
+        options.within,
+      );
     });
   }
 
@@ -337,6 +367,51 @@ export class LedgerService {
       availability,
       nextCursor: rows.length > parsed.limit ? (page.at(-1)?.id ?? null) : null,
     };
+  }
+
+  /**
+   * Balance rows for the Stock page (spec 0006): most recent movement first, keyset on
+   * (`updated_at`, `id`), served by `stock_levels_updated_idx`. Transit and virtual locations are
+   * left out. `after` is the last row's `updatedAt` and `id` from the previous page.
+   */
+  async listStock(query: {
+    locationId?: string;
+    variantId?: string;
+    includeZero: boolean;
+    after?: { updatedAt: string; id: string };
+    limit: number;
+  }): Promise<StockListRow[]> {
+    const filters: SQL[] = [sql`l.type IN ('warehouse', 'showroom')`];
+    if (query.locationId) filters.push(sql`sl.location_id = ${query.locationId}`);
+    if (query.variantId) filters.push(sql`sl.variant_id = ${query.variantId}`);
+    if (!query.includeZero) filters.push(sql`sl.on_hand <> 0`);
+    if (query.after) {
+      filters.push(
+        sql`(sl.updated_at, sl.id) < (${query.after.updatedAt}::timestamptz, ${query.after.id}::uuid)`,
+      );
+    }
+    const { rows } = await this.connection.db.execute<{
+      id: string;
+      variant_id: string;
+      location_id: string;
+      on_hand: number;
+      total_value: string;
+      updated_at: string;
+    }>(sql`
+      SELECT sl.id, sl.variant_id, sl.location_id, sl.on_hand, sl.total_value,
+             to_char(sl.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at
+      FROM stock_levels sl JOIN locations l ON l.id = sl.location_id
+      WHERE ${sql.join(filters, sql` AND `)}
+      ORDER BY sl.updated_at DESC NULLS LAST, sl.id DESC NULLS LAST
+      LIMIT ${query.limit}`);
+    return rows.map((row) => ({
+      id: row.id,
+      variantId: row.variant_id,
+      locationId: row.location_id,
+      onHand: row.on_hand,
+      totalValue: row.total_value,
+      updatedAt: row.updated_at,
+    }));
   }
 
   /** Available stock for one SKU, per sellable location and lot. */
@@ -445,7 +520,11 @@ export class LedgerService {
   }
 
   /** The posting transaction (spec 0002, Key invariants). */
-  private async apply(tx: Transaction, op: Operation): Promise<PostingResult> {
+  private async apply(
+    tx: Transaction,
+    op: Operation,
+    within?: WithinPosting,
+  ): Promise<PostingOutcome> {
     const { timezone, inventory_lock_date: lockDate } = await this.settings.read(
       ['timezone', 'inventory_lock_date'],
       tx,
@@ -525,10 +604,12 @@ export class LedgerService {
     }
 
     await this.write(tx, inserted.id, lines, costed, balances.byKey, reservations, serials);
-    return this.loadResult(tx, inserted.id);
+    const result = await this.loadResult(tx, inserted.id);
+    if (within) await within(tx, result);
+    return { ...result, replayed: false };
   }
 
-  private async replay(tx: Transaction, op: Operation): Promise<PostingResult> {
+  private async replay(tx: Transaction, op: Operation): Promise<PostingOutcome> {
     const existing = (
       await tx.execute<{ id: string; request_hash: string }>(
         sql`SELECT id, request_hash FROM movement_groups WHERE idempotency_key = ${op.idempotencyKey}`,
@@ -541,7 +622,7 @@ export class LedgerService {
         'This idempotency key was already used for a different request',
       );
     }
-    return this.loadResult(tx, existing.id);
+    return { ...(await this.loadResult(tx, existing.id)), replayed: true };
   }
 
   private async loadMaster(

@@ -10,7 +10,7 @@ The thinnest real thread through every layer: sign in, create a SKU, create a wa
 **Spec:** [0006](../specs/0006-core-stock-loop/index.md)
 - [x] Design it (spec): `/architect core stock loop`
 - [ ] Build it: `/develop core stock loop`
-  - [ ] The thin thread: migration, ledger `within` callback, SKU and location create, receipt posting, Stock page, both languages (AC-1, AC-4 to AC-7, AC-9 to AC-11, AC-13, AC-14, AC-16, AC-17)
+  - [x] The thin thread: migration, ledger `within` callback, SKU and location create, receipt posting, Stock page, both languages (AC-1, AC-4 to AC-7, AC-9 to AC-11, AC-13, AC-14, AC-16, AC-17)
   - [ ] Receipts in full: list and search, void, busy retry, backdating (AC-5, AC-7, AC-8, AC-12, AC-14, AC-15)
   - [ ] Master data in full: SKU list, edit, code change, archive with locking, delete, Locations page, SKU history (AC-2 to AC-4, AC-10, AC-11, AC-13, AC-15)
   - [ ] Hardening: Stock page polish, accessibility in both languages, scale checks (AC-9, AC-16, AC-18)

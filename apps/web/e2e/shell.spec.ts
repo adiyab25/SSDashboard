@@ -109,6 +109,9 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Design system',
       // The suite signs in as an administrator, who also has the Staff page (spec 0005, AC-25).
       'Staff',
+      // The inventory group (spec 0006).
+      'Stock on hand',
+      'Receive stock',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

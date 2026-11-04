@@ -14,6 +14,7 @@ export const LedgerSourceType = z.enum([
   'count',
   'production_consume',
   'production_output',
+  'stock_receipt',
 ]);
 export type LedgerSourceType = z.infer<typeof LedgerSourceType>;
 

@@ -92,6 +92,7 @@ export const movementSourceType = pgEnum('movement_source_type', [
   'count',
   'production_consume',
   'production_output',
+  'stock_receipt',
 ]);
 
 /** One row per posting. Append only. */
@@ -158,6 +159,8 @@ export const stockMovements = pgTable(
       t.effectiveAt,
     ),
     index('stock_movements_group_idx').on(t.groupId),
+    // SKU history, newest first (spec 0006).
+    index('stock_movements_variant_recorded_idx').on(t.variantId, t.recordedAt.desc(), t.id.desc()),
     index('stock_movements_recorded_brin').using('brin', t.recordedAt),
     index('stock_movements_lot_idx')
       .on(t.lotId)
@@ -219,6 +222,8 @@ export const stockLevels = pgTable(
       foreignColumns: [lots.id, lots.variantId],
     }).onDelete('restrict'),
     index('stock_levels_location_variant_idx').on(t.locationId, t.variantId),
+    // The Stock page order, most recent movement first (spec 0006).
+    index('stock_levels_updated_idx').on(t.updatedAt.desc(), t.id.desc()),
     check(
       'stock_levels_value_sign',
       sql`(${t.onHand} = 0 AND ${t.totalValue} = 0) OR (${t.onHand} <> 0 AND (${t.totalValue} = 0 OR sign(${t.totalValue}) = sign(${t.onHand})))`,
