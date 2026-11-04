@@ -24,7 +24,7 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 - [x] Instant: change `timezone` to `UTC` → `2026-11-03T22:30:00Z` shows `3 Nov 2026, 22:30` (Cairo shows `4 Nov 2026, 00:30`), the same for English and Arabic users → AC-8 (checked on the real format module, no screen uses it yet)
 - [x] Date only value: a `YYYY-MM-DD` value shows the same day under every `timezone` → AC-8 (checked on the real format module, no screen uses it yet)
 - [x] Clock: English reads 24 hour, Arabic 12 hour with ص/م → AC-8 (checked on the real format module, no screen uses it yet)
-- [ ] Bilingual name: a location with only an Arabic name shows it in English mode; with no names it shows its code → AC-9
+- [x] Bilingual name: a location with only an Arabic name shows it in English mode; with no names it shows its code → AC-9 (driven on 2026-11-04 by `bilingual-location.spec.ts`)
 - [x] Digits: Arabic shows Western digits for numbers, quantities, percents, money, and dates → AC-8 (checked on the real format module, no screen uses it yet)
 
 ## Commands
@@ -39,3 +39,41 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 
 ## Acceptance-criteria coverage
 - AC-1 … Language menu, switch without reload · AC-2 … direction follows language, dev switch gone · AC-3 … cookie, head script, no flash, no hydration warning · AC-4 … settings, config fallbacks · AC-5 … typed keys, literal string lint · AC-6 … catalog parity, English fallback · AC-7 … plurals and interpolation · AC-8 … formatting module and lint ban · AC-9 … bilingual text rule · AC-10 … LtrText · AC-11 … client language files and Caddy route · AC-12 … axe and 375px Arabic · AC-13 … load failure and overlapping choices
+
+## Verify run 2026-11-04 (after staff sign in, spec 0005, merged)
+
+_Run by the QA tester with `/check verify localization` on branch `feat/finish-foundations`. Real api (`node dist/main.js`, port 3211), `next dev` (port 3210) and `next start` on a fresh production build (port 3212), against a throwaway Postgres database `ssdashboard_e2e_l10n_qa` on the local compose database (dropped afterwards). Every shell page needs a session now, so the Playwright suite signs in as the seeded e2e admin through `global-setup.ts`._
+
+Verdict: PASS on all 13 acceptance criteria. One item stays open for a person: the Arabic reading review (see the end).
+
+| AC | Verdict | Evidence |
+|---|---|---|
+| AC-1 Language submenu, switch without reload, text kept, cookie | PASS | `localization.spec.ts` › "switching flips lang, dir, and portals without a reload, keeps typed text, and survives a reload" (desktop, passed) |
+| AC-2 Direction follows language, dev switch gone, production honours cookie | PASS | `production.spec.ts` › "honours the saved language, with no development direction switch" (production project, passed on `next start`); `pnpm build` passes and `/design` is a real 404 in production |
+| AC-3 Cookie, head script, no flash, no hydration warning | PASS | `localization.spec.ts` › "a saved Arabic page opens right to left with no English flash and no hydration warning"; "a first visit opens in the install default language and remembers it" (both passed, desktop) |
+| AC-4 Settings, `/api/config`, fallbacks | PASS | Live: `GET /api/config` returned `languages`, `defaultLanguage`, `currency`, `timezone`. Changing `languages` to `["en"]` gave `["en"]`; `default_language` `"ar"` gave `"ar"`; `default_language` `"fr"` (not enabled) gave `"en"`. `pnpm db:migrate` seeded `languages` `["en","ar"]` and `default_language` `"en"`; after setting `ar` and re-running `node dist/migrate.js` the value stayed `"ar"`. e2e: "a saved language the install no longer enables falls back to the default" and "keeps the saved language when the config call fails" passed. `pnpm --filter @ssdashboard/api test` 305 passed |
+| AC-5 Typed keys, no raw strings | PASS | `pnpm --filter @ssdashboard/web test` includes `typed-keys.spec.ts`, 341 passed; `pnpm --filter @ssdashboard/web lint` exit 0; `pnpm --filter @ssdashboard/config test` 19 pass, 0 fail (the lint fixtures fail where they should); `pnpm typecheck` 7 of 7 tasks successful |
+| AC-6 Catalog parity, English fallback | PASS | `catalog.spec.ts` in the web unit run (341 passed). Wording quality is not judged here, see the open item |
+| AC-7 Interpolation and plurals | PASS | `plurals.spec.ts` in the web unit run (341 passed) |
+| AC-8 Formatting module and lint ban | PASS | `format.spec.ts` and `use-format.spec.tsx` in the web unit run; config lint fixtures for `toLocaleString` and `new Intl.*` pass. No screen uses money or dates yet, so these were checked on the module only (as in the earlier run) |
+| AC-9 Bilingual stored text | PASS | `localized-text.spec.ts` and `location-switcher.spec.tsx` (unit). New driven check `apps/web/e2e/bilingual-location.spec.ts` (desktop, 2 passed): in English a location named only in Arabic shows the Arabic name, in Arabic an English only name shows, a location with no names shows its code |
+| AC-10 `LtrText` | PASS | `localization.spec.ts` › "a code stays left to right inside right to left text (AC-10)" passed |
+| AC-11 Client language files and Caddy | PASS | e2e "a language file appears in the menu, shows where translated and English elsewhere" and "a malformed or missing file is hidden with a console warning, and the shell works" passed. `caddy validate` on the real `deploy/Caddyfile` (with `SITE_ADDRESS=:80`) printed "Valid configuration". A Caddy container with the same `handle /locales/*` block: `/locales/fr.json` answered `200` with `Cache-Control: no-cache`, `/locales/xx.json` answered `404` |
+| AC-12 axe and 375px Arabic | PASS | `shell.spec.ts` axe loop over theme and direction (passed); `localization.spec.ts` › "at 375px in Arabic nothing in the shell is clipped or overlapping" (mobile) and "Arabic text uses IBM Plex Sans Arabic" passed |
+| AC-13 Load failure and overlapping choices | PASS | `localization.spec.ts` › "a blocked Arabic chunk keeps English, leaves the cookie, and shows an inline error" and "the last of two overlapping choices wins" passed |
+
+Commands run (key lines):
+- `pnpm build` → `Tasks: 4 successful`
+- `pnpm typecheck` → `Tasks: 7 successful, 7 total`
+- `pnpm --filter @ssdashboard/web test` → `Test Files 38 passed (38)`, `Tests 341 passed (341)`
+- `pnpm --filter @ssdashboard/config test` → `# pass 19`, `# fail 0`
+- `pnpm --filter @ssdashboard/api test` → `Test Files 27 passed (27)`, `Tests 305 passed (305)`
+- `pnpm --filter @ssdashboard/web lint` → exit 0
+- `playwright test` (desktop, mobile, production, whole suite) → `280 passed`, `44 skipped`, `1 failed` on the first pass. The failure was `shell.spec.ts:134` "every focused shell control shows a visible focus ring" (spec 0003, not localization). It passed when re-run alone, together with `localization.spec.ts` (`13 passed`); treat it as a possible flake, see follow-ups.
+- Mobile skips are by design (`desktopOnly` and the 375px test runs on the mobile project only).
+
+Not localization bugs, found along the way (not fixed, outside this lane):
+- `pnpm lint` fails in `@ssdashboard/api` with 3 `no-unsafe-*` errors (`no-unsafe-return`, `no-unsafe-assignment`, `no-unsafe-member-access` on `.user_id`). The files in progress at the time are the spec 0005 work (`apps/api/src/auth`, `create-admin.ts`, `apps/api/test/create-admin-two-factor.e2e-spec.ts`), so this is the backend dev's in progress work. Web, ui and config lint are clean.
+- With `API_INTERNAL_URL` set in the shell, `session-gate.spec.tsx` › "asks the api for the person with the cookie forwarded" fails because the test expects the default `http://localhost:3001`. It passes with the variable unset (38 of 38 files). A test hygiene issue for spec 0005's owner.
+
+Still open (needs a person): ask an Arabic speaker to read the Arabic catalog and the Arabic money, date, and time output (AC-6, AC-8 wording). The Arabic reading box above stays unticked on purpose.
