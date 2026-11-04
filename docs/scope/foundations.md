@@ -70,16 +70,16 @@ Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`,
 Real staff accounts and sessions so every slice runs as a known user from day one.
 **Done when:** staff can sign in, sign out, and reset a password; sessions expire; an admin can create and disable staff accounts.
 - [x] Design it (spec): `/architect staff sign in`
-- [ ] Build it: `/develop staff sign in`
+- [x] Build it: `/develop staff sign in`
   - [x] Thin thread: sign in and out end to end, guard, `GET /api/me`, first admin command (AC-1, AC-6, AC-7, AC-21, AC-25)
   - [x] Session policy and lockout: 12 hour sliding session with the 7 day cap, five strikes lockout, rate limits in PostgreSQL, password rule (AC-2, AC-3, AC-4, AC-5, AC-8, AC-23)
   - [x] Mail and password reset: SMTP and Postmark adapters, mail queue and worker, forgot and reset pages (AC-9, AC-10, AC-11)
   - [x] Staff administration: create, edit, disable, invite and reset, last admin rule, forced password change, Staff page (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18)
   - [x] Account page and language sync: edit your own name, phone and language, change your password, saved language applied at sign in (AC-19)
   - [x] Two factor: authenticator app and backup codes, the code step at sign in, wrong codes counted toward the lock, admin reset (AC-20, AC-3)
-  - [ ] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
-- [ ] Verify it: `/check verify staff sign in`
-- [ ] Test it: `/test staff sign in`
+  - [x] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
+- [x] Verify it: `/check verify staff sign in`
+- [x] Test it: `/test staff sign in`
 - [ ] Review it (fresh model): `/check review staff sign in`
-- [ ] Document it: `/document staff sign in`
+- [x] Document it: `/document staff sign in`
 Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/account`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`

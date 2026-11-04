@@ -75,6 +75,7 @@ MCP servers: shadcn registry (recommended), Better Auth docs `https://mcp.better
 ## Context files
 
 - [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS api, worker, and migrate entry points; module, config, and extension rules
+- [apps/api/src/auth/AGENTS.md](apps/api/src/auth/AGENTS.md): staff sign in, session guard, lockout, two factor, and the create-admin commands
 - [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js back office (this Next.js version differs from training data, read its docs first)
 - [packages/contracts/AGENTS.md](packages/contracts/AGENTS.md): Zod schemas, OpenAPI document, generated client
 - [packages/db/AGENTS.md](packages/db/AGENTS.md): Drizzle schema and the only migration history
