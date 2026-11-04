@@ -16,7 +16,7 @@ import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -127,6 +127,25 @@ export function ReceiptFormPage() {
   const { errors } = form.formState;
   const lines = useFieldArray({ control: form.control, name: 'lines' });
   const watched = useWatch({ control: form.control, name: 'lines' });
+  // Where focus goes once the line list has re-rendered after an add or a remove.
+  const focusTarget = useRef<{ kind: 'new-line' | 'after-remove'; index: number } | null>(null);
+
+  useEffect(() => {
+    const target = focusTarget.current;
+    if (!target) return;
+    focusTarget.current = null;
+    const byId = (id: string) => document.getElementById(id);
+    if (target.kind === 'new-line') {
+      byId(`line-${target.index}-sku`)?.focus();
+      return;
+    }
+    // The line that took the removed one's place, else the one before it, else Add line.
+    const count = form.getValues('lines').length;
+    const index = Math.min(target.index, count - 1);
+    const remove = byId(`line-${index}-remove`);
+    const next = remove && !remove.hasAttribute('disabled') ? remove : byId(`line-${index}-sku`);
+    (next ?? byId('receipt-add-line'))?.focus();
+  }, [lines.fields, form]);
 
   // The date starts at today once it is known, and stays the person's choice after that.
   useEffect(() => {
@@ -439,9 +458,13 @@ export function ReceiptFormPage() {
                     variant="ghost"
                     size="icon"
                     className="coarse:size-touch"
+                    id={`line-${index}-remove`}
                     disabled={lines.fields.length === 1}
                     aria-label={t('inventory.receipt.removeLine', { number })}
-                    onClick={() => lines.remove(index)}
+                    onClick={() => {
+                      lines.remove(index);
+                      focusTarget.current = { kind: 'after-remove', index };
+                    }}
                   >
                     <Trash2Icon aria-hidden />
                   </Button>
@@ -454,8 +477,12 @@ export function ReceiptFormPage() {
           <Button
             type="button"
             variant="outline"
+            id="receipt-add-line"
             disabled={lines.fields.length >= 200}
-            onClick={() => lines.append(NEW_LINE)}
+            onClick={() => {
+              lines.append(NEW_LINE, { shouldFocus: false });
+              focusTarget.current = { kind: 'new-line', index: lines.fields.length };
+            }}
           >
             <PlusIcon aria-hidden data-icon="inline-start" />
             {t('inventory.receipt.addLine')}

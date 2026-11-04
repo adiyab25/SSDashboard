@@ -23,7 +23,8 @@ import type { LocationChoice } from '@/shell/current-location';
 
 /** Query keys, so a write invalidates exactly what it changed. */
 export const inventoryKeys = {
-  stock: (locationId: LocationChoice) => ['stock', locationId] as const,
+  stock: (locationId: LocationChoice, skuId: string | null, includeZero: boolean) =>
+    ['stock', locationId, skuId, includeZero] as const,
   stockAll: ['stock'] as const,
   skuSearch: (q: string) => ['skus', 'search', q] as const,
   skus: ['skus'] as const,
@@ -41,13 +42,22 @@ export const inventoryKeys = {
   receiptsAll: ['stock-receipts', 'list'] as const,
 };
 
+/** The Stock page filters (AC-9): `skuId` narrows to one SKU, `includeZero` adds rows back at 0. */
+export interface StockFilters {
+  skuId: string | null;
+  includeZero: boolean;
+}
+
 export function listStock(
   locationId: LocationChoice,
+  filters: StockFilters,
   cursor: string | undefined,
   signal?: AbortSignal,
 ) {
   const params = new URLSearchParams({ limit: '50' });
   if (locationId !== 'all') params.set('locationId', locationId);
+  if (filters.skuId) params.set('skuId', filters.skuId);
+  if (filters.includeZero) params.set('includeZero', 'true');
   if (cursor) params.set('cursor', cursor);
   return apiRequest('GET', `/api/stock?${params}`, StockListResponse, { signal });
 }

@@ -50,6 +50,8 @@ interface CurrentLocation {
   current: LocationChoice;
   locations: LocationSummary[];
   status: LocationsStatus;
+  /** False until the first answer (or error) arrives; list queries wait for it. */
+  ready: boolean;
   retry: () => void;
   setCurrentLocation: (choice: LocationChoice) => void;
 }
@@ -101,6 +103,7 @@ export function CurrentLocationProvider({ children }: { children: React.ReactNod
       current: status === 'ready' ? current : 'all',
       locations,
       status,
+      ready: status !== 'loading',
       retry,
       setCurrentLocation,
     }),

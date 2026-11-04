@@ -38,7 +38,7 @@ export function ReceiptsPage() {
   const format = useFormat();
   const text = useLocalizedText();
   const current = useCurrentLocation();
-  const { locations } = useLocationSwitcher();
+  const { locations, ready } = useLocationSwitcher();
   const { language, config } = useLanguage();
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
@@ -51,6 +51,7 @@ export function ReceiptsPage() {
   const query = useInfiniteQuery({
     queryKey: inventoryKeys.receipts(current, q),
     queryFn: ({ pageParam, signal }) => listReceipts(current, q, pageParam, signal),
+    enabled: ready,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });

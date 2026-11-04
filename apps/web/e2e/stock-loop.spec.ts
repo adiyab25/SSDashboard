@@ -2,8 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
 import { ownAddress, seedAccount, signInThroughApi, type SeededAccount } from './accounts';
+import { findRow } from './master-data-api';
 import { ownerDatabaseUrl } from './auth';
-import { expectNoAxeViolations, openShell, useBrowserState, waitForFormHydration } from './support';
+import {
+  expectNoAxeViolations,
+  openShell,
+  textFor,
+  useBrowserState,
+  waitForFormHydration,
+} from './support';
 
 // Spec 0006, AC-17 (Milestone 1 part): a staff member creates a SKU, an admin creates a
 // warehouse, the staff member receives 10 at 5.0000, and on hand 10 shows on the Stock page in
@@ -92,7 +99,9 @@ test.describe('core stock loop', () => {
     await expectNoAxeViolations(clerkPage);
 
     await openShell(clerkPage, '/stock');
-    const clerkRow = clerkPage.getByRole('row', { name: new RegExp(skuCode) });
+    // All locations, newest movement first: a busy shared database can push the row past the
+    // first page, so page until it shows.
+    const clerkRow = await findRow(clerkPage, 'Stock on hand', new RegExp(skuCode));
     await expect(clerkRow).toContainText('10');
     await expect(clerkRow).toContainText(`Cairo ${tag}`);
     await expectNoAxeViolations(clerkPage);
@@ -100,7 +109,7 @@ test.describe('core stock loop', () => {
 
     // The admin sees the value, in English and in Arabic.
     await openShell(page, '/stock');
-    const adminRow = page.getByRole('row', { name: new RegExp(skuCode) });
+    const adminRow = await findRow(page, 'Stock on hand', new RegExp(skuCode));
     await expect(adminRow).toContainText('10');
     await expect(adminRow).toContainText('50.00');
 
@@ -108,7 +117,12 @@ test.describe('core stock loop', () => {
     await openShell(page, '/stock');
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1, name: 'المخزون المتاح' })).toBeVisible();
-    const arabicRow = page.getByRole('row', { name: new RegExp(skuCode) });
+    const arabicRow = await findRow(
+      page,
+      'المخزون المتاح',
+      new RegExp(skuCode),
+      textFor('rtl', 'inventory.loadMore'),
+    );
     await expect(arabicRow).toContainText('تيشيرت أسود مقاس وسط');
     await expect(arabicRow).toContainText(`مخزن القاهرة ${tag}`);
     await expect(arabicRow).toContainText('50.00');
@@ -130,7 +144,7 @@ test.describe('core stock loop', () => {
     await expect(page.getByRole('button', { name: 'Void receipt' })).toHaveCount(0);
 
     await openShell(page, '/stock-receipts');
-    const listRow = page.getByRole('row', { name: new RegExp(`Cairo ${tag}`) });
+    const listRow = await findRow(page, 'Stock receipts', new RegExp(`Cairo ${tag}`));
     await expect(listRow).toContainText('Voided');
     await expectNoAxeViolations(page);
 

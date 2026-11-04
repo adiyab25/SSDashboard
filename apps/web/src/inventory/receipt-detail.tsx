@@ -43,7 +43,7 @@ export function ReceiptDetailPage() {
     const notFound = query.error instanceof ApiError && query.error.status === 404;
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold">{t('inventory.receiptDetail.linesTitle')}</h1>
+        <h1 className="text-xl font-semibold">{t('inventory.receiptDetail.title')}</h1>
         <Alert variant="destructive">
           <AlertDescription className="flex flex-wrap items-center gap-3">
             {notFound
@@ -63,11 +63,14 @@ export function ReceiptDetailPage() {
 }
 
 export function ReceiptDetailSkeleton() {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-4" aria-hidden>
-      <Skeleton className="h-7 w-56" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-40 w-full" />
+    <div className="flex flex-col gap-4">
+      <h1 className="text-xl font-semibold">{t('inventory.receiptDetail.title')}</h1>
+      <div className="flex flex-col gap-4" aria-hidden>
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
     </div>
   );
 }

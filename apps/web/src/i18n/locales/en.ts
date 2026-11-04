@@ -402,6 +402,13 @@ export const en = {
         value: 'Stock value',
         lastMoved: 'Last movement',
       },
+      showZero: 'Show rows at zero',
+      skuFilter: 'Filter by SKU',
+      clearSku: 'Clear SKU filter',
+      filteredEmptyTitle: 'No stock matches',
+      filteredEmptyBody: 'Try another SKU, turn on Show rows at zero, or switch to all locations.',
+      filteredEmptyBodySku: 'Try another SKU or switch to all locations.',
+      filteredEmptyBodyZero: 'Nothing has been received here yet. Try switching to all locations.',
       negative: 'Below zero',
       emptyTitle: 'No stock here yet',
       emptyBody: 'Record a stock receipt and what arrived shows up here.',
@@ -718,6 +725,7 @@ export const en = {
       },
     },
     receiptDetail: {
+      title: 'Stock receipt',
       loadError: 'The receipt could not be loaded.',
       notFound: 'There is no such receipt.',
       status: {

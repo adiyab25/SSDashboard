@@ -401,6 +401,13 @@ export const ar: Catalog = {
         value: 'قيمة المخزون',
         lastMoved: 'آخر حركة',
       },
+      showZero: 'إظهار الصفوف عند الصفر',
+      skuFilter: 'تصفية بالصنف',
+      clearSku: 'مسح تصفية الصنف',
+      filteredEmptyTitle: 'لا يوجد مخزون مطابق',
+      filteredEmptyBody: 'جرّب صنفًا آخر أو فعّل إظهار الصفوف عند الصفر أو انتقل إلى كل المواقع.',
+      filteredEmptyBodySku: 'جرّب صنفًا آخر أو انتقل إلى كل المواقع.',
+      filteredEmptyBodyZero: 'لم يُستلم أي شيء هنا بعد. جرّب الانتقال إلى كل المواقع.',
       negative: 'أقل من صفر',
       emptyTitle: 'لا يوجد مخزون هنا بعد',
       emptyBody: 'سجّل إذن استلام وسيظهر هنا ما وصل.',
@@ -714,6 +721,7 @@ export const ar: Catalog = {
       },
     },
     receiptDetail: {
+      title: 'إذن استلام',
       loadError: 'تعذر تحميل الإذن.',
       notFound: 'لا يوجد إذن بهذا الرقم.',
       status: {

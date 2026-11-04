@@ -3,9 +3,25 @@
 import * as React from 'react';
 import { cn } from 'cn';
 
+/**
+ * The wrapper scrolls horizontally on narrow screens, so it must be keyboard
+ * reachable (WCAG 2.1.1, axe scrollable-region-focusable): tabIndex 0, a named
+ * region (it reuses the table's own aria-label / aria-labelledby), and an inset
+ * focus ring (an outer ring would be clipped by overflow).
+ */
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
+  const { 'aria-label': label, 'aria-labelledby': labelledBy } = props;
   return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
+    <div
+      data-slot="table-container"
+      role="region"
+      aria-label={label}
+      aria-labelledby={labelledBy}
+      // Intentional: scrollable regions must be focusable (WCAG 2.1.1).
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+      tabIndex={0}
+      className="relative w-full overflow-x-auto outline-none focus-ring-inset"
+    >
       <table
         data-slot="table"
         className={cn('w-full caption-bottom text-sm', className)}

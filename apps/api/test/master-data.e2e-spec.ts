@@ -245,6 +245,27 @@ describe('master data api', { timeout: 90_000 }, () => {
       expect((await call('GET', '/skus?cursor=nope', { cookie: staff })).status).toBe(400);
     });
 
+    it('lists a SKU matching by code and by name once, in code order, across pages', async () => {
+      await newSku('DUPQ-1', { en: 'dupq-1 shirt' });
+      await newSku('DUPQ-2', { en: 'Shirt' });
+      await newSku('XDUPQ-3', { en: 'Has dupq inside' });
+      expect(await codes('?q=dupq')).toEqual(['DUPQ-1', 'DUPQ-2', 'XDUPQ-3']);
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: SkuListResponse = SkuListResponse.parse(
+          (
+            await call('GET', `/skus?q=dupq&limit=1${cursor ? `&cursor=${cursor}` : ''}`, {
+              cookie: staff,
+            })
+          ).body,
+        );
+        walked.push(...page.items.map((item) => item.code));
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(walked).toEqual(['DUPQ-1', 'DUPQ-2', 'XDUPQ-3']);
+    });
+
     it('treats %, _, and a backslash in q as plain characters', async () => {
       await newSku('ESC_1', { en: 'Under score' });
       await newSku('ESCX1', { en: 'Plain one' });

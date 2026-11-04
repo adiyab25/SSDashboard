@@ -64,11 +64,14 @@ export function SkuDetailPage() {
 }
 
 export function SkuDetailSkeleton() {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-4" aria-hidden>
-      <Skeleton className="h-7 w-56" />
-      <Skeleton className="h-24 w-full" />
-      <Skeleton className="h-40 w-full" />
+    <div className="flex flex-col gap-4">
+      <h1 className="text-xl font-semibold">{t('inventory.skus.title')}</h1>
+      <div className="flex flex-col gap-4" aria-hidden>
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
     </div>
   );
 }

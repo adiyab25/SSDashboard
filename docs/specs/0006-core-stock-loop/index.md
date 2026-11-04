@@ -278,8 +278,8 @@ Tracer Bullet: Milestone 1 is the whole scope "done when" thread, thin but real 
 - 14a. [x] Fix: `lockForArchive` takes `FOR UPDATE` on the SKU or location row only (remove the `stock_levels`/`reservations` pair scan and `lockPairs`); archive, unarchive, SKU code change, and location code change each run "row `FOR UPDATE`, then `usage`/`hasBalance`" in one transaction; update the `lockForArchive` doc comment (the locking text in `apps/api/src/inventory/AGENTS.md` is handled by the `/sync` follow-up below, not here); `rebuildLevel` (`reconciliation.service.ts`) reads the SKU and location rows `FOR SHARE` in id order before its `lockPairs`; add the "Archive at scale", "Code change race", and "Rebuild race" tests, satisfies **AC-2**, **AC-3**, **AC-4**
 
 **Milestone 4: Hardening**
-17. Stock page polish: Show zero toggle, negative flag, SKU filter, empty and error states; axe and keyboard checks on every new page in both languages, satisfies **AC-9**, **AC-16**
-18. Scale checks added to `test/scale.e2e-spec.ts` (stock page, SKU stock, both searches, a 200 line receipt), satisfies **AC-18**
+17. [x] Stock page polish: Show zero toggle, negative flag, SKU filter, empty and error states; axe and keyboard checks on every new page in both languages, satisfies **AC-9**, **AC-16**
+18. [x] Scale checks added to `test/scale.e2e-spec.ts` (stock page, SKU stock, both searches, a 200 line receipt), satisfies **AC-18**
 
 ## Consequences
 

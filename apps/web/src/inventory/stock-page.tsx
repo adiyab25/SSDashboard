@@ -22,9 +22,10 @@ import {
   MapPinPlusIcon,
   PackagePlusIcon,
   TagIcon,
+  XIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMe } from '@/auth/use-me';
 import { NewSkuDialog } from '@/catalog/new-sku-dialog';
@@ -34,6 +35,7 @@ import { locationName, useCurrentLocation, useLocationSwitcher } from '@/shell/c
 import { useLanguage } from '@/i18n/language-provider';
 import { inventoryKeys, listStock } from './inventory-api';
 import { NewLocationDialog } from './new-location-dialog';
+import { SkuPicker, type PickedSku } from './sku-picker';
 
 const features = tableFeatures({});
 
@@ -53,13 +55,20 @@ export function StockPage() {
   const me = useMe();
   const isAdmin = me?.role === 'admin';
   const current = useCurrentLocation();
-  const { locations } = useLocationSwitcher();
+  const { locations, ready } = useLocationSwitcher();
   const { language, config } = useLanguage();
   const [dialog, setDialog] = useState<'sku' | 'location' | null>(null);
 
+  const [sku, setSku] = useState<PickedSku | null>(null);
+  const [includeZero, setIncludeZero] = useState(false);
+  const skuId = sku?.id ?? null;
+  const pickerRef = useRef<HTMLButtonElement>(null);
+
   const query = useInfiniteQuery({
-    queryKey: inventoryKeys.stock(current),
-    queryFn: ({ pageParam, signal }) => listStock(current, pageParam, signal),
+    queryKey: inventoryKeys.stock(current, skuId, includeZero),
+    queryFn: ({ pageParam, signal }) =>
+      listStock(current, { skuId, includeZero }, pageParam, signal),
+    enabled: ready,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -135,6 +144,7 @@ export function StockPage() {
 
   const columnCount = columns.length;
   const loading = query.isPending;
+  const filtered = skuId !== null || includeZero;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -166,6 +176,45 @@ export function StockPage() {
       <p className="text-sm text-muted-foreground">
         {t('inventory.stock.scope', { location: scope })}
       </p>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-1">
+          <div className="w-72 max-w-full">
+            <SkuPicker
+              id="stock-sku-filter"
+              value={sku}
+              onChange={setSku}
+              buttonRef={pickerRef}
+              label={t('inventory.stock.skuFilter')}
+              placeholder={t('inventory.stock.skuFilter')}
+            />
+          </div>
+          {sku && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('inventory.stock.clearSku')}
+              onClick={() => {
+                setSku(null);
+                // The clear button unmounts with the filter, so focus goes back to the picker.
+                pickerRef.current?.focus();
+              }}
+            >
+              <XIcon aria-hidden />
+            </Button>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={includeZero}
+            onChange={(event) => setIncludeZero(event.target.checked)}
+          />
+          {t('inventory.stock.showZero')}
+        </label>
+      </div>
 
       {query.isError && !query.data ? (
         <Alert variant="destructive">
@@ -209,14 +258,26 @@ export function StockPage() {
                     <div className="flex flex-col items-center gap-3 text-center">
                       <BoxesIcon aria-hidden className="size-8 text-muted-foreground" />
                       <div className="flex flex-col gap-1">
-                        <p className="font-medium">{t('inventory.stock.emptyTitle')}</p>
+                        <p className="font-medium">
+                          {filtered
+                            ? t('inventory.stock.filteredEmptyTitle')
+                            : t('inventory.stock.emptyTitle')}
+                        </p>
                         <p className="text-sm text-muted-foreground">
-                          {t('inventory.stock.emptyBody')}
+                          {!filtered
+                            ? t('inventory.stock.emptyBody')
+                            : skuId === null
+                              ? t('inventory.stock.filteredEmptyBodyZero')
+                              : includeZero
+                                ? t('inventory.stock.filteredEmptyBodySku')
+                                : t('inventory.stock.filteredEmptyBody')}
                         </p>
                       </div>
-                      <Button asChild size="sm">
-                        <Link href="/stock-receipts/new">{t('inventory.stock.receive')}</Link>
-                      </Button>
+                      {!filtered && (
+                        <Button asChild size="sm">
+                          <Link href="/stock-receipts/new">{t('inventory.stock.receive')}</Link>
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

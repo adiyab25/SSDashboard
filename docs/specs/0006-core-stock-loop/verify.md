@@ -15,9 +15,9 @@ _Steps derived from spec 0006 acceptance criteria and its Value sourcing table. 
 - [ ] Each new page (`/stock`, `/stock-receipts/new`, `/stock-receipts/<id>`) has one `<h1>`, a loading skeleton, an empty or error state, and passes axe in both languages → AC-16
 
 ## Commands
-- [ ] `pnpm --filter @ssdashboard/api test:e2e -- test/stock-receipts.e2e-spec.ts` (after `pnpm build`) → 10 passed: thread, replay and conflict, key required, line faults, system location and future date, backdating, atomicity, codes in use, search, 401 → AC-1, AC-4 to AC-7, AC-9, AC-11, AC-13, AC-15, AC-17
-- [ ] `pnpm --filter @ssdashboard/api test:e2e -- test/ledger.e2e-spec.ts` → the `within` callback commits, rolls back on throw, reruns once on a forced deadlock with one result, and never runs on a replay → AC-5, AC-6
-- [ ] `pnpm --filter @ssdashboard/web test:e2e -- e2e/stock-loop.spec.ts --project=desktop` → the thread in both languages, cost hidden for staff, axe clean, and the balance equals its movements → AC-17
+- [x] `pnpm --filter @ssdashboard/api test:e2e -- test/stock-receipts.e2e-spec.ts` (after `pnpm build`) → 10 passed: thread, replay and conflict, key required, line faults, system location and future date, backdating, atomicity, codes in use, search, 401 → AC-1, AC-4 to AC-7, AC-9, AC-11, AC-13, AC-15, AC-17
+- [x] `pnpm --filter @ssdashboard/api test:e2e -- test/ledger.e2e-spec.ts` → the `within` callback commits, rolls back on throw, reruns once on a forced deadlock with one result, and never runs on a replay → AC-5, AC-6
+- [x] `pnpm --filter @ssdashboard/web test:e2e -- e2e/stock-loop.spec.ts --project=desktop` → the thread in both languages, cost hidden for staff, axe clean, and the balance equals its movements → AC-17
 - [ ] Query the database after the thread: `SELECT on_hand, total_value FROM stock_levels` for the SKU at `WH-CAI` → `10`, `50.00`, and `ReconciliationService.reconcile()` records 0 discrepancies → AC-17
 
 ## Value sourcing checks
@@ -51,9 +51,9 @@ _Steps derived from spec 0006 acceptance criteria and its Value sourcing table. 
 - [ ] When the api answers 503 `BUSY`, the form waits for `Retry-After` and sends the same request once more; if still busy it shows "Stock is busy…" with Try again, the form stays filled, and Try again posts with the same idempotency key → AC-14
 
 ## Commands
-- [ ] `pnpm --filter @ssdashboard/api test:e2e -- test/stock-receipts.e2e-spec.ts` (after `pnpm build`) → 15 passed, including list and paging, void once and back to 0, two voids at once (one 200, one 409 `ALREADY_VOIDED`), `INSUFFICIENT_STOCK` naming the SKU, and the void value at the average → AC-8, AC-12, AC-15
-- [ ] `pnpm --filter @ssdashboard/web test:e2e -- e2e/stock-loop.spec.ts --project=desktop` → 4 passed: the thread through the void, busy retry, backdating, and the balance equal to its movements → AC-5, AC-7, AC-8, AC-14, AC-17
-- [ ] Run the web e2e suite twice in a row on the same database → the second run's global setup still signs in (the e2e admin is reset in place, never deleted, since it now has ledger history)
+- [x] `pnpm --filter @ssdashboard/api test:e2e -- test/stock-receipts.e2e-spec.ts` (after `pnpm build`) → 15 passed, including list and paging, void once and back to 0, two voids at once (one 200, one 409 `ALREADY_VOIDED`), `INSUFFICIENT_STOCK` naming the SKU, and the void value at the average → AC-8, AC-12, AC-15
+- [x] `pnpm --filter @ssdashboard/web test:e2e -- e2e/stock-loop.spec.ts --project=desktop` → 4 passed: the thread through the void, busy retry, backdating, and the balance equal to its movements → AC-5, AC-7, AC-8, AC-14, AC-17
+- [x] Run the web e2e suite twice in a row on the same database → the second run's global setup still signs in (the e2e admin is reset in place, never deleted, since it now has ledger history)
 
 ## Value sourcing checks
 - [ ] Void with `effectiveAt` omitted → the reversal group is dated now; `stock_receipts.void_group_id` points at it and `voided_by` is the session user → AC-8 (void fields written inside `within`)
@@ -69,7 +69,7 @@ _Steps derived from spec 0006 acceptance criteria and its Value sourcing table. 
 ---
 
 # Verify: core stock loop, Milestone 3 (master data in full) · spec 0006 · updated 2026-11-04
-_Proved in a real browser by `apps/web/e2e/master-data.spec.ts` (desktop project; English and Arabic). BUG-1 to BUG-3 (QA report of 2026-11-04) are fixed and re-verified; BUG-4 (404 flash after delete) is open._
+_Proved in a real browser by `apps/web/e2e/master-data.spec.ts` (desktop project; English and Arabic). BUG-1 to BUG-3 (QA report of 2026-11-04) are fixed and re-verified; BUG-4 (404 flash after delete) is fixed._
 
 ## UI / manual
 - [x] Admin creates a location on `/locations` and a SKU on `/skus`, posts a receipt, and `/skus/<id>` shows stock per location with average cost and value plus a history row with unit and total cost → AC-2, AC-4, AC-10, AC-11
@@ -88,4 +88,51 @@ _Proved in a real browser by `apps/web/e2e/master-data.spec.ts` (desktop project
 - [x] Escape in the confirm step leaves the edit dialog open, typed edits kept → AC-16 (BUG-2 fixed; passed in 3 consecutive runs)
 - [x] Focus returns to New SKU, New location (`/stock`) and Void receipt (receipt page) after Escape → AC-16
 - [x] A refetch of the SKU behind an open edit dialog does not swap its version: the save answers STALE_RECORD and the colleague's rename survives → AC-2
-- [ ] Deleting a SKU from `/skus/[id]` goes to the list with no "There is no such SKU." flash → AC-3 (FAILS, BUG-4: a GET 404 for the deleted id fires about 30 ms after the DELETE; failing test `deleting from the detail page never flashes`)
+- [x] Deleting a SKU from `/skus/[id]` goes to the list with no "There is no such SKU." flash → AC-3 (BUG-4 fixed; `deleting from the detail page never flashes` passed in every full run of 2026-11-04)
+
+---
+
+# Verify: core stock loop, Milestone 4 (hardening) and the whole feature · spec 0006 · updated 2026-11-04
+_Final re-verification by the QA tester after the last fix wave, on a fresh `pnpm build` (`apps/web/.next` cleared), against a scratch database `ssdashboard_qa0006` migrated to this tree, api on 3201 (`PUBLIC_URL=http://localhost:3300`), web dev on 3300, production build on 3100. Proved by `apps/web/e2e/stock-page.spec.ts` (AC-9), `apps/web/e2e/stock-accessibility.spec.ts` (AC-16 sweep) and the suites below. BUG-5 to BUG-7 are fixed and pass. Verdict: **every criterion AC-1 to AC-18 is met and every suite is green**, BUG-8 (a narrow-screen axe finding on `/stock`) is fixed and now covered by a 375 px axe sweep (2026-11-04 re-verification of the fix, fresh `pnpm build`, same scratch environment)._
+
+## UI / manual
+- [x] `/stock` hides rows at zero by default, Show rows at zero adds the voided row (0 on hand) and unchecking removes it, in English and Arabic → AC-9 (`stock-page.spec.ts` › hides rows at zero…)
+- [x] A negative row (-3) is badged "Below zero" and is the only flagged row → AC-9 (same test; the balance is seeded straight into `stock_levels`, since no screen can post one yet)
+- [x] SKU filter by keyboard (Enter opens, type, Enter picks, one Tab to Clear, Enter clears, the next Tab stop is the Show zero checkbox, Space toggles) → AC-9, AC-16 (`filters by SKU from the keyboard…`, both languages)
+- [x] The page follows the top bar location switcher: location one, location two, then all locations → AC-9 (`follows the shell location switcher…`, both languages)
+- [x] With a saved location, `/stock` and `/stock-receipts` send no unscoped request first: the network log shows only `/api/stock?limit=50&locationId=<saved>` and `/api/stock-receipts?limit=50&locationId=<saved>` after the location calls → AC-9, AC-12 (checked by script against the dev server; `ready` gates the list queries)
+- [x] Most recent movement first; 55 rows page 50 then 5 with Load more → AC-9 (`lists the most recent movement first`, `pages 50 rows at a time…`)
+- [x] Empty ("No stock here yet" with a Receive stock link), filtered empty (Show zero on, or a SKU with no stock), and error with Try again that recovers → AC-9, AC-16 (`says so when there is no stock…`, `shows an error with Try again…`)
+- [x] Staff see no Average cost or Stock value column and no cost field in the `/api/stock` answer; the admin sees 5.0000 and 50.00; staff have no New location button → AC-9, AC-11 (`staff see no cost columns…`, both languages)
+- [x] axe (WCAG 2.2 AA) and one `<h1>` in English and Arabic on `/stock` (loaded, picker open, loading, empty, filtered empty, error), `/stock-receipts` (loaded with a voided row, searched to nothing, loading, empty, error), `/stock-receipts/new` (empty, all errors showing, picker open, two lines), `/stock-receipts/[id]` (posted, voided), the not found and error states of the receipt and SKU pages, and `/skus` and `/locations` loading, empty, error → AC-16
+- [x] axe clean in both languages on the New SKU, New location, and Void receipt dialogs (empty and with field errors), the Archive and Delete confirm steps (SKU edit dialog), the Archive confirm step (Locations row), and on `/stock`, the receipt form and a receipt as a person without cost access → AC-16
+- [x] `/skus`, `/skus/[id]`, `/locations` and their edit dialogs: axe clean in both languages (existing `master-data.spec.ts` sweep, re-run) → AC-16
+- [x] The receipt form by keyboard alone, English and Arabic: pick the place by typing, SKU combobox by Enter, type, Enter, quantity and cost, Add line, remove a line (focus stays in the form), post with Enter, then the Stock page (client navigation, no reload) lists both SKUs → AC-16, AC-5, AC-17 (BUG-6 fixed)
+- [x] The SKU picker: Space opens, Escape closes and returns focus to the trigger, ArrowDown and ArrowUp then Enter picks → AC-16, AC-13
+- [x] Every page has exactly one `<h1>` while it is loading → AC-16 (BUG-5 fixed: `receipt detail page: the loading skeleton keeps the page's one h1` and the `sku detail page` one, both languages, pass)
+- [x] Each stock dialog has exactly one control named Cancel, the corner icon being Close → AC-16 (BUG-7 fixed)
+- [x] axe at a phone width (375 px) on `/stock`, `/stock-receipts` and `/skus` with rows, English and Arabic, and the table's scroll region is a focusable, named region → AC-16 (BUG-8 fixed; `stock-accessibility.spec.ts` `phone width (375 px) axe sweep`, 6 tests, run inside the desktop project with `setViewportSize`; `/stock` is asserted to overflow, so the test cannot pass by the table fitting)
+
+## Commands
+- [x] `pnpm build` → 4 tasks successful
+- [x] `pnpm --filter @ssdashboard/api test:e2e` → Test Files 20 passed, Tests 270 passed, 1 skipped (`bootstrap.sh`, skipped on Windows) → AC-1 to AC-8, AC-11 to AC-15, AC-17
+- [x] `npx vitest run --config ./vitest.config.e2e.ts test/scale.e2e-spec.ts --reporter=verbose` (in apps/api) → 9 passed (includes the plan test: the code prefix search uses `Index Scan(product_variants_sku_c_idx)`), and the p95 table below → AC-18
+- [x] `npx playwright test` (in apps/web, all three projects: desktop, mobile, production) → 367 passed, 130 skipped (desktop only flows on the mobile project), 0 failed after the BUG-8 fix (the 6 added tests are the 375 px sweep); the earlier failures (BUG-5 to BUG-7) pass
+- [x] The four feature specs (`stock-page`, `stock-accessibility`, `master-data`, `stock-loop`), desktop, `--repeat-each=2`, run 3 times → 156 passed in the last two runs. The first run had one test race and one BUG-8 hit: `master-data.spec.ts` read the receipt page `<h1>` while the new loading skeleton's "Stock receipt" heading was still up (the test now waits for `SR-…`), and `stock-loop.spec.ts` (Arabic `/stock`) reported `scrollable-region-focusable` on a data-heavy table at desktop width (not seen again in the two later runs)
+
+## Scale (AC-18), api over HTTP as an admin, 100,000 SKUs and 1,000,000 movements
+| Check | p95 | Target |
+|---|---|---|
+| `GET /stock` first page | 9.4 ms | 200 ms |
+| `GET /skus/:id/stock` | 10.8 ms | 200 ms |
+| `GET /skus?q=<code prefix>` | 44.9 ms | 100 ms |
+| `GET /skus?q=<name part>` | 45.3 ms | 500 ms |
+| `POST /stock-receipts` (200 lines) | 189.7 ms | 2000 ms |
+
+## Acceptance-criteria verdict
+- AC-1 met · AC-2 met · AC-3 met · AC-4 met · AC-5 met · AC-6 met · AC-7 met · AC-8 met · AC-9 met · AC-10 met · AC-11 met · AC-12 met · AC-13 met · AC-14 met · AC-15 met · AC-16 met (axe clean in both languages on every page and dialog the suites reach, one `<h1>` in every state, keyboard flows, dialog close names, and axe clean at 375 px on `/stock`, `/stock-receipts`, `/skus` with rows in both languages; BUG-8 fixed) · AC-17 met · AC-18 met (code prefix search 44.9 ms of its 100 ms budget, on the index)
+- Specced surfaces: `/stock`, `/stock-receipts`, `/stock-receipts/new`, `/stock-receipts/[id]`, `/skus`, `/skus/[id]`, `/locations`, the api route groups, and migration `0008` all exist and are live (`Migrations applied.` on the scratch database)
+
+## Open defects
+- None open. BUG-8 (minor, fixed): the shared table wrapper was a scroll container with no keyboard access (`scrollable-region-focusable` at 375 px on `/stock`). `packages/ui/src/components/table.tsx` now renders it as `role="region"`, `tabIndex={0}`, with the table's own label and an inset focus ring (2 px `--ring` outline). Verified: the new 375 px axe sweep passes in both languages; the full Playwright run (desktop, mobile, production) is 367 passed, 130 skipped, 0 failed with no change needed to the existing tab-order, keyboard receipt form, stock filter or `getByLabel` tests; `stock-loop` and `stock-accessibility` desktop `--repeat-each=3` passed (114). Side effect to know: every table now has one extra tab stop and a region with the table's name (by design).
+- Test hardening (not a product bug): a `Receipt posted` toast caught mid fade made `stock-loop.spec.ts` report `color-contrast` on `div[data-title=""]` in 2 of 3 repeats of one run. `expectNoAxeViolations` (`e2e/support.ts`) now waits for finite animations to finish first; 6 repeats then 3 more repeats passed.

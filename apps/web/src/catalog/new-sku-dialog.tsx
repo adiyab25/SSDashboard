@@ -92,7 +92,7 @@ export function NewSkuDialog({ onClose, onCreated }: Props) {
   return (
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
       <DialogContent
-        closeLabel={t('inventory.cancel')}
+        closeLabel={t('inventory.close')}
         onCloseAutoFocus={returnFocus}
         className="sm:max-w-lg"
       >

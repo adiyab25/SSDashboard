@@ -8,8 +8,9 @@ export interface ScaleSeed {
 
 /**
  * Loads a full size catalog straight into the tables, in SQL, for the AC-14 latency check:
- * `skus` SKUs, `locations` warehouses, and `movements` opening balance movements (ten per
- * group), with balances that match them. Runs as the owner role on a scratch database.
+ * `skus` SKUs (codes `SCALE-000001` and up, uppercase like real ones), `locations` warehouses,
+ * and `movements` opening balance movements (ten per group), with balances that match them.
+ * Runs as the owner role on a scratch database.
  */
 export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Promise<void> {
   const run = (text: string, values: unknown[] = []) => owner.pool.query(text, values);
@@ -20,7 +21,9 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
        RETURNING id
      )
      INSERT INTO product_variants (product_id, sku, base_uom_id)
-     SELECT id, 'SCALE-' || id, (SELECT id FROM uoms WHERE code = 'pc') FROM p`,
+     SELECT id, 'SCALE-' || lpad(row_number() OVER (ORDER BY id)::text, greatest(6, length($1::text)), '0'),
+            (SELECT id FROM uoms WHERE code = 'pc')
+     FROM p`,
     [seed.skus],
   );
   await run(

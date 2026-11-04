@@ -71,6 +71,12 @@ afterEach(() => {
 });
 
 describe('SkuDetailPage (AC-10, AC-11)', () => {
+  it('has exactly one h1 while loading', () => {
+    api.getSku.mockReturnValue(new Promise(() => undefined));
+    renderWithQuery(<SkuDetailPage />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
   it('leaves the cost columns out entirely when the api sent no cost fields', async () => {
     arrange({ cost: false });
     renderWithQuery(<SkuDetailPage />);

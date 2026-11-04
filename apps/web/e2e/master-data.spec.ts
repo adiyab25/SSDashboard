@@ -153,8 +153,9 @@ test.describe('admin thread: create, receive, detail with cost; staff without co
     await page.getByLabel('Unit cost').fill('5.0000');
     await page.getByRole('button', { name: 'Post receipt' }).click();
     await expect(page).toHaveURL(/\/stock-receipts\/[0-9a-f-]{36}$/);
+    // The loading skeleton also has an h1 ("Stock receipt"), so wait for the number to replace it.
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^SR-\d{4}-\d{6}$/);
     const number = (await page.getByRole('heading', { level: 1 }).textContent()) ?? '';
-    expect(number).toMatch(/^SR-\d{4}-\d{6}$/);
 
     // The detail page: stock per location with the cost columns, and the history row.
     await openShell(page, detailPath);
@@ -797,7 +798,14 @@ test.describe('Locations page: edit, archive, delete (AC-4)', () => {
       .getByRole('button', { name: 'Unarchive' })
       .click();
     await expect(page.getByText(`Location ${location.code} unarchived.`)).toBeVisible();
+    // Wait for the refreshed Active list before looking for the row: findRow reads what is on
+    // screen, and with a lot of locations the row is only on a later page of that list.
+    const activeList = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/locations' && url.searchParams.get('status') === 'active';
+    });
     await page.getByRole('button', { name: 'Active' }).click();
+    await activeList;
     await expect(await findRow(page, 'Locations', new RegExp(location.code))).toContainText(
       'Active',
     );

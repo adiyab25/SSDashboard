@@ -83,6 +83,46 @@ const SKU_COLUMNS = sql`
   to_char(v.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
 
 /**
+ * The SQL behind `list()`. With a search `q` it is the union of two ordered, limited branches
+ * (code prefix, name contains), so the prefix branch walks `product_variants_sku_c_idx` instead
+ * of the OR forcing a scan of every row. UNION (not ALL) keeps a SKU matching both once.
+ */
+export function buildSkuListSql(query: SkuListQuery): SQL {
+  const filters: SQL[] = [
+    query.status === 'archived' ? sql`v.archived_at IS NOT NULL` : sql`v.archived_at IS NULL`,
+  ];
+  if (query.cursor) {
+    const [after] = decodeKeyset(query.cursor, 1);
+    filters.push(sql`v.sku COLLATE "C" > ${after} COLLATE "C"`);
+  }
+  const limit = query.limit + 1;
+  if (!query.q) {
+    return sql`
+      SELECT ${SKU_COLUMNS}
+      FROM product_variants v JOIN products p ON p.id = v.product_id
+      WHERE ${sql.join(filters, sql` AND `)}
+      ORDER BY v.sku COLLATE "C"
+      LIMIT ${limit}`;
+  }
+  const where = sql.join(filters, sql` AND `);
+  const prefix = `${escapeLike(query.q.toUpperCase())}%`;
+  const contains = `%${escapeLike(query.q)}%`;
+  return sql`
+    SELECT ${SKU_COLUMNS}
+    FROM product_variants v JOIN products p ON p.id = v.product_id
+    WHERE v.id IN (
+      (SELECT v.id FROM product_variants v
+        WHERE ${where} AND v.sku COLLATE "C" LIKE ${prefix}
+        ORDER BY v.sku COLLATE "C" LIMIT ${limit})
+      UNION
+      (SELECT v.id FROM product_variants v JOIN products p ON p.id = v.product_id
+        WHERE ${where} AND (p.name->>'en' ILIKE ${contains} OR p.name->>'ar' ILIKE ${contains})
+        ORDER BY v.sku COLLATE "C" LIMIT ${limit}))
+    ORDER BY v.sku COLLATE "C"
+    LIMIT ${limit}`;
+}
+
+/**
  * Products and their SKUs (spec 0006). Owns `products` and `product_variants`; imports nothing
  * from inventory. Stock dependent SKU actions live in inventory and call this service.
  */
@@ -135,26 +175,7 @@ export class CatalogService {
    * starting with `q` (uppercased) or an English or Arabic name containing it (AC-13).
    */
   async list(query: SkuListQuery): Promise<SkuListResponse> {
-    const filters: SQL[] = [
-      query.status === 'archived' ? sql`v.archived_at IS NOT NULL` : sql`v.archived_at IS NULL`,
-    ];
-    if (query.q) {
-      const pattern = escapeLike(query.q);
-      filters.push(sql`(
-        v.sku COLLATE "C" LIKE ${`${escapeLike(query.q.toUpperCase())}%`}
-        OR p.name->>'en' ILIKE ${`%${pattern}%`}
-        OR p.name->>'ar' ILIKE ${`%${pattern}%`})`);
-    }
-    if (query.cursor) {
-      const [after] = decodeKeyset(query.cursor, 1);
-      filters.push(sql`v.sku COLLATE "C" > ${after} COLLATE "C"`);
-    }
-    const { rows } = await this.connection.db.execute<SkuRow>(sql`
-      SELECT ${SKU_COLUMNS}
-      FROM product_variants v JOIN products p ON p.id = v.product_id
-      WHERE ${sql.join(filters, sql` AND `)}
-      ORDER BY v.sku COLLATE "C"
-      LIMIT ${query.limit + 1}`);
+    const { rows } = await this.connection.db.execute<SkuRow>(buildSkuListSql(query));
     const page = rows.slice(0, query.limit);
     const last = page.at(-1);
     return {
