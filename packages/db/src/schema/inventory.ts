@@ -18,6 +18,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { productVariants } from './catalog.js';
 import { createdAt, id, money, unitCost } from './columns.js';
+import { users } from './auth.js';
 import { bins, locations } from './locations.js';
 
 // Only the inventory ledger service writes the tables in this file (spec 0002).
@@ -105,7 +106,8 @@ export const movementGroups = pgTable(
     reversesGroupId: uuid('reverses_group_id').unique(),
     effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
-    postedBy: uuid('posted_by'),
+    /** The signed in user who posted it; null for history from before sign in (spec 0005). */
+    postedBy: uuid('posted_by').references(() => users.id, { onDelete: 'restrict' }),
   },
   (t) => [
     foreignKey({ columns: [t.reversesGroupId], foreignColumns: [t.id] }).onDelete('restrict'),

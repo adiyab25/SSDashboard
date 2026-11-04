@@ -10,17 +10,27 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "lint": "eslint ."
+    "lint": "eslint . && node ../../packages/config/scripts/check-logical-css.mjs src"
   },
   "dependencies": {
     "@ssdashboard/contracts": "workspace:*",
+    "@ssdashboard/ui": "workspace:*",
+    "better-auth": "^1.7.15",
+    "i18next": "catalog:",
+    "lucide-react": "^1.66.0",
     "next": "16.4.3",
+    "next-themes": "^0.4.6",
+    "qrcode.react": "^4.2.0",
+    "radix-ui": "^1.8.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-i18next": "catalog:"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.64.1",
     "@ssdashboard/config": "workspace:*",
+    "@ssdashboard/db": "workspace:*",
     "@tailwindcss/turbopack": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

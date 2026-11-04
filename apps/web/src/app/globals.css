@@ -1,1 +1,10 @@
-@import 'tailwindcss';
+@import '@ssdashboard/ui/globals.css';
+
+/* Tailwind v4 does not scan linked workspace packages on its own. */
+@source '../../../../packages/ui/src';
+
+/* The head script sets this for a saved language other than English. The page stays
+   hidden until that language's text is applied, so no English flashes first. */
+html[data-i18n='pending'] body {
+  visibility: hidden;
+}

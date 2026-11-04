@@ -7,6 +7,16 @@
 		reverse_proxy api:3001
 	}
 
+	# Client language files (spec 0004): extensions/<client>/locales/<code>.json, mounted at
+	# /srv/locales. Before the catch all, so the web image never changes. No folder or no
+	# file answers 404 and the language is simply hidden. no-cache: an edit shows on reload.
+	handle /locales/* {
+		uri strip_prefix /locales
+		root * /srv/locales
+		header Cache-Control no-cache
+		file_server
+	}
+
 	handle {
 		reverse_proxy web:3000
 	}

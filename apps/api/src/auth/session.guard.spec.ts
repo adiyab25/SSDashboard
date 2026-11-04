@@ -1,0 +1,261 @@
+import { ForbiddenException, UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { describe, expect, it, vi } from 'vitest';
+import type { Env } from '../config/env.js';
+import type { Auth } from './auth.tokens.js';
+import { IS_PUBLIC } from './public.decorator.js';
+import { SessionGuard } from './session.guard.js';
+
+const ORIGIN = 'https://erp.example.com';
+const env = { PUBLIC_URL: `${ORIGIN}` } as Env;
+
+const liveSession = (createdAt = new Date()) => ({ id: 's1', token: 't1', createdAt });
+
+const USER = {
+  id: '0190c0de-0000-7000-8000-000000000001',
+  name: 'Sam',
+  email: 'sam@example.com',
+  role: 'admin',
+  banned: false,
+  mustChangePassword: false,
+  twoFactorEnabled: false,
+  phone: null,
+  staffCode: null,
+  language: 'ar',
+};
+
+function setup(options: {
+  method?: string;
+  path?: string;
+  origin?: string;
+  cookie?: string;
+  isPublic?: boolean;
+  session?: { user: typeof USER; session: { id: string; token: string; createdAt: Date } } | null;
+  setCookies?: string[];
+}) {
+  const getSession = vi.fn(() =>
+    Promise.resolve({
+      response: options.session ?? null,
+      headers: new Headers(
+        (options.setCookies ?? []).map((value) => ['set-cookie', value] as [string, string]),
+      ),
+    }),
+  );
+  const reflector = new Reflector();
+  vi.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) =>
+    key === IS_PUBLIC ? options.isPublic : undefined,
+  );
+  const request = {
+    method: options.method ?? 'GET',
+    path: options.path ?? '/api/things',
+    headers: { ...(options.origin && { origin: options.origin }), cookie: options.cookie },
+  } as Record<string, unknown>;
+  const response = { append: vi.fn() };
+  const context = {
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
+    getHandler: () => undefined,
+    getClass: () => undefined,
+  } as unknown as ExecutionContext;
+  const deleteSession = vi.fn(() => Promise.resolve());
+  const auth = {
+    api: { getSession },
+    $context: Promise.resolve({ internalAdapter: { deleteSession } }),
+  } as unknown as Auth;
+  const guard = new SessionGuard(reflector, auth, env);
+  return { guard, context, request, response, getSession, deleteSession };
+}
+
+describe('SessionGuard', () => {
+  it('lets a public route through without asking Better Auth', async () => {
+    const { guard, context, getSession } = setup({ isPublic: true });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it('answers UNAUTHENTICATED when there is no cookie and no session', async () => {
+    const { guard, context } = setup({});
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'UNAUTHENTICATED' },
+    });
+  });
+
+  it.each([
+    ['a plain cookie', 'better-auth.session_token=abc.def'],
+    ['the https cookie', '__Secure-better-auth.session_token=abc.def'],
+    ['one among others', 'theme=dark; better-auth.session_token=abc.def; ss_lang=ar'],
+  ])('answers SESSION_EXPIRED when %s has no live session behind it', async (_case, cookie) => {
+    const { guard, context } = setup({ cookie });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'SESSION_EXPIRED' },
+    });
+  });
+
+  it('does not mistake a look alike cookie name for the session cookie', async () => {
+    const { guard, context } = setup({ cookie: 'x-better-auth.session_token=abc' });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'UNAUTHENTICATED' },
+    });
+  });
+
+  it('treats a disabled person as signed out even when the session row is live', async () => {
+    const { guard, context } = setup({
+      cookie: 'better-auth.session_token=abc',
+      session: { user: { ...USER, banned: true }, session: liveSession() },
+    });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'SESSION_EXPIRED' },
+    });
+  });
+
+  it('attaches the person and passes a renewed cookie on', async () => {
+    const { guard, context, request, response } = setup({
+      cookie: 'better-auth.session_token=abc',
+      session: { user: USER, session: liveSession() },
+      setCookies: ['better-auth.session_token=renewed; Path=/; HttpOnly'],
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    expect(request.staff).toEqual({
+      id: USER.id,
+      name: 'Sam',
+      email: 'sam@example.com',
+      role: 'admin',
+      phone: null,
+      staffCode: null,
+      language: 'ar',
+      twoFactorEnabled: false,
+      mustChangePassword: false,
+      sessionId: 's1',
+    });
+    expect(response.append).toHaveBeenCalledWith(
+      'set-cookie',
+      'better-auth.session_token=renewed; Path=/; HttpOnly',
+    );
+  });
+
+  describe('a temporary password that must be changed (AC-14)', () => {
+    const forced = { ...USER, mustChangePassword: true };
+    const run = (method: string, path: string) =>
+      setup({
+        method,
+        path,
+        origin: ORIGIN,
+        cookie: 'better-auth.session_token=abc',
+        session: { user: forced, session: liveSession() },
+      });
+
+    it('lets only GET /api/me through', async () => {
+      const { guard, context } = run('GET', '/api/me');
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it.each([
+      ['GET', '/api/locations'],
+      ['GET', '/api/staff'],
+      ['POST', '/api/staff'],
+      ['PATCH', '/api/me'],
+      ['POST', '/api/me'],
+    ])('answers 403 PASSWORD_CHANGE_REQUIRED to %s %s', async (method, path) => {
+      const { guard, context } = run(method, path);
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'PASSWORD_CHANGE_REQUIRED' },
+      });
+    });
+
+    it('does not gate a person with no forced change', async () => {
+      const { guard, context } = setup({
+        path: '/api/locations',
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession() },
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+  });
+
+  describe('the 7 day cap (AC-5)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const withAge = (ms: number) =>
+      setup({
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession(new Date(Date.now() - ms)) },
+        setCookies: ['better-auth.session_token=renewed; Path=/'],
+      });
+
+    it('lets a session just under 7 days old through', async () => {
+      const { guard, context, deleteSession } = withAge(7 * DAY - 60_000);
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(deleteSession).not.toHaveBeenCalled();
+    });
+
+    it('ends a session older than 7 days even though it was just used', async () => {
+      const { guard, context, deleteSession, response } = withAge(7 * DAY + 60_000);
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'SESSION_EXPIRED' },
+      });
+      expect(deleteSession).toHaveBeenCalledWith('t1');
+      expect(response.append).not.toHaveBeenCalled();
+    });
+  });
+
+  it('reports whether two factor is on, from the account', async () => {
+    const { guard, context, request } = setup({
+      cookie: 'better-auth.session_token=abc',
+      session: { user: { ...USER, twoFactorEnabled: true }, session: liveSession() },
+    });
+
+    await guard.canActivate(context);
+
+    expect(request.staff).toMatchObject({ twoFactorEnabled: true });
+  });
+
+  it('falls back to the staff role for a role it does not know', async () => {
+    const { guard, context, request } = setup({
+      cookie: 'better-auth.session_token=abc',
+      session: { user: { ...USER, role: 'owner' }, session: liveSession() },
+    });
+
+    await guard.canActivate(context);
+
+    expect(request.staff).toMatchObject({ role: 'staff' });
+  });
+
+  describe('the Origin check on writes', () => {
+    it.each([['POST'], ['PATCH'], ['DELETE']])('rejects a %s from another site', async (method) => {
+      const { guard, context } = setup({ method, origin: 'https://evil.example', isPublic: true });
+
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('rejects a write with no Origin header', async () => {
+      const { guard, context } = setup({ method: 'POST', isPublic: true });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'FORBIDDEN_ORIGIN' },
+      });
+    });
+
+    it('accepts a write from our own origin', async () => {
+      const { guard, context } = setup({ method: 'POST', origin: ORIGIN, isPublic: true });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it('does not ask a read for an Origin', async () => {
+      const { guard, context } = setup({ method: 'GET', isPublic: true });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+  });
+});

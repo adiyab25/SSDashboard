@@ -5,6 +5,7 @@ import { loadEnv } from './env.js';
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
 
 const VALID_URL = 'postgres://ssdashboard:secret@localhost:5433/ssdashboard';
+const VALID_SECRET = 'x'.repeat(32);
 
 describe('loadEnv', () => {
   let exit: ReturnType<typeof vi.spyOn>;
@@ -19,11 +20,25 @@ describe('loadEnv', () => {
       'APP_DB_PASSWORD',
       'EXTENSIONS',
       'LEDGER_RECONCILE_CRON',
+      'AUTH_CLEANUP_CRON',
       'APP_VERSION',
+      'CLIENT_DISPLAY_NAME',
+      'PUBLIC_URL',
+      'BETTER_AUTH_SECRET',
+      'MAIL_DRIVER',
+      'MAIL_FROM',
+      'SMTP_HOST',
+      'SMTP_PORT',
+      'SMTP_SECURITY',
+      'SMTP_USER',
+      'SMTP_PASSWORD',
+      'POSTMARK_SERVER_TOKEN',
     ]) {
       vi.stubEnv(name, undefined);
     }
     vi.stubEnv('DATABASE_URL', VALID_URL);
+    vi.stubEnv('PUBLIC_URL', 'https://erp.example.com');
+    vi.stubEnv('BETTER_AUTH_SECRET', VALID_SECRET);
     exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit(${code})`);
     }) as never);
@@ -37,15 +52,28 @@ describe('loadEnv', () => {
   });
 
   describe('with valid settings', () => {
-    it('fills in the defaults when only DATABASE_URL is set', () => {
+    it('fills in the defaults when only the required settings are set', () => {
       expect(loadEnv()).toEqual({
         NODE_ENV: 'development',
         PORT: 3001,
         DATABASE_URL: VALID_URL,
         EXTENSIONS: [],
         LEDGER_RECONCILE_CRON: '0 2 * * *',
+        AUTH_CLEANUP_CRON: '0 3 * * *',
         APP_VERSION: '0.0.0-dev',
+        CLIENT_DISPLAY_NAME: 'SSDashboard',
+        PUBLIC_URL: 'https://erp.example.com',
+        BETTER_AUTH_SECRET: VALID_SECRET,
+        MAIL_DRIVER: 'none',
+        SMTP_PORT: 587,
+        SMTP_SECURITY: 'starttls',
       });
+    });
+
+    it('drops a trailing slash from PUBLIC_URL', () => {
+      vi.stubEnv('PUBLIC_URL', 'http://localhost:3000/');
+
+      expect(loadEnv().PUBLIC_URL).toBe('http://localhost:3000');
     });
 
     it('turns PORT into a number', () => {
@@ -82,6 +110,40 @@ describe('loadEnv', () => {
       expect(loadEnv().LEDGER_RECONCILE_CRON).toBe('15 1 * * 1');
     });
 
+    it('keeps a custom auth cleanup schedule', () => {
+      vi.stubEnv('AUTH_CLEANUP_CRON', '30 4 * * 0');
+
+      expect(loadEnv().AUTH_CLEANUP_CRON).toBe('30 4 * * 0');
+    });
+
+    it.each([
+      '0 3 * * *',
+      '*/5 * * * *',
+      '0 3 * * 1-5',
+      '0,30 8-18 * jan-mar mon,fri',
+      '0 0 1 */2 7',
+    ])('accepts the cron %s', (expression) => {
+      vi.stubEnv('AUTH_CLEANUP_CRON', expression);
+      vi.stubEnv('LEDGER_RECONCILE_CRON', expression);
+
+      expect(loadEnv()).toMatchObject({
+        AUTH_CLEANUP_CRON: expression,
+        LEDGER_RECONCILE_CRON: expression,
+      });
+    });
+
+    it('keeps the install name, trimmed', () => {
+      vi.stubEnv('CLIENT_DISPLAY_NAME', '  Acme Home  ');
+
+      expect(loadEnv().CLIENT_DISPLAY_NAME).toBe('Acme Home');
+    });
+
+    it('falls back to SSDashboard when the install name is blank', () => {
+      vi.stubEnv('CLIENT_DISPLAY_NAME', '   ');
+
+      expect(loadEnv().CLIENT_DISPLAY_NAME).toBe('SSDashboard');
+    });
+
     it('keeps the release version set in the image', () => {
       vi.stubEnv('APP_VERSION', '1.4.2');
 
@@ -106,12 +168,46 @@ describe('loadEnv', () => {
       ['an unknown NODE_ENV', 'NODE_ENV', 'staging', 'NODE_ENV'],
       ['a cron with too few fields', 'LEDGER_RECONCILE_CRON', '0 2 *', 'LEDGER_RECONCILE_CRON'],
       [
+        'an auth cleanup cron with too few fields',
+        'AUTH_CLEANUP_CRON',
+        '0 3 *',
+        'AUTH_CLEANUP_CRON',
+      ],
+      ['a cron of five words', 'AUTH_CLEANUP_CRON', 'a b c d e', 'AUTH_CLEANUP_CRON'],
+      [
+        'a reconcile cron of five words',
+        'LEDGER_RECONCILE_CRON',
+        'a b c d e',
+        'LEDGER_RECONCILE_CRON',
+      ],
+      ['a cron minute out of range', 'AUTH_CLEANUP_CRON', '60 3 * * *', 'AUTH_CLEANUP_CRON'],
+      ['a cron hour out of range', 'AUTH_CLEANUP_CRON', '0 24 * * *', 'AUTH_CLEANUP_CRON'],
+      ['a cron month of zero', 'AUTH_CLEANUP_CRON', '0 3 1 0 *', 'AUTH_CLEANUP_CRON'],
+      ['a cron weekday past 7', 'AUTH_CLEANUP_CRON', '0 3 * * 8', 'AUTH_CLEANUP_CRON'],
+      ['a cron range that runs backwards', 'AUTH_CLEANUP_CRON', '0 3 * * 5-1', 'AUTH_CLEANUP_CRON'],
+      ['a cron step of zero', 'AUTH_CLEANUP_CRON', '*/0 3 * * *', 'AUTH_CLEANUP_CRON'],
+      ['a cron with a bad name', 'AUTH_CLEANUP_CRON', '0 3 * foo *', 'AUTH_CLEANUP_CRON'],
+      [
         'a non postgres MIGRATION_DATABASE_URL',
         'MIGRATION_DATABASE_URL',
         'mysql://u:p@localhost/app',
         'MIGRATION_DATABASE_URL',
       ],
       ['an empty APP_DB_PASSWORD', 'APP_DB_PASSWORD', '', 'APP_DB_PASSWORD'],
+      ['a PUBLIC_URL that is not a URL', 'PUBLIC_URL', 'erp.example.com', 'PUBLIC_URL'],
+      ['a PUBLIC_URL with a path', 'PUBLIC_URL', 'https://erp.example.com/app', 'PUBLIC_URL'],
+      [
+        'a BETTER_AUTH_SECRET under 32 characters',
+        'BETTER_AUTH_SECRET',
+        'short',
+        'BETTER_AUTH_SECRET',
+      ],
+      [
+        'an install name over 80 characters',
+        'CLIENT_DISPLAY_NAME',
+        'x'.repeat(81),
+        'CLIENT_DISPLAY_NAME',
+      ],
     ])('stops the process for %s', (_case, name, value, reported) => {
       vi.stubEnv(name, value);
 
@@ -119,11 +215,87 @@ describe('loadEnv', () => {
       expect(errorLog.mock.calls[0]?.[0]).toContain(reported);
     });
 
+    it.each(['PUBLIC_URL', 'BETTER_AUTH_SECRET'])(
+      'stops the process when %s is missing',
+      (name) => {
+        vi.stubEnv(name, undefined);
+
+        expect(() => loadEnv()).toThrow('process.exit(1)');
+        expect(errorLog.mock.calls[0]?.[0]).toContain(name);
+      },
+    );
+
     it('does not print the database password when the URL is rejected', () => {
       vi.stubEnv('DATABASE_URL', 'mysql://u:hunter2@localhost/app');
 
       expect(() => loadEnv()).toThrow('process.exit(1)');
       expect(errorLog.mock.calls[0]?.[0]).not.toContain('hunter2');
+    });
+  });
+
+  describe('mail settings (spec 0005)', () => {
+    const failsWith = (message: string) => {
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      expect(errorLog.mock.calls.flat().join(' ')).toContain(message);
+    };
+
+    it('needs nothing when the driver is none, even if blank values are present', () => {
+      vi.stubEnv('MAIL_FROM', '  ');
+      vi.stubEnv('SMTP_HOST', '');
+
+      expect(loadEnv()).toMatchObject({ MAIL_DRIVER: 'none', MAIL_FROM: undefined });
+    });
+
+    it('accepts a complete smtp setup, with or without a login', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('MAIL_FROM', 'ERP <no-reply@client.com>');
+      vi.stubEnv('SMTP_HOST', 'mail.client.com');
+
+      expect(loadEnv()).toMatchObject({ SMTP_HOST: 'mail.client.com', SMTP_PORT: 587 });
+
+      vi.stubEnv('SMTP_USER', 'robot');
+      vi.stubEnv('SMTP_PASSWORD', 'hunter2');
+      vi.stubEnv('SMTP_SECURITY', 'tls');
+      vi.stubEnv('SMTP_PORT', '465');
+      expect(loadEnv()).toMatchObject({ SMTP_USER: 'robot', SMTP_SECURITY: 'tls', SMTP_PORT: 465 });
+    });
+
+    it('stops when a sender is missing for a mail driver', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('SMTP_HOST', 'mail.client.com');
+
+      failsWith('MAIL_FROM');
+    });
+
+    it('stops when smtp has no host', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('MAIL_FROM', 'no-reply@client.com');
+
+      failsWith('SMTP_HOST');
+    });
+
+    it('stops when only one of the smtp user and password is set', () => {
+      vi.stubEnv('MAIL_DRIVER', 'smtp');
+      vi.stubEnv('MAIL_FROM', 'no-reply@client.com');
+      vi.stubEnv('SMTP_HOST', 'mail.client.com');
+      vi.stubEnv('SMTP_USER', 'robot');
+
+      failsWith('set together');
+    });
+
+    it('stops when postmark has no token, and accepts it with one', () => {
+      vi.stubEnv('MAIL_DRIVER', 'postmark');
+      vi.stubEnv('MAIL_FROM', 'no-reply@client.com');
+      failsWith('POSTMARK_SERVER_TOKEN');
+
+      vi.stubEnv('POSTMARK_SERVER_TOKEN', 'token');
+      expect(loadEnv().MAIL_DRIVER).toBe('postmark');
+    });
+
+    it('rejects a driver it does not know', () => {
+      vi.stubEnv('MAIL_DRIVER', 'carrier-pigeon');
+
+      failsWith('MAIL_DRIVER');
     });
   });
 

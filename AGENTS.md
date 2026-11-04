@@ -43,11 +43,13 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationa
 - **Migrations only move forward**, run only by the `migrate` entry point, apply from any supported version, and follow expand and contract (no destructive change in one release). Data moves happen in SQL migrations.
 - **Errors**: throw NestJS HTTP exceptions with a stable error code at the api edge; domain code throws typed domain errors, never returns error strings. **Named exports only**, except where Next.js requires a default export (`page`, `layout`, and similar files).
 - **UI**: English and Arabic from day one, so no hard coded strings and logical CSS properties only (`ms-`/`me-`, `start`/`end`, never `left`/`right`); WCAG 2.2 AA with keyboard and focus support.
+- **Design system**: build all UI to [`packages/ui/DESIGN.md`](packages/ui/DESIGN.md) (color roles, type, density, focus, and the table, form, and feedback rules); token values live in `packages/ui/src/styles/globals.css`, not `packages/config`. Use role tokens only (`bg-muted`, `text-foreground`, never `bg-zinc-200` or raw colors), Radix `asChild` for custom triggers, and shadcn components from `@ssdashboard/ui` before custom markup. Every page renders inside the app shell with exactly one `<h1>`.
 
 ## Tooling
 
 Chosen here, installed by `/develop tooling` (feature 2). Tests already run on Vitest, Testing Library, and Playwright (`test-preferences.json`).
 - Lint and format: ESLint flat config with typescript-eslint (shared config in `packages/config`) + Prettier, run through Turborepo `lint` and `format` tasks.
+- Logical CSS check: `packages/config/scripts/check-logical-css.mjs` runs inside `lint` for `packages/ui` and `apps/web` and fails on physical side styles (`ml-`, `left-`, `text-right`, `margin-left`, and the like).
 - Before commit: lint, format, and type check staged work on every commit (Husky + lint-staged).
 - Testing gate: unit + integration tests with Vitest beside the source, database backed e2e and Playwright for user flows.
 - CI: GitHub Actions on push and PR runs lint, typecheck, test, and the generated client freshness check. The upgrade test and image publishing come with feature 16.
@@ -73,9 +75,11 @@ MCP servers: shadcn registry (recommended), Better Auth docs `https://mcp.better
 ## Context files
 
 - [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS api, worker, and migrate entry points; module, config, and extension rules
+- [apps/api/src/auth/AGENTS.md](apps/api/src/auth/AGENTS.md): staff sign in, session guard, lockout, two factor, and the create-admin commands
 - [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js back office (this Next.js version differs from training data, read its docs first)
 - [packages/contracts/AGENTS.md](packages/contracts/AGENTS.md): Zod schemas, OpenAPI document, generated client
 - [packages/db/AGENTS.md](packages/db/AGENTS.md): Drizzle schema and the only migration history
 - [packages/config/AGENTS.md](packages/config/AGENTS.md): shared TypeScript (and later lint) config
+- [packages/ui/AGENTS.md](packages/ui/AGENTS.md): shared design system, shadcn components, tokens, and `DESIGN.md`
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

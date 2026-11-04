@@ -28,3 +28,7 @@ sed \
 chmod 600 .env
 
 echo "bootstrap: wrote .env with fresh secrets. Set CLIENT_ID, SSD_VERSION, SITE_ADDRESS and PUBLIC_URL next."
+echo "bootstrap: then start the install:  docker compose --env-file .env up -d"
+echo "bootstrap: next step, create the first admin (prints a temporary password once):"
+echo "  docker compose --env-file .env run --rm api node dist/create-admin.js --email <email> --name <name>"
+echo "bootstrap: do not capture or log that output. First check \`docker info --format '{{.LoggingDriver}}'\` prints json-file or local; change the password at first sign in."
