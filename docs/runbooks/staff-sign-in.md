@@ -36,9 +36,11 @@ Create a second admin right after the first one signs in and changes the passwor
 - On the staff page, choose Add staff, set Role to Administrator, and hand over the temporary password under the same rules as step 5 above.
 - Each admin turns on two factor (account page, Turn on) and stores the 10 backup codes offline. The codes are shown once, when two factor is turned on or when new codes are made.
 
-With two admins, a lost authenticator never leaves the install without a working admin. A sole admin who loses the authenticator and has no backup codes has no recovery in the product (section 2).
+With two admins, a lost authenticator never leaves the install without a working admin. A sole admin who loses the authenticator and every backup code uses the two factor reset in section 2.
 
-## 2. Break glass: reset a sole admin's password
+## 2. Break glass: reset a sole admin's password or two factor
+
+### Reset the password
 
 Use this when mail is off (`MAIL_DRIVER=none`), and the only active admin cannot sign in because the password is lost or the account is locked. With mail on, the admin can use the forgot password link instead. That link also clears the lock.
 
@@ -61,23 +63,63 @@ It refuses, exits with code 1 and changes nothing when:
 - The account is not an admin: ask an admin to reset that password from the staff page.
 - The account is disabled: enable it first.
 
-It does not reset two factor. This is deliberate. If the admin also lost the authenticator app, they need one of these:
+It does not reset two factor. If the admin also lost the authenticator app, they need one of these:
 
 - A backup code. At the two factor step, choose Use a backup code instead.
 - Another active admin resets their two factor from the staff page (row menu, Reset two factor). This also ends their sessions.
 
-If neither is possible, this run book has no step for it. A sole admin who lost the authenticator app and has no backup codes has no recovery from the command line today. Escalate to the developer. Do not edit the database by hand.
+If neither is possible, use the two factor reset below.
+
+### Reset two factor
+
+Use this when an admin has lost the authenticator app and every backup code. It applies to a sole admin, and to each admin after a `BETTER_AUTH_SECRET` rotation. Run it from a shell on the server. It is never offered over HTTP, by email or on any screen.
+
+```bash
+docker compose --env-file .env run --rm api node dist/create-admin.js --reset-two-factor --email <email>
+```
+
+What it does:
+
+- Turns two factor off for that account and deletes its stored two factor setup.
+- Ends every session for that account.
+- Ends any sign in that is waiting for a two factor code.
+- Clears the lockout for that email. This includes a lock built up by wrong codes.
+- Keeps the password. It does not set the must change flag, so the admin signs in with the same password.
+- Prints a confirmation with the email. It prints no password.
+- Writes one audit line to stderr, with the event `auth.admin_break_glass_two_factor_reset`, the user id and the time. It holds no email, code, secret or password.
+
+It refuses, exits with code 1 and changes nothing when:
+
+- The email has no account.
+- The account is not an admin. An admin resets that person's two factor from the staff page.
+- The account is disabled. Enable it first.
+
+If two factor is already off, the command still succeeds and changes nothing else. A repeated run is safe.
+
+After the run, the admin signs in with the password and turns two factor on again from the account page (Turn on). They store the new backup codes offline.
+
+### Lost password and two factor
+
+For a sole admin who is fully locked out, with the password and the authenticator both lost, run both reset flags in one command:
+
+```bash
+docker compose --env-file .env run --rm api node dist/create-admin.js --reset-password --reset-two-factor --email <email>
+```
+
+Both changes happen in one transaction. Either both apply or neither does. The command prints one temporary password, and each mode writes its own audit line to stderr. Follow section 3 for this output, because it holds a live password. The admin signs in with the temporary password, chooses a new one, and then turns two factor on again.
+
+Do not add `--name` to a reset run. With a reset flag, `--name` prints the usage and exits with code 1.
 
 **Do not rotate `BETTER_AUTH_SECRET` to get around this.** Rotating it makes every enrolled two factor secret and every backup code unreadable, and it signs everyone out. Rotate it only if one of these is true:
 
 - No account has two factor on.
 - A second active admin who has two factor off can sign in. That admin resets the other accounts' two factor from the staff page.
 
-For a sole admin with two factor on there is no in-product recovery after a rotation. Break glass does not reset two factor, and no other admin can reset it. Rotating the secret in that case locks the install out of its admin.
+If the secret is rotated while two factor is on, each admin with two factor on needs the two factor reset above, once, for their own email. The reset refuses for an account that is not an admin, so an admin resets those accounts from the staff page after signing in again.
 
 ## 3. Do not capture the output
 
-The `create-admin` output contains a live temporary password. Keep it out of every log:
+The `create-admin` output contains a live temporary password whenever it resets a password (`--reset-password`, and the combined run). Keep it out of every log:
 
 - Run the command in a local terminal on the server.
 - Do not pipe or save it: no `| tee`, no `> file`, no `script`.
@@ -109,6 +151,8 @@ How to clear a lock:
 1. Wait 15 minutes from when it started. Nothing else is needed.
 2. Another active admin resets that person's password from the staff page. This clears the lock, but it also changes the password.
 3. Break glass for a sole admin (section 2).
+
+**On premises behind the client's TLS proxy:** with `SITE_ADDRESS=:80`, Caddy treats the proxy's own address as the client, so every user shares one IP and the per IP lockout and rate limits apply to the whole install. Set `TRUSTED_PROXIES` in `.env` to the proxy's address (for example `10.0.0.5/32`, several separated by spaces) so Caddy reads the real client address from the proxy's `X-Forwarded-For`. Caddy reads that header from the right, ignores anything a user forged on the left, and always passes the api exactly one address. Never set it to a wide range such as `0.0.0.0/0`, because anyone could then fake their IP. Leave it empty when Caddy faces users directly.
 
 ## 5. Mail on or off
 
@@ -151,6 +195,8 @@ How to clear a lock:
 | `--reset-password` prints `... is disabled` | The account is disabled | Enable it first |
 | Process stops at startup with `Invalid environment` | A required or invalid setting | Fix the setting named in the message in `.env`, then restart |
 | Reset email never arrives | Mail is off, or sending is failing | Check `mailEnabled` in `GET /api/config`. In the worker log, look for `will retry` or a final failure |
-| Two factor code is refused after `BETTER_AUTH_SECRET` changed | Rotating the secret makes every enrolled two factor secret and every backup code unreadable, and signs everyone out | Do not rotate it without the conditions in section 2. If it was rotated and a second admin with two factor off can sign in, that admin resets each affected person's two factor from the staff page. A sole admin with two factor on has no in-product recovery: escalate |
+| Two factor code is refused after `BETTER_AUTH_SECRET` changed | Rotating the secret makes every enrolled two factor secret and every backup code unreadable, and signs everyone out | Do not rotate it without the conditions in section 2. If it was rotated, each affected admin runs `--reset-two-factor` for their email (section 2). If a second admin with two factor off can sign in, that admin can also reset each affected person's two factor from the staff page |
 | Two factor code is refused after a lock | A lock ends the sign in that was waiting for a code | Start again from the password |
-| Lost authenticator app and no backup codes | Two factor cannot be bypassed by break glass | Another admin resets two factor (section 2), or escalate |
+| Lost authenticator app and no backup codes | The authenticator and every backup code are gone | Another admin resets two factor from the staff page. A sole admin runs `--reset-two-factor` (section 2) |
+| `--reset-two-factor` exits with code 1 | The email has no account, the account is not an admin, or it is disabled | For a staff account, an admin resets two factor from the staff page. For a disabled account, enable it first. Check the email spelling |
+| A reset run prints the usage and exits with code 1 | `--name` was given with a reset flag, or `--email` is missing | Run it again with `--email <email>` and no `--name` |

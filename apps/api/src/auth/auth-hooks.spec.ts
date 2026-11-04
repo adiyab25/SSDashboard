@@ -9,6 +9,7 @@ import {
 import {
   createAfterHook,
   createBeforeHook,
+  forceRevokeOtherSessions,
   RESET_RESPONSE_FLOOR_MS,
   type HookContext,
 } from './auth-hooks.js';
@@ -153,6 +154,29 @@ describe('before hook', () => {
         before(context('/reset-password', { origin: ORIGIN, body: {} })),
       ).rejects.toMatchObject({ body: { code: 'WEAK_PASSWORD' } });
     });
+  });
+});
+
+describe('password change ends the other sessions (AC-14, AC-19)', () => {
+  it('sets revokeOtherSessions to true whatever the client sent, keeping the rest of the body', () => {
+    for (const sent of [{}, { revokeOtherSessions: false }, { revokeOtherSessions: 'no' }]) {
+      const body = { currentPassword: 'Old-Pass-1', newPassword: 'New-Pass-1', ...sent };
+      expect(forceRevokeOtherSessions(body)).toEqual({
+        context: {
+          body: {
+            currentPassword: 'Old-Pass-1',
+            newPassword: 'New-Pass-1',
+            revokeOtherSessions: true,
+          },
+        },
+      });
+    }
+  });
+
+  it('leaves a body that is not an object for Better Auth to refuse', () => {
+    for (const body of [undefined, null, 'text', ['a']]) {
+      expect(forceRevokeOtherSessions(body)).toBeUndefined();
+    }
   });
 });
 

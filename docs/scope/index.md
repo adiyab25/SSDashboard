@@ -35,7 +35,7 @@ A warehouse and ERP system for an ecommerce business with thousands to 100,000+ 
 | 3 | [Data model](foundations.md) | Foundation | done |
 | 4 | [Design system & UI foundation](foundations.md) | Foundation | done |
 | 5 | [Localization (English & Arabic)](foundations.md) | Foundation | in-progress |
-| 6 | [Staff sign in](foundations.md) | Foundation | in-progress |
+| 6 | [Staff sign in](foundations.md) | Foundation | done |
 | 7 | [Core stock loop](inventory.md) | Slice 1 | planned |
 | 8 | [Product catalog & variants](inventory.md) | Slice 2 | planned |
 | 9 | [Catalog search & filtering](inventory.md) | Slice 2 | planned |

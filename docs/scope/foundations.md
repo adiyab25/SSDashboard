@@ -66,7 +66,7 @@ Every screen in English and Arabic, with direction, numbers, and dates formatted
 - [x] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/contracts/src/platform.ts`, `packages/ui/src/components/ltr-text.tsx`, `packages/config/eslint/i18n.js`, `deploy/`
 
-### 6. Staff sign in · in-progress · GA
+### 6. Staff sign in · done · GA
 Real staff accounts and sessions so every slice runs as a known user from day one.
 **Done when:** staff can sign in, sign out, and reset a password; sessions expire; an admin can create and disable staff accounts.
 - [x] Design it (spec): `/architect staff sign in`
@@ -80,6 +80,6 @@ Real staff accounts and sessions so every slice runs as a known user from day on
   - [x] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
 - [x] Verify it: `/check verify staff sign in`
 - [x] Test it: `/test staff sign in`
-- [ ] Review it (fresh model): `/check review staff sign in`
+- [x] Review it (fresh model): `/check review staff sign in`
 - [x] Document it: `/document staff sign in`
 Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/account`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`

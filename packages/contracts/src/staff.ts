@@ -105,6 +105,7 @@ export const StaffErrorCode = z.enum([
   'EMAIL_LOCKED',
   'LAST_ADMIN',
   'SELF_DISABLE',
+  'SELF_ACTION',
   'NOT_INVITED',
   'MAIL_DISABLED',
   'INVALID_LANGUAGE',

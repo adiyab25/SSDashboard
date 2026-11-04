@@ -340,6 +340,9 @@ export const en = {
       disabled: 'Account disabled.',
       enabled: 'Account enabled.',
       inviteSent: 'Invite sent again.',
+      emailChangedInvite: 'Email changed. A new invite was sent to the new address.',
+      emailChangedReset:
+        'Email changed. Use Reset password to give this person a new temporary password.',
       sessionsEnded: 'Signed out everywhere.',
       twoFactorReset: 'Two factor reset.',
     },
@@ -349,6 +352,7 @@ export const en = {
       EMAIL_LOCKED: 'The email can only change while the account is invited.',
       LAST_ADMIN: 'There must always be at least one active administrator.',
       SELF_DISABLE: 'You cannot disable your own account.',
+      SELF_ACTION: 'Use your Account page to change your own password, two factor or sessions.',
       NOT_INVITED: 'Only a person who has not signed in yet can be invited again.',
       MAIL_DISABLED: 'This install does not send email.',
       INVALID_LANGUAGE: 'That language is not enabled on this install.',

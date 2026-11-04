@@ -1,6 +1,7 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { toNodeHandler } from 'better-auth/node';
 import type { NextFunction, Request, Response } from 'express';
+import { logAuthRequestFailure } from './auth-logger.js';
 import type { Auth } from './auth.tokens.js';
 
 const BASE = '/api/auth';
@@ -37,7 +38,7 @@ export function mountAuth(app: NestExpressApplication, auth: Auth): void {
   const handle = toNodeHandler(auth);
   const server = app.getHttpAdapter().getInstance() as Mountable;
 
-  server.all(`${BASE}/*splat`, (req, res, next) => {
+  server.all(`${BASE}/*splat`, (req, res) => {
     const path = new URL(req.originalUrl, 'http://localhost').pathname
       .slice(BASE.length)
       .replace(/\/+$/, '');
@@ -46,6 +47,15 @@ export function mountAuth(app: NestExpressApplication, auth: Auth): void {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Not found' });
       return;
     }
-    Promise.resolve(handle(req, res)).catch(next);
+    // Never `next(error)`: Express would print the raw error, query params included.
+    Promise.resolve(handle(req, res)).catch((error: unknown) => {
+      // A token in the path is a credential: the log names the route, not the token.
+      logAuthRequestFailure(
+        ALLOWED_ROUTES.has(route) ? route : route.replace(/[^/]+$/, ':token'),
+        error,
+      );
+      if (res.headersSent) res.end();
+      else res.status(500).end();
+    });
   });
 }

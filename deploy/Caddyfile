@@ -1,10 +1,29 @@
+{
+	# Proxies whose X-Forwarded-For Caddy trusts (space separated CIDRs). Empty by default:
+	# trust nobody, so the real peer address is the client. Set it only to the client's own
+	# TLS proxy in front of `:80`. Strict parsing reads the header right to left, so a value a
+	# user forges on the left is ignored.
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:}
+		trusted_proxies_strict
+	}
+}
+
+# The api and web always receive exactly one X-Forwarded-For value: the client address as
+# Caddy determines it, never a list a user could forge.
+(upstream_headers) {
+	header_up X-Forwarded-For {client_ip}
+}
+
 # One domain per client. SITE_ADDRESS is the bare host (erp.client.com) for automatic
 # HTTPS, or `:80` for an on premises install behind the client's own TLS.
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
 	handle /api/* {
-		reverse_proxy api:3001
+		reverse_proxy api:3001 {
+			import upstream_headers
+		}
 	}
 
 	# Client language files (spec 0004): extensions/<client>/locales/<code>.json, mounted at
@@ -18,6 +37,8 @@
 	}
 
 	handle {
-		reverse_proxy web:3000
+		reverse_proxy web:3000 {
+			import upstream_headers
+		}
 	}
 }
