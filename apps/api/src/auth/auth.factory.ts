@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { admin } from 'better-auth/plugins/admin';
+import { twoFactor } from 'better-auth/plugins/two-factor';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@ssdashboard/contracts';
 import { schema, type Database } from '@ssdashboard/db';
 import type { Env } from '../config/env.js';
@@ -33,6 +34,7 @@ export function createAuth(
         account: schema.accounts,
         verification: schema.verifications,
         rateLimit: schema.rateLimits,
+        twoFactor: schema.twoFactors,
       },
     }),
     emailAndPassword: {
@@ -61,6 +63,11 @@ export function createAuth(
         '/change-password': { window: 60, max: 30 },
         '/request-password-reset': { window: 15 * 60, max: 3 },
         '/reset-password': { window: 15 * 60, max: 5 },
+        // Routes that ask for the password: Better Auth's default is 3 every 10 seconds. The
+        // per account lock (5 wrong passwords, AC-3) is the real control.
+        '/two-factor/enable': { window: 60, max: 30 },
+        '/two-factor/disable': { window: 60, max: 30 },
+        '/two-factor/generate-backup-codes': { window: 60, max: 30 },
         '/two-factor/verify-totp': { window: 10 * 60, max: 15 },
         '/two-factor/verify-backup-code': { window: 10 * 60, max: 15 },
       },
@@ -93,6 +100,12 @@ export function createAuth(
       lockout: parts.lockout,
       audit: parts.audit,
     }),
-    plugins: [admin({ defaultRole: 'staff', adminRoles: ['admin'] })],
+    plugins: [
+      admin({ defaultRole: 'staff', adminRoles: ['admin'] }),
+      // Authenticator app codes and backup codes only (spec 0005, AC-20). There is no email code
+      // (`otpOptions` is left out, so its routes stay closed), and a trusted device is never
+      // honored: the before hook refuses a request that asks for one.
+      twoFactor({ issuer: env.CLIENT_DISPLAY_NAME, backupCodeOptions: { amount: 10, length: 10 } }),
+    ],
   });
 }

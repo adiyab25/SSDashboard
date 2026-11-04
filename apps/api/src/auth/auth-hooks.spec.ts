@@ -37,7 +37,7 @@ function setup(lock = { locked: false }) {
       origin?: string;
       body?: unknown;
       returned?: unknown;
-      newSession?: { user: { id: string } } | null;
+      newSession?: { user: { id: string; twoFactorEnabled?: boolean } } | null;
       ip?: string;
     } = {},
   ): HookContext => {
@@ -172,6 +172,22 @@ describe('after hook', () => {
     expect(lockout.reset).toHaveBeenCalledWith('sam@example.com');
     expect(audit.record).toHaveBeenCalledWith(expect.any(SignedIn));
     expect(lockout.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('with two factor on, the password step is not a sign in: nothing is stamped, cleared or recorded (AC-3, AC-23)', async () => {
+    const { after, context, internalAdapter, lockout, audit } = setup();
+
+    await after(
+      context('/sign-in/email', {
+        body: { email: 'Sam@Example.com' },
+        newSession: { user: { id: USER_ID, twoFactorEnabled: true } },
+        returned: { twoFactorRedirect: true },
+      }),
+    );
+
+    expect(internalAdapter.updateUser).not.toHaveBeenCalled();
+    expect(lockout.reset).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('on a wrong password: counts the failure and emits SignInFailed', async () => {

@@ -18,7 +18,7 @@ import { CheckIcon, CopyIcon, LoaderCircleIcon } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export type ConfirmKind = 'disable' | 'reset' | 'revoke';
+export type ConfirmKind = 'disable' | 'reset' | 'revoke' | 'twoFactor';
 
 interface ConfirmProps {
   kind: ConfirmKind;
@@ -51,6 +51,11 @@ export function ConfirmDialog({ kind, name, mailEnabled, onConfirm, onClose }: C
       title: t('staff.confirm.resetTitle', { name }),
       body: mailEnabled ? t('staff.confirm.resetBodyMail') : t('staff.confirm.resetBodyTemporary'),
       action: t('staff.confirm.resetConfirm'),
+    },
+    twoFactor: {
+      title: t('staff.confirm.twoFactorTitle', { name }),
+      body: t('staff.confirm.twoFactorBody'),
+      action: t('staff.confirm.twoFactorConfirm'),
     },
     revoke: {
       title: t('staff.confirm.revokeTitle', { name }),

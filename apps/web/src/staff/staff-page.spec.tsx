@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   resetStaffPassword: vi.fn(),
   resendInvite: vi.fn(),
   revokeStaffSessions: vi.fn(),
+  resetStaffTwoFactor: vi.fn(),
 }));
 vi.mock('./staff-api', () => api);
 
@@ -252,6 +253,24 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
       expect(await screen.findByText('Invite sent again.')).toBeVisible();
       expect(api.resendInvite).toHaveBeenCalledWith('new-id');
     });
+  });
+
+  it('resets two factor only for someone who has it on, after a confirmation (AC-20)', async () => {
+    api.resetStaffTwoFactor.mockImplementation(() => ok({}));
+    render(<StaffPage />);
+
+    await openMenu('Sam Carter');
+    expect(screen.queryByRole('menuitem', { name: 'Reset two factor' })).not.toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+
+    await openMenu('Gil Gone');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Reset two factor' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reset two factor for Gil Gone?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reset two factor' }));
+
+    expect(await screen.findByText('Two factor reset.')).toBeVisible();
+    expect(api.resetStaffTwoFactor).toHaveBeenCalledWith('gone-id');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('opens the add dialog, and shows the temporary password of the new account', async () => {

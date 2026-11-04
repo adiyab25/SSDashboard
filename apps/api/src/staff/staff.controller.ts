@@ -116,6 +116,15 @@ export class StaffController {
     return this.staff.resendInvite(id, actorOf(request));
   }
 
+  @Post(':id/reset-two-factor')
+  @HttpCode(200)
+  resetTwoFactor(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<StaffDetail> {
+    return this.staff.resetTwoFactor(id, actorOf(request));
+  }
+
   @Post(':id/revoke-sessions')
   @HttpCode(200)
   revokeSessions(

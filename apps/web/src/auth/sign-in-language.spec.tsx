@@ -97,6 +97,33 @@ describe('SignInForm applies the saved account language (AC-19)', () => {
     expect(cookie()).toBeUndefined();
   });
 
+  it('goes to the code step, keeping returnTo, when the account also needs a code (AC-20)', async () => {
+    vi.stubGlobal('location', {
+      origin: 'https://erp.example.com',
+      search: '?returnTo=%2Fstaff',
+      protocol: 'https:',
+      assign,
+    });
+    signInEmail.mockResolvedValue({ data: { twoFactorRedirect: true }, error: null });
+    render(<SignInForm />);
+
+    await signIn();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/two-factor?returnTo=%2Fstaff'));
+    // Not signed in yet, so the saved language is not read and the sign in has not finished.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(cookie()).toBeUndefined();
+  });
+
+  it('goes to the code step with no returnTo when there was none', async () => {
+    signInEmail.mockResolvedValue({ data: { twoFactorRedirect: true }, error: null });
+    render(<SignInForm />);
+
+    await signIn();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/two-factor'));
+  });
+
   it('does not ask for the profile when sign in fails', async () => {
     signInEmail.mockResolvedValue({ data: null, error: { status: 401 } });
     render(<SignInForm />);

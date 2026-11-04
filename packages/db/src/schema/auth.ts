@@ -141,3 +141,25 @@ export const signInAttempts = pgTable(
   },
   (t) => [primaryKey({ columns: [t.emailKey, t.scope] })],
 );
+
+/**
+ * One authenticator app secret and its backup codes per person (spec 0005, AC-20). Better Auth
+ * encrypts `secret` and `backup_codes` with `BETTER_AUTH_SECRET`. The three columns after
+ * `backup_codes` are the ones its two factor plugin adds: `verified` stays false until the first
+ * code is confirmed, and the other two count consecutive wrong codes for its own per account lock.
+ */
+export const twoFactors = pgTable(
+  'two_factors',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    secret: text('secret').notNull(),
+    backupCodes: text('backup_codes').notNull(),
+    verified: boolean('verified').notNull().default(true),
+    failedVerificationCount: integer('failed_verification_count').notNull().default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  },
+  (t) => [uniqueIndex('two_factors_user_unique').on(t.userId)],
+);

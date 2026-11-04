@@ -18,6 +18,7 @@ const USER = {
   role: 'admin',
   banned: false,
   mustChangePassword: false,
+  twoFactorEnabled: false,
   phone: null,
   staffCode: null,
   language: 'ar',
@@ -206,6 +207,17 @@ describe('SessionGuard', () => {
       expect(deleteSession).toHaveBeenCalledWith('t1');
       expect(response.append).not.toHaveBeenCalled();
     });
+  });
+
+  it('reports whether two factor is on, from the account', async () => {
+    const { guard, context, request } = setup({
+      cookie: 'better-auth.session_token=abc',
+      session: { user: { ...USER, twoFactorEnabled: true }, session: liveSession() },
+    });
+
+    await guard.canActivate(context);
+
+    expect(request.staff).toMatchObject({ twoFactorEnabled: true });
   });
 
   it('falls back to the staff role for a role it does not know', async () => {

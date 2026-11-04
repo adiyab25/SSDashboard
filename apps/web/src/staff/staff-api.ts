@@ -72,5 +72,8 @@ export const resetStaffPassword = (id: string) =>
 
 export const resendInvite = (id: string) => request('POST', `/api/staff/${id}/resend-invite`, Ok);
 
+export const resetStaffTwoFactor = (id: string) =>
+  request('POST', `/api/staff/${id}/reset-two-factor`, StaffDetail);
+
 export const revokeStaffSessions = (id: string) =>
   request('POST', `/api/staff/${id}/revoke-sessions`, RevokeSessionsResponse);

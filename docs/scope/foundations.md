@@ -76,7 +76,8 @@ Real staff accounts and sessions so every slice runs as a known user from day on
   - [x] Mail and password reset: SMTP and Postmark adapters, mail queue and worker, forgot and reset pages (AC-9, AC-10, AC-11)
   - [x] Staff administration: create, edit, disable, invite and reset, last admin rule, forced password change, Staff page (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18)
   - [x] Account page and language sync: edit your own name, phone and language, change your password, saved language applied at sign in (AC-19)
-  - [ ] Two factor, ledger link, cleanup, and hardening (AC-20, AC-22, AC-24, AC-21, AC-7)
+  - [x] Two factor: authenticator app and backup codes, the code step at sign in, wrong codes counted toward the lock, admin reset (AC-20, AC-3)
+  - [ ] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
 - [ ] Verify it: `/check verify staff sign in`
 - [ ] Test it: `/test staff sign in`
 - [ ] Review it (fresh model): `/check review staff sign in`

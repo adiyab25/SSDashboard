@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
@@ -315,4 +315,39 @@ export async function eventually<T>(
       throw new Error(`Timed out waiting for ${options.what ?? 'a result'}`);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
+}
+
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+/** The secret in a `otpauth://` link, as bytes. Better Auth gives it in base32. */
+function secretBytes(base32: string): Buffer {
+  let bits = '';
+  for (const char of base32.replace(/=+$/, '').toUpperCase()) {
+    bits += BASE32.indexOf(char).toString(2).padStart(5, '0');
+  }
+  const bytes: number[] = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8)
+    bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
+  return Buffer.from(bytes);
+}
+
+/**
+ * A 6 digit authenticator app code for a base32 secret (RFC 6238: 30 second steps, SHA 1), so a
+ * suite can sign in with a code the way a phone would. `offsetSteps` reaches a neighbouring step.
+ */
+export function totpCode(base32Secret: string, offsetSteps = 0, now = Date.now()): string {
+  const counter = Math.floor(now / 30_000) + offsetSteps;
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = createHmac('sha1', secretBytes(base32Secret)).update(message).digest();
+  const offset = (digest[digest.length - 1] as number) & 0x0f;
+  const value = digest.readUInt32BE(offset) & 0x7fffffff;
+  return String(value % 1_000_000).padStart(6, '0');
+}
+
+/** The base32 secret out of the `otpauth://totp/...?secret=...` link Better Auth returns. */
+export function secretFromUri(uri: string): string {
+  const secret = new URL(uri).searchParams.get('secret');
+  if (!secret) throw new Error(`no secret in ${uri}`);
+  return secret;
 }

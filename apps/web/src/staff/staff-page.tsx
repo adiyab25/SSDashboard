@@ -26,6 +26,7 @@ import {
   listStaff,
   resendInvite,
   resetStaffPassword,
+  resetStaffTwoFactor,
   revokeStaffSessions,
   type ApiResult,
   type StaffFilter,
@@ -157,6 +158,9 @@ export function StaffPage() {
     };
     if (action === 'disable') {
       return run(disableStaff(row.id, reason), () => close(t('staff.messages.disabled')));
+    }
+    if (action === 'twoFactor') {
+      return run(resetStaffTwoFactor(row.id), () => close(t('staff.messages.twoFactorReset')));
     }
     if (action === 'revoke') {
       return run(revokeStaffSessions(row.id), () => close(t('staff.messages.sessionsEnded')));
@@ -332,6 +336,11 @@ export function StaffPage() {
                           {row.status === 'invited' && mailEnabled && (
                             <DropdownMenuItem onSelect={() => void invite(row)}>
                               {t('staff.row.resendInvite')}
+                            </DropdownMenuItem>
+                          )}
+                          {row.twoFactorEnabled && (
+                            <DropdownMenuItem onSelect={() => confirm('twoFactor', row)}>
+                              {t('staff.row.resetTwoFactor')}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem onSelect={() => confirm('revoke', row)}>

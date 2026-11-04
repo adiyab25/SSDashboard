@@ -261,3 +261,60 @@ _AC-19, AC-25 (the Account link), and AC-8 for the self service password change.
 - AC-19 … own name, phone and language; own password with the current one; no email, role or staff code; language saved from the menu and applied at sign in · covered by every step above
 - AC-25 … the Account link · covered by UI step 1 (the admin only Staff page was covered in slice 4)
 - AC-8 … rules before submit, paste allowed, right autocomplete values on the self service form · covered by UI steps 9, 11 and Commands step 8
+
+# Slice 6: two factor sign in · updated 2026-11-04
+
+_AC-20, and the two factor parts of AC-3, AC-4, AC-23 and AC-24. Run against a throwaway database with the api and web running, and a real authenticator app (or any TOTP tool) for the QR code steps._
+
+## UI / manual
+
+- [ ] Open `/account` → expect a "Two factor sign in" section showing Off, with a Turn on button only → AC-20
+- [ ] Turn on with a wrong password → expect "The password is not right" and no QR code; then with the right password → expect the QR code and the setup key (left to right, in groups of four), and no backup codes yet → AC-20
+- [ ] Scan the QR code with your authenticator app → expect an entry named after the install and your email → AC-20
+- [ ] Type a wrong code → expect "That code is not right" and two factor still Off; close the dialog and reopen it → expect to start again from the password → AC-20
+- [ ] Type the right code → expect the "Save your backup codes" step with 10 codes and a Copy codes button, and no way to see them again after "I saved them" → AC-20
+- [ ] The section now says On with "New backup codes" and "Turn off" buttons → AC-20
+- [ ] Sign out and sign in → expect the "Enter your code" screen after the password, with one `h1`, and no way into the app yet → AC-20, AC-24
+- [ ] Enter a wrong code → expect the error with focus back in the field; enter the right code → expect the page you asked for in `returnTo`, and your saved language → AC-19, AC-20
+- [ ] Sign in again, choose "Use a backup code instead", enter one backup code → expect to be signed in; reuse the same code on another sign in → expect "not right, or it was already used" → AC-20
+- [ ] Wait 10 minutes on the code screen, then submit → expect "This sign in has expired or was stopped" with a way back → AC-20
+- [ ] Enter 5 wrong codes in a row → expect the next try, even with the right code, to fail, and the password step from the same address to say the usual wrong email or password → AC-3
+- [ ] New backup codes → expect the password to be asked, 10 new codes shown once, and the old ones refused at sign in → AC-20
+- [ ] Turn off → expect the password to be asked, the section to say Off, and the next sign in to need no code → AC-20
+- [ ] As an admin open the row menu of someone with two factor on → expect "Reset two factor" (and not for someone without it); confirm → expect their open sessions to end and their next sign in to need no code, with their password unchanged → AC-20
+- [ ] Switch to Arabic and repeat the turn on, code and backup code screens → expect right to left, every string translated, and the setup key, codes and the code field left to right → AC-24
+- [ ] Use only the keyboard through the dialog steps and the code screen → expect a visible focus ring, Escape to close the dialog, and focus returning to the button that opened it → AC-24
+
+## Commands
+
+- [ ] `POST /api/auth/two-factor/enable` with a wrong password, then the right one → expect 400 `INVALID_PASSWORD`, then 200 with `totpURI` (issuer is `CLIENT_DISPLAY_NAME`, label is the email) and 10 `backupCodes` → AC-20
+- [ ] `SELECT secret, backup_codes, verified FROM two_factors` → expect both encrypted (neither the secret nor a backup code in plain text) and `verified = false` until the first code is confirmed; a sign in meanwhile needs no code → AC-20
+- [ ] `POST /api/auth/two-factor/verify-totp` with a wrong then the right code, while signed in → expect 401 `INVALID_CODE`, then 200, `users.two_factor_enabled = true` and `GET /api/me` showing `twoFactorEnabled: true` → AC-20
+- [ ] Sign in with the password only → expect 200 `{"twoFactorRedirect": true}`, a `two_factor` cookie and no session cookie, `GET /api/me` 401, `users.last_sign_in_at` unchanged, and the lockout counters not cleared → AC-3, AC-20
+- [ ] Send the right code with that cookie → expect 200, a session cookie, `last_sign_in_at` set, the counters cleared, and one `SignedIn` log line → AC-20, AC-23
+- [ ] Send 5 wrong codes with that cookie from one address, then the right one → expect 401 each time, a locked `sign_in_attempts` row, and the right code refused; the password step from that address → expect the generic 401; from another address → expect a code step that works → AC-3
+- [ ] `POST /api/auth/two-factor/verify-backup-code` with a backup code, twice → expect 200 then 401 `INVALID_BACKUP_CODE` → AC-20
+- [ ] `verify-totp` with `{"trustDevice": true}` → expect 400 `TRUST_DEVICE_NOT_SUPPORTED`, no `trust_device` cookie, and the next sign in still asking for a code → AC-20
+- [ ] `POST /api/auth/two-factor/send-otp`, `verify-otp` and `get-totp-uri` → expect 404 each → AC-20
+- [ ] `POST /api/auth/two-factor/generate-backup-codes` with a wrong then the right password → expect 400, then 10 new codes with the old ones refused → AC-20
+- [ ] `POST /api/auth/two-factor/disable` with 5 wrong passwords from one address, then the right one → expect 400 each time (the lock applies), and the right password from another address → expect 200, the `two_factors` row gone, and `TwoFactorDisabled` in the log → AC-3, AC-20
+- [ ] `POST /api/staff/<id>/reset-two-factor` as an admin → expect `twoFactorEnabled: false`, the person's sessions gone, the password still working, and `StaffTwoFactorReset` in the log; as staff → expect 403; unknown id → expect 404 → AC-20
+- [ ] More than 15 code attempts in 10 minutes from one address → expect 429 with `X-Retry-After` → AC-4
+- [ ] `POST /api/auth/two-factor/enable` while a temporary password is still in force → expect 403 `PASSWORD_CHANGE_REQUIRED` → AC-14
+- [ ] Read the api log → expect `TwoFactorEnabled`, `TwoFactorDisabled`, `SignedIn` (only after the code), `SignInFailed` for wrong codes and `AccountLocked` when a lock starts, each with actor, target, `ip` and `userAgent`, and no code, secret or backup code → AC-23
+- [ ] `pnpm --filter @ssdashboard/api test:e2e` → expect every suite to pass, `two-factor` included → AC-20
+
+## Value sourcing
+
+- [ ] Set `CLIENT_DISPLAY_NAME=Acme Home` and enroll again → expect the issuer `Acme Home` and the account email as the label → AC-20
+- [ ] Read `users.two_factor_enabled` after an admin reset → expect false, and the Staff list column to match (the staff list reads the same column) → AC-20
+- [ ] Rotate `BETTER_AUTH_SECRET` and sign in as someone with two factor on → expect the code to stop working (the secret was encrypted with the old key), which is why an admin reset is the recovery → AC-20
+- [ ] Wrong codes for a person at the code step → expect the lock key to be that person's email (from the pending sign in) and the client address (from `X-Forwarded-For`) → AC-3
+
+## Acceptance-criteria coverage
+
+- AC-20 … enroll with a QR code and key, first code confirms, backup codes shown once, code at sign in, backup code once, turn off with the password, admin reset revokes sessions, no trusted devices, no email code routes · covered by UI steps 1 to 14 and Commands steps 1 to 12
+- AC-3 … wrong codes and wrong current passwords count toward the lock, a lock ends the pending sign in · covered by UI step 11 and Commands steps 4, 6, 11
+- AC-4 … code attempts limited per address · covered by Commands step 13
+- AC-23 … two factor events and the sign in event only after the code · covered by Commands steps 5, 15
+- AC-24 … keyboard, Arabic, accessible authentication (no puzzle, paste allowed, `one-time-code`) · covered by UI steps 7, 15, 16

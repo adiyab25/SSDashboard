@@ -43,6 +43,13 @@
       "when": 1793727076721,
       "tag": "0005_staff_sign_in_lockout",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793779636615,
+      "tag": "0006_staff_two_factor",
+      "breakpoints": true
     }
   ]
 }

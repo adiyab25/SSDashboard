@@ -5,8 +5,10 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMe } from '@/auth/use-me';
 import { loadConfig } from '@/shell/client-config';
+import { setMe } from '@/auth/use-me';
 import { PasswordSection } from './password-section';
 import { ProfileSection } from './profile-section';
+import { TwoFactorSection } from './two-factor-section';
 
 /**
  * Your own account (spec 0005, AC-19, AC-25): your details and your password. Two factor sign in
@@ -17,6 +19,8 @@ export function AccountPage() {
   const me = useMe();
   const [languages, setLanguages] = useState<readonly string[]>(['en']);
   const [settled, setSettled] = useState(false);
+  // Set once two factor is turned on or off here, so the buttons follow without a reload.
+  const [twoFactor, setTwoFactor] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -41,6 +45,13 @@ export function AccountPage() {
         <>
           <ProfileSection me={me} languages={languages} />
           <PasswordSection />
+          <TwoFactorSection
+            enabled={twoFactor ?? me.twoFactorEnabled}
+            onChange={(value) => {
+              setTwoFactor(value);
+              setMe({ ...me, twoFactorEnabled: value });
+            }}
+          />
         </>
       ) : (
         <div role="status" className="flex flex-col gap-3">

@@ -45,6 +45,20 @@ export class PasswordChanged {
   constructor(readonly context: AuthEventContext) {}
 }
 
+/** A person finished turning on two factor sign in (their first code was confirmed). */
+export class TwoFactorEnabled {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+export class TwoFactorDisabled {
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** An admin turned off someone else's two factor and ended their sessions. */
+export class StaffTwoFactorReset {
+  constructor(readonly context: AuthEventContext) {}
+}
+
 /** An admin created an account. `targetId` is the new account. */
 export class StaffCreated {
   constructor(readonly context: AuthEventContext) {}
@@ -90,6 +104,9 @@ export type AuthEvent =
   | PasswordResetRequested
   | PasswordResetCompleted
   | PasswordChanged
+  | TwoFactorEnabled
+  | TwoFactorDisabled
+  | StaffTwoFactorReset
   | StaffCreated
   | StaffUpdated
   | StaffRoleChanged

@@ -15,6 +15,11 @@ const ALLOWED_ROUTES: ReadonlySet<string> = new Set([
   'POST /request-password-reset',
   'POST /reset-password',
   'POST /change-password',
+  'POST /two-factor/enable',
+  'POST /two-factor/verify-totp',
+  'POST /two-factor/verify-backup-code',
+  'POST /two-factor/generate-backup-codes',
+  'POST /two-factor/disable',
 ]);
 
 /** Routes with a token in the path: one segment only, so nothing deeper slips through. */

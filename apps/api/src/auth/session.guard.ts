@@ -83,8 +83,7 @@ export class SessionGuard implements CanActivate {
       phone: user.phone ?? null,
       staffCode: user.staffCode ?? null,
       language: user.language ?? null,
-      // The two factor plugin (a later slice) adds this field to the user; none is enrolled yet.
-      twoFactorEnabled: false,
+      twoFactorEnabled: user.twoFactorEnabled ?? false,
       mustChangePassword: user.mustChangePassword,
       sessionId: session.id,
     };

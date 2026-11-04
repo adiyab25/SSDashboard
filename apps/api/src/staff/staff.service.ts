@@ -34,6 +34,7 @@ import {
   StaffPasswordReset,
   StaffRoleChanged,
   StaffSessionsRevoked,
+  StaffTwoFactorReset,
   StaffUpdated,
   type AuthEvent,
   type AuthEventContext,
@@ -384,6 +385,24 @@ export class StaffService {
     const result = await this.db.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
     this.emit(new StaffSessionsRevoked(this.context(actor, id)));
     return { count: result.rowCount ?? 0 };
+  }
+
+  /**
+   * Turns off someone else's two factor and ends their sessions (AC-20), for a person who lost
+   * their phone. Their password is untouched, so they sign in with it and can enroll again.
+   */
+  async resetTwoFactor(id: string, actor: Actor): Promise<StaffDetail> {
+    await this.db.transaction(async (tx) => {
+      const target = await this.find(tx, id, true);
+      if (!target) throw notFound();
+      await tx.execute(sql`DELETE FROM two_factors WHERE user_id = ${id}::uuid`);
+      await tx.execute(
+        sql`UPDATE users SET two_factor_enabled = false, updated_at = now() WHERE id = ${id}::uuid`,
+      );
+      await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+    });
+    this.emit(new StaffTwoFactorReset(this.context(actor, id)));
+    return this.get(id);
   }
 
   // ---- helpers ----
