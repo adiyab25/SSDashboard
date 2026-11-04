@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../test/axe';
@@ -90,6 +90,69 @@ describe('overlays', () => {
 
     expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument();
     await expectNoAxeViolations(document.body);
+  });
+
+  it('DropdownMenu does not hide the page behind it, and its trigger opens and closes it', async () => {
+    render(
+      <>
+        <a href="#main">Skip</a>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>Actions</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Rename</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Actions' });
+
+    await userEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Skip' })).toBeVisible();
+    expect(document.body.querySelector('[aria-hidden="true"]')).toBeNull();
+
+    await userEvent.click(trigger);
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    await userEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it('DropdownMenu closes when another menu opens, and its own trigger still toggles it', async () => {
+    render(
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>Row A</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Rename A</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>Row B</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Rename B</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </>,
+    );
+    const triggerA = screen.getByRole('button', { name: 'Row A' });
+    const triggerB = screen.getByRole('button', { name: 'Row B' });
+
+    await userEvent.click(triggerA);
+    expect(screen.getByRole('menuitem', { name: 'Rename A' })).toBeInTheDocument();
+
+    await userEvent.click(triggerB);
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Rename A' })).toBeNull());
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+    expect(screen.getByRole('menuitem', { name: 'Rename B' })).toBeInTheDocument();
+
+    await userEvent.click(triggerB);
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
   });
 
   it('Popover opens with no axe violations', async () => {

@@ -34,6 +34,10 @@ test.describe('accessibility matrix (AC-2, AC-5, AC-11)', () => {
           await useBrowserState(page, { theme, dir });
 
           await openShell(page, path);
+          if (path === '/') {
+            // The status panel disables its button while it loads; axe runs once it has settled.
+            await expect(page.getByRole('button', { name: 'Check again' })).toBeEnabled();
+          }
           await expect(page.locator('html')).toHaveAttribute('dir', dir);
           await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
           if (path === '/design') {
@@ -93,10 +97,15 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       }),
     );
     await openShell(page);
+    // The Staff entry joins the sidebar once /api/me has told the shell the role.
+    await expect(page.getByRole('button', { name: /User menu: E2E Admin/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check again' })).toBeVisible();
     const expected = [
       'Skip to main content',
       'Home',
       'Design system',
+      // The suite signs in as an administrator, who also has the Staff page (spec 0005, AC-25).
+      'Staff',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

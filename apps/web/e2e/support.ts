@@ -43,7 +43,7 @@ export async function languageCookie(page: Page): Promise<string | undefined> {
 /** Answers `GET /api/config` with these install settings. */
 export async function stubConfig(
   page: Page,
-  config: { languages?: string[]; defaultLanguage?: string } = {},
+  config: { languages?: string[]; defaultLanguage?: string; mailEnabled?: boolean } = {},
 ) {
   await page.route('**/api/config', (route) =>
     route.fulfill({
@@ -54,6 +54,7 @@ export async function stubConfig(
         timezone: 'Africa/Cairo',
         languages: ['en', 'ar'],
         defaultLanguage: 'en',
+        mailEnabled: false,
         ...config,
       },
     }),
@@ -71,6 +72,18 @@ export async function openShell(page: Page, path = '/') {
   await page.goto(path);
   await locations;
   await expect(page.getByRole('main')).toBeVisible();
+}
+
+/**
+ * Waits until React has taken over the form on the page. A click or Enter before that submits
+ * the form natively (a full page post), which no person with a fast hand would notice but a
+ * test does.
+ */
+export async function waitForFormHydration(page: Page) {
+  await page.waitForFunction(() => {
+    const form = document.querySelector('main form');
+    return form !== null && Object.keys(form).some((key) => key.startsWith('__reactProps'));
+  });
 }
 
 /** WCAG 2.2 AA through axe; contrast and target size need a real browser, so they run here. */

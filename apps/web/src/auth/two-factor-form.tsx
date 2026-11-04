@@ -12,6 +12,9 @@ import { applySavedLanguage } from './apply-saved-language';
 import { authClient } from './auth-client';
 import { safeReturnTo } from './return-to';
 
+/** Better Auth's code for a missing, expired or already used challenge cookie (status 401). */
+const CHALLENGE_ENDED = 'INVALID_TWO_FACTOR_COOKIE';
+
 /**
  * The code step of a sign in (spec 0005, AC-20): after the password, a 6 digit code from the
  * authenticator app, or one of the backup codes. The password step has left only a short lived
@@ -53,9 +56,10 @@ export function TwoFactorForm() {
         return;
       }
       if (error.status === 429) setFailure(t('auth.twoFactor.rateLimited'));
-      else if (error.status === 400) setExpired(true);
+      else if (error.code === CHALLENGE_ENDED) setExpired(true);
       else if (error.status === 401) {
-        // A stopped challenge and a wrong code are both 401; only the code can be tried again.
+        // A stopped challenge and a wrong code are both 401; the code tells them apart, and only
+        // a wrong code can be tried again. A locked sign in answers like a wrong code.
         setFailure(backup ? t('auth.twoFactor.backupWrong') : t('auth.twoFactor.wrong'));
       } else setFailure(t('auth.twoFactor.failed'));
     } catch {

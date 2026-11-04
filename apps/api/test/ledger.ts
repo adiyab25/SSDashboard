@@ -111,6 +111,7 @@ export function posting(
     idempotencyKey: randomUUID(),
     sourceType: 'adjustment',
     sourceId: randomUUID(),
+    postedBy: null,
     lines,
     ...overrides,
   };

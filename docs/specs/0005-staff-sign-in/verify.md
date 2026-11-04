@@ -366,3 +366,75 @@ Flow on `qa7` with a sole admin: `create-admin --email Owner@Example.com --name 
 
 - minor: `AUTH_CLEANUP_CRON="a b c d e"` passes the env regex (any five words) but the worker then crashes at bootstrap inside `cron-parser` with a stack trace, exit 1. It does fail fast, but not with the clean `Invalid environment` message. The existing `RECONCILE_CRON` uses the same regex, so this is a shared pre existing pattern.
 - minor (environment): root `pnpm test:e2e` cannot reach the api and web suites until the stale `schema.e2e-spec` assertion is fixed.
+
+# Slice 8: hardening and finish · verified 2026-11-04
+
+_Covers AC-7, AC-21, AC-22, AC-24 and the spec's critical test scenarios. Run by the QA tester against the built app (`apps/api/dist`) and the dev Postgres 18 on port 5433, in a throwaway database `ssdashboard_e2e_s8e` (dropped afterwards). Web dev server on 3220 (a temporary `distDir` override in `next.config.ts` because another dev server already owned `.next`; restored to the same sha1, extra dist folder deleted), api on 3221, production project on 3320. Result key: PASS, FAIL, GAP (not testable yet or not covered)._
+
+## Gates
+
+| Command | Result |
+| --- | --- |
+| `pnpm build` | PASS, 4 of 4 tasks |
+| `pnpm typecheck` | PASS, 7 of 7 (6 from turbo cache) |
+| `pnpm lint` | PASS, 8 of 8 (7 from turbo cache) |
+| `pnpm test` | PASS: contracts 129, db 5, api 252, ui 24, web 341 |
+| `pnpm --filter @ssdashboard/api test:e2e` | PASS: 16 files, 199 passed, 1 skipped |
+| `pnpm --filter @ssdashboard/db test:e2e` | PASS: 3 files, 27 passed (the stale `schema.e2e-spec` assertion from slice 7 is fixed) |
+| Playwright full suite, `apps/web`, desktop + mobile + production | PASS after one setup fix: 317 tests, 274 passed, 40 skipped (project only tests), 3 failed in `production` because I started `next start` without `API_INTERNAL_URL`; rerun of `--project=production` with `API_INTERNAL_URL=http://localhost:3221` gave 5 passed. Not a code bug, see Findings |
+| `--repeat-each=3` on auth-flows, account, staff, auth-accessibility (desktop + mobile) | PASS: 588 passed, 0 flaky, 0 failed |
+| `shell.spec.ts` x 5 runs (desktop + mobile) | PASS 5 of 5, 28 passed each; the `/` color contrast flake did not appear (0 of 5) |
+
+## Fresh install path (throwaway database, over HTTP)
+
+- PASS: `migrate.js` gave "Migrations applied."; `create-admin --email Boss@Example.com --name "Boss One"` exit 0, 16 character temporary password on stdout, nothing on stderr.
+- PASS: sign in with `BOSS@example.com` and the temporary password gave 200 with `mustChangePassword: true`; `GET /api/me` 200; `GET /api/locations` 403 `PASSWORD_CHANGE_REQUIRED`.
+- PASS: change password with `abc` gave 422 `WEAK_PASSWORD` (`min_length`, `uppercase`, `digit`); with a strong one 200; `/api/locations` then 200; `mustChangePassword` false.
+- PASS: sign out 200; the old cookie on `/api/me` gave 401 `SESSION_EXPIRED`; the new password signs in 200; the temporary password gave 401 `INVALID_EMAIL_OR_PASSWORD`.
+- PASS: lockout. Five wrong passwords from one address, then the correct one, gave 401 with the same body; an unknown email gives the identical body. Six wrong passwords from six different addresses and then the correct one from a new address gave 200 (correct: the per email lock needs 20 spread failures).
+- PASS: `create-admin --reset-password --email boss@example.com` exit 0, "Sessions ended and lockout cleared.", new 16 character password on stdout. stderr is exactly one line `{"event":"auth.admin_break_glass_reset","targetId":"<uuid>","actor":"cli","at":"..."}`; the new password occurs 0 times in stderr and 0 times in the api log. The old password gave 401, the new one 200, and `must_change_password` is `t`.
+- Note: a first reset attempt ran against the `.env` database (the shared `ssdashboard`) because I had not exported `DATABASE_URL`; it answered "No account has the email", exit 1, and changed nothing. `create-admin` reads `DATABASE_URL` from `.env` when the environment does not set it.
+
+## Critical test scenarios (end of the spec)
+
+- PASS: first admin happy path (AC-1, AC-6, AC-14, AC-21, AC-25). Manual run above; `sign-in.e2e-spec` "creates the first admin, prints a temporary password once, and sets the must change flag", "signs in with the email in any letter case...", "signs out only that session..."; Playwright `auth-flows` "forced password change > changes the password from the keyboard alone and lands on the page asked for" and `sign-in.spec`.
+- PASS with a gap: invite flow (AC-9, AC-12, AC-13, AC-14). Mail captured through a real SMTP catcher: `staff.e2e-spec` "invites by email with a 7 day link that sets the first password" (Arabic mail has `dir="rtl"`, the link lasts 7 days, the person signs in and reaches `/api/locations`). Mail off: "shows a temporary password once, then forces a change before anything else works" and Playwright `staff` "creates a person, shows the temporary password once, and the person must change it". GAP: no browser test clicks a real invite email link through the `/reset-password?invite=1` page (the page and an invalid token are covered by `auth-flows`, the redeem by the api test).
+- PASS: five wrong passwords and generic answers (AC-2, AC-3). `sign-in-policy.e2e-spec` "locks an email and address after five failures, with the same answer for everything", "treats an unknown email like a real one", "locks the email for every address after 20 failures", "does not lose a count when attempts arrive at the same moment"; manual run above.
+- PASS: session expiry (AC-5). `sign-in-policy.e2e-spec` "ends a session left idle for 12 hours", "ends a session 7 days after sign in even when it was used a minute ago", "renews an idle session...". Time is moved by editing `sessions` rows, not by a fake clock; same effect.
+- PASS: auth and permission matrix (AC-7, AC-15, AC-16). Live: every mapped route except `GET /api/config` and `/api/health` gave 401 with no cookie (13 routes, including `GET /api/locations`); `POST /api/auth/sign-up/email`, `admin/list-users`, `update-user`, `change-email`, `get-session` gave 404; sign in with `origin: https://evil.example` gave 403. Tests: `sign-in.e2e-spec` "keeps config and health public and guards everything else", "closes every Better Auth route that is not on the allowlist"; `staff.e2e-spec` "answers 401 with no session and 403 FORBIDDEN to a staff role, and lets an admin in", "closes Better Auth routes that would bypass the staff service"; Playwright `staff` "the staff api answers 403 FORBIDDEN to reads and writes". Disabled person's old cookie: `sign-in.e2e-spec` "treats a disabled account as signed out on its next request", `sign-in-policy.e2e-spec` "answers a disabled person on their very next request", `staff.e2e-spec` "disables in one step: no sessions, no live links...".
+- PASS: `returnTo` off site (AC-7). Playwright `sign-in.spec` "ignores a returnTo that points off site", `auth-flows` "an off site returnTo is ignored after the change".
+- PASS: two factor (AC-20). `two-factor.e2e-spec` covers enrol, a right code, a backup code once, wrong codes counting toward the lock, and admin reset ("turns it off and ends their sessions"); Playwright `auth-flows` "enrol on the account page, then sign in asks for a code; a wrong code is announced; a backup code works once".
+- PASS: break glass (AC-21). Manual run above and `create-admin-reset.e2e-spec` "restores access for a locked out sole admin".
+- PASS: Arabic and English, keyboard only, axe (AC-24, AC-19). `auth-accessibility.spec.ts` runs each new screen in light and dark, ltr and rtl on desktop and mobile; keyboard tests in `auth-flows`, `account`, `staff`. 588 of 588 across 3 repeats.
+- PASS with a gap: nightly cleanup and `posted_by` (AC-22). `auth-cleanup.e2e-spec` "deletes expired rows in all four tables and keeps live ones", "removes nothing on a second run"; `ledger.e2e-spec` "stores the posting user as posted_by and rejects an unknown user". GAP (unchanged from slice 7): no HTTP route posts to the ledger yet, so the guard to `posted_by` wiring cannot be driven end to end.
+- PASS (extra, in the spec's list): two admins disabling each other, `staff.e2e-spec` "leaves one admin when two disable each other at the same moment"; weak passwords refused on the reset, change and invite paths (api tests above).
+- GAP: AC-11 "after the last retry a log line without the link appears". `password-reset.e2e-spec` "does not fail the request, and the worker retries without ever logging the link" covers the first failure and the retry only; the final line is covered by worker unit tests (a real run takes about 15 minutes), as in slice 3.
+
+## Contract: `postedBy` (AC-22)
+
+Run: `pnpm exec vitest run test/inventory.spec.ts src/inventory.spec.ts` in `packages/contracts` gave 27 passed; `vitest run src/inventory/controller-contracts.spec.ts` in `apps/api` gave 2 passed; plus a direct parse against the built contracts.
+
+- PASS: `PostingInput` without `postedBy` is rejected (`postedBy: invalid_type`); with `null` it is accepted. `ReverseInput` without `postedBy` is rejected (`invalid_type`).
+- PASS: `PostingRequest` and `ReverseRequest` accept a clean body and reject a smuggled `postedBy` (a uuid, and also `null`) with `unrecognized_keys`, instead of stripping it.
+- PASS: no non test code writes `posted_by` from request input. `grep -rnE "posted_by|postedBy" apps packages --include=*.ts --include=*.tsx`, minus specs, tests, schema and migrations, leaves only `ledger.service.ts` (the service level insert, taking the already validated `PostingInput.postedBy`, and mapping the FK error), `request-hash.ts` (excluded from the hash) and `packages/contracts/src/inventory.ts`. No controller, job or web file touches it. `controller-contracts.spec.ts` fails if a controller imports `PostingInput` or `ReverseInput`.
+- Limit: that guard is an import scan. A controller that validated its body with some other schema would not trip it. There is no posting controller to check yet.
+- Note (by design, documented in `request-hash.ts`): `postedBy` is not in the idempotency hash, so a replay of the same key from another user matches the first posting and keeps the first poster.
+
+## Mobile dropdown menus (375 x 740, touch)
+
+Driven with Playwright on a touch device against the dev server, using real screen taps (a scratch script run from stdin, nothing saved). The shell user menu is A, the staff row menu is B.
+
+- PASS: A opens on tap, closes on Escape with focus back on its trigger, closes on an outside tap, toggles closed when its own trigger is tapped and reopens on the next tap, and picking "Account" closes it and navigates.
+- PASS: B opens on tap, closes on Escape with focus back on its trigger, closes on an outside tap, toggles on its own trigger, and picking "Edit" closes it and opens a dialog.
+- PASS: with A open, tapping B's trigger leaves exactly one menu, B's (Edit, Reset password, Sign out everywhere); with B open, tapping A's trigger leaves exactly one menu, A's.
+- PASS: with A or B open, one tap on "Add staff" closes the menu and opens exactly one dialog; with A open, one tap on "Search pages" opens exactly one palette.
+- Note: Playwright's `locator.tap()` cannot reach the page heading while a menu is open at 375 wide (the menu covers it); outside taps used `touchscreen.tap` on empty page area.
+- GAP: no committed test covers any of this on the mobile project (the existing menu tests are Escape on desktop and axe with the row menu open). Worth a Playwright test.
+
+## Findings
+
+- minor (docs): the `production.spec.ts` comment "No api runs behind this server: the saved language is kept when config cannot load" is stale. Since the shell requires a session, the production project needs `API_INTERNAL_URL` pointing at a running api, or three tests show "This page couldn't load". Say so in the README or the config comment.
+- minor (environment): `next dev` allows one server per directory; a stale server on 3200 held `.next`, so a second run needs a different `distDir`. There is no env hook for it in `next.config.ts` today.
+- minor (carried over from slice 7, not re-run): `AUTH_CLEANUP_CRON="a b c d e"` still crashes inside `cron-parser` instead of the clean "Invalid environment" message.
+- flake not reproduced: the pre existing `/` color contrast failure in `shell.spec.ts` did not occur in 5 runs, nor in the full run or the 3 repeat runs.
+- No product bugs found in this pass. Ports 3200 and 3201 were left alone; the shared `ssdashboard` database was not changed.

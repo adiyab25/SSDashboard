@@ -97,6 +97,7 @@ services:
 
   caddy:
     image: caddy:2.11-alpine
+    # Only caddy may publish ports: the api trusts the X-Forwarded-For that Caddy sets (enforced by apps/api/test/compose-ports.spec.ts).
     ports:
       - "80:80"
       - "443:443"

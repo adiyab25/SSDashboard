@@ -7,10 +7,11 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@ssdashboard/ui/compo
 import { Input } from '@ssdashboard/ui/components/input';
 import { LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authClient } from './auth-client';
 import { PasswordRules } from './password-rules';
+import { useFocusWhenShown } from './use-focus-when-shown';
 
 type Stage =
   | { name: 'loading' }
@@ -59,9 +60,7 @@ export function ResetPasswordForm() {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // A new screen (dead link, done) replaces the form, so focus moves to its heading.
-  useEffect(() => {
-    if (stage.name === 'invalid' || stage.name === 'done') headingRef.current?.focus();
-  }, [stage.name]);
+  useFocusWhenShown(headingRef, stage.name === 'invalid' || stage.name === 'done');
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

@@ -47,6 +47,10 @@ function canonical(value: unknown): string {
 /**
  * SHA-256 of what a posting asks for (spec 0002, Value sourcing): never the key,
  * `postedBy`, or a defaulted date, and lines sorted so their order does not matter.
+ *
+ * Because `postedBy` is excluded, a replay of the same key from a different user matches and
+ * returns the original poster's attribution. To be decided when the HTTP route lands (e.g. scope
+ * keys per user, or reject a different poster); no behaviour change here.
  */
 export function requestHash(request: HashedRequest): string {
   const lines = request.lines

@@ -123,7 +123,10 @@ describe('TwoFactorForm (AC-20, AC-3)', () => {
   );
 
   it('tells the person to start again when the sign in has ended', async () => {
-    verifyTotp.mockResolvedValue({ data: null, error: { status: 400 } });
+    verifyTotp.mockResolvedValue({
+      data: null,
+      error: { status: 401, code: 'INVALID_TWO_FACTOR_COOKIE' },
+    });
     render(<TwoFactorForm />);
 
     await verify();

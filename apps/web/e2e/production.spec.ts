@@ -17,7 +17,9 @@ test.describe('production build', () => {
     await page.addInitScript(() => localStorage.setItem('ss_dir', 'ltr'));
     await page.goto('/');
 
-    // No api runs behind this server: the saved language is kept when config cannot load.
+    // The saved language is kept when config cannot load. This server needs API_INTERNAL_URL
+    // pointing at a running api (the session gate calls it), and the saved sign in cookie is
+    // for the dev hostname, so run it on the same hostname as the dev server.
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('نظرة عامة');
@@ -45,7 +47,8 @@ test.describe('production build', () => {
     const hosts = new Set<string>();
     page.on('request', (request) => hosts.add(new URL(request.url()).host));
 
-    // No api runs behind this server, so wait for the fonts, not for network idle.
+    // Wait for the fonts, not for network idle. This server needs API_INTERNAL_URL pointing at
+    // a running api (the session gate), as the first test says.
     await page.goto('/');
     const fonts = await page.evaluate(async () => {
       await document.fonts.ready;

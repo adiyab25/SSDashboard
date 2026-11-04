@@ -35,6 +35,7 @@ pnpm --filter @ssdashboard/ui typecheck
 
 - `shadcn add` run inside this folder writes to the wrong place in this repo. Generate components in a scratch shadcn monorepo (`init --template next --monorepo --base radix --preset vega --rtl`), copy them into `src/components/`, rewrite `@workspace/ui/` to `@ssdashboard/ui/`, then run Prettier and the logical CSS check.
 - `shadcn init --rtl` leaves some physical side classes behind (sheet, sidebar, popper animations); convert them when you copy a component in.
+- DropdownMenu is non-modal by default (a modal menu aria-hides the shell and fails axe aria-hidden-focus); no scroll lock; one outside press closes the menu AND activates the pressed control. Keep this when re-copying from shadcn.
 
 ## Agent skills
 

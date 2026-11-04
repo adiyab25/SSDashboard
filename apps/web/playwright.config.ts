@@ -45,7 +45,15 @@ export default defineConfig({
     {
       name: 'production',
       testMatch: /production\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], baseURL: prodBaseURL },
+      // Signed in as the seeded admin: since spec 0005 every shell page asks for a session first,
+      // so a signed out visit would only ever reach the sign in page. That check calls the api, so
+      // this server needs API_INTERNAL_URL pointing at a running api. The saved cookie belongs to
+      // the dev hostname (localhost), so the production server must use the same hostname.
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: prodBaseURL,
+        storageState: STORAGE_STATE,
+      },
     },
   ],
   webServer: [

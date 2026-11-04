@@ -5,8 +5,28 @@ import { cn } from 'cn';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import { CheckIcon, ChevronRightIcon } from 'lucide-react';
 
-function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
+/** The root's trigger element, so the content can tell a press on its own trigger from any other. */
+const TriggerRefContext = React.createContext<React.RefObject<HTMLElement | null> | null>(null);
+
+/**
+ * Not modal by default. A modal Radix menu marks the rest of the page `aria-hidden` (the skip link,
+ * the whole shell) while its trigger and links stay focusable, which axe reports as
+ * `aria-hidden-focus`. A menu is not a dialog, so nothing behind it needs hiding. Escape closes it
+ * and returns focus to the trigger. Tab does not close it (Radix prevents the key's default and
+ * keeps focus in the menu). An outside press closes it and, in this non-modal mode, does NOT
+ * return focus to the trigger: the pressed control keeps the focus and is activated by that same
+ * press. There is no scroll lock.
+ */
+function DropdownMenu({
+  modal = false,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  const triggerRef = React.useRef<HTMLElement | null>(null);
+  return (
+    <TriggerRefContext.Provider value={triggerRef}>
+      <DropdownMenuPrimitive.Root data-slot="dropdown-menu" modal={modal} {...props} />
+    </TriggerRefContext.Provider>
+  );
 }
 
 function DropdownMenuPortal({
@@ -16,23 +36,49 @@ function DropdownMenuPortal({
 }
 
 function DropdownMenuTrigger({
+  ref,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
-  return <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
+  const triggerRef = React.useContext(TriggerRefContext);
+  const setRef = React.useCallback(
+    (node: HTMLButtonElement | null) => {
+      if (triggerRef) triggerRef.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref, triggerRef],
+  );
+  return (
+    <DropdownMenuPrimitive.Trigger ref={setRef} data-slot="dropdown-menu-trigger" {...props} />
+  );
 }
 
 function DropdownMenuContent({
   className,
   align = 'start',
   sideOffset = 4,
+  onInteractOutside,
+  ref,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const triggerRef = React.useContext(TriggerRefContext);
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        ref={ref}
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         align={align}
+        onInteractOutside={(event) => {
+          onInteractOutside?.(event);
+          // Not modal: a press on THIS menu's own trigger is the trigger's to handle (it toggles).
+          // Without this, a menu that is still animating closed dismisses the press that reopens
+          // it. The root's context holds its own trigger element, so another menu's trigger does
+          // not match and still dismisses this menu. Nothing depends on ids or aria attributes.
+          if (event.target instanceof Node && triggerRef?.current?.contains(event.target)) {
+            event.preventDefault();
+          }
+        }}
         className={cn(
           // logical-css-ignore: Radix sets data-side to the physical placement, so these slide the right way.
           'z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',

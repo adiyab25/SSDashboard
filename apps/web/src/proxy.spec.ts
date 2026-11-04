@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { config, proxy } from './proxy';
 
 const seenByPage = (response: Response, name: string) =>
@@ -28,6 +28,28 @@ describe('proxy', () => {
     );
 
     expect(seenByPage(response, 'cookie')).toBe('a=b');
+  });
+
+  describe('in production', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it.each(['/design', '/design/'])('answers a real 404 for the development only %s', (path) => {
+      vi.stubEnv('NODE_ENV', 'production');
+
+      const response = proxy(new NextRequest(`http://localhost:3000${path}`));
+
+      expect(response.status).toBe(404);
+      expect(response.headers.get('x-middleware-rewrite')).toBe('http://localhost:3000/_not-found');
+    });
+
+    it.each(['/', '/designs', '/staff'])('leaves %s alone', (path) => {
+      vi.stubEnv('NODE_ENV', 'production');
+
+      const response = proxy(new NextRequest(`http://localhost:3000${path}`));
+
+      expect(response.status).toBe(200);
+      expect(seenByPage(response, 'x-pathname')).toBe(path);
+    });
   });
 
   describe('matcher', () => {

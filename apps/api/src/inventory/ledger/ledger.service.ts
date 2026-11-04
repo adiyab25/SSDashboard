@@ -204,7 +204,7 @@ export class LedgerService {
       sourceId: parsed.sourceId,
       reversesGroupId: null,
       effectiveAt: parsed.effectiveAt,
-      postedBy: parsed.postedBy ?? null,
+      postedBy: parsed.postedBy,
       lines,
     };
     return this.transact((tx) => this.apply(tx, operation));
@@ -296,7 +296,7 @@ export class LedgerService {
         sourceId: original.source_id,
         reversesGroupId: parsed.groupId,
         effectiveAt: parsed.effectiveAt,
-        postedBy: parsed.postedBy ?? null,
+        postedBy: parsed.postedBy,
         lines,
       });
     });

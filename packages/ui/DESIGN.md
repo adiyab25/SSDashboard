@@ -135,6 +135,7 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 - Sortable headers are buttons with `aria-sort` on the `th`, and the sort icon is decorative.
 - Keep the header row sticky in long tables. Wide tables scroll inside their container, never the page.
 - Row actions sit in a trailing column as an icon button with a dropdown menu; the button's name includes the row ("Actions for TBL-OAK-120").
+- DropdownMenu is non-modal by default (a modal menu aria-hides the shell and fails axe aria-hidden-focus); no scroll lock; one outside press closes the menu AND activates the pressed control. Keep this when re-copying from shadcn.
 - States: loading shows skeleton rows at the real row height; empty uses the empty pattern below inside the table body; an error replaces the body with an inline alert and a retry.
 
 ### Forms (built by features 7 and 8)

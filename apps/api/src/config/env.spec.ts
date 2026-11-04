@@ -116,6 +116,22 @@ describe('loadEnv', () => {
       expect(loadEnv().AUTH_CLEANUP_CRON).toBe('30 4 * * 0');
     });
 
+    it.each([
+      '0 3 * * *',
+      '*/5 * * * *',
+      '0 3 * * 1-5',
+      '0,30 8-18 * jan-mar mon,fri',
+      '0 0 1 */2 7',
+    ])('accepts the cron %s', (expression) => {
+      vi.stubEnv('AUTH_CLEANUP_CRON', expression);
+      vi.stubEnv('LEDGER_RECONCILE_CRON', expression);
+
+      expect(loadEnv()).toMatchObject({
+        AUTH_CLEANUP_CRON: expression,
+        LEDGER_RECONCILE_CRON: expression,
+      });
+    });
+
     it('keeps the install name, trimmed', () => {
       vi.stubEnv('CLIENT_DISPLAY_NAME', '  Acme Home  ');
 
@@ -157,6 +173,20 @@ describe('loadEnv', () => {
         '0 3 *',
         'AUTH_CLEANUP_CRON',
       ],
+      ['a cron of five words', 'AUTH_CLEANUP_CRON', 'a b c d e', 'AUTH_CLEANUP_CRON'],
+      [
+        'a reconcile cron of five words',
+        'LEDGER_RECONCILE_CRON',
+        'a b c d e',
+        'LEDGER_RECONCILE_CRON',
+      ],
+      ['a cron minute out of range', 'AUTH_CLEANUP_CRON', '60 3 * * *', 'AUTH_CLEANUP_CRON'],
+      ['a cron hour out of range', 'AUTH_CLEANUP_CRON', '0 24 * * *', 'AUTH_CLEANUP_CRON'],
+      ['a cron month of zero', 'AUTH_CLEANUP_CRON', '0 3 1 0 *', 'AUTH_CLEANUP_CRON'],
+      ['a cron weekday past 7', 'AUTH_CLEANUP_CRON', '0 3 * * 8', 'AUTH_CLEANUP_CRON'],
+      ['a cron range that runs backwards', 'AUTH_CLEANUP_CRON', '0 3 * * 5-1', 'AUTH_CLEANUP_CRON'],
+      ['a cron step of zero', 'AUTH_CLEANUP_CRON', '*/0 3 * * *', 'AUTH_CLEANUP_CRON'],
+      ['a cron with a bad name', 'AUTH_CLEANUP_CRON', '0 3 * foo *', 'AUTH_CLEANUP_CRON'],
       [
         'a non postgres MIGRATION_DATABASE_URL',
         'MIGRATION_DATABASE_URL',

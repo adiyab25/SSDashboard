@@ -1,6 +1,56 @@
 import { existsSync } from 'node:fs';
 import { z } from 'zod';
 
+const CRON_NAMES = {
+  month: ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'],
+  weekday: ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
+};
+const CRON_FIELDS = [
+  { min: 0, max: 59 },
+  { min: 0, max: 23 },
+  { min: 1, max: 31 },
+  { min: 1, max: 12, names: CRON_NAMES.month, offset: 1 },
+  { min: 0, max: 7, names: CRON_NAMES.weekday, offset: 0 },
+];
+
+/**
+ * True for a standard 5 field cron expression: each field is a list of `*`, a value or an
+ * `a-b` range, with an optional `/step`, inside the field's range. Checked here so a typo is a
+ * clean "Invalid environment" message, not a crash inside the scheduler at startup.
+ */
+function isCron(expression: string): boolean {
+  const fields = expression.split(' ');
+  if (fields.length !== 5) return false;
+  return fields.every((field, index) => {
+    const { min, max, names, offset = 0 } = CRON_FIELDS[index] ?? { min: 0, max: 0 };
+    const value = (text: string): number | undefined => {
+      if (/^\d+$/.test(text)) return Number(text);
+      const named = names?.indexOf(text.toLowerCase()) ?? -1;
+      return named >= 0 ? named + offset : undefined;
+    };
+    return field.split(',').every((item) => {
+      const match = /^(\*|\w+(?:-\w+)?)(?:\/(\d+))?$/.exec(item);
+      if (!match) return false;
+      const [, range = '', step] = match;
+      if (step !== undefined && Number(step) < 1) return false;
+      if (range === '*') return true;
+      const bounds = range.split('-').map(value);
+      const inRange = (n: number | undefined): n is number =>
+        n !== undefined && n >= min && n <= max;
+      const [from, to] = bounds;
+      if (!inRange(from)) return false;
+      return bounds.length === 1 || (inRange(to) && to >= from);
+    });
+  });
+}
+
+const cron = (example: string) =>
+  z
+    .string()
+    .regex(/^\S+( \S+){4}$/, `A 5 field cron expression, like "${example}"`)
+    .refine(isCron, `Not a valid 5 field cron expression, like "${example}"`)
+    .default(example);
+
 /** A value that may be left blank in .env: blank counts as unset. */
 const optionalText = z
   .string()
@@ -28,15 +78,9 @@ const EnvSchema = z
           .filter(Boolean),
       ),
     /** When the nightly ledger reconciliation runs (`worker`), in the `timezone` setting. */
-    LEDGER_RECONCILE_CRON: z
-      .string()
-      .regex(/^\S+( \S+){4}$/, 'A 5 field cron expression, like "0 2 * * *"')
-      .default('0 2 * * *'),
+    LEDGER_RECONCILE_CRON: cron('0 2 * * *'),
     /** When the nightly sign in cleanup runs (`worker`), in the `timezone` setting. */
-    AUTH_CLEANUP_CRON: z
-      .string()
-      .regex(/^\S+( \S+){4}$/, 'A 5 field cron expression, like "0 3 * * *"')
-      .default('0 3 * * *'),
+    AUTH_CLEANUP_CRON: cron('0 3 * * *'),
     /**
      * The browser facing address (spec 0005): the auth base URL, the trusted origin, the
      * cookie `Secure` flag, and the links in emails. A trailing slash is dropped.
