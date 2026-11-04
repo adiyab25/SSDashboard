@@ -6,6 +6,7 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@ssdashboard/contracts
 import { schema, type Database } from '@ssdashboard/db';
 import type { Env } from '../config/env.js';
 import { createAuthHooks, type AuthHookDeps } from './auth-hooks.js';
+import { betterAuthLog } from './auth-logger.js';
 import type { AuthMail } from './auth-mail.service.js';
 import { SESSION_IDLE_SECONDS, SESSION_RENEW_SECONDS } from './session-policy.js';
 
@@ -26,6 +27,13 @@ export function createAuth(
     baseURL: env.PUBLIC_URL,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [new URL(env.PUBLIC_URL).origin],
+    // Every Better Auth log line goes through the Nest logger, with a failed query reduced to its
+    // pg code: the raw Drizzle error holds the query params (emails, password hashes).
+    logger: { log: betterAuthLog },
+    // An error Better Auth did not turn into an answer is thrown out of the handler, and
+    // `mount-auth.ts` logs it safely and answers 500. Without this, better-call prints the raw
+    // error with `console.error` (an `onError` hook cannot stop that).
+    onAPIError: { throw: true },
     database: drizzleAdapter(db, {
       provider: 'pg',
       schema: {

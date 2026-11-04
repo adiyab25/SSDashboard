@@ -154,6 +154,30 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
       expect(screen.queryByRole('menuitem', { name: 'Disable' })).not.toBeInTheDocument();
     });
 
+    it('hides reset password, reset two factor and sign out everywhere on the admin own row only', async () => {
+      api.listStaff.mockImplementation(() =>
+        page([
+          row({ id: 'me-id', name: 'Amira Admin', role: 'admin', twoFactorEnabled: true }),
+          row({ id: 'sam-id', name: 'Sam Carter', twoFactorEnabled: true }),
+        ]),
+      );
+      render(<StaffPage />);
+
+      await openMenu('Amira Admin');
+      expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+      expect(screen.queryByRole('menuitem', { name: 'Reset password' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'Reset two factor' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: 'Sign out everywhere' }),
+      ).not.toBeInTheDocument();
+      await userEvent.keyboard('{Escape}');
+
+      await openMenu('Sam Carter');
+      expect(screen.getByRole('menuitem', { name: 'Reset password' })).toBeVisible();
+      expect(screen.getByRole('menuitem', { name: 'Reset two factor' })).toBeVisible();
+      expect(screen.getByRole('menuitem', { name: 'Sign out everywhere' })).toBeVisible();
+    });
+
     it('hides resend invite when the install sends no mail', async () => {
       loadConfig.mockResolvedValue({ mailEnabled: false, languages: ['en'] });
       render(<StaffPage />);
@@ -191,6 +215,24 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
 
       expect(
         await screen.findByText('There must always be at least one active administrator.'),
+      ).toBeVisible();
+      expect(screen.getByRole('dialog')).toBeVisible();
+    });
+
+    it('points to the Account page when the api refuses an action on yourself (SELF_ACTION)', async () => {
+      api.resetStaffPassword.mockImplementation(() => fail('SELF_ACTION'));
+      render(<StaffPage />);
+
+      await openMenu('Sam Carter');
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Reset password' }));
+      await userEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset password' }),
+      );
+
+      expect(
+        await screen.findByText(
+          'Use your Account page to change your own password, two factor or sessions.',
+        ),
       ).toBeVisible();
       expect(screen.getByRole('dialog')).toBeVisible();
     });
@@ -293,5 +335,58 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
       await screen.findByRole('dialog', { name: /Temporary password for Sam Carter/ }),
     ).toHaveTextContent('New-Pass-1234567');
     expect(await screen.findByText('Account created.')).toBeVisible();
+  });
+
+  describe('editing an email', () => {
+    const detail = (status: 'invited' | 'active', email = 'nour@example.com') => ({
+      ...ROWS[2],
+      status,
+      email,
+      phone: null,
+      staffCode: null,
+      language: null,
+    });
+
+    async function editAndSave(status: 'invited' | 'active', newEmail: string | null) {
+      api.listStaff.mockImplementation(() => page(ROWS));
+      api.getStaff.mockImplementation(() => ok(detail(status)));
+      api.updateStaff.mockImplementation(() => ok(detail(status, newEmail ?? 'nour@example.com')));
+      render(<StaffPage />);
+      await openMenu('Nour Newhire');
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+      const form = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(form).getByLabelText(/^Name/)).toHaveValue('Nour Newhire'));
+      if (newEmail) {
+        const email = within(form).getByLabelText(/^Email/);
+        await userEvent.clear(email);
+        await userEvent.type(email, newEmail);
+      } else {
+        await userEvent.type(within(form).getByLabelText(/^Name/), 'x');
+      }
+      await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    }
+
+    it('says a new invite was sent when mail is on', async () => {
+      await editAndSave('invited', 'nour2@example.com');
+      expect(
+        await screen.findByText('Email changed. A new invite was sent to the new address.'),
+      ).toBeVisible();
+    });
+
+    it('points to Reset password when mail is off', async () => {
+      loadConfig.mockResolvedValue({ mailEnabled: false, languages: ['en'] });
+      await editAndSave('invited', 'nour2@example.com');
+      expect(
+        await screen.findByText(
+          'Email changed. Use Reset password to give this person a new temporary password.',
+        ),
+      ).toBeVisible();
+    });
+
+    it('keeps the plain message when the email did not change', async () => {
+      await editAndSave('invited', null);
+      expect(await screen.findByText('Saved.')).toBeVisible();
+      expect(screen.queryByText(/Email changed/)).not.toBeInTheDocument();
+    });
   });
 });

@@ -51,3 +51,21 @@ export async function issueToken(
   if (tokenId === undefined) throw new Error('Could not store the token');
   return { token, tokenId };
 }
+
+/**
+ * Removes a person's pending two factor challenges (Better Auth: identifier `2fa-<random>`, value =
+ * user id, plus a `2fa-attempts-<that identifier>` counter row), so a half finished sign in cannot
+ * resume after a reset. The counters go first, while the challenge rows that name them still exist.
+ */
+export async function deleteTwoFactorChallenges(executor: Executor, userId: string): Promise<void> {
+  await executor.execute(
+    sql`DELETE FROM verifications
+        WHERE identifier IN (SELECT '2fa-attempts-' || identifier FROM verifications
+                              WHERE value = ${userId} AND identifier LIKE '2fa-%'
+                                AND identifier NOT LIKE '2fa-attempts-%')`,
+  );
+  await executor.execute(
+    sql`DELETE FROM verifications
+        WHERE value = ${userId} AND identifier LIKE '2fa-%' AND identifier NOT LIKE '2fa-attempts-%'`,
+  );
+}

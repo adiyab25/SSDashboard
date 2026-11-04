@@ -52,7 +52,7 @@ Visual language, layout, and base components for a dense, data heavy back office
 - [ ] Test it: `/test design system & UI foundation` (skipped)
 Spec [0003](../specs/0003-design-system-ui-foundation/index.md) · code in `packages/ui`, `apps/web/src/shell`, `apps/web/src/design`, `apps/api/src/inventory/locations`
 
-### 5. Localization (English & Arabic) · in-progress
+### 5. Localization (English & Arabic) · done
 Every screen in English and Arabic, with direction, numbers, and dates formatted per language, and room for future client languages.
 **Done when:** a user can switch language and the whole interface flips direction; no hard coded strings; dates and numbers format per locale; adding a third language needs only translations.
 - [x] Design it (spec): `/architect localization`
@@ -62,11 +62,11 @@ Every screen in English and Arabic, with direction, numbers, and dates formatted
   - [x] Formatting and bilingual text (AC-8, AC-9)
   - [x] Literal string lint and mixed direction text (AC-5, AC-10)
   - [x] Client languages, tests, and docs (AC-11, AC-12)
-- [ ] Verify it: `/check verify localization`
+- [x] Verify it: `/check verify localization`
 - [x] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/contracts/src/platform.ts`, `packages/ui/src/components/ltr-text.tsx`, `packages/config/eslint/i18n.js`, `deploy/`
 
-### 6. Staff sign in · in-progress · GA
+### 6. Staff sign in · done · GA
 Real staff accounts and sessions so every slice runs as a known user from day one.
 **Done when:** staff can sign in, sign out, and reset a password; sessions expire; an admin can create and disable staff accounts.
 - [x] Design it (spec): `/architect staff sign in`
@@ -80,6 +80,6 @@ Real staff accounts and sessions so every slice runs as a known user from day on
   - [x] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
 - [x] Verify it: `/check verify staff sign in`
 - [x] Test it: `/test staff sign in`
-- [ ] Review it (fresh model): `/check review staff sign in`
+- [x] Review it (fresh model): `/check review staff sign in`
 - [x] Document it: `/document staff sign in`
 Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/account`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`

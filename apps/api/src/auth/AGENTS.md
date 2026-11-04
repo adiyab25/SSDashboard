@@ -23,6 +23,7 @@ Staff sign in for the api: Better Auth wired into NestJS, a global session guard
 ```bash
 docker compose --env-file .env run --rm api node dist/create-admin.js --email <email> --name <name>
 docker compose --env-file .env run --rm api node dist/create-admin.js --reset-password --email <email>
+docker compose --env-file .env run --rm api node dist/create-admin.js --reset-two-factor --email <email>   # add --reset-password to do both in one transaction
 ```
 
 `create-admin` prints a live temporary password to stdout. Never capture or log that output.
