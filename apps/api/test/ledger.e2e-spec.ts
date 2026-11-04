@@ -83,7 +83,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       const key = await sku();
       const sourceId = randomUUID();
       const sourceLineId = randomUUID();
-      const postedBy = randomUUID();
+      const postedBy = await make.user();
 
       const result = await h.ledger.post(
         posting([{ ...key, quantity: 3, unitCost: '1.5', sourceLineId, reasonCode: 'found' }], {
@@ -102,6 +102,27 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
         [result.groupId],
       );
       expect(rows).toEqual([{ same: true }]);
+    });
+
+    it('stores the posting user as posted_by and rejects an unknown user (AC-22)', async () => {
+      const key = await sku();
+      const postedBy = await make.user();
+
+      const result = await h.ledger.post(
+        posting([{ ...key, quantity: 1, unitCost: '1.0000' }], { postedBy }),
+      );
+
+      const { rows } = await h.owner.pool.query(
+        `SELECT posted_by FROM movement_groups WHERE id = $1`,
+        [result.groupId],
+      );
+      expect(rows).toEqual([{ posted_by: postedBy }]);
+      await rejects(
+        h.ledger.post(
+          posting([{ ...key, quantity: 1, unitCost: '1.0000' }], { postedBy: randomUUID() }),
+        ),
+        'UnknownReference',
+      );
     });
 
     it('rejects a unit cost on an outbound line and a missing one on an inbound line', async () => {

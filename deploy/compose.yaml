@@ -80,6 +80,7 @@ services:
     environment:
       <<: [*app-env, *auth-env]
       LEDGER_RECONCILE_CRON: ${LEDGER_RECONCILE_CRON:-0 2 * * *}
+      AUTH_CLEANUP_CRON: ${AUTH_CLEANUP_CRON:-0 3 * * *}
     depends_on:
       migrate:
         condition: service_completed_successfully

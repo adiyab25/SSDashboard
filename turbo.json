@@ -17,6 +17,7 @@
         "MIGRATION_DATABASE_URL",
         "APP_DB_PASSWORD",
         "LEDGER_RECONCILE_CRON",
+        "AUTH_CLEANUP_CRON",
         "PORT",
         "API_INTERNAL_URL",
         "EXTENSIONS",

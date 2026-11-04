@@ -318,3 +318,51 @@ _AC-20, and the two factor parts of AC-3, AC-4, AC-23 and AC-24. Run against a t
 - AC-4 … code attempts limited per address · covered by Commands step 13
 - AC-23 … two factor events and the sign in event only after the code · covered by Commands steps 5, 15
 - AC-24 … keyboard, Arabic, accessible authentication (no puzzle, paste allowed, `one-time-code`) · covered by UI steps 7, 15, 16
+
+---
+
+# Slice 7: ledger link, nightly cleanup, break glass reset · verified 2026-11-04
+
+_Covers AC-21 (reset mode) and AC-22. Run by the QA tester against the built app (`apps/api/dist`) and the dev Postgres 18 on port 5433, in a throwaway database `qa7` (dropped afterwards). Result key: PASS, FAIL, GAP (not testable yet or not built)._
+
+## Gates
+
+| Command | Result |
+| --- | --- |
+| `pnpm build` | PASS, 4 of 4 tasks |
+| `pnpm typecheck` | PASS, 7 of 7 |
+| `pnpm lint` | PASS, 8 of 8 |
+| `pnpm test` | PASS: contracts 121, db 5, api 244, ui 22, web 333 |
+| `pnpm --filter @ssdashboard/api test:e2e` | PASS: 16 files, 198 passed, 1 skipped (includes `auth-cleanup`, `create-admin-reset`, `ledger`) |
+| `pnpm --filter @ssdashboard/db test:e2e` | 26 passed, 1 failed: `schema.e2e-spec > seeds the settings ...` (known stale failure from before this slice, expects 5 settings, finds 7). The new `migrate.e2e-spec` orphan test passes |
+| `pnpm test:e2e` (root) | Stops at the db package because of that stale failure, so api and web never run from the root; api was run alone (above) |
+| Playwright (`apps/web`) | NOT RUN: port 3000 is held by another project (`ssw-landing-web` container), `next dev --port 3000` fails with EADDRINUSE. This slice changes no UI |
+
+## AC-22 clauses
+
+- PASS: `posted_by` is a foreign key to `users.id`. Migration run through `node apps/api/dist/migrate.js` → "Migrations applied.", constraint `movement_groups_posted_by_users_id_fk` exists. An insert with an unknown user → `violates foreign key constraint`. Deleting a user that has postings → `violates RESTRICT setting`.
+- PASS: orphans nulled, valid ones kept, then validated. Dropped the FK on `qa7`, inserted `known` (real user), `orphan` (no such user), `none` (null), removed the 0007 row from `drizzle.__drizzle_migrations`, re-ran `migrate.js` → rows `known = 1111…`, `orphan = NULL`, `none = NULL`; `SELECT convalidated ...` → `t`; `drizzle.__drizzle_migrations` count back to 8.
+- PASS: append only trigger re-enabled and still rejecting. `SELECT tgenabled FROM pg_trigger WHERE tgname='movement_groups_append_only'` → `O` (enabled). `UPDATE movement_groups SET posted_by=NULL` as the owner role → `ERROR: movement_groups is append only: UPDATE is not allowed.` Also locked in by `packages/db/test/migrate.e2e-spec.ts` ("links posted_by to users, nulling orphans and keeping the append only trigger"). Not exercised: a mid migration failure leaving the trigger off; it relies on the migration running in one transaction (the SQL comment says so, not proven here).
+- GAP: `created_by` columns. The spec says `created_by` and `posted_by` become foreign keys; `grep created_by packages/db/src/schema` finds none, only `posted_by` exists (movement_groups). Nothing to link yet; the Lead should confirm the spec wording is stale or that a later table owns it.
+- GAP (stated plainly, not a failure): "ledger posting takes `postedBy` from the signed in user". No HTTP route posts to the ledger yet, so the guard to ledger wiring cannot be driven. Service level only: `ledger.e2e-spec` "stores the posting user as posted_by and rejects an unknown user" passes. To verify when the first posting route lands.
+- PASS: nightly cleanup against seeded rows. Seeded in `qa7`: sessions expired/live, verifications expired/live, `sign_in_attempts` idle (window over), lock-ended, window-running, lock-running, `rate_limits` old (24h01m) and recent. Started `AUTH_CLEANUP_CRON="* * * * *" node apps/api/dist/worker.js` as the app role, waited 85 seconds → log `Removed 1 sessions, 1 tokens, 2 sign in counters, 1 rate limit counters.`; left behind: sessions `live`, verifications `live`, attempts `lock-running` and `window-running`, rate_limits `recent`. Second run removes nothing (`auth-cleanup.e2e-spec`).
+- PASS: bad `AUTH_CLEANUP_CRON` rejected at startup. `AUTH_CLEANUP_CRON="banana"`, `"0 3 * *"` and `""` with `worker.js` → `Invalid environment: ✖ A 5 field cron expression ... at AUTH_CLEANUP_CRON`, exit 1.
+- Not exercised: the `timezone` setting being honoured by the schedule (read once at startup, `tz` passed to pg-boss); only the cron firing in the default timezone was seen.
+
+## AC-21 clauses (reset mode)
+
+Flow on `qa7` with a sole admin: `create-admin --email Owner@Example.com --name Owner` → exit 0, password printed; sign in 200; 6 wrong passwords → 401 each; the right password while locked → 401; `sign_in_attempts` row `failures = 5`, locked.
+
+- PASS: `create-admin --reset-password --email owner@example.com` → exit 0, "Password reset: owner@example.com. Sessions ended and lockout cleared." and a new temporary password printed once.
+- PASS: lockout cleared: `SELECT count(*) FROM sign_in_attempts` → 0 afterwards.
+- PASS: sessions revoked: `SELECT count(*) FROM sessions` → 0 (and `create-admin-reset.e2e-spec` shows the old cookie gets 401 on `/api/me`).
+- PASS: must change flag set: `users.must_change_password` → `t` for the admin (I had cleared it first).
+- PASS: access restored: old password → 401, new password → 200.
+- PASS: password to the terminal only: the api log contains 0 occurrences of the new password. Not captured by the QA run beyond the shell variable.
+- PASS: refusals change nothing: unknown email → "No account has the email ..." exit 1; non admin, disabled admin and bad arguments covered by `create-admin-reset.e2e-spec` (passes). The email is trimmed and lower cased (` Owner@Example.com ` works in the e2e).
+- PASS: hashing and `account_id`: e2e asserts `account_id = users.id` and that the stored value is not the plain password; the hash is Better Auth's `hashPassword` (the sign in with the new password returns 200).
+
+## Findings
+
+- minor: `AUTH_CLEANUP_CRON="a b c d e"` passes the env regex (any five words) but the worker then crashes at bootstrap inside `cron-parser` with a stack trace, exit 1. It does fail fast, but not with the clean `Invalid environment` message. The existing `RECONCILE_CRON` uses the same regex, so this is a shared pre existing pattern.
+- minor (environment): root `pnpm test:e2e` cannot reach the api and web suites until the stale `schema.e2e-spec` assertion is fixed.

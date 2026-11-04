@@ -50,6 +50,13 @@
       "when": 1793779636615,
       "tag": "0006_staff_two_factor",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793780820286,
+      "tag": "0007_ledger_posted_by_user_fk",
+      "breakpoints": true
     }
   ]
 }

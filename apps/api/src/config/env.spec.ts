@@ -20,6 +20,7 @@ describe('loadEnv', () => {
       'APP_DB_PASSWORD',
       'EXTENSIONS',
       'LEDGER_RECONCILE_CRON',
+      'AUTH_CLEANUP_CRON',
       'APP_VERSION',
       'CLIENT_DISPLAY_NAME',
       'PUBLIC_URL',
@@ -58,6 +59,7 @@ describe('loadEnv', () => {
         DATABASE_URL: VALID_URL,
         EXTENSIONS: [],
         LEDGER_RECONCILE_CRON: '0 2 * * *',
+        AUTH_CLEANUP_CRON: '0 3 * * *',
         APP_VERSION: '0.0.0-dev',
         CLIENT_DISPLAY_NAME: 'SSDashboard',
         PUBLIC_URL: 'https://erp.example.com',
@@ -108,6 +110,12 @@ describe('loadEnv', () => {
       expect(loadEnv().LEDGER_RECONCILE_CRON).toBe('15 1 * * 1');
     });
 
+    it('keeps a custom auth cleanup schedule', () => {
+      vi.stubEnv('AUTH_CLEANUP_CRON', '30 4 * * 0');
+
+      expect(loadEnv().AUTH_CLEANUP_CRON).toBe('30 4 * * 0');
+    });
+
     it('keeps the install name, trimmed', () => {
       vi.stubEnv('CLIENT_DISPLAY_NAME', '  Acme Home  ');
 
@@ -143,6 +151,12 @@ describe('loadEnv', () => {
       ['a PORT of zero', 'PORT', '0', 'PORT'],
       ['an unknown NODE_ENV', 'NODE_ENV', 'staging', 'NODE_ENV'],
       ['a cron with too few fields', 'LEDGER_RECONCILE_CRON', '0 2 *', 'LEDGER_RECONCILE_CRON'],
+      [
+        'an auth cleanup cron with too few fields',
+        'AUTH_CLEANUP_CRON',
+        '0 3 *',
+        'AUTH_CLEANUP_CRON',
+      ],
       [
         'a non postgres MIGRATION_DATABASE_URL',
         'MIGRATION_DATABASE_URL',

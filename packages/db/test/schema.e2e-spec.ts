@@ -89,8 +89,10 @@ describe('core data model schema (spec 0002)', () => {
     const settings = await owner.query<{ key: string }>('SELECT key FROM settings ORDER BY key');
     expect(settings.rows.map((row) => row.key)).toEqual([
       'currency',
+      'default_language',
       'document_prefixes',
       'inventory_lock_date',
+      'languages',
       'prices_include_vat',
       'timezone',
     ]);

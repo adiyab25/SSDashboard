@@ -49,6 +49,14 @@ async function insertOne(owner: DatabaseConnection, text: string, values: unknow
 
 export function fixtures(owner: DatabaseConnection) {
   return {
+    /** A staff account, so `posted_by` has a real user to point at (spec 0005, AC-22). */
+    async user(): Promise<string> {
+      const tag = next();
+      return insertOne(owner, `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`, [
+        `Test user ${tag}`,
+        `user-${tag}@example.test`,
+      ]);
+    },
     async variant(
       options: {
         tracking?: 'none' | 'lot' | 'serial';

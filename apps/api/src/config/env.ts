@@ -32,6 +32,11 @@ const EnvSchema = z
       .string()
       .regex(/^\S+( \S+){4}$/, 'A 5 field cron expression, like "0 2 * * *"')
       .default('0 2 * * *'),
+    /** When the nightly sign in cleanup runs (`worker`), in the `timezone` setting. */
+    AUTH_CLEANUP_CRON: z
+      .string()
+      .regex(/^\S+( \S+){4}$/, 'A 5 field cron expression, like "0 3 * * *"')
+      .default('0 3 * * *'),
     /**
      * The browser facing address (spec 0005): the auth base URL, the trusted origin, the
      * cookie `Secure` flag, and the links in emails. A trailing slash is dropped.

@@ -472,6 +472,9 @@ export class LedgerService {
       if (pgConstraint(error) === 'movement_groups_reverses_group_id_unique') {
         throw new LedgerError('AlreadyReversed', 'This posting has already been reversed');
       }
+      if (pgConstraint(error) === 'movement_groups_posted_by_users_id_fk') {
+        throw new LedgerError('UnknownReference', 'The posting user does not exist');
+      }
       throw error;
     }
     if (!inserted) return this.replay(tx, op);
