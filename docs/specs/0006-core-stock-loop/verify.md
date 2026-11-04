@@ -65,3 +65,27 @@ _Steps derived from spec 0006 acceptance criteria and its Value sourcing table. 
 ## Acceptance-criteria coverage
 - AC-5 UI steps 6 and 7 · AC-7 UI step 6 · AC-8 UI steps 3 to 5, Commands 1 and 2, Value sourcing 1 to 4 · AC-12 UI steps 1 and 2, Commands 1 · AC-14 UI step 8, Commands 2, Value sourcing 5 · AC-15 UI step 4 · AC-17 (void half) UI step 5, Commands 2
 - Still to come (Milestones 3 and 4): AC-2, AC-3, AC-10 (history), AC-18, the full AC-4 location management
+
+---
+
+# Verify: core stock loop, Milestone 3 (master data in full) · spec 0006 · updated 2026-11-04
+_Proved in a real browser by `apps/web/e2e/master-data.spec.ts` (desktop project; English and Arabic). BUG-1 to BUG-3 (QA report of 2026-11-04) are fixed and re-verified; BUG-4 (404 flash after delete) is open._
+
+## UI / manual
+- [x] Admin creates a location on `/locations` and a SKU on `/skus`, posts a receipt, and `/skus/<id>` shows stock per location with average cost and value plus a history row with unit and total cost → AC-2, AC-4, AC-10, AC-11
+- [x] Staff open the same SKU page: no Average cost, Stock value, Unit cost, or Total cost, no `50.00` or `5.0000` anywhere; no Locations or Staff nav entry; `/locations` shows the notice and no table; the edit dialog has no Administrator actions → AC-11, AC-15
+- [x] `/skus`: code prefix in any case, English and Arabic name fragments, a literal `%`, no match message, Archived filter, Load more past 50 → AC-13
+- [x] Edit name from a second tab → the first tab's save shows the stale message, Reload loads the latest, a second save works → AC-2
+- [x] Admin code change before stock works; after stock the field is disabled with its hint, and a change attempted from a dialog opened earlier answers CODE_LOCKED with the explanation → AC-2
+- [x] Archive disabled with stock (hint), STOCK_ON_HAND explained when stock lands while the dialog is open, allowed after a void, Unarchive from the Archived filter → AC-3
+- [x] Delete: IN_USE explained for a SKU with history; an unused SKU is deleted from its detail page and the page then says "There is no such SKU." → AC-3
+- [x] SKU history: void row reads "Void of SR-…" and links to the receipt; a null `postedBy` reads System; 56 movements page 50 then 6 with Load more → AC-10
+- [x] Locations: edit name, type, and code before stock; code read only with the hint after stock; stale edit and Reload; archive blocked with stock, allowed after a void; delete IN_USE vs unused; archived and new locations follow the top bar switcher → AC-4
+- [x] Arabic: `/skus`, `/skus/<id>`, `/locations` are right to left with Arabic names, Western digits, إلغاء and النظام → AC-16
+- [x] axe (WCAG 2.2 AA) clean on `/skus`, `/skus/<id>`, `/locations` and their edit dialogs in both languages, one `<h1>` each, empty and error states → AC-16
+- [x] Edit dialog by keyboard: opens with Enter, Tab and Shift+Tab stay inside, Enter in a field saves, a confirm step cancels by keyboard without dropping typed edits → AC-16
+- [x] Focus returns to the Edit button after the dialog closes → AC-16 (BUG-1 fixed; re-verified 2026-11-04 on a fresh build, `master-data.spec.ts` focus tests)
+- [x] Escape in the confirm step leaves the edit dialog open, typed edits kept → AC-16 (BUG-2 fixed; passed in 3 consecutive runs)
+- [x] Focus returns to New SKU, New location (`/stock`) and Void receipt (receipt page) after Escape → AC-16
+- [x] A refetch of the SKU behind an open edit dialog does not swap its version: the save answers STALE_RECORD and the colleague's rename survives → AC-2
+- [ ] Deleting a SKU from `/skus/[id]` goes to the list with no "There is no such SKU." flash → AC-3 (FAILS, BUG-4: a GET 404 for the deleted id fires about 30 ms after the DELETE; failing test `deleting from the detail page never flashes`)

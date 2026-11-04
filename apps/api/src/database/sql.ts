@@ -53,3 +53,12 @@ export function isRetryable(error: unknown): boolean {
   const code = pgErrorCode(error);
   return code === '40P01' || code === '40001';
 }
+
+/**
+ * A delete that a foreign key refused: 23503 (NO ACTION) or 23001 (ON DELETE RESTRICT, which
+ * every reference to master data uses).
+ */
+export function isStillReferenced(error: unknown): boolean {
+  const code = pgErrorCode(error);
+  return code === '23503' || code === '23001';
+}

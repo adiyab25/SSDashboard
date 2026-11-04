@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { useLocationSwitcher } from '@/shell/current-location';
 import { createLocation, inventoryKeys } from './inventory-api';
+import { useReturnFocus } from './use-return-focus';
 
 /** The form, built from the contract's field schemas (spec 0006, AC-4). */
 const NewLocationForm = z
@@ -52,6 +53,7 @@ const TYPES = ['warehouse', 'showroom'] as const;
 /** Creates a warehouse or showroom. Admins only; the api enforces it too. */
 export function NewLocationDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
+  const returnFocus = useReturnFocus();
   const queryClient = useQueryClient();
   const { retry: reloadLocations } = useLocationSwitcher();
   const form = useForm<NewLocationInput, unknown, NewLocationOutput>({
@@ -72,6 +74,7 @@ export function NewLocationDialog({ onClose }: { onClose: () => void }) {
       // The shell's switcher and every stock list name locations.
       reloadLocations();
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
+      void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
       toast.success(t('inventory.location.created', { code: location.code }));
       onClose();
     },
@@ -88,7 +91,11 @@ export function NewLocationDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
-      <DialogContent closeLabel={t('inventory.cancel')} className="sm:max-w-lg">
+      <DialogContent
+        closeLabel={t('inventory.cancel')}
+        onCloseAutoFocus={returnFocus}
+        className="sm:max-w-lg"
+      >
         <form
           noValidate
           className="grid gap-6"

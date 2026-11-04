@@ -41,8 +41,8 @@ export async function ledgerTransaction<T>(
   }
 }
 
-/** A stable 64 bit lock key per SKU and location, so lock order is the same for everyone. */
-function lockKey(variantId: string, locationId: string): bigint {
+/** A stable 64 bit lock key per SKU and location, so lock order is the same for everyone. Exported for tests that hold a pair. */
+export function lockKey(variantId: string, locationId: string): bigint {
   const digest = createHash('sha256').update(`${variantId}:${locationId}`).digest();
   return digest.readBigInt64BE(0);
 }

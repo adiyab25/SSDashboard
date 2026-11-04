@@ -8,6 +8,11 @@ import { describe, expect, it } from 'vitest';
 const LEDGER_TABLES =
   /\b(stock_movements|movement_groups|movement_serials|stock_levels|reservations|serials|stockMovements|movementGroups|movementSerials|stockLevels)\b/;
 
+// Spec 0006: inside inventory only the ledger reads catalog tables (its `loadMaster` and
+// `lockForArchive`); every other inventory file gets SKU data through `CatalogService`.
+const CATALOG_TABLES =
+  /\b(products|product_variants|productVariants|product_options|barcodes|uoms)\b/;
+
 const API_SRC = fileURLToPath(new URL('..', import.meta.url));
 const EXTENSIONS = fileURLToPath(new URL('../../../../extensions', import.meta.url));
 
@@ -35,5 +40,16 @@ describe('inventory module boundary', () => {
     expect(LEDGER_TABLES.test('db.insert(schema.stockMovements)')).toBe(true);
     expect(LEDGER_TABLES.test('UPDATE stock_levels SET on_hand = 0')).toBe(true);
     expect(LEDGER_TABLES.test('this.ledger.post(input)')).toBe(false);
+  });
+
+  it('keeps catalog table reads inside the ledger within inventory', () => {
+    const inventory = sourceFiles(join(API_SRC, 'inventory')).filter((path) => {
+      const inside = relative(API_SRC, path);
+      return !inside.startsWith(`inventory${sep}ledger${sep}`) && !inside.endsWith('.spec.ts');
+    });
+
+    const offenders = inventory.filter((path) => CATALOG_TABLES.test(readFileSync(path, 'utf8')));
+
+    expect(offenders).toEqual([]);
   });
 });

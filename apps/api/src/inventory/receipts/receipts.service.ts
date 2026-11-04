@@ -18,7 +18,7 @@ import type { z } from 'zod';
 import { CatalogService, escapeLike } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
-import { decodeKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
+import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { NumberingService } from '../../platform/numbering.service.js';
 import { SettingsService } from '../../platform/settings.service.js';
 import { StaffDirectory } from '../../staff/staff-directory.js';
@@ -229,10 +229,8 @@ export class ReceiptsService {
       filters.push(sql`(r.number ILIKE ${pattern} OR r.reference ILIKE ${pattern})`);
     }
     if (query.cursor) {
-      const [effectiveAt, id] = decodeKeyset(query.cursor, 2);
-      filters.push(
-        sql`(r.effective_at, r.id) < (${effectiveAt ?? ''}::timestamptz, ${id ?? ''}::uuid)`,
-      );
+      const after = decodeTimeIdKeyset(query.cursor);
+      filters.push(sql`(r.effective_at, r.id) < (${after.at}::timestamptz, ${after.id}::uuid)`);
     }
     const where = filters.length ? sql`WHERE ${sql.join(filters, sql` AND `)}` : sql``;
     const { rows } = await this.connection.db.execute<{
@@ -347,6 +345,14 @@ export class ReceiptsService {
       userId: caller.id,
     });
     return this.get(id, caller);
+  }
+
+  /** Receipt numbers by receipt id, for movement history links. Unknown ids are left out. */
+  async numbersByIds(ids: readonly string[]): Promise<Map<string, string>> {
+    if (!ids.length) return new Map();
+    const { rows } = await this.connection.db.execute<{ id: string; number: string }>(sql`
+      SELECT id, number FROM stock_receipts WHERE id = ANY(${pgArray([...new Set(ids)])}::uuid[])`);
+    return new Map(rows.map((row) => [row.id, row.number]));
   }
 
   /** The receipt's SKUs whose on hand at its location is below the line's quantity now. */

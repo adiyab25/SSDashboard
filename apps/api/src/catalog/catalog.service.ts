@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   CreateProductRequest,
+  UpdateSkuRequest,
   type LocalizedText,
   type SkuDetail,
   type SkuListQuery,
@@ -10,13 +11,13 @@ import {
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
-import { pgArray, pgConstraint, type Executor } from '../database/sql.js';
+import { isStillReferenced, pgArray, pgConstraint, type Executor } from '../database/sql.js';
 import { decodeKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
 
 /** `to_char` format of `updatedAt`: microseconds, UTC (spec 0006, Value sourcing). */
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
-export type CatalogErrorCode = 'SkuTaken' | 'NotFound';
+export type CatalogErrorCode = 'SkuTaken' | 'NotFound' | 'Stale' | 'InUse';
 
 /** A catalog rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class CatalogError extends Error {
@@ -162,6 +163,81 @@ export class CatalogService {
     };
   }
 
+  /**
+   * Edits a SKU's name (on its product) and price (AC-2). The stale check compares the variant's
+   * stored `updated_at` to the microsecond string the caller read; a mismatch is `Stale`.
+   */
+  async updateSku(id: string, input: z.output<typeof UpdateSkuRequest>): Promise<SkuDetail> {
+    return this.connection.db.transaction(async (tx) => {
+      const sets: SQL[] = [sql`updated_at = now()`];
+      if (input.price !== undefined) sets.push(sql`price = ${input.price}`);
+      const updated = await this.touchVariant(tx, id, input.updatedAt, sets);
+      if (input.name) {
+        await tx.execute(sql`
+          UPDATE products SET name = ${JSON.stringify(input.name)}::jsonb, updated_at = now()
+          WHERE id = ${updated.productId}`);
+      }
+      return this.mustFind(tx, id);
+    });
+  }
+
+  /**
+   * Writes a new code (AC-2). Inventory calls this inside its locked transaction, after it
+   * checked that no stock was ever posted for the SKU. A stale `updatedAt` is `Stale`.
+   */
+  async setCode(tx: Executor, id: string, code: string, updatedAt: string): Promise<SkuDetail> {
+    try {
+      await this.touchVariant(tx, id, updatedAt, [sql`sku = ${code}`, sql`updated_at = now()`]);
+    } catch (error) {
+      if (pgConstraint(error) === 'product_variants_sku_unique') {
+        throw new CatalogError('SkuTaken', `SKU ${code} is already in use`);
+      }
+      throw error;
+    }
+    return this.mustFind(tx, id);
+  }
+
+  /**
+   * Archives or unarchives a SKU and its product (AC-3). Inventory calls this inside its locked
+   * transaction after the stock checks. Archiving an archived SKU keeps the first date.
+   */
+  async setArchived(tx: Executor, id: string, archived: boolean): Promise<SkuDetail> {
+    const archivedAt = archived ? sql`coalesce(archived_at, now())` : sql`NULL`;
+    const { rows } = await tx.execute<{ product_id: string }>(sql`
+      UPDATE product_variants SET archived_at = ${archivedAt}, updated_at = now()
+      WHERE id = ${id}
+      RETURNING product_id`);
+    const row = rows[0];
+    if (!row) throw new CatalogError('NotFound', 'SKU not found');
+    await tx.execute(sql`
+      UPDATE products SET archived_at = ${archivedAt}, updated_at = now()
+      WHERE id = ${row.product_id}`);
+    return this.mustFind(tx, id);
+  }
+
+  /**
+   * Deletes a SKU nothing references, and its product once it has no other SKU (AC-3). Any
+   * reference (movements, balances, receipt lines, lots, serial numbers, barcodes) is `InUse`.
+   */
+  async deleteSku(id: string): Promise<void> {
+    try {
+      await this.connection.db.transaction(async (tx) => {
+        const { rows } = await tx.execute<{ product_id: string }>(sql`
+          DELETE FROM product_variants WHERE id = ${id} RETURNING product_id`);
+        const row = rows[0];
+        if (!row) throw new CatalogError('NotFound', 'SKU not found');
+        await tx.execute(sql`
+          DELETE FROM products p WHERE p.id = ${row.product_id}
+            AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id)`);
+      });
+    } catch (error) {
+      if (isStillReferenced(error)) {
+        throw new CatalogError('InUse', 'This SKU is in use and cannot be deleted. Archive it.');
+      }
+      throw error;
+    }
+  }
+
   /** Code and name for each id that exists, archived ones included. One query. */
   async getSkus(
     ids: readonly string[],
@@ -217,6 +293,35 @@ export class CatalogService {
         return [id, { fault: null, sku }];
       }),
     );
+  }
+
+  /**
+   * `UPDATE product_variants SET ...` guarded by the stale check (spec 0006, Value sourcing):
+   * 0 rows and the row exists is `Stale`, 0 rows and no row is `NotFound`.
+   */
+  private async touchVariant(
+    tx: Executor,
+    id: string,
+    updatedAt: string,
+    sets: SQL[],
+  ): Promise<{ productId: string }> {
+    const { rows } = await tx.execute<{ product_id: string }>(sql`
+      UPDATE product_variants SET ${sql.join(sets, sql`, `)}
+      WHERE id = ${id} AND to_char(updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) = ${updatedAt}
+      RETURNING product_id`);
+    const row = rows[0];
+    if (row) return { productId: row.product_id };
+    const exists = await tx.execute(sql`SELECT 1 FROM product_variants WHERE id = ${id}`);
+    if (exists.rows.length) {
+      throw new CatalogError('Stale', 'Someone else changed this SKU. Reload and try again.');
+    }
+    throw new CatalogError('NotFound', 'SKU not found');
+  }
+
+  private async mustFind(executor: Executor, id: string): Promise<SkuDetail> {
+    const detail = await this.findSku(executor, id);
+    if (!detail) throw new CatalogError('NotFound', 'SKU not found');
+    return detail;
   }
 
   private async findSku(executor: Executor, id: string): Promise<SkuDetail | null> {

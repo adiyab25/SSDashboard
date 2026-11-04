@@ -161,6 +161,30 @@ export interface StockListRow {
   updatedAt: string;
 }
 
+/** What stock state refers to a SKU or location (spec 0006, `usage`). */
+export interface StockUsage {
+  /** A balance row exists: stock was posted there at least once. */
+  hasBalance: boolean;
+  onHandNonZero: boolean;
+  activeReserved: boolean;
+}
+
+/** One movement of a SKU's history with its group's source. */
+export interface MovementRow {
+  id: string;
+  locationId: string;
+  quantity: number;
+  unitCost: string;
+  totalCost: string;
+  /** Microsecond UTC strings; `recordedAt` is also the keyset cursor's first part. */
+  effectiveAt: string;
+  recordedAt: string;
+  sourceType: LedgerSourceType;
+  sourceId: string;
+  reversesGroupId: string | null;
+  postedBy: string | null;
+}
+
 /** A posting's stored result, plus whether this call replayed an earlier one by its key. */
 export type PostingOutcome = PostingResult & { replayed: boolean };
 
@@ -414,6 +438,140 @@ export class LedgerService {
     }));
   }
 
+  /**
+   * Locks a SKU or location against postings for an archive, unarchive, or code change
+   * (spec 0006): takes `FOR UPDATE` on that one row and nothing else. No pair locks and no
+   * scan of balance or reservation rows, so the lock count does not grow with the balances.
+   * Every posting, reversal, reservation, and rebuild reads the row `FOR SHARE` first, so this
+   * waits for each one in flight and blocks new ones until commit; `usage` (or the code change
+   * `hasBalance` check) run after it sees a settled state. Run inside a transaction, before
+   * `usage`. Returns null when the row does not exist.
+   */
+  async lockForArchive(
+    tx: Transaction,
+    target: { variantId: string } | { locationId: string },
+  ): Promise<{ id: string; archived: boolean } | null> {
+    const { rows } =
+      'variantId' in target
+        ? await tx.execute<{ id: string; archived: boolean }>(sql`
+            SELECT id, archived_at IS NOT NULL AS archived
+            FROM product_variants WHERE id = ${target.variantId} FOR UPDATE`)
+        : await tx.execute<{ id: string; archived: boolean }>(sql`
+            SELECT id, archived_at IS NOT NULL AS archived
+            FROM locations WHERE id = ${target.locationId} FOR UPDATE`);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Read only: the ids among `ids` with at least one balance row (stock was posted there).
+   * One EXISTS per id on the leading column of `stock_levels_key_unique` (SKU) or
+   * `stock_levels_location_variant_idx` (location); no reservation scan, so list pages can ask.
+   */
+  async withBalance(
+    target: { variantIds: readonly string[] } | { locationIds: readonly string[] },
+    executor: Executor = this.connection.db,
+  ): Promise<Set<string>> {
+    const byVariant = 'variantIds' in target;
+    const ids = [...new Set(byVariant ? target.variantIds : target.locationIds)];
+    if (!ids.length) return new Set();
+    const column = byVariant ? sql`variant_id` : sql`location_id`;
+    const { rows } = await executor.execute<{ id: string }>(sql`
+      SELECT k.id FROM unnest(${pgArray(ids)}::uuid[]) AS k(id)
+      WHERE EXISTS (SELECT 1 FROM stock_levels s WHERE s.${column} = k.id)`);
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /**
+   * Read only: whether each SKU or location has any balance row, any balance with on hand other
+   * than 0, and any open reservation (spec 0006). Every id asked for is in the answer.
+   */
+  async usage(
+    target: { variantIds: readonly string[] } | { locationIds: readonly string[] },
+    executor: Executor = this.connection.db,
+  ): Promise<Map<string, StockUsage>> {
+    const byVariant = 'variantIds' in target;
+    const ids = [...new Set(byVariant ? target.variantIds : target.locationIds)];
+    const result = new Map<string, StockUsage>(
+      ids.map((id) => [id, { hasBalance: false, onHandNonZero: false, activeReserved: false }]),
+    );
+    if (!ids.length) return result;
+    const column = byVariant ? sql`variant_id` : sql`location_id`;
+    const { rows } = await executor.execute<{
+      id: string;
+      has_balance: boolean;
+      on_hand_non_zero: boolean;
+      active_reserved: boolean;
+    }>(sql`
+      SELECT k.id,
+             EXISTS (SELECT 1 FROM stock_levels s WHERE s.${column} = k.id) AS has_balance,
+             EXISTS (SELECT 1 FROM stock_levels s
+                     WHERE s.${column} = k.id AND s.on_hand <> 0) AS on_hand_non_zero,
+             EXISTS (SELECT 1 FROM reservations r
+                     WHERE r.${column} = k.id AND r.status = 'active'
+                       AND r.open_quantity > 0) AS active_reserved
+      FROM unnest(${pgArray(ids)}::uuid[]) AS k(id)`);
+    for (const row of rows) {
+      result.set(row.id, {
+        hasBalance: row.has_balance,
+        onHandNonZero: row.on_hand_non_zero,
+        activeReserved: row.active_reserved,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * A SKU's movements, newest recorded first, keyset on (`recorded_at`, `id`), served by
+   * `stock_movements (variant_id, recorded_at desc, id desc)`. `after` is the last row's
+   * `recordedAt` and `id` from the previous page.
+   */
+  async getMovements(query: {
+    variantId: string;
+    after?: { recordedAt: string; id: string };
+    limit: number;
+  }): Promise<MovementRow[]> {
+    const filters: SQL[] = [sql`m.variant_id = ${query.variantId}`];
+    if (query.after) {
+      filters.push(
+        sql`(m.recorded_at, m.id) < (${query.after.recordedAt}::timestamptz, ${query.after.id}::uuid)`,
+      );
+    }
+    const { rows } = await this.connection.db.execute<{
+      id: string;
+      location_id: string;
+      quantity: number;
+      unit_cost: string;
+      total_cost: string;
+      effective_at: string;
+      recorded_at: string;
+      source_type: LedgerSourceType;
+      source_id: string;
+      reverses_group_id: string | null;
+      posted_by: string | null;
+    }>(sql`
+      SELECT m.id, m.location_id, m.quantity, m.unit_cost, m.total_cost,
+             to_char(m.effective_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS effective_at,
+             to_char(m.recorded_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS recorded_at,
+             g.source_type, g.source_id, g.reverses_group_id, g.posted_by
+      FROM stock_movements m JOIN movement_groups g ON g.id = m.group_id
+      WHERE ${sql.join(filters, sql` AND `)}
+      ORDER BY m.recorded_at DESC NULLS LAST, m.id DESC NULLS LAST
+      LIMIT ${query.limit}`);
+    return rows.map((row) => ({
+      id: row.id,
+      locationId: row.location_id,
+      quantity: row.quantity,
+      unitCost: row.unit_cost,
+      totalCost: row.total_cost,
+      effectiveAt: row.effective_at,
+      recordedAt: row.recorded_at,
+      sourceType: row.source_type,
+      sourceId: row.source_id,
+      reversesGroupId: row.reverses_group_id,
+      postedBy: row.posted_by,
+    }));
+  }
+
   /** Available stock for one SKU, per sellable location and lot. */
   async getAvailable(input: GetAvailableInput): Promise<Availability[]> {
     const parsed = parse(GetAvailableInput, input);
@@ -625,6 +783,12 @@ export class LedgerService {
     return { ...(await this.loadResult(tx, existing.id)), replayed: true };
   }
 
+  /**
+   * The SKUs and locations a posting checks, read `FOR SHARE` (spec 0006): an archive, which
+   * takes `FOR UPDATE` in `lockForArchive`, waits for an in flight posting, and the reverse.
+   * Rows are locked in id order. This runs before `lockPairs`; an archive takes no pair locks,
+   * so the master row locks are the only ones the two contend on.
+   */
   private async loadMaster(
     executor: Executor,
     lines: readonly {
@@ -645,14 +809,18 @@ export class LedgerService {
       archived: boolean;
     }>(sql`
       SELECT id, kind, tracking, archived_at IS NOT NULL AS archived
-      FROM product_variants WHERE id = ANY(${pgArray(ids((l) => l.variantId))}::uuid[])`);
+      FROM product_variants WHERE id = ANY(${pgArray(ids((l) => l.variantId))}::uuid[])
+      ORDER BY id
+      FOR SHARE`);
     const locations = await executor.execute<{
       id: string;
       allow_negative: boolean;
       archived: boolean;
     }>(sql`
       SELECT id, allow_negative, archived_at IS NOT NULL AS archived
-      FROM locations WHERE id = ANY(${pgArray(ids((l) => l.locationId))}::uuid[])`);
+      FROM locations WHERE id = ANY(${pgArray(ids((l) => l.locationId))}::uuid[])
+      ORDER BY id
+      FOR SHARE`);
     const bins = await executor.execute<{ id: string; location_id: string; archived: boolean }>(sql`
       SELECT id, location_id, archived_at IS NOT NULL AS archived
       FROM bins WHERE id = ANY(${pgArray(ids((l) => l.binId))}::uuid[])`);

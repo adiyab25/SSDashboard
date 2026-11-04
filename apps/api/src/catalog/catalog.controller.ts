@@ -3,20 +3,25 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
 import {
   CreateProductRequest,
   SkuListQuery,
+  UpdateSkuRequest,
   type SkuDetail,
   type SkuListResponse,
 } from '@ssdashboard/contracts';
 import type { z } from 'zod';
+import { Roles } from '../auth/roles.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
@@ -30,6 +35,10 @@ export function catalogHttpError(error: unknown): unknown {
         return new ConflictException({ code: 'SKU_TAKEN', message: error.message });
       case 'NotFound':
         return new NotFoundException({ code: 'NOT_FOUND', message: error.message });
+      case 'Stale':
+        return new ConflictException({ code: 'STALE_RECORD', message: error.message });
+      case 'InUse':
+        return new ConflictException({ code: 'IN_USE', message: error.message });
     }
   }
   if (error instanceof InvalidCursorError) {
@@ -38,12 +47,16 @@ export function catalogHttpError(error: unknown): unknown {
   return error;
 }
 
-const notFoundId = () =>
+/** A malformed id is a SKU that does not exist: 404, never 400. Inventory's `/skus` routes reuse it. */
+export const notFoundId = () =>
   new ParseUUIDPipe({
     exceptionFactory: () => new NotFoundException({ code: 'NOT_FOUND', message: 'Not found' }),
   });
 
-/** Products in, SKUs out (spec 0006). Any signed in person; admin actions come in Milestone 3. */
+/**
+ * Products in, SKUs out (spec 0006). Any signed in person creates, reads, and edits name and
+ * price; delete is admin only. Stock dependent SKU actions live in inventory's `sku-lifecycle/`.
+ */
 @Controller()
 export class CatalogController {
   constructor(private readonly catalog: CatalogService) {}
@@ -73,6 +86,32 @@ export class CatalogController {
   async get(@Param('id', notFoundId()) id: string): Promise<SkuDetail> {
     try {
       return await this.catalog.getSku(id);
+    } catch (error) {
+      throw catalogHttpError(error);
+    }
+  }
+
+  /** Name and price, with the stale check (AC-2). The code changes through inventory. */
+  @Patch('skus/:id')
+  async update(
+    @Param('id', notFoundId()) id: string,
+    @Body(new ZodBodyPipe(UpdateSkuRequest, INVALID_INPUT))
+    body: z.output<typeof UpdateSkuRequest>,
+  ): Promise<SkuDetail> {
+    try {
+      return await this.catalog.updateSku(id, body);
+    } catch (error) {
+      throw catalogHttpError(error);
+    }
+  }
+
+  /** Admin only, and only while nothing references the SKU (AC-3): 409 `IN_USE` otherwise. */
+  @Roles('admin')
+  @Delete('skus/:id')
+  @HttpCode(204)
+  async remove(@Param('id', notFoundId()) id: string): Promise<void> {
+    try {
+      await this.catalog.deleteSku(id);
     } catch (error) {
       throw catalogHttpError(error);
     }

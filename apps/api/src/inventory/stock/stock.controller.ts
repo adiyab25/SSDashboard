@@ -1,19 +1,13 @@
+import { Controller, Get, Param, Query, Req } from '@nestjs/common';
 import {
-  Controller,
-  Get,
-  NotFoundException,
-  Param,
-  ParseUUIDPipe,
-  Query,
-  Req,
-} from '@nestjs/common';
-import {
+  SkuMovementsQuery,
   StockListQuery,
+  type SkuMovementsResponse,
   type SkuStockResponse,
   type StockListResponse,
 } from '@ssdashboard/contracts';
 import type { AuthenticatedRequest } from '../../auth/current-staff.js';
-import { catalogHttpError } from '../../catalog/catalog.controller.js';
+import { catalogHttpError, notFoundId } from '../../catalog/catalog.controller.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { StockService } from './stock.service.js';
@@ -37,17 +31,25 @@ export class StockController {
 
   @Get('skus/:id/stock')
   async forSku(
-    @Param(
-      'id',
-      new ParseUUIDPipe({
-        exceptionFactory: () => new NotFoundException({ code: 'NOT_FOUND', message: 'Not found' }),
-      }),
-    )
-    id: string,
+    @Param('id', notFoundId()) id: string,
     @Req() request: AuthenticatedRequest,
   ): Promise<SkuStockResponse> {
     try {
       return await this.stock.forSku(id, request.staff.role);
+    } catch (error) {
+      throw ledgerHttpError(catalogHttpError(error));
+    }
+  }
+
+  /** Newest first, 50 a page with load more (AC-10); cost fields for admins only (AC-11). */
+  @Get('skus/:id/movements')
+  async movements(
+    @Param('id', notFoundId()) id: string,
+    @Query(new ZodQueryPipe(SkuMovementsQuery)) query: SkuMovementsQuery,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<SkuMovementsResponse> {
+    try {
+      return await this.stock.movements(id, query, request.staff.role);
     } catch (error) {
       throw ledgerHttpError(catalogHttpError(error));
     }

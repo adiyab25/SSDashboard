@@ -38,8 +38,13 @@ test.describe('production build', () => {
   test('never links the development only gallery', async ({ page }) => {
     await page.goto('/');
 
+    // No /design entry. This server has no api proxy, so the role stays unknown and the admin
+    // only entries (Staff, Locations) are hidden too; the built pages for everyone remain.
     await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link')).toHaveText([
       'Home',
+      'Stock on hand',
+      'Stock receipts',
+      'SKUs',
     ]);
   });
 

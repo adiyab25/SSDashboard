@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import type { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { inventoryKeys, voidReceipt } from './inventory-api';
+import { useReturnFocus } from './use-return-focus';
 
 type VoidInput = z.input<typeof VoidStockReceiptRequest>;
 type VoidOutput = z.output<typeof VoidStockReceiptRequest>;
@@ -40,6 +41,7 @@ export function VoidReceiptDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const returnFocus = useReturnFocus();
   const queryClient = useQueryClient();
   const form = useForm<VoidInput, unknown, VoidOutput>({
     resolver: zodResolver(VoidStockReceiptRequest),
@@ -82,7 +84,11 @@ export function VoidReceiptDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
-      <DialogContent closeLabel={t('inventory.cancel')} className="sm:max-w-lg">
+      <DialogContent
+        closeLabel={t('inventory.cancel')}
+        onCloseAutoFocus={returnFocus}
+        className="sm:max-w-lg"
+      >
         <form
           noValidate
           className="grid gap-6"

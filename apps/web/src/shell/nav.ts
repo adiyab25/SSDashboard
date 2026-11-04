@@ -2,8 +2,10 @@ import type { StaffRole } from '@ssdashboard/contracts';
 import {
   BoxesIcon,
   HomeIcon,
+  MapPinIcon,
   PackagePlusIcon,
   PaletteIcon,
+  TagIcon,
   UsersIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -56,6 +58,21 @@ export const navItems: readonly NavItem[] = [
     href: '/stock-receipts',
     icon: PackagePlusIcon,
     group: 'inventory',
+  },
+  {
+    id: 'skus',
+    labelKey: 'shell.nav.items.skus',
+    href: '/skus',
+    icon: TagIcon,
+    group: 'inventory',
+  },
+  {
+    id: 'locations',
+    labelKey: 'shell.nav.items.locations',
+    href: '/locations',
+    icon: MapPinIcon,
+    group: 'inventory',
+    adminOnly: true,
   },
 ];
 

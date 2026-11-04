@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRetryable, pgArray, pgConstraint, pgErrorCode } from './sql.js';
+import { isRetryable, isStillReferenced, pgArray, pgConstraint, pgErrorCode } from './sql.js';
 
 describe('pgArray', () => {
   it('builds a quoted PostgreSQL array literal', () => {
@@ -70,5 +70,14 @@ describe('isRetryable', () => {
 
   it('is false for an error without a code', () => {
     expect(isRetryable(new Error('network down'))).toBe(false);
+  });
+});
+
+describe('isStillReferenced', () => {
+  it('is true for a foreign key refusal, RESTRICT or NO ACTION, also when wrapped', () => {
+    expect(isStillReferenced({ code: '23001' })).toBe(true);
+    expect(isStillReferenced({ message: 'wrapped', cause: { code: '23503' } })).toBe(true);
+    expect(isStillReferenced({ code: '23505' })).toBe(false);
+    expect(isStillReferenced(new Error('plain'))).toBe(false);
   });
 });

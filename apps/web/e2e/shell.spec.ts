@@ -112,6 +112,9 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       // The inventory group (spec 0006).
       'Stock on hand',
       'Stock receipts',
+      'SKUs',
+      // Locations is admin only (spec 0006, AC-15); the suite signs in as an administrator.
+      'Locations',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

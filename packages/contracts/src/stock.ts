@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LocalizedText } from './localized-text.js';
+import { LedgerSourceType } from './inventory.js';
 import { MoneyString, UnitCostString } from './money.js';
 
 /** A query string boolean: only `true` and `false` are accepted. */
@@ -53,3 +54,36 @@ export const SkuStockResponse = z.object({
   totalValue: MoneyString.optional(),
 });
 export type SkuStockResponse = z.infer<typeof SkuStockResponse>;
+
+/** Query of `GET /api/skus/:id/movements`: newest first, `cursor` is the last `nextCursor`. */
+export const SkuMovementsQuery = z.object({
+  cursor: z.string().min(1).max(400).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+});
+export type SkuMovementsQuery = z.infer<typeof SkuMovementsQuery>;
+
+/**
+ * One movement of a SKU's history (AC-10). `source` links a stock receipt (`number` is its
+ * `SR-…` number); other source types carry `null`. `isReversal` marks a void's row. `postedBy`
+ * is null for a system job. `unitCost` and `totalCost` are present for admins only (AC-11).
+ */
+export const SkuMovement = z.object({
+  id: z.uuid(),
+  effectiveAt: z.string(),
+  recordedAt: z.string(),
+  location: LocationRef,
+  quantity: z.number().int(),
+  sourceType: LedgerSourceType,
+  isReversal: z.boolean(),
+  source: z.object({ id: z.uuid(), number: z.string() }).nullable(),
+  postedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  unitCost: UnitCostString.optional(),
+  totalCost: MoneyString.optional(),
+});
+export type SkuMovement = z.infer<typeof SkuMovement>;
+
+export const SkuMovementsResponse = z.object({
+  items: z.array(SkuMovement),
+  nextCursor: z.string().nullable(),
+});
+export type SkuMovementsResponse = z.infer<typeof SkuMovementsResponse>;

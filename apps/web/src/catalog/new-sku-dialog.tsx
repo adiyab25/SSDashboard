@@ -29,6 +29,7 @@ import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import type { MessageKey } from '@/i18n/message-key';
 import { createSku, inventoryKeys } from '@/inventory/inventory-api';
+import { useReturnFocus } from '@/inventory/use-return-focus';
 
 /** The form, built from the contract's field schemas (spec 0006, AC-1). */
 const NewSkuForm = z
@@ -55,6 +56,7 @@ interface Props {
 /** Creates one SKU (a product with one stocked variant). Any signed in person. */
 export function NewSkuDialog({ onClose, onCreated }: Props) {
   const { t } = useTranslation();
+  const returnFocus = useReturnFocus();
   const queryClient = useQueryClient();
   const form = useForm<NewSkuInput, unknown, NewSkuOutput>({
     resolver: zodResolver(NewSkuForm),
@@ -89,7 +91,11 @@ export function NewSkuDialog({ onClose, onCreated }: Props) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
-      <DialogContent closeLabel={t('inventory.cancel')} className="sm:max-w-lg">
+      <DialogContent
+        closeLabel={t('inventory.cancel')}
+        onCloseAutoFocus={returnFocus}
+        className="sm:max-w-lg"
+      >
         <form
           noValidate
           className="grid gap-6"

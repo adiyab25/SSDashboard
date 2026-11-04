@@ -2,6 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   Money,
   UnitCost,
+  type SkuMovement,
+  type SkuMovementsQuery,
+  type SkuMovementsResponse,
   type SkuStockResponse,
   type StaffRole,
   type StockListQuery,
@@ -9,9 +12,11 @@ import {
   type StockRow,
 } from '@ssdashboard/contracts';
 import { CatalogService } from '../../catalog/catalog.service.js';
-import { decodeKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
+import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
+import { StaffDirectory } from '../../staff/staff-directory.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { LocationsService } from '../locations/locations.service.js';
+import { ReceiptsService } from '../receipts/receipts.service.js';
 
 /** `round(totalValue / onHand, 4)` when on hand is positive, else null (spec 0006). */
 export function averageCost(onHand: number, totalValue: string): string | null {
@@ -37,6 +42,13 @@ export function serializeSkuStock(stock: SkuStockResponse, role: StaffRole): Sku
   };
 }
 
+/** Removes unit cost and line value for anyone but an admin (AC-11). */
+export function serializeMovement(movement: SkuMovement, role: StaffRole): SkuMovement {
+  if (role === 'admin') return movement;
+  const { unitCost: _cost, totalCost: _total, ...rest } = movement;
+  return rest;
+}
+
 const byCode = (a: { code: string }, b: { code: string }) =>
   a.code < b.code ? -1 : a.code > b.code ? 1 : 0;
 
@@ -47,16 +59,18 @@ export class StockService {
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(LocationsService) private readonly locations: LocationsService,
+    @Inject(ReceiptsService) private readonly receipts: ReceiptsService,
+    @Inject(StaffDirectory) private readonly staff: StaffDirectory,
   ) {}
 
   /** The Stock page: one row per balance, most recent movement first, 50 a page. */
   async list(query: StockListQuery, role: StaffRole): Promise<StockListResponse> {
-    const after = query.cursor ? decodeKeyset(query.cursor, 2) : undefined;
+    const after = query.cursor ? decodeTimeIdKeyset(query.cursor) : undefined;
     const rows = await this.ledger.listStock({
       locationId: query.locationId,
       variantId: query.skuId,
       includeZero: query.includeZero,
-      after: after ? { updatedAt: after[0] ?? '', id: after[1] ?? '' } : undefined,
+      after: after ? { updatedAt: after.at, id: after.id } : undefined,
       limit: query.limit + 1,
     });
     const page = rows.slice(0, query.limit);
@@ -120,5 +134,58 @@ export class StockService {
       },
       role,
     );
+  }
+
+  /**
+   * A SKU's movement history, newest first, 50 a page with load more (AC-10). A stock receipt
+   * row links to its number (a void's row is `isReversal`); posted by names come from the staff
+   * directory. Throws catalog `NotFound` for an unknown SKU.
+   */
+  async movements(
+    variantId: string,
+    query: SkuMovementsQuery,
+    role: StaffRole,
+  ): Promise<SkuMovementsResponse> {
+    const after = query.cursor ? decodeTimeIdKeyset(query.cursor) : undefined;
+    await this.catalog.getSku(variantId);
+    const rows = await this.ledger.getMovements({
+      variantId,
+      after: after ? { recordedAt: after.at, id: after.id } : undefined,
+      limit: query.limit + 1,
+    });
+    const page = rows.slice(0, query.limit);
+    const places = await this.locations.byIds(page.map((row) => row.locationId));
+    const numbers = await this.receipts.numbersByIds(
+      page.filter((row) => row.sourceType === 'stock_receipt').map((row) => row.sourceId),
+    );
+    const names = await this.staff.namesByIds(
+      page.map((row) => row.postedBy).filter((id): id is string => id !== null),
+    );
+    const last = page.at(-1);
+    return {
+      items: page.map((row) => {
+        const number = row.sourceType === 'stock_receipt' ? numbers.get(row.sourceId) : undefined;
+        return serializeMovement(
+          {
+            id: row.id,
+            effectiveAt: row.effectiveAt,
+            recordedAt: row.recordedAt,
+            location: places.get(row.locationId) ?? { id: row.locationId, code: '', name: {} },
+            quantity: row.quantity,
+            sourceType: row.sourceType,
+            isReversal: row.reversesGroupId !== null,
+            source: number ? { id: row.sourceId, number } : null,
+            postedBy: row.postedBy
+              ? { id: row.postedBy, name: names.get(row.postedBy) ?? '' }
+              : null,
+            unitCost: row.unitCost,
+            totalCost: row.totalCost,
+          },
+          role,
+        );
+      }),
+      nextCursor:
+        rows.length > query.limit && last ? encodeKeyset([last.recordedAt, last.id]) : null,
+    };
   }
 }
