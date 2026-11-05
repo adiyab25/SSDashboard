@@ -1,7 +1,7 @@
 # 0001. Adopt a TypeScript modular monolith on PostgreSQL, shipped as one container set per client
 
 **Date**: 2026-10-31
-**Status**: Accepted
+**Status**: Superseded by [0007](../0007-stack-architecture-operations-layer/index.md) (2026-11-05: 0007 confirms this stack and replaces its architecture shape)
 
 ## Summary
 

@@ -1,6 +1,6 @@
 # SSDashboard
 
-Warehouse and ERP system for multi channel ecommerce, one shared core deployed per client. Scope: [docs/scope/index.md](docs/scope/index.md).
+The order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, and consignment showroom partners; one shared core deployed per brand, sold as a Warehouse and an Operations bundle. Scope: [docs/scope/index.md](docs/scope/index.md). A from scratch rebuild is under way on `feat/rebuild` ([plan](docs/positioning/2026-11-05-rebuild-plan.md)); the rest of this file describes the current code until `/audit` rewrites it after the new scaffold.
 
 ## Stack
 
@@ -8,7 +8,7 @@ Warehouse and ERP system for multi channel ecommerce, one shared core deployed p
 - **Framework**: modular monolith, NestJS api + worker + migrate (`apps/api`), Next.js App Router back office (`apps/web`)
 - **Key dependencies**: PostgreSQL 18 + Drizzle ORM (`packages/db`), Zod contracts + OpenAPI (`packages/contracts`), Better Auth, pg-boss, shadcn/ui on Tailwind v4, TanStack Table
 - **Package manager**: pnpm workspaces (shared versions in the `catalog:` of `pnpm-workspace.yaml`) + Turborepo
-- **Deploy**: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client (`deploy/`). Full decision: [spec 0001](docs/specs/0001-stack-architecture/index.md)
+- **Deploy**: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client (`deploy/`). Full decision: [spec 0007](docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001; reshapes hosting, connectors, and audiences, applied in wave 3)
 
 ## Build approach
 

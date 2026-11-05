@@ -1,20 +1,13 @@
-# Epic: Production
+# Slice 5: the production loop
 
-Making finished SKUs in your own factories and through contract manufacturers. Back to [index](index.md).
+Materials out to contracted factories, finished pieces in, and cost rolled up honestly. A run record, not a versioned bill of materials. [Back to the scope](index.md).
 
-## Slice 7: Production
+### 64. Factory production runs · GA · needs a decision
+Send fabric and trims to a factory location, receive finished pieces as SKUs, and roll the factory charge plus materials into unit cost.
+**Done when:** materials leave the warehouse to a factory location on the ledger, materials held per factory are visible, finished pieces receive at a cost that includes materials and the factory charge, and an open run gives the expected date for "wait for stock".
+- [ ] Design it (spec): `/architect factory production runs`
 
-### 39. Bills of materials · needs a decision
-The recipe for each finished SKU: raw materials, quantities, and expected scrap.
-**Done when:** a finished SKU can have a versioned bill of materials; it can include sub assemblies; the system can show how many units can be made from current stock.
-- [ ] Design it (spec): `/architect bills of materials`
-
-### 40. Production orders · needs a decision
-Run production in your own factories: consume raw materials, produce finished goods.
-**Done when:** a production order moves through planned, in progress, done; completing it consumes materials (with lots) and adds finished stock (with new lots); the finished unit cost rolls up from materials; actual vs planned usage is reported.
-- [ ] Design it (spec): `/architect production orders`
-
-### 41. Contract manufacturing · needs a decision
-Send materials or designs to an outside factory and track what comes back and what it costs.
-**Done when:** a work order sends materials to a factory location; finished goods are received against it; the factory's service charge and the materials roll into finished unit cost; materials still held at each factory are visible.
-- [ ] Design it (spec): `/architect contract manufacturing`
+### 65. Quality report from return reasons · needs a decision
+Which products, sizes, and factories drive returns, from the reasons customers and inspections record.
+**Done when:** the report shows return and defect reasons by product, size, and factory over a period, from confirmed data only.
+- [ ] Design it (spec): `/architect quality report from return reasons`
