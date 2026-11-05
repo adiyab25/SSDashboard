@@ -39,7 +39,10 @@
       "dependsOn": ["^build"]
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build", "//#lint:repo"]
+    },
+    "//#lint:repo": {
+      "cache": false
     }
   }
 }

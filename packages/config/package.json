@@ -29,7 +29,7 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "test": "node --test scripts/check-logical-css.test.mjs eslint/i18n.test.mjs"
+    "test": "node --test scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs eslint/i18n.test.mjs"
   },
   "devDependencies": {
     "eslint": "catalog:",

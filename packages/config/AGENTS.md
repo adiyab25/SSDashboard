@@ -14,11 +14,16 @@ Shared configuration every workspace extends: TypeScript presets today, and the 
 | `tsconfig/react-library.json` | Preset for React packages outside Next.js (`packages/ui`) |
 | `eslint/react.js` | ESLint for React packages: the base rules plus jsx-a11y |
 | `scripts/check-logical-css.mjs` | Fails `lint` on physical side styles in `packages/ui` and `apps/web` (spec 0003); its tests and planted fixtures sit beside it |
+| `scripts/check-module-readmes.mjs` | Fails `lint` when an api module, web feature folder, or package lacks a README with the five headings of `docs/templates/module-readme.md` (spec 0007) |
+| `scripts/check-route-groups.mjs` | Fails `lint` on any top level route group in `apps/web/src/app` other than `(backoffice)`, `(portal)`, `(partner)`, `(auth)` |
+| `scripts/check-folder-names.mjs` | Fails `lint` on global `services` or `controllers` folders (folder by feature) |
+| `scripts/check-doc-links.mjs` | Fails `lint` on a relative link in `docs/**`, a README, or an AGENTS.md that does not resolve |
 
 ## Commands
 
 ```bash
-pnpm --filter @ssdashboard/config test   # the logical CSS check's own tests (node --test)
+pnpm --filter @ssdashboard/config test   # every check script's own tests (node --test)
+pnpm lint:repo                           # the four repo wide checks; `pnpm lint` runs them through the root task //#lint:repo
 ```
 
 ## Conventions

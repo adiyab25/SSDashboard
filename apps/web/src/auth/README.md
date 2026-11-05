@@ -1,0 +1,36 @@
+# Sign in screens
+
+The staff sign in flow in the browser: sign in, two factor, forgot and reset password, forced password change, and the session gate that protects back office pages.
+
+## Owns
+
+- Forms: [sign-in-form.tsx](sign-in-form.tsx), [two-factor-form.tsx](two-factor-form.tsx), [forgot-password-form.tsx](forgot-password-form.tsx), [reset-password-form.tsx](reset-password-form.tsx), [change-password-form.tsx](change-password-form.tsx)
+- The minimal frame without the app shell: [auth-frame.tsx](auth-frame.tsx)
+- The session check for back office pages: [session-gate.tsx](session-gate.tsx), [use-me.ts](use-me.ts)
+- Calls to the api: [api-fetch.ts](api-fetch.ts), [auth-client.ts](auth-client.ts), [account-api.ts](account-api.ts)
+- Return to the page the staff member came from: [return-to.ts](return-to.ts)
+- Routes: `/sign-in`, `/two-factor`, `/forgot-password`, `/reset-password`, `/change-password` under `src/app/(auth)`
+
+## Never touches
+
+- Passwords or session tokens beyond sending them to the api. Cookies are set by the api only.
+- The app shell. These screens use their own frame.
+- Anything that reveals whether an account exists. Show the api's answer as is.
+
+## How to test
+
+```bash
+pnpm --filter @ssdashboard/web test -- src/auth
+pnpm --filter @ssdashboard/web test:e2e -- e2e/sign-in.spec.ts
+```
+
+Other Playwright specs: `e2e/auth-flows.spec.ts`, `e2e/auth-accessibility.spec.ts`.
+
+## Governing spec
+
+- [0005 Staff sign in](../../../../docs/specs/0005-staff-sign-in/index.md)
+- [0004 Localization](../../../../docs/specs/0004-localization/index.md)
+
+## Decisions
+
+None yet. Record non obvious decisions as ADRs in docs/adr/ and link them here.
