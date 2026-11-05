@@ -1,13 +1,17 @@
-# Verify: Data model · spec 0002 · updated 2026-11-03 · verified 2026-11-03 (PASS)
+# Verify: Data model · spec 0002 · updated 2026-11-05 · original verified 2026-11-03 (PASS) · amendment 2026-11-05 not yet verified
 _Steps derived from spec 0002 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones._
 
 This feature has no screens or HTTP endpoints, so every step runs against PostgreSQL: the dev database from `deploy/compose.dev.yaml`, migrated with `pnpm db:migrate`. The database suites build their own scratch databases.
 
+> Amended 2026-11-05: the checked steps below are the record of the original verification on migrations `0000` to `0008`, which the amendment replaces with one baseline. Lines the amendment makes false carry a note; the new checks are in `## Amendment 2026-11-05 checks` at the end.
+
 ## Commands
 - [x] `pnpm db:migrate` → prints `Migrations applied.`; the dev database has the 20 core tables, the `pgboss` schema owned by `ssdashboard_app`, and the seeded settings, `pc` unit, `TRANSIT` and `SCRAP` locations → AC-2, AC-3, AC-13
+  > Amended 2026-11-05: the baseline holds many more tables (see the ownership map in the tenancy child), and the `pgboss` schema is owned by the role named in `ssd.app_role`.
 - [x] `pnpm --filter @ssdashboard/db test:e2e` → all pass (append only triggers and grants, composite keys, archive rules) → AC-2, AC-13
 - [x] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `ledger`, `ledger-tracking`, `numbering-reconcile`, and `scale` → AC-1 to AC-14
 - [x] `pnpm test` → all pass, including `costing.spec.ts`, `money.spec.ts`, and `module-boundary.spec.ts` → AC-2, AC-12
+  > Amended 2026-11-05: `apps/api/src/inventory/module-boundary.spec.ts` is replaced by `apps/api/src/module-boundary.spec.ts` (A5).
 - [x] `pnpm lint` → passes; adding `schema.stockMovements` to a file outside `apps/api/src/inventory/` fails lint → AC-2
 - [x] Start the worker (`pnpm --filter @ssdashboard/api worker` after a build) → logs `Worker started.`; `SELECT name, cron, timezone FROM pgboss.schedule` shows `ledger.reconcile`, `0 2 * * *`, `Africa/Cairo` → AC-11
 
@@ -36,6 +40,7 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 - [x] Tamper with a balance as the owner, reconcile twice → one open discrepancy with expected and actual; rebuild → balance matches movements, discrepancy marked `rebuilt` with who and when → AC-11
 - [x] Reconcile while 20 postings run → 0 found → AC-11
 - [x] 100,000 SKUs and 1,000,000 movements: `getAvailable` for one SKU and a single line `post` both under 50 ms at p95 → AC-14
+  > Amended 2026-11-05: replaced by the 50,000 SKU suite (AC-36).
 
 ## Value sourcing (one per row: vary the input that the value depends on)
 - [x] Inbound `unit_cost` is stored as given, even into a shortfall where `total_cost` differs from quantity × cost → Value sourcing: post inbound `unit_cost`
@@ -79,3 +84,69 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 - AC-12 … costing steps and value sourcing rows
 - AC-13 … archive and delete checks
 - AC-14 … scale step
+
+## Amendment 2026-11-05 checks
+_Not yet verified. Derived from AC-15 to AC-36 and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
+
+### Commands
+- [ ] `pnpm db:migrate` on an empty database → `Migrations applied.` from one `0000_baseline.sql`; a second run applies nothing; `SELECT * FROM install` → one row whose `id` equals `current_setting('ssd.tenant_id')`; `SHOW ssd.app_role` in a new session → `ssdashboard_app` → AC-16
+- [ ] Rerun `migrate` with a different `TENANT_ID` → fails with `TenantMismatch`, nothing changed → AC-16
+- [ ] `pnpm --filter @ssdashboard/db test:e2e` → all pass, including `tenant.e2e-spec.ts`, `operating-day.e2e-spec.ts`, and an append only case per table in A4 → AC-15, AC-17, AC-33
+- [ ] `pnpm test` → all pass, including the phone, transition, outcome, line split, credit arithmetic, settlement state, ownership map, module boundary, owner type boundary, cost lookup, and redaction tests → AC-19 to AC-22, AC-24, AC-25, AC-27, AC-29, AC-30, AC-32, AC-34
+- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `location-owner-types.e2e-spec.ts` and the amended ledger suites → AC-29, AC-31
+- [ ] `pnpm test:e2e` → every pre existing api and Playwright test passes unchanged on the baseline → AC-16
+- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` → every p95 under its budget; record the measured values below → AC-36
+- [ ] `pnpm lint` → passes; a planted `schema.orders` import in another module's folder fails the boundary test; a planted `=== 'consignment_partner'` outside the policy file fails the owner type boundary test → AC-29, AC-34
+
+### Database checks (psql)
+- [ ] `INSERT INTO stores (code, name, kind) VALUES ('X', '{"en":"X"}', 'internal') RETURNING tenant_id` → the install's id; the same insert in a scratch database that has no `ssd.tenant_id` setting → fails → AC-15
+- [ ] Two stores, each with order `#1001` → both insert; a second `#1001` in one store → unique violation → AC-18
+- [ ] A `shopify` connection without a store → check violation; a second `shopify` connection on one store → unique violation; a `bosta` connection with and without a store → both insert → AC-18
+- [ ] A `gifted` order with a line price above 0 → check violation; an `exchange_replacement` without `original_order_id` → check violation → AC-23
+- [ ] `UPDATE locations SET owner_type = 'own'` on a partner location → fails with `OwnerTypeFixed` → AC-29
+- [ ] Two periods of one settlement account with overlapping dates → exclusion violation; a `carrier` account with a party → check violation → AC-25
+- [ ] A task set to `done` without an outcome → check violation; two open tasks with one dedupe key → unique violation → AC-26
+- [ ] `SELECT ssd_operating_day('2026-11-05 22:30:00+00')` → the Cairo local date of that instant (`2026-11-06` when the database's zone data puts Cairo at UTC+2 that day; the e2e test, not this line, owns the transition dates) → AC-17
+- [ ] As the app role, `UPDATE credit_entries SET amount = 1` → permission denied; as the owner → "append only" (repeat for each A4 table) → AC-33
+
+### Value sourcing (one per row: vary the input the value depends on)
+- [ ] `tenant_id` comes from the database setting, never from the writer → Tenancy child: any insert
+- [ ] `operating_day` follows its source column and the `timezone` and `operating_day_cutoff_hour` settings; changing the zone changes new rows only → Tenancy child: stamped insert
+- [ ] Order `cod_expected_amount` = total − prepaid − credit applied → Orders child: create order
+- [ ] First cash state from the amounts (`unpaid`, `prepaid`, `nothing_to_collect`) → Orders child: first state rule
+- [ ] Split amounts: the worked example (gross 1,000.00 over 3 units, 1 returned → 333.33 and 666.67) → Orders child: partial delivery
+- [ ] Outcome from fulfillment state, delivered amount, and refunded amount, one case per row → Orders child: the derived outcome
+- [ ] Return credit share and the last unit's exact rest (999.99 over 2 → 500.00 then 499.99) → Customers child: return credit
+- [ ] Consumption and balance due (500 credit, 800 order → 500 and 300); leftover (800 credit, 500 order → 300) → Customers child: exchange
+- [ ] Phone normalization, one case per table row → Customers child: phone normalization
+- [ ] A line's state is its latest match row; a period's status is its latest event → Settlement child: rules
+- [ ] Carrier line store from the account binding, else the delivery's store → Settlement child: import
+- [ ] Cost lookup by newest effective date, override on a tie, then newest recorded → Catalog child: cost lookup
+- [ ] Cost rule `not_set` before the first set row, never 0 → Catalog child: per order cost rules
+- [ ] Owner type answers come from the seeded policy rows → Catalog child: locations
+
+### Scale results
+_Fill in from the first measured run (AC-36); the budgets in the catalog child are Assumed until then._
+
+### Acceptance criteria coverage (amendment)
+- AC-15 … tenant schema test, psql insert check
+- AC-16 … migrate commands, unchanged suites
+- AC-17 … operating day test, psql check
+- AC-18 … order number, connection binding checks
+- AC-19, AC-20 … transition unit tests (feature 16 adds the writer tests)
+- AC-21 … line split unit test
+- AC-22 … outcome unit test
+- AC-23 … gifted and exchange checks
+- AC-24 … credit arithmetic and table checks (feature 28 adds the locked balance tests)
+- AC-25 … settlement checks and state functions (features 22 and 23 add matching and close)
+- AC-26 … task checks (feature 17 adds the service tests)
+- AC-27 … phone tests, unique phone, redaction test
+- AC-28 … merge table checks (feature 14 adds resolution and undo tests)
+- AC-29 … owner type trigger, policy, boundary, three way test
+- AC-30 … cost lookup test
+- AC-31 … opening balance ledger cases
+- AC-32 … cost rule tests
+- AC-33 … append only cases per table
+- AC-34 … ownership map and boundary tests
+- AC-35 … outbound command checks and the packing refusal in `nextState`
+- AC-36 … scale suite
