@@ -1,7 +1,7 @@
-import type { Catalog } from '../catalog';
+import type { Catalog } from '../catalog.js';
 
 /**
- * The Arabic catalog, a lazy chunk (`import('./locales/ar')`). Every key in `en.ts` needs
+ * The Arabic catalog, a lazy chunk (`import('@ssdashboard/i18n/ar')`). Every key in `en.ts` needs
  * one here; a test checks it. Plural keys carry all six Arabic forms.
  */
 export const ar: Catalog = {
@@ -755,5 +755,24 @@ export const ar: Catalog = {
       voidReason: 'سبب الإلغاء',
       allReceipts: 'كل الأذونات',
     },
+  },
+  mail: {
+    reset: {
+      subject: 'إعادة تعيين كلمة المرور في {{clientName}}',
+      greeting: 'مرحباً {{name}}،',
+      body: 'وصلنا طلب لإعادة تعيين كلمة المرور الخاصة بك. استخدم الرابط التالي لاختيار كلمة مرور جديدة.',
+      action: 'اختيار كلمة مرور جديدة',
+      validity: 'الرابط يعمل مرة واحدة وتنتهي صلاحيته بعد ساعة.',
+      ignore: 'إذا لم تطلب ذلك فتجاهل هذه الرسالة، وستبقى كلمة المرور كما هي.',
+    },
+    invite: {
+      subject: 'دعوة للانضمام إلى {{clientName}}',
+      greeting: 'مرحباً {{name}}،',
+      body: 'أنشأ لك أحد المسؤولين حساباً. استخدم الرابط التالي لاختيار كلمة المرور وتسجيل الدخول.',
+      action: 'تعيين كلمة المرور',
+      validity: 'الرابط يعمل مرة واحدة وتنتهي صلاحيته بعد 7 أيام.',
+      ignore: 'إذا لم تكن تتوقع ذلك فتجاهل هذه الرسالة.',
+    },
+    fallbackName: 'زميلنا',
   },
 };

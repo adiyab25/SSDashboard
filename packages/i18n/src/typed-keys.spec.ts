@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createI18n } from './create-i18n';
+import { createI18n } from './create-i18n.js';
 
 // AC-5: a wrong key fails the type check. `tsc` runs over this file, and the directive
 // below is itself an error if the call stops being one.

@@ -760,4 +760,24 @@ export const en = {
       allReceipts: 'All receipts',
     },
   },
+  mail: {
+    reset: {
+      subject: 'Reset your {{clientName}} password',
+      greeting: 'Hello {{name}},',
+      body: 'We received a request to reset your password. Use the link below to choose a new one.',
+      action: 'Choose a new password',
+      validity: 'The link works once and expires in 1 hour.',
+      ignore:
+        'If you did not ask for this, you can ignore this email. Your password stays the same.',
+    },
+    invite: {
+      subject: 'You have been invited to {{clientName}}',
+      greeting: 'Hello {{name}},',
+      body: 'An administrator created an account for you. Use the link below to choose your password and sign in.',
+      action: 'Set your password',
+      validity: 'The link works once and expires in 7 days.',
+      ignore: 'If you did not expect this, you can ignore this email.',
+    },
+    fallbackName: 'there',
+  },
 } as const;

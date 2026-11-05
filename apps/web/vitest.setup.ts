@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { setI18n } from 'react-i18next';
 import { afterEach, vi } from 'vitest';
-import { createI18n } from './src/i18n/create-i18n';
+import { createI18n } from '@ssdashboard/i18n';
 
 // Components under test read English text without a provider.
 setI18n(createI18n());

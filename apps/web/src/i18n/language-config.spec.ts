@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { directionOf, HIDE_CAP_MS, languageScript } from './language-config';
+import { HIDE_CAP_MS, languageScript } from './language-config';
 
 /** Runs the head script the way the browser does, against the current document. */
 // eslint-disable-next-line @typescript-eslint/no-implied-eval -- the test must run the real script text
@@ -8,18 +8,6 @@ const runHeadScript = () => (new Function(languageScript) as () => void)();
 const setCookie = (value: string) => {
   document.cookie = `ss_lang=${value}; Path=/`;
 };
-
-describe('directionOf', () => {
-  // AC-2: direction follows the language.
-  it('reads right to left for the right to left base codes and left to right otherwise', () => {
-    for (const code of ['ar', 'he', 'fa', 'ur', 'ps', 'sd', 'ug', 'yi', 'dv', 'ckb']) {
-      expect(directionOf(code), code).toBe('rtl');
-    }
-    for (const code of ['en', 'fr', 'de', 'tr']) {
-      expect(directionOf(code), code).toBe('ltr');
-    }
-  });
-});
 
 // AC-3: the head script runs before first paint.
 describe('languageScript', () => {

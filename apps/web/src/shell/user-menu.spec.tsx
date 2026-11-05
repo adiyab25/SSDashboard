@@ -6,7 +6,7 @@ import { resetLanguageState, settle, stubNetwork } from '@/i18n/language-probe';
 import { UserMenu } from './user-menu';
 
 // The Arabic chunk cannot be fetched, as on a dropped connection.
-vi.mock('@/i18n/locales/ar', () => {
+vi.mock('@ssdashboard/i18n/ar', () => {
   throw new Error('chunk blocked');
 });
 

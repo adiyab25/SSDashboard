@@ -27,8 +27,8 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { coreLanguages, isCoreLanguage } from '@/i18n/languages';
-import type { MessageKey } from '@/i18n/message-key';
+import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
+import type { MessageKey } from '@ssdashboard/i18n';
 import { createStaff, getStaff, updateStaff } from './staff-api';
 
 type FieldName = 'name' | 'email' | 'phone' | 'staffCode';
@@ -72,7 +72,7 @@ interface Props {
 }
 
 const languageName = (code: string): string =>
-  isCoreLanguage(code) ? coreLanguages[code].nativeName : code;
+  isCoreLanguage(code) ? CORE_LANGUAGES[code].nativeName : code;
 
 /** Add or edit one person (spec 0005, AC-12, AC-15). The email is locked once they have signed in. */
 export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) {

@@ -16,23 +16,23 @@ The Next.js App Router back office. Every staff page renders inside the app shel
 
 ## Key files
 
-| File | Owns |
-|---|---|
-| `src/app/layout.tsx` | Static root layout: fonts, the language head script, `Providers`, `SkipLink` |
-| `src/app/(backoffice)/layout.tsx` | `CurrentLocationProvider` (calls staff `/api/locations`), `AppShell`, and the staff `SessionGate` |
-| `src/app/providers.tsx` | Theme (`next-themes`), query client, language and direction (`LanguageProvider`), tooltips, toaster; nothing that calls a staff api route |
-| `src/shell/nav.ts` | The typed navigation registry the sidebar and command palette read |
-| `src/shell/current-location-provider.tsx` | `useCurrentLocation()` and the `ss_location` cookie |
-| `src/i18n/locales/en.ts`, `locales/ar.ts` | Every UI string. English is the source, the type source, and the fallback; Arabic is a lazy chunk |
-| `src/i18n/language-provider.tsx` | Active language, catalog loading, `<html lang dir>`, Radix direction, the `ss_lang` cookie |
-| `src/i18n/language-config.ts` | Cookie name, right to left codes, and the head script text (a plain module) |
-| `src/i18n/format.ts`, `use-format.ts` | The only place `Intl` is built: number, quantity, percent, money, date and time formatters |
-| `src/i18n/localized-text.ts` | Which language's text to show for `{ en, ar }` stored text |
-| `src/i18n/runtime-languages.ts` | Loads and checks client language files from `/locales/<code>.json` |
-| `src/design/` | The development only `/design` gallery (`design-gallery.tsx`, loaded through `design-loader.tsx`) |
-| `src/proxy.ts` | Next.js Proxy: sets `x-pathname` for the session check's `returnTo`, and answers a real 404 for development only paths in production. Not an authorization layer |
-| `src/api/client.ts` | `apiRequest` (calls a relative `/api` path through `apiFetch` and parses the answer with a contract schema), `ApiError` with the stable error `code`, `withBusyRetry` |
-| `src/auth/api-fetch.ts` | `apiFetch`: `fetch` for session calls; a 401 sends the person to sign in, a 403 `PASSWORD_CHANGE_REQUIRED` to change password |
+| File                                      | Owns                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/app/layout.tsx`                      | Static root layout: fonts, the language head script, `Providers`, `SkipLink`                                                                                                                     |
+| `src/app/(backoffice)/layout.tsx`         | `CurrentLocationProvider` (calls staff `/api/locations`), `AppShell`, and the staff `SessionGate`                                                                                                |
+| `src/app/providers.tsx`                   | Theme (`next-themes`), query client, language and direction (`LanguageProvider`), tooltips, toaster; nothing that calls a staff api route                                                        |
+| `src/shell/nav.ts`                        | The typed navigation registry the sidebar and command palette read                                                                                                                               |
+| `src/shell/current-location-provider.tsx` | `useCurrentLocation()` and the `ss_location` cookie                                                                                                                                              |
+| `@ssdashboard/i18n` (`packages/i18n`)     | Every UI string (`en` is the source, the type source, and the fallback; `@ssdashboard/i18n/ar` is a lazy chunk), the language registry, `directionOf`, and the translator the api mail also uses |
+| `src/i18n/language-provider.tsx`          | Active language, catalog loading, `<html lang dir>`, Radix direction, the `ss_lang` cookie                                                                                                       |
+| `src/i18n/language-config.ts`             | Cookie name, language code pattern, and the head script text (a plain module)                                                                                                                    |
+| `src/i18n/format.ts`, `use-format.ts`     | The only place `Intl` is built: number, quantity, percent, money, date and time formatters                                                                                                       |
+| `src/i18n/localized-text.ts`              | Which language's text to show for `{ en, ar }` stored text                                                                                                                                       |
+| `src/i18n/runtime-languages.ts`           | Loads and checks client language files from `/locales/<code>.json`                                                                                                                               |
+| `src/design/`                             | The development only `/design` gallery (`design-gallery.tsx`, loaded through `design-loader.tsx`)                                                                                                |
+| `src/proxy.ts`                            | Next.js Proxy: sets `x-pathname` for the session check's `returnTo`, and answers a real 404 for development only paths in production. Not an authorization layer                                 |
+| `src/api/client.ts`                       | `apiRequest` (calls a relative `/api` path through `apiFetch` and parses the answer with a contract schema), `ApiError` with the stable error `code`, `withBusyRetry`                            |
+| `src/auth/api-fetch.ts`                   | `apiFetch`: `fetch` for session calls; a 401 sends the person to sign in, a 403 `PASSWORD_CHANGE_REQUIRED` to change password                                                                    |
 
 ## Route groups
 
@@ -57,7 +57,7 @@ pnpm --filter @ssdashboard/web test:e2e    # Playwright: desktop, mobile, and pr
 
 - Feature folders sit in `src/<feature>/` (`catalog`, `inventory`, `staff`, `account`, `partner`, `portal`, ...), each with a `README.md` (checked by `pnpm lint:repo`); route files in `src/app/<group>/` stay thin and render the feature's page component (`catalog/sku-detail-page.tsx`).
 - One component per `.tsx` file, exporting the component named after the file; `lint` (`react/no-multi-comp`) and `pnpm lint:repo` (component export names) enforce it.
-- No hard coded UI text: add the string to `locales/en.ts` and the Arabic one to `locales/ar.ts` (a test fails if a key is missing), and read it with `const { t } = useTranslation()`; a wrong key fails the type check. `lint` fails on a raw literal in JSX text and in `aria-label`, `title`, `placeholder`, and `alt`. Plural keys end in `_one`/`_other` (Arabic needs all six forms).
+- No hard coded UI text: add the string to `packages/i18n/src/locales/en.ts` and the Arabic one to `packages/i18n/src/locales/ar.ts` (the parity test in `@ssdashboard/i18n` fails if a key is missing), and read it with `const { t } = useTranslation()`; a wrong key fails the type check. `lint` fails on a raw literal in JSX text and in `aria-label`, `title`, `placeholder`, and `alt`. Plural keys end in `_one`/`_other` (Arabic needs all six forms).
 - Numbers, money, and dates go through `useFormat()` (Western digits in both languages, the install's currency and time zone). `lint` fails on `toLocaleString`, `toLocaleDateString`, `toLocaleTimeString`, and `new Intl.*` outside `src/i18n/format.ts`. Settings not loaded yet: `useFormat().status` is `loading` or `error` and the output is the raw value.
 - Codes (SKU, barcode, document number, email, URL, version) sit in `LtrText` from `@ssdashboard/ui`. Stored `{ en, ar }` text goes through `localizedText()`.
 - A client adds a language with `extensions/<client>/locales/<code>.json` and the `languages` setting; see `extensions/README.md`.

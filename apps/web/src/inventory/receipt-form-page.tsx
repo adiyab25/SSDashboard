@@ -24,7 +24,7 @@ import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { useMe } from '@/auth/use-me';
 import { useFormat } from '@/i18n/use-format';
-import type { MessageKey } from '@/i18n/message-key';
+import type { MessageKey } from '@ssdashboard/i18n';
 import {
   locationName,
   useCurrentLocation,

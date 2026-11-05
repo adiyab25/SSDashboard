@@ -5,7 +5,7 @@ import { LanguageProvider } from './language-provider';
 import { LanguageProbe, readout, resetLanguageState, stubNetwork } from './language-probe';
 
 // The Arabic chunk neither loads nor fails, as on a stalled connection.
-vi.mock('./locales/ar', () => new Promise(() => {}));
+vi.mock('@ssdashboard/i18n/ar', () => new Promise(() => {}));
 
 // AC-13: a load that never answers is given up on, so the menu does not wait forever.
 describe('a catalog that never answers', () => {

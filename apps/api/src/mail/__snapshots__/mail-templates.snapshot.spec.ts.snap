@@ -1,0 +1,109 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderMail output (AC-15) > keeps the invite email in ar exactly as written 1`] = `
+{
+  "html": "<!doctype html>
+<html lang="ar" dir="rtl">
+<body style="margin:0;padding:24px;font-family:system-ui,Segoe UI,Tahoma,sans-serif;line-height:1.6;color:#1a1a1a;">
+<p>مرحباً Sam &amp; &lt;Co&gt;،</p>
+<p>أنشأ لك أحد المسؤولين حساباً. استخدم الرابط التالي لاختيار كلمة المرور وتسجيل الدخول.</p>
+<p><a href="https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:6px;">تعيين كلمة المرور</a></p>
+<p style="direction:ltr;unicode-bidi:plaintext;word-break:break-all;font-size:13px;color:#555555;">https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1</p>
+<p style="color:#555555;">الرابط يعمل مرة واحدة وتنتهي صلاحيته بعد 7 أيام.<br>إذا لم تكن تتوقع ذلك فتجاهل هذه الرسالة.</p>
+<p style="color:#555555;">Acme Home</p>
+</body>
+</html>",
+  "subject": "دعوة للانضمام إلى Acme Home",
+  "text": "مرحباً Sam & <Co>،
+
+أنشأ لك أحد المسؤولين حساباً. استخدم الرابط التالي لاختيار كلمة المرور وتسجيل الدخول.
+
+https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&y=1
+
+الرابط يعمل مرة واحدة وتنتهي صلاحيته بعد 7 أيام.
+إذا لم تكن تتوقع ذلك فتجاهل هذه الرسالة.
+
+Acme Home",
+}
+`;
+
+exports[`renderMail output (AC-15) > keeps the invite email in en exactly as written 1`] = `
+{
+  "html": "<!doctype html>
+<html lang="en" dir="ltr">
+<body style="margin:0;padding:24px;font-family:system-ui,Segoe UI,Tahoma,sans-serif;line-height:1.6;color:#1a1a1a;">
+<p>Hello Sam &amp; &lt;Co&gt;,</p>
+<p>An administrator created an account for you. Use the link below to choose your password and sign in.</p>
+<p><a href="https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:6px;">Set your password</a></p>
+<p style="direction:ltr;unicode-bidi:plaintext;word-break:break-all;font-size:13px;color:#555555;">https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1</p>
+<p style="color:#555555;">The link works once and expires in 7 days.<br>If you did not expect this, you can ignore this email.</p>
+<p style="color:#555555;">Acme Home</p>
+</body>
+</html>",
+  "subject": "You have been invited to Acme Home",
+  "text": "Hello Sam & <Co>,
+
+An administrator created an account for you. Use the link below to choose your password and sign in.
+
+https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&y=1
+
+The link works once and expires in 7 days.
+If you did not expect this, you can ignore this email.
+
+Acme Home",
+}
+`;
+
+exports[`renderMail output (AC-15) > keeps the reset email in ar exactly as written 1`] = `
+{
+  "html": "<!doctype html>
+<html lang="ar" dir="rtl">
+<body style="margin:0;padding:24px;font-family:system-ui,Segoe UI,Tahoma,sans-serif;line-height:1.6;color:#1a1a1a;">
+<p>مرحباً Sam &amp; &lt;Co&gt;،</p>
+<p>وصلنا طلب لإعادة تعيين كلمة المرور الخاصة بك. استخدم الرابط التالي لاختيار كلمة مرور جديدة.</p>
+<p><a href="https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:6px;">اختيار كلمة مرور جديدة</a></p>
+<p style="direction:ltr;unicode-bidi:plaintext;word-break:break-all;font-size:13px;color:#555555;">https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1</p>
+<p style="color:#555555;">الرابط يعمل مرة واحدة وتنتهي صلاحيته بعد ساعة.<br>إذا لم تطلب ذلك فتجاهل هذه الرسالة، وستبقى كلمة المرور كما هي.</p>
+<p style="color:#555555;">Acme Home</p>
+</body>
+</html>",
+  "subject": "إعادة تعيين كلمة المرور في Acme Home",
+  "text": "مرحباً Sam & <Co>،
+
+وصلنا طلب لإعادة تعيين كلمة المرور الخاصة بك. استخدم الرابط التالي لاختيار كلمة مرور جديدة.
+
+https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&y=1
+
+الرابط يعمل مرة واحدة وتنتهي صلاحيته بعد ساعة.
+إذا لم تطلب ذلك فتجاهل هذه الرسالة، وستبقى كلمة المرور كما هي.
+
+Acme Home",
+}
+`;
+
+exports[`renderMail output (AC-15) > keeps the reset email in en exactly as written 1`] = `
+{
+  "html": "<!doctype html>
+<html lang="en" dir="ltr">
+<body style="margin:0;padding:24px;font-family:system-ui,Segoe UI,Tahoma,sans-serif;line-height:1.6;color:#1a1a1a;">
+<p>Hello Sam &amp; &lt;Co&gt;,</p>
+<p>We received a request to reset your password. Use the link below to choose a new one.</p>
+<p><a href="https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:6px;">Choose a new password</a></p>
+<p style="direction:ltr;unicode-bidi:plaintext;word-break:break-all;font-size:13px;color:#555555;">https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&amp;y=1</p>
+<p style="color:#555555;">The link works once and expires in 1 hour.<br>If you did not ask for this, you can ignore this email. Your password stays the same.</p>
+<p style="color:#555555;">Acme Home</p>
+</body>
+</html>",
+  "subject": "Reset your Acme Home password",
+  "text": "Hello Sam & <Co>,
+
+We received a request to reset your password. Use the link below to choose a new one.
+
+https://erp.example.com/api/auth/reset-password/abc123?callbackURL=x&y=1
+
+The link works once and expires in 1 hour.
+If you did not ask for this, you can ignore this email. Your password stays the same.
+
+Acme Home",
+}
+`;

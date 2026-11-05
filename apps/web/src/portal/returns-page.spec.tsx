@@ -1,10 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it } from 'vitest';
-import { flatten } from '@/i18n/catalog';
-import { createI18n } from '@/i18n/create-i18n';
-import { ar } from '@/i18n/locales/ar';
-import { en } from '@/i18n/locales/en';
+import { flatten } from '@ssdashboard/i18n';
+import { createI18n } from '@ssdashboard/i18n';
+import { ar } from '@ssdashboard/i18n/ar';
+import { en } from '@ssdashboard/i18n';
 import { ReturnsPage } from './returns-page';
 
 const enFlat = flatten(en);

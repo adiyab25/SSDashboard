@@ -1,3 +1,4 @@
+import './i18next-types.js';
 import type { ParseKeys } from 'i18next';
 
 /**

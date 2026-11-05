@@ -14,15 +14,15 @@ export interface LanguageInfo {
  * The core languages shipped with the app. Every formatter adds `numberingSystem: 'latn'`,
  * so digits are Western in all of them.
  */
-export const coreLanguages = {
+export const CORE_LANGUAGES = {
   en: { nativeName: 'English', intl: 'en-GB', hour12: false, weekStart: 1 },
   ar: { nativeName: 'العربية', intl: 'ar-EG', hour12: true, weekStart: 6 },
 } as const satisfies Record<string, LanguageInfo>;
 
 /** The codes of the core languages. */
-export type CoreLanguage = keyof typeof coreLanguages;
+export type CoreLanguage = keyof typeof CORE_LANGUAGES;
 
 /** True when `code` is a core language, which the app ships without a download. */
 export function isCoreLanguage(code: string): code is CoreLanguage {
-  return Object.hasOwn(coreLanguages, code);
+  return Object.hasOwn(CORE_LANGUAGES, code);
 }

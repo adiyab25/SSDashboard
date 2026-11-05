@@ -58,7 +58,7 @@ Arabic first, English always, everywhere: screens, errors, receipts, exports, an
 **Done when:** every string comes from the message catalogs in both languages, layout flips right to left correctly, Arabic and Latin digits both parse, money shows in EGP, and dates show in Cairo time.
 - [x] Design it (spec): `/architect localization`
 - [ ] Build it: `/develop localization`
-  - [ ] The shared catalog package, end to end (web, api mail, worker)
+  - [x] The shared catalog package, end to end (web, api mail, worker)
   - [ ] Formatting and digits at every input edge
   - [ ] Server rendered portal and partner pages
   - [ ] Operating day test on the real Cairo transition dates and the time zone release step

@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
-import type { MessageKey } from '../src/i18n/message-key';
-import { ar } from '../src/i18n/locales/ar';
-import { en } from '../src/i18n/locales/en';
+import type { MessageKey } from '@ssdashboard/i18n';
+import { ar } from '@ssdashboard/i18n/ar';
+import { en } from '@ssdashboard/i18n';
 import { ownerDatabaseUrl } from './auth';
 
 export type Theme = 'light' | 'dark';

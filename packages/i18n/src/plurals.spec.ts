@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createI18n } from './create-i18n';
-import { ar } from './locales/ar';
+import { createI18n } from './create-i18n.js';
+import { ar } from './locales/ar.js';
 
 // AC-7: counts pick the right form in both languages, and {{name}} interpolates.
 describe('plurals and interpolation', () => {

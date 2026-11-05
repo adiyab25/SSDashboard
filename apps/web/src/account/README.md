@@ -10,7 +10,7 @@ The signed in staff member's own page at `/account`: profile, password, and two 
 ## Never touches
 
 - Other staff members' accounts. That is the [staff](../staff/) screen.
-- Hard coded UI text. Every string goes through `t()` with keys in `src/i18n/locales`.
+- Hard coded UI text. Every string goes through `t()` with keys in `packages/i18n/src/locales`.
 - Business logic. The api decides every rule.
 
 ## How to test

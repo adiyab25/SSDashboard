@@ -1,14 +1,13 @@
 # Language and formatting
 
-English and Arabic: the language provider, the message catalog, and the only place numbers, money and dates are formatted.
+English and Arabic in the browser: the language provider, the cookie and head script, and the only place numbers, money and dates are formatted. The message catalogs, typed keys, language registry, and translator live in [packages/i18n](../../../../packages/i18n/README.md).
 
 ## Owns
 
-- The active language, direction and cookie: [language-provider.tsx](language-provider.tsx), [language-config.ts](language-config.ts), [language-cookie.ts](language-cookie.ts)
-- The message catalog and typed keys: [catalog.ts](catalog.ts), [message-key.ts](message-key.ts), [create-i18n.ts](create-i18n.ts)
+- The active language, direction and cookie: [language-provider.tsx](language-provider.tsx), [language-config.ts](language-config.ts) (cookie and head script), [language-cookie.ts](language-cookie.ts)
 - Number, quantity, percent, money and date formatters: [format.ts](format.ts), [use-format.ts](use-format.ts)
 - Which language to show for stored `{ en, ar }` text: [localized-text.ts](localized-text.ts), [use-localized-text.ts](use-localized-text.ts)
-- Client language files loaded at runtime: [runtime-languages.ts](runtime-languages.ts), [languages.ts](languages.ts)
+- Client language files loaded at runtime: [runtime-languages.ts](runtime-languages.ts)
 
 ## Never touches
 

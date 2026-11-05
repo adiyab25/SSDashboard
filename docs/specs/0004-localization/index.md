@@ -45,7 +45,7 @@ The product is now an order operations layer for Egyptian brands. Three things c
 | `.` | `@ssdashboard/i18n` | `en`, `Catalog`, `MessageKey`, `CORE_LANGUAGES` (registry), `directionOf`, `RTL_LANGUAGES`, `createTranslator`, `createFormatter`, `normalizeDigits`, `parseQuantity`, `parseMoney` |
 | `./ar` | `@ssdashboard/i18n/ar` | `ar` (the Arabic catalog) |
 
-`createTranslator` loads `ar` by dynamic `import()`, so it is `async` the first time per language and cached; `createTranslatorSync(catalogs)` is what a server component and the web provider use when the catalog is already in hand. Web code keeps `react-i18next` for components. `packages/contracts` depends on `@ssdashboard/i18n` for the digit helpers only.
+`createTranslator` loads `ar` by dynamic `import()`, so it is `async` the first time per language and cached; `createTranslatorSync(language, catalogs)` is what a server component and the web provider use when the catalog is already in hand (built 2026-11-05 with the `language` argument, which this line first left out). Web code keeps `react-i18next` for components. `packages/contracts` depends on `@ssdashboard/i18n` for the digit helpers only.
 
 **Server rendered audiences (AC-16), route layout:**
 
@@ -277,10 +277,10 @@ Tracer Bullet: prove one real thread first (Arabic chosen, saved, restored befor
 Amendment work only (the original plan above is built). Tracer Bullet: Milestone 1 moves one real thread through every process (a key in the shared catalog, read by the web and by the api's mail), then later milestones thicken one segment at a time.
 
 **Milestone 1: The shared catalog, end to end**
-1. [ ] Create `packages/i18n` (package.json with the `.` and `./ar` exports, build to `dist` like `packages/contracts`, tsconfig, vitest, ESLint config, `README.md` from the module template, workspace and `catalog:` entries); move `apps/web/src/i18n/locales/en.ts` and `ar.ts`, `languages.ts`, `message-key.ts`, and `directionOf` and `RTL_LANGUAGES` into it; web imports from `@ssdashboard/i18n` and `apps/web/src/i18n/locales/` is deleted, satisfies **AC-14**
-2. [ ] `createTranslator` (async, English fallback, typed `t`) and `createTranslatorSync`; move the catalog parity and plural tests (counts 0, 1, 2, 3, 11, 100) into the package and extend parity to the new key groups, satisfies **AC-15**
-3. [ ] Add the `mail` keys and rewrite `apps/api/src/mail/mail-templates.ts` to render from `createTranslator`, deleting its `COPY` table; pin the old output with a snapshot test written before the change, satisfies **AC-15**
-4. [ ] A wrong key in `apps/api` fails `tsc` (fixture test like the web `typed-keys.spec.ts`); the extension locale e2e (`fr.json`) still passes, satisfies **AC-15**, **AC-23**
+1. [x] Create `packages/i18n` (package.json with the `.` and `./ar` exports, build to `dist` like `packages/contracts`, tsconfig, vitest, ESLint config, `README.md` from the module template, workspace and `catalog:` entries); move `apps/web/src/i18n/locales/en.ts` and `ar.ts`, `languages.ts`, `message-key.ts`, and `directionOf` and `RTL_LANGUAGES` into it; web imports from `@ssdashboard/i18n` and `apps/web/src/i18n/locales/` is deleted, satisfies **AC-14**
+2. [x] `createTranslator` (async, English fallback, typed `t`) and `createTranslatorSync`; move the catalog parity and plural tests (counts 0, 1, 2, 3, 11, 100) into the package and extend parity to the new key groups, satisfies **AC-15**
+3. [x] Add the `mail` keys and rewrite `apps/api/src/mail/mail-templates.ts` to render from `createTranslator`, deleting its `COPY` table; pin the old output with a snapshot test written before the change, satisfies **AC-15**
+4. [x] A wrong key in `apps/api` fails `tsc` (fixture test like the web `typed-keys.spec.ts`); the extension locale e2e (`fr.json`) still passes, satisfies **AC-15**, **AC-23**
 
 **Done when** `pnpm build && pnpm typecheck && pnpm --filter @ssdashboard/i18n test && pnpm --filter @ssdashboard/web test && pnpm --filter @ssdashboard/api test` all pass, and `pnpm lint` passes.
 

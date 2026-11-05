@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { baseKey, flatten, pickKnownKeys, requiredKeys } from './catalog';
-import { createI18n } from './create-i18n';
-import { pluralCategories } from './format';
-import { ar } from './locales/ar';
+import { baseKey, flatten, pickKnownKeys, requiredKeys } from './catalog.js';
+import { createI18n } from './create-i18n.js';
+import { pluralCategories } from './plural-categories.js';
+import { ar } from './locales/ar.js';
 
 describe('catalogs', () => {
   // AC-6: translation debt fails the build.

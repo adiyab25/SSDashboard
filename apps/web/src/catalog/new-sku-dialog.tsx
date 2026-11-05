@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
-import type { MessageKey } from '@/i18n/message-key';
+import type { MessageKey } from '@ssdashboard/i18n';
 import { createSku, inventoryKeys } from '@/inventory/inventory-api';
 import { useReturnFocus } from '@/inventory/use-return-focus';
 

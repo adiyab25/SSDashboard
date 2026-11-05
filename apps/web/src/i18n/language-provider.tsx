@@ -1,6 +1,15 @@
 'use client';
 
 import type { ConfigResponse } from '@ssdashboard/contracts';
+import {
+  CORE_LANGUAGES,
+  createI18n,
+  directionOf,
+  isCoreLanguage,
+  type Catalog,
+  type LanguageInfo,
+  type TextDirection,
+} from '@ssdashboard/i18n';
 import type { i18n as I18n } from 'i18next';
 import { Direction } from 'radix-ui';
 import {
@@ -15,11 +24,7 @@ import {
 } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { loadConfig } from '@/shell/client-config';
-import type { Catalog } from './catalog';
-import { createI18n } from './create-i18n';
 import { readLanguageCookie, writeLanguageCookie } from './language-cookie';
-import { directionOf, type TextDirection } from './language-config';
-import { coreLanguages, isCoreLanguage, type LanguageInfo } from './languages';
 import { loadRuntimeLanguage, type RuntimeLanguage } from './runtime-languages';
 
 /** One entry of the Language submenu. */
@@ -53,7 +58,7 @@ interface LanguageState {
 const LanguageContext = createContext<LanguageState>({
   language: 'en',
   direction: 'ltr',
-  info: coreLanguages.en,
+  info: CORE_LANGUAGES.en,
   options: [],
   config: null,
   configStatus: 'loading',
@@ -83,7 +88,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 /** Core languages other than English load as a lazy chunk. */
 const coreLoaders: Record<string, () => Promise<Catalog>> = {
-  ar: () => import('./locales/ar').then((module) => module.ar),
+  ar: () => import('@ssdashboard/i18n/ar').then((module) => module.ar),
 };
 
 /**
@@ -105,7 +110,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const infoOf = useCallback(
     (code: string): LanguageInfo =>
-      isCoreLanguage(code) ? coreLanguages[code] : (runtime[code]?.info ?? coreLanguages.en),
+      isCoreLanguage(code) ? CORE_LANGUAGES[code] : (runtime[code]?.info ?? CORE_LANGUAGES.en),
     [runtime],
   );
 
@@ -204,9 +209,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [apply, ensureCatalog, loadRuntime]);
 
   const options = useMemo<LanguageOption[]>(() => {
-    const enabled = config ? config.languages : Object.keys(coreLanguages);
+    const enabled = config ? config.languages : Object.keys(CORE_LANGUAGES);
     return enabled.flatMap((code) => {
-      const info = isCoreLanguage(code) ? coreLanguages[code] : runtime[code]?.info;
+      const info = isCoreLanguage(code) ? CORE_LANGUAGES[code] : runtime[code]?.info;
       return info ? [{ code, nativeName: info.nativeName, dir: directionOf(code) }] : [];
     });
   }, [config, runtime]);

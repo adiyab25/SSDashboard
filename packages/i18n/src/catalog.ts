@@ -1,5 +1,5 @@
-import { pluralCategories } from './format';
-import { en } from './locales/en';
+import { en } from './locales/en.js';
+import { pluralCategories } from './plural-categories.js';
 
 /** A translation catalog: nested objects whose leaves are strings. */
 export interface Catalog {
