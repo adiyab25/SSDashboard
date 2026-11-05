@@ -58,6 +58,9 @@ services:
       # Only migrate connects as the owner. It also sets the application role's login password.
       MIGRATION_DATABASE_URL: postgres://ssdashboard:${POSTGRES_PASSWORD}@postgres:5432/ssdashboard
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      # First run only (spec 0002, A2): the tenant id (unset: generated) and the application role's name.
+      TENANT_ID: ${TENANT_ID:-}
+      APP_DB_ROLE: ${APP_DB_ROLE:-ssdashboard_app}
     depends_on:
       postgres:
         condition: service_healthy

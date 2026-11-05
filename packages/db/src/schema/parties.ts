@@ -1,13 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, check, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
-import { archivedAt, createdAt, id, updatedAt } from './columns.js';
+import { boolean, check, jsonb, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { archivedAt, createdAt, id, tenantId, updatedAt } from './columns.js';
 
 /** Suppliers, factories, and customers. One party can hold several roles. */
 export const parties = pgTable(
   'parties',
   {
     id: id(),
-    code: text('code').notNull().unique(),
+    tenantId: tenantId(),
+    code: text('code').notNull(),
     name: text('name').notNull(),
     nameAr: text('name_ar'),
     taxId: text('tax_id'),
@@ -21,5 +22,8 @@ export const parties = pgTable(
     updatedAt: updatedAt(),
     archivedAt: archivedAt(),
   },
-  (t) => [check('parties_has_a_role', sql`${t.isSupplier} OR ${t.isCustomer} OR ${t.isFactory}`)],
+  (t) => [
+    unique('parties_code_unique').on(t.tenantId, t.code),
+    check('parties_has_a_role', sql`${t.isSupplier} OR ${t.isCustomer} OR ${t.isFactory}`),
+  ],
 );

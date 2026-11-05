@@ -9,7 +9,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { archivedAt, createdAt, id, updatedAt, type LocalizedText } from './columns.js';
+import { archivedAt, createdAt, id, tenantId, updatedAt, type LocalizedText } from './columns.js';
 
 /** What kind of place holds stock: a warehouse, a consignment showroom, goods in transit, or a virtual bucket. */
 export const locationType = pgEnum('location_type', [
@@ -20,17 +20,22 @@ export const locationType = pgEnum('location_type', [
 ]);
 
 /** A place stock is counted in. Archived rather than deleted; `allowNegative` lets postings take on-hand below zero at this location. */
-export const locations = pgTable('locations', {
-  id: id(),
-  code: text('code').notNull().unique(),
-  name: jsonb('name').$type<LocalizedText>().notNull(),
-  type: locationType('type').notNull(),
-  isSellable: boolean('is_sellable').notNull().default(true),
-  allowNegative: boolean('allow_negative').notNull().default(false),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-  archivedAt: archivedAt(),
-});
+export const locations = pgTable(
+  'locations',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    code: text('code').notNull(),
+    name: jsonb('name').$type<LocalizedText>().notNull(),
+    type: locationType('type').notNull(),
+    isSellable: boolean('is_sellable').notNull().default(true),
+    allowNegative: boolean('allow_negative').notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    archivedAt: archivedAt(),
+  },
+  (t) => [unique('locations_code_unique').on(t.tenantId, t.code)],
+);
 
 /** Depth in the bin tree, from a whole zone down to a single bin. */
 export const binLevel = pgEnum('bin_level', ['zone', 'aisle', 'shelf', 'bin']);
@@ -40,6 +45,7 @@ export const bins = pgTable(
   'bins',
   {
     id: id(),
+    tenantId: tenantId(),
     locationId: uuid('location_id')
       .notNull()
       .references(() => locations.id, { onDelete: 'restrict' }),
@@ -53,7 +59,7 @@ export const bins = pgTable(
   },
   (t) => [
     foreignKey({ columns: [t.parentId], foreignColumns: [t.id] }).onDelete('restrict'),
-    unique('bins_location_code_unique').on(t.locationId, t.code),
+    unique('bins_location_code_unique').on(t.tenantId, t.locationId, t.code),
     // Target of the (bin_id, location_id) composite keys: a bin always belongs to the row's location.
     unique('bins_id_location_unique').on(t.id, t.locationId),
     index('bins_parent_idx').on(t.parentId),

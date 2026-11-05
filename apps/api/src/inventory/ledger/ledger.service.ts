@@ -705,7 +705,7 @@ export class LedgerService {
                   ${op.reversesGroupId},
                   coalesce(${op.effectiveAt?.toISOString() ?? null}::timestamptz, now()),
                   ${op.postedBy})
-          ON CONFLICT (idempotency_key) DO NOTHING
+          ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
           RETURNING id,
                     effective_at > recorded_at + ${`${FUTURE_TOLERANCE_MS} milliseconds`}::interval AS future,
                     to_char(effective_at AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS local_date`)

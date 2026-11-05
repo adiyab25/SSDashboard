@@ -3,12 +3,13 @@
 //    value that is already set; secrets it generates are random per machine.
 // 2. Starts PostgreSQL, Garage (S3), and Mailpit with Docker Compose and waits until healthy.
 // 3. Gives Garage its storage layout, the dev bucket, and the access key, then writes the key to .env.
-// 4. Applies database migrations.
+// 4. Stops, with the fix, if the database was migrated by the old migration history (ADR 0003).
+// 5. Applies database migrations.
 // Safe to run again: every step checks before it acts, and no data volume is removed.
 // Plain Node with no dependencies, so it runs the same on Windows, macOS, and Linux.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ENV_FILE = join(ROOT, '.env');
 const ENV_EXAMPLE = join(ROOT, '.env.example');
 const COMPOSE_FILE = join(ROOT, 'deploy', 'compose.dev.yaml');
+const MIGRATIONS_DIR = join(ROOT, 'packages', 'db', 'migrations');
 const KEY_NAME = 'ssdashboard-dev';
 const STARTED = Date.now();
 
@@ -162,6 +164,63 @@ function prepareGarage() {
   garage('bucket', 'allow', '--read', '--write', '--owner', bucket, '--key', keyId);
 }
 
+/**
+ * Stops when the dev database holds a migration hash that matches no current migration file: it
+ * was migrated by the history that the baseline replaced (spec 0002, A2), and migrating it now
+ * would fail halfway. Drizzle's hash is the sha256 of a migration file's SQL text.
+ */
+function checkMigrationHistory() {
+  const url = new URL(
+    valueOf('MIGRATION_DATABASE_URL') || 'postgres://ssdashboard@localhost/ssdashboard',
+  );
+  const user = decodeURIComponent(url.username);
+  const database = decodeURIComponent(url.pathname.slice(1));
+  const sql =
+    "SELECT CASE WHEN to_regclass('drizzle.__drizzle_migrations') IS NULL THEN '' ELSE (SELECT coalesce(string_agg(hash, ' '), '') FROM drizzle.__drizzle_migrations) END";
+  let output;
+  try {
+    output = compose([
+      'exec',
+      '-T',
+      'postgres',
+      'psql',
+      '-U',
+      user,
+      '-d',
+      database,
+      '-At',
+      '-c',
+      sql,
+    ]);
+  } catch {
+    // The database named in .env does not exist yet, so there is no old history to find.
+    return;
+  }
+  const known = new Set(
+    readdirSync(MIGRATIONS_DIR)
+      .filter((name) => name.endsWith('.sql'))
+      .map((name) =>
+        createHash('sha256')
+          .update(readFileSync(join(MIGRATIONS_DIR, name), 'utf8'))
+          .digest('hex'),
+      ),
+  );
+  const unknown = output
+    .trim()
+    .split(/\s+/)
+    .filter((hash) => hash !== '' && !known.has(hash));
+  if (unknown.length > 0) {
+    fail(
+      [
+        'this dev database was migrated by the old migration history, which the baseline replaced',
+        '(docs/adr/0003-reset-migrations-to-one-baseline.md). Drop the dev volume and start again:',
+        '    docker compose -f deploy/compose.dev.yaml down -v',
+        '    pnpm bootstrap',
+      ].join('\n'),
+    );
+  }
+}
+
 if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0) {
   fail('Docker Compose was not found. Install and start Docker Desktop, then run this again.');
 }
@@ -177,6 +236,7 @@ step('starting PostgreSQL, Garage, and Mailpit', () => {
   }
 });
 step('preparing the Garage bucket and key', prepareGarage);
+step('checking the migration history', checkMigrationHistory);
 step('applying database migrations', () => {
   const migrate = spawnSync('pnpm', ['db:migrate'], { cwd: ROOT, stdio: 'inherit', shell: true });
   if (migrate.status !== 0) fail('pnpm db:migrate failed. Did you run `pnpm install` first?');

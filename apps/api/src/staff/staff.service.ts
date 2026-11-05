@@ -526,7 +526,7 @@ export class StaffService {
     await tx.execute(
       sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
           VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})
-          ON CONFLICT (provider_id, account_id) DO UPDATE SET password = excluded.password, updated_at = now()`,
+          ON CONFLICT (tenant_id, provider_id, account_id) DO UPDATE SET password = excluded.password, updated_at = now()`,
     );
   }
 

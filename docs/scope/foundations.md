@@ -29,7 +29,7 @@ The core entities every slice builds on, shaped for Egyptian cash on delivery fr
 Also from spec 0007: order number unique per (tenant, store), never per tenant; carrier accounts belong to the tenant with an optional store binding (one account for all stores, or one per store).
 - [x] Design it (spec): `/architect data model`
 - [ ] Build it: `/develop data model`
-  - [ ] A new baseline with a tenant id on every row, end to end
+  - [x] A new baseline with a tenant id on every row, end to end
   - [ ] Operating day, styles and seasons with cost, locations with a fixed owner type, and the ledger changes
   - [ ] Stores, channels, customers by phone, and orders with both state machines
   - [ ] Customer credit, settlement, tasks, per order cost rules, and the module walls

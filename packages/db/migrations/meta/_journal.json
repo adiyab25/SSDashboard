@@ -5,64 +5,22 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1793435703070,
-      "tag": "0000_enable_extensions",
+      "when": 1793909275323,
+      "tag": "0000_baseline_extensions",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1793654391571,
-      "tag": "0001_core_data_model",
+      "when": 1793909278421,
+      "tag": "0001_baseline_tables",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1793655487635,
-      "tag": "0002_job_queue_schema",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1793716082204,
-      "tag": "0003_localization_settings",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1793723309514,
-      "tag": "0004_staff_sign_in",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1793727076721,
-      "tag": "0005_staff_sign_in_lockout",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1793779636615,
-      "tag": "0006_staff_two_factor",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1793780820286,
-      "tag": "0007_ledger_posted_by_user_fk",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1793813557759,
-      "tag": "0008_stock_receipts",
+      "when": 1793909281304,
+      "tag": "0002_baseline_rules",
       "breakpoints": true
     }
   ]

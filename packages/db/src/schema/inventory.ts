@@ -17,7 +17,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { productVariants } from './catalog.js';
-import { createdAt, id, money, unitCost } from './columns.js';
+import { createdAt, id, money, tenantId, unitCost } from './columns.js';
 import { users } from './auth.js';
 import { bins, locations } from './locations.js';
 
@@ -30,6 +30,7 @@ export const lots = pgTable(
   'lots',
   {
     id: id(),
+    tenantId: tenantId(),
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'restrict' }),
@@ -38,7 +39,7 @@ export const lots = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    unique('lots_variant_code_unique').on(t.variantId, t.code),
+    unique('lots_variant_code_unique').on(t.tenantId, t.variantId, t.code),
     // Target of the (lot_id, variant_id) composite keys: a lot always belongs to the row's SKU.
     unique('lots_id_variant_unique').on(t.id, t.variantId),
   ],
@@ -52,6 +53,7 @@ export const serials = pgTable(
   'serials',
   {
     id: id(),
+    tenantId: tenantId(),
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'restrict' }),
@@ -63,7 +65,7 @@ export const serials = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique('serials_variant_serial_unique').on(t.variantId, t.serial),
+    unique('serials_variant_serial_unique').on(t.tenantId, t.variantId, t.serial),
     foreignKey({
       columns: [t.lotId, t.variantId],
       foreignColumns: [lots.id, lots.variantId],
@@ -104,7 +106,8 @@ export const movementGroups = pgTable(
   'movement_groups',
   {
     id: id(),
-    idempotencyKey: text('idempotency_key').notNull().unique(),
+    tenantId: tenantId(),
+    idempotencyKey: text('idempotency_key').notNull(),
     requestHash: text('request_hash').notNull(),
     sourceType: movementSourceType('source_type').notNull(),
     sourceId: uuid('source_id').notNull(),
@@ -115,6 +118,7 @@ export const movementGroups = pgTable(
     postedBy: uuid('posted_by').references(() => users.id, { onDelete: 'restrict' }),
   },
   (t) => [
+    unique('movement_groups_idempotency_key_unique').on(t.tenantId, t.idempotencyKey),
     foreignKey({ columns: [t.reversesGroupId], foreignColumns: [t.id] }).onDelete('restrict'),
     index('movement_groups_source_idx').on(t.sourceType, t.sourceId),
   ],
@@ -125,6 +129,7 @@ export const stockMovements = pgTable(
   'stock_movements',
   {
     id: id(),
+    tenantId: tenantId(),
     groupId: uuid('group_id')
       .notNull()
       .references(() => movementGroups.id, { onDelete: 'restrict' }),
@@ -181,6 +186,7 @@ export const stockMovements = pgTable(
 export const movementSerials = pgTable(
   'movement_serials',
   {
+    tenantId: tenantId(),
     movementId: uuid('movement_id')
       .notNull()
       .references(() => stockMovements.id, { onDelete: 'restrict' }),
@@ -199,6 +205,7 @@ export const stockLevels = pgTable(
   'stock_levels',
   {
     id: id(),
+    tenantId: tenantId(),
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'restrict' }),
@@ -243,6 +250,7 @@ export const reservations = pgTable(
   'reservations',
   {
     id: id(),
+    tenantId: tenantId(),
     variantId: uuid('variant_id')
       .notNull()
       .references(() => productVariants.id, { onDelete: 'restrict' }),
@@ -266,7 +274,7 @@ export const reservations = pgTable(
       foreignColumns: [lots.id, lots.variantId],
     }).onDelete('restrict'),
     uniqueIndex('reservations_active_source_line_unique')
-      .on(t.sourceType, t.sourceLineId)
+      .on(t.tenantId, t.sourceType, t.sourceLineId)
       .where(sql`${t.status} = 'active'`),
     index('reservations_active_balance_idx')
       .on(t.variantId, t.locationId, t.lotId)
@@ -293,6 +301,7 @@ export const stockLevelDiscrepancies = pgTable(
   'stock_level_discrepancies',
   {
     id: id(),
+    tenantId: tenantId(),
     stockLevelId: uuid('stock_level_id').references(() => stockLevels.id, {
       onDelete: 'restrict',
     }),

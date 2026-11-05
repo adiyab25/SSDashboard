@@ -192,6 +192,95 @@ describe('core data model schema (spec 0002)', () => {
     });
   });
 
+  // AC-33 (spec 0002, A4): every table that can only grow. The app role is refused on permissions,
+  // the owner on the trigger. Later features add their tables to this list.
+  describe('the append only tables (AC-33)', () => {
+    type Seeded = { update: string; remove: string; params: string[] };
+
+    const seeds: Record<string, () => Promise<Seeded>> = {
+      movement_groups: async () => {
+        const { groupId } = await makeMovement();
+        return {
+          update: "UPDATE movement_groups SET request_hash = 'x' WHERE id = $1",
+          remove: 'DELETE FROM movement_groups WHERE id = $1',
+          params: [groupId],
+        };
+      },
+      stock_movements: async () => {
+        const { movementId } = await makeMovement();
+        return {
+          update: 'UPDATE stock_movements SET quantity = 6 WHERE id = $1',
+          remove: 'DELETE FROM stock_movements WHERE id = $1',
+          params: [movementId],
+        };
+      },
+      movement_serials: async () => {
+        const { movementId, variantId } = await makeMovement();
+        const serial = await one<{ id: string }>(
+          owner,
+          "INSERT INTO serials (variant_id, serial, status) VALUES ($1, 'S-1', 'out') RETURNING id",
+          [variantId],
+        );
+        await owner.query('INSERT INTO movement_serials (movement_id, serial_id) VALUES ($1, $2)', [
+          movementId,
+          serial.id,
+        ]);
+        return {
+          update: 'UPDATE movement_serials SET serial_id = serial_id WHERE movement_id = $1',
+          remove: 'DELETE FROM movement_serials WHERE movement_id = $1',
+          params: [movementId],
+        };
+      },
+      stock_receipt_lines: async () => {
+        const { groupId, variantId } = await makeMovement();
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('R', $1) RETURNING id",
+          [`receipt-${counter}@example.test`],
+        );
+        const receipt = await one<{ id: string }>(
+          owner,
+          `INSERT INTO stock_receipts (id, request_hash, number, location_id, effective_at, movement_group_id, posted_by)
+           VALUES (gen_random_uuid(), 'h', $1, $2, now(), $3, $4) RETURNING id`,
+          [`SR-T-${counter}`, await makeLocation(), groupId, user.id],
+        );
+        await owner.query(
+          `INSERT INTO stock_receipt_lines (id, receipt_id, position, variant_id, uom_id, quantity, unit_cost, line_total)
+           VALUES (gen_random_uuid(), $1, 1, $2, (SELECT id FROM uoms WHERE code = 'pc'), 1, 1, 1)`,
+          [receipt.id, variantId],
+        );
+        return {
+          update: 'UPDATE stock_receipt_lines SET quantity = 2 WHERE receipt_id = $1',
+          remove: 'DELETE FROM stock_receipt_lines WHERE receipt_id = $1',
+          params: [receipt.id],
+        };
+      },
+    };
+
+    it.each(Object.keys(seeds))('refuses UPDATE, DELETE, and TRUNCATE on %s', async (table) => {
+      const seed = await seeds[table]?.();
+      if (!seed) throw new Error(`no seed for ${table}`);
+
+      for (const statement of [seed.update, seed.remove]) {
+        await expect(app.query(statement, seed.params)).rejects.toThrow(/permission denied/);
+        await expect(owner.query(statement, seed.params)).rejects.toThrow(/append only/);
+      }
+      await expect(app.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/permission denied/);
+      await expect(owner.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/append only/);
+    });
+
+    it('keeps the install row read only for the app role', async () => {
+      await expect(
+        app.query(
+          "INSERT INTO install (id, client_code, name) VALUES (gen_random_uuid(), 'x', 'x')",
+        ),
+      ).rejects.toThrow(/permission denied/);
+      const rows = await app.query('SELECT id FROM install');
+      expect(rows.rowCount).toBe(1);
+    });
+  });
+
   describe('referenced master data (AC-13)', () => {
     it('refuses to delete a SKU that has movements, but lets it be archived', async () => {
       const { variantId } = await makeMovement();

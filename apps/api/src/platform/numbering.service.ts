@@ -37,7 +37,7 @@ export class NumberingService {
     const { rows } = await executor.execute<{ last_value: number }>(sql`
       INSERT INTO document_counters (doc_type, year, last_value)
       VALUES (${docType}, ${year}, 1)
-      ON CONFLICT (doc_type, year) DO UPDATE SET last_value = document_counters.last_value + 1
+      ON CONFLICT (tenant_id, doc_type, year) DO UPDATE SET last_value = document_counters.last_value + 1
       RETURNING last_value`);
     const value = rows[0]?.last_value;
     if (value === undefined) throw new Error('The document counter returned no value');

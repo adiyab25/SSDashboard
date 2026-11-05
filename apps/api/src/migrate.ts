@@ -9,9 +9,14 @@ if (!env.MIGRATION_DATABASE_URL) {
   process.exit(1);
 }
 try {
-  await runMigrations(env.MIGRATION_DATABASE_URL);
+  await runMigrations(env.MIGRATION_DATABASE_URL, {
+    tenantId: env.TENANT_ID,
+    appRole: env.APP_DB_ROLE,
+  });
   // The application role gets its login here, so each install sets it from its own secret.
-  if (env.APP_DB_PASSWORD) await setAppRoleLogin(env.MIGRATION_DATABASE_URL, env.APP_DB_PASSWORD);
+  if (env.APP_DB_PASSWORD) {
+    await setAppRoleLogin(env.MIGRATION_DATABASE_URL, env.APP_DB_PASSWORD, env.APP_DB_ROLE);
+  }
   console.log('Migrations applied.');
 } catch (error) {
   console.error('Migration failed:', error);

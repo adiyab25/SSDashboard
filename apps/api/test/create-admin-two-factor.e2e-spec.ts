@@ -141,7 +141,7 @@ describe('create-admin --reset-two-factor', { timeout: 120_000 }, () => {
     await owner.pool.query(
       `INSERT INTO sign_in_attempts (email_key, scope, failures, window_started_at, locked_until)
        VALUES ($1, '*', 10, now(), now() + interval '15 minutes')
-       ON CONFLICT (email_key, scope) DO UPDATE SET locked_until = excluded.locked_until`,
+       ON CONFLICT (tenant_id, email_key, scope) DO UPDATE SET locked_until = excluded.locked_until`,
       [email],
     );
   }

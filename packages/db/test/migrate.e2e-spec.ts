@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runMigrations } from '../src/index.js';
-import { createScratchDatabase, dropScratchDatabase } from './database.js';
+import { runMigrations, TenantMismatch } from '../src/index.js';
+import { createScratchDatabase, dropScratchDatabase, withAdmin } from './database.js';
 
 async function query<T extends pg.QueryResultRow>(url: string, sql: string): Promise<T[]> {
   const client = new pg.Client({ connectionString: url });
@@ -38,14 +38,14 @@ describe('runMigrations', () => {
     await Promise.all(scratch.splice(0).map(dropScratchDatabase));
   });
 
-  it('enables the pg_trgm and unaccent search extensions on an empty database', async () => {
+  it('enables the pg_trgm, unaccent, and btree_gist extensions on an empty database', async () => {
     const url = await freshDatabase();
 
     await runMigrations(url);
 
     const extensions = await query<{ extname: string }>(url, 'SELECT extname FROM pg_extension');
     expect(extensions.map((row) => row.extname)).toEqual(
-      expect.arrayContaining(['pg_trgm', 'unaccent']),
+      expect.arrayContaining(['pg_trgm', 'unaccent', 'btree_gist']),
     );
   });
 
@@ -84,65 +84,141 @@ describe('runMigrations', () => {
     expect(locks).toHaveLength(0);
   });
 
-  // AC-22: existing postings that name no user are nulled out, the rest are kept, and the
-  // ledger's append only trigger is back on afterwards.
-  it('links posted_by to users, nulling orphans and keeping the append only trigger', async () => {
-    const url = await freshDatabase();
-    await runMigrations(url);
-    const sqlFile = readFileSync(
-      new URL('../migrations/0007_ledger_posted_by_user_fk.sql', import.meta.url),
-      'utf8',
-    );
-    const client = new pg.Client({ connectionString: url });
-    await client.connect();
-    try {
-      // Rewind to the state before 0007, then add one posting per kind of value.
-      await client.query(
-        'ALTER TABLE movement_groups DROP CONSTRAINT movement_groups_posted_by_users_id_fk',
+  // AC-16 (spec 0002, A2): the first run names the tenant and the app role, and writes the install row.
+  describe('the install (AC-16)', () => {
+    const databaseSettings = async (url: string) =>
+      (
+        await query<{ setting: string }>(
+          url,
+          `SELECT unnest(setconfig) AS setting FROM pg_db_role_setting
+            WHERE setrole = 0 AND setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+            ORDER BY 1`,
+        )
+      ).map((row) => row.setting);
+    const installRows = (url: string) =>
+      query<{ id: string; client_code: string; name: string; created_at: Date }>(
+        url,
+        'SELECT id, client_code, name, created_at FROM install',
       );
-      const user = (
-        await client.query<{ id: string }>(
-          "INSERT INTO users (name, email) VALUES ('A', 'a@example.test') RETURNING id",
-        )
-      ).rows[0]?.id;
-      const insertGroup = (key: string, postedBy: string | null) =>
-        client.query(
-          `INSERT INTO movement_groups (idempotency_key, request_hash, source_type, source_id, effective_at, posted_by)
-           VALUES ($1, 'h', 'count', uuidv7(), now(), $2)`,
-          [key, postedBy],
-        );
-      await insertGroup('known', user ?? null);
-      await insertGroup('orphan', '00000000-0000-4000-8000-000000000001');
-      await insertGroup('none', null);
 
-      await client.query('BEGIN');
-      await client.query(sqlFile.replaceAll('--> statement-breakpoint', ''));
-      await client.query('COMMIT');
+    it('generates a tenant id, sets both database settings, and writes the install row', async () => {
+      const url = await freshDatabase();
 
-      const rows = (
-        await client.query<{ k: string; posted_by: string | null }>(
-          'SELECT idempotency_key AS k, posted_by FROM movement_groups ORDER BY k',
-        )
-      ).rows;
-      expect(rows).toEqual([
-        { k: 'known', posted_by: user },
-        { k: 'none', posted_by: null },
-        { k: 'orphan', posted_by: null },
+      await runMigrations(url);
+
+      const rows = await installRows(url);
+      expect(rows).toHaveLength(1);
+      const id = rows[0]?.id ?? '';
+      expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(rows[0]).toMatchObject({ client_code: 'dev', name: 'dev' });
+      expect(await databaseSettings(url)).toEqual([
+        'ssd.app_role=ssdashboard_app',
+        `ssd.tenant_id=${id}`,
       ]);
-      const constraint = await client.query(
-        "SELECT convalidated FROM pg_constraint WHERE conname = 'movement_groups_posted_by_users_id_fk'",
+    });
+
+    it('stamps the given TENANT_ID on the install row and the seeded rows', async () => {
+      const url = await freshDatabase();
+      const tenant = '0192f7a0-0000-7000-8000-0000000000aa';
+
+      await runMigrations(url, { tenantId: tenant });
+
+      expect((await installRows(url)).map((row) => row.id)).toEqual([tenant]);
+      const seeded = await query<{ tenant_id: string }>(
+        url,
+        'SELECT DISTINCT tenant_id FROM settings',
       );
-      expect(constraint.rows).toEqual([{ convalidated: true }]);
-      const trigger = await client.query(
-        "SELECT tgenabled FROM pg_trigger WHERE tgname = 'movement_groups_append_only'",
-      );
-      expect(trigger.rows).toEqual([{ tgenabled: 'O' }]);
-      await expect(client.query('UPDATE movement_groups SET posted_by = NULL')).rejects.toThrow(
-        /append only/,
-      );
-    } finally {
-      await client.end();
-    }
+      expect(seeded).toEqual([{ tenant_id: tenant }]);
+    });
+
+    it('changes nothing on a rerun, with or without the same TENANT_ID', async () => {
+      const url = await freshDatabase();
+      const tenant = '0192f7a0-0000-7000-8000-0000000000bb';
+      await runMigrations(url, { tenantId: tenant });
+      const before = {
+        install: await installRows(url),
+        settings: await databaseSettings(url),
+        history: await query(
+          url,
+          'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id',
+        ),
+      };
+
+      await runMigrations(url);
+      await runMigrations(url, { tenantId: tenant });
+
+      expect({
+        install: await installRows(url),
+        settings: await databaseSettings(url),
+        history: await query(
+          url,
+          'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id',
+        ),
+      }).toEqual(before);
+    });
+
+    it('stops with TenantMismatch, changing nothing, when TENANT_ID differs from the install row', async () => {
+      const url = await freshDatabase();
+      await runMigrations(url, { tenantId: '0192f7a0-0000-7000-8000-0000000000cc' });
+      const before = {
+        install: await installRows(url),
+        settings: await databaseSettings(url),
+        history: await countMigrations(url),
+      };
+
+      await expect(
+        runMigrations(url, { tenantId: '0192f7a0-0000-7000-8000-0000000000dd' }),
+      ).rejects.toBeInstanceOf(TenantMismatch);
+
+      expect({
+        install: await installRows(url),
+        settings: await databaseSettings(url),
+        history: await countMigrations(url),
+      }).toEqual(before);
+    });
+
+    it('creates a custom app role and grants it the append only rules', async () => {
+      const url = await freshDatabase();
+      const role = `ssd_acme_${Date.now()}_app`;
+      try {
+        await runMigrations(url, { appRole: role });
+
+        const privileges = await query<Record<string, boolean>>(
+          url,
+          `SELECT has_table_privilege('${role}', 'movement_groups', 'INSERT') AS insert_ledger,
+                  has_table_privilege('${role}', 'movement_groups', 'UPDATE') AS update_ledger,
+                  has_table_privilege('${role}', 'settings', 'UPDATE') AS update_settings,
+                  has_table_privilege('${role}', 'install', 'INSERT') AS insert_install,
+                  (SELECT nspowner::regrole::text FROM pg_namespace WHERE nspname = 'pgboss') = '${role}' AS owns_pgboss`,
+        );
+        expect(privileges[0]).toEqual({
+          insert_ledger: true,
+          update_ledger: false,
+          update_settings: true,
+          insert_install: false,
+          owns_pgboss: true,
+        });
+      } finally {
+        await Promise.all(scratch.splice(0).map(dropScratchDatabase));
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
+      }
+    });
+
+    it('derives the client code from an ssd_<code>_app role name', async () => {
+      const url = await freshDatabase();
+      const role = `ssd_acme${Date.now()}_app`;
+      try {
+        await runMigrations(url, { appRole: role });
+
+        expect((await installRows(url))[0]).toMatchObject({
+          client_code: role.slice(4, -4),
+          name: role.slice(4, -4),
+        });
+      } finally {
+        await Promise.all(scratch.splice(0).map(dropScratchDatabase));
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
+      }
+    });
   });
 
   it('rejects when the database cannot be reached', async () => {
