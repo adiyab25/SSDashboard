@@ -2,7 +2,7 @@
 
 ## Overview
 
-Shared configuration every workspace extends: TypeScript presets today, and the ESLint and Prettier config once `/develop tooling` adds them.
+Shared configuration every workspace extends: TypeScript presets, ESLint rules, the personal data redaction list, and the repo check scripts run by `lint` and CI. Prettier config is the root `.prettierrc.json`, not here.
 
 ## Key files
 
@@ -13,7 +13,8 @@ Shared configuration every workspace extends: TypeScript presets today, and the 
 | `tsconfig/node-library.json` | Preset for the packages |
 | `tsconfig/react-library.json` | Preset for React packages outside Next.js (`packages/ui`) |
 | `eslint/base.js` | Shared rules for every workspace, including the spec 0007 conventions: `jsdoc/require-jsdoc` (`REQUIRE_JSDOC`, publicOnly, no fixer) and `tsdoc/syntax` on `.ts`/`.tsx`, and `unicorn/filename-case` (kebab case, `[param]` and `(group)` names kept). `TSDOC_EXEMPT_FILES` (specs, `*.test-support.ts(x)` (the deliberate home of test helpers: the word `utils` is banned, so name them `<thing>.test-support.ts`), `e2e/`, `__fixtures__/`, `.d.ts`, `*.config.ts`, `vitest.setup.ts`) skips TSDoc and the one component rule |
-| `eslint/react.js`, `eslint/next.js` | ESLint for React packages and the Next app: the base rules plus jsx-a11y and `react/no-multi-comp` (one component per `.tsx` file) |
+| `eslint/react.js`, `eslint/next.js` | ESLint for React packages and the Next app: the base rules plus jsx-a11y and `react/no-multi-comp` (one component per `.tsx` file; `packages/ui/src/components/**` exempt by ADR 0001) |
+| `eslint/i18n.js` | The web's i18n rules: no raw text in JSX or labelling attributes, no `toLocale*` or `new Intl.*` outside `src/i18n/format.ts` |
 | `src/redaction.ts` | The personal data redaction list and the pure `redact` function (Law 151, spec 0007); built to `dist/`, imported as `@ssdashboard/config/redaction` by the api logger and later by pino and the error tracker |
 | `scripts/check-logical-css.mjs` | Fails `lint` on physical side styles in `packages/ui` and `apps/web` (spec 0003); its tests and planted fixtures sit beside it |
 | `scripts/check-module-readmes.mjs` | Fails `lint` when an api module, web feature folder, or package lacks a README with the five headings of `docs/templates/module-readme.md` (spec 0007) |

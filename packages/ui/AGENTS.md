@@ -9,8 +9,8 @@
 | File | Owns |
 |---|---|
 | `src/styles/globals.css` | Tokens (oklch CSS variables, light in `:root`, dark in `.dark`), the `@theme inline` mapping, base layer |
-| `src/components/*.tsx` | shadcn components, one per file, imported as `@ssdashboard/ui/components/<name>` |
-| `src/lib/utils.ts` | `cn()` |
+| `src/components/*.tsx` | shadcn components in their vendor shape (compound files like `dialog.tsx` hold several components; exempt from the one component rule by [ADR 0001](../../docs/adr/0001-shadcn-component-files-keep-their-vendor-shape.md)), imported as `@ssdashboard/ui/components/<name>` |
+| `src/lib/utils.ts` | `cn()`; the one file allowed the banned name `utils` (ADR 0001) |
 | `src/hooks/*.ts` | Hooks the components use (`use-mobile`) |
 | `src/test/axe.ts` | `expectNoAxeViolations()` for component tests |
 | `DESIGN.md` | The written design standard: color roles with measured contrast, type, density, focus, icons, and table, form, and feedback rules |
@@ -30,6 +30,7 @@ pnpm --filter @ssdashboard/ui typecheck
 - Role tokens only (`bg-muted`, `text-foreground`); no raw colors or Tailwind palette classes.
 - Logical sides only (`ms-`, `pe-`, `start-`, `border-e`); directional icons get `rtl:-scale-x-100`.
 - Every component gets a spec with an axe check; overlays are checked on `document.body`.
+- Our own components never go in `src/components/` (that folder is exempt from the one component per file checks); put them elsewhere in `src/`, one per file, named after the file.
 
 ## Gotchas
 

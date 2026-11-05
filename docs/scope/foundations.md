@@ -1,27 +1,27 @@
 # Foundations
 
-The ground every slice stands on. Nothing here is done yet: the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chose Shape A (2026-11-05): wave 3 keeps and amends them, and each foundation spec below amends the old spec it inherits. [Back to the scope](index.md).
+The ground every slice stands on. Features 1 to 3 are done (wave 3, branch `feat/scaffold-shape-a`, 2026-11-05): the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chose Shape A (2026-11-05): wave 3 keeps and amends them, and each foundation spec below amends the old spec it inherits. [Back to the scope](index.md).
 
 ### 1. Stack & architecture
 Decide the stack again against the new positioning, then reshape the runnable skeleton by keeping and amending the current code (Shape A, chosen at the gate on 2026-11-05). The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
 **Done when:** spec 0007 records the decision with alternatives and marks spec 0001 confirmed or superseded, a `domain-reviewer` pass has no open blocker, you approve it, and the scaffold builds, type checks, lints, and passes CI.
 - [x] Decide the stack (spec): `/architect stack & architecture`
-- [ ] Build it: `/develop stack & architecture` (Shape A milestones from spec 0007's Build plan)
-  - [ ] Baseline and audience seams: rename `(app)` to `(backoffice)`, add portal and partner route groups, api audience guard that denies by default
-  - [ ] Docs tree and templates (ADR, module README, PR template, research folder, README per module)
-  - [ ] TSDoc, naming, and personal data redaction rules, with the TSDoc backfill
-  - [ ] Git checks and CI building the real images
+- [x] Build it: `/develop stack & architecture` (Shape A milestones from spec 0007's Build plan)
+  - [x] Baseline and audience seams: rename `(app)` to `(backoffice)`, add portal and partner route groups, api audience guard that denies by default
+  - [x] Docs tree and templates (ADR, module README, PR template, research folder, README per module)
+  - [x] TSDoc, naming, and personal data redaction rules, with the TSDoc backfill
+  - [x] Git checks and CI building the real images
 Spec [0007](../specs/0007-stack-architecture-operations-layer/index.md) (Accepted 2026-11-05, supersedes spec 0001; domain review [domain-stack](../reviews/domain-stack.md) approves with 0 open blockers)
 
 ### 2. Coding & documentation standards
 Capture conventions from the new scaffold, then enforce them: lint, format, type check before every commit, CI, and the documentation rules the next developer relies on.
 **Done when:** root `AGENTS.md` reflects the rebuilt stack; a lint rule fails the build when an exported symbol has no TSDoc; a module README template (owns, never touches, how to test, governing spec) and an ADR template exist; the docs tree holds `scope`, `specs`, `adr`, `reviews`, `positioning`, and `research`; lint, format, and CI run clean.
-- [ ] Capture conventions + tooling choices: `/audit`
+- [x] Capture conventions + tooling choices: `/audit`
 
 ### 3. Dev environment
 The hybrid setup the owner chose: the database, object storage, and a mail catcher in containers, the apps on the host for a fast edit loop, and CI building the real images.
 **Done when:** a fresh clone reaches running apps in under 10 minutes with one bootstrap command and an example env file, and a "run locally" README says how.
-- [ ] Build it: `/develop dev environment`
+- [x] Build it: `/develop dev environment` (`pnpm install && pnpm bootstrap`: PostgreSQL 18, Garage per [ADR 0002](../adr/0002-garage-as-the-s3-compatible-store.md), Mailpit)
 
 ### 4. Data model · GA · needs a decision
 The core entities every slice builds on, shaped for Egyptian cash on delivery from the first migration.

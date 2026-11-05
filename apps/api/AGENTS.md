@@ -8,11 +8,14 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 
 | File | Owns |
 |---|---|
-| `src/main.ts` | HTTP bootstrap: `/api` prefix, trust proxy, extension loading |
+| `src/main.ts` | HTTP bootstrap: installs `RedactingLogger`, loads extensions |
+| `src/app.setup.ts` | HTTP wiring shared by every start: trust proxy, `/api` prefix, `QueryErrorFilter`, Better Auth mounted before the body parsers |
 | `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD` |
-| `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, runs pg-boss jobs (the nightly ledger reconciliation) |
+| `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, logs through `RedactingLogger`, runs pg-boss jobs (the nightly ledger reconciliation) |
 | `src/database/sql.ts` | `Transaction`/`Executor` types, `pgArray` (arrays as one bound literal), PostgreSQL error code helpers |
-| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers); `audience/` holds `@Audience(...)` and the deny by default guard |
+| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers) |
+| `src/platform/audience/` | `@Audience(...)` (`staff`, `partner`, `portal`, `hook`, `public`) and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
+| `src/platform/logging/` | `RedactingLogger`: Nest's console logger with every argument passed through `redact` from `@ssdashboard/config/redaction` |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
 | `src/app.module.ts` | Root module, imports each business module |
 | `src/config/env.ts` | Zod env schema, validated at startup |
@@ -30,7 +33,8 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 
 ## Conventions
 
-- One folder per business module under `src/<module>/`, holding its module, services, controllers, and specs side by side.
+- One folder per business module under `src/<module>/`, holding its module, services, controllers, specs, and a `README.md` (the five headings of `docs/templates/module-readme.md`, checked by `pnpm lint:repo`) side by side.
+- Inside the api and worker, log through Nest's `Logger` (routed to `RedactingLogger`); `console` appears only in command line paths (`create-admin.ts`, the startup env failure) and never with personal data. A new field that carries personal data goes into the list in `packages/config/src/redaction.ts`.
 - Read config only through the injected `ENV` token, never `process.env` directly; add every new variable to `env.ts` and `.env.example`.
 - Database access goes through the Drizzle client from `database.module.ts`; tables are defined in `packages/db`, not here.
 - Import Drizzle helpers (`sql`, `inArray`, `SQL`) from `@ssdashboard/db`, never from `drizzle-orm`: pg-boss's `@opentelemetry/api` peer makes pnpm create a second drizzle-orm copy whose types do not match.
@@ -42,7 +46,7 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 
 - ESM with NodeNext resolution: relative imports need the `.js` suffix (`./app.module.js`).
 - The api never migrates on boot. Run `pnpm db:migrate`, which builds the api first.
-- Better Auth (feature 6) needs NestJS's body parser off for `/api/auth`, and its cookie stays host only, `Secure`, `HttpOnly`, `SameSite=Lax`.
+- Better Auth needs NestJS's body parser off for `/api/auth`, and its cookie stays host only, `Secure`, `HttpOnly`, `SameSite=Lax`.
 - The core never imports an extension; extensions load by dynamic import only.
 - `DATABASE_URL` is the application role, which cannot create databases. The e2e helpers create scratch databases with `MIGRATION_DATABASE_URL` (the owner) and run the ledger as the app role with `options=-c role=ssdashboard_app`.
 - `test/scale.e2e-spec.ts` seeds 100,000 SKUs and 1,000,000 movements; it adds about 1m45s to `test:e2e`.
@@ -53,11 +57,10 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - [drizzle-orm-patterns](../../.claude/skills/drizzle-orm-patterns/): `giuseppe-trisciuoglio/developer-kit`, queries, transactions, row locks
 - [pg-boss-v12](../../.claude/skills/pg-boss-v12/): `sncollective/snc-platform`, pg-boss v12 API reference (send, work, schedule, createQueue). Written inside another project: its version notes describe that project, not ours
 - [tl-pg-boss](../../.claude/skills/tl-pg-boss/): `toddlevy/tl-agent-skills`, pg-boss job patterns (cron, retries, exactly once, testing, monitoring)
-- Auth work (feature 6), from `better-auth/skills`: [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/), [better-auth-security-best-practices](../../.claude/skills/better-auth-security-best-practices/), [email-and-password-best-practices](../../.claude/skills/email-and-password-best-practices/), [two-factor-authentication-best-practices](../../.claude/skills/two-factor-authentication-best-practices/), [organization-best-practices](../../.claude/skills/organization-best-practices/), [create-auth](../../.claude/skills/create-auth/). Move these to `src/auth/AGENTS.md` once that folder exists.
-
+- Auth work (`src/auth/`), from `better-auth/skills`: [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/), [better-auth-security-best-practices](../../.claude/skills/better-auth-security-best-practices/), [email-and-password-best-practices](../../.claude/skills/email-and-password-best-practices/), [two-factor-authentication-best-practices](../../.claude/skills/two-factor-authentication-best-practices/), [organization-best-practices](../../.claude/skills/organization-best-practices/), [create-auth](../../.claude/skills/create-auth/).
 ## Related specs
 
-- [0001 Stack & architecture](../../docs/specs/0001-stack-architecture/index.md)
+- [0007 Stack and architecture for the operations layer](../../docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001)
 - [0002 Core data model](../../docs/specs/0002-core-data-model/index.md)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

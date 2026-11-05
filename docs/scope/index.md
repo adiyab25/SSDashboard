@@ -20,7 +20,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 
 ## Epics
 
-- [Foundations](foundations.md): 10 features, stack, standards, dev environment, data model, design system, languages, sign in, roles, settings, audit. 0 of 10 done.
+- [Foundations](foundations.md): 10 features, stack, standards, dev environment, data model, design system, languages, sign in, roles, settings, audit. 3 of 10 done.
 - [Slice 1a: confirmation to cash](confirmation-to-cash.md): 17 features, Shopify, orders, customers, confirmation, Bosta mirror, failures, settlement, period close, dashboard, daily report, hosting, exit package. 0 of 17 done.
 - [Slice 1b: the exchange loop](exchange-loop.md): 12 features, credit ledger, portal, rules, Bosta driver mode, picking, execution, refunds, retention, write back, transfers. 0 of 12 done.
 - [Slice 2: consignment partners and the accounting handoff](consignment-and-accounting.md): 8 features, channel code mapping, partners, ingestion, settlement, tax documents, export engine, provisioning. 0 of 8 done.
@@ -33,9 +33,9 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 
 | # | Feature | Phase | Bundle | Tier | Status |
 |---|---------|-------|--------|------|--------|
-| 1 | [Stack & architecture](foundations.md) | Foundation | Core | Beta | in-progress |
-| 2 | [Coding & documentation standards](foundations.md) | Foundation | Core | Beta | planned |
-| 3 | [Dev environment](foundations.md) | Foundation | Core | Beta | planned |
+| 1 | [Stack & architecture](foundations.md) | Foundation | Core | Beta | done |
+| 2 | [Coding & documentation standards](foundations.md) | Foundation | Core | Beta | done |
+| 3 | [Dev environment](foundations.md) | Foundation | Core | Beta | done |
 | 4 | [Data model](foundations.md) | Foundation | Core | GA | planned |
 | 5 | [Design system & UI foundation](foundations.md) | Foundation | Core | Beta | planned |
 | 6 | [Localization (Arabic & English)](foundations.md) | Foundation | Core | Beta | planned |
