@@ -109,6 +109,8 @@ _Not yet verified. Derived from AC-15 to AC-36 (as revised by the fix pass of 20
 - [ ] A settlement line inserted twice into one statement with one `external_line_ref` → unique violation; the same ref in a superseding statement → inserts; `settlement_lines` has no `period_id` column; an `accounted` match without `account_code` → check violation → AC-25
 - [ ] A task with `owner_hat = 'partner'` → check violation → AC-26
 - [ ] `UPDATE locations SET owner_type = 'own'` on a partner location → fails with `OwnerTypeFixed` → AC-29
+- [ ] Close a settlement period, then `UPDATE settlement_periods SET ends_on = ends_on - 1` on it → fails with `PeriodClosed`; after a revoke the same update succeeds → AC-25
+- [ ] A `consumption_release` without `order_id` → check violation; an order paid by credit, partially delivered, with its returned line's credit released, derives `kept` → AC-22, AC-24
 - [ ] Two periods of one settlement account with overlapping dates → exclusion violation; a `carrier` account with a party → check violation → AC-25
 - [ ] A task set to `done` without an outcome → check violation; two open tasks with one dedupe key → unique violation → AC-26
 - [ ] `SELECT ssd_operating_day('2026-11-05 22:30:00+00')` → the Cairo local date of that instant (`2026-11-06` when the database's zone data puts Cairo at UTC+2 that day; the e2e test, not this line, owns the transition dates) → AC-17
