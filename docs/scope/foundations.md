@@ -1,85 +1,54 @@
-# Epic: Foundations
+# Foundations
 
-The ground every slice stands on. Back to [index](index.md).
+The ground every slice stands on. Nothing here is done yet: the earlier scaffold and its specs predate the new positioning, and the rebuild replaces them once spec 0002 is approved. [Back to the scope](index.md).
 
-## Foundations
+### 1. Stack & architecture · needs a decision
+Decide the stack again against the new positioning, then wipe the old apps per the rebuild plan's keep list and scaffold a runnable skeleton. The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
+**Done when:** spec 0002 records the decision with alternatives and marks spec 0001 confirmed or superseded, a `domain-reviewer` pass has no open blocker, you approve it, and the scaffold builds, type checks, lints, and passes CI.
+- [ ] Decide the stack (spec): `/architect stack & architecture`
+Spec 0001 (to be confirmed or superseded by spec 0002)
 
-### 1. Stack & architecture · done
-Decide the stack and how one shared core ships as separate installs per client, then scaffold a runnable project.
-**Done when:** the stack and the per client deployment model (own install and database per client, settings and module toggles) are recorded in a spec, and the empty scaffold boots locally and passes build. (basis: one codebase, many deploys, configuration per deployment)
-- [x] Decide the stack (spec): `/architect stack & architecture`
-- [x] Scaffold from the decision: `/develop stack & architecture`
-- [x] Verify it: `/check verify stack & architecture`
-- [x] Test it: `/test stack & architecture`
-Spec [0001](../specs/0001-stack-architecture/index.md) · code in `apps/`, `packages/`, `deploy/`
+### 2. Coding & documentation standards
+Capture conventions from the new scaffold, then enforce them: lint, format, type check before every commit, CI, and the documentation rules the next developer relies on.
+**Done when:** root `AGENTS.md` reflects the rebuilt stack; a lint rule fails the build when an exported symbol has no TSDoc; a module README template (owns, never touches, how to test, governing spec) and an ADR template exist; the docs tree holds `scope`, `specs`, `adr`, `reviews`, `positioning`, and `research`; lint, format, and CI run clean.
+- [ ] Capture conventions + tooling choices: `/audit`
 
-### 2. Coding standards & tooling · done
-Capture conventions, then install lint, format, type checks, pre commit hooks, and CI from the real scaffolded project.
-**Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit run clean.
-- [x] Capture conventions + tooling choices: `/audit`
-- [x] Build it: `/develop tooling`
-  - [x] ESLint and Prettier, shared from `packages/config`
-  - [x] Pre commit hook (lint-staged, then typecheck)
-  - [x] CI on GitHub Actions
-Code in `packages/config/eslint/`, `.husky/`, `.github/workflows/`
+### 3. Dev environment
+The hybrid setup the owner chose: the database, object storage, and a mail catcher in containers, the apps on the host for a fast edit loop, and CI building the real images.
+**Done when:** a fresh clone reaches running apps in under 10 minutes with one bootstrap command and an example env file, and a "run locally" README says how.
+- [ ] Build it: `/develop dev environment`
 
-### 3. Data model · GA · done
-Core entities every module builds on: products and variants, locations (warehouse, showroom, bin), an append only stock ledger, lots and serials, parties (suppliers, factories, customers), and cost and price on every transaction.
-**Done when:** stock on hand per SKU per location is derived from immutable movements; movements carry quantity, unit cost, lot or serial, and source document; purchase and sales lines carry price, discount, and tax amount; the model handles 100,000+ SKUs and supports purchasing, sales, production, and the accounting export without a breaking migration. (basis: data model is the costliest thing to redo; stock as an append only ledger)
-- [x] Design it (spec): `/architect data model`
-- [x] Build it: `/develop data model`
-  - [x] Schema, value objects, and database roles (AC-2, AC-3, AC-12, AC-13)
-  - [x] Ledger posting core: inbound, outbound, costing, dates, reversals, reads (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-12)
-  - [x] Lots, serials, and reservations (AC-4, AC-8, AC-9)
-  - [x] Numbering, nightly reconciliation, and scale check (AC-10, AC-11, AC-14)
-- [x] Verify it: `/check verify data model`
-- [x] Test it: `/test data model`
-- [x] Review it (fresh model): `/check review data model`
-- [x] Document it: `/document data model`
-Spec [0002](../specs/0002-core-data-model/index.md) · code in `packages/db/`, `packages/contracts/`, `apps/api/src/inventory/`, `apps/api/src/platform/`
+### 4. Data model · GA · needs a decision
+The core entities every slice builds on, shaped for Egyptian cash on delivery from the first migration.
+**Done when:** the model holds orders with a fulfillment state machine and a cash state machine (partial amounts allowed), store, channel, source, order type (sale, exchange replacement, gifted), and a derived outcome; append only ledgers for stock and customer credit, and settlement accounts with an owner type (carrier, consignment partner, gateway); one task primitive; customers with many phones and channel ids; locations with an owner type and a sellable online flag; products with style, season, and product group; cost by style and season with per order cost rules that can be "not set"; the Cairo operating day; a tenant id on every row; and it is tested at 50,000 SKUs. A `domain-reviewer` pass has no open blocker.
+- [ ] Design it (spec): `/architect data model`
 
-### 4. Design system & UI foundation · done
-Visual language, layout, and base components for a dense, data heavy back office (tables, forms, scan screens), mirrored correctly for right to left.
-**Done when:** `design.md` covers type, color, spacing, and components; base components work with keyboard and focus, meet WCAG 2.2 AA, and render correctly in both left to right and right to left layouts. (basis: WCAG 2.2 AA)
-- [x] Design it (spec): `/architect design system & UI foundation`
-- [x] Build it: `/develop design system & UI foundation`
-  - [x] Thin thread: `packages/ui`, `GET /api/config`, client name in a minimal shell header (AC-2, AC-5, AC-9, AC-12)
-  - [x] Foundations: tokens, fonts, theme, dev direction switch, typed strings, logical CSS check (AC-2, AC-5, AC-6, AC-11, AC-12, AC-13)
-  - [x] App shell: sidebar, mobile sheet, top bar, skip link, user menu, command palette (AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-14)
-  - [x] Location switcher and `GET /api/locations` (AC-10)
-  - [x] `/design` gallery, `DESIGN.md`, and the Playwright accessibility suite (AC-1, AC-2, AC-4, AC-5, AC-6, AC-7, AC-8, AC-11, AC-13, AC-14)
-- [x] Verify it: `/check verify design system & UI foundation`
-- [ ] Test it: `/test design system & UI foundation` (skipped)
-Spec [0003](../specs/0003-design-system-ui-foundation/index.md) · code in `packages/ui`, `apps/web/src/shell`, `apps/web/src/design`, `apps/api/src/inventory/locations`
+### 5. Design system & UI foundation · needs a decision
+Visual language, layout primitives, and base components, shaped with the Impeccable skill, so every screen feels like one product in Arabic and English.
+**Done when:** `design.md` covers type, color, spacing, and components; base components handle focus, keyboard, and right to left; there is a phone first pattern for the manager dashboard and a pattern for in screen help.
+- [ ] Design it (spec): `/architect design system & UI foundation`
 
-### 5. Localization (English & Arabic) · done
-Every screen in English and Arabic, with direction, numbers, and dates formatted per language, and room for future client languages.
-**Done when:** a user can switch language and the whole interface flips direction; no hard coded strings; dates and numbers format per locale; adding a third language needs only translations.
-- [x] Design it (spec): `/architect localization`
-- [x] Build it: `/develop localization`
-  - [x] Thin thread: language cookie, config fields, switch, direction (AC-1, AC-2, AC-3, AC-4, AC-13)
-  - [x] Full catalogs, typed keys, plurals (AC-5, AC-6, AC-7)
-  - [x] Formatting and bilingual text (AC-8, AC-9)
-  - [x] Literal string lint and mixed direction text (AC-5, AC-10)
-  - [x] Client languages, tests, and docs (AC-11, AC-12)
-- [x] Verify it: `/check verify localization`
-- [x] Test it: `/test localization`
-Spec [0004](../specs/0004-localization/index.md) · code in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/contracts/src/platform.ts`, `packages/ui/src/components/ltr-text.tsx`, `packages/config/eslint/i18n.js`, `deploy/`
+### 6. Localization (Arabic & English) · needs a decision
+Arabic first, English always, everywhere: screens, errors, receipts, exports, and templates.
+**Done when:** every string comes from the message catalogs in both languages, layout flips right to left correctly, Arabic and Latin digits both parse, money shows in EGP, and dates show in Cairo time.
+- [ ] Design it (spec): `/architect localization`
 
-### 6. Staff sign in · done · GA
-Real staff accounts and sessions so every slice runs as a known user from day one.
-**Done when:** staff can sign in, sign out, and reset a password; sessions expire; an admin can create and disable staff accounts.
-- [x] Design it (spec): `/architect staff sign in`
-- [x] Build it: `/develop staff sign in`
-  - [x] Thin thread: sign in and out end to end, guard, `GET /api/me`, first admin command (AC-1, AC-6, AC-7, AC-21, AC-25)
-  - [x] Session policy and lockout: 12 hour sliding session with the 7 day cap, five strikes lockout, rate limits in PostgreSQL, password rule (AC-2, AC-3, AC-4, AC-5, AC-8, AC-23)
-  - [x] Mail and password reset: SMTP and Postmark adapters, mail queue and worker, forgot and reset pages (AC-9, AC-10, AC-11)
-  - [x] Staff administration: create, edit, disable, invite and reset, last admin rule, forced password change, Staff page (AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18)
-  - [x] Account page and language sync: edit your own name, phone and language, change your password, saved language applied at sign in (AC-19)
-  - [x] Two factor: authenticator app and backup codes, the code step at sign in, wrong codes counted toward the lock, admin reset (AC-20, AC-3)
-  - [x] Ledger link, cleanup, and hardening (AC-22, AC-24, AC-21, AC-7)
-- [x] Verify it: `/check verify staff sign in`
-- [x] Test it: `/test staff sign in`
-- [x] Review it (fresh model): `/check review staff sign in`
-- [x] Document it: `/document staff sign in`
-Spec [0005](../specs/0005-staff-sign-in/index.md) · code in `apps/api/src/auth`, `apps/api/src/platform/events`, `apps/api/src/mail`, `apps/api/src/staff`, `apps/api/src/create-admin.ts`, `apps/web/src/auth`, `apps/web/src/staff`, `apps/web/src/account`, `apps/web/src/app/(auth)`, `apps/web/src/app/(app)`, `packages/db/src/schema/auth.ts`, `packages/contracts/src/auth.ts`
+### 7. Staff sign in · GA · needs a decision
+Staff accounts, sessions, and lockouts for the brand's team, with a break glass path for the first admin.
+**Done when:** staff can sign in and out in both languages, repeated failures lock out safely, sessions expire, and the first admin and recovery steps are written in a run book.
+- [ ] Design it (spec): `/architect staff sign in`
+
+### 8. Roles as hats · GA · needs a decision
+Permissions as hats one person can wear several of: support, operations, warehouse, manager, plus external hats for the media buyer (campaign results only, no customer data) and partners (their own given, sold, owed). Cost and margin are a separate permission, off for support by default. Teams and routing are later settings on the same data.
+**Done when:** each default hat sees only what it should, a person can hold several hats, cost and margin hide without the cost permission, and the external hats cannot reach customer data.
+- [ ] Design it (spec): `/architect roles as hats`
+
+### 9. Settings, module toggles & bundles · GA · needs a decision
+Per brand settings and the switches that make one image into a Warehouse install, an Operations install, or both: bundle and license, module toggles, policy knobs (credit timing, retention limits, auto approval), and the switch per executing step.
+**Done when:** a module turns off cleanly without errors or orphaned jobs, a lapsed Operations license switches its connectors off, every executing step defaults to off, and the location owner types are a setting, not three code paths.
+- [ ] Design it (spec): `/architect settings, module toggles & bundles`
+
+### 10. Audit trail · needs a decision
+Agent accountability: who did what, when, and why, across edits, merges, overrides, confirmations, exports, and every automatic action.
+**Done when:** each of those actions writes an audit entry with actor, time, before and after, and reason where one is required; managers can filter it by person and record; nothing can edit or delete an entry.
+- [ ] Design it (spec): `/architect audit trail`

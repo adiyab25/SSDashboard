@@ -1,6 +1,6 @@
 # SSDashboard
 
-Warehouse and ERP system for multi channel ecommerce, one shared core deployed per client. Scope: [docs/scope/index.md](docs/scope/index.md).
+The order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, and consignment showroom partners; one shared core deployed per brand, sold as a Warehouse and an Operations bundle. Scope: [docs/scope/index.md](docs/scope/index.md). A from scratch rebuild is under way on `feat/rebuild` ([plan](docs/positioning/2026-11-05-rebuild-plan.md)); the rest of this file describes the current code until `/audit` rewrites it after the new scaffold.
 
 ## Stack
 
