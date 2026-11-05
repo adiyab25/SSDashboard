@@ -228,6 +228,8 @@ Folded into `## Conventions` below, which both shapes implement.
 
 One image. Each module declares its bundle (`core`, `warehouse`, `operations`) and a toggle. The license is a signed file (an Ed25519 signature over client id, bundles, Operations expiry, issue date) verified with a public key built into the image, at startup and daily; no phone home, so offline installs work. Warnings go out 30, 14, and 7 days before expiry. After expiry and the 14 day grace period (owner decision) Operations modules switch off for new work: their routes answer 404 with code `MODULE_OFF`, screens hide, and connectors wind down as in *Switching off on lapse*: mirror reads and the cash sweep continue for shipments created before the lapse until a final cash state or `operations_wind_down_days` (default 60); new shipments, the confirmation queue, and driver mode stop; a renewal starts a backfill sweep over the gap. Feature 9 owns the detail. Every executing step (driver mode, auto approval, refunds, Shopify write back) is its own switch, default off.
 
+> Amended 2026-11-05: [spec 0009](../0009-settings-toggles-bundles/index.md) AC-8 keeps `GET` routes of a `read_only` (wind down) module answering, so the brand's data stays readable; only an `off` module answers 404 `MODULE_OFF` on every route.
+
 ### Database roles and the append only ledgers
 
 - Per client roles on the shared server: `ssd_<client>_owner` (owns the schema, used only by `migrate`), `ssd_<client>_app` (api and worker), `ssd_<client>_backup` (read only, used only by `ops`). Each client database gets `REVOKE CONNECT ON DATABASE ... FROM PUBLIC` and `CONNECT` only for its own three roles. The server superuser is used only by the host bootstrap that creates a client's database and roles.

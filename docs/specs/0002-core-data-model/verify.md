@@ -86,23 +86,28 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 - AC-14 … scale step
 
 ## Amendment 2026-11-05 checks
-_Not yet verified. Derived from AC-15 to AC-36 and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
+_Not yet verified. Derived from AC-15 to AC-36 (as revised by the fix pass of 2026-11-05) and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
 
 ### Commands
-- [ ] `pnpm db:migrate` on an empty database → `Migrations applied.` from one `0000_baseline.sql`; a second run applies nothing; `SELECT * FROM install` → one row whose `id` equals `current_setting('ssd.tenant_id')`; `SHOW ssd.app_role` in a new session → `ssdashboard_app` → AC-16
+- [ ] `pnpm db:migrate` on an empty database → `Migrations applied.` from the three baseline files (`0000_baseline_extensions.sql`, `0001_baseline_tables.sql`, `0002_baseline_rules.sql`); regenerating with `pnpm db:generate` changes only `0001`; a second run applies nothing; `SELECT * FROM install` → one row whose `id` equals `current_setting('ssd.tenant_id')`; `SHOW ssd.app_role` in a new session → `ssdashboard_app` → AC-16
 - [ ] Rerun `migrate` with a different `TENANT_ID` → fails with `TenantMismatch`, nothing changed → AC-16
 - [ ] `pnpm --filter @ssdashboard/db test:e2e` → all pass, including `tenant.e2e-spec.ts`, `operating-day.e2e-spec.ts`, and an append only case per table in A4 → AC-15, AC-17, AC-33
 - [ ] `pnpm test` → all pass, including the phone, transition, outcome, line split, credit arithmetic, settlement state, ownership map, module boundary, owner type boundary, cost lookup, and redaction tests → AC-19 to AC-22, AC-24, AC-25, AC-27, AC-29, AC-30, AC-32, AC-34
 - [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `location-owner-types.e2e-spec.ts` and the amended ledger suites → AC-29, AC-31
 - [ ] `pnpm test:e2e` → every pre existing api and Playwright test passes unchanged on the baseline → AC-16
-- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` → every p95 under its budget; record the measured values below → AC-36
+- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` → every p95 under its budget (the audit entry budgets of spec 0010 included); record the measured values below → AC-36
+- [ ] `pnpm test:e2e` does not run `test/scale.e2e-spec.ts`; the CI `scale` job runs it nightly and on a pull request labelled `scale` → AC-36
 - [ ] `pnpm lint` → passes; a planted `schema.orders` import in another module's folder fails the boundary test; a planted `=== 'consignment_partner'` outside the policy file fails the owner type boundary test → AC-29, AC-34
 
 ### Database checks (psql)
 - [ ] `INSERT INTO stores (code, name, kind) VALUES ('X', '{"en":"X"}', 'internal') RETURNING tenant_id` → the install's id; the same insert in a scratch database that has no `ssd.tenant_id` setting → fails → AC-15
 - [ ] Two stores, each with order `#1001` → both insert; a second `#1001` in one store → unique violation → AC-18
 - [ ] A `shopify` connection without a store → check violation; a second `shopify` connection on one store → unique violation; a `bosta` connection with and without a store → both insert → AC-18
-- [ ] A `gifted` order with a line price above 0 → check violation; an `exchange_replacement` without `original_order_id` → check violation → AC-23
+- [ ] A `gifted` order with a line gross above 0 or a shipping charge → check violation (`total_amount = 0`); a gifted line with `unit_price` 500.00 and discount 500.00 → inserts; an `exchange_replacement` without `original_order_id` → check violation → AC-23
+- [ ] An order with `fulfillment_state = 'refused'` and no `refused_reason_code` → check violation; a `gateway` connection → inserts; an order with `prepaid_amount > 0` and no `prepaid_method` → check violation → AC-18, AC-19, AC-24
+- [ ] A `goodwill` credit entry funded `cod_cash`, a `refund_payout` funded `credit_only`, and a `refund_payout` without `payout_method` → each a check violation; a reversal of a `return_credit` with a negative amount → inserts → AC-24
+- [ ] A settlement line inserted twice into one statement with one `external_line_ref` → unique violation; the same ref in a superseding statement → inserts; `settlement_lines` has no `period_id` column; an `accounted` match without `account_code` → check violation → AC-25
+- [ ] A task with `owner_hat = 'partner'` → check violation → AC-26
 - [ ] `UPDATE locations SET owner_type = 'own'` on a partner location → fails with `OwnerTypeFixed` → AC-29
 - [ ] Two periods of one settlement account with overlapping dates → exclusion violation; a `carrier` account with a party → check violation → AC-25
 - [ ] A task set to `done` without an outcome → check violation; two open tasks with one dedupe key → unique violation → AC-26
@@ -112,7 +117,15 @@ _Not yet verified. Derived from AC-15 to AC-36 and the Value sourcing tables of 
 ### Value sourcing (one per row: vary the input the value depends on)
 - [ ] `tenant_id` comes from the database setting, never from the writer → Tenancy child: any insert
 - [ ] `operating_day` follows its source column and the `timezone` and `operating_day_cutoff_hour` settings; changing the zone changes new rows only → Tenancy child: stamped insert
-- [ ] Order `cod_expected_amount` = total − prepaid − credit applied → Orders child: create order
+- [ ] Order `cod_expected_amount` = total − prepaid − credit applied, frozen when the carrier delivery exists → Orders child: create order
+- [ ] `cod_due_amount`: a 2,450.00 order (three 800.00 pieces, 50.00 shipping) with one piece back gives 1,650.00 (full shipping kept); a full return to origin gives 0; a cancelled line leaves `lines_gross_amount` → Orders child: money on the order
+- [ ] Allocation: 300.00 credit on lines of 600.00 and 350.00 with 50.00 shipping gives 180.00, 105.00, and 15.00 → Orders child: allocation
+- [ ] `delivered_amount` counts `delivered` and `returned` lines, so two delivered 500 pieces with one returned and refunded give `partially_refunded` → Orders child: the derived outcome
+- [ ] A return credit splits by funding: a 1,200.00 COD line with a 300.00 `credit_only` share gives 300.00 `credit_only` and 900.00 `cod_cash` → Customers child: return credit
+- [ ] Payout matching: `gateway` funding only by `gateway_refund`; `cod_cash` and `instapay_or_transfer` by carrier cash or InstaPay; `credit_only` never → Customers child: refund payout
+- [ ] Consumption spends `credit_only` first and is 0 for a customer who owes; a `debt_payment` never exceeds the debt → Customers child: consumption, debt payment
+- [ ] A line's period is found from `occurred_on`: lines imported before the period existed join it → Settlement child: rules
+- [ ] An opening stock line without a cost raises `InvalidCost`; the onboarding import's uncosted style list comes from `CostService` returning `NotSet`; an `estimate` record is returned with its basis → Catalog child: stock ledger changes
 - [ ] First cash state from the amounts (`unpaid`, `prepaid`, `nothing_to_collect`) → Orders child: first state rule
 - [ ] Split amounts: the worked example (gross 1,000.00 over 3 units, 1 returned → 333.33 and 666.67) → Orders child: partial delivery
 - [ ] Outcome from fulfillment state, delivered amount, and refunded amount, one case per row → Orders child: the derived outcome
@@ -144,7 +157,7 @@ _Fill in from the first measured run (AC-36); the budgets in the catalog child a
 - AC-28 … merge table checks (feature 14 adds resolution and undo tests)
 - AC-29 … owner type trigger, policy, boundary, three way test
 - AC-30 … cost lookup test
-- AC-31 … opening balance ledger cases
+- AC-31 … opening balance needs a cost, restock at the shipment's cost (ledger cases)
 - AC-32 … cost rule tests
 - AC-33 … append only cases per table
 - AC-34 … ownership map and boundary tests

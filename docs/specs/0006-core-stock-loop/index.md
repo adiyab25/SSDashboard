@@ -20,6 +20,7 @@ This is the walking skeleton (the first thin path through every layer): a signed
 - **AC-2**: Any signed in person can edit a SKU's name and price. Only an admin can change a SKU's code, and only while no stock balance row exists for it (it has never been posted); after that the api answers 409 `CODE_LOCKED` and the field is read only with a hint. An edit sent with an `updatedAt` other than the stored one answers 409 `STALE_RECORD` and changes nothing.
 - **AC-3**: Only an admin can archive, unarchive, or delete a SKU. Archive fails with 409 `STOCK_ON_HAND` while any balance of that SKU has on hand other than 0 or any active reservation is open, and a receipt posting at the same moment either lands before the archive (which then fails) or fails with `ARCHIVED`, never both succeeding. An archived SKU leaves search, pickers, and the default list, and shows under an Archived filter; its history stays. Delete works only for a SKU nothing references (409 `IN_USE` otherwise) and removes its product too.
 - **AC-4**: Only an admin can create, edit, archive, unarchive, or delete locations. A location has a code (trimmed, uppercased, `^[A-Z0-9._-]{1,16}$`, unique, 409 `LOCATION_CODE_TAKEN`), a name (at least one language), and a type of warehouse or showroom. Code edits, stale edits, archive, and delete follow the same rules as AC-2 and AC-3 (a location with bins cannot be deleted). The seeded transit and virtual locations never appear in these screens or pickers, and their ids answer 404 on location management endpoints.
+  > Amended 2026-11-05: a location now has a `kind` (`warehouse`, `shop`, `transit`, `virtual`) and an `owner_type` defaulting to `own`, not a `type` of warehouse or showroom; a showroom becomes `shop` (spec 0002, Amendment A13, [catalog child](../0002-core-data-model/0002-catalog-locations.md#locations-and-the-owner-type-policy)).
 - **AC-5**: Any signed in person can post a stock receipt: one active warehouse or showroom location, a receipt date (defaults to now; may be an earlier day; never in the future), an optional reference (up to 64 characters) and note (up to 500), and 1 to 200 lines. Each line names a different SKU, a whole quantity from 1 to 1,000,000, and a required unit cost from 0 to 9,999,999,999.9999 with at most 4 decimals, and quantity times unit cost may not exceed 9,999,999,999.99 (422 `LINE_TOTAL_TOO_LARGE`). One transaction writes the receipt, its lines, its number (`SR-YYYY-NNNNNN`, year taken from the receipt date in the install time zone), and one ledger group of source type `stock_receipt` with one inbound movement per line at that line's unit cost, linked by `source_line_id`, posted by the session user. If any part fails, nothing is stored and no number is used.
 - **AC-6**: A receipt post requires an `Idempotency-Key` header holding a UUID, which becomes the receipt's id. The same key with the same body answers 200 with the same receipt and moves stock once. The same key with any field different (location, date, reference, note, or lines) answers 409 `IDEMPOTENCY_CONFLICT`. A missing or malformed key answers 400 `IDEMPOTENCY_KEY_REQUIRED`.
 - **AC-7**: A receipt with an unknown, archived, or not stockable SKU, a SKU listed twice, an unknown, archived, or system location, a future date, or a date on or before the inventory lock date is rejected with a stable code and posts nothing. Line faults are all reported at once, each with its line index.
@@ -27,6 +28,7 @@ This is the walking skeleton (the first thin path through every layer): a signed
 - **AC-9**: The Stock page lists on hand per SKU and location from the ledger balances, showing SKU code, name, location, and on hand (plus average unit cost and stock value for admins). By default it lists rows with on hand other than 0, negative ones flagged; a Show zero toggle adds rows that went back to 0. It filters by the shell's current location (or all locations) and optionally one SKU, orders by most recent movement first, and pages 50 rows at a time.
 - **AC-10**: A SKU's detail page shows its on hand per location (non zero rows and a total) and its movement history newest first, 50 per page with load more: date, location, signed quantity, source document number linking to the receipt (a void's row reads "Void of SR-…"), and who posted it (unit cost and line value for admins).
 - **AC-11**: Unit cost, line totals, receipt reference value, average unit cost, and stock value are returned only to admins. For staff the api leaves those fields out of every response, replays included, and the screens hide those columns. Staff still enter unit cost on receipts.
+  > Amended 2026-11-05: cost and value are returned only to people holding the `cost.view` grant, not to admins ([spec 0008](../0008-roles-as-hats/index.md) AC-6).
 - **AC-12**: The receipt list shows receipts newest first with number, date, location, reference, line count, status (voided ones badged), and who posted. It filters by the shell's current location (or all) and a search box matching number or reference (contains, ignoring case), and pages 50 at a time.
 - **AC-13**: SKU search (`q`) matches a SKU code starting with `q` (uppercased) or an English or Arabic name containing `q` (ignoring case). The receipt line picker shows up to 20 active SKUs; the SKU list pages 50 at a time and can show archived ones.
 - **AC-14**: When a post or void hits the ledger's lock cap, the api answers 503 `BUSY` with `Retry-After: 2`. The web retries once with the same request after that delay, then shows a busy message with a Retry button and keeps the form filled.
@@ -64,6 +66,8 @@ Reasoning and options: see [rationale.md](rationale.md).
 ### Data model sketch
 
 Reused from [spec 0002](../0002-core-data-model/index.md) with no column changes: `products` (`name`, `status = active`, `archived_at`), `product_variants` (`sku`, `price`, `kind = stocked`, `tracking = none`, `base_uom_id = pc`, `archived_at`, `updated_at`), `locations` (`code`, `name`, `type`, `is_sellable = true`, `allow_negative = false`, `archived_at`, `updated_at`), `bins` (blocks location delete), `users` (spec 0005).
+
+> Amended 2026-11-05: no longer true once the spec 0002 amendment is built: every table gains `tenant_id`, `products` gains the style columns, and `locations.type` and `is_sellable` give way to `kind`, `owner_type`, `party_id`, `is_sellable`, and `sellable_online` (spec 0002, Amendment A1, A12, A13).
 
 One migration (`0008_*`, generated with `pnpm db:generate` so drizzle kit writes the journal and snapshot, then hand edited for the SQL drizzle kit cannot express) adds:
 
@@ -117,6 +121,8 @@ All paths are under `/api`, behind the session guard. Bodies and queries are Zod
 | `/stock-receipts/:id` | inventory | GET | id | `StockReceiptDetail` (number, status, location, effectiveAt, reference, note, postedBy, lines with SKU code and name, quantity, `unitCost?`, `lineTotal?`, `totalQuantity`, `referenceValue?`, void block) | signed in | 404 |
 | `/stock-receipts/:id/void` | inventory | POST | `reason` (req, 1 to 500) | `StockReceiptDetail` | admin | 409 `ALREADY_VOIDED`, `INSUFFICIENT_STOCK` (with `skuIds`); 403; 404; 503 `BUSY` |
 | `/stock` | inventory | GET | `locationId?`, `skuId?`, `includeZero?` (default false), `cursor?`, `limit?` (≤ 50) | `items: [{ sku, location, onHand, negative, avgUnitCost?, totalValue?, lastMovedAt }]`, `nextCursor` | signed in | 400 |
+
+> Amended 2026-11-05: the `POST /locations` and `PATCH /locations/:id` rows take `kind` (`warehouse` | `shop`) and an `owner_type` defaulting to `own` instead of `type` (`warehouse` | `showroom`) (spec 0002, Amendment A13; build plan milestone 2).
 
 **Error mapping** (one function, `inventory/ledger-http.ts`, used by every inventory controller; it also sets the `Retry-After` header):
 
@@ -198,6 +204,8 @@ All paths are under `/api`, behind the session guard. Bodies and queries are Zod
 | SKU search | match | `sku COLLATE "C" LIKE upper(q) || '%'` (the same expression as the new index) OR `name->>'en' ILIKE '%' || q || '%'` OR `name->>'ar' ILIKE '%' || q || '%'`, with `%`, `_`, and `\` in `q` escaped. Codes are always stored uppercased, so an uppercased prefix finds every code |
 | receipt list | search | `number ILIKE '%q%'` OR `reference ILIKE '%q%'`, escaped |
 | busy retry | delay | response header `Retry-After` (2 seconds), set by `ledger-http.ts` |
+
+> Amended 2026-11-05: the receipt location check reads `kind` `warehouse` or `shop` instead of `type` `warehouse` or `showroom` (spec 0002, Amendment A13).
 
 ### Key invariants
 

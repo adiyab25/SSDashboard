@@ -204,6 +204,9 @@ On 2026-11-05 the product became the order operations and warehouse back office 
 - *Constant*: Pros: reviewed in code. Cons: every brand difference is a release.
 
 **14. Opening stock without a cost: record it as cost unknown, reject it, or block go live.**
+
+> Amended 2026-11-05 (fix pass): reversed. Opening stock now needs a cost record (an owner estimate is allowed); see *Fix pass of 2026-11-05*, B5. The text below is the record of the first call.
+
 - *Cost unknown (chosen)*: Pros: a brand can go live with partial costs, as the reference brand had to; "not set" stays visible; it reuses the ledger's existing `cost_unknown` rule, so no costing rule changes. Cons: those pieces stay at cost 0 in the ledger until feature 59 decides on revaluation. Owner question 6.
 - *Reject*: Pros: every piece has a cost. Cons: a brand with uncosted styles cannot import its stock.
 
@@ -217,6 +220,44 @@ On 2026-11-05 the product became the order operations and warehouse back office 
 - *Always ask*: Cons: a list of 50 orders makes 50 cross module calls, or a cross module join the module rule forbids.
 
 **17. Added states.** `cancelled` in fulfillment, and `prepaid` and `nothing_to_collect` in cash, are not in the final plan's lists. Without them a cancelled order, a gateway paid order, and a gift would sit forever in a non final state, which the license wind down (spec 0007, final cash state) and the confirmation queue cannot accept. Runner up: encode them as reason codes on `new` and `unpaid`, which makes every "open orders" query wrong.
+
+### Fix pass of 2026-11-05: the five blockers
+
+The domain review (`docs/reviews/domain-data-model.md`) found five places where money moves in a shape the tables did not expect; the gate review accepted it in full, with round 2 rulings on B1 and B5, and the owner answered three brand questions. Each decision below names the options weighed.
+
+**B1. Where credit came from.**
+- *A funding on every entry, allocation of prepayment and credit to lines, payout only from a matching funding (chosen; decided, owner question 13)*. Pros: credit that was never cash (a retention bonus, goodwill) can be spent but never leave as cash; "refund the way they paid" is defined for a pooled balance; card money goes back to the card; the arithmetic stays exact because shares follow the discount allocation rule. Cons: one return can post several entries (one per funding), grouped by `posting_id`; the credit service must sum per funding.
+- *One pooled balance with a payout cap per order*: Pros: one number per customer. Cons: the retention case in the review (1,000 paid, 1,200 paid out) still happens once credit crosses orders.
+- *Never pay credit out as cash*: Pros: simplest. Cons: contradicts final plan 6.2 and the owner's rule that a COD refund is cash back by Bosta.
+- Consumption spends `credit_only` first, so cash stays refundable longest. Runner up: spend cash first, which strands bonus credit and pays out more cash.
+
+**B2. What the courier should collect after a partial delivery.**
+- *Keep `cod_expected_amount` as what the courier was told, add `cod_due_amount` for what the customer owes (chosen)*. Pros: both facts kept; reconciliation compares like with like, so a real shortfall is visible among partial deliveries. Cons: two amounts to explain on screen.
+- *Recompute `cod_expected_amount` after delivery*: Cons: loses what the delivery was created with, which the carrier check of feature 19 needs.
+- Shipping is charged in full on any partial delivery (owner answer). Cancelled lines leave `lines_gross_amount`, so a piece removed at confirmation leaves the COD.
+
+**B3. Which period a settlement line belongs to.**
+- *Derive it from `occurred_on` and the account's periods (chosen)*. Pros: an append only line never needs a later update; lines imported before their period exists join it; the exclusion constraint already makes the period unique. Cons: every period read is a date range query (indexed).
+- *Store `period_id` and allow updating it*: Cons: breaks append only on the one table where history matters most.
+- *Refuse to import a line until its period exists*: Cons: the daily carrier sweep would stall until the accountant creates the month.
+
+**B4. Lines that have no order.**
+- *A terminal `accounted` result with an account code, and the refund or payment document when there is one (chosen)*. Pros: a partner period can close on its payment (final plan 7.4); the close evidence sums matched plus accounted. Cons: an account code list to grow per feature.
+- *Treat them as `cleared`*: Cons: hides payments from the evidence total and mixes them with superseded lines.
+
+**B5. Opening stock without a cost.**
+- *Require a cost record for every style before the opening import posts, with an owner estimate allowed and labelled "estimate" (chosen by the gate review, round 2, and the owner's answer to question 6)*. Pros: the reviewed GA ledger and its average stay untouched during foundations; an estimate is as honest as "not set" and keeps the arithmetic intact; the import lists what the owner still has to price. Cons: go live waits for a cost list, even a rough one.
+- *Track units of unknown cost on each balance and change `costOutbound`* (the first fix pass instruction, reversed in round 2): Pros: uncosted stock could post at once and be flagged on the way out. Cons: changes the costing rules and the average blending of the GA ledger for no pilot value; carried to feature 59.
+- *Keep the first amendment's rule (post at 0 with `cost_unknown`)*: rejected, because the built `costOutbound` ships from a positive balance at its share of 0 without the flag and blends zeros into later receipts (`apps/api/src/inventory/ledger/costing.ts`), the silent zero final plan 6.10 forbids.
+- Restocks post at the order line's frozen shipment cost, never 0 and never the current average.
+
+### Other fix pass calls
+
+- **A lost parcel is a fulfillment state, not a reason on `returned_to_origin`** (M3): otherwise the warehouse waits for a piece and the returned to origin rate rises. No stock posting: the stock already left at `order_shipment`.
+- **The edit lock is "a carrier delivery exists"**, not "pickup created" (M5): in mirror mode the carrier's own app creates the delivery, and an edit after that ships the old COD.
+- **The settlement dedupe key is per statement** (M8): a corrected partner file numbers its lines again; duplicates across statements are found by content within overlapping coverage.
+- **`order_consumption` replaces `exchange_consumption`**: the owner wants agents to apply kept credit on any order they create, not only on exchange replacements.
+- **Actor names follow spec 0010** (`system_job`, `import`), so the order event log, the credit ledger, and the audit trail name the same actors the same way.
 
 ### Decisions made without a question (amendment)
 

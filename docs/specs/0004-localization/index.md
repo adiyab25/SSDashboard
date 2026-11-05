@@ -337,6 +337,7 @@ Amendment work only (the original plan above is built). Tracer Bullet: Milestone
 
 - [ ] When feature 6 (staff sign in) lands, store the language on the user account, keep `ss_lang` as the pre sign in value, and decide which wins after sign in.
 - [ ] Feature 46 (client settings and module toggles) should offer an admin screen for `languages` and `default_language`, and decide the long term extension contract; until then the runtime JSON route in this spec is the only extension point for text.
+  > Amended 2026-11-05: that is now scope feature 9, settings, module toggles and bundles ([spec 0009](../0009-settings-toggles-bundles/index.md)).
 - [ ] Purchasing and sales documents (printed and emailed purchase orders, quotes) need a server side template language and catalog; decide it when feature 21 is designed. _Amended 2026-11-05: the catalog and translator are decided by Amendment AC-14 and AC-15; feature 21 only adds keys and templates._
 - [ ] Amendment: a server side loader for client languages (read `extensions/<client>/locales` in the api, worker, and portal), so mail, reports, and the public pages can use a client language. Decide when a client asks for one.
 - [ ] Amendment: measure the hidden body wait for a returning Arabic manager on Slow 4G (AC-17); if it is over 2 seconds, move the back office to a server rendered language too.
