@@ -7,7 +7,6 @@ import { ThemeProvider } from 'next-themes';
 import { useState } from 'react';
 import { ApiError } from '@/api/client';
 import { LanguageProvider } from '@/i18n/language-provider';
-import { CurrentLocationProvider } from '@/shell/current-location';
 
 /** One query client per browser tab. A refused request (4xx) is an answer, never retried. */
 function makeQueryClient(): QueryClient {
@@ -24,8 +23,9 @@ function makeQueryClient(): QueryClient {
 }
 
 /**
- * Browser state for the whole app: theme, language and direction, the current location, and
- * server state through TanStack Query (spec 0006).
+ * Browser state for every audience: theme, language and direction, tooltips, and server state
+ * through TanStack Query (spec 0006). Nothing here calls a staff api route, so the public portal
+ * stays anonymous; the current location lives in the (backoffice) layout.
  */
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(makeQueryClient);
@@ -33,12 +33,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
         <LanguageProvider>
-          <CurrentLocationProvider>
-            <TooltipProvider>
-              {children}
-              <Toaster position="bottom-center" duration={6000} />
-            </TooltipProvider>
-          </CurrentLocationProvider>
+          <TooltipProvider>
+            {children}
+            <Toaster position="bottom-center" duration={6000} />
+          </TooltipProvider>
         </LanguageProvider>
       </QueryClientProvider>
     </ThemeProvider>

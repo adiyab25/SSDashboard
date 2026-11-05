@@ -367,6 +367,18 @@ export const en = {
       generic: 'Something went wrong. Check your connection and try again.',
     },
   },
+  portal: {
+    returns: {
+      title: 'Exchanges and returns',
+      description: 'Start an exchange or a return for your order. This page is coming soon.',
+    },
+  },
+  partner: {
+    home: {
+      title: 'Partner showroom',
+      description: 'Your consignment stock and sales will appear here. This page is coming soon.',
+    },
+  },
   home: {
     title: 'Overview',
     status: {

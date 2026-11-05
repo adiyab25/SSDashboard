@@ -8,11 +8,13 @@ import {
 } from '@ssdashboard/contracts';
 import type { AuthenticatedRequest } from '../../auth/current-staff.js';
 import { catalogHttpError, notFoundId } from '../../catalog/catalog.controller.js';
+import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { StockService } from './stock.service.js';
 
 /** Stock on hand (spec 0006). Inventory owns these `/skus` paths because they read the ledger. */
+@Audience('staff')
 @Controller()
 export class StockController {
   constructor(private readonly stock: StockService) {}

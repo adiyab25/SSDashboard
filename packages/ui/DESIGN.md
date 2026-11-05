@@ -15,7 +15,7 @@ Token values live in [`src/styles/globals.css`](src/styles/globals.css). This fi
 - Use role tokens only (`bg-background`, `text-muted-foreground`, `border-input`). No raw hex, rgb, oklch, or Tailwind palette classes (`bg-zinc-200`) in components or pages.
 - Use logical sides only: `ms-`/`me-`, `ps-`/`pe-`, `start-`/`end-`, `border-s`/`border-e`, `rounded-s`/`rounded-e`, `text-start`/`text-end`. `pnpm lint` fails on physical ones (`check-logical-css.mjs`).
 - No text inside `packages/ui`. Every label, including screen reader only ones, arrives as a prop. Apps pass text through `t()`.
-- Every page renders inside the app shell and has exactly one `<h1>`.
+- Every staff page renders inside the app shell, and every page has exactly one `<h1>`; the sign in screens and the public portal and partner seams use a minimal frame instead.
 - Every interactive control works from the keyboard, shows the focus ring, and has an accessible name.
 
 ## Color roles

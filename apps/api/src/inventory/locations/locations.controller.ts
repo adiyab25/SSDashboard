@@ -27,6 +27,7 @@ import type { Response } from 'express';
 import type { z } from 'zod';
 import type { AuthenticatedRequest } from '../../auth/current-staff.js';
 import { Roles } from '../../auth/roles.decorator.js';
+import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
@@ -67,6 +68,7 @@ const locationId = () =>
  * Behind the session guard like every `/api` route except config, health, and auth. The seeded
  * transit and virtual locations never appear and answer 404 here.
  */
+@Audience('staff')
 @Controller('locations')
 export class LocationsController {
   constructor(private readonly locations: LocationsService) {}

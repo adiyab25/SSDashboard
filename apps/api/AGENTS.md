@@ -12,7 +12,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 | `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD` |
 | `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, runs pg-boss jobs (the nightly ledger reconciliation) |
 | `src/database/sql.ts` | `Transaction`/`Executor` types, `pgArray` (arrays as one bound literal), PostgreSQL error code helpers |
-| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers) |
+| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers); `audience/` holds `@Audience(...)` and the deny by default guard |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
 | `src/app.module.ts` | Root module, imports each business module |
 | `src/config/env.ts` | Zod env schema, validated at startup |

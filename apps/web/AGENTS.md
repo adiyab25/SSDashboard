@@ -12,14 +12,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Overview
 
-The Next.js App Router back office. Every page renders inside the app shell (`src/shell/`), built from `@ssdashboard/ui` to [`packages/ui/DESIGN.md`](../../packages/ui/DESIGN.md). Decisions: [spec 0003](../../docs/specs/0003-design-system-ui-foundation/index.md) (design system), [spec 0004](../../docs/specs/0004-localization/index.md) (localization).
+The Next.js App Router back office. Every staff page renders inside the app shell (`src/shell/`); the sign in screens (`(auth)`) and the `(portal)` and `(partner)` seams are documented exceptions with their own minimal frame. Built from `@ssdashboard/ui` to [`packages/ui/DESIGN.md`](../../packages/ui/DESIGN.md). Decisions: [spec 0003](../../docs/specs/0003-design-system-ui-foundation/index.md) (design system), [spec 0004](../../docs/specs/0004-localization/index.md) (localization).
 
 ## Key files
 
 | File | Owns |
 |---|---|
-| `src/app/layout.tsx` | Static root layout: fonts, the language head script, `Providers`, `SkipLink`, `AppShell` |
-| `src/app/providers.tsx` | Theme (`next-themes`), language and direction (`LanguageProvider`), current location, tooltips |
+| `src/app/layout.tsx` | Static root layout: fonts, the language head script, `Providers`, `SkipLink` |
+| `src/app/(backoffice)/layout.tsx` | `CurrentLocationProvider` (calls staff `/api/locations`), `AppShell`, and the staff `SessionGate` |
+| `src/app/providers.tsx` | Theme (`next-themes`), query client, language and direction (`LanguageProvider`), tooltips, toaster; nothing that calls a staff api route |
 | `src/shell/nav.ts` | The typed navigation registry the sidebar and command palette read |
 | `src/shell/current-location.tsx` | `useCurrentLocation()` and the `ss_location` cookie |
 | `src/i18n/locales/en.ts`, `locales/ar.ts` | Every UI string. English is the source, the type source, and the fallback; Arabic is a lazy chunk |
@@ -29,6 +30,15 @@ The Next.js App Router back office. Every page renders inside the app shell (`sr
 | `src/i18n/localized-text.ts` | Which language's text to show for `{ en, ar }` stored text |
 | `src/i18n/runtime-languages.ts` | Loads and checks client language files from `/locales/<code>.json` |
 | `src/design/` | The development only `/design` gallery |
+
+## Route groups
+
+One group per audience (spec 0007, section 2). The root `Providers` must stay free of staff api calls, because a 401 sends the browser to staff sign in.
+
+- `(backoffice)`: staff back office, inside the app shell with the session check.
+- `(auth)`: staff sign in screens, no shell.
+- `(partner)`: consignment partners (`/partner`), staff host, minimal frame, no staff shell or session check yet.
+- `(portal)`: the public exchange and return portal (`/returns`), minimal frame, anonymous.
 
 ## Commands
 

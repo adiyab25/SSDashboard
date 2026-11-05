@@ -22,6 +22,7 @@ import {
 } from '@ssdashboard/contracts';
 import type { z } from 'zod';
 import { Roles } from '../auth/roles.decorator.js';
+import { Audience } from '../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
@@ -57,6 +58,7 @@ export const notFoundId = () =>
  * Products in, SKUs out (spec 0006). Any signed in person creates, reads, and edits name and
  * price; delete is admin only. Stock dependent SKU actions live in inventory's `sku-lifecycle/`.
  */
+@Audience('staff')
 @Controller()
 export class CatalogController {
   constructor(private readonly catalog: CatalogService) {}

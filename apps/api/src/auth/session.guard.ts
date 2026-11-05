@@ -13,6 +13,7 @@ import type { Request, Response } from 'express';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import type { CurrentStaff } from './current-staff.js';
+import { audienceOf } from '../platform/audience/audience.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { AUTH, type Auth } from './auth.tokens.js';
 import { pastAbsoluteCap } from './session-policy.js';
@@ -23,8 +24,9 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * The one guard on every `/api` route (spec 0005, AC-7). It rejects a write whose `Origin` is
- * not ours, lets `@Public()` routes through, and otherwise requires a live session. The person
- * is read from the database on every request, so a disabled account fails on its next call.
+ * not ours, lets `@Audience('public')` (and `@Public()`) routes through, and otherwise requires a
+ * live session. The person is read from the database on every request, so a disabled account
+ * fails on its next call.
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -49,10 +51,11 @@ export class SessionGuard implements CanActivate {
     }
 
     const isPublic = this.reflector.getAllAndOverride<boolean | undefined>(IS_PUBLIC, [
-      context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
+    // Class level only, on purpose: a handler can never open itself up inside a guarded controller.
+    // The audience is the source of truth; `@Public()` stays honoured and a spec keeps them equal.
+    if (isPublic || audienceOf(context.getClass()) === 'public') return true;
 
     const result = await this.auth.api.getSession({
       headers: fromNodeHeaders(request.headers),

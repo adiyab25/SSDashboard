@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Providers } from '@/app/providers';
 import { AppShell } from './app-shell';
+import { CurrentLocationProvider } from './current-location';
 
 const push = vi.fn();
 let pathname = '/';
@@ -15,9 +16,11 @@ vi.mock('next/navigation', () => ({
 function renderShell() {
   return render(
     <Providers>
-      <AppShell>
-        <h1>Page</h1>
-      </AppShell>
+      <CurrentLocationProvider>
+        <AppShell>
+          <h1>Page</h1>
+        </AppShell>
+      </CurrentLocationProvider>
     </Providers>,
   );
 }

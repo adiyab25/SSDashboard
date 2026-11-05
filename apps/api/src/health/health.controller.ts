@@ -5,9 +5,11 @@ import { Public } from '../auth/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';
+import { Audience } from '../platform/audience/audience.decorator.js';
 
 const DB_PROBE_TIMEOUT_MS = 2_000;
 
+@Audience('public')
 @Public()
 @Controller('health')
 export class HealthController {

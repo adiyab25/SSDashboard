@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
 import { UpdateMeRequest, type MeResponse } from '@ssdashboard/contracts';
+import { Audience } from '../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import type { AuthenticatedRequest } from './current-staff.js';
 import { ProfileService } from './profile.service.js';
 
+@Audience('staff')
 @Controller('me')
 export class MeController {
   constructor(private readonly profile: ProfileService) {}

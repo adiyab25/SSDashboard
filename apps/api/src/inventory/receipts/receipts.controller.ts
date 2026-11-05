@@ -26,6 +26,7 @@ import type { Response } from 'express';
 import { z } from 'zod';
 import type { AuthenticatedRequest } from '../../auth/current-staff.js';
 import { Roles } from '../../auth/roles.decorator.js';
+import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
@@ -78,6 +79,7 @@ const callerOf = (request: AuthenticatedRequest): ReceiptCaller => ({
 });
 
 /** Stock receipts (spec 0006). Any signed in person posts and reads; cost fields are admin only. */
+@Audience('staff')
 @Controller('stock-receipts')
 export class ReceiptsController {
   constructor(private readonly receipts: ReceiptsService) {}

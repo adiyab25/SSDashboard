@@ -24,6 +24,7 @@ import {
 import type { AuthenticatedRequest } from '../auth/current-staff.js';
 import { clientIp, userAgent } from '../auth/client-info.js';
 import { Roles } from '../auth/roles.decorator.js';
+import { Audience } from '../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { InvalidStaffCursorError, StaffService, type Actor } from './staff.service.js';
@@ -41,6 +42,7 @@ function actorOf(request: AuthenticatedRequest): Actor {
  * Staff administration (spec 0005, AC-12 to AC-18). Admins only. The browser never talks to
  * Better Auth's admin routes: those answer 404, and these endpoints are the whole surface.
  */
+@Audience('staff')
 @Roles('admin')
 @Controller('staff')
 export class StaffController {
