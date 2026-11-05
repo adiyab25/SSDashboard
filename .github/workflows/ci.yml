@@ -23,11 +23,11 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      # setup-node caches pnpm on its own because package.json names a packageManager, so pnpm must exist first.
-      - uses: pnpm/action-setup@v4
+      # The job runs dependency free Node scripts, so there is nothing to install or cache.
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          package-manager-cache: false
       # Hooks can be skipped, so CI reruns the commit-msg check on every commit in the PR.
       # The range uses the two PR shas: HEAD on pull_request is a merge commit.
       - name: Branch name
