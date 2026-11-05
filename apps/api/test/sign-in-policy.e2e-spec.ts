@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { LOCKOUT, SignInLockout } from '../src/auth/sign-in-lockout.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,
@@ -206,13 +207,68 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       const person = await addUser();
       const ip = freshIp();
 
-      await Promise.all(
+      const answers = await Promise.all(
         Array.from({ length: 10 }, () => signIn(person.email, 'Wrong-Password-1', ip)),
       );
 
+      // Every attempt gets the same generic answer: none fell over or hit a rate limit.
+      expect(answers.every((a) => a.status === 401 && a.text === answers[0]?.text)).toBe(true);
+      // An attempt that arrives once the lock is set is turned away before its password is
+      // checked, and is not counted (AC-3). How many do depends on timing, so each attempt is
+      // read from its audit line: a checked password is `bad_credentials`, a turned away one is
+      // `locked`. The lines reach the pipe a moment after the answers.
+      const reasons = (): string[] =>
+        (api as RunningProcess)
+          .output()
+          .split('\n')
+          .filter((l) => l.includes('"event":"SignInFailed"') && l.includes(`"ip":"${ip}"`))
+          .map((l) => /"reason":"(\w+)"/.exec(l)?.[1] ?? 'none');
+      await expect.poll(() => reasons().length).toBe(10);
+      const checked = reasons().filter((r) => r === 'bad_credentials').length;
+      expect(checked + reasons().filter((r) => r === 'locked').length).toBe(10);
+
+      // Every checked password was counted, on both rows: none was lost to the race.
       const rows = await attempts(person.email);
-      expect(rows.find((row) => row.scope === ip)).toMatchObject({ failures: 10, locked: true });
-      expect(rows.find((row) => row.scope === '*')?.failures).toBe(10);
+      expect(checked).toBeGreaterThanOrEqual(LOCKOUT.pairLimit);
+      expect(rows.find((row) => row.scope === ip)).toMatchObject({
+        failures: checked,
+        locked: true,
+      });
+      expect(rows.find((row) => row.scope === '*')?.failures).toBe(checked);
+    });
+
+    it('counts every one of many failures recorded at the same moment, and locks once', async () => {
+      // Straight at the upsert, with no password hashing to spread the calls out, so a read
+      // then write counter would lose counts here.
+      const appUrl = new URL(scratch.url);
+      appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
+      const app = createDatabase(appUrl.toString(), { max: 20 });
+      try {
+        const lockout = new SignInLockout(app);
+        const email = `burst${counter}@example.com`;
+        // Three addresses at once, so they also contend on the shared all addresses row.
+        const ips = [freshIp(), freshIp(), freshIp()];
+        const outcomes = await Promise.all(
+          Array.from({ length: 60 }, (_, i) => lockout.recordFailure(email, ips[i % 3] as string)),
+        );
+
+        const rows = await attempts(email);
+        for (const ip of ips) {
+          expect(rows.find((row) => row.scope === ip)).toMatchObject({
+            failures: 20,
+            locked: true,
+          });
+        }
+        expect(rows.find((row) => row.scope === '*')).toMatchObject({
+          failures: 60,
+          locked: true,
+        });
+        // Exactly one failure starts each lock, so each `AccountLocked` is written once.
+        expect(outcomes.filter((o) => o.pairLocked)).toHaveLength(3);
+        expect(outcomes.filter((o) => o.emailLocked)).toHaveLength(1);
+      } finally {
+        await app.pool.end();
+      }
     });
 
     it('lets the person in once the lock has ended, and then clears the counters', async () => {
