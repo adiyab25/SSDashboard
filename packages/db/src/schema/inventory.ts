@@ -25,6 +25,7 @@ import { bins, locations } from './locations.js';
 // `movement_groups`, `stock_movements`, and `movement_serials` are append only: the
 // application role holds INSERT and SELECT on them, and a trigger rejects the rest.
 
+/** A production batch of one SKU, with an optional expiry date. Code is unique per SKU; other tables reference `(id, variant_id)` so a lot cannot cross SKUs. */
 export const lots = pgTable(
   'lots',
   {
@@ -43,8 +44,10 @@ export const lots = pgTable(
   ],
 );
 
+/** Where a serial number stands: on hand somewhere, or gone out. */
 export const serialStatus = pgEnum('serial_status', ['in_stock', 'out']);
 
+/** One physical unit of a serial tracked SKU. A serial is unique per SKU; its status and place move with the ledger postings. */
 export const serials = pgTable(
   'serials',
   {
@@ -80,6 +83,7 @@ export const serials = pgTable(
   ],
 );
 
+/** Why stock moved. Every ledger movement carries one, and the source document is identified alongside it. */
 export const movementSourceType = pgEnum('movement_source_type', [
   'opening_balance',
   'purchase_receipt',
@@ -231,6 +235,7 @@ export const stockLevels = pgTable(
   ],
 );
 
+/** Reservation lifecycle: active holds stock, then released (cancelled) or fulfilled (shipped). */
 export const reservationStatus = pgEnum('reservation_status', ['active', 'released', 'fulfilled']);
 
 /** Stock promised to a document line. Holds no bin: picking chooses the bin. */
@@ -278,7 +283,9 @@ export const reservations = pgTable(
   ],
 );
 
+/** What a reconciliation found wrong: a stock balance, a reservation total, or a serial status. */
 export const discrepancyKind = pgEnum('discrepancy_kind', ['balance', 'reservation', 'serial']);
+/** How a discrepancy was closed: the balance was rebuilt from the ledger, or a person dismissed it. */
 export const discrepancyResolution = pgEnum('discrepancy_resolution', ['rebuilt', 'dismissed']);
 
 /** Mismatches found by the nightly reconciliation. At most one open record per balance and kind. */

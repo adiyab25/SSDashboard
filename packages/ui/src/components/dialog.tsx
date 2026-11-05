@@ -7,22 +7,27 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 import { Button } from '@ssdashboard/ui/components/button';
 import { XIcon } from 'lucide-react';
 
+/** Modal dialog root; owns open state and traps focus while open. */
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
+/** Element that opens its Dialog; use asChild for a custom trigger. */
 function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
 }
 
+/** Renders dialog layers outside the DOM hierarchy so they stack above the page. */
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
+/** Element that closes the surrounding Dialog. */
 function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
+/** Dimmed backdrop behind an open Dialog. */
 function DialogOverlay({
   className,
   ...props
@@ -39,6 +44,7 @@ function DialogOverlay({
   );
 }
 
+/** The dialog panel, with a close button; needs a DialogTitle for accessibility. */
 function DialogContent({
   className,
   children,
@@ -73,12 +79,14 @@ function DialogContent({
   );
 }
 
+/** Layout wrapper for the title and description of a Dialog. */
 function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div data-slot="dialog-header" className={cn('flex flex-col gap-2', className)} {...props} />
   );
 }
 
+/** Layout wrapper for the action buttons of a Dialog. */
 function DialogFooter({
   className,
   closeLabel,
@@ -104,6 +112,7 @@ function DialogFooter({
   );
 }
 
+/** Accessible name of a Dialog; required for screen readers. */
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
@@ -114,6 +123,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   );
 }
 
+/** Accessible description of a Dialog; explains its purpose to screen readers. */
 function DialogDescription({
   className,
   ...props

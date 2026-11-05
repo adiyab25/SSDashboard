@@ -19,7 +19,7 @@ vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
 
 const WH = '50000000-0000-4000-8000-000000000001';
 const shell = vi.hoisted(() => ({ current: 'all', ready: true }));
-vi.mock('@/shell/current-location', () => ({
+vi.mock('@/shell/current-location-provider', () => ({
   useCurrentLocation: () => shell.current,
   useLocationSwitcher: () => ({
     retry: vi.fn(),

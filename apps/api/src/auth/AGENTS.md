@@ -9,7 +9,8 @@ Staff sign in for the api: Better Auth wired into NestJS, a global session guard
 | File | Owns |
 |---|---|
 | `auth.factory.ts`, `mount-auth.ts` | Builds Better Auth and mounts it at `/api/auth` |
-| `session.guard.ts`, `public.decorator.ts` | The global guard. Every `/api` route needs a session unless marked `@Public()` |
+| `session.guard.ts`, `public.decorator.ts` | The global guard. Every `/api` route needs a staff session unless its controller is `@Audience('public')` |
+| `../platform/audience/` | `@Audience(...)` and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `roles.guard.ts`, `roles.decorator.ts` | Admin only routes |
 | `current-staff.ts` | Reads the signed in user from the request. Ledger routes take the poster from here |
 | `session-policy.ts`, `sign-in-lockout.ts` | 12 hour sliding session with a 7 day cap, five strikes lockout |
@@ -30,7 +31,8 @@ docker compose --env-file .env run --rm api node dist/create-admin.js --reset-tw
 
 ## Conventions
 
-- Add a route that should be open to the public with `@Public()`. Without it the guard answers 401.
+- Every controller needs exactly one `@Audience(...)` on the class (`src/platform/audience/`); a spec fails the build without it, with two, on a handler, or with a path prefix that does not match (`partner`, `portal`, `hooks`). Open routes use `@Audience('public')` plus a class level `@Public()` (the spec keeps them equal). A staff session on a non staff audience gets 403 `WRONG_AUDIENCE`.
+- `SessionGuard` still demands a staff session on every non public audience. Partner, portal and hook routes need `SessionGuard` made audience aware first (staff and partner sessions, a portal sealed token, a hook signature with no Origin check). Never use `@Public()` to get around it.
 - A route that posts to the ledger validates with `PostingRequest` or `ReverseRequest` from `@ssdashboard/contracts`, never `PostingInput`, and sets `postedBy` from `current-staff.ts`. `src/inventory/controller-contracts.spec.ts` fails if a controller imports the service schemas.
 - Sign in failures give identical answers for unknown emails, wrong passwords and locked accounts, so the api never reveals which accounts exist.
 - Take `ADMIN_RULE_LOCK` (`locks.ts`) before any change that could remove the last active admin.

@@ -1,11 +1,15 @@
 import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
 import { UpdateMeRequest, type MeResponse } from '@ssdashboard/contracts';
+import { Audience } from '../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import type { AuthenticatedRequest } from './current-staff.js';
 import { ProfileService } from './profile.service.js';
 
+/** The signed in person's own profile routes under `/api/me`, open to any staff role. */
+@Audience('staff')
 @Controller('me')
 export class MeController {
+  /** Takes the profile service that saves the person's own details. */
   constructor(private readonly profile: ProfileService) {}
 
   /** Who is signed in. The web shell calls this to check the session and fill the user menu. */

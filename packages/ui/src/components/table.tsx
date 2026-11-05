@@ -31,10 +31,12 @@ function Table({ className, ...props }: React.ComponentProps<'table'>) {
   );
 }
 
+/** Table head section; wraps header rows. */
 function TableHeader({ className, ...props }: React.ComponentProps<'thead'>) {
   return <thead data-slot="table-header" className={cn('[&_tr]:border-b', className)} {...props} />;
 }
 
+/** Table body section; wraps data rows. */
 function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
   return (
     <tbody
@@ -45,6 +47,7 @@ function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
   );
 }
 
+/** Table foot section, for totals. */
 function TableFooter({ className, ...props }: React.ComponentProps<'tfoot'>) {
   return (
     <tfoot
@@ -55,6 +58,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<'tfoot'>) {
   );
 }
 
+/** One table row with hover and selected states. */
 function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
   return (
     <tr
@@ -68,6 +72,7 @@ function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
   );
 }
 
+/** Column header cell. */
 function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
   return (
     <th
@@ -81,6 +86,7 @@ function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
   );
 }
 
+/** Data cell. */
 function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
   return (
     <td
@@ -91,6 +97,7 @@ function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
   );
 }
 
+/** Caption that names the table for screen readers. */
 function TableCaption({ className, ...props }: React.ComponentProps<'caption'>) {
   return (
     <caption

@@ -56,6 +56,7 @@ export class Money {
 
   static readonly zero = new Money(0n);
 
+  /** Parses text or a number with at most 2 decimals; throws `InvalidAmountError` otherwise. */
   static of(value: string | number): Money {
     if (typeof value === 'number' && !Number.isFinite(value)) {
       throw new InvalidAmountError(`Amount is not finite: ${value}`);
@@ -63,18 +64,22 @@ export class Money {
     return new Money(parseScaled(String(value), 2, 'Amount'));
   }
 
+  /** Builds an amount from whole cents. */
   static fromCents(cents: bigint): Money {
     return new Money(cents);
   }
 
+  /** Sum of two amounts. */
   plus(other: Money): Money {
     return new Money(this.cents + other.cents);
   }
 
+  /** Difference of two amounts. */
   minus(other: Money): Money {
     return new Money(this.cents - other.cents);
   }
 
+  /** The same amount with the opposite sign. */
   negate(): Money {
     return new Money(-this.cents);
   }
@@ -84,14 +89,17 @@ export class Money {
     return new Money(mulDivRound(this.cents, numerator, denominator));
   }
 
+  /** -1, 0, or 1 for a negative, zero, or positive amount. */
   sign(): -1 | 0 | 1 {
     return this.cents === 0n ? 0 : this.cents < 0n ? -1 : 1;
   }
 
+  /** True when the amount is exactly zero. */
   isZero(): boolean {
     return this.cents === 0n;
   }
 
+  /** Exact value equality of the cents. */
   equals(other: Money): boolean {
     return this.cents === other.cents;
   }
@@ -101,6 +109,7 @@ export class Money {
     return formatScaled(this.cents, 2);
   }
 
+  /** Serializes as the 2 decimal text so JSON never carries a float. */
   toJSON(): string {
     return this.toString();
   }
@@ -115,10 +124,12 @@ export class UnitCost {
 
   static readonly zero = new UnitCost(0n);
 
+  /** Parses text or a number with at most 4 decimals; throws `InvalidAmountError` when malformed or negative. */
   static of(value: string | number): UnitCost {
     return new UnitCost(parseScaled(String(value), 4, 'Unit cost'));
   }
 
+  /** Builds a cost from ten thousandths of EGP. */
   static fromScaled(scaled: bigint): UnitCost {
     return new UnitCost(scaled);
   }
@@ -134,18 +145,22 @@ export class UnitCost {
     return Money.fromCents(mulDivRound(this.scaled, BigInt(quantity), 100n));
   }
 
+  /** True when the cost is exactly zero. */
   isZero(): boolean {
     return this.scaled === 0n;
   }
 
+  /** Exact value equality. */
   equals(other: UnitCost): boolean {
     return this.scaled === other.scaled;
   }
 
+  /** The `numeric` text form, always with 4 decimals. */
   toString(): string {
     return formatScaled(this.scaled, 4);
   }
 
+  /** Serializes as the 4 decimal text so JSON never carries a float. */
   toJSON(): string {
     return this.toString();
   }
@@ -155,6 +170,7 @@ export class UnitCost {
 export class Quantity {
   private constructor(readonly value: number) {}
 
+  /** A whole number; throws `InvalidAmountError` for fractions, NaN, or unsafe integers. */
   static of(value: number): Quantity {
     if (!Number.isSafeInteger(value)) {
       throw new InvalidAmountError(`Quantity must be a whole number: ${value}`);
@@ -174,10 +190,12 @@ export class Quantity {
     return Quantity.of(Quantity.of(quantity).value * Quantity.of(factor).value);
   }
 
+  /** True for a positive quantity, stock coming in. */
   isInbound(): boolean {
     return this.value > 0;
   }
 
+  /** The size of the quantity without its sign. */
   abs(): number {
     return Math.abs(this.value);
   }
@@ -190,6 +208,7 @@ function parseTaxRate(value: string | number): bigint {
   return scaled;
 }
 
+/** What a document line supplies to `LineAmounts.compute`: quantity, price, optional discount, tax rate, and whether the price already includes VAT. */
 export interface LineAmountsInput {
   /** Whole units on the line. */
   quantity: number;
@@ -201,6 +220,7 @@ export interface LineAmountsInput {
   pricesIncludeVat: boolean;
 }
 
+/** Net, tax, and gross of one line, where gross = net + tax. */
 export interface LineAmountsResult {
   net: Money;
   tax: Money;
@@ -209,6 +229,7 @@ export interface LineAmountsResult {
 
 /** The one rule for line amounts, used by every document module. */
 export const LineAmounts = {
+  /** Computes a line's amounts; throws `InvalidAmountError` for a negative quantity, price, or discount, or a discount larger than the line. */
   compute(input: LineAmountsInput): LineAmountsResult {
     const quantity = Quantity.of(input.quantity);
     if (quantity.value < 0) throw new InvalidAmountError('Line quantity cannot be negative');
@@ -238,7 +259,9 @@ export const LineAmounts = {
 export const MoneyString = z
   .string()
   .regex(/^-?\d{1,12}(\.\d{1,2})?$/, 'An amount with at most 2 decimals');
+/** A unit cost as `numeric(14,4)` text: 0 or more, at most 4 decimals. */
 export const UnitCostString = z
   .string()
   .regex(/^\d{1,10}(\.\d{1,4})?$/, 'A unit cost of 0 or more with at most 4 decimals');
+/** A tax rate in percent as `numeric(5,2)` text, such as `14.00`. */
 export const TaxRateString = z.string().regex(/^\d{1,3}(\.\d{1,2})?$/, 'A rate like 14.00');

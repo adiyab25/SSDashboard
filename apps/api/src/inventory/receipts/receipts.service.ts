@@ -33,6 +33,10 @@ const MAX_LINE_TOTAL_CENTS = 999_999_999_999n;
 
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
+/**
+ * The receipt rules a caller can break: missing, replayed key with a different body, bad lines
+ * or location, future date, already voided, or a void that would take stock below zero.
+ */
 export type ReceiptErrorCode =
   | 'NotFound'
   | 'IdempotencyConflict'
@@ -44,6 +48,10 @@ export type ReceiptErrorCode =
 
 /** A receipt rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class ReceiptError extends Error {
+  /**
+   * Takes the stable `code`, a message safe to show, the per line errors, and for
+   * `InsufficientStock` the SKUs a void would take below zero.
+   */
   constructor(
     readonly code: ReceiptErrorCode,
     message: string,
@@ -103,6 +111,7 @@ export function serializeReceipt(detail: StockReceiptDetail, role: StaffRole): S
 export class ReceiptsService {
   private readonly logger = new Logger('StockReceipts');
 
+  /** Takes the app database connection, the ledger, catalog, numbering and settings services. */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LedgerService) private readonly ledger: LedgerService,

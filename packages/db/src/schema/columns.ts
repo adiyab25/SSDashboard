@@ -19,9 +19,11 @@ export const unitCost = (name: string) => numeric(name, { precision: 14, scale: 
 /** A tax rate in percent, `numeric(5,2)` (14.00 means 14%). */
 export const taxRate = (name: string) => numeric(name, { precision: 5, scale: 2 });
 
+/** Creation timestamp, set by the database and never changed. */
 export const createdAt = () =>
   timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 
+/** Last change timestamp, refreshed by Drizzle on every update through the ORM. */
 export const updatedAt = () =>
   timestamp('updated_at', { withTimezone: true })
     .notNull()

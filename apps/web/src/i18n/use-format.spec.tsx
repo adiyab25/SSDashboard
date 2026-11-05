@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LanguageProvider, useLanguage } from './language-provider';
-import { resetLanguageState, stubNetwork } from './language-test-utils';
+import { resetLanguageState, stubNetwork } from './language-probe';
 import { useFormat } from './use-format';
 
 function Sample() {

@@ -1,6 +1,10 @@
 /** Which message: a forgotten password, or an admin's invitation to set a first password. */
 export type MailKind = 'reset' | 'invite';
 
+/**
+ * What a message is built from: its kind, the recipient's language and name, the client's name
+ * and the one time link.
+ */
 export interface MailTemplateInput {
   kind: MailKind;
   /** `ar` or anything else (English). The caller picks the recipient's saved language. */
@@ -10,6 +14,7 @@ export interface MailTemplateInput {
   link: string;
 }
 
+/** A finished message in three parts: subject, plain text and HTML. */
 export interface RenderedMail {
   subject: string;
   text: string;

@@ -37,6 +37,10 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
   private readonly db: Database;
   private boss: PgBoss | undefined;
 
+  /**
+   * Takes the env, the app database connection, the mailer (null when `MAIL_DRIVER` is none) and
+   * the settings service.
+   */
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(DATABASE) connection: DatabaseConnection,
@@ -46,6 +50,10 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
     this.db = connection.db;
   }
 
+  /**
+   * Starts the queue and the send handler. Does nothing on an install without a mailer, because
+   * nothing is ever queued there.
+   */
   async onApplicationBootstrap(): Promise<void> {
     // No mail on this install: nothing is queued, so there is nothing to work.
     if (!this.mailer) return;
@@ -128,6 +136,7 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
     }
   }
 
+  /** Stops the queue after letting a send in progress finish. */
   async onApplicationShutdown(): Promise<void> {
     await this.boss?.stop({ graceful: true });
   }

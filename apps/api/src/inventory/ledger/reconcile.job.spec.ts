@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
 import type { SettingsService } from '../../platform/settings.service.js';
@@ -92,14 +93,14 @@ describe('ReconcileJob', () => {
   });
 
   it('logs queue errors instead of crashing the worker', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     await makeJob().job.onApplicationBootstrap();
     const [event, listener] = boss.on.mock.calls[0] as [string, (error: Error) => void];
 
     listener(new Error('connection lost'));
 
     expect(event).toBe('error');
-    expect(log).toHaveBeenCalledWith('Job queue error: connection lost');
+    expect(log).toHaveBeenCalledWith('Job queue error: connection lost', expect.any(String));
   });
 
   it('stops the queue gracefully on shutdown, and does nothing if it never started', async () => {

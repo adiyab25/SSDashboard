@@ -2,13 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from './language-provider';
-import {
-  LanguageProbe,
-  readout,
-  resetLanguageState,
-  settle,
-  stubNetwork,
-} from './language-test-utils';
+import { LanguageProbe, readout, resetLanguageState, settle, stubNetwork } from './language-probe';
 
 const cookie = () => /(?:^|;\s*)ss_lang=([^;]*)/.exec(document.cookie)?.[1];
 

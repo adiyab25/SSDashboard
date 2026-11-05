@@ -15,14 +15,17 @@ import {
 } from 'drizzle-orm/pg-core';
 import { archivedAt, createdAt, id, money, updatedAt, type LocalizedText } from './columns.js';
 
+/** Units of measure (piece, box). A variant counts stock in its base unit; packs convert through `variantUomConversions`. */
 export const uoms = pgTable('uoms', {
   id: id(),
   code: text('code').notNull().unique(),
   name: jsonb('name').$type<LocalizedText>().notNull(),
 });
 
+/** Product lifecycle: draft until published, active for sale, archived instead of deleted. */
 export const productStatus = pgEnum('product_status', ['draft', 'active', 'archived']);
 
+/** The style a customer thinks of (a shirt), with bilingual name and free form custom fields. Sold and stocked as its variants. */
 export const products = pgTable(
   'products',
   {
@@ -44,6 +47,7 @@ export const products = pgTable(
   (t) => [index('products_tags_idx').using('gin', t.tags)],
 );
 
+/** A choice axis on a product (size, color) with ordered values; variants point into it by position. */
 export const productOptions = pgTable(
   'product_options',
   {
@@ -59,7 +63,9 @@ export const productOptions = pgTable(
   (t) => [unique('product_options_product_position_unique').on(t.productId, t.position)],
 );
 
+/** What a variant is: physical stock, a service with no stock, or a bundle of other variants. */
 export const variantKind = pgEnum('variant_kind', ['stocked', 'service', 'bundle']);
+/** How a stocked variant is traced: not at all, by lot, or one serial per unit. Only `stocked` variants may be tracked. */
 export const variantTracking = pgEnum('variant_tracking', ['none', 'lot', 'serial']);
 
 /** The SKU: the unit stock is counted in. */
@@ -122,6 +128,7 @@ export const variantUomConversions = pgTable(
   ],
 );
 
+/** Scannable codes for a variant, each tied to the pack unit it scans as. Codes are unique across the whole catalog. */
 export const barcodes = pgTable(
   'barcodes',
   {

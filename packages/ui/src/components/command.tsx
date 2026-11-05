@@ -14,6 +14,7 @@ import {
 import { InputGroup, InputGroupAddon } from '@ssdashboard/ui/components/input-group';
 import { SearchIcon, CheckIcon } from 'lucide-react';
 
+/** Searchable command list root (cmdk); filters its items as the user types. */
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
   return (
     <CommandPrimitive
@@ -27,6 +28,7 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
   );
 }
 
+/** Command palette shown inside a Dialog; title and description arrive as props for screen readers. */
 function CommandDialog({
   title,
   description,
@@ -62,6 +64,7 @@ function CommandDialog({
   );
 }
 
+/** Search field of a Command list, with its leading search icon. */
 function CommandInput({
   className,
   ...props
@@ -85,6 +88,7 @@ function CommandInput({
   );
 }
 
+/** Scrollable results area of a Command list. */
 function CommandList({ className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
     <CommandPrimitive.List
@@ -98,6 +102,7 @@ function CommandList({ className, ...props }: React.ComponentProps<typeof Comman
   );
 }
 
+/** Shown when no Command item matches the search; message arrives as children. */
 function CommandEmpty({
   className,
   ...props
@@ -111,6 +116,7 @@ function CommandEmpty({
   );
 }
 
+/** Titled group of related Command items. */
 function CommandGroup({
   className,
   ...props
@@ -127,6 +133,7 @@ function CommandGroup({
   );
 }
 
+/** Divider between Command groups. */
 function CommandSeparator({
   className,
   ...props
@@ -140,6 +147,7 @@ function CommandSeparator({
   );
 }
 
+/** One selectable row in a Command list; selected via keyboard or pointer. */
 function CommandItem({
   className,
   children,
@@ -160,6 +168,7 @@ function CommandItem({
   );
 }
 
+/** Keyboard hint displayed at the end of a Command item. */
 function CommandShortcut({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span

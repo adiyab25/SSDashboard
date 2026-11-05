@@ -1,14 +1,14 @@
 # SSDashboard
 
-The order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, and consignment showroom partners; one shared core deployed per brand, sold as a Warehouse and an Operations bundle. Scope: [docs/scope/index.md](docs/scope/index.md). A from scratch rebuild is under way on `feat/rebuild` ([plan](docs/positioning/2026-11-05-rebuild-plan.md)); the rest of this file describes the current code until `/audit` rewrites it after the new scaffold.
+The order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, and consignment showroom partners; one shared core deployed per brand, sold as a Warehouse and an Operations bundle. Scope: [docs/scope/index.md](docs/scope/index.md). The wave 3 scaffold ([spec 0007](docs/specs/0007-stack-architecture-operations-layer/index.md) Shape A: keep and amend) is in; why the product changed: [rebuild plan](docs/positioning/2026-11-05-rebuild-plan.md).
 
 ## Stack
 
 - **Language / Runtime**: TypeScript (strict) on Node 26 (`.nvmrc`), ESM everywhere
-- **Framework**: modular monolith, NestJS api + worker + migrate (`apps/api`), Next.js App Router back office (`apps/web`)
-- **Key dependencies**: PostgreSQL 18 + Drizzle ORM (`packages/db`), Zod contracts + OpenAPI (`packages/contracts`), Better Auth, pg-boss, shadcn/ui on Tailwind v4, TanStack Table
+- **Framework**: modular monolith, NestJS api + worker + migrate (`apps/api`), Next.js App Router web app split by audience (`apps/web`)
+- **Key dependencies**: PostgreSQL 18 + Drizzle ORM (`packages/db`), Zod contracts (`packages/contracts`), Better Auth, pg-boss, shadcn/ui on Tailwind v4, TanStack Table
 - **Package manager**: pnpm workspaces (shared versions in the `catalog:` of `pnpm-workspace.yaml`) + Turborepo
-- **Deploy**: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client (`deploy/`). Full decision: [spec 0007](docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001; reshapes hosting, connectors, and audiences, applied in wave 3)
+- **Deploy**: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client (`deploy/compose.yaml`) today. Full decision: [spec 0007](docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001); the shared host Postgres, edge Caddy, and per client role names arrive with features 4 and 26.
 
 ## Build approach
 
@@ -17,11 +17,12 @@ Tracer Bullet: prove one real thread through every layer first, then thicken one
 ## Commands
 
 ```bash
-pnpm install                                  # Install
-docker compose -f deploy/compose.dev.yaml up -d   # Local Postgres on port 5433 (copy .env.example to .env)
+pnpm install && pnpm bootstrap               # .env from .env.example, Postgres 18 (5433), Garage S3 (3900), Mailpit (1025, UI 8025), migrations; safe to rerun
 pnpm db:migrate                               # Apply migrations (as the owner, MIGRATION_DATABASE_URL)
 pnpm dev                                      # api on 3001, web on 3000
 pnpm build && pnpm typecheck                  # Build, type check
+pnpm lint                                     # ESLint per workspace + the repo checks (pnpm lint:repo runs those alone)
+pnpm format:check                             # Prettier
 pnpm test                                     # Unit tests (Vitest)
 pnpm test:e2e                                 # Database backed e2e + Playwright (needs Postgres)
 pnpm db:generate                              # New SQL migration from the Drizzle schema
@@ -29,37 +30,42 @@ pnpm db:generate                              # New SQL migration from the Drizz
 
 ## Specs
 
-Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationale.md`, `verify.md`).
+Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationale.md`, `verify.md`). Decisions inside one module are ADRs in `docs/adr/NNNN-title.md` (copy `0000-template.md`, list it in `docs/adr/README.md`, link it from the module README).
 
 ## Rules
 
-- **Domain driven modules.** Each business area (catalog, inventory, purchasing, sales, production, costing, platform) is one bounded NestJS module owning its tables, services, and controllers. Modules talk only through exported services or past tense domain events (`StockMoved`, `OrderPlaced`), never by reading another module's tables. Use the business's words in code; immutable value objects (`Money`, `Quantity`) validate on construction.
+- **Domain driven modules.** Each business area is one bounded NestJS module in `apps/api/src/<module>/` owning its tables, services, and controllers, named in the business's words. Today: `platform` (settings, numbering, `audience/`, `logging/`), `auth`, `staff`, `catalog`, `inventory`, `mail`, `health`. Planned by spec 0007's module map: `audit`, `identity` (absorbs `auth` and `staff`), `customers`, `orders`, `tasks`, `credit`, `settlement`, `channels`, `connectors`, `exchanges`, `partners`, `exports`, `reporting`; purchasing and production come with slices 4 and 5. Modules talk only through exported services or past tense domain events (`StockMoved`, `OrderPlaced`), never by reading another module's tables. Immutable value objects (`Money`, `Quantity`) validate on construction.
 - **The stock ledger is append only.** Every stock change goes through the inventory ledger service, the single writer of movements. Never update or delete a movement; correct with a new one. Every movement, order line, and receipt carries cost and price.
 - **Two database roles.** The api and worker connect as `ssdashboard_app` (`DATABASE_URL`), which can only insert and read the ledger history; only `migrate` connects as the owner (`MIGRATION_DATABASE_URL`). Never give an app service the owner password; Compose passes each service an explicit env list. Full rules: [spec 0002](docs/specs/0002-core-data-model/index.md).
-- **Folder by feature.** Colocate a feature's module, schema, contract, and screens; no global `services/` or `controllers/` folders.
+- **Audiences, deny by default.** Web route groups are exactly `(backoffice)`, `(portal)`, `(partner)`, `(auth)`. Every api controller carries exactly one `@Audience('staff' | 'partner' | 'portal' | 'hook' | 'public')` (`apps/api/src/platform/audience/`); `audience.spec.ts` fails the build otherwise.
+- **Folder by feature.** Colocate a feature's module, schema, contract, screens, and tests; no global `services/` or `controllers/` folders.
 - **Strict types.** No `any` (use `unknown` and narrow), exhaustive `switch` on unions; keep `strict` and `noUncheckedIndexedAccess` on.
-- **One schema per shape.** Request and response shapes are Zod schemas in `packages/contracts`; the api validates with them and the web calls the generated client. Never hand write a duplicate type.
+- **One schema per shape.** Request and response shapes are Zod schemas in `packages/contracts`; the api validates with them, and the web calls relative `/api` paths (`apiRequest` in `apps/web/src/api/client.ts`) and parses each answer with the contract schema. There is no OpenAPI document or generated client yet. Never hand write a duplicate type.
 - **No business logic in Next.js server code.** Server components render only the shell and session check; business data loads in client components through relative `/api` paths. No `NEXT_PUBLIC_*` per client settings; they come from `GET /api/config`.
 - **Config is env only, validated at startup** (`apps/api/src/config/env.ts`). Nothing per client is baked into an image; client differences live in settings, module toggles, custom fields, or `extensions/<client>`, never core edits.
 - **Migrations only move forward**, run only by the `migrate` entry point, apply from any supported version, and follow expand and contract (no destructive change in one release). Data moves happen in SQL migrations.
 - **Errors**: throw NestJS HTTP exceptions with a stable error code at the api edge; domain code throws typed domain errors, never returns error strings. **Named exports only**, except where Next.js requires a default export (`page`, `layout`, and similar files).
+- **Documented code.** TSDoc on every export (what it does, why, and what it must never do), enforced by lint. A `README.md` with Owns, Never touches, How to test, Governing spec, and Decisions (`docs/templates/module-readme.md`) in every api module, web feature folder, and package, enforced by `lint:repo`.
+- **Names.** Kebab case files; one component per `.tsx` file, exporting the component named after the file (`exchange-request-form.tsx` exports `ExchangeRequestForm`); no vague words (`util`, `helper`, `misc`, `temp`, `mgr`, `cfg`). shadcn files in `packages/ui/src/components/` and `packages/ui/src/lib/utils.ts` are exempt ([ADR 0001](docs/adr/0001-shadcn-component-files-keep-their-vendor-shape.md)).
+- **Personal data never reaches logs (Law 151).** Customer phones, names, addresses, and message bodies are redacted by the list in `packages/config/src/redaction.ts`; the api and worker log through `RedactingLogger` (`apps/api/src/platform/logging/`). Never print personal data with `console`; any error tracker runs on the host or in Egypt, never abroad.
+- **Docs stay true.** A README, spec, scope, or `AGENTS.md` line your change makes false is a defect; fix it in the same change.
 - **UI**: English and Arabic from day one, so no hard coded strings and logical CSS properties only (`ms-`/`me-`, `start`/`end`, never `left`/`right`); WCAG 2.2 AA with keyboard and focus support.
-- **Design system**: build all UI to [`packages/ui/DESIGN.md`](packages/ui/DESIGN.md) (color roles, type, density, focus, and the table, form, and feedback rules); token values live in `packages/ui/src/styles/globals.css`, not `packages/config`. Use role tokens only (`bg-muted`, `text-foreground`, never `bg-zinc-200` or raw colors), Radix `asChild` for custom triggers, and shadcn components from `@ssdashboard/ui` before custom markup. Every page renders inside the app shell with exactly one `<h1>`.
+- **Design system**: build all UI to [`packages/ui/DESIGN.md`](packages/ui/DESIGN.md) (color roles, type, density, focus, and the table, form, and feedback rules); token values live in `packages/ui/src/styles/globals.css`, not `packages/config`. Use role tokens only (`bg-muted`, `text-foreground`, never `bg-zinc-200` or raw colors), Radix `asChild` for custom triggers, and shadcn components from `@ssdashboard/ui` before custom markup. Every page renders inside its audience's frame with exactly one `<h1>`.
 
 ## Tooling
 
-Chosen here, installed by `/develop tooling` (feature 2). Tests already run on Vitest, Testing Library, and Playwright (`test-preferences.json`).
-- Lint and format: ESLint flat config with typescript-eslint (shared config in `packages/config`) + Prettier, run through Turborepo `lint` and `format` tasks.
-- Logical CSS check: `packages/config/scripts/check-logical-css.mjs` runs inside `lint` for `packages/ui` and `apps/web` and fails on physical side styles (`ml-`, `left-`, `text-right`, `margin-left`, and the like).
-- Before commit: lint, format, and type check staged work on every commit (Husky + lint-staged).
-- Testing gate: unit + integration tests with Vitest beside the source, database backed e2e and Playwright for user flows.
-- CI: GitHub Actions on push and PR runs lint, typecheck, test, and the generated client freshness check. The upgrade test and image publishing come with feature 16.
+- Lint and format: ESLint flat config (shared in `packages/config/eslint`: typescript-eslint, `jsdoc/require-jsdoc` + `tsdoc/syntax`, `unicorn/filename-case`, `react/no-multi-comp`, i18n bans) + Prettier (`.prettierrc.json`).
+- Repo checks (`packages/config/scripts`, run by `pnpm lint` through the root task `//#lint:repo`): route groups, folder names, module READMEs, doc links (`docs/**`, READMEs, AGENTS.md), banned names, component export names, and the TSDoc fixture. The logical CSS check runs inside `lint` for `packages/ui` and `apps/web`.
+- Hooks (Husky): `pre-commit` runs lint-staged (args chunked with `--max-arg-length 4000` for Windows) then `pnpm typecheck`; `commit-msg` runs `check-commit-subject.mjs`.
+- Testing: Vitest and Testing Library beside the source, database backed e2e and Playwright for user flows (`test-preferences.json`).
+- CI (`.github/workflows/ci.yml`): `conventions` (branch name and every commit subject, PRs only), `images` (builds `app` and `web`, not pushed), `checks` (format, lint, typecheck, unit), `e2e` (Postgres 18 service, Playwright). Publishing images comes with feature 26 (deployment).
 
 ## Git
 
 - integration: on
-- branch prefix: feat/
-- commit: per-milestone (short imperative subject, matching the history; no conventional commit prefixes)
+- branch prefix: feat/ (also fix/ and docs/; CI rejects anything else, `check-branch-name.mjs`)
+- commit: per-milestone (short imperative subject in business words, at most 72 characters, a body that says why when it is not obvious; no conventional prefixes, no `fixup!`, no vague subjects like `wip` or `misc`, rejected by the hook and CI)
+- PRs use `.github/pull_request_template.md`; agent made commits and PRs carry the project's attribution lines (review only).
 
 ## Agent skills
 
@@ -69,19 +75,21 @@ Project wide skills here; stack specific ones are listed in each workspace doc.
 - [multi-stage-dockerfile](.claude/skills/multi-stage-dockerfile/): `github/awesome-copilot`, the `deploy/` Dockerfiles
 - [postgresql-table-design](.claude/skills/postgresql-table-design/): `wshobson/agents`, table, index, and constraint design for every module
 - [agent-browser](.claude/skills/agent-browser/): drives the real app for `/check verify`
-- [design-md](.claude/skills/design-md/): the `design.md` for feature 4
+- [design-md](.claude/skills/design-md/): the `DESIGN.md` for feature 5
 
 MCP servers: shadcn registry (recommended), Better Auth docs `https://mcp.better-auth.com/mcp` (recommended), Next.js devtools `vercel/next-devtools-mcp` (recommended), a community Postgres MCP on dev data only (recommended)
 
 ## Context files
 
-- [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS api, worker, and migrate entry points; module, config, and extension rules
+Human docs come first: every module and package has a `README.md` (what it owns and never touches). The `AGENTS.md` files below carry only agent gotchas and point at those READMEs.
+
+- [apps/api/AGENTS.md](apps/api/AGENTS.md): NestJS api, worker, and migrate entry points; module, config, audience, logging, and extension rules
 - [apps/api/src/inventory/AGENTS.md](apps/api/src/inventory/AGENTS.md): the stock ledger service, its locking, costing, and reconciliation rules
 - [apps/api/src/auth/AGENTS.md](apps/api/src/auth/AGENTS.md): staff sign in, session guard, lockout, two factor, and the create-admin commands
-- [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js back office (this Next.js version differs from training data, read its docs first)
-- [packages/contracts/AGENTS.md](packages/contracts/AGENTS.md): Zod schemas, OpenAPI document, generated client
+- [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js web app and its four audience route groups (this Next.js version differs from training data, read its docs first)
+- [packages/contracts/AGENTS.md](packages/contracts/AGENTS.md): Zod schemas shared by the api and web
 - [packages/db/AGENTS.md](packages/db/AGENTS.md): Drizzle schema and the only migration history
-- [packages/config/AGENTS.md](packages/config/AGENTS.md): shared TypeScript (and later lint) config
+- [packages/config/AGENTS.md](packages/config/AGENTS.md): shared TypeScript and ESLint config, the redaction list, and the repo check scripts
 - [packages/ui/AGENTS.md](packages/ui/AGENTS.md): shared design system, shadcn components, tokens, and `DESIGN.md`
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

@@ -55,6 +55,10 @@ const byCode = (a: { code: string }, b: { code: string }) =>
 /** Stock on hand read from the ledger balances (spec 0006, AC-9 and AC-10). */
 @Injectable()
 export class StockService {
+  /**
+   * Takes the ledger for balances and the catalog, locations, receipts and staff directory that
+   * name what those balances refer to.
+   */
   constructor(
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(CatalogService) private readonly catalog: CatalogService,

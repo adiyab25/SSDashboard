@@ -90,10 +90,15 @@ interface Cursor {
   id: string;
 }
 
+/** Turns the last row of a page into the opaque cursor for the next one. */
 export function encodeStaffCursor(cursor: Cursor): string {
   return Buffer.from(JSON.stringify([cursor.name, cursor.id]), 'utf8').toString('base64url');
 }
 
+/**
+ * Reads a cursor back. Throws `InvalidStaffCursorError` for anything this endpoint did not
+ * issue.
+ */
 export function decodeStaffCursor(value: string): Cursor {
   try {
     if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('shape');
@@ -121,6 +126,10 @@ export function escapeLike(value: string): string {
 
 const iso = (value: Date | string): string => new Date(value).toISOString();
 
+/**
+ * Derives the shown status: disabled when banned, invited when the person never signed in,
+ * otherwise active.
+ */
 export const statusOf = (row: {
   banned: boolean;
   last_sign_in_at: Date | string | null;
@@ -154,6 +163,10 @@ const refuseSelf = (id: string, actor: Actor, action: string): void => {
 export class StaffService {
   private readonly db: Database;
 
+  /**
+   * Takes the env, the app database connection, and the mail producer, lockout and audit
+   * services.
+   */
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(DATABASE) connection: DatabaseConnection,
@@ -169,6 +182,9 @@ export class StaffService {
     return this.env.MAIL_DRIVER !== 'none';
   }
 
+  /**
+   * One keyset page of staff ordered by name, with the optional search and filters of the query.
+   */
   async list(query: StaffListQuery): Promise<StaffListResponse> {
     const filters = [sql`TRUE`];
     if (query.q) {
@@ -203,12 +219,17 @@ export class StaffService {
     };
   }
 
+  /** One account's detail; throws 404 `NOT_FOUND` for an unknown id. */
   async get(id: string): Promise<StaffDetail> {
     const row = await this.find(this.db, id);
     if (!row) throw notFound();
     return this.toDetail(row);
   }
 
+  /**
+   * Creates an account and queues an invite when the install sends email, or returns a temporary
+   * password to hand over otherwise.
+   */
   async create(input: CreateStaffRequest, actor: Actor): Promise<CreateStaffResponse> {
     await this.assertLanguage(input.language);
     // Hashing is slow and must not hold any lock.
@@ -250,6 +271,10 @@ export class StaffService {
     return { staff, setup };
   }
 
+  /**
+   * Changes name, contact details, language or role. Refuses a change that would remove the last
+   * active admin, and emits a role changed event when the role moved.
+   */
   async update(id: string, input: UpdateStaffRequest, actor: Actor): Promise<StaffDetail> {
     if (input.language) await this.assertLanguage(input.language);
     // Hashing is slow and must not hold any lock, so the unusable password an email change needs
@@ -330,6 +355,10 @@ export class StaffService {
     return this.get(id);
   }
 
+  /**
+   * Disables an account, deleting its sessions and unused links in the same transaction. Refuses
+   * to disable the last active admin.
+   */
   async disable(id: string, reason: string | undefined, actor: Actor): Promise<StaffDetail> {
     await this.db.transaction(async (tx) => {
       await this.lock(tx);
@@ -350,6 +379,7 @@ export class StaffService {
     return this.get(id);
   }
 
+  /** Re-enables a disabled account; 404 for an unknown id. */
   async enable(id: string, actor: Actor): Promise<StaffDetail> {
     if (!(await this.find(this.db, id))) throw notFound();
     const result = await this.db.execute(
@@ -398,6 +428,10 @@ export class StaffService {
     };
   }
 
+  /**
+   * Issues a fresh invite link to an account that has never signed in. Throws 409 `NOT_INVITED`
+   * or `MAIL_DISABLED` when that cannot work.
+   */
   async resendInvite(id: string, actor: Actor): Promise<{ ok: true }> {
     const target = await this.find(this.db, id);
     if (!target) throw notFound();
@@ -411,6 +445,10 @@ export class StaffService {
     return { ok: true };
   }
 
+  /**
+   * Deletes every session of another person. Throws 409 `SELF_ACTION` when the admin targets
+   * themselves.
+   */
   async revokeSessions(id: string, actor: Actor): Promise<RevokeSessionsResponse> {
     refuseSelf(id, actor, 'sign out every session of');
     const target = await this.find(this.db, id);

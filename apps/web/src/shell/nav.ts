@@ -14,6 +14,7 @@ import type { MessageKey } from '@/i18n/message-key';
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
 export type NavGroup = 'general' | 'inventory';
 
+/** One sidebar and palette entry. */
 export interface NavItem {
   id: string;
   labelKey: MessageKey;
@@ -76,6 +77,7 @@ export const navItems: readonly NavItem[] = [
   },
 ];
 
+/** The groups in display order, with their heading keys. */
 export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
   { id: 'general', labelKey: 'shell.nav.groups.general' },
   { id: 'inventory', labelKey: 'shell.nav.groups.inventory' },

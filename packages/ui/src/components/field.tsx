@@ -6,6 +6,7 @@ import { cn } from 'cn';
 
 import { Label } from '@ssdashboard/ui/components/label';
 
+/** Stacks several form fields with consistent spacing. */
 function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -49,6 +50,7 @@ function Field({
   );
 }
 
+/** Label bound to a form control; text arrives as children and is never hard-coded. */
 function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>) {
   return (
     <Label
@@ -62,6 +64,7 @@ function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>)
   );
 }
 
+/** Helper text under a form control. */
 function FieldDescription({ className, ...props }: React.ComponentProps<'p'>) {
   return (
     <p

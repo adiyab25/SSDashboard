@@ -1,0 +1,30 @@
+'use client';
+
+import { Avatar, AvatarFallback } from '@ssdashboard/ui/components/avatar';
+import { Kbd, KbdGroup } from '@ssdashboard/ui/components/kbd';
+import { Separator } from '@ssdashboard/ui/components/separator';
+import { Skeleton } from '@ssdashboard/ui/components/skeleton';
+
+/** Keys, avatar, separator and skeleton specimens. */
+export function Basics() {
+  return (
+    <div className="flex flex-wrap items-center gap-6">
+      <KbdGroup>
+        <Kbd>Ctrl</Kbd>
+        <Kbd>K</Kbd>
+      </KbdGroup>
+      <Avatar>
+        <AvatarFallback>S</AvatarFallback>
+      </Avatar>
+      <div className="flex h-6 items-center gap-3">
+        <span>Start</span>
+        <Separator orientation="vertical" />
+        <span>End</span>
+      </div>
+      <div className="flex w-48 flex-col gap-2" aria-hidden>
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    </div>
+  );
+}

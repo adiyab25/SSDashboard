@@ -10,6 +10,7 @@ import {
   Loader2Icon,
 } from 'lucide-react';
 
+/** Mounts the toast notification region (sonner) themed to the design system; render once in the app shell. */
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = 'system' } = useTheme();
 

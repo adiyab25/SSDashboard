@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { UnitCost } from '@ssdashboard/contracts';
 
+/** One posting line reduced to the fields that identify it, so a retry hashes identically. */
 export interface HashedLine {
   variantId: string;
   locationId: string;
@@ -14,6 +15,10 @@ export interface HashedLine {
   reasonCode?: string | undefined;
 }
 
+/**
+ * A whole posting reduced to what identifies it, for the idempotency check: the same key with a
+ * different hash is a conflict.
+ */
 export interface HashedRequest {
   operation: 'post' | 'reverse';
   sourceType: string;

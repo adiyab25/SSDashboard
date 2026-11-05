@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { LocalizedText } from './localized-text.js';
 
+/** Location lifecycle: active, or archived instead of deleted. */
 export const LocationStatus = z.enum(['active', 'archived']);
+/** The validated shape of `LocationStatus`, as the api and web see it after parsing. */
 export type LocationStatus = z.infer<typeof LocationStatus>;
 
 /**
@@ -14,11 +16,13 @@ export const LocationListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(200),
 });
 
+/** The validated shape of `LocationListQuery`, as the api and web see it after parsing. */
 export type LocationListQuery = z.infer<typeof LocationListQuery>;
 
 /** The places a person works in: warehouses and showrooms, never transit or virtual ones. */
 export const WorkLocationType = z.enum(['warehouse', 'showroom']);
 
+/** A location as a picker shows it: id, code, bilingual name, and type. */
 export const LocationSummary = z.object({
   id: z.uuid(),
   code: z.string(),
@@ -26,6 +30,7 @@ export const LocationSummary = z.object({
   type: WorkLocationType,
 });
 
+/** The validated shape of `LocationSummary`, as the api and web see it after parsing. */
 export type LocationSummary = z.infer<typeof LocationSummary>;
 
 /** Location codes are trimmed and uppercased before the pattern check (spec 0006, AC-4). */
@@ -52,6 +57,7 @@ export const LocationName = z
 export const CreateLocationRequest = z
   .object({ code: LocationCode, name: LocationName, type: WorkLocationType })
   .strict();
+/** What a caller passes for `CreateLocationRequest`, before defaults and transforms are applied. */
 export type CreateLocationRequest = z.input<typeof CreateLocationRequest>;
 
 /** One location as the list and the management endpoints return it. */
@@ -62,6 +68,7 @@ export const LocationDetail = LocationSummary.extend({
   /** True once stock was posted or a receipt was recorded there: the code is read only. */
   codeLocked: z.boolean(),
 });
+/** The validated shape of `LocationDetail`, as the api and web see it after parsing. */
 export type LocationDetail = z.infer<typeof LocationDetail>;
 
 /** Warehouses and showrooms ordered by code, a page at a time. Never transit or virtual. */
@@ -70,6 +77,7 @@ export const LocationListResponse = z.object({
   nextCursor: z.string().nullable(),
 });
 
+/** The validated shape of `LocationListResponse`, as the api and web see it after parsing. */
 export type LocationListResponse = z.infer<typeof LocationListResponse>;
 
 /**
@@ -84,4 +92,5 @@ export const UpdateLocationRequest = z
     type: WorkLocationType.optional(),
   })
   .strict();
+/** What a caller passes for `UpdateLocationRequest`, before defaults and transforms are applied. */
 export type UpdateLocationRequest = z.input<typeof UpdateLocationRequest>;

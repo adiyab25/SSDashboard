@@ -2,6 +2,7 @@ import { MeResponse } from '@ssdashboard/contracts';
 import { apiFetch } from './api-fetch';
 import { setMe } from './use-me';
 
+/** The outcome of a profile change: the new person, or the api status and error code. */
 export type ProfileResult =
   { ok: true; me: MeResponse } | { ok: false; status: number; code: string };
 

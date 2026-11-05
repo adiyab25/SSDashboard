@@ -1,6 +1,7 @@
 import { HttpException, UnprocessableEntityException, type PipeTransform } from '@nestjs/common';
 import type { z } from 'zod';
 
+/** How a pipe answers a bad body: the HTTP status and the stable error code. */
 export interface ZodBodyPipeOptions {
   /** Default 422. */
   status?: number;
@@ -13,11 +14,16 @@ export interface ZodBodyPipeOptions {
  * unless the endpoint's spec names another answer (spec 0006 uses 400 `INVALID_INPUT`).
  */
 export class ZodBodyPipe<T extends z.ZodType> implements PipeTransform<unknown, z.output<T>> {
+  /** Takes the contract schema and optional answer overrides. */
   constructor(
     private readonly schema: T,
     private readonly options: ZodBodyPipeOptions = {},
   ) {}
 
+  /**
+   * Returns the parsed body, or throws the HTTP error listing each failing field. A missing body
+   * is validated as an empty object.
+   */
   transform(value: unknown): z.output<T> {
     const result = this.schema.safeParse(value ?? {});
     if (!result.success) {

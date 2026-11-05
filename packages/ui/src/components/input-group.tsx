@@ -8,6 +8,7 @@ import { Button } from '@ssdashboard/ui/components/button';
 import { Input } from '@ssdashboard/ui/components/input';
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 
+/** Joins an input with addons and buttons into one bordered control sharing a single focus ring. */
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -41,6 +42,7 @@ const inputGroupAddonVariants = cva(
   },
 );
 
+/** Icon, text, or button slot attached to the start or end of an InputGroup. */
 function InputGroupAddon({
   className,
   align = 'inline-start',
@@ -79,6 +81,7 @@ const inputGroupButtonVariants = cva('flex items-center gap-2 text-sm shadow-non
   },
 });
 
+/** Compact button sized to sit inside an InputGroup. */
 function InputGroupButton({
   className,
   type = 'button',
@@ -98,6 +101,7 @@ function InputGroupButton({
   );
 }
 
+/** Static text slot inside an InputGroup, such as a unit or currency prefix. */
 function InputGroupText({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
@@ -110,6 +114,7 @@ function InputGroupText({ className, ...props }: React.ComponentProps<'span'>) {
   );
 }
 
+/** Borderless input that takes its frame from the surrounding InputGroup. */
 function InputGroupInput({ className, ...props }: React.ComponentProps<'input'>) {
   return (
     <Input
@@ -123,6 +128,7 @@ function InputGroupInput({ className, ...props }: React.ComponentProps<'input'>)
   );
 }
 
+/** Borderless textarea that takes its frame from the surrounding InputGroup. */
 function InputGroupTextarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <Textarea

@@ -22,6 +22,7 @@ import {
 } from '@ssdashboard/contracts';
 import type { z } from 'zod';
 import { Roles } from '../auth/roles.decorator.js';
+import { Audience } from '../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
@@ -57,10 +58,16 @@ export const notFoundId = () =>
  * Products in, SKUs out (spec 0006). Any signed in person creates, reads, and edits name and
  * price; delete is admin only. Stock dependent SKU actions live in inventory's `sku-lifecycle/`.
  */
+@Audience('staff')
 @Controller()
 export class CatalogController {
+  /** Takes the catalog service that holds the rules. */
   constructor(private readonly catalog: CatalogService) {}
 
+  /**
+   * Creates one active product with one stocked SKU and returns that SKU. A taken SKU code is
+   * mapped to an HTTP error by `catalogHttpError`.
+   */
   @Post('products')
   async create(
     @Body(new ZodBodyPipe(CreateProductRequest, INVALID_INPUT))
@@ -73,6 +80,7 @@ export class CatalogController {
     }
   }
 
+  /** One keyset page of SKUs for the catalog list, filtered by the validated query. */
   @Get('skus')
   async list(@Query(new ZodQueryPipe(SkuListQuery)) query: SkuListQuery): Promise<SkuListResponse> {
     try {
@@ -82,6 +90,7 @@ export class CatalogController {
     }
   }
 
+  /** One SKU's detail; an unknown or malformed id answers 404. */
   @Get('skus/:id')
   async get(@Param('id', notFoundId()) id: string): Promise<SkuDetail> {
     try {

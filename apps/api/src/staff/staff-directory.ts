@@ -9,6 +9,7 @@ import { pgArray } from '../database/sql.js';
  */
 @Injectable()
 export class StaffDirectory {
+  /** Takes the app database connection. */
   constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
 
   /** Display names by user id. Unknown ids are left out. */
@@ -21,5 +22,6 @@ export class StaffDirectory {
   }
 }
 
+/** Module that exports the staff directory to modules which only need names, such as inventory. */
 @Module({ providers: [StaffDirectory], exports: [StaffDirectory] })
 export class StaffDirectoryModule {}

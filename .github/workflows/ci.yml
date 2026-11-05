@@ -15,6 +15,49 @@ env:
   TURBO_LOG_ORDER: stream
 
 jobs:
+  conventions:
+    name: Branch name and commit subjects
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # The job runs dependency free Node scripts, so there is nothing to install or cache.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      # Hooks can be skipped, so CI reruns the commit-msg check on every commit in the PR.
+      # The range uses the two PR shas: HEAD on pull_request is a merge commit.
+      - name: Branch name
+        run: node packages/config/scripts/check-branch-name.mjs "$HEAD_REF"
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+      - name: Commit subjects
+        run: node packages/config/scripts/check-commit-subject.mjs --range "$BASE_SHA..$HEAD_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  images:
+    name: Build the ${{ matrix.image }} image (not pushed)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [app, web]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile.${{ matrix.image }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
   checks:
     name: Format, lint, typecheck, unit tests
     runs-on: ubuntu-latest

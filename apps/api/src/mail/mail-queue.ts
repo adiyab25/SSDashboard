@@ -5,6 +5,7 @@ import type { Env } from '../config/env.js';
 import { JOB_SCHEMA } from '../inventory/ledger/reconcile.job.js';
 import type { MailKind } from './mail-templates.js';
 
+/** The pg-boss queue that carries one job per email to send. */
 export const MAIL_QUEUE = 'mail.send';
 
 /**
@@ -17,6 +18,7 @@ export interface MailJob {
   tokenId: string;
 }
 
+/** How many times pg-boss retries a failed send before giving up. */
 export const MAIL_RETRY_LIMIT = 4;
 
 /**
@@ -50,6 +52,7 @@ export class MailProducer implements OnApplicationShutdown {
   private readonly logger = new Logger('Mail');
   private started: Promise<PgBoss> | undefined;
 
+  /** Takes the env for the database URL the send only client connects to. */
   constructor(@Inject(ENV) private readonly env: Env) {}
 
   /** True when the job is queued. */
@@ -86,6 +89,7 @@ export class MailProducer implements OnApplicationShutdown {
     return this.started;
   }
 
+  /** Stops the send client if it was ever started, ignoring a start that failed. */
   async onApplicationShutdown(): Promise<void> {
     const boss = await this.started?.catch(() => undefined);
     await boss?.stop({ graceful: true });

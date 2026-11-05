@@ -11,6 +11,10 @@ export function clientIp(headers: Headers | undefined): string {
   return first && first !== '*' ? first : UNKNOWN_IP;
 }
 
+/**
+ * The browser's `User-Agent` header cut to 300 characters for audit lines, or null when absent.
+ * Never log the full header: it is client controlled and unbounded.
+ */
 export function userAgent(headers: Headers | undefined): string | null {
   return headers?.get('user-agent')?.slice(0, 300) ?? null;
 }

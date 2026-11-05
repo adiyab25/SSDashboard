@@ -6,4 +6,5 @@ export const LocalizedText = z.object({
   ar: z.string().optional(),
 });
 
+/** The validated shape of `LocalizedText`, as the api and web see it after parsing. */
 export type LocalizedText = z.infer<typeof LocalizedText>;

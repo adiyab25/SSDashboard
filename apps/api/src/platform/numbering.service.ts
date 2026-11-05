@@ -7,6 +7,7 @@ import { localDate, SettingsService } from './settings.service.js';
 export class NumberingError extends Error {
   readonly code = 'UnknownDocType';
 
+  /** Takes the document type that had no prefix. */
   constructor(docType: string) {
     super(`No document prefix is set for "${docType}"`);
     this.name = 'NumberingError';
@@ -16,6 +17,7 @@ export class NumberingError extends Error {
 /** Gap free document numbers per type and year, like `PO-2026-000123` (AC-10). */
 @Injectable()
 export class NumberingService {
+  /** Takes the settings service that holds the document prefixes. */
   constructor(@Inject(SettingsService) private readonly settings: SettingsService) {}
 
   /**

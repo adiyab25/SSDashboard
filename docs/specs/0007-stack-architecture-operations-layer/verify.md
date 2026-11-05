@@ -21,18 +21,18 @@ _Steps derived from spec 0007. It is a decision spec, so its checks map to the r
 
 ## Part 2: after wave 3 (both shapes unless marked)
 
-- [ ] Shape A only: `apps/web/src/app/(backoffice)`, `(portal)`, `(partner)`, `(auth)` exist and `(app)` does not → R-2, R-9
-- [ ] Shape B only: `pnpm db:migrate`, then `pnpm dev`, then `curl localhost:3001/api/health` → `"status":"ok"`; the web health page renders with `dir="rtl"` in Arabic → R-10
-- [ ] `pnpm build && pnpm typecheck && pnpm test` → every task succeeds
-- [ ] Remove the `@Audience` annotation from one controller, run `pnpm --filter @ssdashboard/api test` → the audience test fails naming that controller; restore it → passes → R-2
-- [ ] `pnpm lint` → passes; switch off `jsdoc/require-jsdoc` in `packages/config/eslint` and run the fixture check → it fails for each export kind (function, class, interface, type alias, enum, exported const, React component, hook) → R-9
-- [ ] Delete one module README heading (for example `## Never touches`), run `pnpm lint` → the README script fails naming the file → R-9
-- [ ] Empty the redaction list, run the logger test → it fails showing a phone in the output; restore → passes → R-9 (M10)
-- [ ] Add a second component to a `.tsx` file → `react/no-multi-comp` fails; add a file `MiscHelper.ts` → `unicorn/filename-case` and the banned names script fail → R-9
-- [ ] `git commit -m "wip"` on a scratch branch → the `commit-msg` hook rejects it; the same subject pushed with `--no-verify` fails the CI commit check → R-9
-- [ ] Open a PR from a branch named `test-branch` → the CI branch name check fails; from `feat/<slug>` → passes → R-9
+- [x] Shape A only: `apps/web/src/app/(backoffice)`, `(portal)`, `(partner)`, `(auth)` exist and `(app)` does not → R-2, R-9 _(2026-11-05: done, commit 3c1fe4e)_
+- [ ] Shape B only: `pnpm db:migrate`, then `pnpm dev`, then `curl localhost:3001/api/health` → `"status":"ok"`; the web health page renders with `dir="rtl"` in Arabic → R-10 _(not applicable: the owner chose Shape A)_
+- [x] `pnpm build && pnpm typecheck && pnpm test` → every task succeeds _(2026-11-05: build 5/5, typecheck 8/8, unit tests pass in all six workspaces; api e2e 271 and browser e2e 318 pass locally)_
+- [x] Remove the `@Audience` annotation from one controller, run `pnpm --filter @ssdashboard/api test` → the audience test fails naming that controller; restore it → passes → R-2 _(2026-11-05: removing it from `CatalogController` fails naming `CatalogController (catalog\catalog.controller.ts)`; restored, 15 pass)_
+- [x] `pnpm lint` → passes; switch off `jsdoc/require-jsdoc` in `packages/config/eslint` and run the fixture check → it fails for each export kind (function, class, interface, type alias, enum, exported const, React component, hook) → R-9 _(2026-11-05: `node packages/config/scripts/check-tsdoc-fixture.mjs --without-require-jsdoc` reports all 9 kinds slipping past, including method)_
+- [x] Delete one module README heading (for example `## Never touches`), run `pnpm lint` → the README script fails naming the file → R-9 _(2026-11-05: deleting it from `apps/api/src/inventory/README.md` fails naming the file and heading)_
+- [x] Empty the redaction list, run the logger test → it fails showing a phone in the output; restore → passes → R-9 (M10) _(2026-11-05: emptying `PERSONAL_DATA_KEYS` fails 4 tests showing names and addresses; phones stay masked even then, by the free text phone pattern, a second layer; restored, 10 pass)_
+- [x] Add a second component to a `.tsx` file → `react/no-multi-comp` fails; add a file `MiscHelper.ts` → `unicorn/filename-case` and the banned names script fail → R-9 _(2026-11-05: both fail as described, planted in `packages/ui/src` and `apps/web/src`)_
+- [x] `git commit -m "wip"` on a scratch branch → the `commit-msg` hook rejects it; the same subject pushed with `--no-verify` fails the CI commit check → R-9 _(2026-11-05: the hook rejects `wip` and no commit is created; the CI range check is proven by a planted `wip` in a temporary repository in `check-commit-subject.test.mjs`, not by a pushed `--no-verify` commit)_
+- [x] Open a PR from a branch named `test-branch` → the CI branch name check fails; from `feat/<slug>` → passes → R-9 _(2026-11-05: `check-branch-name.mjs` fails `test-branch` and passes `feat/scaffold-shape-a` locally; the CI job is checked on this branch's PR; no `test-branch` PR was opened)_
 - [ ] The PR shows the `app` and `web` image build jobs green, with nothing pushed to the registry → R-5
-- [ ] `ls docs/adr/0000-template.md docs/templates/module-readme.md docs/research .github/pull_request_template.md` → all exist → R-9
+- [x] `ls docs/adr/0000-template.md docs/templates/module-readme.md docs/research .github/pull_request_template.md` → all exist → R-9 _(2026-11-05: all exist)_
 
 ## Part 3: owned by later features (listed so they are not lost)
 

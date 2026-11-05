@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 /** Roles until feature 13 replaces them with permissions. */
 export const StaffRole = z.enum(['admin', 'staff']);
+/** The validated shape of `StaffRole`, as the api and web see it after parsing. */
 export type StaffRole = z.infer<typeof StaffRole>;
 
 /** Response of `GET /api/me`: the signed in person, read fresh from the database. */
@@ -17,18 +18,22 @@ export const MeResponse = z.object({
   mustChangePassword: z.boolean(),
 });
 
+/** The validated shape of `MeResponse`, as the api and web see it after parsing. */
 export type MeResponse = z.infer<typeof MeResponse>;
 
 /** The stable codes the api answers with when a request has no usable session. */
 export const SessionErrorCode = z.enum(['UNAUTHENTICATED', 'SESSION_EXPIRED']);
+/** The validated shape of `SessionErrorCode`, as the api and web see it after parsing. */
 export type SessionErrorCode = z.infer<typeof SessionErrorCode>;
 
 /** The password rule (spec 0005, AC-8): 8 to 128 characters with a lowercase, an uppercase and a digit. */
 export const PASSWORD_MIN_LENGTH = 8;
+/** Longest password accepted; a cap so hashing cost cannot be abused with huge input. */
 export const PASSWORD_MAX_LENGTH = 128;
 
 /** Which rules a password breaks. The forms show the same keys next to each rule. */
 export const PasswordRule = z.enum(['min_length', 'max_length', 'lowercase', 'uppercase', 'digit']);
+/** The validated shape of `PasswordRule`, as the api and web see it after parsing. */
 export type PasswordRule = z.infer<typeof PasswordRule>;
 
 /** Every rule the password breaks, in a stable order. Empty means it is acceptable. */
@@ -53,4 +58,5 @@ export const WeakPasswordResponse = z.object({
   message: z.string(),
   unmet: z.array(PasswordRule),
 });
+/** The validated shape of `WeakPasswordResponse`, as the api and web see it after parsing. */
 export type WeakPasswordResponse = z.infer<typeof WeakPasswordResponse>;

@@ -2,13 +2,16 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from './schema/index.js';
 
+/** The typed Drizzle handle over the full schema, used by every module's repositories. */
 export type Database = NodePgDatabase<typeof schema>;
 
+/** A Drizzle handle plus the pool behind it, so the owner of the connection can close it. */
 export interface DatabaseConnection {
   db: Database;
   pool: pg.Pool;
 }
 
+/** Opens a pooled connection for the given URL. The api and worker pass the app role URL; only migrate uses the owner URL. */
 export function createDatabase(
   connectionString: string,
   options: { max?: number } = {},

@@ -14,12 +14,18 @@ import { JOB_SCHEMA } from '../inventory/ledger/reconcile.job.js';
 import { SettingsService } from '../platform/settings.service.js';
 import { LOCKOUT } from './sign-in-lockout.js';
 
+/** The pg-boss queue that carries the nightly sign in cleanup job. */
 export const AUTH_CLEANUP_QUEUE = 'auth.cleanup';
+/**
+ * How long a cleanup run may take before pg-boss treats it as failed and lets the next one
+ * start.
+ */
 export const AUTH_CLEANUP_EXPIRY_SECONDS = 600;
 
 /** Rate limit counters older than this are of no use: Better Auth's windows are far shorter. */
 const RATE_LIMIT_KEEP_MS = 24 * 60 * 60 * 1000;
 
+/** How many rows one cleanup run removed from each table, logged after the run. */
 export interface AuthCleanupCounts {
   sessions: number;
   verifications: number;
@@ -34,6 +40,10 @@ export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShut
   private readonly db: Database;
   private boss: PgBoss | undefined;
 
+  /**
+   * Takes the env (database URL and cron), the app database connection and the settings service
+   * for the timezone.
+   */
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(DATABASE) connection: DatabaseConnection,
@@ -42,6 +52,10 @@ export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShut
     this.db = connection.db;
   }
 
+  /**
+   * Starts the job queue, registers the nightly schedule in the install's timezone, and starts
+   * the handler. Runs only in the `worker` entry point.
+   */
   async onApplicationBootstrap(): Promise<void> {
     const boss = new PgBoss({
       connectionString: this.env.DATABASE_URL,
@@ -88,6 +102,10 @@ export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShut
     return { sessions, verifications, signInAttempts, rateLimits };
   }
 
+  /**
+   * Stops the queue after letting a run in progress finish, so a deploy never cuts a delete in
+   * half.
+   */
   async onApplicationShutdown(): Promise<void> {
     await this.boss?.stop({ graceful: true });
   }

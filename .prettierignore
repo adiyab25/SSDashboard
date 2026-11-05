@@ -14,3 +14,6 @@ next-env.d.ts
 # Markdown (docs, scope, specs, AGENTS.md) is curated prose; skills match its exact layout.
 *.md
 .vscode/
+
+# Written by Playwright runs (gitignored).
+apps/web/e2e/.auth/

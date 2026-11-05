@@ -19,8 +19,10 @@ export const coreLanguages = {
   ar: { nativeName: 'العربية', intl: 'ar-EG', hour12: true, weekStart: 6 },
 } as const satisfies Record<string, LanguageInfo>;
 
+/** The codes of the core languages. */
 export type CoreLanguage = keyof typeof coreLanguages;
 
+/** True when `code` is a core language, which the app ships without a download. */
 export function isCoreLanguage(code: string): code is CoreLanguage {
   return Object.hasOwn(coreLanguages, code);
 }

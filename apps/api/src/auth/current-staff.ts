@@ -6,4 +6,8 @@ export interface CurrentStaff extends MeResponse {
   sessionId: string;
 }
 
+/**
+ * An Express request after the session guard ran, with the signed in person on `staff`. Use it
+ * in handlers that sit behind the guard, never on public routes.
+ */
 export type AuthenticatedRequest = Request & { staff: CurrentStaff };

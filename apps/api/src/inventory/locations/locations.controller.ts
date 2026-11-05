@@ -27,6 +27,7 @@ import type { Response } from 'express';
 import type { z } from 'zod';
 import type { AuthenticatedRequest } from '../../auth/current-staff.js';
 import { Roles } from '../../auth/roles.decorator.js';
+import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
@@ -67,8 +68,10 @@ const locationId = () =>
  * Behind the session guard like every `/api` route except config, health, and auth. The seeded
  * transit and virtual locations never appear and answer 404 here.
  */
+@Audience('staff')
 @Controller('locations')
 export class LocationsController {
+  /** Takes the locations service. */
   constructor(private readonly locations: LocationsService) {}
 
   /** Active locations for anyone signed in; `status=archived` is admin only. */
@@ -87,6 +90,10 @@ export class LocationsController {
     }
   }
 
+  /**
+   * Admin only: adds a warehouse or showroom. A code already in use is refused through
+   * `locationHttpError`.
+   */
   @Roles('admin')
   @Post()
   async create(
@@ -100,6 +107,10 @@ export class LocationsController {
     }
   }
 
+  /**
+   * Admin only: edits a location's name or code, with the stale check so two admins cannot
+   * overwrite each other.
+   */
   @Roles('admin')
   @Patch(':id')
   async update(
@@ -115,6 +126,7 @@ export class LocationsController {
     }
   }
 
+  /** Admin only: archives a location, refused while stock is on hand or reserved there. */
   @Roles('admin')
   @Post(':id/archive')
   @HttpCode(200)
@@ -129,6 +141,7 @@ export class LocationsController {
     }
   }
 
+  /** Admin only: brings an archived location back into the switcher. */
   @Roles('admin')
   @Post(':id/unarchive')
   @HttpCode(200)
@@ -143,6 +156,10 @@ export class LocationsController {
     }
   }
 
+  /**
+   * Admin only: deletes a location nothing references yet; otherwise it must be archived
+   * instead.
+   */
   @Roles('admin')
   @Delete(':id')
   @HttpCode(204)

@@ -33,6 +33,7 @@ type SidebarContextProps = {
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
+/** Reads the sidebar state and toggles; throws if used outside SidebarProvider. */
 function useSidebar() {
   const context = React.useContext(SidebarContext);
   if (!context) {
@@ -42,6 +43,7 @@ function useSidebar() {
   return context;
 }
 
+/** Holds sidebar open state (persisted in a cookie) and the keyboard shortcut; wrap the app shell with it. */
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -142,6 +144,7 @@ function SidebarProvider({
   );
 }
 
+/** The app navigation panel: fixed on desktop, a Sheet on mobile, collapsible to icons. */
 function Sidebar({
   side = 'start',
   variant = 'sidebar',
@@ -247,6 +250,7 @@ function Sidebar({
   );
 }
 
+/** Button that toggles the Sidebar; its accessible label must come from the i18n layer. */
 function SidebarTrigger({
   className,
   onClick,
@@ -274,6 +278,7 @@ function SidebarTrigger({
   );
 }
 
+/** Thin edge strip that toggles the Sidebar on click. */
 function SidebarRail({
   className,
   label,
@@ -303,6 +308,7 @@ function SidebarRail({
   );
 }
 
+/** Main content region that sits beside the Sidebar. */
 function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
   return (
     <main
@@ -316,6 +322,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
   );
 }
 
+/** Search input styled for the Sidebar. */
 function SidebarInput({ className, ...props }: React.ComponentProps<typeof Input>) {
   return (
     <Input
@@ -327,6 +334,7 @@ function SidebarInput({ className, ...props }: React.ComponentProps<typeof Input
   );
 }
 
+/** Top section of the Sidebar, for branding or a switcher. */
 function SidebarHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -338,6 +346,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Bottom section of the Sidebar, for account or settings. */
 function SidebarFooter({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -349,6 +358,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Divider between Sidebar sections. */
 function SidebarSeparator({ className, ...props }: React.ComponentProps<typeof Separator>) {
   return (
     <Separator
@@ -360,6 +370,7 @@ function SidebarSeparator({ className, ...props }: React.ComponentProps<typeof S
   );
 }
 
+/** Scrollable middle section of the Sidebar that holds the groups. */
 function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -374,6 +385,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Section of related Sidebar navigation. */
 function SidebarGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -385,6 +397,7 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Heading for a SidebarGroup; hidden when the Sidebar is collapsed to icons. */
 function SidebarGroupLabel({
   className,
   asChild = false,
@@ -405,6 +418,7 @@ function SidebarGroupLabel({
   );
 }
 
+/** Small action button at the end of a SidebarGroup heading. */
 function SidebarGroupAction({
   className,
   asChild = false,
@@ -425,6 +439,7 @@ function SidebarGroupAction({
   );
 }
 
+/** Wrapper for the menu inside a SidebarGroup. */
 function SidebarGroupContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -436,6 +451,7 @@ function SidebarGroupContent({ className, ...props }: React.ComponentProps<'div'
   );
 }
 
+/** List of navigation entries in a SidebarGroup. */
 function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
   return (
     <ul
@@ -447,6 +463,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
   );
 }
 
+/** One entry in a SidebarMenu. */
 function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
   return (
     <li
@@ -480,6 +497,7 @@ const sidebarMenuButtonVariants = cva(
   },
 );
 
+/** Navigation button or link for a SidebarMenuItem; can show a tooltip when the Sidebar is collapsed. */
 function SidebarMenuButton({
   asChild = false,
   isActive = false,
@@ -530,6 +548,7 @@ function SidebarMenuButton({
   );
 }
 
+/** Secondary action button beside a SidebarMenuButton. */
 function SidebarMenuAction({
   className,
   asChild = false,
@@ -556,6 +575,7 @@ function SidebarMenuAction({
   );
 }
 
+/** Count or status chip at the end of a SidebarMenuItem. */
 function SidebarMenuBadge({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -570,6 +590,7 @@ function SidebarMenuBadge({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
+/** Loading placeholder for a SidebarMenuItem. */
 function SidebarMenuSkeleton({
   className,
   showIcon = false,
@@ -603,6 +624,7 @@ function SidebarMenuSkeleton({
   );
 }
 
+/** Nested list of entries under a SidebarMenuItem. */
 function SidebarMenuSub({ className, ...props }: React.ComponentProps<'ul'>) {
   return (
     <ul
@@ -617,6 +639,7 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<'ul'>) {
   );
 }
 
+/** One entry in a SidebarMenuSub list. */
 function SidebarMenuSubItem({ className, ...props }: React.ComponentProps<'li'>) {
   return (
     <li
@@ -628,6 +651,7 @@ function SidebarMenuSubItem({ className, ...props }: React.ComponentProps<'li'>)
   );
 }
 
+/** Navigation link for a SidebarMenuSubItem. */
 function SidebarMenuSubButton({
   asChild = false,
   size = 'md',

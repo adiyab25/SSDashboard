@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { cn } from 'cn';
 
+/** Multi-line text input styled to the design system; pair with a Label. */
 function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <textarea

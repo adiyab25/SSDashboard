@@ -23,6 +23,7 @@ const badgeVariants = cva(
   },
 );
 
+/** Compact status or count label; the variant carries meaning through role colors, never color alone. */
 function Badge({
   className,
   variant = 'default',

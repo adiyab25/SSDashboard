@@ -29,6 +29,10 @@ export interface LocationRef {
 /** `to_char` format of `updatedAt`: microseconds, UTC (spec 0006, Value sourcing). */
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
+/**
+ * The location rules a caller can break: missing, code taken, edited by someone else, code
+ * locked by use, stock still on hand, or still referenced.
+ */
 export type LocationErrorCode =
   'NotFound' | 'CodeTaken' | 'Stale' | 'CodeLocked' | 'StockOnHand' | 'InUse';
 
@@ -37,6 +41,7 @@ export type LocationErrorCode =
  * seeded transit and virtual locations are `NotFound` on every management action.
  */
 export class LocationError extends Error {
+  /** Takes the stable `code` the controller maps to an HTTP answer, and a message safe to show. */
   constructor(
     readonly code: LocationErrorCode,
     message: string,
@@ -60,6 +65,10 @@ export function encodeCursor(code: string): string {
   return Buffer.from(code, 'utf8').toString('base64url');
 }
 
+/**
+ * Reads a page cursor back into the last row's code. Throws `InvalidCursorError` for anything
+ * this endpoint did not issue, even text Node would decode loosely.
+ */
 export function decodeCursor(cursor: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(cursor)) throw new InvalidCursorError();
   const code = Buffer.from(cursor, 'base64url').toString('utf8');
@@ -106,6 +115,10 @@ function codeTaken(error: unknown, code: string): unknown {
 /** Warehouses and showrooms: the switcher list and full management for admins (AC-4). */
 @Injectable()
 export class LocationsService {
+  /**
+   * Takes the app database connection and the ledger service that knows what stock a location
+   * holds.
+   */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LedgerService) private readonly ledger: LedgerService,

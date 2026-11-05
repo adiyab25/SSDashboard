@@ -100,7 +100,7 @@ const EnvSchema = z
      * hands over temporary passwords instead.
      */
     MAIL_DRIVER: z.enum(['none', 'smtp', 'postmark']).default('none'),
-    /** The sender address, like "ERP <no-reply@client.com>". Required unless the driver is none. */
+    /** The sender address, like `ERP <no-reply@client.com>`. Required unless the driver is none. */
     MAIL_FROM: optionalText,
     SMTP_HOST: optionalText,
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
@@ -143,6 +143,10 @@ const EnvSchema = z
     }
   });
 
+/**
+ * The validated env every provider receives through `ENV`. Derived from `EnvSchema`, so a new
+ * variable is typed the moment it is added there.
+ */
 export type Env = z.infer<typeof EnvSchema>;
 
 // Local development reads the repo root `.env`. Installs get env vars from Compose.

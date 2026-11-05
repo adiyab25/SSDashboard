@@ -9,7 +9,7 @@ import {
   searchPicker,
   seedStockScene,
   waitForStock,
-} from './stock-helpers';
+} from './stock-steps';
 import { openShell, textFor, useBrowserState, type TextDirection } from './support';
 
 // Spec 0006, Milestone 4, AC-9: the Stock page in a real browser, as an admin and as staff, in

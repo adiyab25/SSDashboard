@@ -15,6 +15,10 @@ export const LOCKOUT = {
 /** The row that counts an email's failures from every address. */
 export const ALL_ADDRESSES = '*';
 
+/**
+ * What recording one failed sign in led to: whether a lock began and for which scope, so the
+ * caller can emit the right event.
+ */
 export interface FailureOutcome {
   /** A lock began with this failure, for the pair or for the email as a whole. */
   pairLocked: boolean;
@@ -35,6 +39,7 @@ interface CounterRow extends Record<string, unknown> {
 export class SignInLockout {
   private readonly db: Database;
 
+  /** Takes the app database connection that holds the counters. */
   constructor(@Inject(DATABASE) connection: DatabaseConnection) {
     this.db = connection.db;
   }

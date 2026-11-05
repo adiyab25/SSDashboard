@@ -4,14 +4,17 @@ import * as React from 'react';
 import { cn } from 'cn';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 
+/** Non-modal floating panel root, anchored to a trigger. */
 function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
+/** Control that toggles its Popover; use asChild for a custom trigger. */
 function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
+/** The floating panel of a Popover; closes on Escape and outside click. */
 function PopoverContent({
   className,
   align = 'center',
@@ -35,10 +38,12 @@ function PopoverContent({
   );
 }
 
+/** Positions a Popover against an element other than its trigger. */
 function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
 }
 
+/** Layout wrapper for the title and description of a Popover. */
 function PopoverHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -49,10 +54,12 @@ function PopoverHeader({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Heading text of a Popover. */
 function PopoverTitle({ className, ...props }: React.ComponentProps<'h2'>) {
   return <div data-slot="popover-title" className={cn('font-medium', className)} {...props} />;
 }
 
+/** Supporting text under a Popover title. */
 function PopoverDescription({ className, ...props }: React.ComponentProps<'p'>) {
   return (
     <p

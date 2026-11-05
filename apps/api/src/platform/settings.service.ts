@@ -33,11 +33,18 @@ function isTimeZone(name: string): boolean {
   }
 }
 
+/** The name of one install setting. */
 export type SettingKey = keyof typeof SettingShapes;
+/** All install settings, each with the type its value parses to. */
 export type Settings = { [K in SettingKey]: z.infer<(typeof SettingShapes)[K]> };
 
+/**
+ * Typed reads of the install's settings table. Every value is parsed on the way out, so a bad
+ * row fails loudly instead of reaching a screen.
+ */
 @Injectable()
 export class SettingsService {
+  /** Takes the app database connection. */
   constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
 
   /** Reads the given settings, inside the caller's transaction when one is passed. */

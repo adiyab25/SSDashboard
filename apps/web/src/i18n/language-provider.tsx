@@ -29,6 +29,7 @@ export interface LanguageOption {
   dir: TextDirection;
 }
 
+/** Where the `/api/config` load stands. */
 export type ConfigStatus = 'loading' | 'ready' | 'error';
 
 interface LanguageState {
@@ -268,6 +269,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The active language, its direction, the choices, and the setter. Must sit inside
+ * `LanguageProvider`.
+ */
 export function useLanguage(): LanguageState {
   return use(LanguageContext);
 }

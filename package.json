@@ -7,6 +7,7 @@
     "node": ">=26"
   },
   "scripts": {
+    "bootstrap": "node deploy/dev-bootstrap.mjs",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
@@ -15,6 +16,7 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm build && pnpm -r --workspace-concurrency=1 test:e2e",
     "lint": "turbo run lint",
+    "lint:repo": "node packages/config/scripts/check-route-groups.mjs && node packages/config/scripts/check-folder-names.mjs && node packages/config/scripts/check-module-readmes.mjs && node packages/config/scripts/check-doc-links.mjs && node packages/config/scripts/check-banned-names.mjs && node packages/config/scripts/check-component-export-names.mjs && node packages/config/scripts/check-tsdoc-fixture.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"

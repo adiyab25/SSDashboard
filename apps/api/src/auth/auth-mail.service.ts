@@ -22,6 +22,7 @@ interface IdRow extends Record<string, unknown> {
 export class AuthMail {
   private readonly db: Database;
 
+  /** Takes the env, the app database connection, the mail producer, and the lockout and audit services. */
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(DATABASE) connection: DatabaseConnection,

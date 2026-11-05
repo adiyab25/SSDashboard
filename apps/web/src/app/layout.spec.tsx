@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { AppShell } from '@/shell/app-shell';
+import { CurrentLocationProvider } from '@/shell/current-location-provider';
 import RootLayout, { metadata } from './layout';
 
 vi.mock('next/navigation', () => ({
@@ -39,11 +40,13 @@ describe('RootLayout', () => {
   });
 
   it('puts the skip link before the navigation and the page', () => {
-    // The shell lives in the (app) layout; the skip link stays here, ahead of every route group.
+    // The shell lives in the (backoffice) layout; the skip link stays here, ahead of every route group.
     const html = render(
-      <AppShell>
-        <h1>page</h1>
-      </AppShell>,
+      <CurrentLocationProvider>
+        <AppShell>
+          <h1>page</h1>
+        </AppShell>
+      </CurrentLocationProvider>,
     );
     const skip = html.indexOf('<a href="#main-content"');
 

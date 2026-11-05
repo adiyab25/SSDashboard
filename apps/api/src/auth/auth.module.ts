@@ -5,6 +5,7 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';
 import { MailModule } from '../mail/mail.module.js';
+import { AudienceGuard } from '../platform/audience/audience.guard.js';
 import { PlatformModule } from '../platform/platform.module.js';
 import { AuthAudit } from './auth-audit.service.js';
 import { AuthMail } from './auth-mail.service.js';
@@ -43,6 +44,8 @@ import { SignInLockout } from './sign-in-lockout.js';
     { provide: APP_GUARD, useClass: SessionGuard },
     // Registered after the session guard, which puts the person on the request first.
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Last: it reads who the session guard identified, and denies any route without an audience.
+    { provide: APP_GUARD, useClass: AudienceGuard },
   ],
   exports: [AUTH, SignInLockout, AuthAudit],
 })

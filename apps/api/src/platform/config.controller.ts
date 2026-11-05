@@ -3,21 +3,28 @@ import type { ConfigResponse } from '@ssdashboard/contracts';
 import { Public } from '../auth/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
+import { Audience } from './audience/audience.decorator.js';
 import { SettingsService, type Settings } from './settings.service.js';
 
 const FALLBACK_LANGUAGE = 'en';
 
 /** Public by design: the shell and the sign in page need it, and it holds nothing secret. */
+@Audience('public')
 @Public()
 @Controller('config')
 export class ConfigController {
   private readonly logger = new Logger(ConfigController.name);
 
+  /** Takes the env and the settings service. */
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly settings: SettingsService,
   ) {}
 
+  /**
+   * Returns the install's currency, time zone, enabled languages and default language, for the
+   * shell and sign in page.
+   */
   @Get()
   async read(): Promise<ConfigResponse> {
     const { currency, timezone, languages, default_language } = await this.readSettings();

@@ -22,15 +22,18 @@ const plexArabic = IBM_Plex_Sans_Arabic({
   variable: '--font-plex-arabic',
 });
 
+/** Default page title and description for every page. */
 export const metadata: Metadata = {
   title: 'SSDashboard',
   description: 'Warehouse and ERP back office',
 };
 
-// Static under cacheComponents: no cookies() or headers() here. Theme, language, and
-// direction are browser state, applied before paint by next-themes and the language script.
-// The server markup is always English left to right; the saved language is applied after
-// hydration (spec 0004), so the markup and the first client render match.
+/**
+ * The static root layout (cache components): no `cookies()` or `headers()` here. Theme, language,
+ * and direction are browser state, applied before paint by next-themes and the language script.
+ * The server markup is always English left to right; the saved language is applied after
+ * hydration (spec 0004), so the markup and the first client render match.
+ */
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html

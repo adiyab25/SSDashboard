@@ -19,6 +19,7 @@ export type FormatStatus = 'ready' | 'loading' | 'error';
 
 type Decimal = number | string;
 
+/** The number, money, date and time formatters for the active language and install settings. */
 export interface Format {
   /** `'ready'`, or why money and date output is the raw value. Reads live. */
   readonly status: FormatStatus;

@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 
+/** The help text the `create-admin` command prints when its arguments are wrong. */
 export const CREATE_ADMIN_USAGE = [
   'Usage:',
   '  node dist/create-admin.js --email <email> --name <name>',
@@ -8,6 +9,10 @@ export const CREATE_ADMIN_USAGE = [
   '  node dist/create-admin.js --reset-password --reset-two-factor --email <email>',
 ].join('\n');
 
+/**
+ * What the `create-admin` command line asked for: create the first admin, or reset a password or
+ * two factor, or both, for one email.
+ */
 export type CreateAdminCommand =
   | { kind: 'create'; email: string; name: string }
   | { kind: 'reset'; email: string; password: boolean; twoFactor: boolean }

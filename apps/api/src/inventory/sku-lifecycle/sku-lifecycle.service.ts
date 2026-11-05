@@ -6,10 +6,15 @@ import { DATABASE } from '../../database/database.module.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { ledgerTransaction } from '../ledger/locks.js';
 
+/**
+ * The stock rules a SKU action can break: stock is on hand, or the code is locked because stock
+ * was posted.
+ */
 export type SkuLifecycleErrorCode = 'StockOnHand' | 'CodeLocked';
 
 /** A stock rule a SKU action broke; the controller maps `code` to an HTTP answer. */
 export class SkuLifecycleError extends Error {
+  /** Takes the stable `code` the controller maps to an HTTP answer, and a message safe to show. */
   constructor(
     readonly code: SkuLifecycleErrorCode,
     message: string,
@@ -28,6 +33,10 @@ const notFound = () => new CatalogError('NotFound', 'SKU not found');
  */
 @Injectable()
 export class SkuLifecycleService {
+  /**
+   * Takes the app database connection, the ledger (for stock state and locks) and the catalog
+   * (for the write).
+   */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LedgerService) private readonly ledger: LedgerService,

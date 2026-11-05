@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import type { z } from 'zod';
 import { Roles } from '../../auth/roles.decorator.js';
 import { catalogHttpError, notFoundId } from '../../catalog/catalog.controller.js';
+import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { SkuLifecycleError, SkuLifecycleService } from './sku-lifecycle.service.js';
@@ -31,10 +32,16 @@ function lifecycleHttpError(error: unknown, response?: Response): unknown {
 }
 
 /** SKU actions that need stock state (spec 0006). Inventory owns these `/skus` paths. */
+@Audience('staff')
 @Controller('skus')
 export class SkuLifecycleController {
+  /** Takes the SKU lifecycle service. */
   constructor(private readonly lifecycle: SkuLifecycleService) {}
 
+  /**
+   * Tells the screen whether a SKU has stock history, so it can offer delete, archive or
+   * neither.
+   */
   @Get(':id/usage')
   async usage(@Param('id', notFoundId()) id: string): Promise<SkuUsage> {
     try {
@@ -44,6 +51,10 @@ export class SkuLifecycleController {
     }
   }
 
+  /**
+   * Admin only: changes a SKU's code, which the lifecycle service refuses once stock has been
+   * posted for it.
+   */
   @Roles('admin')
   @Patch(':id/code')
   async changeCode(
@@ -59,6 +70,7 @@ export class SkuLifecycleController {
     }
   }
 
+  /** Admin only: archives a SKU, refused while stock is on hand or reserved. */
   @Roles('admin')
   @Post(':id/archive')
   @HttpCode(200)
@@ -73,6 +85,7 @@ export class SkuLifecycleController {
     }
   }
 
+  /** Admin only: makes an archived SKU usable again. */
   @Roles('admin')
   @Post(':id/unarchive')
   @HttpCode(200)

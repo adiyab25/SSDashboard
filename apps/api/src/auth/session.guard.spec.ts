@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../config/env.js';
 import type { Auth } from './auth.tokens.js';
+import { Audience, type AudienceName } from '../platform/audience/audience.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { SessionGuard } from './session.guard.js';
 
@@ -30,6 +31,7 @@ function setup(options: {
   origin?: string;
   cookie?: string;
   isPublic?: boolean;
+  audience?: AudienceName;
   session?: { user: typeof USER; session: { id: string; token: string; createdAt: Date } } | null;
   setCookies?: string[];
 }) {
@@ -45,6 +47,8 @@ function setup(options: {
   vi.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) =>
     key === IS_PUBLIC ? options.isPublic : undefined,
   );
+  class Controller {}
+  if (options.audience) Audience(options.audience)(Controller);
   const request = {
     method: options.method ?? 'GET',
     path: options.path ?? '/api/things',
@@ -54,7 +58,7 @@ function setup(options: {
   const context = {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
     getHandler: () => undefined,
-    getClass: () => undefined,
+    getClass: () => Controller,
   } as unknown as ExecutionContext;
   const deleteSession = vi.fn(() => Promise.resolve());
   const auth = {
@@ -66,6 +70,19 @@ function setup(options: {
 }
 
 describe('SessionGuard', () => {
+  it('lets a public audience through without asking Better Auth, even without @Public()', async () => {
+    const { guard, context, getSession } = setup({ audience: 'public' });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it('still requires a session on a non public audience', async () => {
+    const { guard, context } = setup({ audience: 'portal' });
+
+    await expect(guard.canActivate(context)).rejects.toThrow();
+  });
+
   it('lets a public route through without asking Better Auth', async () => {
     const { guard, context, getSession } = setup({ isPublic: true });
 

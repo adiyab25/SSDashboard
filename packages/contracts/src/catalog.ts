@@ -26,6 +26,7 @@ export const SkuName = z
     message: 'Give a name in at least one language',
     path: ['en'],
   });
+/** The validated shape of `SkuName`, as the api and web see it after parsing. */
 export type SkuName = z.infer<typeof SkuName>;
 
 /** `POST /api/products`. One variant for now; feature 8 lifts the limit. */
@@ -37,9 +38,12 @@ export const CreateProductRequest = z
       .length(1),
   })
   .strict();
+/** What a caller passes for `CreateProductRequest`, before defaults and transforms are applied. */
 export type CreateProductRequest = z.input<typeof CreateProductRequest>;
 
+/** SKU lifecycle as the api exposes it: active, or archived instead of deleted. */
 export const SkuStatus = z.enum(['active', 'archived']);
+/** The validated shape of `SkuStatus`, as the api and web see it after parsing. */
 export type SkuStatus = z.infer<typeof SkuStatus>;
 
 /** A row of `GET /api/skus`. */
@@ -51,6 +55,7 @@ export const SkuSummary = z.object({
   price: MoneyString.nullable(),
   archived: z.boolean(),
 });
+/** The validated shape of `SkuSummary`, as the api and web see it after parsing. */
 export type SkuSummary = z.infer<typeof SkuSummary>;
 
 /** `GET /api/skus/:id`. `updatedAt` is the microsecond UTC string the stale check compares. */
@@ -58,6 +63,7 @@ export const SkuDetail = SkuSummary.extend({
   status: SkuStatus,
   updatedAt: z.string(),
 });
+/** The validated shape of `SkuDetail`, as the api and web see it after parsing. */
 export type SkuDetail = z.infer<typeof SkuDetail>;
 
 /** Query of `GET /api/skus`. The receipt line picker sends `limit=20`. */
@@ -67,12 +73,15 @@ export const SkuListQuery = z.object({
   cursor: z.string().min(1).max(400).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(50),
 });
+/** The validated shape of `SkuListQuery`, as the api and web see it after parsing. */
 export type SkuListQuery = z.infer<typeof SkuListQuery>;
 
+/** One page of `GET /api/skus`; pass `nextCursor` back as `cursor` for the next page, null at the end. */
 export const SkuListResponse = z.object({
   items: z.array(SkuSummary),
   nextCursor: z.string().nullable(),
 });
+/** The validated shape of `SkuListResponse`, as the api and web see it after parsing. */
 export type SkuListResponse = z.infer<typeof SkuListResponse>;
 
 /** The `updatedAt` a client read, sent back with every edit for the stale check (AC-2). */
@@ -91,12 +100,15 @@ export const UpdateSkuRequest = z
     price: PriceString.nullable().optional(),
   })
   .strict();
+/** What a caller passes for `UpdateSkuRequest`, before defaults and transforms are applied. */
 export type UpdateSkuRequest = z.input<typeof UpdateSkuRequest>;
 
 /** `PATCH /api/skus/:id/code` (admin). 409 `CODE_LOCKED` once the SKU has a stock balance. */
 export const ChangeSkuCodeRequest = z.object({ updatedAt: UpdatedAt, sku: SkuCode }).strict();
+/** What a caller passes for `ChangeSkuCodeRequest`, before defaults and transforms are applied. */
 export type ChangeSkuCodeRequest = z.input<typeof ChangeSkuCodeRequest>;
 
 /** `GET /api/skus/:id/usage`: drives the read only code field and the archive button. */
 export const SkuUsage = z.object({ codeLocked: z.boolean(), canArchive: z.boolean() });
+/** The validated shape of `SkuUsage`, as the api and web see it after parsing. */
 export type SkuUsage = z.infer<typeof SkuUsage>;
