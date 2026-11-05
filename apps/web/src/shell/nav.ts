@@ -1,9 +1,18 @@
 import type { StaffRole } from '@ssdashboard/contracts';
-import { HomeIcon, PaletteIcon, UsersIcon, type LucideIcon } from 'lucide-react';
+import {
+  BoxesIcon,
+  HomeIcon,
+  MapPinIcon,
+  PackagePlusIcon,
+  PaletteIcon,
+  TagIcon,
+  UsersIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import type { MessageKey } from '@/i18n/message-key';
 
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
-export type NavGroup = 'general';
+export type NavGroup = 'general' | 'inventory';
 
 export interface NavItem {
   id: string;
@@ -36,10 +45,40 @@ export const navItems: readonly NavItem[] = [
     group: 'general',
     adminOnly: true,
   },
+  {
+    id: 'stock',
+    labelKey: 'shell.nav.items.stock',
+    href: '/stock',
+    icon: BoxesIcon,
+    group: 'inventory',
+  },
+  {
+    id: 'receipts',
+    labelKey: 'shell.nav.items.receipts',
+    href: '/stock-receipts',
+    icon: PackagePlusIcon,
+    group: 'inventory',
+  },
+  {
+    id: 'skus',
+    labelKey: 'shell.nav.items.skus',
+    href: '/skus',
+    icon: TagIcon,
+    group: 'inventory',
+  },
+  {
+    id: 'locations',
+    labelKey: 'shell.nav.items.locations',
+    href: '/locations',
+    icon: MapPinIcon,
+    group: 'inventory',
+    adminOnly: true,
+  },
 ];
 
 export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
   { id: 'general', labelKey: 'shell.nav.groups.general' },
+  { id: 'inventory', labelKey: 'shell.nav.groups.inventory' },
 ];
 
 /**

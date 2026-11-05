@@ -21,15 +21,23 @@ export default async function globalSetup(config: FullConfig) {
 
   const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
   try {
-    // A clean account each run; its sessions go with it (on delete cascade).
-    await pool.query(`DELETE FROM users WHERE lower(email) = $1`, [E2E_ADMIN.email]);
+    // A clean account each run. It is reset in place, never deleted: once it has posted stock,
+    // the ledger's history keeps a RESTRICT reference to it (spec 0005, AC-22; spec 0006).
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO users (name, email, role, email_verified) VALUES ($1, $2, 'admin', true)
+       ON CONFLICT ((lower(email))) DO UPDATE
+         SET name = EXCLUDED.name, role = 'admin', email_verified = true, banned = false,
+             ban_reason = NULL, ban_expires = NULL, two_factor_enabled = false, phone = NULL,
+             staff_code = NULL, language = NULL, must_change_password = false,
+             last_sign_in_at = NULL, updated_at = now()
        RETURNING id`,
       [E2E_ADMIN.name, E2E_ADMIN.email],
     );
     const userId = rows[0]?.id;
     if (!userId) throw new Error('Could not seed the e2e admin');
+    for (const table of ['sessions', 'accounts', 'two_factors']) {
+      await pool.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
+    }
     await pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

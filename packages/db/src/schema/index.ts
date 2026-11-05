@@ -6,3 +6,4 @@ export * from './inventory.js';
 export * from './locations.js';
 export * from './parties.js';
 export * from './platform.js';
+export * from './stock-receipts.js';

@@ -112,7 +112,9 @@ export class ReconciliationService {
   /**
    * Recomputes one balance from its movements, as an admin approved fix for an open
    * discrepancy, and records who did it and when. The average follows the rebuild formula:
-   * round(total_value / on_hand, 4) when on hand is above 0, else the kept one.
+   * round(total_value / on_hand, 4) when on hand is above 0, else the kept one. It reads the
+   * SKU and location rows `FOR SHARE` before `lockPairs`, like every other balance writer
+   * (spec 0006, Key invariants).
    */
   async rebuildLevel(input: { discrepancyId: string; resolvedBy: string }): Promise<StockLevel> {
     return ledgerTransaction(this.connection.db, async (tx) => {
@@ -144,6 +146,19 @@ export class ReconciliationService {
         );
       }
       const { variant_id: variantId, location_id: locationId } = discrepancy;
+      // The SKU and location rows FOR SHARE, as `loadMaster` (SKU first, then location), before
+      // `lockPairs`: a rebuild joins the archive exclusion, so an archive (row FOR UPDATE in
+      // `lockForArchive`) waits for it, and it waits for an archive holding the row.
+      const variant = await tx.execute(
+        sql`SELECT id FROM product_variants WHERE id = ${variantId} FOR SHARE`,
+      );
+      if (!variant.rows.length) throw new LedgerError('NotFound', `SKU ${variantId} not found`);
+      const location = await tx.execute(
+        sql`SELECT id FROM locations WHERE id = ${locationId} FOR SHARE`,
+      );
+      if (!location.rows.length) {
+        throw new LedgerError('NotFound', `Location ${locationId} not found`);
+      }
       await lockPairs(tx, [[variantId, locationId]]);
       const level = (
         await tx.execute<{

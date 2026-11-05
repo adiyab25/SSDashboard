@@ -4,10 +4,18 @@ Products, locations, and stock movement. This epic is the MVP. Back to [index](i
 
 ## Slice 1: Core stock loop
 
-### 7. Core stock loop · needs a decision
+### 7. Core stock loop · in-progress
 The thinnest real thread through every layer: sign in, create a SKU, create a warehouse, record incoming stock, see stock on hand. This slice is the walking skeleton.
 **Done when:** a signed in user can add one SKU and one warehouse, record a stock receipt, and see the correct on hand quantity, read from the stock ledger, in both languages. (basis: tracer bullets prove the whole pipe before any part is built fully)
-- [ ] Design it (spec): `/architect core stock loop`
+**Spec:** [0006](../specs/0006-core-stock-loop/index.md)
+- [x] Design it (spec): `/architect core stock loop`
+- [x] Build it: `/develop core stock loop`
+  - [x] The thin thread: migration, ledger `within` callback, SKU and location create, receipt posting, Stock page, both languages (AC-1, AC-4 to AC-7, AC-9 to AC-11, AC-13, AC-14, AC-16, AC-17)
+  - [x] Receipts in full: list and search, void, busy retry, backdating (AC-5, AC-7, AC-8, AC-12, AC-14, AC-15)
+  - [x] Master data in full: SKU list, edit, code change, archive with locking, delete, Locations page, SKU history (AC-2 to AC-4, AC-10, AC-11, AC-13, AC-15)
+  - [x] Hardening: Stock page polish, accessibility in both languages, scale checks (AC-9, AC-16, AC-18)
+- [x] Verify it: `/check verify core stock loop`
+- [ ] Test it: `/test core stock loop`
 
 ## Slice 2: Inventory depth & go live
 

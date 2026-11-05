@@ -13,4 +13,11 @@ describe('visibleNavItems (AC-25)', () => {
     expect(ids()).not.toContain('staff');
     expect(ids()).toContain('home');
   });
+
+  it('shows Locations to an administrator only, and SKUs to everyone (spec 0006, AC-4)', () => {
+    expect(ids('admin')).toContain('locations');
+    expect(ids('staff')).not.toContain('locations');
+    expect(ids()).not.toContain('locations');
+    expect(ids('staff')).toContain('skus');
+  });
 });

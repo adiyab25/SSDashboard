@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from '@ssdashboard/db';
 import { LedgerError } from '../src/inventory/ledger/ledger.errors.js';
+import type { WithinPosting } from '../src/inventory/ledger/ledger.service.js';
 import {
   driftedBalances,
   fixtures,
@@ -266,7 +268,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       const first = await h.ledger.post(input);
       const second = await h.ledger.post(input);
 
-      expect(second).toEqual(first);
+      expect(second).toEqual({ ...first, replayed: true });
       expect((await level(h.owner, key)).onHand).toBe(4);
     });
 
@@ -293,7 +295,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
          WHERE key = 'inventory_lock_date'`,
       );
       try {
-        expect(await h.ledger.post(input)).toEqual(first);
+        expect(await h.ledger.post(input)).toEqual({ ...first, replayed: true });
       } finally {
         await h.owner.pool.query(
           "UPDATE settings SET value = 'null' WHERE key = 'inventory_lock_date'",
@@ -474,7 +476,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
 
       const first = await h.ledger.reverse(input);
 
-      expect(await h.ledger.reverse(input)).toEqual(first);
+      expect(await h.ledger.reverse(input)).toEqual({ ...first, replayed: true });
       expect((await level(h.owner, key)).onHand).toBe(0);
     });
 
@@ -644,6 +646,118 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
 
       expect(new Set(results.map((r) => r.groupId)).size).toBe(1);
       expect((await level(h.owner, key)).onHand).toBe(7);
+    });
+  });
+
+  describe('the within callback (spec 0006)', () => {
+    // The callback writes a document_counters row: a table the app role may write, standing in
+    // for a caller's own document rows.
+    async function counter(docType: string): Promise<number | undefined> {
+      const { rows } = await h.owner.pool.query<{ last_value: number }>(
+        'SELECT last_value FROM document_counters WHERE doc_type = $1',
+        [docType],
+      );
+      return rows[0]?.last_value;
+    }
+
+    const mark =
+      (docType: string, calls: { count: number }) => async (tx: Parameters<WithinPosting>[0]) => {
+        calls.count += 1;
+        await tx.execute(
+          sql`INSERT INTO document_counters (doc_type, year, last_value) VALUES (${docType}, 2026, 1)`,
+        );
+      };
+
+    it('commits its rows with the posting and sees the posted result', async () => {
+      const key = await sku();
+      const docType = `t-${randomUUID()}`;
+      const calls = { count: 0 };
+      let seen: string | undefined;
+
+      const result = await h.ledger.post(posting([{ ...key, quantity: 3, unitCost: '1.0000' }]), {
+        within: async (tx, posted) => {
+          seen = posted.groupId;
+          await mark(docType, calls)(tx);
+        },
+      });
+
+      expect(result.replayed).toBe(false);
+      expect(seen).toBe(result.groupId);
+      expect(await counter(docType)).toBe(1);
+      expect((await level(h.owner, key)).onHand).toBe(3);
+    });
+
+    it('rolls the whole posting back when it throws', async () => {
+      const key = await sku();
+      const input = posting([{ ...key, quantity: 3, unitCost: '1.0000' }]);
+
+      await expect(
+        h.ledger.post(input, {
+          within: () => Promise.reject(new Error('callback failed')),
+        }),
+      ).rejects.toThrow('callback failed');
+
+      const { rows } = await h.owner.pool.query(
+        'SELECT 1 FROM movement_groups WHERE idempotency_key = $1',
+        [input.idempotencyKey],
+      );
+      expect(rows).toEqual([]);
+      expect((await level(h.owner, key)).onHand).toBe(0);
+    });
+
+    it('reruns with the whole transaction on the deadlock retry, leaving one result', async () => {
+      const key = await sku();
+      const docType = `t-${randomUUID()}`;
+      const calls = { count: 0 };
+
+      const result = await h.ledger.post(posting([{ ...key, quantity: 2, unitCost: '1.0000' }]), {
+        within: async (tx) => {
+          await mark(docType, calls)(tx);
+          if (calls.count === 1) {
+            await tx.execute(
+              sql.raw(`DO $$ BEGIN RAISE EXCEPTION 'forced' USING ERRCODE = '40P01'; END $$`),
+            );
+          }
+        },
+      });
+
+      expect(calls.count).toBe(2);
+      expect(result.replayed).toBe(false);
+      expect(await counter(docType)).toBe(1);
+      expect((await level(h.owner, key)).onHand).toBe(2);
+    });
+
+    it('does not run on a replay, which is flagged', async () => {
+      const key = await sku();
+      const input = posting([{ ...key, quantity: 1, unitCost: '1.0000' }]);
+      await h.ledger.post(input);
+      const calls = { count: 0 };
+
+      const replay = await h.ledger.post(input, { within: mark(`t-${randomUUID()}`, calls) });
+
+      expect(replay.replayed).toBe(true);
+      expect(calls.count).toBe(0);
+    });
+
+    it('runs inside a reversal too', async () => {
+      const key = await sku();
+      const posted = await h.ledger.post(posting([{ ...key, quantity: 2, unitCost: '1.0000' }]));
+      const docType = `t-${randomUUID()}`;
+      const calls = { count: 0 };
+
+      const reversal = await h.ledger.reverse(
+        {
+          groupId: posted.groupId,
+          idempotencyKey: randomUUID(),
+          postedBy: null,
+          reasonCode: 'test',
+        },
+        { within: mark(docType, calls) },
+      );
+
+      expect(reversal.replayed).toBe(false);
+      expect(await counter(docType)).toBe(1);
+      expect((await level(h.owner, key)).onHand).toBe(0);
     });
   });
 

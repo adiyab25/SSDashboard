@@ -36,7 +36,7 @@ A warehouse and ERP system for an ecommerce business with thousands to 100,000+ 
 | 4 | [Design system & UI foundation](foundations.md) | Foundation | done |
 | 5 | [Localization (English & Arabic)](foundations.md) | Foundation | done |
 | 6 | [Staff sign in](foundations.md) | Foundation | done |
-| 7 | [Core stock loop](inventory.md) | Slice 1 | planned |
+| 7 | [Core stock loop](inventory.md) | Slice 1 | in-progress |
 | 8 | [Product catalog & variants](inventory.md) | Slice 2 | planned |
 | 9 | [Catalog search & filtering](inventory.md) | Slice 2 | planned |
 | 10 | [Locations & bins](inventory.md) | Slice 2 | planned |
@@ -91,6 +91,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Carrier label integration**: buy and print shipping labels from carriers · needs a decision
 - **Offline POS**: keep showroom sales running without internet · needs a decision
 - **Storefront analytics**: conversion and funnel tracking for the storefront · needs a decision
+- **Stock receipt drafts**: save a long receipt as a draft before posting; revisit with feature 22 · from spec 0006
 
 ## References
 

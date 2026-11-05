@@ -94,6 +94,8 @@ export const productVariants = pgTable(
   },
   (t) => [
     index('product_variants_product_idx').on(t.productId),
+    // SKU code prefix search: the unique index uses the default collation, which LIKE 'X%' cannot use.
+    index('product_variants_sku_c_idx').on(sql`${t.sku} COLLATE "C"`),
     check(
       'product_variants_tracking_stocked_only',
       sql`${t.tracking} = 'none' OR ${t.kind} = 'stocked'`,

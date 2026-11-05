@@ -102,6 +102,17 @@ export async function waitForFormHydration(page: Page) {
 
 /** WCAG 2.2 AA through axe; contrast and target size need a real browser, so they run here. */
 export async function expectNoAxeViolations(page: Page) {
+  // Axe measures contrast on what is painted, so let a toast or dialog finish fading in first
+  // (a "Receipt posted" toast caught mid fade reported color-contrast). A skeleton pulses
+  // forever; only animations that end are worth waiting for.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => null)),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();

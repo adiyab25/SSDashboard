@@ -6,8 +6,20 @@ import { LocationSwitcher } from './location-switcher';
 
 const fetchMock = vi.fn<typeof fetch>();
 
-const MAIN = { id: '11111111-1111-4111-8111-111111111111', code: 'WH-A', type: 'warehouse' };
-const SHOWROOM = { id: '22222222-2222-4222-8222-222222222222', code: 'SR-1', type: 'showroom' };
+/** The list answers `LocationDetail` rows (spec 0006): the master data fields ride along. */
+const DETAIL = { archived: false, updatedAt: '2026-11-03T10:00:00.000000Z', codeLocked: false };
+const MAIN = {
+  ...DETAIL,
+  id: '11111111-1111-4111-8111-111111111111',
+  code: 'WH-A',
+  type: 'warehouse',
+};
+const SHOWROOM = {
+  ...DETAIL,
+  id: '22222222-2222-4222-8222-222222222222',
+  code: 'SR-1',
+  type: 'showroom',
+};
 
 function page(items: unknown[], nextCursor: string | null = null) {
   return Response.json({ items, nextCursor });
