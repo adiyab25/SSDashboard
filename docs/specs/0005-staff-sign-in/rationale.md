@@ -98,3 +98,58 @@ Where the 7 day cap and idle expiry come from: Better Auth gives a sliding sessi
 - Single use, short lived reset tokens; revoke sessions on credential change.
 - WCAG 2.2 success criterion 3.3.8, Accessible Authentication (Minimum).
 - Expand and contract migrations (spec 0001) for the staged foreign keys.
+
+## Amendment 2026-11-05
+
+The decision record for the amendment in [index.md](index.md). The original text above stays as it was; this section only adds.
+
+### Context
+
+Spec 0007 chose Shape A: keep this spec and its built code, and amend it ([0007 build plan](../0007-stack-architecture-operations-layer/index.md)). The positioning moved the product to clothing brands behind Shopify and Bosta, with a back office, a partner surface and a public returns portal on separate hostnames ([0007 section 2](../0007-stack-architecture-operations-layer/index.md), [positioning section 6.6](../../positioning/2026-11-05-egypt-order-operations-layer.md)). Three forces reach sign in. A public host now sits one DNS name away from a host that holds a session cookie, so the cookie scope is a security control and no longer a detail. A second kind of person (a partner user, bound to one partner account) must sign in through the pages and limits already built and reviewed. And every table gets a tenant id, with roles becoming hats that one person can hold several of, so a live session must have a defined behavior when a person's hats change. The 2026-11-04 review found no blockers and its fixes are in, so the amendment does not reopen sign in itself ([review](../../reviews/2026-11-04-feat-staff-sign-in.md)).
+
+### Options considered
+
+**Cookie scope for the staff session.**
+- *Host only on the staff host (chosen).* No `Domain` attribute, so the browser sends the cookie to the staff host alone. It is what spec 0007 section 2 already says, and it needs no setting beyond leaving Better Auth's `crossSubDomainCookies` off. Pros: the public portal host never receives it, and it costs nothing. Cons: one staff host per brand, and a sibling subdomain can still plant a cookie with a wider `Domain` (cookie tossing).
+- *A `Domain=<brand domain>` cookie shared by subdomains.* Easier for single sign on later. Rejected: the portal host would receive the staff session on every request, which is the exact risk the origin wall exists to remove.
+- *Portal on a different registrable domain.* Strongest separation, and it ends cookie tossing. Rejected as a requirement: it costs the brand a second domain and its DNS work. It stays allowed, because nothing in this spec forbids it.
+- *A `__Host-` cookie name.* Would stop tossing. Not possible through configuration: Better Auth prepends `__Secure-` on https, so the name cannot start with `__Host-` (checked in the installed `better-auth` 1.7.15, `dist/cookies/index.mjs`). Left as a follow up.
+
+**Path based fallback.** Scoping the cookie by `Path` through `advanced.defaultCookieAttributes.path` is supported in the installed version (same file; it is spread over Better Auth's own `path: "/"`). That is why AC-31 is a small, testable cookie contract. What it cannot decide is whether pages and `/api` can share one prefix, because Next.js `basePath` is fixed at build time and `AGENTS.md` forbids per client values in an image. That belongs to deployment, so it is a risk and not a requirement here.
+
+**Partner users.**
+- *Same Better Auth users and pages, audience from hats (chosen).* Reuses lockout, limits, reset, mail and two factor without a second copy, and keeps one place to prove that answers do not reveal the kind of person. Cons: the guard must now look at audiences, and a mistake there could let one kind reach another's routes; AC-29 and its tests cover that.
+- *A second Better Auth instance or user table for partners.* Cleaner on paper. Rejected: two lockouts, two reset flows and two sets of mail to keep identical, and an attacker could tell the two apart by timing.
+- *A separate partner sign in page.* Rejected: the lockout would still be shared, and the extra page buys nothing but a visible difference between staff and partner emails.
+
+**How the guard learns a person's audiences.**
+- *A port, `SessionAudiences`, read from the database on every request (chosen).* Keeps the hat model out of this spec (spec 0008 owns it), lets this spec be built and tested now with a staff only implementation and a fake, and fits the rule that cookie caching is off.
+- *Hats stored in the session or cookie.* Rejected: a removed hat would keep working until the session ended, up to 7 days.
+- *The guard reads hat tables directly.* Rejected: it would force this spec to design hats, which scope feature 8 owns.
+
+**Tenant id on the auth tables.** The column default from the database setting `ssd.tenant_id` (chosen, per [0007 section 7](../0007-stack-architecture-operations-layer/index.md)) means Better Auth's inserts, which never name the column, still fill it. Passing the tenant id from code (runner up) was rejected there because a data move in SQL could forget it. `rate_limits` and `verifications` keep the keys Better Auth owns because changing them would fight the library for no gain in a one tenant database.
+
+**Sessions when hats change.**
+- *Conservative (chosen): the next request sees the change, and sessions are deleted only when the person loses every hat, changes audience, or moves to another partner account.* A grant or a smaller change needs no new sign in, and a change that could leave a stale partner binding ends the session in the same transaction, like disabling.
+- *Always delete sessions on any hat change.* Safe but annoying: an operations person would be signed out each time a manager adds a hat.
+- *Never delete, rely on fresh reads.* Rejected for kind changes and partner rebinding, where a leftover session is hard to reason about in an audit.
+
+**One `identity` module.** Spec 0007's module map names it. Keeping `auth` and `staff` apart would leave `staff` importing `auth` internals (it already takes the admin lock and writes auth tables), which breaks the rule that modules talk through exported services. One module, with sub folders, keeps the rule honest and is a rename with no behavior change.
+
+### Rationale
+
+Keep what was built and reviewed, and change only what the new layout forces. The three real changes are all about boundaries: which host can see the cookie, which audience a session may use, and which tenant a row belongs to. Each is a few lines of configuration or a guard rule with a test that fails when it is removed. The risky part, the hat model, is pushed to spec 0008 behind a port and a single revoke call, so this amendment can be built first and the two specs cannot disagree about sessions. (basis: spec 0007 sections 2 and 7 and the Carried table row m8; the 2026-11-04 review)
+
+### References (amendment)
+
+**Project sources** (verifiable, in this repo):
+- [Spec 0007](../0007-stack-architecture-operations-layer/index.md): section 2 (audiences, origin wall, partner sign in), section 7 (tenant id), the Module map, Configuration, and the Carried table row m8.
+- [Positioning, section 6.6](../../positioning/2026-11-05-egypt-order-operations-layer.md): roles are hats, teams optional.
+- [Review of 2026-11-04](../../reviews/2026-11-04-feat-staff-sign-in.md): settled findings 1 to 7, deferred finding 8.
+- `apps/api/src/auth/auth.factory.ts` (cookie caching off, `useSecureCookies`, `ipAddress` header), `apps/api/src/platform/audience/` (the audience guard), `apps/api/src/auth/AGENTS.md` (the guard still demands a staff session), `packages/db/src/schema/auth.ts`.
+- `deploy/Caddyfile`: the single forwarded client address and `trusted_proxies`.
+- Installed `better-auth` 1.7.15, `dist/cookies/index.mjs`: cookie name prefix, default `path`, `defaultCookieAttributes`, `crossSubDomainCookies`.
+
+**Practices & standards**:
+- OWASP Session Management cheat sheet (cookie scope, `Domain` and `Path` attributes).
+- Account enumeration prevention (identical answers for every kind of account).

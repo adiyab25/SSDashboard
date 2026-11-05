@@ -438,3 +438,64 @@ Driven with Playwright on a touch device against the dev server, using real scre
 - minor (carried over from slice 7, not re-run): `AUTH_CLEANUP_CRON="a b c d e"` still crashes inside `cron-parser` instead of the clean "Invalid environment" message.
 - flake not reproduced: the pre existing `/` color contrast failure in `shell.spec.ts` did not occur in 5 runs, nor in the full run or the 3 repeat runs.
 - No product bugs found in this pass. Ports 3200 and 3201 were left alone; the shared `ssdashboard` database was not changed.
+
+---
+
+# Amendment 2026-11-05: identity module, audiences, cookie scope, tenant id, hats and sessions · written 2026-11-05
+
+_AC-27 to AC-35. Not yet run. Run against a throwaway database with the api, worker and web running. Until spec 0008 lands there is no real partner hat, so partner steps use the test double for `SessionAudiences` named in AC-29 (the e2e suites inject it); steps that need a real partner user are marked "after 0008". Use a different `x-forwarded-for` address per scenario as in slice 2._
+
+## UI / manual
+
+- [ ] Sign in as an admin and click through account, staff, two factor and sign out → expect everything to behave as before the module move → AC-27
+- [ ] Sign in with a person whose audience is `partner` (test double) → expect to land on `/partner`, with no staff sidebar → AC-28
+- [ ] Open `/sign-in?returnTo=/stock` as that partner and sign in → expect `/partner`, not `/stock` → AC-28
+- [ ] As a staff person open `/sign-in?returnTo=/partner` and sign in → expect `/`, because the target is outside the staff pages → AC-28
+- [ ] Open `/partner/account` as the partner → expect name, phone, language, password and two factor, inside the partner frame, one `h1` → AC-28, AC-34
+- [ ] Read every `(auth)` screen in English and Arabic as a partner → expect no word "staff" or "employee" and every string translated, right to left in Arabic → AC-34
+- [ ] Press Tab through each `(auth)` screen with no mouse → expect a visible focus ring and errors announced with focus on the first error → AC-34
+- [ ] With the path fallback (`STAFF_BASE_PATH` set and Caddy serving the prefix; after features 26 and 47), sign in, reload, and sign out → expect to stay signed in, then be signed out for real → AC-31
+- [ ] Remove a person's last hat while they are signed in on another browser (after 0008) → expect their next click to land on sign in; add a second hat to someone → expect their open page to gain access on the next click, with no sign in → AC-33
+- [ ] A reader who has not seen the code follows the run book on an empty stack: first admin, change password, second admin, two factor on, a lockout and its recovery → expect no missing step; write down every place they stopped → AC-35
+
+## Commands
+
+- [ ] `pnpm --filter @ssdashboard/api test -- src/identity` → expect the boundary test to pass; add a planted import of an identity file from `catalog` → expect it to fail → AC-27
+- [ ] `pnpm --filter @ssdashboard/api test:e2e -- sign-in sign-in-policy password-reset two-factor profile staff create-admin-reset auth-cleanup` → expect every suite to pass with only import paths changed → AC-27
+- [ ] `node dist/create-admin.js --email owner@example.com --name "Owner One"` on an empty database → expect the same output as slice 1 → AC-27
+- [ ] `curl -i -X POST http://localhost:3001/api/auth/sign-in/email -H "origin: <staff origin>" -H "content-type: application/json" -d '{"email":"...","password":"..."}'` → expect `Set-Cookie` with `HttpOnly`, `SameSite=Lax`, `Path=/`, and no `Domain` → AC-30
+- [ ] The same request with `x-forwarded-host: <portal host>` and `PORTAL_ORIGIN` set → expect 404 and no cookie; `GET /api/auth/*` the same → AC-30
+- [ ] A valid staff cookie sent to a `portal` route and to a `hook` route → expect the handler to see no user (the audience e2e suite) → AC-29
+- [ ] A staff cookie on a `partner` route and a partner (double) cookie on a `staff` route → expect 403 `WRONG_AUDIENCE` each; no cookie → expect 401 `UNAUTHENTICATED`; a dead session → expect 401 `SESSION_EXPIRED` → AC-29
+- [ ] Remove one `@Audience(...)` annotation → expect `audience.spec.ts` to fail → AC-29
+- [ ] `GET /api/me` for a staff person and for the partner double → expect `home` of `backoffice`, then `partner` → AC-28
+- [ ] Five wrong passwords for a partner email, for a staff email and for an unknown email → expect identical bodies and similar timing, then the correct password still refused for the two real ones → AC-28, AC-3
+- [ ] `GET /api/staff` as an admin with a partner user present → expect the partner user absent; try to disable the only staff admin while a partner exists → expect 409 `LAST_ADMIN` → AC-28
+- [ ] `STAFF_BASE_PATH=/ops pnpm --filter @ssdashboard/api test:e2e -- sign-in` → expect every cookie, including the second factor cookie and the one cleared at sign out, to carry `Path=/ops`; try `STAFF_BASE_PATH=ops`, `/ops/` and `/a/../b` → expect the process to stop at startup with `Invalid environment` naming the setting → AC-31
+- [ ] `SELECT table_name FROM information_schema.columns WHERE column_name = 'tenant_id' AND table_name IN ('users','sessions','accounts','verifications','two_factors','rate_limits','sign_in_attempts')` → expect seven rows → AC-32
+- [ ] Sign in, request a reset, enrol two factor and fail a lock, then read `tenant_id` of the new rows in `users`, `sessions`, `verifications`, `two_factors`, `sign_in_attempts` and `rate_limits` → expect exactly the install's tenant id in each → AC-32
+- [ ] `pnpm db:migrate && pnpm --filter @ssdashboard/db test:e2e` → expect the schema test that fails on a table without `tenant_id` to pass, and a duplicate email in different letter case to be refused by (`tenant_id`, `lower(email)`) → AC-32
+- [ ] With fake hats: grant one, then remove it, using one cookie → expect the route to open, then 403 on the next request with the same cookie → AC-33
+- [ ] With fake hats: remove a person's last hat, move them to the other audience, rebind them to another partner account → expect their sessions deleted in the same transaction (`SELECT count(*) FROM sessions WHERE user_id = ...` is 0), then 401 `SESSION_EXPIRED`; remove one of two hats → expect the session kept → AC-33
+- [ ] Two admins each lose the administration hat in the same instant (after 0008; before it, use the staff role change) → expect exactly one to succeed and one 409 `LAST_ADMIN`, with one admin left → AC-33, AC-17
+- [ ] Read the api log after a hat change → expect one structured line with actor, target, `ip`, `userAgent`, the hats added and removed, and no email text or token → AC-33
+
+## Value sourcing
+
+- [ ] Change `PUBLIC_URL` (later `STAFF_ORIGIN`) from http to https → expect `Secure` on the cookie and the origin check, `returnTo` and email links to use the new origin and nothing else (it is the one source) → AC-30
+- [ ] Send `x-forwarded-host: evil.example` on a reset request → expect the email link to still start with the staff origin plus `STAFF_BASE_PATH` → AC-30, AC-31
+- [ ] Read a partner route handler's partner account id with a forged `x-partner-id` header, a query parameter and a body field → expect the value from the session's user row every time → AC-29
+- [ ] Insert a user directly with SQL naming no `tenant_id` → expect the install's tenant id from the database default → AC-32
+- [ ] Change the fake audiences between two requests with one cookie → expect the second request to follow the new value, with no cache (the audiences come from the database on every request) → AC-29, AC-33
+
+## Acceptance-criteria coverage
+
+- AC-27 … one `identity` module, behavior unchanged, boundary test · covered by UI step 1 and Commands steps 1 to 3
+- AC-28 … partner users on the same pages, identical answers, `home`, `returnTo` inside the audience, staff only admin rules · covered by UI steps 2 to 5 and Commands steps 9 to 11 (a real partner user: after 0008)
+- AC-29 … audience aware guard, portal and hook ignore the cookie · covered by Commands steps 6 to 8 and Value sourcing steps 3, 5
+- AC-30 … host only cookie, no `Domain`, portal host refusal, one staff origin · covered by Commands steps 4, 5 and Value sourcing steps 1, 2
+- AC-31 … cookie `Path` in the fallback and the startup check · covered by UI step 8 and Commands step 12
+- AC-32 … `tenant_id` on seven tables, keys with the tenant, default fills Better Auth's inserts · covered by Commands steps 13 to 15 and Value sourcing step 4
+- AC-33 … sessions follow hat changes, revoke on loss of every hat, last admin under the lock, log line · covered by UI step 9 and Commands steps 16 to 19
+- AC-34 … both languages and both audiences, neutral wording, accessible authentication · covered by UI steps 5 to 7
+- AC-35 … run book · covered by UI step 10 (the run book edit itself is milestone 4 of the amendment build plan)

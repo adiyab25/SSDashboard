@@ -1,11 +1,150 @@
 # 0005. Staff sign in with Better Auth: email and password, admin managed accounts, optional two factor
 
 **Date**: 2026-11-03
-**Status**: Accepted
+**Status**: Proposed (amendment of 2026-11-05 for scope feature 7; the original decision was accepted and built)
 
 ## Summary
 
 Staff sign in with an email and password. Sessions last up to 12 hours of inactivity and 7 days in total. An admin creates, edits and disables staff accounts, and a person can reset a forgotten password by email, or through an admin when the install has no mail. Two factor sign in with an authenticator app is optional for everyone. Every `/api` route then runs as a known user, which also fills the `posted_by` column on the stock ledger. The work is built as thin end to end slices, starting with plain sign in and sign out.
+
+## Amendment 2026-11-05
+
+**Why.** The product changed on 2026-11-05 ([rebuild plan](../../positioning/2026-11-05-rebuild-plan.md)) and [spec 0007](../0007-stack-architecture-operations-layer/index.md) chose Shape A: keep this spec and its built, reviewed code, and amend it. Sign in itself does not change. Better Auth, the email and password flow, lockout, rate limits, sessions, optional two factor, admin managed accounts and the `create-admin` commands all stay as built, and AC-1 to AC-26 keep holding unless a note below says a line is replaced. What changes is the world around it: there are now two audiences that sign in (staff and partner users) on one staff host, a separate public portal host that must never see a staff session, one tenant id on every row, an `identity` module that absorbs `auth` and `staff`, and roles that become hats (scope feature 8). Scope feature 7 shrinks to this delta. Its done when is: staff can sign in and out in both languages, repeated failures lock out safely, sessions expire, and the first admin and recovery steps are in a run book. The first three already hold and are re proved by the existing tests; this amendment closes the fourth against the new layout and adds the rest.
+
+**Settled and not reopened.** The review in [docs/reviews/2026-11-04-feat-staff-sign-in.md](../../reviews/2026-11-04-feat-staff-sign-in.md) found no blockers. Its findings 1 to 7 are fixed and re checked (invited email change voids the old invite, one forwarded client address, self targeted admin actions refused, no query params in error output, server side `revokeOtherSessions`, shared pending challenge delete). Finding 8 (the lockout checks before it counts, so a parallel burst gets more than five tries, bounded by the 30 per minute IP limit) stays deferred; this amendment does not touch the count order. The password rule, optional two factor and both mail adapters stay the owner's earlier choices.
+
+**What this amendment adds or replaces** (each item names the original text it touches):
+
+1. **One `identity` module** (adds AC-27; replaces the file locations in the `auth` and `staff` READMEs and in "Commands", behavior unchanged).
+2. **Partner users sign in through the same pages, lockout and limits** (adds AC-28; extends AC-3, AC-4, AC-5, AC-8, AC-9, AC-20 to a second kind of person).
+3. **An audience aware session guard** (adds AC-29; replaces the sentence in the original "Public routes" paragraph that the guard demands a staff session on every non public route).
+4. **A host only staff cookie that the portal host never sees** (adds AC-30; replaces `PUBLIC_URL` as the source of the cookie, Origin and link settings in AC-1, AC-7, "Configuration required" and the Security model).
+5. **The path based fallback scopes the cookie by `Path`** (adds AC-31; Carried m8 in spec 0007).
+6. **`tenant_id` on every auth table** (adds AC-32; replaces the "Data model sketch" for keys and uniqueness).
+7. **Sessions and hats** (adds AC-33; replaces "Roles for now ... feature 13" in the Security model, because roles became hats in feature 8; the hat model itself is spec 0008).
+8. **Sign in pages and mail for both audiences, in both languages** (adds AC-34; keeps AC-24).
+9. **Run book gains** (adds AC-35; extends the two run book follow-ups of the original).
+
+### New requirements
+
+Numbering continues from AC-26.
+
+- **AC-27**: The code of `apps/api/src/auth/` and `apps/api/src/staff/` lives in one Nest module, `apps/api/src/identity/`, with one `IdentityModule`, one README (Owns, Never touches, How to test, Governing spec, Decisions) and one `AGENTS.md`. The sign in parts and the staff administration parts keep separate sub folders. Nothing observable changes: every route, error code, event name, table name, environment name and the `create-admin` entry point (`node dist/create-admin.js`) stay as they are, and every existing unit and end to end test passes with only import paths changed. Other modules use identity only through exported services (the current user reader that ledger routes use for `postedBy`, `StaffDirectory`, and the session revoke service of AC-33), and a boundary test like `apps/api/src/inventory/module-boundary.spec.ts` fails when another module imports a file inside `identity/` or reads an auth table. The auth tables are written only by identity.
+- **AC-28**: A partner user (spec 0007 section 2: a Better Auth session with the partner hat, bound to one partner account) signs in on the same `(auth)` pages with an email and password. Every rule applies to a partner user exactly as to staff: the lockout of AC-3, the per IP limits of AC-4, session lifetime and cap of AC-5, password rules of AC-8, reset and mail of AC-9 to AC-11, the must change flow of AC-14, and optional two factor of AC-20. The lockout and the sign in answers are keyed on the email text and never on the kind of person, so a partner email, a staff email and an unknown email give identical answers and timing (no probing of who is a partner). After a full sign in, `GET /api/me` also returns `home`, either `backoffice` or `partner`, and the sign in page sends the person there when `returnTo` is absent or invalid. The `returnTo` of AC-7 is followed only when it points into the pages of the person's own audience; otherwise the person lands on `home` (a partner asking for `/stock` lands on `/partner`). Partner users get the same Account screen (name, phone, language, password, two factor) inside the partner frame. `/api/staff` lists, edits and disables staff only; the last active admin rule (AC-17) counts staff admins only; a partner user can never be an admin; `create-admin` creates staff only. Who creates partner users, and the partner account binding, belong to feature 8 and the partners module; this spec requires only that they reuse the invite and reset mechanics of AC-12, AC-13 and AC-18 unchanged. Until spec 0008 lands, every person is staff and `home` is `backoffice`.
+- **AC-29**: `SessionGuard` becomes audience aware, using the `@Audience(...)` of the route (`apps/api/src/platform/audience/`). A `staff` route needs a live session whose person may use the staff audience; a `partner` route needs a live session whose person may use the partner audience, and the partner account id comes from the session's user row, never from the request; a live session that does not fit the route's audience gets 403 `WRONG_AUDIENCE`; no cookie gets 401 `UNAUTHENTICATED` and a dead session 401 `SESSION_EXPIRED`, as in AC-5. `portal`, `hook` and `public` routes never read the session cookie at all, so a staff cookie cannot act on a portal route by any path (a test sends a valid staff cookie to a portal route and a hook route and proves the handler sees no user). Which audiences a person may use comes through a port, `SessionAudiences` (**Assumed** name), that identity exports: given a user id it returns the audiences the person's hats allow. Before spec 0008 the one implementation returns `staff` for every user. Spec 0008 supplies the real one, and tests for this criterion use a fake that returns `partner`. The must change flag, the 7 day cap, the disabled check and the Origin check of AC-7 apply to every audience the guard serves. The Origin check on Better Auth routes and on non GET routes compares against the staff origin of AC-30.
+- **AC-30**: The staff session cookie, and every other cookie Better Auth sets (the second factor challenge cookie, the dont remember cookie), is host only: no `Domain` attribute is ever sent (Better Auth's `advanced.crossSubDomainCookies` stays off, a test reads the `Set-Cookie` of a real sign in and fails on a `Domain`), `HttpOnly`, `SameSite=Lax`, and `Secure` when the staff origin is https. It is set only on answers from the staff host. Better Auth is reachable only on the staff host: when a request carries the portal host (as `X-Forwarded-Host`, set by Caddy; **Assumed**, to be checked against `deploy/Caddyfile` in milestone 1), every `/api/auth/*` route answers 404, and the web `(auth)` pages are not served there (Caddy's job in feature 26, listed in the run book). Auth uses one staff origin for the Better Auth base URL, trusted origins, the Origin check, the `Secure` flag, `returnTo` validation and the links in emails. Today that value is `PUBLIC_URL`; it becomes `STAFF_ORIGIN` when spec 0007's configuration rename lands (the rename itself is feature 3 and 26 work, not done here). The portal origin is never a trusted origin of Better Auth.
+- **AC-31**: In the path based fallback (a brand with no spare subdomain, so the staff pages and the staff api share a host with the portal under different path prefixes), the staff cookies carry `Path=<STAFF_BASE_PATH>` (**Assumed** name, proposed like the other names in spec 0007's "Configuration"; empty by default, meaning `Path=/`). The value must start with `/`, must not end with `/` and must not contain `..`, checked at startup in `apps/api/src/config/env.ts`, which stops the process with `Invalid environment` otherwise. Better Auth is told the path through `advanced.defaultCookieAttributes.path` (a documented option that Better Auth merges over its own `path: "/"`, checked in the installed 1.7.15 `dist/cookies/index.mjs`). Sign out, session renewal and the second factor cookie use the same path, so sign out really clears the cookie (a browser clears a cookie only when the path matches); a test proves a signed out `Set-Cookie` repeats the path. Links in emails and redirects are the staff origin plus `STAFF_BASE_PATH` plus the route. This spec states the cookie contract only. Whether the whole staff surface (pages and `/api`) can sit under one prefix is a deployment and web question for features 26 and 47 (see Risks).
+- **AC-32**: Every table in `packages/db/src/schema/auth.ts` (`users`, `sessions`, `accounts`, `verifications`, `two_factors`, `rate_limits`, `sign_in_attempts`) has `tenant_id uuid not null`, defaulting to `current_setting('ssd.tenant_id')::uuid`, by the rule spec 0007 section 7 sets and the data model spec (feature 4) owns in its baseline migration. No auth code names the column: Better Auth's inserts, our raw SQL (the lockout upsert, token writes, the `create-admin` commands) and the nightly cleanup all work with the default, and an end to end test proves rows made by a sign in, a reset, a two factor enrolment, a lockout and a rate limit hold the install's tenant id. Unique business keys include the tenant: email is unique on (`tenant_id`, `lower(email)`), staff code on (`tenant_id`, `staff_code`) where set, an account on (`tenant_id`, `provider_id`, `account_id`), and `sign_in_attempts` has the primary key (`tenant_id`, `email_key`, `scope`). `rate_limits` and `verifications` carry the column but keep the keys Better Auth owns. There is no row level security (one database holds one tenant). The feature 4 schema test, which fails on any table without the column, passes with the auth tables included. A partner who serves several brands has one login per brand stack (spec 0007 section 2); nothing here shares an account across brands.
+- **AC-33**: Sessions follow a person's hats without a new sign in. (a) A session carries no hat and no permission: the guard reads the person's user row and hats from the database on every request, so a grant or a removal acts on the person's next request. This extends the existing rule that cookie caching is off, and a test proves a grant and a removal take effect with the same cookie. (b) A change that leaves the person with no hat at all, that moves them between the staff and partner audiences, or that binds them to a different partner account deletes all their sessions in the same transaction as the change, as disabling does (AC-16), so the next request is 401 `SESSION_EXPIRED`. A change that only adds or removes a hat while the person keeps at least one hat of the same audience leaves the sessions alive. (c) Identity exports a session revoke service, `revokeSessions(userId, tx)` (**Assumed** name), that takes the caller's transaction; the hat service of spec 0008 calls it, so the change and the revoke commit together. (d) The rule that at least one active admin always exists (AC-17) survives hats: removing the hat that grants user administration from the last active admin gets 409 `LAST_ADMIN` under `ADMIN_RULE_LOCK`, the same lock as today; spec 0008 names the hat, identity keeps the lock and the rule. (e) A hat change writes the log line and the past tense event of AC-23 shape (`actorId`, `targetId`, `ip`, `userAgent`, `at`, and the hats added and removed). The event name and payload fields are spec 0008's. (f) A person cannot change their own hats. Everything about which hats exist, what they allow, and how one person holds several is spec 0008. This criterion only fixes what a session does when that model changes.
+- **AC-34**: All `(auth)` screens (sign in, forgot password, reset and invite, two factor, forced change) and all auth emails work in English and Arabic, right to left, by keyboard alone and to WCAG 2.2 AA for both audiences (AC-24 stays). Their wording is neutral about the kind of person: no string a partner can reach says "staff" or "employee" (the admin only invite wording on the staff page keeps it). The sign in page's saved language rule (AC-19) applies to partner users too. When message catalogs move to `packages/i18n` (spec 0007 section 10, feature 6), the auth screens and the mail templates move with them, keep every key, and stay inside the missing Arabic key test. How the `(auth)` pages render `lang` and `dir` (a server side render, or the existing head script) is decided by the localization spec (feature 6); this spec only requires that a partner never sees a wrong direction flash that a staff person would not.
+- **AC-35**: The run book `docs/runbooks/staff-sign-in.md` is rewritten for the new layout and states the first admin and recovery steps in plain words for an operator who has never seen the code. It must gain, and the build plan names who writes it:
+  1. The first admin steps for a vendor hosted client (the per client Compose project of spec 0007 section 6, `STAFF_ORIGIN`, `PORTAL_ORIGIN`, the per client `.env`) and for a self hosted install, with the sign in address taken from the staff origin and not `PUBLIC_URL`.
+  2. The log driver check made explicit for a shared host: one Docker daemon serves many clients, so the check is of the host's default driver and happens once per host before any client's first admin is created.
+  3. Where the tenant id comes from: `create-admin` relies on the database setting `ssd.tenant_id` that `migrate` makes; the symptom and fix when it is missing.
+  4. Recovery for every kind of person: an admin (existing commands), staff (staff page), a partner user (reset and unlock from the partners screen of feature 8, with the same 15 minute lock and the same wait), and "the only admin and the second factor are both lost", unchanged.
+  5. What hat changes do to live sessions, in operator words: a grant or removal acts on the person's next click; removing a person's last hat, or moving them to another audience or partner account, signs them out.
+  6. Cookie symptoms: signed out at once after sign in behind the path fallback means `STAFF_BASE_PATH` does not match the prefix Caddy serves; the portal host never shows a sign in page; what a `Domain` cookie would mean and why it must never appear.
+  7. The client address chain with the host level edge Caddy: where `TRUSTED_PROXIES` is set now, and that the per IP lockout and limits are only as good as the one forwarded address (section 4 of the run book, review finding 2 of 2026-11-04).
+  8. The pre existing sections (lockout abuse, mail, nightly cleanup, rotation of `BETTER_AUTH_SECRET`, troubleshooting) stay, with `PUBLIC_URL` replaced by the staff origin wherever it appears, and the spec link pointing here.
+
+### Design delta
+
+**Data model delta** (all in `packages/db`, in the baseline migration feature 4 writes, not a separate migration; no install exists, spec 0007 "Keep list, Shape A")
+
+| Table | Change | Rules and indexes |
+|---|---|---|
+| all seven auth tables | add `tenant_id uuid not null default current_setting('ssd.tenant_id')::uuid` | AC-32 |
+| ★ `users` | the unique index on `lower(email)` becomes (`tenant_id`, `lower(email)`); the unique partial index on `staff_code` becomes (`tenant_id`, `staff_code`) where not null | the `role` column and its `admin or staff` check stay until spec 0008 replaces them with hats |
+| ★ `accounts` | unique (`provider_id`, `account_id`) becomes (`tenant_id`, `provider_id`, `account_id`) | one `credential` row per user stays |
+| ★ `sign_in_attempts` | primary key (`email_key`, `scope`) becomes (`tenant_id`, `email_key`, `scope`) | the atomic upsert in `sign-in-lockout.ts` changes its conflict target to match |
+
+No new auth table. Hats and partner account binding are tables of spec 0008.
+
+**Interfaces delta**:
+- `GET /api/me` adds `home` (`backoffice` or `partner`). `packages/contracts/src/auth.ts` gets the field; the web parses it.
+- New error behavior: 403 `WRONG_AUDIENCE` also for a staff session on a partner route and the reverse. The code already exists for non staff audiences.
+- Exports of the `identity` module: the current user reader, `StaffDirectory`, `SessionAudiences` (port), and `revokeSessions(userId, tx)`.
+- Environment: `STAFF_ORIGIN` (replaces `PUBLIC_URL` for auth when the rename lands), `STAFF_BASE_PATH` (optional). Both are added to `env.ts` and to only the services that read them (`api`, `worker` for mail links). `PORTAL_ORIGIN` is read by auth only to refuse `/api/auth/*` for the portal host.
+- No new route is added. No Better Auth route is opened or closed.
+
+**Value sourcing delta**
+
+| Action | Value produced / displayed | Source |
+|---|---|---|
+| Sign in | cookie `Domain` | never set (host only) |
+| Sign in | cookie `Path` | `STAFF_BASE_PATH`, else `/` |
+| Sign in | cookie `Secure` flag | scheme of the staff origin |
+| Sign in | where the browser lands | valid `returnTo` inside the person's audience, else `home` from `GET /api/me` |
+| Session check | audiences the person may use | `SessionAudiences`, read from the database on every request |
+| Session check | partner account id on a partner route | the session's user row, never a header, path or body |
+| Auth tables | `tenant_id` | the column default from the database setting `ssd.tenant_id` |
+| Email | link base | staff origin plus `STAFF_BASE_PATH` plus route |
+| Hat change | sessions deleted or kept | whether the person keeps a hat of the same audience and the same partner account |
+
+**Critical test scenarios** (each maps to an acceptance criterion):
+- Happy path: the full existing sign in, reset, invite, two factor and `create-admin` suites pass after the move to `identity/`, with only import paths changed, verifies **AC-27**
+- Auth/permission: a module other than identity importing an identity file, or reading an auth table, fails the boundary test, verifies **AC-27**
+- Happy path: with the fake `SessionAudiences` returning `partner`, a partner user signs in on the same page, lands on `/partner`, is locked after five wrong passwords with the same answer and timing as a staff email and an unknown email, and gets the same reset flow, verifies **AC-28**
+- Auth/permission: a partner session on a staff route, and a staff session on a partner route, get 403 `WRONG_AUDIENCE`; a valid staff cookie sent to a portal and a hook route leaves the handler with no user, verifies **AC-29**
+- Auth/permission: `Set-Cookie` of a real sign in has no `Domain`, and `/api/auth/*` answers 404 for the portal host, verifies **AC-30**
+- Failure case: with `STAFF_BASE_PATH=/ops` the sign in, renewal, two factor and sign out cookies all carry `Path=/ops` and sign out clears it; a bad value stops startup, verifies **AC-31**
+- Happy path: rows made by sign in, reset, two factor enrolment, lockout and rate limit hold the install's tenant id; the feature 4 schema test passes, verifies **AC-32**
+- Failure case: with the same cookie, a granted hat is usable and a removed hat is refused on the next request; removing a person's last hat deletes their sessions, and two admins removing each other's administration hat at once leave one, verifies **AC-33**
+- Happy path: Playwright and axe on every `(auth)` screen in both languages and directions for the staff audience, plus a copy check that finds no "staff" in strings a partner can reach, verifies **AC-34**
+- Failure case: a fresh reader follows the run book on an empty vendor hosted stack and reaches a signed in admin, then recovers a locked admin, verifies **AC-35**
+
+### Risks of the amendment
+
+- **Path fallback is not buildable from this spec alone.** Next.js `basePath` is fixed at build time, and `AGENTS.md` forbids per client values baked into an image, so one prefix for pages and `/api` needs a deployment answer (features 26 and 47). If none exists, the fallback is dropped and the cookie `Path` setting stays harmless. Decide before feature 26 closes.
+- **Cookie tossing.** Better Auth prepends `__Secure-` to the cookie name on https and takes no `__Host-` prefix (checked in `dist/cookies/index.mjs`), so a sibling subdomain of the brand's registrable domain could set a cookie with a wider `Domain` that the staff host would also receive. The cookie value is signed, which stops forging a session, but a planted valid session of the attacker's own is still possible. Mitigation is the origin separation this spec asks for plus the signed cookie; a `__Host-` name stays a follow up.
+- **Client address chain.** The per IP lockout and limits assume the api receives one trustworthy `X-Forwarded-For`. A host level edge Caddy in front of many client stacks changes that chain; feature 26 must keep `test/compose-ports.spec.ts` meaningful.
+- **Hats may need a different session rule.** AC-33 is deliberately conservative (it deletes sessions on any kind change). Spec 0008 may widen what keeps a session alive but must not narrow what AC-33 deletes.
+- **Host header trust.** The portal host refusal (AC-30) reads `X-Forwarded-Host`; in local development there is no Caddy, so the check applies only when `PORTAL_ORIGIN` is set.
+
+## Build plan
+
+Tracer Bullet: milestone 1 moves the module and puts the cookie contract in place with the one real sign in thread still passing, then each milestone thickens one segment. Depends on: the feature 4 baseline migration (milestone 2) and spec 0008 for the real hats (milestone 3 uses a fake until then). This amendment's work is only the tasks below; the original plan is kept under "Build plan (original, built)".
+
+**Milestone 1: One identity module and the staff cookie contract** (backend)
+1. [ ] Move `apps/api/src/auth/` and `apps/api/src/staff/` into `apps/api/src/identity/` (`sign-in/` and `staff/` sub folders), add `IdentityModule`, one README from `docs/templates/module-readme.md` and one `AGENTS.md`, update every import and the `docs` links that name the old paths, satisfies **AC-27**
+2. [ ] Add `identity/module-boundary.spec.ts` like the inventory one, and export only the current user reader, `StaffDirectory` and the revoke service, satisfies **AC-27**
+3. [ ] Set the cookie attributes in `auth.factory.ts`: no `Domain`, `advanced.defaultCookieAttributes.path` from `STAFF_BASE_PATH`, one staff origin value for base URL, trusted origins, Origin check, `Secure`, `returnTo` and mail links; validate `STAFF_BASE_PATH` in `env.ts`; refuse `/api/auth/*` for the portal host when `PORTAL_ORIGIN` is set, after checking the header in `deploy/Caddyfile`, satisfies **AC-30**, **AC-31**
+4. [ ] Tests: `Set-Cookie` has no `Domain`; with `STAFF_BASE_PATH=/ops` every cookie, sign out included, carries the path; a bad value stops startup, satisfies **AC-30**, **AC-31**
+
+**Done when:** `pnpm build && pnpm typecheck && pnpm --filter @ssdashboard/api test && pnpm --filter @ssdashboard/api test:e2e` pass, and `pnpm lint` passes (module README and doc link checks included).
+
+**Milestone 2: Tenant id on the auth tables** (backend)
+1. [ ] Make sure the feature 4 baseline migration gives all seven auth tables `tenant_id` and the new unique keys; if it is not in yet, add them to the baseline, not to a separate migration, satisfies **AC-32**
+2. [ ] Change the `sign_in_attempts` upsert conflict target to (`tenant_id`, `email_key`, `scope`) and check every raw SQL statement in identity and in the `create-admin` commands runs with no `tenant_id` named, satisfies **AC-32**
+3. [ ] End to end test that rows made by sign in, reset, two factor, lockout and rate limit hold the install's tenant id, and that `create-admin` works on a fresh database, satisfies **AC-32**
+
+**Done when:** `pnpm db:migrate && pnpm --filter @ssdashboard/db test:e2e && pnpm --filter @ssdashboard/api test:e2e` pass.
+
+**Milestone 3: Audience aware guard, partner users and hat sessions** (backend)
+1. [ ] Add the `SessionAudiences` port with the staff only implementation, make `SessionGuard` read the route's audience and answer 403 `WRONG_AUDIENCE` for a mismatch, and stop `portal`, `hook` and `public` routes from reading the cookie, satisfies **AC-29**
+2. [ ] Add `home` to `GET /api/me` and to the contract in `packages/contracts/src/auth.ts`, satisfies **AC-28**
+3. [ ] Keep `/api/staff`, the last admin rule and `create-admin` staff only, with tests using a fake partner user, satisfies **AC-28**
+4. [ ] Export `revokeSessions(userId, tx)` and the log line shape for hat changes, and test the three rules of AC-33 (b) with fake hats, satisfies **AC-33**
+5. [ ] Write the requirement notes spec 0008 must meet (the port, the revoke call, `HatsChanged`, `LAST_ADMIN` under the lock) into `AGENTS.md` of the identity module, satisfies **AC-33**
+
+**Done when:** `pnpm --filter @ssdashboard/api test -- src/identity src/platform/audience && pnpm --filter @ssdashboard/api test:e2e` pass, and the audience test fails when one `@Audience` annotation is removed.
+
+**Milestone 4: Pages for both audiences and the run book** (frontend, then docs)
+1. [ ] Make the sign in page follow `home` and follow `returnTo` only inside the person's audience, with unit tests for `/partner` and `/stock`, satisfies **AC-28**
+2. [ ] Reuse the account feature folder in the partner frame (shared component, partner route), satisfies **AC-28**
+3. [ ] Copy pass: no "staff" in strings a partner can reach, in the web catalogs and the mail templates; keep the Arabic keys complete, satisfies **AC-34**
+4. [ ] Update `docs/runbooks/staff-sign-in.md` for all eight points of AC-35 (the build owner or the docs writer; Igris routes it) and point the spec link to this amendment, satisfies **AC-35**
+5. [ ] Re run the Playwright accessibility and keyboard suite for the `(auth)` screens in both languages, satisfies **AC-34**
+
+**Done when:** `pnpm lint && pnpm --filter @ssdashboard/web test && pnpm --filter @ssdashboard/web test:e2e -- auth` pass, and a person who has not seen the code follows the run book on a fresh stack to a signed in admin (recorded in `verify.md`).
+
+## Questions for the owner
+
+None blocks the build. These are owner level choices, each with the default this amendment uses:
+
+1. Should the manager hat (the successor of `admin`) be required to use two factor? **Default: no.** Two factor stays optional for everyone, as chosen earlier, and the run book recommends it for every admin. Revisit with spec 0008 and again at the pilot.
+2. Does a partner user ever also work as staff with the same email? **Default: no**, one person has one kind; spec 0008 may allow it, and AC-33 works either way.
+3. Is a brand without a spare subdomain a case you want to support? **Default: yes in the cookie contract only** (AC-31), with the full fallback decided in features 26 and 47.
 
 ## Requirements
 
@@ -18,12 +157,16 @@ Staff sign in with an email and password. Sessions last up to 12 hours of inacti
 
 **Acceptance criteria** (the contract, each criterion is IDed and independently checkable):
 - **AC-1**: Signing in with a correct email (any letter case) and password creates a session. The cookie is host only, `HttpOnly`, `SameSite=Lax`, and `Secure` when `PUBLIC_URL` is https. The browser lands on the `returnTo` path when it is a relative path on this site, otherwise on `/`. `users.last_sign_in_at` is set. The user menu shows the person's name, email and role.
+
+> Amended 2026-11-05: the cookie settings and the `Secure` flag come from the staff origin, and the cookie never carries a `Domain`; see AC-30 and AC-31. `PUBLIC_URL` below reads as the staff origin.
 - **AC-2**: A wrong password, an unknown email, and a locked account all return the same 401 `INVALID_EMAIL_OR_PASSWORD` answer with the same message and shape. A disabled account that supplies the correct password gets 403 `BANNED_USER` with a clear "account disabled, ask an administrator" message and no session. A disabled account with a wrong password gets the generic answer. A correct password on a disabled account counts as neither a failure nor a reset of the lockout counter, and is logged as `SignInFailed` with reason `disabled`.
 - **AC-3**: Five failed attempts within a fixed 10 minute window (started by the first failure) for the same email text (real or unknown) from the same client IP lock that pair for 15 minutes. Separately, 20 failures for that email from any addresses in the window lock the email for 15 minutes, so a spread out attack is slowed without letting one outsider keep a person locked out from a single address. During a lock every attempt, including the correct password, gets the generic answer of AC-2. The counter resets only after a full sign in (a session was issued and no second factor is pending). Counting is one atomic upsert, so concurrent attempts cannot skip a count. Wrong second factor codes (AC-20) and wrong current password answers on change password and two factor disable count toward the same lock; for a code attempt the key comes from the user of the pending sign in, and reaching a lock ends that pending sign in.
 - **AC-4**: Public auth routes are rate limited per client IP, with counters stored in PostgreSQL so a restart does not reset them. Rate limiting is switched on in every environment (Better Auth turns it off outside production unless told otherwise). Going over a limit returns 429 with the `X-Retry-After` header. The limits are: 30 sign in attempts per minute (a shared warehouse network must survive a shift change), 3 reset requests per 15 minutes, 5 reset completions per 15 minutes, 15 second factor code attempts per 10 minutes (the per account lock of AC-3 is the tighter control).
 - **AC-5**: A session expires after 12 hours without use (each use renews it, at most once an hour) and never lives longer than 7 days from sign in. Disabling cookie caching means a revoked or disabled session fails on the very next request. A request that carries a session cookie with no live session behind it (expired, signed out, disabled or revoked) returns 401 `SESSION_EXPIRED`, and a request with no cookie returns 401 `UNAUTHENTICATED`. In both cases the web app sends the person to sign in with `returnTo` set to the page they were on. Browser calls to `/api` renew the session cookie, and a test proves that a person who only loads pages is not signed out while their session row is still live.
 - **AC-6**: Signing out ends only that session, clears the cookie, and sends the person to `/sign-in`. The old cookie value then fails with 401 `SESSION_EXPIRED`.
 - **AC-7**: Every `/api` route except `/api/config`, `/api/health` and the allowed `/api/auth/*` routes returns 401 `UNAUTHENTICATED` without a valid session, including `GET /api/locations`. Web pages inside the shell redirect to `/sign-in?returnTo=<path>`. `returnTo` is accepted only when it starts with a single `/` (not `//` or `/\`), resolves to the `PUBLIC_URL` origin, and is not one of the `(auth)` paths; otherwise `/` is used (so `//evil.example` and full URLs are ignored). The path travels through the two factor and forced change steps. Next.js middleware passes the current path to the shell layout, because layouts cannot read it. Every non GET request to our routes must carry an `Origin` that matches `PUBLIC_URL` (CSRF defense beyond `SameSite=Lax`). Better Auth routes do not pass through the NestJS guard, so every Better Auth path not listed in the API surface returns 404 and the ones that remain apply the Origin check, the 7 day cap and the must change rule through a before hook.
+
+> Amended 2026-11-05: the guard is audience aware, the Origin check compares against the staff origin, and portal, hook and public routes never read the session cookie; see AC-29 and AC-30. The `staff` role wording is replaced by hats (spec 0008).
 - **AC-8**: A password is 8 to 128 characters with at least one lowercase letter, one uppercase letter and one digit. The same rule applies when setting a password from an invite or reset link, changing it, and for admin issued temporary passwords. A weak password returns 422 `WEAK_PASSWORD` with an `unmet` list, thrown by a before hook on `/reset-password` and `/change-password` from the shared Zod schema (Better Auth's own length errors never reach the browser). A wrong current password returns 400 `INVALID_PASSWORD`. The forms show the rules before submit, allow paste, and use the right `autocomplete` values so password managers work.
 - **AC-9**: With mail on, requesting a reset for any email shows the same neutral confirmation, and the response is padded to at least 500 ms whether or not the account exists, so timing reveals nothing. For an existing account that is not disabled (including one still `invited`) one email is queued with a link valid for 1 hour and usable once; issuing it deletes that person's older reset and invite tokens. Setting the new password revokes all that person's sessions, clears any lockout, sets the email verified and clears the must change flag (all in Better Auth's `onPasswordReset` callback), and the person then signs in normally. The email link goes to Better Auth's token check, which redirects to the reset page with `?error=INVALID_TOKEN` when the token is used or expired, so the "link no longer valid" screen, with a way to request a new one, appears before the person types. A disabled account receives no email.
 - **AC-10**: With mail off (`MAIL_DRIVER=none`), `GET /api/config` reports `mailEnabled: false`, the forgot password page tells the person to ask an administrator, and no email is attempted anywhere.
@@ -82,6 +225,8 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 Relationships: `users` 1:N `sessions`; `users` 1:N `accounts` (in practice 1:1); `users` 1:0..1 `two_factors`. Later features' `created_by` / `posted_by` columns become nullable foreign keys to `users.id` (on delete restrict). Staff status is derived, never stored: `disabled` when `banned`, else `invited` when `last_sign_in_at` is null, else `active`.
 
+> Amended 2026-11-05: every table also carries `tenant_id`, and the email, staff code, account and attempt keys include it; see AC-32 and the data model delta. The `role` check constraint is replaced by hats in scope feature 8 (spec 0008), not feature 13 as written here.
+
 **State transitions**:
 - Staff: `invited` → `active` (first sign in); `invited` or `active` → `disabled` (admin); `disabled` → back to `invited` or `active` by its history (admin enable). A lockout is a temporary condition, not a state.
 - Session: created at sign in → used (renewed at most hourly) → expired (idle 12 hours, or 7 days from creation) or revoked (sign out, disable, password change or reset, admin revoke).
@@ -110,6 +255,8 @@ Every other Better Auth path is closed with 404 (an allowlist, not a block list)
 
 *Our NestJS routes (Zod contracts in `packages/contracts/src/auth.ts` and `staff.ts`, listed in the OpenAPI document)*
 
+> Amended 2026-11-05: there is no OpenAPI document yet (see `AGENTS.md`); the Zod contracts are the only schema. `GET /api/me` gains `home` (AC-28).
+
 | Endpoint | Method | Key inputs | Key outputs | Auth | Key errors |
 |---|---|---|---|---|---|
 | `/api/me` | GET | none | id, name, email, role, phone, staffCode, language, twoFactorEnabled, mustChangePassword | session (allowed while must change) | 401 `UNAUTHENTICATED`, 401 `SESSION_EXPIRED` |
@@ -127,6 +274,8 @@ Every other Better Auth path is closed with 404 (an allowlist, not a block list)
 | `/api/config` | GET | none | existing fields plus `mailEnabled: boolean` | public | none |
 
 Public routes (no session): `GET /api/config`, `GET /api/health`, and the Better Auth sign in, reset and token routes above. The guard lets a session with the must change flag reach only `GET /api/me`, `/api/auth/change-password`, and `/api/auth/sign-out`.
+
+> Amended 2026-11-05: the guard no longer demands a staff session on every non public audience; it checks the audience of the route (AC-29). The partner, portal and hook wording in `apps/api/src/auth/AGENTS.md` is replaced the same way.
 
 *Web routes (`apps/web/src/app`)*: `(auth)/sign-in`, `(auth)/forgot-password`, `(auth)/reset-password` (reset and invite, same page with different wording when `invite=1`), `(auth)/two-factor`, `(auth)/change-password` (forced change); inside the shell: `account` (profile, password, two factor) and `staff` (list with create, edit and row actions). Next.js checks the session in the shell layout by calling `GET /api/me` over `API_INTERNAL_URL` with the cookie forwarded. A client side fetch wrapper turns any 401 from `/api` into a redirect to sign in.
 
@@ -177,8 +326,12 @@ Public routes (no session): `GET /api/config`, `GET /api/health`, and the Better
 
 **Security model**:
 - Roles for now: `admin` (everything, including `/api/staff`) and `staff` (everything else). Location scoping and finer permissions arrive with feature 13, which replaces the role check constraint.
+
+> Amended 2026-11-05: roles are replaced by hats in scope feature 8 (spec 0008); location scoping and the cost permission belong there too. `admin` stays as built until then, and AC-33 fixes what sessions do when hats change.
 - Public surface is limited to config, health and the listed Better Auth routes, all behind per IP rate limits. Sign up is closed (staff are created only by an admin or the first admin command).
 - Sessions use a host only `HttpOnly` cookie; the 7 day cap and the disabled state are enforced on every request.
+
+> Amended 2026-11-05: the staff cookie is host only on the staff host and the portal host never receives or reads it (AC-30); the path based fallback scopes it by `Path` (AC-31).
 - Staff data (names, emails, phones) is personal data. Keep the fields minimal; disabled accounts are kept because the ledger needs them. No compliance regime is confirmed; erasure rules are a follow up.
 - Every non GET request to our routes is rejected unless its `Origin` matches `PUBLIC_URL`, as Better Auth already does for its own routes.
 - Account probing is closed on sign in (identical answers and lockout, AC-2 and AC-3), on reset (neutral answer, same timing), and by keying lockouts on email text.
@@ -186,6 +339,8 @@ Public routes (no session): `GET /api/config`, `GET /api/health`, and the Better
 **Configuration required**:
 - `BETTER_AUTH_SECRET`: already generated by `bootstrap.sh`; now read and validated in `env.ts` (at least 32 characters). Rotating it signs everyone out and also makes every enrolled two factor secret and backup code unreadable, so those people need their two factor reset: by another admin from the staff page, or, for a sole admin or when no admin can pass the code step, by `create-admin --reset-two-factor` from the server shell (AC-26). The reset deletes the unreadable rows without decrypting them.
 - `PUBLIC_URL`: browser facing URL; auth base URL, trusted origins and the links in emails. In `env.ts` and passed to `api` and `worker` in Compose.
+
+> Amended 2026-11-05: replaced by `STAFF_ORIGIN` for auth when spec 0007 section "Configuration" lands, plus the optional `STAFF_BASE_PATH` (AC-30, AC-31). `PORTAL_ORIGIN` is never a trusted origin of Better Auth.
 - `API_INTERNAL_URL`: for the web container only, the internal address of the api.
 - `MAIL_DRIVER`: `none` (default), `smtp` or `postmark`.
 - `MAIL_FROM`: sender address; required unless the driver is `none`.
@@ -211,7 +366,7 @@ Public routes (no session): `GET /api/config`, `GET /api/health`, and the Better
 - Happy path: Arabic and English screens, keyboard only, with the Playwright accessibility suite on every new screen, verifies **AC-24**, **AC-19**
 - Happy path: the nightly cleanup removes expired rows and leaves live ones, and posting a stock movement stores the signed in user as `posted_by`, verifies **AC-22**
 
-## Build plan
+## Build plan (original, built)
 
 Tracer Bullet: the first slice is a real sign in through every layer, then each slice thickens one segment and ships on its own. Migrations follow the slices (users, sessions, accounts and verifications first; counters second; two factor table third; foreign keys last), so no slice carries tables it does not use.
 
@@ -234,6 +389,8 @@ Tracer Bullet: the first slice is a real sign in through every layer, then each 
 - Account probing is closed at sign in and reset, and brute force is slowed twice (per IP and per email).
 - One contract and one OpenAPI document cover all our own endpoints; the browser never talks to Better Auth's admin routes.
 
+> Amended 2026-11-05: there is no OpenAPI document; the Zod contracts in `packages/contracts` are the single description.
+
 **Negative / tradeoffs**:
 - The password rule (8 characters with composition) is weaker than the length first approach current guidance prefers. It was your choice. Lockout, IP limits and optional two factor reduce the risk; revisit if a client asks for stricter rules.
 - Better Auth has no per account lockout, so lockout, the 7 day cap and the safe admin rules are our own code around it. They need careful tests, and a Better Auth upgrade can change hook behavior.
@@ -252,6 +409,8 @@ Tracer Bullet: the first slice is a real sign in through every layer, then each 
 - A fourth entry point, `create-admin`, ships in the `app` image next to `api`, `worker` and `migrate`.
 - The api process starts a send only pg-boss client (no scheduling or maintenance) with a pool of 2 connections.
 - Roles are just `admin` and `staff` until feature 13.
+
+> Amended 2026-11-05: until spec 0008 (scope feature 8, roles as hats), not feature 13.
 - Auth screens sit outside the app shell and need an exception note in `AGENTS.md`.
 
 ## Follow-up
@@ -265,7 +424,11 @@ Tracer Bullet: the first slice is a real sign in through every layer, then each 
 - [ ] Check pg-boss options for deleting completed jobs after an hour and failed jobs after a day on the installed version.
 - [ ] Confirm Caddy overwrites a client supplied `X-Forwarded-For` header so IP rate limits cannot be spoofed.
 - [ ] Feature 13: replace the `role` check constraint with real roles and permissions; hide unit cost and stock value from roles without cost permission.
+
+> Amended 2026-11-05: this is now scope feature 8 (spec 0008). Feature 13 is the Shopify connector.
 - [ ] Feature 14: subscribe to the staff and sign in events and decide how audit entries are stored durably.
+
+> Amended 2026-11-05: the audit trail is scope feature 10, not 14.
 - [ ] Feature 16: alert on repeated mail job failures; measure per request session lookups.
 - [ ] Needs a decision later: erasure or anonymising former staff data if a client falls under data protection rules; changing the email of a live account; session list with "sign out other devices".
 - [ ] Existing end to end tests that call `/api/locations` unauthenticated need the new sign in helper (build plan step 8).
