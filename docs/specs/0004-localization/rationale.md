@@ -99,3 +99,46 @@ The literal string lint and the `Intl` restriction are included because the type
 - react-i18next TypeScript overview: https://react.i18next.com/latest/typescript
 - Next.js caching and cache components: https://nextjs.org/docs/app/getting-started/caching
 - Not verified: Lingui v6 typed ids and setup (the guide returned 404), react-intl typed keys, and how react-i18next fails wrong keys and types plural keys.
+
+## Amendment 2026-11-05: rationale
+
+Scope feature 6 is amended in place (Shape A of spec 0007). Context, options, and rationale above stay as the record of the original decision. This section records only what the delta decided. Build spec: [index.md](index.md), section `Amendment 2026-11-05`.
+
+### Context added
+
+- Text is needed outside the browser. `apps/api/src/mail/mail-templates.ts` has its own `COPY` table of English and Arabic text, and the daily report, WhatsApp messages, export labels, and receipts are coming in the worker (spec 0007, section 10). Two sources of Arabic text would drift.
+- The portal and partner pages are opened by customers on slow phones from links the system sends. The head script and hidden body rule was designed for staff.
+- Egypt observes daylight saving (the tz data in Node 2026a shows 24 Apr 2026 with 23 hours and 29 Oct 2026 with 25 hours), so a day key must come from one SQL function and be tested on the real dates (Carried row m7).
+
+### Options considered (the delta)
+
+**Where the shared catalog lives.**
+
+- Option A, chosen: a new `packages/i18n`. It matches the module map in spec 0007, keeps React out of the api and worker, and lets Arabic stay a lazy subpath for the web. Cost: one more package to build before the web.
+- Option B: keep the catalogs in `apps/web` and import them from the api. Not chosen: the api and worker would depend on a Next.js app folder.
+- Option C: put the catalogs in `packages/contracts`. Not chosen: contracts holds request and response shapes, and text changes for a different reason.
+
+**How portal and partner pages know the language on the server.**
+
+- Option A, chosen: the language in the URL (`/ar/returns`), read as a root parameter, one root layout per audience. The page prerenders per language under Cache Components, works with scripts blocked, and a link sent on WhatsApp carries its language. The cost is a structural change (multiple root layouts, an experimental global 404, moved pages) and a full page load between audiences, which the Next.js docs state.
+- Option B: read the `ss_lang` cookie with `cookies()` in the root layout. Not chosen: the installed docs say `cookies()` outside a Suspense boundary stops the route from prerendering under Cache Components, and `<html>` cannot sit inside Suspense, so the whole app, back office included, would turn dynamic.
+- Option C: keep the static root layout and put `lang` and `dir` on a wrapper element. Kept only as the named fallback: `<html lang>` would stay wrong for screen readers, and Radix portals mount on the body, outside the wrapper.
+- Option D: a language subdomain. Not chosen: one host per install (spec 0007, hosting), and Caddy and certificates would grow for no gain.
+
+**Does the back office change.** Decided no (AC-17). It sits behind a login, may use a client language that exists only as runtime JSON (the server cannot read it yet), and the original verify run passed all 13 criteria. The trigger to revisit is a measured wait, recorded as a Follow-up, not a feeling.
+
+**Digit input.** Decided: normalize at the edge by schema, with a strict comma rule (no guessing `1,5`), and display stays Western. Showing Arabic digits would undo the original reason: figures must match scanned labels, exports, and the closed month rules. Silently rounding extra fraction digits was rejected, because a money field that changes what was typed hides mistakes.
+
+**Where the formatters live.** Moved into the package so the worker's report and the web screen cannot disagree; the lint ban follows the module. The original rule (one module, fixed `Intl` options) is unchanged.
+
+**Operating day.** The function is owned by feature 4 (data model); this spec owns the display and the test. The test computes the release year from the rule and checks PostgreSQL against Node `Intl`, so a change in Egypt's rules fails a build and not a report. Pinning only 2026 would rot; computing only from the rule would hide a tz data error; the test does both.
+
+### References added
+
+**Project sources**: spec 0007 sections 2, 3 and 10 and the Carried row m7 ([spec 0007](../0007-stack-architecture-operations-layer/index.md)); positioning sections 6.4, 6.11, 6.15 ([positioning](../../positioning/2026-11-05-egypt-order-operations-layer.md)); `docs/scope/foundations.md` feature 6; `apps/web/src/app/layout.tsx`; `apps/web/src/proxy.ts`; `apps/api/src/mail/mail-templates.ts`; `packages/db/migrations/0001_core_data_model.sql` (seeds `currency` and `timezone`).
+
+**Installed Next.js 16.4.3 docs** (read in this session, under `apps/web/node_modules/next/dist/docs/01-app/`): `03-api-reference/03-file-conventions/route-groups.md` (multiple root layouts, full page load), `03-api-reference/03-file-conventions/layout.md` (root layout rules), `03-api-reference/03-file-conventions/not-found.md` (`global-not-found`, experimental), `03-api-reference/04-functions/next-root-params.md` (root parameters and the `generateStaticParams` requirement), `03-api-reference/04-functions/cookies.md` (Suspense under Cache Components), `02-guides/internationalization.md`.
+
+**Run in this session**: `node -e` with `Intl.DateTimeFormat` and `timeZone: 'Africa/Cairo'` on the instants in the spec (Node tz data 2026a).
+
+**Not verified**: the Egyptian rule text from the IANA source (the rule used, last Friday of April to last Thursday of October, matches the Node output for 2026 and 2027 but was not read from the tz database); that `experimental.globalNotFound` keeps the production `/design` 404 working; that WhatsApp template bodies can be held as per language fixtures (Meta documentation not checked); that `process.versions.tz` is available on the Node 26 image (it printed `2026a` on the Node used here).
