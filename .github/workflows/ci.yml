@@ -23,6 +23,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      # setup-node caches pnpm on its own because package.json names a packageManager, so pnpm must exist first.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
