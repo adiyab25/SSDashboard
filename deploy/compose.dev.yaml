@@ -1,6 +1,13 @@
-# Local development database only. The api and web run on your machine with `pnpm dev`.
-# Start it:  docker compose -f deploy/compose.dev.yaml up -d
-# Matches DATABASE_URL in the root .env.example.
+# Local development services: the database, an S3 compatible object store, and a mail catcher.
+# The api, worker, and web run on your machine with `pnpm dev`.
+# One command sets everything up:  pnpm bootstrap   (it runs `docker compose ... up -d --wait`)
+# Matches DATABASE_URL, S3_*, and SMTP_* in the root .env.example.
+#
+# Host ports: 5433 PostgreSQL (never 5432), 3900 Garage S3, 1025 Mailpit SMTP, 8025 Mailpit UI.
+# 3000 and 3001 stay free for the web and api.
+#
+# Database roles: local runs use the same two roles as production (the owner `ssdashboard` and the
+# application role `ssdashboard_app`). Per client role names (ssd_<client>_*) arrive with feature 4.
 
 name: ssdashboard-dev
 
@@ -16,6 +23,45 @@ services:
       - "5433:5432"
     volumes:
       - postgres-dev-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssdashboard -d ssdashboard"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Garage, a small self hosted S3 compatible store (ADR 0002). The first start has no storage
+  # layout; `pnpm bootstrap` assigns it and creates the bucket and key (deploy/dev-bootstrap.mjs).
+  garage:
+    image: dxflrs/garage:v2.4.1
+    environment:
+      # A fixed, public, dev only value. Production generates its own.
+      GARAGE_RPC_SECRET: "0000000000000000000000000000000000000000000000000000000000000001"
+    ports:
+      # The S3 api only. The RPC port 3901 stays inside the container network.
+      - "3900:3900"
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage-dev-meta:/var/lib/garage/meta
+      - garage-dev-data:/var/lib/garage/data
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # Mailpit catches every email the api sends. Read them at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
 volumes:
   postgres-dev-data:
+  garage-dev-meta:
+  garage-dev-data:

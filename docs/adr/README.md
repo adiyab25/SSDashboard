@@ -8,3 +8,4 @@ records one decision inside a module or area.
 ## Index
 
 - [0001 shadcn component files keep their vendor shape](0001-shadcn-component-files-keep-their-vendor-shape.md)
+- [0002 Garage as the S3 compatible store](0002-garage-as-the-s3-compatible-store.md)

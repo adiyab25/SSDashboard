@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "node --test scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs scripts/check-banned-names.test.mjs scripts/check-component-export-names.test.mjs scripts/check-tsdoc-fixture.test.mjs eslint/i18n.test.mjs"
+    "test": "node --test scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs scripts/check-banned-names.test.mjs scripts/check-commit-subject.test.mjs scripts/check-branch-name.test.mjs scripts/check-component-export-names.test.mjs scripts/check-tsdoc-fixture.test.mjs eslint/i18n.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

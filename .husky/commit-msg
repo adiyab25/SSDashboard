@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Rejects banned, conventional prefixed, or over long commit subjects (spec 0007). CI reruns the same check.
+node packages/config/scripts/check-commit-subject.mjs "$1"

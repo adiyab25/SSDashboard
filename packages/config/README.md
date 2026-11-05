@@ -10,6 +10,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 - ESLint rules, including the i18n rules: [eslint/](eslint/)
 - The personal data redaction list and `redact` function, shared by every log and error sink: [src/redaction.ts](src/redaction.ts)
 - The logical CSS check that fails `lint` on physical side styles: [scripts/check-logical-css.mjs](scripts/check-logical-css.mjs)
+- The commit subject and branch name checks, shared by the `.husky/commit-msg` hook and the CI `conventions` job: [scripts/check-commit-subject.mjs](scripts/check-commit-subject.mjs), [scripts/check-branch-name.mjs](scripts/check-branch-name.mjs)
 
 ## Never touches
 

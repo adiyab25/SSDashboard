@@ -23,6 +23,8 @@ Shared configuration every workspace extends: TypeScript presets today, and the 
 | `scripts/check-banned-names.mjs` | Fails `lint` on a file or folder name with a banned whole word (`mgr`, `cfg`, `util`, `utils`, `misc`, `temp`, `tmp`, `stuff`, `helper`, `helpers`) in `apps/*`, `packages/*`, `extensions/*` |
 | `scripts/check-component-export-names.mjs` | Fails `lint` when a `.tsx` file in `apps/web/src` or `packages/ui/src` that exports a PascalCase value does not export the one named after the file (`exchange-request-form.tsx` exports `ExchangeRequestForm`); Next special files, specs, and test utilities are skipped |
 | `scripts/check-doc-links.mjs` | Fails `lint` on a relative link in `docs/**`, a README, or an AGENTS.md that does not resolve |
+| `scripts/check-commit-subject.mjs` | The shared commit subject check: rejects banned whole subjects (`wip`, `misc`, `fixes`, ...), conventional prefixes (`feat:`), `fixup!`/`squash!`, and subjects over 72 characters; allows GitHub merge commits. Run by `.husky/commit-msg` on a message file and by the CI `conventions` job with `--range base..head` |
+| `scripts/check-branch-name.mjs` | Fails unless a branch is `feat/`, `fix/`, or `docs/` plus a kebab case slug; the CI `conventions` job passes the pull request head branch |
 
 ## Commands
 
