@@ -36,13 +36,13 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 | 1 | [Stack & architecture](foundations.md) | Foundation | Core | Beta | done |
 | 2 | [Coding & documentation standards](foundations.md) | Foundation | Core | Beta | done |
 | 3 | [Dev environment](foundations.md) | Foundation | Core | Beta | done |
-| 4 | [Data model](foundations.md) | Foundation | Core | GA | planned |
-| 5 | [Design system & UI foundation](foundations.md) | Foundation | Core | Beta | planned |
-| 6 | [Localization (Arabic & English)](foundations.md) | Foundation | Core | Beta | planned |
-| 7 | [Staff sign in](foundations.md) | Foundation | Core | GA | planned |
-| 8 | [Roles as hats](foundations.md) | Foundation | Core | GA | planned |
-| 9 | [Settings, module toggles & bundles](foundations.md) | Foundation | Core | GA | planned |
-| 10 | [Audit trail](foundations.md) | Foundation | Core | Beta | planned |
+| 4 | [Data model](foundations.md) | Foundation | Core | GA | in-progress |
+| 5 | [Design system & UI foundation](foundations.md) | Foundation | Core | Beta | in-progress |
+| 6 | [Localization (Arabic & English)](foundations.md) | Foundation | Core | Beta | in-progress |
+| 7 | [Staff sign in](foundations.md) | Foundation | Core | GA | in-progress |
+| 8 | [Roles as hats](foundations.md) | Foundation | Core | GA | in-progress |
+| 9 | [Settings, module toggles & bundles](foundations.md) | Foundation | Core | GA | in-progress |
+| 10 | [Audit trail](foundations.md) | Foundation | Core | Beta | in-progress |
 | 11 | [Stock ledger & locations](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
 | 12 | [Catalog, styles & variants](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |
 | 13 | [Shopify connector](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
