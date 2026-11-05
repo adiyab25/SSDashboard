@@ -1,4 +1,4 @@
-# Verify: localization · spec 0004 · updated 2026-11-03
+# Verify: localization · spec 0004 · updated 2026-11-05 (amendment steps added)
 _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones. Most already have a test: the unit tests in `apps/web/src/i18n`, `apps/web/src/shell`, `apps/api/src/platform`, `packages/config/eslint/i18n.test.mjs`, and `apps/web/e2e/localization.spec.ts`._
 
 ## UI / manual
@@ -39,6 +39,43 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 
 ## Acceptance-criteria coverage
 - AC-1 … Language menu, switch without reload · AC-2 … direction follows language, dev switch gone · AC-3 … cookie, head script, no flash, no hydration warning · AC-4 … settings, config fallbacks · AC-5 … typed keys, literal string lint · AC-6 … catalog parity, English fallback · AC-7 … plurals and interpolation · AC-8 … formatting module and lint ban · AC-9 … bilingual text rule · AC-10 … LtrText · AC-11 … client language files and Caddy route · AC-12 … axe and 375px Arabic · AC-13 … load failure and overlapping choices
+
+## Amendment 2026-11-05: verify steps (not yet run)
+
+_Steps for AC-14 to AC-23. The checks above stay valid for `(backoffice)` and `(auth)` (AC-17) and must be re-run after milestone 3. `/check verify` runs these after the amendment is built._
+
+### UI / manual
+- [ ] Open `/ar/returns` with JavaScript disabled → `<html lang="ar" dir="rtl">`, Arabic text, no hidden body → AC-16
+- [ ] Open `/returns` with `Accept-Language: ar-EG` and no cookie → redirected to `/ar/returns`; with cookie `ss_lang=en` → `/en/returns`; with neither → `/ar/returns` (or the owner's answer to question 1) → AC-16
+- [ ] Open `/fr/returns` → real 404 → AC-16
+- [ ] On a portal page, use the other language link → the same page in the other language, cookie `ss_lang` updated → AC-16
+- [ ] Do the same three checks on a partner page → AC-16
+- [ ] Production build: `/design` still answers 404, and an unknown path shows the not found page → AC-17
+- [ ] Sign in and use the back office in Arabic as before (cookie, no flash, Language menu) → AC-17
+- [ ] Type `٣` in a quantity field and `١٢٣٤٫٥٠` in an amount field (when a screen with each exists) → saved as `3` and `1234.50`; `1,5` shows a field error → AC-18
+- [ ] Type a password containing Arabic digits → it is not changed → AC-18
+- [ ] Send a password reset mail in Arabic → same text as before the move, right to left → AC-15
+- [ ] Ask an Arabic speaker to read the new `mail`, `report`, `export`, and `receipt` text, together with the open item above → AC-15
+
+### Value sourcing
+- [ ] Change `currency` to `USD` → web, mail, and worker output all show USD; back to `EGP` → all show EGP → AC-19
+- [ ] Change `timezone` to `UTC` → the same instant shows the UTC time in web and worker output → AC-20
+- [ ] Display `2026-04-23T22:00:00Z` → `01:00` on 24 Apr 2026; `2026-10-29T20:30:00Z` and `2026-10-29T21:30:00Z` → both `23:30` on 29 Oct 2026 → AC-20
+- [ ] `ssd_operating_day()` on the seven 2026 rows in the amendment → the dates listed there → AC-21
+
+### Commands
+- [ ] `pnpm --filter @ssdashboard/i18n test` → parity across all key groups, plurals, formatters, digit parsers → AC-14, AC-15, AC-18, AC-19
+- [ ] `pnpm --filter @ssdashboard/contracts test` → the digit helpers on request schemas → AC-18
+- [ ] `pnpm --filter @ssdashboard/api test` → mail snapshot, wrong key fixture, Arabic digit quantity → AC-15, AC-18
+- [ ] `pnpm lint` → a `toLocaleString` or `new Intl.*` in `apps/api` fails it; `packages/i18n/src` is exempt → AC-19
+- [ ] `node packages/config/scripts/check-route-groups.mjs` → still only the four audiences → AC-16
+- [ ] `pnpm test:e2e` (desktop, mobile, production) → portal and partner server rendered tests, back office tests → AC-16, AC-17
+- [ ] `pnpm --filter @ssdashboard/db test:e2e` → operating day on the Cairo transition dates → AC-21
+- [ ] `pnpm check:timezone` → prints `process.versions.tz`, `process.versions.icu`, the PostgreSQL version, and passes → AC-22
+- [ ] The `fr.json` extension test, then a portal page with a French cookie → English → AC-23
+
+### Acceptance-criteria coverage (amendment)
+- AC-14 … shared package and imports · AC-15 … translator, typed keys, parity, mail snapshot · AC-16 … portal and partner server rendered by URL language · AC-17 … back office unchanged, root layouts split · AC-18 … Arabic digits at every edge · AC-19 … shared formatters, EGP, lint ban moved · AC-20 … Cairo display on transition instants · AC-21 … operating day test on real DST dates · AC-22 … time zone refresh release check · AC-23 … extension locales carried
 
 ## Verify run 2026-11-04 (after staff sign in, spec 0005, merged)
 

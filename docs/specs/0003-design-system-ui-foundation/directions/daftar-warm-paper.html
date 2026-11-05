@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Direction preview: Daftar (warm paper)</title>
+    <!-- Preview only. The product self hosts its fonts; this link just lets the preview show them. -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Arabic:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #e8e8e8;
+        font-family: system-ui, sans-serif;
+        color: #222;
+      }
+      .top {
+        padding: 24px 32px;
+        background: #fff;
+        border-bottom: 1px solid #ddd;
+        font-family: system-ui, sans-serif;
+      }
+      .top h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+      }
+      .top p {
+        margin: 2px 0;
+        color: #444;
+        max-width: 70ch;
+      }
+      .note {
+        font-size: 12px;
+        color: #555;
+      }
+      .wrap {
+        display: grid;
+        gap: 24px;
+        padding: 24px 32px;
+      }
+      .panel {
+        background: var(--canvas);
+        color: var(--fg);
+        border: 1px solid #ccc;
+        border-radius: 12px;
+        padding: 20px;
+        font-size: 15px;
+        line-height: 1.5;
+        --brand: #0a7c39;
+        --brand-fg: #fff;
+      }
+      .panel[lang='ar'] {
+        font-family: 'Noto Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+        line-height: 1.75;
+      }
+      .panel[lang='en'] {
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+      .panel h2 {
+        font-size: 17px;
+        margin: 0 0 12px;
+        font-weight: 600;
+      }
+      .panel .tag {
+        font-family: system-ui, sans-serif;
+        font-size: 11px;
+        color: var(--mfg);
+        margin-bottom: 8px;
+      }
+      .grid {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        align-items: start;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+      }
+      .ic {
+        width: 1.05em;
+        height: 1.05em;
+        flex: none;
+      }
+      .code {
+        font-family: 'JetBrains Mono', ui-monospace, monospace;
+        direction: ltr;
+        unicode-bidi: isolate;
+        font-size: 0.92em;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      th {
+        height: 44px;
+        background: var(--muted);
+        text-align: start;
+        font-weight: 500;
+        padding-inline: 10px;
+        font-size: 0.9em;
+        white-space: nowrap;
+      }
+      td {
+        height: 40px;
+        padding-inline: 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+      }
+      td.num {
+        text-align: end;
+      }
+      tr.stripe td:first-child {
+        border-inline-start: 0px solid var(--c);
+      }
+      tr.ok {
+        --c: var(--success);
+      }
+      tr.bad {
+        --c: var(--destructive);
+      }
+      tr.prov {
+        --c: var(--mfg);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35em;
+        height: 24px;
+        padding-inline: 0.55em;
+        border-radius: 4px;
+        font-size: 0.88em;
+        font-weight: 500;
+        white-space: nowrap;
+        border: 1px solid transparent;
+      }
+      .chip {
+        background: color-mix(in oklab, var(--c) 12%, var(--card));
+        color: var(--c);
+      }
+      .chip.ok {
+        --c: var(--success);
+      }
+      .chip.bad {
+        --c: var(--destructive);
+      }
+      .chip.owed {
+        --c: var(--warning);
+      }
+      .chip.prov {
+        --c: var(--mfg);
+        background: transparent;
+        border: 1px dashed var(--input);
+      }
+      .flag {
+        display: inline-flex;
+        gap: 0.3em;
+        align-items: center;
+        color: var(--destructive);
+        font-size: 0.88em;
+        margin-inline-start: 6px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4em;
+        min-height: 44px;
+        padding-inline: 14px;
+        border-radius: 6px;
+        border: 1px solid var(--input);
+        background: var(--card);
+        color: var(--fg);
+        font: inherit;
+        font-weight: 500;
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: var(--pfg);
+        border-color: var(--primary);
+      }
+      .btn.wa {
+        border-color: var(--success);
+        color: var(--success);
+      }
+      .btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+      .sub {
+        color: var(--mfg);
+        font-size: 0.88em;
+      }
+      .banner {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        background: color-mix(in oklab, var(--info) 12%, var(--card));
+        color: var(--fg);
+        border: 1px solid var(--info);
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin: 12px 0;
+      }
+      .banner .ic {
+        color: var(--info);
+      }
+      .hint {
+        margin-top: 14px;
+        border: 1px dashed var(--input);
+        border-radius: 6px;
+        padding: 10px 12px;
+        background: var(--muted);
+      }
+      .hint b {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        font-weight: 600;
+      }
+      .hint a {
+        color: var(--primary);
+        text-decoration: underline;
+        font-weight: 500;
+      }
+      .q-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .bar {
+        height: 6px;
+        border-radius: 3px;
+        background: var(--muted);
+        margin-bottom: 12px;
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        width: 25%;
+        background: var(--primary);
+      }
+      .line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-block: 1px solid var(--border);
+        padding-block: 8px;
+        margin-block: 10px;
+        font-variant-numeric: tabular-nums;
+      }
+      .phone {
+        width: 375px;
+        max-width: 100%;
+        border: 8px solid #111;
+        border-radius: 30px;
+        overflow: hidden;
+        background: var(--bg);
+        margin-inline: auto;
+      }
+      .phone .hd {
+        padding: 14px 16px;
+        background: var(--card);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-weight: 600;
+      }
+      .phone .fresh {
+        padding: 8px 16px;
+        font-size: 0.82em;
+        background: var(--muted);
+        color: var(--mfg);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .phone .body {
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+      .kpi {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px;
+      }
+      .kpi .v {
+        font-size: 25px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        line-height: 1.2;
+      }
+      .kpi.owedk {
+        border-inline-start: 6px solid var(--warning);
+      }
+      .kpi .l {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: var(--mfg);
+        font-size: 0.88em;
+      }
+      .kpi.provk {
+        border: 2px dashed var(--input);
+        background: transparent;
+      }
+      .kpi.provk .v::before {
+        content: '≈ ';
+      }
+      .two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .kpi.failk .v {
+        color: var(--destructive);
+      }
+      .need {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        min-height: 48px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 0.92em;
+      }
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-top: 1px solid var(--border);
+        background: var(--card);
+      }
+      .tabs span {
+        min-height: 56px;
+        display: grid;
+        place-items: center;
+        font-size: 0.8em;
+        gap: 2px;
+        padding-block: 6px;
+      }
+      .tabs span i {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: var(--input);
+        display: block;
+      }
+      .tabs span.on {
+        color: var(--primary);
+        font-weight: 600;
+      }
+      .tabs span.on i {
+        background: var(--primary);
+      }
+      .portal {
+        width: 320px;
+        max-width: 100%;
+        margin-inline: auto;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .portal .rule {
+        height: 6px;
+        background: var(--brand);
+      }
+      .portal .in {
+        padding: 18px;
+        display: grid;
+        gap: 12px;
+      }
+      .logo {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        font-weight: 600;
+      }
+      .logo i {
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        background: var(--brand);
+        color: var(--brand-fg);
+        display: grid;
+        place-items: center;
+        font-style: normal;
+        font-weight: 700;
+      }
+      .field label {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+      .field div {
+        height: 44px;
+        border: 1px solid var(--input);
+        border-radius: 6px;
+        background: var(--card);
+      }
+      .btn.brand {
+        background: var(--brand);
+        color: var(--brand-fg);
+        border-color: var(--brand);
+        width: 100%;
+      }
+      .portal h3 {
+        margin: 0;
+        font-size: 19px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-ok" viewBox="0 0 16 16">
+          <path
+            d="M3 8.5l3.2 3L13 4.8"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="i-bad" viewBox="0 0 16 16">
+          <path
+            d="M4 4l8 8M12 4l-8 8"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-owed" viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <path
+            d="M8 5v6M6.2 6.6h2.9a1 1 0 010 2H6.9a1 1 0 000 2h2.9"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+          />
+        </symbol>
+        <symbol id="i-prov" viewBox="0 0 16 16">
+          <circle
+            cx="8"
+            cy="8"
+            r="5.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-dasharray="2.4 2"
+          />
+          <path
+            d="M8 5v3l2 1.4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-alert" viewBox="0 0 16 16">
+          <path
+            d="M8 2.5l6 10.5H2z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M8 6.5v3M8 11.3v.1"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-help" viewBox="0 0 16 16">
+          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path
+            d="M6.2 6.3a1.9 1.9 0 113 1.5c-.7.5-1.2.8-1.2 1.6M8 11.3v.1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </symbol>
+      </defs>
+    </svg>
+    <div class="top">
+      <h1>Daftar (warm paper)</h1>
+      <p>
+        A well kept paper ledger: warm paper, ink blue actions, tinted status chips, Arabic set
+        first.
+      </p>
+      <p class="note">
+        Static preview of spec 0003, Amendment 2026-11-05. Sample data only. Three panels: Arabic
+        light, English light, Arabic dark. Each shows the order rows, one confirmation queue card,
+        the phone dashboard (375px) and the returns portal frame. Fonts load from Google Fonts for
+        this preview only; offline you see the system fallback.
+      </p>
+    </div>
+    <div class="wrap">
+      <section
+        class="panel light"
+        lang="ar"
+        dir="rtl"
+        style="
+          --bg: oklch(0.985 0.006 85);
+          --fg: oklch(0.22 0.02 70);
+          --card: oklch(0.997 0.003 85);
+          --muted: oklch(0.955 0.01 85);
+          --mfg: oklch(0.46 0.02 70);
+          --border: oklch(0.9 0.012 85);
+          --input: oklch(0.58 0.02 70);
+          --primary: oklch(0.38 0.12 275);
+          --pfg: oklch(0.99 0.003 85);
+          --success: oklch(0.45 0.11 150);
+          --warning: oklch(0.48 0.11 65);
+          --destructive: oklch(0.5 0.19 27);
+          --info: oklch(0.45 0.07 235);
+          --canvas: oklch(0.96 0.01 85);
+        "
+      >
+        <div class="tag">Arabic, right to left · light</div>
+        <div class="grid">
+          <div style="grid-column: 1/-1">
+            <h2>الطلبات</h2>
+            <div class="card" style="padding: 0; overflow: auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>الطلب</th>
+                    <th>العميل</th>
+                    <th>المنطقة</th>
+                    <th style="text-align: end">الإجمالي</th>
+                    <th>الحالة</th>
+                    <th>النقدية</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="stripe ok">
+                    <td><span class="code">SS-48213</span></td>
+                    <td>منى عبد الرحمن</td>
+                    <td class="sub">مدينة نصر، القاهرة</td>
+                    <td class="num">1,450 ج.م</td>
+                    <td>
+                      <span class="chip ok"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>مؤكد</span
+                      >
+                    </td>
+                    <td>
+                      <span class="chip owed"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>مستحق
+                        التحصيل</span
+                      >
+                    </td>
+                  </tr>
+                  <tr class="stripe bad">
+                    <td><span class="code">SS-48207</span></td>
+                    <td>
+                      أحمد سمير<span class="flag"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-alert" /></svg>متوقف 3
+                        أيام</span
+                      >
+                    </td>
+                    <td class="sub">سموحة، الإسكندرية</td>
+                    <td class="num">790 ج.م</td>
+                    <td>
+                      <span class="chip bad"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>فشل
+                        التسليم</span
+                      >
+                    </td>
+                    <td><span class="sub">—</span></td>
+                  </tr>
+                  <tr class="stripe prov">
+                    <td><span class="code">SS-48199</span></td>
+                    <td>هدى محمود</td>
+                    <td class="sub">الجيزة</td>
+                    <td class="num">≈ 2,310 ج.م</td>
+                    <td>
+                      <span class="chip ok"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>تم
+                        التسليم</span
+                      >
+                    </td>
+                    <td>
+                      <span class="chip prov"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>تحصيل
+                        مؤقت</span
+                      >
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h2>طابور التأكيد</h2>
+            <div class="card">
+              <div class="q-head"><b>منى عبد الرحمن</b><span class="sub">3 من 12</span></div>
+              <div class="bar"><i></i></div>
+              <div style="display: flex; gap: 8px; align-items: center; margin-block: 2px 8px">
+                <bdi class="code" dir="ltr">01012345678</bdi>
+              </div>
+              <div class="banner">
+                <span style="display: flex; gap: 8px; align-items: center"
+                  ><svg class="ic" aria-hidden="true"><use href="#i-alert" /></svg>نفس الرقم لديه
+                  طلب مفتوح آخر SS-48190</span
+                ><button class="btn" style="min-height: 36px">دمج</button>
+              </div>
+              <div class="line"><span>قميص كتان، مقاس M، رملي × 1</span><b>790 ج.م</b></div>
+              <div class="sub">القاهرة › مدينة نصر › الحي السابع</div>
+              <div class="btns">
+                <button class="btn wa">واتساب</button><button class="btn">اتصال</button>
+              </div>
+              <div class="btns">
+                <button class="btn primary">
+                  <svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>تم التأكيد</button
+                ><button class="btn">لم يرد</button><button class="btn">اتصل لاحقاً</button
+                ><button class="btn">إلغاء</button>
+              </div>
+              <div class="hint">
+                <b
+                  ><svg class="ic" aria-hidden="true"><use href="#i-help" /></svg>ماذا يفعل «لم
+                  يرد»؟</b
+                >
+                <div class="sub" style="margin-block: 4px">
+                  يعود الطلب إلى الطابور في وقت المحاولة التالية المحدد في الإعدادات. بعد ثلاث
+                  محاولات بلا رد يُغلق الطلب.
+                </div>
+                <a href="#">شرح كامل لهذه الشاشة</a>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2>اليوم</h2>
+            <div class="phone">
+              <div class="hd"><span>علامة تجريبية</span><span class="sub">اليوم</span></div>
+              <div class="fresh">
+                <svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>مؤكد حتى 4 نوفمبر ·
+                أرقام اليوم مؤقتة
+              </div>
+              <div class="body">
+                <div class="kpi owedk">
+                  <div class="l">
+                    <svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>نقدية مستحقة لك
+                  </div>
+                  <div class="v">23,500 ج.م</div>
+                  <div class="sub">بوسطة 19,200 · الشركاء 4,300</div>
+                </div>
+                <div class="two">
+                  <div class="kpi">
+                    <div class="l">
+                      <svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>طلبات مؤكدة أمس
+                    </div>
+                    <div class="v">186</div>
+                  </div>
+                  <div class="kpi failk">
+                    <div class="l">
+                      <svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>فشل التسليم
+                    </div>
+                    <div class="v">11.4%</div>
+                  </div>
+                </div>
+                <div class="kpi provk">
+                  <div class="l">
+                    <svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>اليوم حتى الآن
+                  </div>
+                  <div class="v">64 طلباً</div>
+                  <div class="sub">مؤقت · يتحدث كل ساعة</div>
+                </div>
+                <b style="margin-top: 4px">يحتاج منك قراراً</b>
+                <div class="need">
+                  <span>SS-48207 · فشل التسليم مرتين</span
+                  ><span class="chip bad"
+                    ><svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>فشل التسليم</span
+                  >
+                </div>
+                <div class="need">
+                  <span>تسوية بوسطة · 3 سطور بلا مطابقة</span
+                  ><span class="chip owed"
+                    ><svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>مستحق
+                    التحصيل</span
+                  >
+                </div>
+              </div>
+              <div class="tabs">
+                <span class="on"><i></i>اليوم</span><span class=""><i></i>الطلبات</span
+                ><span class=""><i></i>النقدية</span><span class=""><i></i>المزيد</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2>بوابة الإرجاع</h2>
+            <div class="portal">
+              <div class="rule"></div>
+              <div class="in">
+                <div class="logo"><i>B</i>علامة تجريبية</div>
+                <h3>استبدال أو إرجاع</h3>
+                <div class="field">
+                  <label>رقم الطلب</label>
+                  <div></div>
+                </div>
+                <div class="field">
+                  <label>رقم الهاتف</label>
+                  <div></div>
+                </div>
+                <button class="btn brand">ابحث عن طلبي</button>
+                <div class="sub">نخفي رقمك ولا نحفظه في الرابط.</div>
+                <div class="sub" style="text-decoration: underline">English</div>
+              </div>
+            </div>
+            <p class="sub" style="font-family: system-ui, sans-serif; font-size: 11px">
+              Sample brand accent #0A7C39 with white text: 5.31:1. The accent colors the logo tile,
+              the top rule and the button; it never colors status.
+            </p>
+          </div>
+        </div>
+      </section>
+      <section
+        class="panel light"
+        lang="en"
+        dir="ltr"
+        style="
+          --bg: oklch(0.985 0.006 85);
+          --fg: oklch(0.22 0.02 70);
+          --card: oklch(0.997 0.003 85);
+          --muted: oklch(0.955 0.01 85);
+          --mfg: oklch(0.46 0.02 70);
+          --border: oklch(0.9 0.012 85);
+          --input: oklch(0.58 0.02 70);
+          --primary: oklch(0.38 0.12 275);
+          --pfg: oklch(0.99 0.003 85);
+          --success: oklch(0.45 0.11 150);
+          --warning: oklch(0.48 0.11 65);
+          --destructive: oklch(0.5 0.19 27);
+          --info: oklch(0.45 0.07 235);
+          --canvas: oklch(0.96 0.01 85);
+        "
+      >
+        <div class="tag">English, left to right · light</div>
+        <div class="grid">
+          <div style="grid-column: 1/-1">
+            <h2>Orders</h2>
+            <div class="card" style="padding: 0; overflow: auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Area</th>
+                    <th style="text-align: end">Total</th>
+                    <th>Status</th>
+                    <th>Cash</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="stripe ok">
+                    <td><span class="code">SS-48213</span></td>
+                    <td>Mona Abdelrahman</td>
+                    <td class="sub">Nasr City, Cairo</td>
+                    <td class="num">EGP 1,450</td>
+                    <td>
+                      <span class="chip ok"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg
+                        >Confirmed</span
+                      >
+                    </td>
+                    <td>
+                      <span class="chip owed"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>Cash
+                        owed</span
+                      >
+                    </td>
+                  </tr>
+                  <tr class="stripe bad">
+                    <td><span class="code">SS-48207</span></td>
+                    <td>
+                      Ahmed Samir<span class="flag"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-alert" /></svg>Stuck 3
+                        days</span
+                      >
+                    </td>
+                    <td class="sub">Smouha, Alexandria</td>
+                    <td class="num">EGP 790</td>
+                    <td>
+                      <span class="chip bad"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>Failed
+                        delivery</span
+                      >
+                    </td>
+                    <td><span class="sub">—</span></td>
+                  </tr>
+                  <tr class="stripe prov">
+                    <td><span class="code">SS-48199</span></td>
+                    <td>Huda Mahmoud</td>
+                    <td class="sub">Giza</td>
+                    <td class="num">≈ EGP 2,310</td>
+                    <td>
+                      <span class="chip ok"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg
+                        >Delivered</span
+                      >
+                    </td>
+                    <td>
+                      <span class="chip prov"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>Cash
+                        provisional</span
+                      >
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h2>Confirmation queue</h2>
+            <div class="card">
+              <div class="q-head"><b>Mona Abdelrahman</b><span class="sub">3 of 12</span></div>
+              <div class="bar"><i></i></div>
+              <div style="display: flex; gap: 8px; align-items: center; margin-block: 2px 8px">
+                <bdi class="code" dir="ltr">01012345678</bdi>
+              </div>
+              <div class="banner">
+                <span style="display: flex; gap: 8px; align-items: center"
+                  ><svg class="ic" aria-hidden="true"><use href="#i-alert" /></svg>This phone has
+                  another open order, SS-48190</span
+                ><button class="btn" style="min-height: 36px">Merge</button>
+              </div>
+              <div class="line"><span>Linen shirt, M, Sand × 1</span><b>EGP 790</b></div>
+              <div class="sub">Cairo › Nasr City › 7th district</div>
+              <div class="btns">
+                <button class="btn wa">WhatsApp</button><button class="btn">Call</button>
+              </div>
+              <div class="btns">
+                <button class="btn primary">
+                  <svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>Confirmed</button
+                ><button class="btn">No answer</button><button class="btn">Call back at…</button
+                ><button class="btn">Cancel…</button>
+              </div>
+              <div class="hint">
+                <b
+                  ><svg class="ic" aria-hidden="true"><use href="#i-help" /></svg>What does "No
+                  answer" do?</b
+                >
+                <div class="sub" style="margin-block: 4px">
+                  The order returns to the queue at the next try time set in Settings. After three
+                  no answers the order closes.
+                </div>
+                <a href="#">Full guide for this screen</a>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2>Today</h2>
+            <div class="phone">
+              <div class="hd"><span>Sample brand</span><span class="sub">Today</span></div>
+              <div class="fresh">
+                <svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>Confirmed through 4
+                Nov · today is provisional
+              </div>
+              <div class="body">
+                <div class="kpi owedk">
+                  <div class="l">
+                    <svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>Cash owed to you
+                  </div>
+                  <div class="v">EGP 23,500</div>
+                  <div class="sub">Bosta 19,200 · Partners 4,300</div>
+                </div>
+                <div class="two">
+                  <div class="kpi">
+                    <div class="l">
+                      <svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>Confirmed
+                      yesterday
+                    </div>
+                    <div class="v">186</div>
+                  </div>
+                  <div class="kpi failk">
+                    <div class="l">
+                      <svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>Failed delivery
+                    </div>
+                    <div class="v">11.4%</div>
+                  </div>
+                </div>
+                <div class="kpi provk">
+                  <div class="l">
+                    <svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>Today so far
+                  </div>
+                  <div class="v">64 orders</div>
+                  <div class="sub">Provisional · refreshes hourly</div>
+                </div>
+                <b style="margin-top: 4px">Needs you</b>
+                <div class="need">
+                  <span>SS-48207 · failed twice</span
+                  ><span class="chip bad"
+                    ><svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>Failed
+                    delivery</span
+                  >
+                </div>
+                <div class="need">
+                  <span>Bosta settlement · 3 unmatched lines</span
+                  ><span class="chip owed"
+                    ><svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>Cash owed</span
+                  >
+                </div>
+              </div>
+              <div class="tabs">
+                <span class="on"><i></i>Today</span><span class=""><i></i>Orders</span
+                ><span class=""><i></i>Cash</span><span class=""><i></i>More</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2>Returns portal</h2>
+            <div class="portal">
+              <div class="rule"></div>
+              <div class="in">
+                <div class="logo"><i>B</i>Sample brand</div>
+                <h3>Exchange or return</h3>
+                <div class="field">
+                  <label>Order number</label>
+                  <div></div>
+                </div>
+                <div class="field">
+                  <label>Phone number</label>
+                  <div></div>
+                </div>
+                <button class="btn brand">Find my order</button>
+                <div class="sub">We mask your number and never put it in the link.</div>
+                <div class="sub" style="text-decoration: underline">عربي</div>
+              </div>
+            </div>
+            <p class="sub" style="font-family: system-ui, sans-serif; font-size: 11px">
+              Sample brand accent #0A7C39 with white text: 5.31:1. The accent colors the logo tile,
+              the top rule and the button; it never colors status.
+            </p>
+          </div>
+        </div>
+      </section>
+      <section
+        class="panel dark"
+        lang="ar"
+        dir="rtl"
+        style="
+          --bg: oklch(0.19 0.012 70);
+          --fg: oklch(0.96 0.01 85);
+          --card: oklch(0.23 0.014 70);
+          --muted: oklch(0.28 0.014 70);
+          --mfg: oklch(0.75 0.02 80);
+          --border: oklch(0.33 0.014 70);
+          --input: oklch(0.6 0.02 75);
+          --primary: oklch(0.78 0.12 280);
+          --pfg: oklch(0.2 0.03 275);
+          --success: oklch(0.78 0.15 150);
+          --warning: oklch(0.82 0.14 80);
+          --destructive: oklch(0.74 0.16 25);
+          --info: oklch(0.78 0.08 235);
+          --canvas: oklch(0.16 0.012 70);
+        "
+      >
+        <div class="tag">Arabic, right to left · dark</div>
+        <div class="grid">
+          <div style="grid-column: 1/-1">
+            <h2>الطلبات</h2>
+            <div class="card" style="padding: 0; overflow: auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>الطلب</th>
+                    <th>العميل</th>
+                    <th>المنطقة</th>
+                    <th style="text-align: end">الإجمالي</th>
+                    <th>الحالة</th>
+                    <th>النقدية</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="stripe ok">
+                    <td><span class="code">SS-48213</span></td>
+                    <td>منى عبد الرحمن</td>
+                    <td class="sub">مدينة نصر، القاهرة</td>
+                    <td class="num">1,450 ج.م</td>
+                    <td>
+                      <span class="chip ok"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>مؤكد</span
+                      >
+                    </td>
+                    <td>
+                      <span class="chip owed"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>مستحق
+                        التحصيل</span
+                      >
+                    </td>
+                  </tr>
+                  <tr class="stripe bad">
+                    <td><span class="code">SS-48207</span></td>
+                    <td>
+                      أحمد سمير<span class="flag"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-alert" /></svg>متوقف 3
+                        أيام</span
+                      >
+                    </td>
+                    <td class="sub">سموحة، الإسكندرية</td>
+                    <td class="num">790 ج.م</td>
+                    <td>
+                      <span class="chip bad"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>فشل
+                        التسليم</span
+                      >
+                    </td>
+                    <td><span class="sub">—</span></td>
+                  </tr>
+                  <tr class="stripe prov">
+                    <td><span class="code">SS-48199</span></td>
+                    <td>هدى محمود</td>
+                    <td class="sub">الجيزة</td>
+                    <td class="num">≈ 2,310 ج.م</td>
+                    <td>
+                      <span class="chip ok"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>تم
+                        التسليم</span
+                      >
+                    </td>
+                    <td>
+                      <span class="chip prov"
+                        ><svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>تحصيل
+                        مؤقت</span
+                      >
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h2>طابور التأكيد</h2>
+            <div class="card">
+              <div class="q-head"><b>منى عبد الرحمن</b><span class="sub">3 من 12</span></div>
+              <div class="bar"><i></i></div>
+              <div style="display: flex; gap: 8px; align-items: center; margin-block: 2px 8px">
+                <bdi class="code" dir="ltr">01012345678</bdi>
+              </div>
+              <div class="banner">
+                <span style="display: flex; gap: 8px; align-items: center"
+                  ><svg class="ic" aria-hidden="true"><use href="#i-alert" /></svg>نفس الرقم لديه
+                  طلب مفتوح آخر SS-48190</span
+                ><button class="btn" style="min-height: 36px">دمج</button>
+              </div>
+              <div class="line"><span>قميص كتان، مقاس M، رملي × 1</span><b>790 ج.م</b></div>
+              <div class="sub">القاهرة › مدينة نصر › الحي السابع</div>
+              <div class="btns">
+                <button class="btn wa">واتساب</button><button class="btn">اتصال</button>
+              </div>
+              <div class="btns">
+                <button class="btn primary">
+                  <svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>تم التأكيد</button
+                ><button class="btn">لم يرد</button><button class="btn">اتصل لاحقاً</button
+                ><button class="btn">إلغاء</button>
+              </div>
+              <div class="hint">
+                <b
+                  ><svg class="ic" aria-hidden="true"><use href="#i-help" /></svg>ماذا يفعل «لم
+                  يرد»؟</b
+                >
+                <div class="sub" style="margin-block: 4px">
+                  يعود الطلب إلى الطابور في وقت المحاولة التالية المحدد في الإعدادات. بعد ثلاث
+                  محاولات بلا رد يُغلق الطلب.
+                </div>
+                <a href="#">شرح كامل لهذه الشاشة</a>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2>اليوم</h2>
+            <div class="phone">
+              <div class="hd"><span>علامة تجريبية</span><span class="sub">اليوم</span></div>
+              <div class="fresh">
+                <svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>مؤكد حتى 4 نوفمبر ·
+                أرقام اليوم مؤقتة
+              </div>
+              <div class="body">
+                <div class="kpi owedk">
+                  <div class="l">
+                    <svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>نقدية مستحقة لك
+                  </div>
+                  <div class="v">23,500 ج.م</div>
+                  <div class="sub">بوسطة 19,200 · الشركاء 4,300</div>
+                </div>
+                <div class="two">
+                  <div class="kpi">
+                    <div class="l">
+                      <svg class="ic" aria-hidden="true"><use href="#i-ok" /></svg>طلبات مؤكدة أمس
+                    </div>
+                    <div class="v">186</div>
+                  </div>
+                  <div class="kpi failk">
+                    <div class="l">
+                      <svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>فشل التسليم
+                    </div>
+                    <div class="v">11.4%</div>
+                  </div>
+                </div>
+                <div class="kpi provk">
+                  <div class="l">
+                    <svg class="ic" aria-hidden="true"><use href="#i-prov" /></svg>اليوم حتى الآن
+                  </div>
+                  <div class="v">64 طلباً</div>
+                  <div class="sub">مؤقت · يتحدث كل ساعة</div>
+                </div>
+                <b style="margin-top: 4px">يحتاج منك قراراً</b>
+                <div class="need">
+                  <span>SS-48207 · فشل التسليم مرتين</span
+                  ><span class="chip bad"
+                    ><svg class="ic" aria-hidden="true"><use href="#i-bad" /></svg>فشل التسليم</span
+                  >
+                </div>
+                <div class="need">
+                  <span>تسوية بوسطة · 3 سطور بلا مطابقة</span
+                  ><span class="chip owed"
+                    ><svg class="ic" aria-hidden="true"><use href="#i-owed" /></svg>مستحق
+                    التحصيل</span
+                  >
+                </div>
+              </div>
+              <div class="tabs">
+                <span class="on"><i></i>اليوم</span><span class=""><i></i>الطلبات</span
+                ><span class=""><i></i>النقدية</span><span class=""><i></i>المزيد</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h2>بوابة الإرجاع</h2>
+            <div class="portal">
+              <div class="rule"></div>
+              <div class="in">
+                <div class="logo"><i>B</i>علامة تجريبية</div>
+                <h3>استبدال أو إرجاع</h3>
+                <div class="field">
+                  <label>رقم الطلب</label>
+                  <div></div>
+                </div>
+                <div class="field">
+                  <label>رقم الهاتف</label>
+                  <div></div>
+                </div>
+                <button class="btn brand">ابحث عن طلبي</button>
+                <div class="sub">نخفي رقمك ولا نحفظه في الرابط.</div>
+                <div class="sub" style="text-decoration: underline">English</div>
+              </div>
+            </div>
+            <p class="sub" style="font-family: system-ui, sans-serif; font-size: 11px">
+              Sample brand accent #0A7C39 with white text: 5.31:1. The accent colors the logo tile,
+              the top rule and the button; it never colors status.
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

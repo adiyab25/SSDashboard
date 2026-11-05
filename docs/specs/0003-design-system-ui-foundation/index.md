@@ -1,11 +1,194 @@
 # 0003. Build the back office design system on shadcn/ui (Radix, Vega, zinc) in a shared `packages/ui`, with the app shell as its first real screen
 
 **Date**: 2026-11-03
-**Status**: Accepted
+**Status**: Proposed (amendment of 2026-11-05 for scope feature 5; the original decision was accepted and built)
 
 ## Summary
 
 This spec sets the look of the back office and builds its frame (the app shell: sidebar, top bar, location switcher, command palette) that every later screen sits inside. The look is quiet and neutral: zinc grays, black and white actions with no colored accent, 10px corners, IBM Plex Sans in English and Arabic, light and dark modes, compact table rows, and normal sized forms. The components live in a new shared `packages/ui` package built from shadcn/ui, written with start and end (logical) sides so Arabic right to left layout mirrors cleanly. A development only `/design` page shows every token and component, and automated accessibility checks (axe) run on it in light, dark, left to right, and right to left.
+
+> Amended 2026-11-05: the look described above is the original direction and is now one of three options (Quiet Ledger). The frame, the package, the gallery, and the checks stay. See Amendment 2026-11-05 below.
+
+## Amendment 2026-11-05
+
+Scope feature 5 was rewritten for the new product ([rebuild plan](../../positioning/2026-11-05-rebuild-plan.md), [positioning](../../positioning/2026-11-05-egypt-order-operations-layer.md)). Shape A of [spec 0007](../0007-stack-architecture-operations-layer/index.md): keep and amend, never replace. Nothing below removes the built shell, `packages/ui`, `/design`, or the axe checks. The amendment adds what the new product needs on top, and asks the owner to pick the look.
+
+### Why it changes
+
+- **The users changed.** The original look was drawn for a generic warehouse ERP. The product is now the order operations and warehouse back office of an Egyptian clothing brand: confirmation agents on calls and WhatsApp all day (the queue is the longest daily session), warehouse staff scanning, an operations lead reading tables, and the owner on a phone (positioning section 2). Arabic first, English always.
+- **Status is now the content.** An order carries a fulfillment state, a cash state, a source, an outcome, and an attention flag (positioning 6.1). Numbers are confirmed or provisional (positioning 7.6, the brand's own rule from the [reference brand notes](../../positioning/2026-11-05-reference-brand-notes.md) item 5 and 11). The original spec only had in stock, low, and error.
+- **There are now three frames, not one.** Spec 0007 section 2 adds a public returns portal on its own host (customers on cheap Android phones and slow networks, carrying the brand's own logo and accent) and a partner surface. The original spec built one frame and left "the public portal and partner seams" with a minimal frame.
+- **Two scope items were never designed.** A phone first pattern for the manager dashboard, and a pattern for in screen help (staff turn over, so help and training are product). Scope feature 5 now lists both in its Done when.
+- **What a real brand uses today** (read only: the design notes of the reference console, `docs/rebuild/2026-10-21-design.md` in that repository, summarised in the [insights](../../positioning/2026-11-05-reference-brand-notes.md)): a branded green on paper white, Inter plus IBM Plex Sans Arabic, light only, a bottom bar on phones. It shows that a brand expects to see its own colors, and that the brand's green is also the color of "success". Both facts shape the rules below.
+
+### New requirements
+
+Numbering continues from AC-14. Every direction below must satisfy all of them; the direction only changes values.
+
+- **AC-15**: The chosen direction is applied: `packages/ui/src/styles/globals.css` and `packages/ui/DESIGN.md` carry its tokens, fonts, density, and focus width, in light and dark, with every pair measured and meeting AC-2 (4.5:1 text, 3:1 control boundaries and focus ring), including the new status and chip pairs. `/design` shows the new pairs live. axe stays at zero violations on `/` and `/design` in the four theme and direction combinations.
+- **AC-16**: Status is shown by four meaning roles: `confirmed`, `failed` (failed delivery), `owed` (cash owed), and `provisional`, each defined in light and dark as an alias of an existing hue (success, destructive, warning, and the muted foreground) so no new hue is added. A `StatusChip` always renders an icon and a word together; color is never the only carrier of meaning. One row shows at most three chips (fulfillment, cash, attention), the rest sit behind a count.
+- **AC-17**: Provisional values never look like confirmed ones. A provisional number is drawn with a leading `≈`, a dashed boundary (never a solid one), and a visually hidden "provisional" label for screen readers; confirmed numbers are plain. A total that mixes both shows the confirmed part and the provisional part separately. Every dashboard and report view that shows provisional data carries a freshness strip ("Confirmed through <operating day>, today is provisional").
+- **AC-18**: The design system covers three frames, each with exactly one `<h1>` and one `<main>`: `AppShell` (back office, as built), `PortalFrame` (public portal: one column, brand logo and accent, language switch, no sidebar, no command palette, no staff navigation), and `PartnerFrame` (partner surface: top navigation with the partner's name and the brand logo, no location switcher, no command palette, no cost columns). Frames take all text through props. `/design` shows all three, in left to right and right to left.
+- **AC-19**: Per brand portal theming works from settings, never from the image: a brand supplies an accent color and a logo; the system derives `--brand` and `--brand-foreground` and refuses an accent whose best foreground (white or near black) is below 4.5:1, falling back to the neutral primary. The accent colors only the logo tile, a top rule, and the main portal button. It never colors status, text, the focus ring, or any chip. The logo has an `alt` from the brand name.
+- **AC-20**: A phone first pattern for the manager dashboard exists in `DESIGN.md` and in `packages/ui`: one column from 320px, numbers first, tap targets of 44 by 44, no hover, no horizontal scroll from 320 to 430px, tables collapse into cards below 640px, a bottom tab bar of at most four tabs, and a freshness strip. Playwright at 360 by 800 with touch passes, in both languages.
+- **AC-21**: A pattern for in screen help exists in three layers, and works from the keyboard: a `HelpHint` (a small button that opens a popover with one or two sentences, for a field, column, or outcome), a `HelpPanel` (a page guide in a sheet, opened by a top bar button or the `?` key outside text fields, with steps, an outcome glossary, and an optional recorded training slot, Esc closes and focus returns), and a first run checklist per hat that can be dismissed and brought back. Help text is keyed, typed, and present in Arabic and English (a missing Arabic key fails a test). Help that quotes a policy value (retry count, callback delay) reads it from settings, so it cannot go stale. Help never holds the only copy of an instruction a user must follow.
+- **AC-22**: Dense work surfaces have written rules: the data table row height per direction, a `floor` density scope (taller rows, 48px controls, a thicker focus ring) that the confirmation queue and the scan screens use on a coarse pointer in every direction, one outcome per button with a visible shortcut, and the sticky action bar on phones.
+- **AC-23**: Type works for Arabic first: Arabic body text is optically at least as large as the Latin text beside it (tuned per pair by size adjustment, recorded in `DESIGN.md`), line height at least 1.7 for Arabic, codes stay in `LtrText` in a monospace face, digits are Western in both languages (as built), tabular figures work in the chosen face, and every font file is self hosted with its OFL license text shipped. The portal loads one Arabic weight pair first and falls back to the system face meanwhile (`font-display: swap`), so a slow phone shows text at once.
+
+### Direction options
+
+All three are token level changes on the same shadcn on Radix components, so none replaces the shell, and none changes a component's structure. Each has a static preview with Arabic and English samples: an order row table, one confirmation queue card, the 375px phone dashboard, and the portal frame. Open them in a browser (they load the preview fonts from Google Fonts; the product self hosts).
+
+| | A. Quiet Ledger (keep and tune) | B. Daftar (warm paper) | C. Floor Console |
+|---|---|---|---|
+| Preview | [quiet-ledger.html](directions/quiet-ledger.html) | [daftar-warm-paper.html](directions/daftar-warm-paper.html) | [floor-console.html](directions/floor-console.html) |
+| Feel | Calm zinc, color only where it means something | Warm paper, ink blue actions, tinted chips | Big, loud, readable from a metre away |
+| Fonts | Plex Sans + Plex Sans Arabic | Inter + Noto Sans Arabic | Readex Pro (both scripts) |
+| Primary | near black (as built) | deep indigo | deep teal |
+| Base text | 14px | 15px | 16px |
+| Table row | 36px | 40px | 48px |
+| Status chip | muted fill, colored word | tinted fill, colored word | solid fill, white word, 6px start stripe |
+| Focus ring | 2px | 2px | 3px |
+| Rework of built code | none (values only) | token values and font swap | token values, font swap, density tokens |
+
+Shared facts for all three, measured with a throwaway script that converts each oklch value to sRGB and applies the WCAG 2 formula; the script reproduces the figures in `packages/ui/DESIGN.md` for the built zinc set (foreground on background 19.89, muted foreground 6.85, success 5.90) before any new value was trusted. `/design` recomputes every pair live in the browser in the build. Every value below is a proposal tuned to pass; the build may nudge a lightness to keep the margins.
+
+**How the four meaning colors work** (same rule in all three): `confirmed` maps to the success hue, `failed` to destructive, `owed` to warning, `provisional` to the muted foreground drawn dashed. Each is always an icon plus a word (check, cross, coin, dashed clock). Info never carries order state. A brand accent is never used for any of them (see AC-19), so a brand whose accent is green cannot be confused with "confirmed".
+
+#### Option A. Quiet Ledger (keep and tune)
+
+- **Feel**: a calm zinc ledger; hue appears only as the four meaning colors. The original look, with status, provisional, frames, and brand theming added.
+- **Type pairing**: IBM Plex Sans (English) with IBM Plex Sans Arabic, designed as one family, so a SKU inside an Arabic name aligns without tuning; optional IBM Plex Mono for codes. All SIL Open Font License 1.1 (to be confirmed against each font's OFL file in build task 1.1). Already built and served by `next/font`. Sizes: 14px body, 20px page title, Arabic one step more line height (as built).
+- **Color roles**: unchanged from `globals.css` (light: background white, foreground zinc 950, primary zinc 900; dark: background zinc 950, primary near white). Added aliases only: `confirmed`, `failed`, `owed`, `provisional`, plus `brand` and `brand-foreground`. Meaning colors, light then dark, contrast on the page background: confirmed 5.90 and 9.90, failed 5.85 and 7.44, owed 6.34 and 10.54, provisional 6.85 and 8.60. Chips sit on `muted`: confirmed 5.36 and 7.41, failed 5.31 and 5.57, owed 5.76 and 7.89, provisional 6.22 and 6.44.
+- **Density**: table rows 36px, header 40px, controls 36px (as built), about 22 rows on a 1080p screen. The confirmation queue is one order at a time in a 28rem card; outcome buttons 36px, 44px on touch. Scan screens use the `floor` scope.
+- **A status heavy order row**: order code, customer, area, total, then two chips in a muted fill with a colored word and an icon, and an attention flag under the customer name. Provisional cash is a dashed outline chip. No stripe. The row reads left to right (or right to left) as: what, who, where, how much, where it is, where the money is.
+- **Phone dashboard**: white page, a freshness strip in muted, then a full width "Cash owed" card with an amber start edge, two half cards (confirmed yesterday, failed delivery rate), a dashed "Today so far" card, a "Needs you" list of at most five rows, and a four tab bar. Calm, very little color.
+- **Portal frame**: white page, 6px top rule in the brand accent, brand logo tile and name, one column of 320px, one brand colored button; Plex Sans Arabic as the only loaded face.
+- **Pros**: zero rework and zero regression risk; passes AC-2 already; Plex was built as one family for exactly this mixed script content; the least decoration, so the status colors stand out the most.
+- **Cons**: the primary action ("Confirmed") is near black like the text, so the main button is the weakest part of the queue card; the look is generic and says nothing about the product; no warmth for people who look at it eight hours a day.
+- **Risk to built code**: none. Tokens, fonts, and components stay.
+
+#### Option B. Daftar (warm paper)
+
+- **Feel**: a well kept paper ledger (daftar means notebook or ledger): warm off white paper, ink blue for the one main action, soft tinted chips, Arabic set first.
+- **Type pairing**: Inter (English) with Noto Sans Arabic (Arabic), both SIL OFL 1.1 (to be confirmed in build task 1.1); JetBrains Mono for codes (OFL). Inter has tabular figures. The two faces are not one family, so the Arabic size is tuned up by about one pixel (16px beside 15px Latin) and checked by eye in build task 1.1; this is recorded in `DESIGN.md`. Sizes: 15px body, 17px section title, 20px page title.
+- **Color roles** (oklch, light then dark):
+
+  | Role | Light | Dark |
+  |---|---|---|
+  | background | 0.985 0.006 85 | 0.19 0.012 70 |
+  | foreground | 0.22 0.02 70 | 0.96 0.01 85 |
+  | card | 0.997 0.003 85 | 0.23 0.014 70 |
+  | muted | 0.955 0.01 85 | 0.28 0.014 70 |
+  | muted-foreground | 0.46 0.02 70 | 0.75 0.02 80 |
+  | border (decorative) | 0.9 0.012 85 | 0.33 0.014 70 |
+  | input | 0.58 0.02 70 | 0.6 0.02 75 |
+  | primary | 0.38 0.12 275 | 0.78 0.12 280 |
+  | primary-foreground | 0.99 0.003 85 | 0.2 0.03 275 |
+  | success (confirmed) | 0.45 0.11 150 | 0.78 0.15 150 |
+  | warning (owed) | 0.48 0.11 65 | 0.82 0.14 80 |
+  | destructive (failed) | 0.5 0.19 27 | 0.74 0.16 25 |
+  | info | 0.45 0.07 235 (slate) | 0.78 0.08 235 |
+
+  Measured, light and dark: foreground on background 16.61 and 16.45; muted foreground on background 6.85 and 8.30, on muted 6.27 and 6.56; input on background 4.11 and 4.67 (needs 3); primary foreground on primary 10.05 and 8.82; primary on background 9.91 and 8.99; success 6.77 and 9.78, warning 6.45 and 10.45, destructive 6.34 and 7.46, info 7.02 and 9.37 on the background. Chips are the hue at 12 percent mixed into the card with the hue as text: 5.80, 5.55, 5.47 and 6.00 in light (success, warning, destructive, info), 7.27, 7.71, 5.73 and 7.01 in dark. Info is a quiet slate, not a bright blue, so it cannot be mistaken for the indigo primary.
+- **Density**: table rows 40px, header 44px, controls 40px, about 20 rows on a 1080p screen. The queue card is one order at a time with 44px outcome buttons; the `floor` scope lifts it to 48px.
+- **A status heavy order row**: the same columns as A, with tinted chips (a soft color wash and a colored word with the icon) that read faster across a table than outlined ones; a provisional chip is dashed and transparent. A quiet start edge is not used.
+- **Phone dashboard**: warm paper page, white cards with a hairline border, the amber edge on "Cash owed", chips tinted, the "Today so far" card dashed. The indigo appears on the active tab and the one primary action.
+- **Portal frame**: the warm paper page, a 6px brand rule, logo tile, one 320px column, the brand button. The warmth keeps a returns form from feeling like a bank.
+- **Pros**: the one main action stands out in the queue; warm paper is easier over a long shift than white; tinted chips scan well; Noto Sans Arabic is a plain, neutral Arabic face that sits in dense tables.
+- **Cons**: two unrelated families need a tuned Arabic size and a visual check; an indigo primary is a hue every client shares, so it can clash with a client's own brand color in the portal (mitigated: the portal uses the brand accent, not the indigo); warm tints shift how the status colors look, so the chips need the live contrast check.
+- **Risk to built code**: low. Token values change; `next/font` loads two different families; every component keeps its classes. The `/design` contrast table and the `DESIGN.md` numbers are rewritten. Screenshots in existing tests, if any, change.
+
+#### Option C. Floor Console
+
+- **Feel**: built for the call and the scanner: larger type, taller rows, solid status chips, a thick start stripe you can read from a metre away; a console for the people who spend all day in the queue.
+- **Type pairing**: Readex Pro for both Arabic and Latin (one family, a Lexend derivative made for easy reading; SIL OFL 1.1, to be confirmed in build task 1.1); JetBrains Mono for codes. One family for both scripts keeps the two scripts matched in size and weight. Whether Readex Pro has tabular figures is unverified; build task 1.1 checks it and falls back to the mono face for numeric columns if it does not. Sizes: 16px body, 18px section title, 22px page title.
+- **Color roles** (oklch, light then dark):
+
+  | Role | Light | Dark |
+  |---|---|---|
+  | background | 0.97 0.004 250 | 0.14 0.012 255 |
+  | foreground | 0.16 0.02 255 | 0.97 0.004 250 |
+  | card | 1 0 0 | 0.19 0.014 255 |
+  | muted | 0.94 0.006 250 | 0.25 0.016 255 |
+  | muted-foreground | 0.44 0.025 255 | 0.76 0.02 255 |
+  | border (decorative) | 0.88 0.008 250 | 0.3 0.016 255 |
+  | input | 0.55 0.025 255 | 0.6 0.025 255 |
+  | primary | 0.42 0.09 200 (teal) | 0.8 0.1 200 |
+  | primary-foreground | 0.99 0 0 | 0.14 0.012 255 |
+  | success (confirmed) | 0.42 0.12 150 | 0.78 0.16 150 |
+  | warning (owed) | 0.45 0.11 60 | 0.82 0.14 80 |
+  | destructive (failed) | 0.48 0.2 27 | 0.75 0.16 25 |
+  | info | 0.44 0.15 262 | 0.78 0.11 260 |
+
+  Measured, light and dark: foreground on background 17.80 and 18.26; muted foreground on background 7.11 and 9.28, on muted 6.51 and 7.46; input on background 4.44 and 5.05; primary foreground on primary 7.66 and 11.07; success, warning, destructive, info as text on the background 7.31, 7.06, 6.57, 7.31 in light and 10.57, 11.25, 8.20, 9.91 in dark. Chips are solid fills with the on color (white in light, the dark page color in dark): success 7.75 and 10.57, warning 7.48 and 11.25, destructive 6.96 and 8.20, info 7.75 and 9.91. Provisional stays a dashed outline with foreground text, never a solid fill.
+- **Density**: table rows 48px, header 52px, controls 48px, a 3px focus ring, about 16 rows on a 1080p screen. This is the `floor` scope applied everywhere. An operations lead who wants more rows on screen gets fewer than in A or B.
+- **A status heavy order row**: a 6px start stripe in the status color (decorative, the chip repeats it), then the same columns with solid chips: a green "Confirmed", a red "Failed delivery", a dashed "Provisional". Across a table the stripe and solid chips let you find every failed delivery without reading.
+- **Phone dashboard**: the same card stack with larger numbers, a solid "Cash owed" card edge, and the tab bar at 56px with 16px labels; the page is cool gray so white cards separate clearly in sunlight.
+- **Portal frame**: cool gray page, white card, 6px brand rule, larger inputs (48px) that suit a thumb on a cheap phone.
+- **Pros**: best for the confirmation agents and the warehouse; the status is readable at a glance and at a distance; large touch targets everywhere help the phone and the handheld; the single Readex Pro family keeps both scripts matched.
+- **Cons**: the fewest rows per screen, which is wrong for the operations lead's long tables; loud color on every row can fatigue over a day, and a screen full of solid red and green hides the one row that needs attention; Readex Pro's tabular figures and its Arabic hinting at 14px are unverified; the biggest visual change.
+- **Risk to built code**: medium. Tokens, fonts, and density tokens change, the shell's top bar (56px) and sidebar item (32px) heights have to be revisited, and `shell.spec.ts` geometry checks may need new numbers.
+
+#### Recommendation
+
+**Option B, Daftar**, with the `floor` density scope from option C (AC-22) so the queue and the scan screens get tall rows and big targets on touch devices.
+
+- The two sessions that matter most are the agent's queue and the owner's phone. B gives the queue a primary action that stands out (A's near black does not) without the fatigue risk of C's solid color on every row, and its warm paper and neutral Arabic face suit the longest daily session.
+- The `floor` scope gets C's real benefit, for the people who need it and only on coarse pointers or the scan and queue screens, while the operations lead's tables keep 40px rows.
+- The risk is low: tokens and `next/font` only, no component structure changes.
+- If the owner wants zero visual change and zero risk, A is a safe fallback and still satisfies every new requirement. C is the right pick only if most of the day is on handhelds or tablets.
+
+### Design delta
+
+These patterns hold in every direction; only values differ.
+
+#### Three frames (AC-18)
+
+| | Back office | Public portal | Partner |
+|---|---|---|---|
+| Audience, host | staff, `ops.<brand domain>` (`(backoffice)`) | customers, `returns.<brand domain>` (`(portal)`) | consignment partners, staff host (`(partner)`) |
+| Component | `AppShell` (as built) | `PortalFrame` | `PartnerFrame` |
+| Navigation | sidebar grouped by module, command palette, location switcher | none; logo, language switch, a back link | top bar tabs (statements, stock at your location, settlement), partner name |
+| Density | dense tables and forms, the `floor` scope on queue and scan screens | one column, large inputs, 320px baseline | dense tables, simpler, no cost columns |
+| Identity | client name from `/api/config` | brand logo and accent from settings (AC-19) | brand logo, partner name |
+| Language | `lang`, `dir` by the language setting (spec 0004) | rendered on the server in the visitor's language so a slow phone never waits on a catalog (spec 0007 section 10) | as back office |
+| Network budget | normal | tight: one Arabic weight pair first, system face meanwhile, no icon library beyond the few used, no web fonts for the Latin text that the system face covers | normal |
+
+All three use the same role tokens and base components; a frame is a layout plus a few props, not a second system. The sign in screens use a minimal frame (as before). Wiring the frames into the route groups belongs to the features that build those screens; this spec builds the frame components and shows them on `/design`.
+
+#### Status and provisional value display (AC-16, AC-17)
+
+- Four roles, each icon plus word: confirmed (check), failed delivery (cross), cash owed (coin), provisional (dashed clock). Order state and cash state are separate chips; an attention flag ("Stuck 3 days") is a third element under the name, not a chip.
+- At most three chips per row; beyond that a count chip ("+2") opens the detail. Row order is the same in every table: code, who, where, how much, state, cash.
+- Provisional: `≈` before the number (inside a `bdi` so it stays first in right to left), a dashed boundary, "provisional" read by screen readers. Confirmed values are plain. A dashboard card that is provisional is a dashed card, never a solid one.
+- Meaning never relies on position or color. The start stripe of option C is decorative.
+- The freshness strip sits under every dashboard and report header: "Confirmed through 4 Nov, today is provisional".
+- Cash owed always names who owes (Bosta, a partner, a customer).
+
+#### Phone first manager dashboard (AC-20)
+
+Baseline 360 by 800, works from 320. One column. Top to bottom:
+1. A header with the brand name and the date, and a freshness strip.
+2. A full width "Cash owed to you" card, the biggest number, with the split below (Bosta, partners).
+3. Two half cards: confirmed yesterday, failed delivery rate.
+4. A dashed "Today so far" card, provisional.
+5. "Needs you", at most five rows, each a full width tap target of at least 44px with a chip and a link to the exact screen; a count when there are more.
+6. A bottom tab bar of at most four tabs (Today, Orders, Cash, More), 56px tall.
+
+Each card is a link to a drill down page, never a hover. Tables below 640px collapse to cards of the same chips. The first screen order matches the pushed daily report ([positioning 7.6](../../positioning/2026-11-05-egypt-order-operations-layer.md)) so the owner reads the same story in Telegram and in the app. The four numbers on the first screen are an owner decision (see the questions).
+
+#### In screen help (AC-21)
+
+Staff turn over, so help is part of every screen, in three layers:
+- **HelpHint**: a small question mark button next to a field, a column header, or an outcome button. It opens a popover of one or two sentences. Never on hover alone; it works by tap and by Enter and Space, with an accessible name that includes what it explains.
+- **HelpPanel**: a sheet from the start edge titled "How this screen works", opened by a button in the top bar and by the `?` key when focus is not in a text field. Content: numbered steps, a glossary of the outcomes and states on the screen (each shown with its real chip), the settings that change the behavior (read live), and an optional slot for a recorded training clip served from the install's own storage with captions in both languages.
+- **First run checklist**: per hat (agent, warehouse, lead, owner), a short list of the first actions ("Confirm your first order", "Scan a receipt") with progress, dismissible, restorable from the help panel. Empty states teach in the same words as the panel.
+Help text lives in the message catalogs under `help.<screen>.*`, typed, in Arabic and English, so a missing Arabic key fails the build. Where help quotes a policy ("three no answers closes the order"), the number comes from settings, so the help is never wrong for that brand.
+
+#### Per brand portal theming (AC-19)
+
+The brand supplies an accent color and a logo in settings (the names and the public read endpoint belong to the portal spec; see Follow-up). `deriveBrandTokens(accent)` returns the fill, the foreground (white or near black, whichever has more contrast) and whether it is accepted (at least 4.5:1). A rejected accent is refused at save with the nearest accepted lightness suggested, and the portal falls back to the neutral primary. Worked examples with the same method: the real brand's green `#0A7C39` with white text is 5.31:1 (accepted); a yellow `#F2C230` with white text is 1.68:1 but with near black text 12.53:1 (accepted with a dark foreground). The accent colors the logo tile, the 6px top rule, and the main button only. Focus ring, links, status, and error colors stay the system's, so a green brand never makes "failed" look like "confirmed".
 
 ## Requirements
 
@@ -71,6 +254,8 @@ Reasoning and options: see [rationale.md](rationale.md).
 | Strings | English only, every string behind a typed key (feature 5 adds Arabic and the library) |
 | Locations endpoint auth | Open until feature 6 adds the session guard |
 
+> Amended 2026-11-05: the Color, Radius, Density, and Fonts rows describe the original direction (option A, Quiet Ledger) and change with the direction the owner picks. The Branding row is false for the portal: the portal frame carries a per brand logo and accent from settings (AC-19), while the back office still shows only the client name. The Top bar row is unchanged; the shell stays.
+
 ### Decisions made in this spec (with the runner up)
 
 - **Package layout**: `packages/ui/src/components/ui/*` (shadcn components), `packages/ui/src/lib/utils.ts` (`cn`), `packages/ui/src/hooks/*`, `packages/ui/src/styles/globals.css` (tokens and base layer), its own `components.json`; `apps/web` keeps a `components.json` pointing its `ui` alias at `@ssdashboard/ui`, so `shadcn add` run in either place lands in `packages/ui`. This is the shadcn monorepo layout. Runner up: tokens in `packages/config` (spec 0001 named it for "Tailwind config"), rejected because in Tailwind v4 the config is CSS that belongs beside the components it themes. `apps/web/src/app/globals.css` becomes `@import "@ssdashboard/ui/globals.css";` plus `@source "../../../../packages/ui/src";` (Tailwind v4 does not scan linked workspace packages on its own). Every CSS dependency the stock shadcn CSS imports (`tw-animate-css` and similar) is imported only inside `packages/ui/src/styles/globals.css` and listed in `packages/ui` dependencies; if the Turbopack Tailwind loader cannot resolve them from there under pnpm's strict layout, also list them in `apps/web`. Milestone 1 proves this resolves in `next dev`, `next build`, and the Docker build.
@@ -78,6 +263,8 @@ Reasoning and options: see [rationale.md](rationale.md).
 - **`DESIGN.md` home**: `packages/ui/DESIGN.md`, next to the tokens it describes, with a pointer line in root and `packages/ui/AGENTS.md`. Runner up: repo root `DESIGN.md`.
 - **Fonts**: loaded in `apps/web/src/app/layout.tsx` with `next/font/google` (`IBM_Plex_Sans` with `subsets: ['latin']`; `IBM_Plex_Sans_Arabic` with `subsets: ['arabic', 'latin']` and `preload: false`, so English pages don't download it; weights 400, 500, 600, `display: 'swap'`), which downloads the files at build time and serves them from the app, so nothing is fetched from Google at runtime. They're exposed as `--font-sans` and `--font-arabic`; tokens map `font-sans` to Plex Sans, and `:lang(ar)` switches to Plex Sans Arabic with line height raised one step. Runner up: `next/font/local` with vendored files, the fallback if Docker builds ever run without network.
 - **Tokens** (all oklch CSS variables, light in `:root`, dark in `.dark`, Tailwind v4 `@theme inline` mapping, the shadcn convention): the shadcn zinc set for `background`, `foreground`, `card`, `popover`, `primary` (zinc 900 light, zinc 50 dark), `secondary`, `muted`, `accent`, `border`, `input`, `ring`, and `sidebar-*`; plus status pairs the stock set lacks: `success`, `warning`, `info` alongside `destructive`, each with a `-foreground`, each tuned until it passes AC-2. Start from the stock shadcn zinc oklch values, then make these deliberate changes: darken `input` (the border of fields, outline buttons, checkboxes) until it reaches 3:1 against `background` and `card` in both modes, since the stock zinc border fails that; `border` stays light and is used only for decorative separators and card edges, which are exempt from 3:1; `muted-foreground` (also used for placeholder text) must reach 4.5:1 on `background`, `card`, and `muted`; `destructive` must reach 4.5:1 as text on `background` and its `-foreground` 4.5:1 on it as a fill; every `sidebar-*` text pair meets 4.5:1. Disabled controls are exempt from contrast, but are still styled at 3:1 or more so "No locations yet" stays readable. Status hues exist only for meaning (in stock, low, error, info), never for decoration. Runner up: brand hue tokens, out of scope (feature 46).
+
+> Amended 2026-11-05: status hues now also carry order meaning (confirmed, failed delivery, cash owed, provisional, AC-16), and the runner up "brand hue tokens" is now in scope for the portal only (`brand` and `brand-foreground`, AC-19). The colors, contrast numbers, and "monochrome primary" in this paragraph are option A; the other options change them.
 - **Type scale**: base UI text 14px (`text-sm`) with 20px line height; secondary 12px (`text-xs`); page title 20px semibold; section title 16px semibold. Weights 400, 500, 600 only.
 - **Density**: table row 36px, table header 40px, form controls the Vega default height (36px), shell top bar 56px, sidebar item 32px on fine pointers.
 - **Touch sizing** (AC-14): `globals.css` defines `@custom-variant coarse (@media (pointer: coarse));`. Under `coarse:`, the menu button, sidebar and icon rail items, sheet items, switcher trigger, palette button, user menu trigger and its items, and command items are at least 44px tall (icon only ones 44 by 44). Everywhere, the 24 by 24 floor also covers dialog and sheet close buttons (pad the stock close icon), tooltip triggers, and `Kbd` when it is clickable.
@@ -180,7 +367,7 @@ Both shapes are Zod schemas in `packages/contracts` (`ConfigResponse`, `Location
 - Touch: at a coarse pointer emulation, shell controls measure at least 44 by 44. Verifies **AC-14**.
 - Auth/permission: none yet (no accounts exist); feature 6's tests assert `/api/locations` returns 401 without a session.
 
-## Build plan
+## Build plan (original, built)
 
 Tracer Bullet: the first milestone pushes one thin thread through every layer (env → api → Zod contract → web fetch and parse → shared ui package → web shell). Each later milestone thickens one segment and stays shippable.
 
@@ -203,6 +390,33 @@ Tracer Bullet: the first milestone pushes one thin thread through every layer (e
    2. Write `packages/ui/DESIGN.md` from the final tokens (with measured contrast), including the table, form, and feedback rules features 7 and 8 will build to. Satisfies **AC-1**.
    3. Playwright suite: axe matrix (four combinations × two pages), keyboard flows, right to left geometry, theme no flash, production build checks, touch sizes. Satisfies **AC-2**, **AC-4**, **AC-5**, **AC-6**, **AC-7**, **AC-8**, **AC-11**, **AC-13**, **AC-14**.
 
+## Build plan
+
+Amendment work only. The shell, `packages/ui`, `/design`, and the axe matrix stay as built. The owner chose option B, Daftar, with the `floor` density scope from option C on the queue and scan screens for coarse pointers (2026-11-05, see Questions for the owner). "The chosen direction" in the milestones below means option B's values in *Direction options*. Milestone 1 is the thin thread: it changes the real tokens and fonts and proves every existing check still passes with the new look, before any new component. Our own components go outside `packages/ui/src/components/` (the shadcn folder), one per file, named after the file.
+
+1. **The chosen direction (B, Daftar) in tokens, fonts, and `DESIGN.md`** (the thin thread)
+   1. [ ] Load the chosen direction's fonts with `next/font` in `apps/web/src/app/layout.tsx`, keep the `:lang(ar)` switch and the Arabic line height, tune the Arabic size against the Latin face, confirm tabular figures work (fall back to the mono face for numeric columns if not), confirm each font name exists in `next/font/google`, and ship each font's OFL text. Satisfies **AC-23**.
+   2. [ ] Retune `packages/ui/src/styles/globals.css` to the chosen direction: light and dark values, radius, the density tokens (`--spacing-row`, `--spacing-row-header`, `--spacing-control`), the focus ring width, the four meaning aliases (`confirmed`, `failed`, `owed`, `provisional`) with their chip surfaces, `brand` and `brand-foreground`, and the `floor` density scope (a `data-density="floor"` attribute and the `coarse:` rules). Satisfies **AC-15**, **AC-16**, **AC-19**, **AC-22**.
+   3. [ ] Extend the `/design` contrast list with the new pairs (meaning colors on the page, on the card, and on their chip surface, `brand-foreground` on `brand`, the dashed provisional border on its surface) so each is measured live. Satisfies **AC-15**.
+   4. [ ] Rewrite `packages/ui/DESIGN.md` for option B, Daftar, with the `floor` scope on the queue and scan screens: the color table with measured contrast, the type table and the Arabic size rule, density and focus values, the new status and provisional rules, the `floor` scope, and the line "Zinc grays, a black and white primary" where it is no longer true. Also update `packages/ui/AGENTS.md` if the stack line changes. Satisfies **AC-15**, **AC-23**.
+   - **Done when**: `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm --filter @ssdashboard/ui test`, and `pnpm test:e2e` all pass, where `shell.spec.ts` runs axe with zero violations on `/` and `/design` in light and dark, left to right and right to left, and every contrast pair on `/design` shows its minimum met.
+2. **Status and provisional display, and the floor scope**
+   1. [ ] `StatusChip` (icon plus word, the four roles, one chip surface per direction), `ProvisionalValue` (`≈` inside `bdi`, dashed boundary, hidden "provisional" text), `FreshnessStrip`, and a row start stripe helper, each with a spec that includes `expectNoAxeViolations` in light, dark, and `dir="rtl"`. Satisfies **AC-16**, **AC-17**.
+   2. [ ] A chip count rule ("+2") and the row column order in the `DESIGN.md` table section, and a sample order row table and a confirmation queue card on `/design` built from the base `Table`, `Button`, and `Field` parts, with the `floor` scope on the card. Satisfies **AC-16**, **AC-22**.
+   3. [ ] A test that no chip renders without an icon and a word, and a Playwright check that on a coarse pointer the queue card's outcome buttons measure at least 48 by 48. Satisfies **AC-16**, **AC-22**.
+   - **Done when**: `pnpm --filter @ssdashboard/ui test` and `pnpm test:e2e` pass, the latter including axe on `/design` in the four combinations with the new rows visible.
+3. **Three frames and per brand theming**
+   1. [ ] `PortalFrame` and `PartnerFrame` in `packages/ui` (text through props, one `h1` and one `main`, logical sides only, no `next/*` imports), and `AppShell` unchanged. Satisfies **AC-18**.
+   2. [ ] `deriveBrandTokens(accent)`: converts an accent to a fill and foreground, accepts at least 4.5:1, returns the rejection and the nearest accepted suggestion otherwise; unit tests for `#0A7C39` (accepted, white), `#F2C230` (accepted, dark foreground), and a pale yellow that fails both. Satisfies **AC-19**.
+   3. [ ] `/design` section "Frames" showing the three frames, the portal with a sample brand accent and logo, in left to right and right to left, and a Playwright check at 360 by 800 with touch that the portal and partner samples have no horizontal overflow and no violations in axe. Satisfies **AC-18**, **AC-19**, **AC-20**.
+   - **Done when**: `pnpm --filter @ssdashboard/ui test`, `pnpm test:e2e`, and `pnpm lint` (the logical CSS check) pass.
+4. **Phone dashboard and in screen help patterns**
+   1. [ ] `MetricCard`, `BottomTabs` (at most four tabs, 56px), the row to card collapse below 640px, and the "Needs you" list in `packages/ui`, with a sample phone dashboard on `/design` in the order the daily report uses. Satisfies **AC-20**.
+   2. [ ] `HelpHint`, `HelpPanel` (sheet, `?` key outside text fields, Esc closes, focus returns), and `FirstRunChecklist`, with the `help.*` key convention documented and a test that fails when an Arabic help key is missing. Satisfies **AC-21**.
+   3. [ ] Playwright at 360 by 800 with touch, in both languages: no horizontal scroll from 320 to 430, tap targets at least 44 by 44, keyboard open and close of the help panel with focus return, axe clean. Satisfies **AC-20**, **AC-21**.
+   4. [ ] Add the phone first dashboard and in screen help sections to `packages/ui/DESIGN.md`, and tick the follow up lines this amendment closes. Satisfies **AC-20**, **AC-21**.
+   - **Done when**: `pnpm --filter @ssdashboard/ui test`, `pnpm test:e2e`, `pnpm lint`, `pnpm typecheck`, and `pnpm format:check` all pass, and `node packages/config/scripts/check-doc-links.mjs` passes.
+
 ## Consequences
 
 **Positive**:
@@ -213,7 +427,7 @@ Tracer Bullet: the first milestone pushes one thin thread through every layer (e
 
 **Negative / tradeoffs**:
 - A shared package before a second consumer exists: extra `exports`, `@source`, and `transpilePackages` wiring, and `shadcn add` must be run from the right `components.json`.
-- A monochrome primary makes primary actions stand out less than a colored accent would; the hierarchy has to come from weight, fill versus outline, and placement. Status colors carry all hue.
+- A monochrome primary makes primary actions stand out less than a colored accent would; the hierarchy has to come from weight, fill versus outline, and placement. Status colors carry all hue. (Amended 2026-11-05: true of option A only; options B and C give the primary a hue, and the amendment makes this the main reason to pick one.)
 - English only text means right to left testing here sees English words in a mirrored layout; Arabic length and line height issues surface only in feature 5 (the `/design` Arabic specimen catches font issues, not layout overflow).
 - `GET /api/locations` and `GET /api/config` ship unauthenticated and without rate limiting until feature 6 or 16.
 - With the root layout static, browser state is read after mount: a collapsed sidebar can show expanded for one frame on reload, and the location switcher shows "All" briefly while loading.
@@ -232,5 +446,20 @@ Tracer Bullet: the first milestone pushes one thin thread through every layer (e
 - [ ] Feature 5: replace the development `ss_dir` cookie and `DirectionProvider` wiring with the language switch, move `messages.en.ts` keys into the chosen library, add Arabic messages, pick location names by locale, and check Arabic text length and line height across the shell.
 - [ ] Features 7 and 8: build the data table, form fields, and feedback components to the rules in `packages/ui/DESIGN.md` and add them to `/design`.
 - [ ] Feature 10: location management extends the inventory module's locations surface; keep `GET /api/locations` filtering compatible with the switcher.
-- [ ] Feature 13 and 46: filter `navItems` by role and module toggle; feature 46 adds per client logo and accent overrides on top of these tokens.
+- [ ] Feature 13 and 46: filter `navItems` by role and module toggle; feature 46 adds per client logo and accent overrides on top of these tokens. (Amended 2026-11-05: the portal's per brand logo and accent come from this amendment's `deriveBrandTokens` and settings; feature 46 keeps only any back office branding beyond the client name.)
+- [ ] Amendment 2026-11-05: the portal spec names the brand accent and logo settings, serves them on a public read (the portal cannot read the staff config), and stores the logo; this spec only consumes `accent` and `logoUrl` as props.
+- [ ] Amendment 2026-11-05: spec 0004 (localization) owns the Arabic message catalog; the `help.*` keys, the status labels, and the frame strings join it, and its Arabic key test covers them.
+- [ ] Amendment 2026-11-05: the pushed daily report (positioning 7.6) and the phone dashboard share one metric dictionary and one order of numbers; the reporting spec owns the metrics, this spec owns how they are shown.
 - [ ] `/sync`: add `packages/ui/AGENTS.md` and `DESIGN.md` pointers to root `AGENTS.md` `## Context files`, note that tokens moved from `packages/config` to `packages/ui`, and add the shadcn and Tailwind 4 conventions (Radix `asChild`, role tokens only, logical utilities) to root `## Rules`.
+
+## Questions for the owner
+
+Answered by the owner on 2026-11-05, after viewing the three previews. Questions 4, 6, and 7 keep the designer's default.
+
+1. **Which direction?** **Answered: B, Daftar**, with the `floor` density scope from option C on the confirmation queue and the scan screens for coarse pointers.
+2. **What are the four numbers on the owner's first phone screen?** **Answered:** cash owed to you (split by Bosta and partners), confirmed orders yesterday, failed delivery rate, and today so far (provisional). The same four lead the pushed daily report.
+3. **What do the scanning and calling devices look like?** **Answered:** a laptop or desktop with the phone beside it for the queue; staff phones and Android handhelds for scanning. So the `floor` scope applies only on the scan and queue screens on touch devices.
+4. **Light and dark, or light only?** Default kept: both (already built and tested).
+5. **Does the back office show the brand's accent at all?** **Answered: no.** Only the portal and the partner frame carry the brand accent; the back office keeps the system colors and shows the client name.
+6. **Which brand accent and logo do we design the portal against first?** Default kept: the first brand's real accent and logo when sent; until then the sample (green `#0A7C39`, 5.31:1 with white).
+7. **Who records the training clips, in which language first?** Default kept: the help panel ships text first (Arabic first, then English); the clip slot stays empty until a brand records its own, captioned in both languages.
