@@ -5,6 +5,10 @@ import { Money, UnitCost } from '@ssdashboard/contracts';
  * the movement's costs and the next balance out. Every share is exact and rounded once.
  */
 
+/**
+ * A place's running figures before or after a line: units on hand, total value, and the average
+ * unit cost, which keeps its last value when on hand drops to zero or below.
+ */
 export interface BalanceState {
   onHand: number;
   totalValue: Money;
@@ -12,6 +16,10 @@ export interface BalanceState {
   avgUnitCost: UnitCost;
 }
 
+/**
+ * What the cost rules decided for one line: its total and unit cost, the variance against the
+ * balance, whether the cost was unknown, and the balance after it.
+ */
 export interface CostedLine {
   totalCost: Money;
   unitCost: UnitCost;

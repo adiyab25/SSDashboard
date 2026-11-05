@@ -21,7 +21,7 @@ const me = vi.hoisted((): { current: { id: string; role: string } | null } => ({
   current: { id: 'a', role: 'admin' },
 }));
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
-vi.mock('@/shell/current-location', () => ({
+vi.mock('@/shell/current-location-provider', () => ({
   useLocationSwitcher: () => ({ retry: vi.fn(), locations: [] }),
 }));
 

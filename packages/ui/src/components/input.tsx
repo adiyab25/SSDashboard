@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { cn } from 'cn';
 
+/** Single-line text input styled to the design system; pair with a Label for accessibility. */
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
   return (
     <input

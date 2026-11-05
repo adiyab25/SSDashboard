@@ -15,11 +15,16 @@ const FALLBACK_LANGUAGE = 'en';
 export class ConfigController {
   private readonly logger = new Logger(ConfigController.name);
 
+  /** Takes the env and the settings service. */
   constructor(
     @Inject(ENV) private readonly env: Env,
     private readonly settings: SettingsService,
   ) {}
 
+  /**
+   * Returns the install's currency, time zone, enabled languages and default language, for the
+   * shell and sign in page.
+   */
   @Get()
   async read(): Promise<ConfigResponse> {
     const { currency, timezone, languages, default_language } = await this.readSettings();

@@ -34,6 +34,7 @@ function Alert({
   );
 }
 
+/** Heading line of an Alert; text arrives as children, never hard-coded. */
 function AlertTitle({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -47,6 +48,7 @@ function AlertTitle({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Supporting body text of an Alert; text arrives as children. */
 function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -60,6 +62,7 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
+/** Slot for an action control pinned to the end corner of an Alert, using logical positioning. */
 function AlertAction({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div data-slot="alert-action" className={cn('absolute end-3 top-2.5', className)} {...props} />

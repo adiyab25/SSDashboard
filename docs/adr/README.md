@@ -7,4 +7,4 @@ records one decision inside a module or area.
 
 ## Index
 
-None yet.
+- [0001 shadcn component files keep their vendor shape](0001-shadcn-component-files-keep-their-vendor-shape.md)

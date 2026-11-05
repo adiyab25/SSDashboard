@@ -17,8 +17,10 @@ import { StockService } from './stock.service.js';
 @Audience('staff')
 @Controller()
 export class StockController {
+  /** Takes the stock service. */
   constructor(private readonly stock: StockService) {}
 
+  /** One keyset page of stock on hand across locations; cost and value fields only for admins. */
   @Get('stock')
   async list(
     @Query(new ZodQueryPipe(StockListQuery)) query: StockListQuery,
@@ -31,6 +33,7 @@ export class StockController {
     }
   }
 
+  /** One SKU's stock per location; cost and value fields only for admins. */
   @Get('skus/:id/stock')
   async forSku(
     @Param('id', notFoundId()) id: string,

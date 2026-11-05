@@ -22,7 +22,11 @@ import { useTranslation } from 'react-i18next';
 import { useLanguage } from '@/i18n/language-provider';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
-import { locationName, useCurrentLocation, useLocationSwitcher } from '@/shell/current-location';
+import {
+  locationName,
+  useCurrentLocation,
+  useLocationSwitcher,
+} from '@/shell/current-location-provider';
 import { inventoryKeys, listReceipts } from './inventory-api';
 
 const SEARCH_DELAY_MS = 300;

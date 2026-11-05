@@ -4,6 +4,7 @@ import * as React from 'react';
 import { cn } from 'cn';
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 
+/** Set of mutually exclusive options with arrow-key navigation. */
 function RadioGroup({
   className,
   ...props
@@ -17,6 +18,7 @@ function RadioGroup({
   );
 }
 
+/** One radio option inside a RadioGroup; pair with a Label. */
 function RadioGroupItem({
   className,
   ...props

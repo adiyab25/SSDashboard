@@ -1,5 +1,6 @@
 import { cn } from 'cn';
 
+/** Renders a single keyboard key, for shortcut hints. */
 function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
   return (
     <kbd
@@ -13,6 +14,7 @@ function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
   );
 }
 
+/** Groups several Kbd keys into one shortcut. */
 function KbdGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <kbd

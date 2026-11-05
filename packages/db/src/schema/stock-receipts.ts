@@ -21,6 +21,7 @@ import { locations } from './locations.js';
 // ledger's posting transaction (`within`). Lines are write once: the migration revokes UPDATE
 // and DELETE on them from the application role, and DELETE on the receipts.
 
+/** Receipt state: posted, or voided by a reversing movement group (never edited or deleted). */
 export const stockReceiptStatus = pgEnum('stock_receipt_status', ['posted', 'voided']);
 
 /** A numbered stock receipt. Its id is the client's idempotency key. */

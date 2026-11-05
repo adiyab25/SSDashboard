@@ -10,6 +10,10 @@ import { SettingsService } from '../platform/settings.service.js';
 export class ProfileService {
   private readonly db: Database;
 
+  /**
+   * Takes the app database connection and the settings service that knows which languages are
+   * enabled.
+   */
   constructor(
     @Inject(DATABASE) connection: DatabaseConnection,
     private readonly settings: SettingsService,
@@ -17,6 +21,10 @@ export class ProfileService {
     this.db = connection.db;
   }
 
+  /**
+   * Saves the person's name, phone and language. Rejects a language the install has not enabled,
+   * and never touches email, role or password.
+   */
   async update(userId: string, input: UpdateMeRequest): Promise<void> {
     await assertLanguageEnabled(this.settings, input.language);
     const sets: SQL[] = [];

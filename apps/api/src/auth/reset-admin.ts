@@ -8,6 +8,10 @@ import { generateTemporaryPassword } from './temporary-password.js';
 
 const ResetAdminInput = z.object({ email: z.string().trim().toLowerCase().pipe(z.email()) });
 
+/**
+ * Why a break glass reset did nothing: invalid input, no such person, not an admin, or a
+ * disabled account, with a message safe to print.
+ */
 export type ResetRefusal = {
   reset: false;
   reason: 'invalid_input' | 'not_found' | 'not_admin' | 'disabled';
@@ -17,6 +21,10 @@ export type ResetRefusal = {
 /** Which break glass changes to make. At least one is true. */
 export type BreakGlassModes = { password: boolean; twoFactor: boolean };
 
+/**
+ * The outcome of a break glass reset: the person and the new temporary password (if the password
+ * was reset), or a refusal.
+ */
 export type BreakGlassResult =
   | { reset: true; userId: string; email: string; temporaryPassword: string | undefined }
   | ResetRefusal;

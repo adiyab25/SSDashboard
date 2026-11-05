@@ -2,6 +2,7 @@ import * as React from 'react';
 
 const MOBILE_BREAKPOINT = 768;
 
+/** True when the viewport is below the mobile breakpoint; reads window, so it is false until mounted. */
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined);
 

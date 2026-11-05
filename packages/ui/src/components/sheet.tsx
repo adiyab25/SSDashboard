@@ -7,14 +7,17 @@ import { Dialog as SheetPrimitive } from 'radix-ui';
 import { Button } from '@ssdashboard/ui/components/button';
 import { XIcon } from 'lucide-react';
 
+/** Side panel dialog root that slides in from an edge; owns open state and traps focus. */
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
 
+/** Element that opens its Sheet; use asChild for a custom trigger. */
 function SheetTrigger({ ...props }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
   return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
 }
 
+/** Element that closes the surrounding Sheet. */
 function SheetClose({ ...props }: React.ComponentProps<typeof SheetPrimitive.Close>) {
   return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
 }
@@ -39,6 +42,7 @@ function SheetOverlay({
   );
 }
 
+/** The sliding panel of a Sheet; needs a SheetTitle for accessibility. */
 function SheetContent({
   className,
   children,
@@ -77,6 +81,7 @@ function SheetContent({
   );
 }
 
+/** Layout wrapper for the title and description of a Sheet. */
 function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -87,6 +92,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Layout wrapper for the action buttons of a Sheet. */
 function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -97,6 +103,7 @@ function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Accessible name of a Sheet; required for screen readers. */
 function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Title>) {
   return (
     <SheetPrimitive.Title
@@ -107,6 +114,7 @@ function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPr
   );
 }
 
+/** Accessible description of a Sheet. */
 function SheetDescription({
   className,
   ...props

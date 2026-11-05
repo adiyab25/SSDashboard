@@ -21,6 +21,7 @@ export function proxy(request: NextRequest) {
   return NextResponse.next({ request: { headers } });
 }
 
+/** The pages the proxy runs on; see the matcher for what it skips. */
 export const config = {
   // Pages only: not the api, Next's own files, language files, or anything with an extension.
   matcher: ['/((?!api/|_next/|locales/|.*\\..*).*)'],

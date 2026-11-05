@@ -8,7 +8,7 @@ The frame every staff back office page renders inside: sidebar, user menu, comma
 - The navigation list (add a page here to join the sidebar and palette): [nav.ts](nav.ts)
 - The command palette: [command-palette.tsx](command-palette.tsx)
 - The user menu: [user-menu.tsx](user-menu.tsx)
-- The current location and its `ss_location` cookie: [current-location.tsx](current-location.tsx), [location-switcher.tsx](location-switcher.tsx)
+- The current location and its `ss_location` cookie: [current-location-provider.tsx](current-location-provider.tsx), [location-switcher.tsx](location-switcher.tsx)
 - Install name and client config: [client-config.ts](client-config.ts), [client-name.tsx](client-name.tsx)
 
 ## Never touches

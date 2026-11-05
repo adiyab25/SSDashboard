@@ -39,6 +39,7 @@ const buttonVariants = cva(
   },
 );
 
+/** The base action control, with variants and sizes from the design system; use asChild to render a link or other trigger. */
 function Button({
   className,
   variant = 'default',

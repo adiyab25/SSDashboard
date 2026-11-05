@@ -16,8 +16,13 @@ import { ROLES_KEY } from './roles.decorator.js';
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
+  /** Takes Nest's reflector, which reads the `@Roles(...)` metadata of a route. */
   constructor(private readonly reflector: Reflector) {}
 
+  /**
+   * Lets the request through when its route needs no role or the signed in person has one of
+   * them; otherwise throws 403 `FORBIDDEN`.
+   */
   canActivate(context: ExecutionContext): boolean {
     const required = this.reflector.getAllAndOverride<StaffRole[] | undefined>(ROLES_KEY, [
       context.getHandler(),

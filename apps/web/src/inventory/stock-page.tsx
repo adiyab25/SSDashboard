@@ -31,7 +31,11 @@ import { useMe } from '@/auth/use-me';
 import { NewSkuDialog } from '@/catalog/new-sku-dialog';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
-import { locationName, useCurrentLocation, useLocationSwitcher } from '@/shell/current-location';
+import {
+  locationName,
+  useCurrentLocation,
+  useLocationSwitcher,
+} from '@/shell/current-location-provider';
 import { useLanguage } from '@/i18n/language-provider';
 import { inventoryKeys, listStock } from './inventory-api';
 import { NewLocationDialog } from './new-location-dialog';

@@ -30,6 +30,7 @@ export const documentCounters = pgTable(
   (t) => [primaryKey({ columns: [t.docType, t.year] })],
 );
 
+/** Value types a custom field can hold. */
 export const customFieldType = pgEnum('custom_field_type', [
   'text',
   'number',

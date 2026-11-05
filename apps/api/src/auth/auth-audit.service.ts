@@ -12,8 +12,13 @@ import { eventName, type AuthEvent } from '../platform/events/auth-events.js';
 export class AuthAudit {
   private readonly logger = new Logger('Auth');
 
+  /** Takes the event emitter that carries sign in events to any other module listening. */
   constructor(private readonly events: EventEmitter2) {}
 
+  /**
+   * Logs the outcome and emits it as a domain event. Never throws: a failing listener is logged
+   * by its pg code and the sign in carries on.
+   */
   record(event: AuthEvent): void {
     const { context } = event;
     this.logger.log(

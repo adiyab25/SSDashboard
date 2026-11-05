@@ -31,7 +31,8 @@ import {
   type ApiResult,
   type StaffFilter,
 } from './staff-api';
-import { ConfirmDialog, SetupDialog, type ConfirmKind } from './staff-dialogs';
+import { StaffConfirmDialog, type ConfirmKind } from './staff-confirm-dialog';
+import { StaffSetupDialog } from './staff-setup-dialog';
 import { StaffFormDialog } from './staff-form-dialog';
 
 const STATUSES: readonly StaffStatus[] = ['invited', 'active', 'disabled'];
@@ -420,7 +421,7 @@ export function StaffPage() {
         />
       )}
       {dialog?.kind === 'confirm' && (
-        <ConfirmDialog
+        <StaffConfirmDialog
           kind={dialog.action}
           name={dialog.row.name}
           mailEnabled={mailEnabled}
@@ -429,7 +430,7 @@ export function StaffPage() {
         />
       )}
       {dialog?.kind === 'setup' && (
-        <SetupDialog
+        <StaffSetupDialog
           setup={dialog.setup}
           reason={dialog.reason}
           name={dialog.name}

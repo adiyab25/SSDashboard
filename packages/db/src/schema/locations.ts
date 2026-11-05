@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { archivedAt, createdAt, id, updatedAt, type LocalizedText } from './columns.js';
 
+/** What kind of place holds stock: a warehouse, a consignment showroom, goods in transit, or a virtual bucket. */
 export const locationType = pgEnum('location_type', [
   'warehouse',
   'showroom',
@@ -18,6 +19,7 @@ export const locationType = pgEnum('location_type', [
   'virtual',
 ]);
 
+/** A place stock is counted in. Archived rather than deleted; `allowNegative` lets postings take on-hand below zero at this location. */
 export const locations = pgTable('locations', {
   id: id(),
   code: text('code').notNull().unique(),
@@ -30,8 +32,10 @@ export const locations = pgTable('locations', {
   archivedAt: archivedAt(),
 });
 
+/** Depth in the bin tree, from a whole zone down to a single bin. */
 export const binLevel = pgEnum('bin_level', ['zone', 'aisle', 'shelf', 'bin']);
 
+/** A storage position inside a location, nested by `parentId`. Code is unique per location; the `(id, location_id)` unique key lets other tables keep a bin in its row's location. */
 export const bins = pgTable(
   'bins',
   {

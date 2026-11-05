@@ -1,5 +1,6 @@
 import type { DatabaseConnection } from '@ssdashboard/db';
 
+/** How much data the scale seed loads: SKUs, opening movements and locations. */
 export interface ScaleSeed {
   skus: number;
   movements: number;

@@ -17,10 +17,15 @@ import { decodeKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
 /** `to_char` format of `updatedAt`: microseconds, UTC (spec 0006, Value sourcing). */
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
+/**
+ * The catalog rules a caller can break: code already used, SKU missing, edited by someone else
+ * since it was read, or still referenced and so not deletable.
+ */
 export type CatalogErrorCode = 'SkuTaken' | 'NotFound' | 'Stale' | 'InUse';
 
 /** A catalog rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class CatalogError extends Error {
+  /** Takes the stable `code` the controller maps to an HTTP answer, and a message safe to show. */
   constructor(
     readonly code: CatalogErrorCode,
     message: string,
@@ -41,6 +46,10 @@ export interface StockableSku {
   baseUomId: string;
 }
 
+/**
+ * The answer to whether a SKU can take stock: unknown, or known with the fault (archived, not a
+ * stocked kind) or null when it can.
+ */
 export type StockableCheck =
   { fault: 'UNKNOWN_SKU' } | { fault: 'ARCHIVED' | 'NOT_STOCKABLE' | null; sku: StockableSku };
 
@@ -128,6 +137,7 @@ export function buildSkuListSql(query: SkuListQuery): SQL {
  */
 @Injectable()
 export class CatalogService {
+  /** Takes the app database connection. */
   constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
 
   /** Creates one active product with one stocked SKU (AC-1). */

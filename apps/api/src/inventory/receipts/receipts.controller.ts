@@ -82,6 +82,7 @@ const callerOf = (request: AuthenticatedRequest): ReceiptCaller => ({
 @Audience('staff')
 @Controller('stock-receipts')
 export class ReceiptsController {
+  /** Takes the receipts service. */
   constructor(private readonly receipts: ReceiptsService) {}
 
   /** 201 when created, 200 when the same key and body were posted before (AC-6). */
@@ -143,6 +144,7 @@ export class ReceiptsController {
     }
   }
 
+  /** Reads one receipt; cost fields are left out unless the caller is an admin. */
   @Get(':id')
   async get(
     @Param('id', receiptId()) id: string,

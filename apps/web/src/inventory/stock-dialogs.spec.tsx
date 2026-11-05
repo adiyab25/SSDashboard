@@ -6,7 +6,7 @@ import { NewLocationDialog } from './new-location-dialog';
 import { renderWithQuery } from './render-with-query';
 import { VoidReceiptDialog } from './void-receipt-dialog';
 
-vi.mock('@/shell/current-location', () => ({
+vi.mock('@/shell/current-location-provider', () => ({
   useLocationSwitcher: () => ({ retry: vi.fn(), ready: true, locations: [] }),
 }));
 

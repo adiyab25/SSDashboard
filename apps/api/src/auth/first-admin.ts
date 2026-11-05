@@ -9,6 +9,10 @@ const FirstAdminInput = z.object({
   name: z.string().trim().min(1).max(100),
 });
 
+/**
+ * The outcome of creating the first admin: the new id and a one time temporary password, or the
+ * reason nothing was created.
+ */
 export type FirstAdminResult =
   | { created: true; userId: string; temporaryPassword: string }
   | { created: false; reason: 'invalid_input' | 'admin_exists' | 'email_taken'; message: string };

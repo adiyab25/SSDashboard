@@ -44,6 +44,10 @@ function callerAudience(request: IdentifiedRequest): AudienceName | undefined {
  */
 @Injectable()
 export class AudienceGuard implements CanActivate {
+  /**
+   * Throws 500 `AUDIENCE_MISSING` for a controller with no audience, lets a public one through,
+   * and otherwise throws 403 `WRONG_AUDIENCE` unless the caller's audience matches.
+   */
   canActivate(context: ExecutionContext): boolean {
     const audience = audienceOf(context.getClass());
     if (!audience) {

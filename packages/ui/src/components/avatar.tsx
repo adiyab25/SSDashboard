@@ -4,6 +4,7 @@ import * as React from 'react';
 import { cn } from 'cn';
 import { Avatar as AvatarPrimitive } from 'radix-ui';
 
+/** Circular person or entity image container; falls back to AvatarFallback when the image is missing. */
 function Avatar({
   className,
   size = 'default',
@@ -24,6 +25,7 @@ function Avatar({
   );
 }
 
+/** The image inside an Avatar; callers must pass meaningful alt text. */
 function AvatarImage({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
   return (
     <AvatarPrimitive.Image
@@ -34,6 +36,7 @@ function AvatarImage({ className, ...props }: React.ComponentProps<typeof Avatar
   );
 }
 
+/** Initials or icon shown while an Avatar image loads or if it fails; holds no text of its own. */
 function AvatarFallback({
   className,
   ...props
@@ -50,6 +53,7 @@ function AvatarFallback({
   );
 }
 
+/** Small status marker anchored to the end-bottom corner of an Avatar. */
 function AvatarBadge({ className, ...props }: React.ComponentProps<'span'>) {
   return (
     <span
@@ -66,6 +70,7 @@ function AvatarBadge({ className, ...props }: React.ComponentProps<'span'>) {
   );
 }
 
+/** Overlapping row of Avatars, such as the people on one order. */
 function AvatarGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
@@ -79,6 +84,7 @@ function AvatarGroup({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
+/** Overflow counter (for example +3) that ends an AvatarGroup; the count arrives as children. */
 function AvatarGroupCount({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div

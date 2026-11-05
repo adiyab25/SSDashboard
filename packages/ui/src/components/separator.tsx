@@ -4,6 +4,7 @@ import * as React from 'react';
 import { cn } from 'cn';
 import { Separator as SeparatorPrimitive } from 'radix-ui';
 
+/** Visual and semantic divider; horizontal or vertical. */
 function Separator({
   className,
   orientation = 'horizontal',

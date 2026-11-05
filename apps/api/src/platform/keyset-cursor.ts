@@ -49,7 +49,8 @@ export function decodeTimeIdKeyset(cursor: string): { at: string; id: string } {
 
 /**
  * A real calendar instant: V8 `Date.parse` rolls `02-30` over to March and accepts year 0000,
- * which Postgres `::timestamptz` rejects (22008), so require a millisecond round trip and year >= 1.
+ * which Postgres `::timestamptz` rejects (22008), so require a millisecond round trip and a
+ * year of 1 or later.
  */
 function isRealInstant(at: string): boolean {
   if (at.startsWith('0000')) return false;

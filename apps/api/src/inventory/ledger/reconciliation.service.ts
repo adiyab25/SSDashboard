@@ -14,6 +14,7 @@ const KEY = 'variant_id, location_id, bin_id, lot_id';
  */
 @Injectable()
 export class ReconciliationService {
+  /** Takes the app database connection. */
   constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
 
   /**

@@ -4,6 +4,7 @@ import * as React from 'react';
 import { cn } from 'cn';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 
+/** Shares open and delay timing between Tooltips; mount once near the root. */
 function TooltipProvider({
   delayDuration = 0,
   ...props
@@ -17,14 +18,17 @@ function TooltipProvider({
   );
 }
 
+/** Tooltip root; the hint appears on hover and keyboard focus. */
 function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
+/** Element that a Tooltip describes; use asChild for a custom trigger. */
 function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
+/** The tooltip bubble; text only, never the sole carrier of essential information. */
 function TooltipContent({
   className,
   sideOffset = 0,

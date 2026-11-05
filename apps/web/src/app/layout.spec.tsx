@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { AppShell } from '@/shell/app-shell';
-import { CurrentLocationProvider } from '@/shell/current-location';
+import { CurrentLocationProvider } from '@/shell/current-location-provider';
 import RootLayout, { metadata } from './layout';
 
 vi.mock('next/navigation', () => ({

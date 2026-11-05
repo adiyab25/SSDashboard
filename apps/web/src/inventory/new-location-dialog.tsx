@@ -29,7 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
-import { useLocationSwitcher } from '@/shell/current-location';
+import { useLocationSwitcher } from '@/shell/current-location-provider';
 import { createLocation, inventoryKeys } from './inventory-api';
 import { useReturnFocus } from './use-return-focus';
 

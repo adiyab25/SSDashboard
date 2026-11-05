@@ -16,6 +16,10 @@ export interface LedgerHarness {
   close(): Promise<void>;
 }
 
+/**
+ * Creates a migrated scratch database and connects the ledger as the application role, so tests
+ * hit the same privileges as production. Call `close` to drop the database.
+ */
 export async function ledgerHarness(): Promise<LedgerHarness> {
   const scratch = await createScratchDatabase();
   await runMigrations(scratch.url);
@@ -47,6 +51,11 @@ async function insertOne(owner: DatabaseConnection, text: string, values: unknow
   return row.id;
 }
 
+/**
+ * Inserts rows as the owner (users, SKUs, locations and the like) that ledger tests need, and
+ * returns their ids. Bypasses the services on purpose, so a test sets up exactly the state it
+ * names.
+ */
 export function fixtures(owner: DatabaseConnection) {
   return {
     /** A staff account, so `posted_by` has a real user to point at (spec 0005, AC-22). */
@@ -134,6 +143,7 @@ export async function driftedBalances(owner: DatabaseConnection): Promise<unknow
   return rows;
 }
 
+/** Reads one place's balance row as the owner; a place that never held stock reads as zero. */
 export async function level(
   owner: DatabaseConnection,
   key: { variantId: string; locationId: string; binId?: string; lotId?: string },

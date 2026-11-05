@@ -5,7 +5,7 @@ The admin page at `/staff` to list, invite, edit, disable and reset staff accoun
 ## Owns
 
 - The page: [staff-page.tsx](staff-page.tsx)
-- Dialogs: [staff-form-dialog.tsx](staff-form-dialog.tsx), [staff-dialogs.tsx](staff-dialogs.tsx)
+- Dialogs: [staff-form-dialog.tsx](staff-form-dialog.tsx), [staff-confirm-dialog.tsx](staff-confirm-dialog.tsx), [staff-setup-dialog.tsx](staff-setup-dialog.tsx)
 - Calls to the api: [staff-api.ts](staff-api.ts)
 - The route: `src/app/(backoffice)/staff/page.tsx`
 

@@ -52,6 +52,7 @@ export const users = pgTable(
   ],
 );
 
+/** Staff login sessions for Better Auth. Rows cascade away with their user; `token` is the unique session secret (spec 0005, AC-23: tokens are never written to logs). */
 export const sessions = pgTable(
   'sessions',
   {

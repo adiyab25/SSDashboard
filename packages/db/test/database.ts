@@ -6,6 +6,7 @@ import pg from 'pg';
 // DATABASE_URL from the environment or the repo root `.env`, like the api does.
 const ROOT_ENV = new URL('../../../.env', import.meta.url);
 
+/** The owner connection URL used to create and drop scratch databases. */
 export function adminUrl(): string {
   if (!process.env.MIGRATION_DATABASE_URL && existsSync(ROOT_ENV)) process.loadEnvFile(ROOT_ENV);
   // Scratch databases are created by the owner role; DATABASE_URL is the application role.
@@ -15,6 +16,7 @@ export function adminUrl(): string {
   return url;
 }
 
+/** Runs a callback with a connected owner client and always closes it. */
 export async function withAdmin<T>(run: (client: pg.Client) => Promise<T>): Promise<T> {
   const client = new pg.Client({ connectionString: adminUrl() });
   await client.connect();
@@ -34,6 +36,7 @@ export async function createScratchDatabase(): Promise<{ name: string; url: stri
   return { name, url: url.toString() };
 }
 
+/** Drops a scratch database, disconnecting any session still using it. */
 export async function dropScratchDatabase(name: string): Promise<void> {
   await withAdmin((client) => client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
 }

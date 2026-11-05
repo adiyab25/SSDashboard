@@ -146,6 +146,7 @@ function compareLines(a: Line, b: Line): number {
  */
 export type WithinPosting = (tx: Transaction, result: PostingResult) => Promise<void>;
 
+/** Extra behaviour for one posting: `within` runs inside the posting's transaction. */
 export interface PostingOptions {
   within?: WithinPosting;
 }
@@ -197,6 +198,10 @@ const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
  */
 @Injectable()
 export class LedgerService {
+  /**
+   * Takes the app database connection and the settings service, which supplies the install time
+   * zone and period rules.
+   */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(SettingsService) private readonly settings: SettingsService,

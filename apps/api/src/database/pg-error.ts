@@ -24,6 +24,7 @@ export function isQueryError(error: unknown): error is Error & { query: string; 
 
 /** What gets logged in place of a failed query: no SQL, no params, no pg message or detail. */
 export class FailedQueryError extends Error {
+  /** Keeps only the pg error code, the one part of a failed query that is safe to log. */
   constructor(code: string | undefined) {
     super(code ? `Failed query (pg ${code})` : 'Failed query');
     this.name = 'FailedQueryError';

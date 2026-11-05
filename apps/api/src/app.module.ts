@@ -10,6 +10,11 @@ import { MailModule } from './mail/mail.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 
+/**
+ * The root module of the `app` entry point (the api process): wires config, database, mail,
+ * auth, staff, platform, catalog and inventory. The worker uses its own module so no HTTP code
+ * runs there.
+ */
 @Module({
   imports: [
     EventEmitterModule.forRoot(),

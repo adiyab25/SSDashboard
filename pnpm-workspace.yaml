@@ -10,6 +10,10 @@ catalog:
   drizzle-kit: ^0.31.11
   drizzle-orm: ^0.45.4
   eslint-plugin-i18next: ^6.1.5
+  eslint-plugin-jsdoc: 65.4.2
+  eslint-plugin-react: 7.37.5
+  eslint-plugin-tsdoc: 0.5.4
+  eslint-plugin-unicorn: 65.0.1
   i18next: ^26.7.1
   react-i18next: ^17.1.12
   prettier: ^3.9.10

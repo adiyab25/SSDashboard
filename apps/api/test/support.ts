@@ -6,13 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 
+/** The folder of the built entry points that the e2e suites start. */
 // These suites run the built entry points exactly as the image does, so build first:
 // `pnpm build`. They need the dev database (deploy/compose.dev.yaml) for DATABASE_URL.
 export const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 const ROOT_ENV = new URL('../../../.env', import.meta.url);
 
+/** A database URL that refuses connections at once, for tests of how a process fails to start. */
 export const UNREACHABLE_DB = 'postgres://nobody:nothing@127.0.0.1:1/none';
 
+/** Returns the path of a built entry point, or throws telling the developer to run `pnpm build`. */
 export function requireBuild(entry: string): string {
   const path = `${DIST}${entry}`;
   if (!existsSync(path))
@@ -20,6 +23,10 @@ export function requireBuild(entry: string): string {
   return path;
 }
 
+/**
+ * The dev database URL from the environment or the root `.env`. Throws when neither sets
+ * `DATABASE_URL`.
+ */
 export function devDatabaseUrl(): string {
   if (!process.env.DATABASE_URL && existsSync(ROOT_ENV)) process.loadEnvFile(ROOT_ENV);
   const url = process.env.DATABASE_URL;
@@ -33,6 +40,7 @@ export function ownerDatabaseUrl(): string {
   return process.env.MIGRATION_DATABASE_URL ?? devDatabaseUrl();
 }
 
+/** Runs a callback with a one connection pool as the owner role, and always closes the pool. */
 export async function withAdmin<T>(
   run: (admin: DatabaseConnection['pool']) => Promise<T>,
 ): Promise<T> {
@@ -44,6 +52,7 @@ export async function withAdmin<T>(
   }
 }
 
+/** Creates an empty, uniquely named scratch database as the owner and returns its name and URL. */
 export async function createScratchDatabase(): Promise<{ name: string; url: string }> {
   const name = `ssd_test_${randomBytes(4).toString('hex')}`;
   await withAdmin((client) => client.query(`CREATE DATABASE ${name}`));
@@ -52,6 +61,7 @@ export async function createScratchDatabase(): Promise<{ name: string; url: stri
   return { name, url: url.toString() };
 }
 
+/** Drops a scratch database, forcing out any connection still open to it. */
 export async function dropScratchDatabase(name: string): Promise<void> {
   await withAdmin((client) => client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
 }
@@ -89,6 +99,7 @@ function canListen(port: number): Promise<boolean> {
   });
 }
 
+/** A child process started by `start`, with its output so far and a promise of its exit code. */
 export interface RunningProcess {
   child: ChildProcess;
   output: () => string;
@@ -147,6 +158,10 @@ export async function waitForHttp(
   throw new Error(`${url} did not answer within ${timeoutMs}ms:\n${proc.output()}`);
 }
 
+/**
+ * Kills a started process and waits for it to exit; does nothing if it is absent or already
+ * gone.
+ */
 export async function stop(proc: RunningProcess | undefined): Promise<void> {
   if (!proc || proc.child.exitCode !== null) return;
   proc.child.kill();
@@ -184,6 +199,7 @@ export async function signInAs(
   return cookie.split(';')[0] as string;
 }
 
+/** An email captured by the test mail server, decoded into its parts. */
 export interface CapturedMail {
   to: string;
   subject: string;

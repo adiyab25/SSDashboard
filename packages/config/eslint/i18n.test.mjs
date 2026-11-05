@@ -45,9 +45,9 @@ describe('raw text in markup (AC-5)', () => {
 
   it('exempts the development only /design specimens, test specs, and e2e files', async () => {
     const code = 'export function A() { return <p aria-label="Label">Specimen</p>; }';
-    assert.deepEqual(await rulesFlagged(code, 'src/design/gallery.tsx'), []);
+    assert.deepEqual(await rulesFlagged(code, 'src/design/design-gallery.tsx'), []);
     assert.deepEqual(await rulesFlagged(code, 'src/shell/a.spec.tsx'), []);
-    assert.deepEqual(await rulesFlagged(code, 'src/i18n/language-test-utils.tsx'), []);
+    assert.deepEqual(await rulesFlagged(code, 'src/i18n/language-probe.test-support.tsx'), []);
     assert.deepEqual(await rulesFlagged(code, 'e2e/shell.tsx'), []);
   });
 });

@@ -15,7 +15,11 @@ import { CheckIcon, ChevronsUpDownIcon, MapPinIcon, TriangleAlertIcon } from 'lu
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '@/i18n/language-provider';
-import { locationName, useLocationSwitcher, type LocationChoice } from './current-location';
+import {
+  locationName,
+  useLocationSwitcher,
+  type LocationChoice,
+} from './current-location-provider';
 
 /** Pick the warehouse or showroom you're working in; searchable, with "All locations" first. */
 export function LocationSwitcher() {

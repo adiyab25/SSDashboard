@@ -32,6 +32,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export class SessionGuard implements CanActivate {
   private readonly origin: string;
 
+  /**
+   * Takes the reflector for route metadata, the Better Auth instance, and the env for the
+   * trusted origin.
+   */
   constructor(
     private readonly reflector: Reflector,
     @Inject(AUTH) private readonly auth: Auth,
@@ -40,6 +44,10 @@ export class SessionGuard implements CanActivate {
     this.origin = new URL(env.PUBLIC_URL).origin;
   }
 
+  /**
+   * Applies the origin check, the public route exemption and the session lookup. Throws 401 or
+   * 403 with a stable code, and puts the person on `request.staff` on success.
+   */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
     const request = http.getRequest<Request & { staff?: CurrentStaff }>();

@@ -5,7 +5,7 @@ The SKU list at `/skus` and the SKU detail page at `/skus/[id]`, with dialogs to
 ## Owns
 
 - List page: [skus-page.tsx](skus-page.tsx)
-- Detail page: [sku-detail.tsx](sku-detail.tsx)
+- Detail page: [sku-detail-page.tsx](sku-detail-page.tsx)
 - Dialogs: [new-sku-dialog.tsx](new-sku-dialog.tsx), [sku-edit-dialog.tsx](sku-edit-dialog.tsx)
 - Routes: `src/app/(backoffice)/skus/page.tsx` and `src/app/(backoffice)/skus/[id]/page.tsx`
 

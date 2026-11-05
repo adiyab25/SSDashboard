@@ -9,6 +9,10 @@ import { loggableError } from '../database/pg-error.js';
  */
 @Catch()
 export class QueryErrorFilter extends BaseExceptionFilter {
+  /**
+   * Replaces a failed query with its pg code before Nest logs it, then lets Nest answer. An
+   * `HttpException` passes through unchanged.
+   */
   override catch(exception: unknown, host: ArgumentsHost): void {
     if (exception instanceof HttpException) {
       super.catch(exception, host);

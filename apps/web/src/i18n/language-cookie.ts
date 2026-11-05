@@ -6,6 +6,7 @@ export function readLanguageCookie(): string | null {
   return value && LANGUAGE_CODE.test(value) ? value : null;
 }
 
+/** Saves the language code for a year; ignores anything that is not a 2 to 3 letter code. */
 export function writeLanguageCookie(code: string): void {
   if (!LANGUAGE_CODE.test(code)) return;
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';

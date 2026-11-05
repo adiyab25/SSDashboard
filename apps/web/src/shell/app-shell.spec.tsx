@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Providers } from '@/app/providers';
 import { AppShell } from './app-shell';
-import { CurrentLocationProvider } from './current-location';
+import { CurrentLocationProvider } from './current-location-provider';
 
 const push = vi.fn();
 let pathname = '/';

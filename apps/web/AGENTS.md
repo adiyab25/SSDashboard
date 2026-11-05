@@ -22,7 +22,7 @@ The Next.js App Router back office. Every staff page renders inside the app shel
 | `src/app/(backoffice)/layout.tsx` | `CurrentLocationProvider` (calls staff `/api/locations`), `AppShell`, and the staff `SessionGate` |
 | `src/app/providers.tsx` | Theme (`next-themes`), query client, language and direction (`LanguageProvider`), tooltips, toaster; nothing that calls a staff api route |
 | `src/shell/nav.ts` | The typed navigation registry the sidebar and command palette read |
-| `src/shell/current-location.tsx` | `useCurrentLocation()` and the `ss_location` cookie |
+| `src/shell/current-location-provider.tsx` | `useCurrentLocation()` and the `ss_location` cookie |
 | `src/i18n/locales/en.ts`, `locales/ar.ts` | Every UI string. English is the source, the type source, and the fallback; Arabic is a lazy chunk |
 | `src/i18n/language-provider.tsx` | Active language, catalog loading, `<html lang dir>`, Radix direction, the `ss_lang` cookie |
 | `src/i18n/language-config.ts` | Cookie name, right to left codes, and the head script text (a plain module) |

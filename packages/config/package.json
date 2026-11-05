@@ -6,33 +6,41 @@
   "files": [
     "tsconfig",
     "eslint",
-    "scripts"
+    "scripts",
+    "dist"
   ],
   "exports": {
     "./tsconfig/*.json": "./tsconfig/*.json",
     "./eslint/base": "./eslint/base.js",
     "./eslint/i18n": "./eslint/i18n.js",
     "./eslint/next": "./eslint/next.js",
-    "./eslint/react": "./eslint/react.js"
-  },
-  "dependencies": {
-    "@eslint/js": "^9.39.5",
-    "eslint-config-next": "16.4.3",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-i18next": "catalog:",
-    "eslint-plugin-jsx-a11y": "^6.10.2",
-    "globals": "^17.13.0",
-    "typescript-eslint": "catalog:"
+    "./eslint/react": "./eslint/react.js",
+    "./redaction": {
+      "types": "./dist/redaction.d.ts",
+      "default": "./dist/redaction.js"
+    }
   },
   "peerDependencies": {
     "eslint": "catalog:"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "node --test scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs eslint/i18n.test.mjs"
+    "test": "node --test scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs scripts/check-banned-names.test.mjs scripts/check-component-export-names.test.mjs scripts/check-tsdoc-fixture.test.mjs eslint/i18n.test.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "eslint": "catalog:",
-    "typescript": "catalog:"
+    "eslint-config-next": "16.4.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-i18next": "catalog:",
+    "eslint-plugin-jsdoc": "catalog:",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "catalog:",
+    "eslint-plugin-tsdoc": "catalog:",
+    "eslint-plugin-unicorn": "catalog:",
+    "globals": "^17.13.0",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:"
   }
 }

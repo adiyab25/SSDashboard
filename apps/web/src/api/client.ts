@@ -10,6 +10,7 @@ export interface ApiErrorBody {
 
 /** A failed call. `status` 0 means the request never got an answer. */
 export class ApiError extends Error {
+  /** Carries the HTTP status, the error body, and a parsed `Retry-After`. */
   constructor(
     readonly status: number,
     readonly body: ApiErrorBody,
@@ -20,6 +21,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
+  /** The stable error code from the body. */
   get code(): string {
     return this.body.code;
   }

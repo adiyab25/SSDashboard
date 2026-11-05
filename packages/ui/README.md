@@ -35,4 +35,4 @@ Each component has a spec beside it with an axe check.
 
 ## Decisions
 
-None yet. Record non obvious decisions as ADRs in docs/adr/ and link them here.
+- [ADR 0001 shadcn component files keep their vendor shape](../../docs/adr/0001-shadcn-component-files-keep-their-vendor-shape.md)

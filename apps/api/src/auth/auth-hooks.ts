@@ -39,6 +39,10 @@ export interface HookContext {
   };
 }
 
+/**
+ * What the sign in hooks need from outside: the trusted origin, the lockout and audit services,
+ * and a clock and sleep that tests replace.
+ */
 export interface AuthHookDeps {
   origin: string;
   lockout: Pick<SignInLockout, 'isLocked' | 'recordFailure' | 'reset'>;
@@ -91,6 +95,10 @@ const NEW_PASSWORD_PATHS = new Set(['/reset-password', '/change-password']);
 // Auth's own code and message; the sign in e2e test compares both answers byte for byte.
 const GENERIC_CODE = 'INVALID_EMAIL_OR_PASSWORD';
 const GENERIC_MESSAGE = 'Invalid email or password';
+/**
+ * Builds the one error every failed sign in answers with, wrong password and locked account
+ * alike, so the response never reveals which accounts exist or are locked.
+ */
 export const genericSignInError = () =>
   APIError.from('UNAUTHORIZED', { code: GENERIC_CODE, message: GENERIC_MESSAGE });
 

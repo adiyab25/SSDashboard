@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 import type { Env } from '../config/env.js';
 
+/** One message ready to hand to a mail service. */
 export interface OutgoingMail {
   to: string;
   subject: string;
@@ -18,6 +19,10 @@ export interface Mailer {
 export class SmtpMailer implements Mailer {
   private readonly transport: ReturnType<typeof nodemailer.createTransport>;
 
+  /**
+   * Takes the sender address and the SMTP host, port, security mode and credentials from the
+   * env.
+   */
   constructor(
     private readonly from: string,
     options: Pick<Env, 'SMTP_HOST' | 'SMTP_PORT' | 'SMTP_SECURITY' | 'SMTP_USER' | 'SMTP_PASSWORD'>,
@@ -38,6 +43,10 @@ export class SmtpMailer implements Mailer {
     });
   }
 
+  /**
+   * Sends through the SMTP transport. Throws on failure so the queue retries; connection
+   * timeouts stop a silent server holding the worker.
+   */
   async send(mail: OutgoingMail): Promise<void> {
     await this.transport.sendMail({ from: this.from, ...mail });
   }
@@ -47,12 +56,17 @@ const POSTMARK_URL = 'https://api.postmarkapp.com/email';
 
 /** Sends through Postmark's HTTP API. The sender must be verified there first. */
 export class PostmarkMailer implements Mailer {
+  /**
+   * Takes the verified sender address, the Postmark server token, and a fetch function that
+   * tests replace.
+   */
   constructor(
     private readonly from: string,
     private readonly token: string,
     private readonly fetcher: typeof fetch = fetch,
   ) {}
 
+  /** Posts the message to Postmark. Throws on a failed answer so the queue retries. */
   async send(mail: OutgoingMail): Promise<void> {
     const response = await this.fetcher(POSTMARK_URL, {
       method: 'POST',

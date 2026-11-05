@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from './language-provider';
-import { LanguageProbe, readout, resetLanguageState, stubNetwork } from './language-test-utils';
+import { LanguageProbe, readout, resetLanguageState, stubNetwork } from './language-probe';
 
 // The Arabic chunk neither loads nor fails, as on a stalled connection.
 vi.mock('./locales/ar', () => new Promise(() => {}));

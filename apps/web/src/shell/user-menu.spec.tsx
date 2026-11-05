@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '@/i18n/language-provider';
-import { resetLanguageState, settle, stubNetwork } from '@/i18n/language-test-utils';
+import { resetLanguageState, settle, stubNetwork } from '@/i18n/language-probe';
 import { UserMenu } from './user-menu';
 
 // The Arabic chunk cannot be fetched, as on a dropped connection.

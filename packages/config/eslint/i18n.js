@@ -31,7 +31,7 @@ const TEXT_ATTRIBUTES = ['aria-label', 'title', 'placeholder', 'alt'];
  * Pass the workspace's source folder, for example `src`.
  */
 export function i18n({ source = 'src', formatModule = 'src/i18n/format.ts' } = {}) {
-  const specs = ['**/*.spec.{ts,tsx}', '**/*-test-utils.{ts,tsx}', 'e2e/**'];
+  const specs = ['**/*.spec.{ts,tsx}', '**/*.test-support.{ts,tsx}', 'e2e/**'];
   return [
     {
       files: [`${source}/**/*.{ts,tsx}`],

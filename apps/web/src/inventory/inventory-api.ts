@@ -19,24 +19,34 @@ import {
   type UpdateSkuRequest,
 } from '@ssdashboard/contracts';
 import { apiRequest, withBusyRetry } from '@/api/client';
-import type { LocationChoice } from '@/shell/current-location';
+import type { LocationChoice } from '@/shell/current-location-provider';
 
 /** Query keys, so a write invalidates exactly what it changed. */
 export const inventoryKeys = {
+  /** Stock rows for a location (or all), SKU filter, and zero rows choice. */
   stock: (locationId: LocationChoice, skuId: string | null, includeZero: boolean) =>
     ['stock', locationId, skuId, includeZero] as const,
   stockAll: ['stock'] as const,
+  /** The receipt line picker's search results for one query. */
   skuSearch: (q: string) => ['skus', 'search', q] as const,
   skus: ['skus'] as const,
+  /** The SKU list page for one search and status. */
   skuList: (q: string, status: SkuStatus) => ['skus', 'list', q, status] as const,
+  /** One SKU's detail. */
   sku: (id: string) => ['skus', 'detail', id] as const,
+  /** What a SKU is used by, for the delete check. */
   skuUsage: (id: string) => ['skus', 'usage', id] as const,
+  /** One SKU's stock per location. */
   skuStock: (id: string) => ['skus', 'stock', id] as const,
+  /** One SKU's movement history. */
   skuMovements: (id: string) => ['skus', 'movements', id] as const,
+  /** The Locations page list for one status. */
   locationList: (status: LocationStatus) => ['locations', 'list', status] as const,
   locations: ['locations'] as const,
   receiptsRoot: ['stock-receipts'] as const,
+  /** One stock receipt's detail. */
   receipt: (id: string) => ['stock-receipts', id] as const,
+  /** The receipts list for a location (or all) and a search. */
   receipts: (locationId: LocationChoice, q: string) =>
     ['stock-receipts', 'list', locationId, q] as const,
   receiptsAll: ['stock-receipts', 'list'] as const,
@@ -48,6 +58,7 @@ export interface StockFilters {
   includeZero: boolean;
 }
 
+/** One page of stock rows, 50 a page, narrowed by location and the Stock page filters. */
 export function listStock(
   locationId: LocationChoice,
   filters: StockFilters,
@@ -69,9 +80,11 @@ export function searchSkus(q: string, signal?: AbortSignal) {
   return apiRequest('GET', `/api/skus?${params}`, SkuListResponse, { signal });
 }
 
+/** `POST /api/products`: a new SKU with its first product. */
 export const createSku = (body: CreateProductRequest) =>
   apiRequest('POST', '/api/products', SkuDetail, { body });
 
+/** `POST /api/locations`: a new warehouse or showroom (admin). */
 export const createLocation = (body: CreateLocationRequest) =>
   apiRequest('POST', '/api/locations', LocationDetail, { body });
 
@@ -84,6 +97,7 @@ export const postReceipt = (key: string, body: CreateStockReceiptRequest) =>
     }),
   );
 
+/** One page of stock receipts, 50 a page, narrowed by location and search. */
 export function listReceipts(
   locationId: LocationChoice,
   q: string,
@@ -105,6 +119,7 @@ export const voidReceipt = (id: string, reason: string) =>
     }),
   );
 
+/** One stock receipt with its lines. */
 export const getReceipt = (id: string, signal?: AbortSignal) =>
   apiRequest('GET', `/api/stock-receipts/${encodeURIComponent(id)}`, StockReceiptDetail, {
     signal,
@@ -127,6 +142,7 @@ export function listSkus(
   return apiRequest('GET', `/api/skus?${params}`, SkuListResponse, { signal });
 }
 
+/** One SKU with the `updatedAt` an edit must send back. */
 export const getSku = (id: string, signal?: AbortSignal) =>
   apiRequest('GET', skuPath(id), SkuDetail, { signal });
 
@@ -134,8 +150,10 @@ export const getSku = (id: string, signal?: AbortSignal) =>
 export const updateSku = (id: string, body: UpdateSkuRequest) =>
   apiRequest('PATCH', skuPath(id), SkuDetail, { body });
 
+/** Deletes a SKU that has no stock history (admin). */
 export const deleteSku = (id: string) => apiRequest('DELETE', skuPath(id), noContent);
 
+/** What still uses a SKU, so the dialog can say why it cannot be deleted. */
 export const getSkuUsage = (id: string, signal?: AbortSignal) =>
   apiRequest('GET', `${skuPath(id)}/usage`, SkuUsage, { signal });
 
@@ -143,14 +161,17 @@ export const getSkuUsage = (id: string, signal?: AbortSignal) =>
 export const changeSkuCode = (id: string, body: ChangeSkuCodeRequest) =>
   withBusyRetry(() => apiRequest('PATCH', `${skuPath(id)}/code`, SkuDetail, { body }));
 
+/** Archives or unarchives a SKU (admin). Keyed by the SKU, so the busy retry is safe. */
 export const setSkuArchived = (id: string, archived: boolean) =>
   withBusyRetry(() =>
     apiRequest('POST', `${skuPath(id)}/${archived ? 'archive' : 'unarchive'}`, SkuDetail),
   );
 
+/** One SKU's on-hand quantity per location, with cost fields for admins. */
 export const getSkuStock = (id: string, signal?: AbortSignal) =>
   apiRequest('GET', `${skuPath(id)}/stock`, SkuStockResponse, { signal });
 
+/** One page of a SKU's movement history, newest first, 50 a page. */
 export function listSkuMovements(id: string, cursor: string | undefined, signal?: AbortSignal) {
   const params = new URLSearchParams({ limit: '50' });
   if (cursor) params.set('cursor', cursor);
@@ -170,12 +191,15 @@ export function listLocations(
   return apiRequest('GET', `/api/locations?${params}`, LocationListResponse, { signal });
 }
 
+/** `PATCH /api/locations/:id`: rename or retype a location (admin). */
 export const updateLocation = (id: string, body: UpdateLocationRequest) =>
   apiRequest('PATCH', locationPath(id), LocationDetail, { body });
 
+/** Archives or unarchives a location (admin). Keyed by the location, so the busy retry is safe. */
 export const setLocationArchived = (id: string, archived: boolean) =>
   withBusyRetry(() =>
     apiRequest('POST', `${locationPath(id)}/${archived ? 'archive' : 'unarchive'}`, LocationDetail),
   );
 
+/** Deletes a location with no stock or documents (admin). */
 export const deleteLocation = (id: string) => apiRequest('DELETE', locationPath(id), noContent);

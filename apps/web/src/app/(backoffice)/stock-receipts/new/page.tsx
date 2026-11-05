@@ -1,6 +1,6 @@
-import { ReceiptFormPage } from '@/inventory/receipt-form';
+import { ReceiptFormPage } from '@/inventory/receipt-form-page';
 
-// Server components render only the shell; the form is a client component.
+/** The new stock receipt form, a client component. */
 export default function NewStockReceipt() {
   return <ReceiptFormPage />;
 }

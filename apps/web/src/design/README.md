@@ -4,7 +4,7 @@ A development only `/design` page that shows the design system components, plus 
 
 ## Owns
 
-- The gallery: [gallery.tsx](gallery.tsx)
+- The gallery: [design-gallery.tsx](design-gallery.tsx)
 - The client side loader that imports it only outside production: [design-loader.tsx](design-loader.tsx)
 - Contrast math: [contrast.ts](contrast.ts)
 - The route: `src/app/(backoffice)/design/page.tsx`

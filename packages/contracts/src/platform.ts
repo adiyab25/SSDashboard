@@ -20,4 +20,5 @@ export const ConfigResponse = z.object({
   mailEnabled: z.boolean().default(false),
 });
 
+/** The validated shape of `ConfigResponse`, as the api and web see it after parsing. */
 export type ConfigResponse = z.infer<typeof ConfigResponse>;

@@ -1,7 +1,8 @@
 import { Suspense } from 'react';
-import { ReceiptDetailPage, ReceiptDetailSkeleton } from '@/inventory/receipt-detail';
+import { ReceiptDetailPage } from '@/inventory/receipt-detail-page';
+import { ReceiptDetailSkeleton } from '@/inventory/receipt-detail-skeleton';
 
-// The receipt id is only known at request time, so its reader sits inside Suspense.
+/** One stock receipt. The id is only known at request time, so its reader sits inside Suspense. */
 export default function StockReceipt() {
   return (
     <Suspense fallback={<ReceiptDetailSkeleton />}>

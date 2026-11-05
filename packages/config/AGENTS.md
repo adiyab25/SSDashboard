@@ -12,22 +12,28 @@ Shared configuration every workspace extends: TypeScript presets today, and the 
 | `tsconfig/nextjs.json` | Preset for `apps/web` |
 | `tsconfig/node-library.json` | Preset for the packages |
 | `tsconfig/react-library.json` | Preset for React packages outside Next.js (`packages/ui`) |
-| `eslint/react.js` | ESLint for React packages: the base rules plus jsx-a11y |
+| `eslint/base.js` | Shared rules for every workspace, including the spec 0007 conventions: `jsdoc/require-jsdoc` (`REQUIRE_JSDOC`, publicOnly, no fixer) and `tsdoc/syntax` on `.ts`/`.tsx`, and `unicorn/filename-case` (kebab case, `[param]` and `(group)` names kept). `TSDOC_EXEMPT_FILES` (specs, `*.test-support.ts(x)` (the deliberate home of test helpers: the word `utils` is banned, so name them `<thing>.test-support.ts`), `e2e/`, `__fixtures__/`, `.d.ts`, `*.config.ts`, `vitest.setup.ts`) skips TSDoc and the one component rule |
+| `eslint/react.js`, `eslint/next.js` | ESLint for React packages and the Next app: the base rules plus jsx-a11y and `react/no-multi-comp` (one component per `.tsx` file) |
+| `src/redaction.ts` | The personal data redaction list and the pure `redact` function (Law 151, spec 0007); built to `dist/`, imported as `@ssdashboard/config/redaction` by the api logger and later by pino and the error tracker |
 | `scripts/check-logical-css.mjs` | Fails `lint` on physical side styles in `packages/ui` and `apps/web` (spec 0003); its tests and planted fixtures sit beside it |
 | `scripts/check-module-readmes.mjs` | Fails `lint` when an api module, web feature folder, or package lacks a README with the five headings of `docs/templates/module-readme.md` (spec 0007) |
 | `scripts/check-route-groups.mjs` | Fails `lint` on any top level route group in `apps/web/src/app` other than `(backoffice)`, `(portal)`, `(partner)`, `(auth)` |
 | `scripts/check-folder-names.mjs` | Fails `lint` on global `services` or `controllers` folders (folder by feature) |
+| `scripts/check-tsdoc-fixture.mjs` | Fails `lint` unless `jsdoc/require-jsdoc` reports every export kind (function, class, method, interface, type alias, enum, exported const, React component, hook) in `scripts/fixtures/tsdoc/`; `--without-require-jsdoc` shows it failing |
+| `scripts/check-banned-names.mjs` | Fails `lint` on a file or folder name with a banned whole word (`mgr`, `cfg`, `util`, `utils`, `misc`, `temp`, `tmp`, `stuff`, `helper`, `helpers`) in `apps/*`, `packages/*`, `extensions/*` |
+| `scripts/check-component-export-names.mjs` | Fails `lint` when a `.tsx` file in `apps/web/src` or `packages/ui/src` that exports a PascalCase value does not export the one named after the file (`exchange-request-form.tsx` exports `ExchangeRequestForm`); Next special files, specs, and test utilities are skipped |
 | `scripts/check-doc-links.mjs` | Fails `lint` on a relative link in `docs/**`, a README, or an AGENTS.md that does not resolve |
 
 ## Commands
 
 ```bash
 pnpm --filter @ssdashboard/config test   # every check script's own tests (node --test)
-pnpm lint:repo                           # the four repo wide checks; `pnpm lint` runs them through the root task //#lint:repo
+pnpm lint:repo                           # the repo wide checks; `pnpm lint` runs them through the root task //#lint:repo
 ```
 
 ## Conventions
 
+- Emptying or trimming `PERSONAL_DATA_KEYS` in `src/redaction.ts` leaks customer data into logs; its test is `apps/api/src/platform/logging/redacting-logger.spec.ts`. Build this package (`pnpm --filter @ssdashboard/config build`) before testing the api against a changed list.
 - Loosening an option here loosens it everywhere. Keep `strict` and `noUncheckedIndexedAccess` on; override per workspace only with a reason in a comment.
 - A line the logical CSS check must skip carries `logical-css-ignore: <reason>` on it or the line above; `ltr:` and `rtl:` scoped utilities are always allowed.
 
