@@ -1,12 +1,17 @@
 # Foundations
 
-The ground every slice stands on. Nothing here is done yet: the earlier scaffold and its specs predate the new positioning, and the rebuild replaces them once spec 0002 is approved. [Back to the scope](index.md).
+The ground every slice stands on. Nothing here is done yet: the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chooses whether wave 3 keeps and amends them (Shape A) or replaces them (Shape B). [Back to the scope](index.md).
 
 ### 1. Stack & architecture · needs a decision
-Decide the stack again against the new positioning, then wipe the old apps per the rebuild plan's keep list and scaffold a runnable skeleton. The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
-**Done when:** spec 0002 records the decision with alternatives and marks spec 0001 confirmed or superseded, a `domain-reviewer` pass has no open blocker, you approve it, and the scaffold builds, type checks, lints, and passes CI.
+Decide the stack again against the new positioning, then lay the runnable skeleton in the shape you choose at the gate: keep and amend the current code (Shape A), or wipe it per the rebuild plan's keep list and scaffold again (Shape B). The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
+**Done when:** spec 0007 records the decision with alternatives and marks spec 0001 confirmed or superseded, a `domain-reviewer` pass has no open blocker, you approve it, and the scaffold builds, type checks, lints, and passes CI.
 - [ ] Decide the stack (spec): `/architect stack & architecture`
-Spec 0001 (to be confirmed or superseded by spec 0002)
+- [ ] Build it: `/develop stack & architecture` (milestones from spec 0007's Build plan, in the shape you choose at the gate)
+  - [ ] Baseline and audience seams (Shape A: rename to `(backoffice)`, add portal and partner groups, api audience guard; Shape B: wipe per the keep list, then the skeleton with the same seams)
+  - [ ] Docs tree and templates (ADR, module README, PR template, research folder, README per module)
+  - [ ] TSDoc and naming lint rules (plus the TSDoc backfill in Shape A)
+  - [ ] Git checks and CI building the real images
+Spec 0007 (Proposed, pending domain review and owner approval; supersedes spec 0001 once approved)
 
 ### 2. Coding & documentation standards
 Capture conventions from the new scaffold, then enforce them: lint, format, type check before every commit, CI, and the documentation rules the next developer relies on.
