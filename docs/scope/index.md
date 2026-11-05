@@ -15,6 +15,8 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 - Every executing step (Bosta driver mode, auto approval, refunds, Shopify write back) is a switch per brand; the product must be valuable with all of them off.
 - No live third party calls in tests: connectors prove themselves on recorded fixtures.
 - Vendor hosted by default in an Egyptian data center, with a self host option and a working exit package from the first pilot day. A tenant id on every row from the first migration.
+- **Spec 0007 carries requirements into later features.** Before `/architect` designs any feature, read [spec 0007](../specs/0007-stack-architecture-operations-layer/index.md)'s `## Carried from the domain review` table and the re-review findings in [the stack domain review](../reviews/domain-stack.md) (n1 to features 18 and 21, n2 to features 9 and 19) for that feature's number; only some rows carry an "Also from spec 0007" line.
+- **Pilot window**: mid March to early May 2027, between Eid al Fitr and Eid al Adha. Foundations and slice 1a must land before it (spec 0007, Build plan).
 
 ## Epics
 
@@ -31,7 +33,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 
 | # | Feature | Phase | Bundle | Tier | Status |
 |---|---------|-------|--------|------|--------|
-| 1 | [Stack & architecture](foundations.md) | Foundation | Core | Beta | planned |
+| 1 | [Stack & architecture](foundations.md) | Foundation | Core | Beta | in-progress |
 | 2 | [Coding & documentation standards](foundations.md) | Foundation | Core | Beta | planned |
 | 3 | [Dev environment](foundations.md) | Foundation | Core | Beta | planned |
 | 4 | [Data model](foundations.md) | Foundation | Core | GA | planned |

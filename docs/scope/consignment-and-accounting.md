@@ -10,6 +10,7 @@ Every partner and channel names products its own way. Map their codes and texts 
 ### 41. Consignment partners & handover · GA · needs a decision
 Partners as locations you still own stock at, and the handover that puts it there.
 **Done when:** a partner is a location with the consignment owner type; a handover is a transfer with a consignment note (pieces, consignment prices, date); partner stock shows per partner and is never offered online; fulfilling an online order from partner stock means a logged transfer back to the warehouse first.
+Also from spec 0007: a partner serving several brands holds one login per brand stack in slice 2; a shared partner sign in is a later design question.
 - [ ] Design it (spec): `/architect consignment partners & handover`
 
 ### 42. Partner sales ingestion · GA · needs a decision
@@ -30,6 +31,7 @@ Design the Egyptian Tax Authority integration around the primary document for a 
 ### 45. Export engine · GA · needs a decision
 The accounting handoff as a templated export per client, reproducing the workbook or file their accountant imports today, exactly.
 **Done when:** a rules matrix (channel, product group, kind, and the client's own codes) produces the client's format; each export is a versioned immutable record with a "mark imported" step; a preflight lists blockers (unmapped lines, missing codes, unconfirmed days) and warnings (overlap with an earlier export); a fixture based freeze test guards the format across releases; it carries sales, returns, exchanges, credits, refunds, carrier fees, remittances, and partner invoices.
+Also from spec 0007: templates live in the client's extension with their fixture and freeze test and change only by vendor change with a contract turnaround, no in app editing in version one; the operations hat marks an export imported on the accountant's word, who and when recorded.
 - [ ] Design it (spec): `/architect export engine`
 
 ### 46. Sell through report · needs a decision

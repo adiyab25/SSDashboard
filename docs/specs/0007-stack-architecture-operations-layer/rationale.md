@@ -76,7 +76,9 @@ Database, auth, storage, and generated APIs from the platform, logic in row poli
 
 **Why the exit package is an `ops` command and not a worker job.** It needs a role that reads everything and the PostgreSQL client tools; the worker should hold neither, so a bug in a job can never exfiltrate a full dump.
 
-**Why the build plan has two shapes.** The owner reopened whether wave 3 wipes the code and asked for both shapes with a recommendation, deciding at the gate. Shape A is recommended because the stack is confirmed and the code is on it; see the index.
+**Why the build plan has two shapes.** The owner reopened whether wave 3 wipes the code and asked for both shapes with a recommendation. Shape A was recommended because the stack is confirmed and the code is on it, the domain review reached the same view from the pilot calendar, and the owner chose it on 2026-11-05 ("do what you recommend"). Shape B stays in the index as the record of what was weighed.
+
+**Revision after the domain review (2026-11-05).** `docs/reviews/domain-stack.md` (Fable) found two blockers: order numbers unique per brand instead of per store (fixed in index section 7), and an outbound pattern with no failure path while mirror mode depends on the Shopify write back landing first (fixed in index section 1 with a sync state, `OutboundCommandFailed`, a task, and a blocking rule before packing). Its Bosta facts come from the reference repo, read again for this revision: the dashboard registered webhook with one custom header, a webhook after every state change but none on creation, the dedupe key, and the 429 incident at about 60 back to back single delivery reads (`src/app/api/webhooks/bosta/route.ts`, `src/lib/webhooks/verify.ts`, `src/lib/bosta/sync.ts` in the reference console). The hosting findings come from `docs/research/0001-egypt-hosting-options.md`: no Egyptian provider confirms S3 compatible storage, so object storage is self run on each host and backups go to a second Egyptian provider.
 
 **Deviations from the architect skill.** This ran as a sub agent with no interview: every question the skill would ask was decided by recommendation, and the ones only the owner can answer are in `## Open questions`. The skill keeps build plans out of stack decision specs; this spec carries one because the brief and the project's documentation standard (rebuild plan section 4) require a `## Build plan` of 2 to 5 milestones per spec, and scope feature 1 includes the scaffold. The cross check by another model was not run; the domain review in wave 2b serves that role.
 
@@ -119,6 +121,7 @@ Database, auth, storage, and generated APIs from the platform, logic in row poli
 - `docs/positioning/2026-11-05-rebuild-plan.md` sections 1, 2, 4
 - `docs/positioning/2026-11-05-reference-brand-notes.md` sections 2, 3, 7
 - `docs/positioning/2026-11-05-brand-owner-debate.md` (volume figures, exit package objection)
+- `docs/reviews/domain-stack.md` (domain review of this spec) and `docs/research/0001-egypt-hosting-options.md` (Egypt hosting options)
 - `docs/specs/0001-stack-architecture/` and specs 0002 to 0006
 - `AGENTS.md`, `apps/api/AGENTS.md`, `apps/web/AGENTS.md`, `apps/api/src/inventory/AGENTS.md`, `packages/contracts/AGENTS.md`
 - Installed skills: `pg-boss-v12`, `tl-pg-boss`, `better-auth-security-best-practices`, `nextjs-app-router-patterns`, `postgresql-table-design`

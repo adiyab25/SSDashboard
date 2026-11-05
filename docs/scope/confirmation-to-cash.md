@@ -17,6 +17,7 @@ Products as the brand thinks of them: style, season, product group, and variants
 ### 13. Shopify connector · GA · needs a decision
 The reference connector that sets the pattern for every channel: orders, products, and customers from one or several stores of one brand, by webhooks plus a scheduled backfill, with stock pushed back to Shopify.
 **Done when:** webhooks are signature verified, a backfill catches anything missed, order edit pairs (a positive and a negative line of the same order, variant, day, and value) are netted before anything counts them, stock pushes never echo back as changes, each field has one owner, rate limits hold, and recorded fixtures replay green with no live call.
+Also from spec 0007: one store per Shopify connection, order numbers unique per store and shown with the store everywhere; a failed write back opens a task and blocks packing that order.
 - [ ] Design it (spec): `/architect shopify connector`
 
 ### 14. Customers by phone · needs a decision
@@ -47,6 +48,7 @@ Where support confirms every order before it ships: oldest first, grouped by pho
 ### 19. Bosta connector, mirror mode · GA · needs a decision
 Read the deliveries the carrier's own Shopify app created, with their states, fees, and cash cycles, without executing anything.
 **Done when:** tracking updates move the order's states; attention rules flag exceptions or holds, stuck at pickup over two days, no movement over three days, the carrier's delayed flag, two or more attempts, and stalled after 48 hours; fees and cash cycle amounts come from the per delivery detail and are never overwritten by a list sync that lacks them; recorded fixtures replay green with no live call.
+Also from spec 0007: works with one Bosta account for all stores or one per store; a delivery's store comes from the account's binding, else from its business reference or Shopify store name.
 - [ ] Design it (spec): `/architect bosta connector, mirror mode`
 
 ### 20. Barcode scanning · needs a decision
@@ -62,6 +64,7 @@ What happens when the door does not go as planned: failed attempts, returned to 
 ### 22. Settlement & Bosta reconciliation · GA · needs a decision
 The settlement primitive with its first owner, the carrier: Bosta remits cash minus fees and refunds, and every line is matched to an order.
 **Done when:** a Bosta settlement file or the per delivery cash cycles import into a carrier settlement account; each line matches an order by tracking number (COD collected, COD fee, shipping fee, refund as a negative line, partial amounts); matched orders become reconciled; unmatched lines list with a reason; period totals agree with the app's own cash state.
+Also from spec 0007: cash matching by tracking number and business reference carries the store id onto every settlement line.
 - [ ] Design it (spec): `/architect settlement & bosta reconciliation`
 
 ### 23. Period close with evidence · GA · needs a decision
@@ -77,6 +80,7 @@ Every figure defined once in the model, and the owner's first dashboard designed
 ### 25. Daily report · needs a decision
 A short morning report to the Telegram or WhatsApp group the owner already reads, built only from confirmed data, as a worker job with no host privileges.
 **Done when:** at a fixed Cairo time the report sends yesterday's orders, confirmed, shipped, delivered, returned to origin, cash expected versus remitted, one line per store and per partner, exchanges and refunds owed, plus an automation status line (what synced, what failed, what needs a sign in); a failed send retries and shows up on the dashboard.
+Also from spec 0007: a Telegram group is the first channel; WhatsApp group delivery is a later feature once Meta's documentation is checked.
 - [ ] Design it (spec): `/architect daily report`
 
 ### 26. Deployment, backups & monitoring · GA · needs a decision
@@ -87,4 +91,5 @@ One stack per brand, vendor hosted by default in an Egyptian data center with ba
 ### 27. Exit package · GA · needs a decision
 The brand's way out, as product rather than contract prose, live from the first pilot day.
 **Done when:** a scheduled encrypted export of the database and files lands in storage the brand controls; offline images ship with every release; a self host guide has been followed successfully by someone outside the team; source escrow is arranged.
+Also from spec 0007: destinations in order, Google Drive first, then an S3 bucket the brand controls, then a local disk.
 - [ ] Design it (spec): `/architect exit package`

@@ -8,7 +8,7 @@ The order operations and warehouse back office for Egyptian clothing brands behi
 - **Framework**: modular monolith, NestJS api + worker + migrate (`apps/api`), Next.js App Router back office (`apps/web`)
 - **Key dependencies**: PostgreSQL 18 + Drizzle ORM (`packages/db`), Zod contracts + OpenAPI (`packages/contracts`), Better Auth, pg-boss, shadcn/ui on Tailwind v4, TanStack Table
 - **Package manager**: pnpm workspaces (shared versions in the `catalog:` of `pnpm-workspace.yaml`) + Turborepo
-- **Deploy**: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client (`deploy/`). Full decision: [spec 0001](docs/specs/0001-stack-architecture/index.md)
+- **Deploy**: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client (`deploy/`). Full decision: [spec 0007](docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001; reshapes hosting, connectors, and audiences, applied in wave 3)
 
 ## Build approach
 

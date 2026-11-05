@@ -12,6 +12,7 @@ The single engine for exchanges, refunds, store credit, and retention bonuses, a
 ### 29. Exchange & return portal · GA · needs a decision
 The public gate a customer reaches from a WhatsApp link, the Shopify order page, or an agent acting for them, identified by phone plus any order id, with no customer account.
 **Done when:** a customer picks eligible lines and a reason (photos required for damaged or wrong items), then picks an outcome: another variant of the same product with live warehouse stock first, any product with the price difference, a refund by an allowed method, or wait for stock with an expected date; it works in Arabic on a phone; it shows nothing about anyone else's orders.
+Also from spec 0007: phone plus order number resolves across the brand's stores (asks which store when two match); Turnstile for the pilot, with a server side challenge plus rate limits designed as the fallback.
 - [ ] Design it (spec): `/architect exchange & return portal`
 
 ### 30. Privacy notice & consumer terms · needs a decision

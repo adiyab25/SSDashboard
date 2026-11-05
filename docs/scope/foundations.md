@@ -1,17 +1,17 @@
 # Foundations
 
-The ground every slice stands on. Nothing here is done yet: the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chooses whether wave 3 keeps and amends them (Shape A) or replaces them (Shape B). [Back to the scope](index.md).
+The ground every slice stands on. Nothing here is done yet: the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chose Shape A (2026-11-05): wave 3 keeps and amends them, and each foundation spec below amends the old spec it inherits. [Back to the scope](index.md).
 
-### 1. Stack & architecture · needs a decision
-Decide the stack again against the new positioning, then lay the runnable skeleton in the shape you choose at the gate: keep and amend the current code (Shape A), or wipe it per the rebuild plan's keep list and scaffold again (Shape B). The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
+### 1. Stack & architecture
+Decide the stack again against the new positioning, then reshape the runnable skeleton by keeping and amending the current code (Shape A, chosen at the gate on 2026-11-05). The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
 **Done when:** spec 0007 records the decision with alternatives and marks spec 0001 confirmed or superseded, a `domain-reviewer` pass has no open blocker, you approve it, and the scaffold builds, type checks, lints, and passes CI.
-- [ ] Decide the stack (spec): `/architect stack & architecture`
-- [ ] Build it: `/develop stack & architecture` (milestones from spec 0007's Build plan, in the shape you choose at the gate)
-  - [ ] Baseline and audience seams (Shape A: rename to `(backoffice)`, add portal and partner groups, api audience guard; Shape B: wipe per the keep list, then the skeleton with the same seams)
+- [x] Decide the stack (spec): `/architect stack & architecture`
+- [ ] Build it: `/develop stack & architecture` (Shape A milestones from spec 0007's Build plan)
+  - [ ] Baseline and audience seams: rename `(app)` to `(backoffice)`, add portal and partner route groups, api audience guard that denies by default
   - [ ] Docs tree and templates (ADR, module README, PR template, research folder, README per module)
-  - [ ] TSDoc and naming lint rules (plus the TSDoc backfill in Shape A)
+  - [ ] TSDoc, naming, and personal data redaction rules, with the TSDoc backfill
   - [ ] Git checks and CI building the real images
-Spec 0007 (Proposed, pending domain review and owner approval; supersedes spec 0001 once approved)
+Spec [0007](../specs/0007-stack-architecture-operations-layer/index.md) (Accepted 2026-11-05, supersedes spec 0001; domain review [domain-stack](../reviews/domain-stack.md) approves with 0 open blockers)
 
 ### 2. Coding & documentation standards
 Capture conventions from the new scaffold, then enforce them: lint, format, type check before every commit, CI, and the documentation rules the next developer relies on.
@@ -26,6 +26,7 @@ The hybrid setup the owner chose: the database, object storage, and a mail catch
 ### 4. Data model · GA · needs a decision
 The core entities every slice builds on, shaped for Egyptian cash on delivery from the first migration.
 **Done when:** the model holds orders with a fulfillment state machine and a cash state machine (partial amounts allowed), store, channel, source, order type (sale, exchange replacement, gifted), and a derived outcome; append only ledgers for stock and customer credit, and settlement accounts with an owner type (carrier, consignment partner, gateway); one task primitive; customers with many phones and channel ids; locations with an owner type and a sellable online flag; products with style, season, and product group; cost by style and season with per order cost rules that can be "not set"; the Cairo operating day; a tenant id on every row; and it is tested at 50,000 SKUs. A `domain-reviewer` pass has no open blocker.
+Also from spec 0007: order number unique per (tenant, store), never per tenant; carrier accounts belong to the tenant with an optional store binding (one account for all stores, or one per store).
 - [ ] Design it (spec): `/architect data model`
 
 ### 5. Design system & UI foundation · needs a decision
@@ -51,6 +52,7 @@ Permissions as hats one person can wear several of: support, operations, warehou
 ### 9. Settings, module toggles & bundles · GA · needs a decision
 Per brand settings and the switches that make one image into a Warehouse install, an Operations install, or both: bundle and license, module toggles, policy knobs (credit timing, retention limits, auto approval), and the switch per executing step.
 **Done when:** a module turns off cleanly without errors or orphaned jobs, a lapsed Operations license switches its connectors off, every executing step defaults to off, and the location owner types are a setting, not three code paths.
+Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep continue for shipments created before the lapse until a final cash state or `operations_wind_down_days`, default 60); expiry warnings at 30, 14, and 7 days in the shell and the daily report; 14 day grace; a renewal starts a backfill sweep.
 - [ ] Design it (spec): `/architect settings, module toggles & bundles`
 
 ### 10. Audit trail · needs a decision
