@@ -20,6 +20,8 @@ x-app-env: &app-env
 # validate the same environment at startup, so both get all of these.
 x-auth-env: &auth-env
   PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
+  # The staff cookie Path (api) and the prefix of email links (worker), spec 0005 AC-31.
+  STAFF_BASE_PATH: ${STAFF_BASE_PATH:-}
   CLIENT_DISPLAY_NAME: ${CLIENT_DISPLAY_NAME:-}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
   MAIL_DRIVER: ${MAIL_DRIVER:-none}
@@ -72,6 +74,8 @@ services:
     <<: *app
     environment:
       <<: [*app-env, *auth-env]
+      # Read by the api only: /api/auth/* answers 404 for this host (spec 0005, AC-30).
+      PORTAL_ORIGIN: ${PORTAL_ORIGIN:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

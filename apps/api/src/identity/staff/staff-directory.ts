@@ -1,7 +1,7 @@
 import { Inject, Injectable, Module } from '@nestjs/common';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
-import { DATABASE } from '../database/database.module.js';
-import { pgArray } from '../database/sql.js';
+import { DATABASE } from '../../database/database.module.js';
+import { pgArray } from '../../database/sql.js';
 
 /**
  * Read only lookups of staff for other modules, such as "posted by" names (spec 0006). Kept apart

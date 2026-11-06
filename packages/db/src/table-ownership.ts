@@ -3,8 +3,8 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import * as schema from './schema/index.js';
 
 /**
- * The api modules that own tables (spec 0002, tenancy child, A5). `identity` is today's `auth` and
- * `staff` folders, which move into `apps/api/src/identity/` with feature 7.
+ * The api modules that own tables (spec 0002, tenancy child, A5). `identity` is
+ * `apps/api/src/identity/` (sign in and staff administration, spec 0005 AC-27).
  */
 export type OwningModule =
   | 'platform'

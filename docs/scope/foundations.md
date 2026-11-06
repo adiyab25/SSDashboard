@@ -62,8 +62,8 @@ Arabic first, English always, everywhere: screens, errors, receipts, exports, an
   - [x] Formatting and digits at every input edge
   - [x] Server rendered portal and partner pages
   - [x] Operating day test on the real Cairo transition dates and the time zone release step
-- [ ] Verify it: `/check verify localization`
-- [ ] Test it: `/test localization`
+- [x] Verify it: `/check verify localization`
+- [x] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) (amendment of 2026-11-05, Proposed)
 
 ### 7. Staff sign in · GA

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConnection } from '@ssdashboard/db';
-import { AuthCleanupJob } from '../src/auth/auth-cleanup.job.js';
+import { AuthCleanupJob } from '../src/identity/sign-in/auth-cleanup.job.js';
 import type { Env } from '../src/config/env.js';
 import { SettingsService } from '../src/platform/settings.service.js';
 import { ledgerHarness, type LedgerHarness } from './ledger.js';

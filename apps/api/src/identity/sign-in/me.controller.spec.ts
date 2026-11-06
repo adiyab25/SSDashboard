@@ -1,7 +1,7 @@
 import { UnprocessableEntityException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-import { assertLanguageEnabled } from '../platform/languages.js';
-import type { SettingsService } from '../platform/settings.service.js';
+import { assertLanguageEnabled } from '../../platform/languages.js';
+import type { SettingsService } from '../../platform/settings.service.js';
 import type { AuthenticatedRequest } from './current-staff.js';
 import { MeController } from './me.controller.js';
 import type { ProfileService } from './profile.service.js';

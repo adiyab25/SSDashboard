@@ -1,9 +1,9 @@
 import { createDatabase } from '@ssdashboard/db';
-import { CREATE_ADMIN_USAGE, parseCreateAdminArgs } from './auth/create-admin-args.js';
-import { createFirstAdmin } from './auth/first-admin.js';
-import { breakGlassReset } from './auth/reset-admin.js';
 import { loadEnv } from './config/env.js';
 import { pgErrorCode } from './database/pg-error.js';
+import { CREATE_ADMIN_USAGE, parseCreateAdminArgs } from './identity/sign-in/create-admin-args.js';
+import { createFirstAdmin } from './identity/sign-in/first-admin.js';
+import { breakGlassReset } from './identity/sign-in/reset-admin.js';
 
 // Entry point: `create-admin`. Makes the first admin, prints a temporary password once, and exits.
 //   node dist/create-admin.js --email <email> --name <name>

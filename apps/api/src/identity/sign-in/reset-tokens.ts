@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { sql, type Database } from '@ssdashboard/db';
-import { TOKEN_IDENTIFIER_PREFIX } from '../mail/mail-links.js';
-import type { MailKind } from '../mail/mail-templates.js';
+import { TOKEN_IDENTIFIER_PREFIX } from '../../mail/mail-links.js';
+import type { MailKind } from '../../mail/mail-templates.js';
 
 /** How long a link works: a reset 1 hour, an invite 7 days (spec 0005, AC-9, AC-12). */
 export const TOKEN_LIFE_SECONDS: Record<MailKind, number> = {

@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Logger } from '@nestjs/common';
 import type { ConfigResponse } from '@ssdashboard/contracts';
-import { Public } from '../auth/public.decorator.js';
+import { Public } from '../identity/sign-in/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { Audience } from './audience/audience.decorator.js';
