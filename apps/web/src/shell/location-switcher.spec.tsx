@@ -11,18 +11,24 @@ import { LocationSwitcher } from './location-switcher';
 const fetchMock = vi.fn<typeof fetch>();
 
 /** The list answers `LocationDetail` rows (spec 0006): the master data fields ride along. */
-const DETAIL = { archived: false, updatedAt: '2026-11-03T10:00:00.000000Z', codeLocked: false };
+const DETAIL = {
+  archived: false,
+  updatedAt: '2026-11-03T10:00:00.000000Z',
+  codeLocked: false,
+  ownerType: 'own',
+  sellableOnline: false,
+};
 const MAIN = {
   ...DETAIL,
   id: '11111111-1111-4111-8111-111111111111',
   code: 'WH-A',
-  type: 'warehouse',
+  kind: 'warehouse',
 };
-const SHOWROOM = {
+const SHOP = {
   ...DETAIL,
   id: '22222222-2222-4222-8222-222222222222',
   code: 'SR-1',
-  type: 'showroom',
+  kind: 'shop',
 };
 
 function page(items: unknown[], nextCursor: string | null = null) {
@@ -68,7 +74,7 @@ describe('location switcher', () => {
   it('lists All locations first, then each location, and remembers the choice', async () => {
     fetchMock.mockResolvedValue(
       page([
-        { ...SHOWROOM, name: { ar: 'صالة' } },
+        { ...SHOP, name: { ar: 'صالة' } },
         { ...MAIN, name: { en: ' Main ' } },
       ]),
     );
@@ -100,7 +106,7 @@ describe('location switcher', () => {
   });
 
   it('falls back to all and rewrites the cookie when the stored location is gone', async () => {
-    document.cookie = `ss_location=${SHOWROOM.id}; Path=/`;
+    document.cookie = `ss_location=${SHOP.id}; Path=/`;
     fetchMock.mockResolvedValue(page([{ ...MAIN, name: { en: 'Main' } }]));
 
     renderSwitcher();
@@ -112,7 +118,7 @@ describe('location switcher', () => {
   it('follows nextCursor until every page is loaded', async () => {
     fetchMock
       .mockResolvedValueOnce(page([{ ...MAIN, name: { en: 'Main' } }], 'V0gtQQ'))
-      .mockResolvedValueOnce(page([{ ...SHOWROOM, name: { en: 'Showroom' } }]));
+      .mockResolvedValueOnce(page([{ ...SHOP, name: { en: 'Shop' } }]));
     renderSwitcher();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
@@ -150,7 +156,13 @@ describe('location switcher', () => {
 
 // AC-9: the active language first, then the install default, then the code.
 describe('locationName', () => {
-  const base = { id: MAIN.id, code: 'WH-A', type: 'warehouse' as const };
+  const base = {
+    id: MAIN.id,
+    code: 'WH-A',
+    kind: 'warehouse' as const,
+    ownerType: 'own' as const,
+    sellableOnline: false,
+  };
   const english = { active: 'en', fallback: 'en' };
 
   it('uses the active language, trimmed, then the other language, then the code', () => {

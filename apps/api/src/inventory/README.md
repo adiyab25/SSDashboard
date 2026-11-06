@@ -8,18 +8,20 @@ Agent rules, locking and costing gotchas: [AGENTS.md](AGENTS.md).
 
 - The ledger service and its rules: [ledger/ledger.service.ts](ledger/ledger.service.ts), [ledger/costing.ts](ledger/costing.ts), [ledger/locks.ts](ledger/locks.ts), [ledger/ledger.errors.ts](ledger/ledger.errors.ts)
 - Nightly reconciliation of balances against movements: [ledger/reconciliation.service.ts](ledger/reconciliation.service.ts), [ledger/reconcile.job.ts](ledger/reconcile.job.ts)
-- Locations and bins, routes under `/api/locations`: [locations/locations.controller.ts](locations/locations.controller.ts)
+- Locations and bins, routes under `/api/locations`: [locations/locations.controller.ts](locations/locations.controller.ts). A location has a `kind` (`warehouse`, `shop`, `transit`, `virtual`), an owner type with a party, and `sellable_online`
+- The owner type policy: [locations/location-policy.service.ts](locations/location-policy.service.ts). `LocationPolicyService.policyFor(locationId)` is the only reader of `location_owner_policies` and the only code that names an owner type; everything that differs by owner type (who refunds, when a sale counts, the tax document, online selling) is a policy attribute. Owner type and party are fixed for a location's life by the database trigger `locations_owner_fixed`
 - Stock levels and movement history, routes `/api/stock`, `/api/skus/:id/stock`, `/api/skus/:id/movements`: [stock/stock.controller.ts](stock/stock.controller.ts)
 - Stock receipts, routes under `/api/stock-receipts`: [receipts/receipts.controller.ts](receipts/receipts.controller.ts)
 - SKU usage, code change, archive and unarchive: [sku-lifecycle/sku-lifecycle.controller.ts](sku-lifecycle/sku-lifecycle.controller.ts)
+- The ledger source types (`opening_balance`, `stock_receipt`, `order_shipment`, `consignment_sale`, `customer_return_restock`, `transfer_out`, `transfer_in`, and the rest of spec 0002's list) and the `operating_day` the database stamps on every group and movement from `effective_at`
 - The ledger tables: `movement_groups`, `stock_movements`, `movement_serials`, `stock_levels`, `reservations`, `serials`, `lots`, defined in [packages/db](../../../../packages/db/src/schema/inventory.ts)
 - Locations and receipts tables: [locations](../../../../packages/db/src/schema/locations.ts), [stock-receipts](../../../../packages/db/src/schema/stock-receipts.ts)
 
 ## Never touches
 
 - Updating or deleting a stock movement. Correct with `reverse`.
-- Other modules' tables.
-- Ledger tables from any other folder. Other modules import `LedgerService` and `ReconciliationService` from [inventory.module.ts](inventory.module.ts). [module-boundary.spec.ts](module-boundary.spec.ts) and a lint rule enforce this.
+- Other modules' tables, with one recorded exception: `LocationPolicyService` reads `parties` (the role check for a partner or wholesale location) until the partners module exists. The milestone 4 table ownership map owed by spec 0002 routes that read through the partners module.
+- Ledger tables from any other folder. Other modules import `LedgerService`, `ReconciliationService`, and `LocationPolicyService` from [inventory.module.ts](inventory.module.ts). [module-boundary.spec.ts](module-boundary.spec.ts) and a lint rule enforce this.
 - The service schemas `PostingInput` in controllers. Routes validate with `PostingRequest` or `ReverseRequest` from `@ssdashboard/contracts` ([controller-contracts.spec.ts](controller-contracts.spec.ts)).
 
 ## How to test
@@ -30,7 +32,7 @@ pnpm build && pnpm --filter @ssdashboard/api test:e2e
 pnpm --filter @ssdashboard/api test:e2e -- test/ledger.e2e-spec.ts
 ```
 
-End to end specs in `apps/api/test`: `ledger`, `ledger-tracking`, `locations`, `stock-receipts`, `numbering-reconcile`, `scale` (all `*.e2e-spec.ts`). `scale` seeds 100,000 SKUs and adds about 1m45s. They need Postgres.
+`owner-type-boundary.spec.ts` fails when an owner type value is compared outside the policy service (api and web source). End to end specs in `apps/api/test`: `ledger`, `ledger-tracking`, `location-owner-types` (the three way test), `locations`, `stock-receipts`, `numbering-reconcile`, `scale` (all `*.e2e-spec.ts`). `scale` seeds 100,000 SKUs and adds about 1m45s. They need Postgres.
 
 ## Governing spec
 
@@ -39,4 +41,7 @@ End to end specs in `apps/api/test`: `ledger`, `ledger-tracking`, `locations`, `
 
 ## Decisions
 
-None yet. Record non obvious decisions as ADRs in docs/adr/ and link them here.
+- The app role has SELECT only on `location_owner_policies` (the baseline revokes the rest), so a compromised api cannot turn on online selling for partner stock. Feature 9, which owns editing the policy, grants editing back.
+- `LocationPolicyService` reads `parties` directly for now; see Never touches. Remove the read when the partners module exists.
+
+Record other non obvious decisions as ADRs in docs/adr/ and link them here.

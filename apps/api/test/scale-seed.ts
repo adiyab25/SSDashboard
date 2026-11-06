@@ -17,8 +17,8 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
   const run = (text: string, values: unknown[] = []) => owner.pool.query(text, values);
   await run(
     `WITH p AS (
-       INSERT INTO products (name)
-       SELECT jsonb_build_object('en', 'Scale product ' || g) FROM generate_series(1, $1) g
+       INSERT INTO products (style_code, product_group_id, name)
+       SELECT 'SCALE-STYLE-' || g, (SELECT id FROM product_groups WHERE code = 'MAIN'), jsonb_build_object('en', 'Scale product ' || g) FROM generate_series(1, $1) g
        RETURNING id
      )
      INSERT INTO product_variants (product_id, sku, base_uom_id)
@@ -28,7 +28,7 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
     [seed.skus],
   );
   await run(
-    `INSERT INTO locations (code, name, type)
+    `INSERT INTO locations (code, name, kind)
      SELECT 'SCALE-' || g, jsonb_build_object('en', 'Scale warehouse ' || g), 'warehouse'
      FROM generate_series(1, $1) g`,
     [seed.locations],

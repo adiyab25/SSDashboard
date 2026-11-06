@@ -30,7 +30,10 @@ export const SkuName = z
 /** The validated shape of `SkuName`, as the api and web see it after parsing. */
 export type SkuName = z.infer<typeof SkuName>;
 
-/** `POST /api/products`. One variant for now; feature 8 lifts the limit. */
+/**
+ * `POST /api/products`. One variant for now; feature 8 lifts the limit. The api makes the product a
+ * style whose style code is the SKU code, in the seeded `MAIN` product group (spec 0002, A12).
+ */
 export const CreateProductRequest = z
   .object({
     name: SkuName,
@@ -117,3 +120,13 @@ export type ChangeSkuCodeRequest = z.input<typeof ChangeSkuCodeRequest>;
 export const SkuUsage = z.object({ codeLocked: z.boolean(), canArchive: z.boolean() });
 /** The validated shape of `SkuUsage`, as the api and web see it after parsing. */
 export type SkuUsage = z.infer<typeof SkuUsage>;
+
+/** Where a style's cost came from. A margin that rests on an `estimate` is labelled so (spec 0002, A12). */
+export const CostBasis = z.enum([
+  'factory_invoice',
+  'production_run',
+  'purchase_landed',
+  'estimate',
+]);
+/** The validated shape of `CostBasis`, as the api and web see it after parsing. */
+export type CostBasis = z.infer<typeof CostBasis>;

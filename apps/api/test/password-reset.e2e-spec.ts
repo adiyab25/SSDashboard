@@ -298,7 +298,7 @@ describe('password reset by mail', { timeout: 240_000 }, () => {
       await owner.pool.query(
         `INSERT INTO sign_in_attempts (email_key, scope, failures, window_started_at, locked_until)
          VALUES ($1, '*', 20, now(), now() + interval '15 minutes')
-         ON CONFLICT (email_key, scope) DO UPDATE SET locked_until = now() + interval '15 minutes'`,
+         ON CONFLICT (tenant_id, email_key, scope) DO UPDATE SET locked_until = now() + interval '15 minutes'`,
         [person.email],
       );
       await requestReset(person.email);

@@ -388,13 +388,13 @@ export class ReceiptsService {
     return serializeReceipt(stored.detail, caller.role);
   }
 
-  /** One active warehouse or showroom; the ledger alone would accept transit and scrap. */
+  /** One active warehouse or shop; the ledger alone would accept transit and scrap. */
   private async checkLocation(locationId: string): Promise<void> {
     const { rows } = await this.connection.db.execute<{ ok: boolean }>(sql`
-      SELECT type IN ('warehouse', 'showroom') AND archived_at IS NULL AS ok
+      SELECT kind IN ('warehouse', 'shop') AND archived_at IS NULL AS ok
       FROM locations WHERE id = ${locationId}`);
     if (!rows[0]?.ok) {
-      throw new ReceiptError('InvalidLocation', 'Choose an active warehouse or showroom');
+      throw new ReceiptError('InvalidLocation', 'Choose an active warehouse or shop');
     }
   }
 

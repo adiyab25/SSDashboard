@@ -410,7 +410,7 @@ export class LedgerService {
     after?: { updatedAt: string; id: string };
     limit: number;
   }): Promise<StockListRow[]> {
-    const filters: SQL[] = [sql`l.type IN ('warehouse', 'showroom')`];
+    const filters: SQL[] = [sql`l.kind IN ('warehouse', 'shop')`];
     if (query.locationId) filters.push(sql`sl.location_id = ${query.locationId}`);
     if (query.variantId) filters.push(sql`sl.variant_id = ${query.variantId}`);
     if (!query.includeZero) filters.push(sql`sl.on_hand <> 0`);
@@ -705,7 +705,7 @@ export class LedgerService {
                   ${op.reversesGroupId},
                   coalesce(${op.effectiveAt?.toISOString() ?? null}::timestamptz, now()),
                   ${op.postedBy})
-          ON CONFLICT (idempotency_key) DO NOTHING
+          ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
           RETURNING id,
                     effective_at > recorded_at + ${`${FUTURE_TOLERANCE_MS} milliseconds`}::interval AS future,
                     to_char(effective_at AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS local_date`)

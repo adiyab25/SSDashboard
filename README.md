@@ -27,6 +27,15 @@ pnpm dev
 
 `pnpm bootstrap` is safe to run again. It creates `.env` from [`.env.example`](.env.example) with fresh secrets (an existing `.env` is kept, and only missing variables are added), starts PostgreSQL, Garage, and Mailpit, creates the Garage bucket and access key, and applies the database migrations. The script is [`deploy/dev-bootstrap.mjs`](deploy/dev-bootstrap.mjs).
 
+Once, after the baseline reset ([ADR 0003](docs/adr/0003-reset-migrations-to-one-baseline.md)): recreate your dev database, because the migration history was replaced by one baseline. `pnpm bootstrap` stops with this instruction when it finds a database migrated by the old history.
+
+```bash
+docker compose -f deploy/compose.dev.yaml down -v
+pnpm bootstrap
+```
+
+Warning: `down -v` removes every database in the shared dev volume, so other checkouts on the same server lose theirs too. To start over for one checkout only, drop and recreate just its own database.
+
 **What runs where**
 
 | What                      | Address                 | Notes                                           |

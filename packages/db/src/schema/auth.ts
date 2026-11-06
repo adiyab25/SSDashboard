@@ -8,11 +8,12 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { createdAt, id, updatedAt } from './columns.js';
+import { createdAt, id, tenantId, updatedAt } from './columns.js';
 
 /**
  * Staff accounts (spec 0005). Better Auth reads and writes this table through its `modelName`
@@ -23,6 +24,7 @@ export const users = pgTable(
   'users',
   {
     id: id(),
+    tenantId: tenantId(),
     name: text('name').notNull(),
     email: text('email').notNull(),
     emailVerified: boolean('email_verified').notNull().default(false),
@@ -44,9 +46,9 @@ export const users = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('users_email_unique').on(sql`lower(${t.email})`),
+    uniqueIndex('users_email_unique').on(t.tenantId, sql`lower(${t.email})`),
     uniqueIndex('users_staff_code_unique')
-      .on(t.staffCode)
+      .on(t.tenantId, t.staffCode)
       .where(sql`${t.staffCode} is not null`),
     check('users_role_check', sql`${t.role} in ('admin', 'staff')`),
   ],
@@ -57,10 +59,11 @@ export const sessions = pgTable(
   'sessions',
   {
     id: id(),
+    tenantId: tenantId(),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    token: text('token').notNull().unique(),
+    token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
@@ -69,7 +72,11 @@ export const sessions = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index('sessions_user_idx').on(t.userId), index('sessions_expires_idx').on(t.expiresAt)],
+  (t) => [
+    unique('sessions_token_unique').on(t.tenantId, t.token),
+    index('sessions_user_idx').on(t.userId),
+    index('sessions_expires_idx').on(t.expiresAt),
+  ],
 );
 
 /** The password lives here as a hash, one `credential` row per user. */
@@ -77,6 +84,7 @@ export const accounts = pgTable(
   'accounts',
   {
     id: id(),
+    tenantId: tenantId(),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
@@ -94,7 +102,7 @@ export const accounts = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('accounts_provider_account_unique').on(t.providerId, t.accountId),
+    uniqueIndex('accounts_provider_account_unique').on(t.tenantId, t.providerId, t.accountId),
     index('accounts_user_idx').on(t.userId),
   ],
 );
@@ -104,6 +112,7 @@ export const verifications = pgTable(
   'verifications',
   {
     id: id(),
+    tenantId: tenantId(),
     identifier: text('identifier').notNull(),
     value: text('value').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -118,12 +127,13 @@ export const rateLimits = pgTable(
   'rate_limits',
   {
     id: id(),
+    tenantId: tenantId(),
     key: text('key').notNull(),
     count: integer('count').notNull(),
     /** Milliseconds since the epoch, as Better Auth writes it. */
     lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
   },
-  (t) => [uniqueIndex('rate_limits_key_unique').on(t.key)],
+  (t) => [uniqueIndex('rate_limits_key_unique').on(t.tenantId, t.key)],
 );
 
 /**
@@ -134,13 +144,14 @@ export const rateLimits = pgTable(
 export const signInAttempts = pgTable(
   'sign_in_attempts',
   {
+    tenantId: tenantId(),
     emailKey: text('email_key').notNull(),
     scope: text('scope').notNull(),
     failures: integer('failures').notNull(),
     windowStartedAt: timestamp('window_started_at', { withTimezone: true }).notNull(),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
   },
-  (t) => [primaryKey({ columns: [t.emailKey, t.scope] })],
+  (t) => [primaryKey({ columns: [t.tenantId, t.emailKey, t.scope] })],
 );
 
 /**
@@ -153,6 +164,7 @@ export const twoFactors = pgTable(
   'two_factors',
   {
     id: id(),
+    tenantId: tenantId(),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),

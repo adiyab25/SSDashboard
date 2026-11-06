@@ -10,7 +10,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 |---|---|
 | `src/main.ts` | HTTP bootstrap: installs `RedactingLogger`, loads extensions |
 | `src/app.setup.ts` | HTTP wiring shared by every start: trust proxy, `/api` prefix, `QueryErrorFilter`, Better Auth mounted before the body parsers |
-| `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD` |
+| `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD`; `TENANT_ID` and `APP_DB_ROLE` are read here only: stored on a database's first run, then only checked on every run (a different value throws `TenantMismatch` or `AppRoleMismatch`); the app role's password is set for the stored role |
 | `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, logs through `RedactingLogger`, runs pg-boss jobs (the nightly ledger reconciliation) |
 | `src/database/sql.ts` | `Transaction`/`Executor` types, `pgArray` (arrays as one bound literal), PostgreSQL error code helpers |
 | `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers) |

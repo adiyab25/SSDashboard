@@ -30,6 +30,7 @@ const KNOWN = [
   'STALE_RECORD',
   'CODE_LOCKED',
   'SKU_TAKEN',
+  'STYLE_CODE_TAKEN',
   'STOCK_ON_HAND',
   'IN_USE',
   'BUSY',

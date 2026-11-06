@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
 import { productVariants, uoms } from './catalog.js';
-import { createdAt, money, unitCost } from './columns.js';
+import { createdAt, money, tenantId, unitCost } from './columns.js';
 import { movementGroups } from './inventory.js';
 import { locations } from './locations.js';
 
@@ -29,8 +29,9 @@ export const stockReceipts = pgTable(
   'stock_receipts',
   {
     id: uuid('id').primaryKey(),
+    tenantId: tenantId(),
     requestHash: text('request_hash').notNull(),
-    number: text('number').notNull().unique(),
+    number: text('number').notNull(),
     locationId: uuid('location_id')
       .notNull()
       .references(() => locations.id, { onDelete: 'restrict' }),
@@ -56,6 +57,7 @@ export const stockReceipts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    unique('stock_receipts_number_unique').on(t.tenantId, t.number),
     index('stock_receipts_effective_idx').on(t.effectiveAt.desc(), t.id.desc()),
     index('stock_receipts_location_effective_idx').on(
       t.locationId,
@@ -88,6 +90,7 @@ export const stockReceiptLines = pgTable(
   {
     /** Derived: UUID v5 of `<receipt id>:<position>` (spec 0006, Value sourcing). */
     id: uuid('id').primaryKey(),
+    tenantId: tenantId(),
     receiptId: uuid('receipt_id').notNull(),
     position: integer('position').notNull(),
     variantId: uuid('variant_id')
@@ -103,7 +106,7 @@ export const stockReceiptLines = pgTable(
   (t) => [
     foreignKey({ columns: [t.receiptId], foreignColumns: [stockReceipts.id] }).onDelete('restrict'),
     unique('stock_receipt_lines_receipt_variant_unique').on(t.receiptId, t.variantId),
-    unique('stock_receipt_lines_receipt_position_unique').on(t.receiptId, t.position),
+    unique('stock_receipt_lines_receipt_position_unique').on(t.tenantId, t.receiptId, t.position),
     index('stock_receipt_lines_variant_idx').on(t.variantId),
     check('stock_receipt_lines_position_range', sql`${t.position} BETWEEN 1 AND 200`),
     check('stock_receipt_lines_quantity_range', sql`${t.quantity} BETWEEN 1 AND 1000000`),

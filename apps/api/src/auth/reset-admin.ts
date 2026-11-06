@@ -70,7 +70,7 @@ export async function breakGlassReset(
       await tx.execute(
         sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
             VALUES (${user.id}::uuid, 'credential', ${user.id}, ${passwordHash})
-            ON CONFLICT (provider_id, account_id)
+            ON CONFLICT (tenant_id, provider_id, account_id)
             DO UPDATE SET password = excluded.password, updated_at = now()`,
       );
       await tx.execute(

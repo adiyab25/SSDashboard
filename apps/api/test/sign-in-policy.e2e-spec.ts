@@ -121,12 +121,13 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       );
       const columns = (table: string) =>
         rows.filter((row) => row.table_name === table).map((row) => row.column_name);
-      expect(columns('rate_limits')).toEqual(['count', 'id', 'key', 'last_request']);
+      expect(columns('rate_limits')).toEqual(['count', 'id', 'key', 'last_request', 'tenant_id']);
       expect(columns('sign_in_attempts')).toEqual([
         'email_key',
         'failures',
         'locked_until',
         'scope',
+        'tenant_id',
         'window_started_at',
       ]);
     });

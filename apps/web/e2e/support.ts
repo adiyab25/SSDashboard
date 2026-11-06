@@ -125,28 +125,28 @@ export async function expectNoAxeViolations(page: Page) {
 
 export interface SeededLocations {
   warehouse: { id: string; code: string; name: string };
-  showroom: { id: string; code: string; name: string };
+  shop: { id: string; code: string; name: string };
   remove(): Promise<void>;
 }
 
-/** Inserts one warehouse and one showroom with unique codes, and removes them afterwards. */
+/** Inserts one warehouse and one shop with unique codes, and removes them afterwards. */
 export async function seedLocations(): Promise<SeededLocations> {
   const tag = randomUUID().slice(0, 8);
   const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
-  const insert = async (code: string, name: string, type: string) => {
+  const insert = async (code: string, name: string, kind: string) => {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO locations (code, name, type) VALUES ($1, $2, $3) RETURNING id`,
-      [code, JSON.stringify({ en: name }), type],
+      `INSERT INTO locations (code, name, kind) VALUES ($1, $2, $3) RETURNING id`,
+      [code, JSON.stringify({ en: name }), kind],
     );
     const id = rows[0]?.id;
     if (!id) throw new Error('no location id');
     return { id, code, name };
   };
   const warehouse = await insert(`E2E-${tag}-WH`, `E2E warehouse ${tag}`, 'warehouse');
-  const showroom = await insert(`E2E-${tag}-SR`, `E2E showroom ${tag}`, 'showroom');
+  const shop = await insert(`E2E-${tag}-SR`, `E2E shop ${tag}`, 'shop');
   return {
     warehouse,
-    showroom,
+    shop,
     async remove() {
       await pool.query(`DELETE FROM locations WHERE code LIKE $1`, [`E2E-${tag}-%`]);
       await pool.end();

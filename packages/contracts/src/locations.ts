@@ -19,15 +19,28 @@ export const LocationListQuery = z.object({
 /** The validated shape of `LocationListQuery`, as the api and web see it after parsing. */
 export type LocationListQuery = z.infer<typeof LocationListQuery>;
 
-/** The places a person works in: warehouses and showrooms, never transit or virtual ones. */
-export const WorkLocationType = z.enum(['warehouse', 'showroom']);
+/** The places a person works in: warehouses and shops, never transit or virtual ones. */
+export const WorkLocationKind = z.enum(['warehouse', 'shop']);
+/** The validated shape of `WorkLocationKind`, as the api and web see it after parsing. */
+export type WorkLocationKind = z.infer<typeof WorkLocationKind>;
 
-/** A location as a picker shows it: id, code, bilingual name, and type. */
+/**
+ * Who owns a location (spec 0002, A13). Fixed for the location's life. Only the api's
+ * `LocationPolicyService` may branch on a value; everything else asks it for the policy.
+ */
+export const LocationOwnerType = z.enum(['own', 'consignment_partner', 'wholesale_customer']);
+/** The validated shape of `LocationOwnerType`, as the api and web see it after parsing. */
+export type LocationOwnerType = z.infer<typeof LocationOwnerType>;
+
+/** A location as a picker shows it: id, code, bilingual name, kind, owner type, and whether it feeds online channels. */
 export const LocationSummary = z.object({
   id: z.uuid(),
   code: z.string(),
   name: LocalizedText,
-  type: WorkLocationType,
+  kind: WorkLocationKind,
+  /** Read only: set when the location is created and never changed. */
+  ownerType: LocationOwnerType,
+  sellableOnline: z.boolean(),
 });
 
 /** The validated shape of `LocationSummary`, as the api and web see it after parsing. */
@@ -53,9 +66,21 @@ export const LocationName = z
     path: ['en'],
   });
 
-/** `POST /api/locations` (admin). */
+/**
+ * `POST /api/locations` (admin). `ownerType` defaults to `own`; a partner or wholesale owner
+ * needs the `partyId` of a party with the matching role (422 `PARTY_ROLE_MISMATCH`), and an own
+ * location takes none. `sellableOnline` defaults to false and is refused where the owner type's
+ * policy forbids it (422 `NOT_SELLABLE_ONLINE`).
+ */
 export const CreateLocationRequest = z
-  .object({ code: LocationCode, name: LocationName, type: WorkLocationType })
+  .object({
+    code: LocationCode,
+    name: LocationName,
+    kind: WorkLocationKind,
+    ownerType: LocationOwnerType.optional(),
+    partyId: z.uuid().optional(),
+    sellableOnline: z.boolean().optional(),
+  })
   .strict();
 /** What a caller passes for `CreateLocationRequest`, before defaults and transforms are applied. */
 export type CreateLocationRequest = z.input<typeof CreateLocationRequest>;
@@ -71,7 +96,7 @@ export const LocationDetail = LocationSummary.extend({
 /** The validated shape of `LocationDetail`, as the api and web see it after parsing. */
 export type LocationDetail = z.infer<typeof LocationDetail>;
 
-/** Warehouses and showrooms ordered by code, a page at a time. Never transit or virtual. */
+/** Warehouses and shops ordered by code, a page at a time. Never transit or virtual. */
 export const LocationListResponse = z.object({
   items: z.array(LocationDetail),
   nextCursor: z.string().nullable(),
@@ -89,7 +114,8 @@ export const UpdateLocationRequest = z
     updatedAt: z.string().min(1).max(40),
     code: LocationCode.optional(),
     name: LocationName.optional(),
-    type: WorkLocationType.optional(),
+    kind: WorkLocationKind.optional(),
+    sellableOnline: z.boolean().optional(),
   })
   .strict();
 /** What a caller passes for `UpdateLocationRequest`, before defaults and transforms are applied. */

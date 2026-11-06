@@ -63,7 +63,7 @@ export class SignInLockout {
     const result = await this.db.execute<CounterRow>(sql`
       INSERT INTO sign_in_attempts AS a (email_key, scope, failures, window_started_at, locked_until)
       VALUES (${emailKey}::text, ${ip}::text, 1, now(), NULL), (${emailKey}::text, ${ALL_ADDRESSES}::text, 1, now(), NULL)
-      ON CONFLICT (email_key, scope) DO UPDATE SET
+      ON CONFLICT (tenant_id, email_key, scope) DO UPDATE SET
         failures = CASE WHEN ${fresh} THEN 1 ELSE a.failures + 1 END,
         window_started_at = CASE WHEN ${fresh} THEN now() ELSE a.window_started_at END,
         locked_until = CASE

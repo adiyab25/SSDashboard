@@ -21,7 +21,7 @@ import {
   type LocationChoice,
 } from './current-location-provider';
 
-/** Pick the warehouse or showroom you're working in; searchable, with "All locations" first. */
+/** Pick the warehouse or shop you're working in; searchable, with "All locations" first. */
 export function LocationSwitcher() {
   const { t } = useTranslation();
   const { language, config } = useLanguage();

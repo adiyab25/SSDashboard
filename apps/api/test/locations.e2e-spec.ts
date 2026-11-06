@@ -25,9 +25,9 @@ describe('GET /api/locations', { timeout: 60_000 }, () => {
     await runMigrations(scratch.url);
     owner = createDatabase(scratch.url, { max: 2 });
     await owner.pool.query(
-      `INSERT INTO locations (code, name, type, archived_at) VALUES
+      `INSERT INTO locations (code, name, kind, archived_at) VALUES
         ('WH-B', '{"en": "Back store"}', 'warehouse', NULL),
-        ('SR-1', '{"ar": "صالة العرض"}', 'showroom', NULL),
+        ('SR-1', '{"ar": "صالة العرض"}', 'shop', NULL),
         ('WH-a', '{"en": "Annex"}', 'warehouse', NULL),
         ('WH-A', '{"en": "Main warehouse", "ar": "المخزن"}', 'warehouse', NULL),
         ('TR-1', '{"en": "In transit"}', 'transit', NULL),
@@ -59,7 +59,7 @@ describe('GET /api/locations', { timeout: 60_000 }, () => {
     return { status: response.status, body: (await response.json()) as unknown };
   }
 
-  it('lists active warehouses and showrooms by code, never transit, virtual, or archived', async () => {
+  it('lists active warehouses and shops by code, never transit, virtual, or archived', async () => {
     const { status, body } = await list();
 
     expect(status).toBe(200);
@@ -68,7 +68,9 @@ describe('GET /api/locations', { timeout: 60_000 }, () => {
     expect(page.items.map((item) => item.code)).toEqual(['SR-1', 'WH-A', 'WH-B', 'WH-a']);
     expect(page.items[1]).toMatchObject({
       name: { en: 'Main warehouse', ar: 'المخزن' },
-      type: 'warehouse',
+      kind: 'warehouse',
+      ownerType: 'own',
+      sellableOnline: false,
     });
     expect(page.nextCursor).toBeNull();
   });

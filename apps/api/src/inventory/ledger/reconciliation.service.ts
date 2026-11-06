@@ -214,7 +214,7 @@ export class ReconciliationService {
     return sql`
       INSERT INTO stock_level_discrepancies (stock_level_id, ${sql.raw(KEY)}, kind, expected, actual)
       SELECT stock_level_id, ${sql.raw(KEY)}, ${kind}::discrepancy_kind, expected, actual FROM found
-      ON CONFLICT (kind, ${sql.raw(KEY)}) WHERE resolved_at IS NULL DO NOTHING
+      ON CONFLICT (tenant_id, kind, ${sql.raw(KEY)}) WHERE resolved_at IS NULL DO NOTHING
       RETURNING 1`;
   }
 }

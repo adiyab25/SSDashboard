@@ -110,7 +110,7 @@ describe('master data api', { timeout: 90_000 }, () => {
   async function newLocation(code: string) {
     const { status, body } = await call('POST', '/locations', {
       cookie: admin,
-      body: { code, name: { en: `Warehouse ${code}` }, type: 'warehouse' },
+      body: { code, name: { en: `Warehouse ${code}` }, kind: 'warehouse' },
     });
     expect(status).toBe(201);
     return LocationDetail.parse(body);
@@ -215,6 +215,61 @@ describe('master data api', { timeout: 90_000 }, () => {
     );
     return discrepancy.rows[0]?.id ?? '';
   }
+
+  describe('creating a product (spec 0002, AC-30)', () => {
+    it('makes the product a style whose style code is the SKU code, in the MAIN group', async () => {
+      const sku = await newSku('STYLE-1');
+      const { rows } = await owner.pool.query<{ style_code: string; code: string }>(
+        `SELECT p.style_code, g.code FROM products p
+           JOIN product_groups g ON g.id = p.product_group_id WHERE p.id = $1`,
+        [sku.productId],
+      );
+      expect(rows[0]).toEqual({ style_code: 'STYLE-1', code: 'MAIN' });
+    });
+
+    it('frees the old code when a SKU is renamed, because the style code follows it', async () => {
+      const sku = await newSku('REN-A');
+      const renamed = await call('PATCH', `/skus/${sku.id}/code`, {
+        cookie: admin,
+        body: { updatedAt: sku.updatedAt, sku: 'REN-B' },
+      });
+      expect(renamed.status).toBe(200);
+      const { rows } = await owner.pool.query<{ style_code: string }>(
+        'SELECT style_code FROM products WHERE id = $1',
+        [sku.productId],
+      );
+      expect(rows[0]?.style_code).toBe('REN-B');
+
+      // The freed code can be used again: no stale style code is left behind.
+      expect((await newSku('REN-A')).code).toBe('REN-A');
+    });
+
+    it('answers STYLE_CODE_TAKEN, not SKU_TAKEN, when only another style holds the new code', async () => {
+      const other = await newSku('STY-OTHER');
+      await owner.pool.query("UPDATE products SET style_code = 'STYLE-ONLY' WHERE id = $1", [
+        other.productId,
+      ]);
+      const sku = await newSku('STY-MINE');
+
+      const renamed = await call('PATCH', `/skus/${sku.id}/code`, {
+        cookie: admin,
+        body: { updatedAt: sku.updatedAt, sku: 'STYLE-ONLY' },
+      });
+
+      expect(renamed.status).toBe(409);
+      expect(renamed.body).toMatchObject({ code: 'STYLE_CODE_TAKEN' });
+      expect((await getSku(sku.id)).code).toBe('STY-MINE');
+    });
+
+    it('answers SKU_TAKEN when the code is a variant code or a style code already', async () => {
+      await newSku('STYLE-DUP');
+      const again = await call('POST', '/products', {
+        cookie: staff,
+        body: { name: { en: 'x' }, variants: [{ sku: 'STYLE-DUP' }] },
+      });
+      expect(again.body).toMatchObject({ code: 'SKU_TAKEN' });
+    });
+  });
 
   describe('the SKU list (AC-13)', () => {
     it('pages 50 by default, walks every row once, and shows archived SKUs only under the filter', async () => {
@@ -665,6 +720,35 @@ describe('master data api', { timeout: 90_000 }, () => {
   });
 
   describe('location management (AC-4, AC-15)', () => {
+    it('answers 503 BUSY with Retry-After when a location create waits too long for its party', async () => {
+      const party = await owner.pool.query<{ id: string }>(
+        "INSERT INTO parties (code, name, is_consignment_partner) VALUES ('BUSY-P', 'Partner', true) RETURNING id",
+      );
+      const holder = await owner.pool.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query('SELECT 1 FROM parties WHERE id = $1 FOR UPDATE', [party.rows[0]?.id]);
+
+        const answer = await call('POST', '/locations', {
+          cookie: admin,
+          body: {
+            code: 'BUSY-1',
+            name: { en: 'Busy' },
+            kind: 'shop',
+            ownerType: 'consignment_partner',
+            partyId: party.rows[0]?.id,
+          },
+        });
+
+        expect(answer.status).toBe(503);
+        expect(answer.body).toMatchObject({ code: 'BUSY' });
+        expect(answer.headers.get('retry-after')).not.toBeNull();
+      } finally {
+        await holder.query('ROLLBACK');
+        holder.release();
+      }
+    });
+
     const locations = async (query: string, cookie = admin) =>
       call('GET', `/locations${query}`, { cookie });
 
@@ -709,12 +793,12 @@ describe('master data api', { timeout: 90_000 }, () => {
       const first = await edit({
         updatedAt: place.updatedAt,
         name: { en: 'Front store', ar: 'المتجر' },
-        type: 'showroom',
+        kind: 'shop',
         code: 'ed-2',
       });
       expect(first.status).toBe(200);
       const edited = LocationDetail.parse(first.body);
-      expect(edited).toMatchObject({ code: 'ED-2', type: 'showroom', codeLocked: false });
+      expect(edited).toMatchObject({ code: 'ED-2', kind: 'shop', codeLocked: false });
       expect((await edit({ updatedAt: place.updatedAt, name: { en: 'Late' } })).body).toMatchObject(
         { code: 'STALE_RECORD' },
       );
@@ -798,7 +882,7 @@ describe('master data api', { timeout: 90_000 }, () => {
     it('answers 404 for the seeded transit and virtual locations on every management endpoint', async () => {
       const { rows } = await owner.pool.query<{ id: string; updated_at: string }>(
         `SELECT id, to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at
-         FROM locations WHERE type IN ('transit', 'virtual')`,
+         FROM locations WHERE kind IN ('transit', 'virtual')`,
       );
       expect(rows.length).toBeGreaterThanOrEqual(2);
       for (const row of rows) {
@@ -944,8 +1028,8 @@ describe('master data api', { timeout: 90_000 }, () => {
       // Test only: 10,000 SKUs with a zero balance at the location, and some released reservations.
       await owner.pool.query(
         `WITH p AS (
-           INSERT INTO products (name)
-           SELECT jsonb_build_object('en', 'Bulk product ' || g) FROM generate_series(1, 10000) g
+           INSERT INTO products (style_code, product_group_id, name)
+           SELECT 'ZBULK-STYLE-' || g, (SELECT id FROM product_groups WHERE code = 'MAIN'), jsonb_build_object('en', 'Bulk product ' || g) FROM generate_series(1, 10000) g
            RETURNING id
          ), v AS (
            INSERT INTO product_variants (product_id, sku, base_uom_id)

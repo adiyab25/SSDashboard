@@ -324,6 +324,27 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       expect(await within(dialog).findByText('Another SKU already uses this code.')).toBeVisible();
     });
 
+    it('reports STYLE_CODE_TAKEN on the code field, apart from SKU_TAKEN', async () => {
+      me.current = { id: 'a', role: 'admin' };
+      api.getSku.mockResolvedValue(detail(1));
+      api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
+      api.changeSkuCode.mockRejectedValue(new ApiError(409, { code: 'STYLE_CODE_TAKEN' }));
+      const dialog = await openEdit();
+
+      const code = await within(dialog).findByLabelText('SKU code');
+      await waitFor(() => expect(code).toBeEnabled());
+      await userEvent.clear(code);
+      await userEvent.type(code, 'new-1');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Change code' }));
+
+      expect(
+        await within(dialog).findByText(
+          "This code is already used as another product's style code. Choose another code.",
+        ),
+      ).toBeVisible();
+      expect(within(dialog).queryByText('Another SKU already uses this code.')).toBeNull();
+    });
+
     it('shows the stock on hand message when archiving is refused', async () => {
       me.current = { id: 'a', role: 'admin' };
       api.getSku.mockResolvedValue(detail(1));
