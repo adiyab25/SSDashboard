@@ -2,7 +2,7 @@
 @import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
-/* Touch screens: shell controls grow to 44px (spec 0003, AC-14). */
+/* Touch screens: shell controls grow to 44px (spec 0003, AC-14); `floor` density keys off it too. */
 @custom-variant coarse (@media (pointer: coarse));
 
 /*
@@ -79,10 +79,11 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-arabic:
-    var(--font-plex-arabic), var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  /* The three --font-* variables on <html> come from apps/web/src/shell/root-fonts.ts. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: var(--font-noto-arabic), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -106,6 +107,17 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-confirmed: var(--confirmed);
+  --color-confirmed-surface: var(--confirmed-surface);
+  --color-failed: var(--failed);
+  --color-failed-surface: var(--failed-surface);
+  --color-owed: var(--owed);
+  --color-owed-surface: var(--owed-surface);
+  --color-provisional: var(--provisional);
+  --color-provisional-surface: var(--provisional-surface);
+  --color-info-surface: var(--info-surface);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -118,107 +130,160 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* radius 8px gives sm 4.8px, md 6.4px, lg 8px, xl 11.2px */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/* Density: `h-row`, `h-control`, `min-h-touch`, and so on. */
+/*
+ * Density: `h-row`, `h-control`, `min-h-touch`, and so on. The `floor` scope below raises
+ * three of them on coarse pointers.
+ */
 @theme {
-  --spacing-row: 2.25rem;
-  --spacing-row-header: 2.5rem;
-  --spacing-control: 2.25rem;
+  --spacing-row: 2.5rem;
+  --spacing-row-header: 2.75rem;
+  --spacing-control: 2.5rem;
   --spacing-topbar: 3.5rem;
   --spacing-nav-item: 2rem;
   --spacing-target: 1.5rem;
   --spacing-touch: 2.75rem;
+
+  /* Type (Latin): body 15px, section title 17px; the page title (`text-xl`, 20px) is unchanged. */
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.5;
 }
 
 /*
- * Color roles. Zinc neutrals, a monochrome primary, and status hues used only for
- * meaning. Every text pair reaches 4.5:1 and every control boundary (`input`) and
- * the focus ring 3:1, in both modes; `border` is for decorative separators only.
- * Measured values are in packages/ui/DESIGN.md and live on /design.
+ * Color roles: direction B "Daftar". Warm paper neutrals (hue 70 to 85), a deep indigo
+ * primary, and status hues used only for meaning. Every text pair reaches 4.5:1 and every
+ * control boundary (`input`) and the focus ring 3:1, in both modes; `border` is for
+ * decorative separators only. Measured values are in packages/ui/DESIGN.md and live on /design.
  */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.47 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.53 0.22 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.49 0.13 150.069);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.5 0.14 48.998);
-  --warning-foreground: oklch(0.985 0 0);
-  --info: oklch(0.49 0.2 264.376);
-  --info-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.6 0.016 285.938);
-  --ring: oklch(0.21 0.006 285.885);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.21 0.006 285.885);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.94 0.002 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.21 0.006 285.885);
+  --radius: 0.5rem;
+  --focus-width: 2px;
+  --background: oklch(0.985 0.006 85);
+  --foreground: oklch(0.22 0.02 70);
+  --card: oklch(0.997 0.003 85);
+  --card-foreground: oklch(0.22 0.02 70);
+  --popover: oklch(0.997 0.003 85);
+  --popover-foreground: oklch(0.22 0.02 70);
+  --primary: oklch(0.38 0.12 275);
+  --primary-foreground: oklch(0.99 0.003 85);
+  --secondary: oklch(0.955 0.01 85);
+  --secondary-foreground: oklch(0.22 0.02 70);
+  --muted: oklch(0.955 0.01 85);
+  --muted-foreground: oklch(0.46 0.02 70);
+  --accent: oklch(0.935 0.014 85);
+  --accent-foreground: oklch(0.22 0.02 70);
+  --destructive: oklch(0.5 0.19 27);
+  --destructive-foreground: oklch(0.99 0.003 85);
+  --success: oklch(0.45 0.11 150);
+  --success-foreground: oklch(0.99 0.003 85);
+  --warning: oklch(0.48 0.11 65);
+  --warning-foreground: oklch(0.99 0.003 85);
+  --info: oklch(0.45 0.07 235);
+  --info-foreground: oklch(0.99 0.003 85);
+  --border: oklch(0.9 0.012 85);
+  --input: oklch(0.58 0.02 70);
+  --ring: oklch(0.38 0.12 275);
+  --sidebar: oklch(0.972 0.008 85);
+  --sidebar-foreground: oklch(0.22 0.02 70);
+  --sidebar-primary: oklch(0.38 0.12 275);
+  --sidebar-primary-foreground: oklch(0.99 0.003 85);
+  --sidebar-accent: oklch(0.93 0.014 85);
+  --sidebar-accent-foreground: oklch(0.22 0.02 70);
+  --sidebar-border: oklch(0.9 0.012 85);
+  --sidebar-ring: oklch(0.38 0.12 275);
+
+  /* Meaning roles (AC-16): aliases of existing hues, no new hue. Repeated in `.dark`. */
+  --confirmed: var(--success);
+  --failed: var(--destructive);
+  --owed: var(--warning);
+  --provisional: var(--muted-foreground);
+  --confirmed-surface: color-mix(in oklab, var(--confirmed) 12%, var(--card));
+  --failed-surface: color-mix(in oklab, var(--failed) 12%, var(--card));
+  --owed-surface: color-mix(in oklab, var(--owed) 12%, var(--card));
+  --info-surface: color-mix(in oklab, var(--info) 12%, var(--card));
+  --provisional-surface: transparent;
+
+  /* Portal brand accent (AC-19). A frame overrides these inline; the default is the primary. */
+  --brand: var(--primary);
+  --brand-foreground: var(--primary-foreground);
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.74 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.72 0.17 22.216);
-  --destructive-foreground: oklch(0.141 0.005 285.823);
-  --success: oklch(0.76 0.17 151.711);
-  --success-foreground: oklch(0.141 0.005 285.823);
-  --warning: oklch(0.8 0.15 84.429);
-  --warning-foreground: oklch(0.141 0.005 285.823);
-  --info: oklch(0.74 0.14 254.624);
-  --info-foreground: oklch(0.141 0.005 285.823);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(0.6 0.016 285.938);
-  --ring: oklch(0.985 0 0);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.985 0 0);
-  --sidebar-primary-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.985 0 0);
+  --background: oklch(0.19 0.012 70);
+  --foreground: oklch(0.96 0.01 85);
+  --card: oklch(0.23 0.014 70);
+  --card-foreground: oklch(0.96 0.01 85);
+  --popover: oklch(0.23 0.014 70);
+  --popover-foreground: oklch(0.96 0.01 85);
+  --primary: oklch(0.78 0.12 280);
+  --primary-foreground: oklch(0.2 0.03 275);
+  --secondary: oklch(0.28 0.014 70);
+  --secondary-foreground: oklch(0.96 0.01 85);
+  --muted: oklch(0.28 0.014 70);
+  --muted-foreground: oklch(0.75 0.02 80);
+  --accent: oklch(0.32 0.016 70);
+  --accent-foreground: oklch(0.96 0.01 85);
+  --destructive: oklch(0.74 0.16 25);
+  --destructive-foreground: oklch(0.19 0.012 70);
+  --success: oklch(0.78 0.15 150);
+  --success-foreground: oklch(0.19 0.012 70);
+  --warning: oklch(0.82 0.14 80);
+  --warning-foreground: oklch(0.19 0.012 70);
+  --info: oklch(0.78 0.08 235);
+  --info-foreground: oklch(0.19 0.012 70);
+  --border: oklch(0.33 0.014 70);
+  --input: oklch(0.6 0.02 75);
+  --ring: oklch(0.78 0.12 280);
+  --sidebar: oklch(0.21 0.013 70);
+  --sidebar-foreground: oklch(0.96 0.01 85);
+  --sidebar-primary: oklch(0.78 0.12 280);
+  --sidebar-primary-foreground: oklch(0.2 0.03 275);
+  --sidebar-accent: oklch(0.3 0.016 70);
+  --sidebar-accent-foreground: oklch(0.96 0.01 85);
+  --sidebar-border: oklch(0.33 0.014 70);
+  --sidebar-ring: oklch(0.78 0.12 280);
+
+  --confirmed: var(--success);
+  --failed: var(--destructive);
+  --owed: var(--warning);
+  --provisional: var(--muted-foreground);
+  --confirmed-surface: color-mix(in oklab, var(--confirmed) 12%, var(--card));
+  --failed-surface: color-mix(in oklab, var(--failed) 12%, var(--card));
+  --owed-surface: color-mix(in oklab, var(--owed) 12%, var(--card));
+  --info-surface: color-mix(in oklab, var(--info) 12%, var(--card));
+  --provisional-surface: transparent;
+
+  --brand: var(--primary);
+  --brand-foreground: var(--primary-foreground);
 }
 
-/* One focus style everywhere: a 2px ring outline with a 2px gap. */
+/*
+ * The `floor` density scope (AC-22): set `data-density="floor"` on the confirmation queue and
+ * the scan screens. On a coarse pointer, rows, header, and controls grow and the focus ring
+ * thickens; on a fine pointer the scope changes nothing.
+ */
+@media (pointer: coarse) {
+  [data-density='floor'] {
+    --spacing-row: 3rem;
+    --spacing-row-header: 3.25rem;
+    --spacing-control: 3rem;
+    --focus-width: 3px;
+  }
+}
+
+/* One focus style everywhere: a ring outline (`--focus-width`: 2px, 3px in `floor`) with a 2px gap. */
 @utility focus-ring {
   &:focus-visible,
   [data-gallery] &[data-state-preview~='focus'] {
-    outline: 2px solid var(--ring);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: 2px;
   }
 }
@@ -227,8 +292,8 @@
 @utility focus-ring-inset {
   &:focus-visible,
   [data-gallery] &[data-state-preview~='focus'] {
-    outline: 2px solid var(--ring);
-    outline-offset: -2px;
+    outline: var(--focus-width) solid var(--ring);
+    outline-offset: calc(var(--focus-width) * -1);
   }
 }
 
@@ -243,18 +308,26 @@
     @apply bg-background text-sm text-foreground antialiased;
   }
   :focus-visible {
-    outline: 2px solid var(--ring);
+    outline: var(--focus-width) solid var(--ring);
     outline-offset: 2px;
   }
-  /* Arabic script: its own face and one step more line height. */
+  /*
+   * Arabic script (AC-23): its own face, text one pixel larger than the Latin step beside it
+   * (16px against 15px body), and a line height of at least 1.7 at every step.
+   */
   :lang(ar) {
     font-family: var(--font-arabic);
     line-height: 1.75;
-    --text-xs--line-height: calc(1.25 / 0.75);
-    --text-sm--line-height: calc(1.5 / 0.875);
-    --text-base--line-height: calc(1.75 / 1);
-    --text-lg--line-height: calc(2 / 1.125);
-    --text-xl--line-height: calc(2 / 1.25);
+    --text-xs: 0.8125rem;
+    --text-xs--line-height: 1.75;
+    --text-sm: 1rem;
+    --text-sm--line-height: 1.75;
+    --text-base: 1.125rem;
+    --text-base--line-height: 1.7;
+    --text-lg: 1.1875rem;
+    --text-lg--line-height: 1.7;
+    --text-xl: 1.3125rem;
+    --text-xl--line-height: 1.7;
   }
 }
 

@@ -13,8 +13,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next/font/google', () => ({
-  IBM_Plex_Sans: () => ({ variable: 'plex-sans' }),
-  IBM_Plex_Sans_Arabic: () => ({ variable: 'plex-arabic' }),
+  Inter: () => ({ variable: 'font-inter' }),
+  Noto_Sans_Arabic: () => ({ variable: 'font-noto-arabic' }),
+  JetBrains_Mono: () => ({ variable: 'font-jetbrains-mono' }),
 }));
 
 const render = (segment: string | undefined) =>

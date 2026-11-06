@@ -17,3 +17,6 @@ next-env.d.ts
 
 # Written by Playwright runs (gitignored).
 apps/web/e2e/.auth/
+
+# The impeccable design hook's local cache (gitignored).
+.impeccable/hook.cache.json
