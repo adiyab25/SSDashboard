@@ -91,12 +91,21 @@ export async function freePort(): Promise<number> {
   throw new Error(`No free port found in ${blockStart} to ${blockStart + 999}`);
 }
 
-/** Probes the same address the api binds (all interfaces), so a port taken on any of them fails. */
-function canListen(port: number): Promise<boolean> {
+/**
+ * Probes the address the api binds (all interfaces) and the address the suites call (loopback).
+ * Windows lets a socket bind 0.0.0.0 while another program holds only 127.0.0.1 on that port,
+ * and then sends every loopback request to that program (Docker Desktop listens on
+ * 127.0.0.1:12434 and answers a sign in with 403 `Origin not allowed`).
+ */
+async function canListen(port: number): Promise<boolean> {
+  return (await canListenOn(port, '0.0.0.0')) && (await canListenOn(port, '127.0.0.1'));
+}
+
+function canListenOn(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
     server.once('error', () => resolve(false));
-    server.listen(port, '0.0.0.0', () => server.close(() => resolve(true)));
+    server.listen(port, host, () => server.close(() => resolve(true)));
   });
 }
 
