@@ -123,7 +123,15 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 
 ## Type
 
-Fonts: Inter (Latin), Noto Sans Arabic (Arabic), JetBrains Mono (codes). All SIL OFL 1.1, self hosted by the app (`next/font`, variables `--font-inter`, `--font-noto-arabic`, `--font-jetbrains-mono` on `<html>` from `apps/web/src/shell/root-fonts.ts`), never from a font host at runtime. Tailwind maps them: `font-sans` and `font-heading` are Inter; `font-arabic` is Noto Sans Arabic then Inter; `font-mono` is JetBrains Mono.
+Fonts: Inter (Latin), Noto Sans Arabic (Arabic), JetBrains Mono (codes). All SIL OFL 1.1, self hosted by the app (`next/font/local`, variables `--font-inter`, `--font-noto-arabic`, `--font-jetbrains-mono` on `<html>` from `apps/web/src/shell/root-fonts.ts`), never from a font host at runtime. Tailwind maps them: `font-sans` and `font-heading` are Inter; `font-arabic` is Noto Sans Arabic then Inter; `font-mono` is JetBrains Mono.
+
+Font coverage (three variable woff2 files kept in the repo, see `apps/web/src/shell/fonts/README.md`):
+
+- **Files.** Inter, latin subset, wght 100 to 900 (Version 4.001). Noto Sans Arabic, arabic subset (`U+6??` and related), wght 100 to 900 (Version 2.012); it covers the Arabic-Indic digits U+0660 to U+0669 and U+06F0 to U+06F9. JetBrains Mono, latin subset, wght 100 to 800 (Version 2.211). Only weights 400, 500, and 600 are used.
+- **Latin inside Arabic text.** Under `:lang(ar)` the `--font-arabic` stack is Noto Sans Arabic then Inter. The arabic subset has no Latin glyphs, so Western digits, Latin letters, and Latin punctuation inside Arabic text render in Inter, the system's one Latin and numeral face, with tabular figures. This keeps numbers identical in both languages. Do not expect Noto Sans Arabic to draw them.
+- **Outside the latin subset.** Latin characters beyond it (Latin Extended, Vietnamese) fall back to the system face. Brand and product names with such characters will not render in Inter; add a subset file before relying on them.
+- **First paint.** The generated metric adjusted fallback faces are off (`adjustFontFallback: false`) and `display: swap` is on, so the first paint uses the plain system stack until the font loads. Expect a small text shift on a cold load.
+- **No third party host.** Fonts never come from a third party host, at build time or at run time. New faces or subsets are added as files in the repo.
 
 | Step | Utility | Latin size / line | Arabic size / line | Weight |
 |---|---|---|---|---|
