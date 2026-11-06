@@ -60,7 +60,7 @@ Arabic first, English always, everywhere: screens, errors, receipts, exports, an
 - [ ] Build it: `/develop localization`
   - [x] The shared catalog package, end to end (web, api mail, worker)
   - [x] Formatting and digits at every input edge
-  - [ ] Server rendered portal and partner pages
+  - [x] Server rendered portal and partner pages
   - [ ] Operating day test on the real Cairo transition dates and the time zone release step
 - [ ] Verify it: `/check verify localization`
 - [ ] Test it: `/test localization`

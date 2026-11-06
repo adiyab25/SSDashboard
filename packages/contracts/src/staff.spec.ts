@@ -116,3 +116,17 @@ describe('StaffErrorCode', () => {
     expect(StaffErrorCode.options).toEqual(expect.arrayContaining(['SELF_DISABLE', 'SELF_ACTION']));
   });
 });
+
+describe('StaffPhone digits (spec 0004 AC-18)', () => {
+  it('stores Arabic-Indic and Extended Arabic-Indic digits as Western digits', () => {
+    for (const phone of ['٠١٠١٢٣٤٥٦٧٨', '۰۱۰۱۲۳۴۵۶۷۸']) {
+      expect(CreateStaffRequest.parse({ ...valid, phone }).phone).toBe('01012345678');
+    }
+  });
+
+  it('still refuses letters and keeps its message', () => {
+    const result = CreateStaffRequest.safeParse({ ...valid, phone: 'abc12345' });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('Digits, + and spaces only');
+  });
+});

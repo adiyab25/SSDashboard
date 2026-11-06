@@ -1,11 +1,11 @@
 # Partner area
 
-A placeholder page at `/partner` for consignment partners. It uses a minimal frame with no staff shell and no session check yet.
+A placeholder page at `/en/partner` and `/ar/partner` for consignment partners. It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/partner` redirects to the right language in the proxy.
 
 ## Owns
 
 - The page: [partner-page.tsx](partner-page.tsx)
-- The route: `src/app/(partner)/partner/page.tsx`
+- The route: `src/app/(partner)/[lang]/partner/page.tsx` and its root layout `src/app/(partner)/[lang]/layout.tsx`
 
 ## Never touches
 

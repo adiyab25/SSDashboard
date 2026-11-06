@@ -7,7 +7,12 @@ import type { Catalog } from '../catalog.js';
 export const ar: Catalog = {
   shell: {
     skipLink: 'انتقل إلى المحتوى الرئيسي',
+    publicDescription: 'الطلبات والاستبدال والمرتجعات',
     clientNameFallback: 'SSDashboard',
+    notFound: {
+      title: 'الصفحة غير موجودة',
+      description: 'لا توجد صفحة على هذا العنوان. تحقق من الرابط وحاول مرة أخرى.',
+    },
     nav: {
       label: 'القائمة الرئيسية',
       groups: {

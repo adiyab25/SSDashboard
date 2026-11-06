@@ -31,7 +31,7 @@ The parity test fails the build when an English key is missing from Arabic, or A
 
 ## Governing spec
 
-- [0004 Localization](../../docs/specs/0004-localization/index.md), amendment of 2026-11-05 (AC-14, AC-15, AC-18)
+- [0004 Localization](../../docs/specs/0004-localization/index.md), amendment of 2026-11-05 (AC-14, AC-15, AC-18, AC-19, AC-20)
 
 ## Decisions
 

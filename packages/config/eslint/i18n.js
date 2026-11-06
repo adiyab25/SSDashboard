@@ -63,7 +63,7 @@ export function i18n({ source = 'src', exempt = [] } = {}) {
     {
       // App Router special files must default export their component.
       files: [
-        `${source}/app/**/{page,layout,template,loading,error,global-error,not-found,default}.tsx`,
+        `${source}/app/**/{page,layout,template,loading,error,global-error,global-not-found,not-found,default}.tsx`,
       ],
       ignores: specs,
       rules: { 'no-restricted-syntax': ['error', ...FORMATTING_BANS] },

@@ -1,8 +1,9 @@
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { AppShell } from '@/shell/app-shell';
 import { CurrentLocationProvider } from '@/shell/current-location-provider';
-import RootLayout, { metadata } from './layout';
+import { rootMetadata } from './root-metadata';
+import { StaticRootFrame } from './static-root-frame';
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/',
@@ -15,11 +16,11 @@ vi.mock('next/font/google', () => ({
 }));
 
 const render = (children: React.ReactNode) =>
-  renderToStaticMarkup(<RootLayout params={Promise.resolve({})}>{children}</RootLayout>);
+  renderToStaticMarkup(<StaticRootFrame>{children}</StaticRootFrame>);
 
-describe('RootLayout', () => {
+describe('StaticRootFrame', () => {
   it('titles every page SSDashboard', () => {
-    expect(metadata.title).toBe('SSDashboard');
+    expect(rootMetadata.title).toBe('SSDashboard');
   });
 
   // The server markup is always English left to right; the saved language is applied after hydration.
@@ -65,5 +66,18 @@ describe('RootLayout', () => {
 
   it('renders the page inside the body', () => {
     expect(render(<p>page content</p>)).toContain('<p>page content</p>');
+  });
+
+  // Bug found in milestone 3 verify: without the Activity boundary the whole shell hydrated in the
+  // root's slow pass and early typing was lost. renderToString (React 19.3) marks an Activity as
+  // `<!--&-->` ... `<!--/&-->`; renderToStaticMarkup writes nothing, so it cannot show it.
+  it('wraps the page in an Activity boundary so it hydrates as its own unit', () => {
+    const html = renderToString(
+      <StaticRootFrame>
+        <p>page content</p>
+      </StaticRootFrame>,
+    );
+
+    expect(html).toContain('<!--&--><p>page content</p><!--/&-->');
   });
 });

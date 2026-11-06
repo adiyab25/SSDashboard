@@ -9,6 +9,7 @@ import {
   type SeededAccount,
   ownAddress,
 } from './accounts';
+import { waitForPageHydration } from './support';
 
 // Spec 0005 slice 8: the Staff page (AC-12, AC-14, AC-15, AC-25). The admin comes from the
 // suite's saved sign in; the staff role person is seeded and signs in through the api.
@@ -26,6 +27,7 @@ test.afterEach(async () => {
 async function openStaff(page: Page) {
   await page.goto('/staff');
   await expect(page.getByRole('heading', { level: 1, name: 'Staff' })).toBeVisible();
+  await waitForPageHydration(page);
   await expect(page.getByRole('searchbox', { name: /Search staff/ })).toBeVisible();
 }
 

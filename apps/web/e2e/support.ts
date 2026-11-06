@@ -100,6 +100,17 @@ export async function waitForFormHydration(page: Page) {
   });
 }
 
+/**
+ * Waits until React has taken over the page's controls (for a page with no form, like a list
+ * with a search box). Text typed before this is lost when hydration resets the input.
+ */
+export async function waitForPageHydration(page: Page) {
+  await page.waitForFunction(() => {
+    const control = document.querySelector('main input, main button');
+    return control !== null && Object.keys(control).some((key) => key.startsWith('__reactProps'));
+  });
+}
+
 /** WCAG 2.2 AA through axe; contrast and target size need a real browser, so they run here. */
 export async function expectNoAxeViolations(page: Page) {
   // Axe measures contrast on what is painted, so let a toast or dialog finish fading in first

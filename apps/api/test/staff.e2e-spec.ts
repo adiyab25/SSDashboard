@@ -426,6 +426,14 @@ describe('staff administration', { timeout: 300_000 }, () => {
       }
     });
 
+    it('stores an Arabic digit phone as Western digits (AC-18)', async () => {
+      const admin = await adminCookie();
+      const made = await create(admin.cookie, { phone: '٠١٠١٢٣٤٥٦٧٨' });
+      expect(made.status).toBe(201);
+      const one = await call(base, admin.cookie, 'GET', `/api/staff/${staff(made).id as string}`);
+      expect(one.body).toMatchObject({ phone: '01012345678' });
+    });
+
     it('returns the edit form fields for one person, and 404 for an unknown or malformed id', async () => {
       const admin = await adminCookie();
       const made = await create(admin.cookie, { phone: '+20 100 000 0000', staffCode: 'abc' });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { StaffRole } from './auth.js';
+import { westernDigits } from './digit-input.js';
 
 /** Derived, never stored: `disabled` when banned, else `invited` until the first sign in. */
 export const StaffStatus = z.enum(['invited', 'active', 'disabled']);
@@ -13,8 +14,10 @@ const trimmed = (min: number, max: number) => z.string().trim().min(min).max(max
 export const StaffName = trimmed(1, 100);
 /** A sign in email, trimmed and lowercased so lookups and the unique index agree. */
 export const StaffEmail = z.string().trim().toLowerCase().pipe(z.email().max(254));
-/** Digits, `+` and spaces, 5 to 30 characters. */
-export const StaffPhone = trimmed(5, 30).regex(/^[0-9+ ]+$/, 'Digits, + and spaces only');
+/** Digits, `+` and spaces, 5 to 30 characters; Arabic digits are normalized to Western first (AC-18). */
+export const StaffPhone = westernDigits.pipe(
+  trimmed(5, 30).regex(/^[0-9+ ]+$/, 'Digits, + and spaces only'),
+);
 /** Stored uppercase. */
 export const StaffCode = trimmed(1, 20).transform((value) => value.toUpperCase());
 /** A language code such as `en` or `ar`, 2 to 16 characters. */

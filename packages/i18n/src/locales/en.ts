@@ -6,7 +6,12 @@
 export const en = {
   shell: {
     skipLink: 'Skip to main content',
+    publicDescription: 'Orders, exchanges and returns',
     clientNameFallback: 'SSDashboard',
+    notFound: {
+      title: 'Page not found',
+      description: 'There is no page at this address. Check the link and try again.',
+    },
     nav: {
       label: 'Main',
       groups: {

@@ -8,8 +8,9 @@ const externalBaseUrl = process.env.E2E_BASE_URL;
 const baseURL = externalBaseUrl ?? 'http://localhost:3000';
 
 // The production project checks what only a production build does (no /design, no
-// direction switch). It runs `next start` on the build `pnpm test:e2e` makes first, or
-// an already running production server at E2E_PROD_BASE_URL.
+// direction switch, real 404 statuses) and also runs the portal language spec. It runs
+// `next start` on the build `pnpm test:e2e` makes first, or an already running production
+// server at E2E_PROD_BASE_URL.
 const externalProdUrl = process.env.E2E_PROD_BASE_URL;
 const prodPort = process.env.E2E_PROD_PORT ?? '3100';
 const prodBaseURL = externalProdUrl ?? `http://localhost:${prodPort}`;
@@ -44,7 +45,7 @@ export default defineConfig({
     },
     {
       name: 'production',
-      testMatch: /production\.spec\.ts/,
+      testMatch: /(production|portal-language)\.spec\.ts/,
       // Signed in as the seeded admin: since spec 0005 every shell page asks for a session first,
       // so a signed out visit would only ever reach the sign in page. That check calls the api, so
       // this server needs API_INTERNAL_URL pointing at a running api. The saved cookie belongs to
