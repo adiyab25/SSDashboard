@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { inArray, schema, type DatabaseConnection } from '@ssdashboard/db';
+import { createFormatter, isValidTimeZone } from '@ssdashboard/i18n';
 import { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
 import type { Executor } from '../database/sql.js';
@@ -10,7 +11,7 @@ const LanguageCode = z.string().regex(/^[a-z]{2,3}$/);
 /** The install settings other modules read, with their stored shapes. */
 const SettingShapes = {
   currency: z.string().regex(/^[A-Z]{3}$/),
-  timezone: z.string().refine(isTimeZone, 'Not a time zone name'),
+  timezone: z.string().refine(isValidTimeZone, 'Not a time zone name'),
   prices_include_vat: z.boolean(),
   /** `YYYY-MM-DD`; postings must be dated after it in `timezone`. */
   inventory_lock_date: z.iso.date().nullable(),
@@ -23,15 +24,6 @@ const SettingShapes = {
   /** The language a first visit opens in; the config endpoint checks it is in `languages`. */
   default_language: LanguageCode,
 };
-
-function isTimeZone(name: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** The name of one install setting. */
 export type SettingKey = keyof typeof SettingShapes;
@@ -66,12 +58,9 @@ export class SettingsService {
   }
 }
 
-/** The calendar date of an instant in a time zone, as `YYYY-MM-DD`. */
+/** The calendar date of an instant in a time zone, as `YYYY-MM-DD`; throws for an unknown zone or an invalid instant. */
 export function localDate(at: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(at);
+  const day = createFormatter({ language: 'en', timezone: timeZone }).calendarDate(at);
+  if (day === null) throw new RangeError(`No calendar date for time zone "${timeZone}"`);
+  return day;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { PriceString, SkuCode, type SkuDetail } from '@ssdashboard/contracts';
+import { moneyInput, PriceString, SkuCode, type SkuDetail } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import {
@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
-import type { MessageKey } from '@/i18n/message-key';
+import type { MessageKey } from '@ssdashboard/i18n';
 import { createSku, inventoryKeys } from '@/inventory/inventory-api';
 import { useReturnFocus } from '@/inventory/use-return-focus';
 
@@ -37,7 +37,7 @@ const NewSkuForm = z
     code: SkuCode,
     nameEn: z.string().trim().max(200),
     nameAr: z.string().trim().max(200),
-    price: z.union([z.literal(''), z.string().trim().pipe(PriceString)]),
+    price: z.union([z.literal(''), moneyInput(2).pipe(PriceString)]),
   })
   .refine((form) => form.nameEn !== '' || form.nameAr !== '', {
     path: ['nameEn'],

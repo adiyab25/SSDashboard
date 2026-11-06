@@ -15,6 +15,7 @@
   "dependencies": {
     "@hookform/resolvers": "^7.0.2",
     "@ssdashboard/contracts": "workspace:*",
+    "@ssdashboard/i18n": "workspace:*",
     "@ssdashboard/ui": "workspace:*",
     "@tanstack/react-query": "^5.105.3",
     "@tanstack/react-table": "^9.3.1",

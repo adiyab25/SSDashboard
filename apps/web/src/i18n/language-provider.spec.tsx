@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LanguageProvider } from './language-provider';
+import { ar } from '@ssdashboard/i18n/ar';
+import { LanguageProvider, useLanguage } from './language-provider';
 import { LanguageProbe, readout, resetLanguageState, settle, stubNetwork } from './language-probe';
 
 const cookie = () => /(?:^|;\s*)ss_lang=([^;]*)/.exec(document.cookie)?.[1];
@@ -169,5 +170,46 @@ describe('LanguageProvider', () => {
 
     expect(readout('language')).toBe('en');
     expect(cookie()).toBe('en');
+  });
+
+  // AC-16: a server fixed page never swaps; its other language link is the switch.
+  it('keeps a server fixed language: no swap, no cookie, no html change, config loaded once', async () => {
+    document.documentElement.lang = 'ar';
+    document.documentElement.dir = 'rtl';
+    const calls = stubNetwork({ config: {} });
+    let result: boolean | undefined;
+    function Chooser() {
+      const { setLanguage } = useLanguage();
+      return (
+        <button
+          onClick={() => {
+            void setLanguage('en').then((changed) => {
+              result = changed;
+            });
+          }}
+        >
+          switch
+        </button>
+      );
+    }
+
+    render(
+      <LanguageProvider initial={{ language: 'ar', catalog: ar }}>
+        <LanguageProbe />
+        <Chooser />
+      </LanguageProvider>,
+    );
+    expect(readout('language')).toBe('ar');
+    expect(readout('direction')).toBe('rtl');
+    await settle();
+    await userEvent.click(screen.getByRole('button', { name: 'switch' }));
+    await settle();
+
+    expect(result).toBe(false);
+    expect(readout('language')).toBe('ar');
+    expect(cookie()).toBeUndefined();
+    expect(document.documentElement).toHaveAttribute('lang', 'ar');
+    expect(document.documentElement).toHaveAttribute('dir', 'rtl');
+    expect(calls.filter((call) => call === '/api/config')).toHaveLength(1);
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Money, UnitCost, UnitCostString } from '@ssdashboard/contracts';
+import { Money, moneyInput, quantityInput, UnitCost, UnitCostString } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import {
@@ -24,7 +24,7 @@ import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { useMe } from '@/auth/use-me';
 import { useFormat } from '@/i18n/use-format';
-import type { MessageKey } from '@/i18n/message-key';
+import type { MessageKey } from '@ssdashboard/i18n';
 import {
   locationName,
   useCurrentLocation,
@@ -53,13 +53,9 @@ const ReceiptForm = z.object({
     .array(
       z.object({
         sku: Sku.nullable().refine((sku) => sku !== null, 'skuRequired'),
-        quantity: z
-          .string()
-          .trim()
-          .regex(/^\d{1,7}$/, 'quantityInvalid')
-          .transform(Number)
-          .pipe(z.number().int().min(1, 'quantityInvalid').max(1_000_000, 'quantityInvalid')),
-        unitCost: z.string().trim().pipe(UnitCostString),
+        // The same digit rules as the api (spec 0004 AC-18): Arabic digits are accepted.
+        quantity: quantityInput({ min: 1, max: 1_000_000 }),
+        unitCost: moneyInput(4).pipe(UnitCostString),
       }),
     )
     .min(1)
@@ -70,13 +66,19 @@ type ReceiptOutput = z.output<typeof ReceiptForm>;
 
 const NEW_LINE = { sku: null, quantity: '', unitCost: '' } satisfies ReceiptInput['lines'][number];
 
-/** `quantity × unitCost`, or null while either is not a valid number. */
+/** The typed quantity as a whole number in range, in any digit set, else null. */
+function quantityOf(text: string): number | null {
+  const parsed = quantityInput({ min: 1, max: 1_000_000 }).safeParse(text);
+  return parsed.success ? parsed.data : null;
+}
+
+/** `quantity × unitCost`, or null while either is not a valid number (any digit set). */
 function lineTotal(quantity: string, unitCost: string): string | null {
-  if (!/^\d{1,7}$/.test(quantity.trim()) || !UnitCostString.safeParse(unitCost.trim()).success) {
-    return null;
-  }
+  const count = quantityOf(quantity);
+  const cost = moneyInput(4).pipe(UnitCostString).safeParse(unitCost);
+  if (count === null || !cost.success) return null;
   try {
-    return UnitCost.of(unitCost.trim()).times(Number(quantity)).toString();
+    return UnitCost.of(cost.data).times(count).toString();
   } catch {
     return null;
   }
@@ -222,10 +224,10 @@ export function ReceiptFormPage() {
     code ? t(`inventory.receipt.errors.${code}` as MessageKey) : '';
 
   const totalQuantity = watched.reduce(
-    (sum, line) => sum + (/^\d{1,7}$/.test(line.quantity.trim()) ? Number(line.quantity) : 0),
+    (sum, line) => sum + (quantityOf(String(line.quantity)) ?? 0),
     0,
   );
-  const totals = watched.map((line) => lineTotal(line.quantity, line.unitCost));
+  const totals = watched.map((line) => lineTotal(String(line.quantity), line.unitCost));
   const valueText = totals
     .reduce((sum, total) => (total === null ? sum : sum.plus(Money.of(total))), Money.zero)
     .toString();

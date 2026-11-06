@@ -29,6 +29,7 @@
     "@ssdashboard/config": "workspace:*",
     "@ssdashboard/contracts": "workspace:*",
     "@ssdashboard/db": "workspace:*",
+    "@ssdashboard/i18n": "workspace:*",
     "better-auth": "^1.7.15",
     "nodemailer": "^10.3.1",
     "pg-boss": "^12.38.0",

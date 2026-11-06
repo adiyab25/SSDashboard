@@ -8,7 +8,7 @@ The hook contract an extension implements is decided in feature 46. Until then t
 
 A client adds a language with no code change and no new web image (spec 0004):
 
-1. Copy `apps/web/src/i18n/locales/en.ts` into `extensions/<client>/locales/<code>.json` (`<code>` is 2 to 3 lowercase letters, for example `fr`). Keys may be nested or flat dotted. Add a `_meta` block with the language's own name and its Intl tag:
+1. Copy `packages/i18n/src/locales/en.ts` into `extensions/<client>/locales/<code>.json` (`<code>` is 2 to 3 lowercase letters, for example `fr`). Keys may be nested or flat dotted. Add a `_meta` block with the language's own name and its Intl tag:
 
    ```json
    { "_meta": { "nativeName": "Français", "intl": "fr-FR" }, "home": { "title": "Aperçu" } }

@@ -89,6 +89,7 @@ Human docs come first: every module and package has a `README.md` (what it owns 
 - [apps/api/src/auth/AGENTS.md](apps/api/src/auth/AGENTS.md): staff sign in, session guard, lockout, two factor, and the create-admin commands
 - [apps/web/AGENTS.md](apps/web/AGENTS.md): Next.js web app and its four audience route groups (this Next.js version differs from training data, read its docs first)
 - [packages/contracts/AGENTS.md](packages/contracts/AGENTS.md): Zod schemas shared by the api and web
+- [packages/i18n/AGENTS.md](packages/i18n/AGENTS.md): the English and Arabic message catalogs, `createTranslator`, and the language registry shared by the web, api, and worker
 - [packages/db/AGENTS.md](packages/db/AGENTS.md): Drizzle schema and the only migration history
 - [packages/config/AGENTS.md](packages/config/AGENTS.md): shared TypeScript and ESLint config, the redaction list, and the repo check scripts
 - [packages/ui/AGENTS.md](packages/ui/AGENTS.md): shared design system, shadcn components, tokens, and `DESIGN.md`

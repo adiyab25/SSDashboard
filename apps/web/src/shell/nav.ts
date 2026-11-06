@@ -9,7 +9,7 @@ import {
   UsersIcon,
   type LucideIcon,
 } from 'lucide-react';
-import type { MessageKey } from '@/i18n/message-key';
+import type { MessageKey } from '@ssdashboard/i18n';
 
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
 export type NavGroup = 'general' | 'inventory';

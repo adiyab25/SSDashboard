@@ -10,14 +10,14 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { updateProfile } from '@/auth/account-api';
-import { coreLanguages, isCoreLanguage } from '@/i18n/languages';
-import type { MessageKey } from '@/i18n/message-key';
+import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
+import type { MessageKey } from '@ssdashboard/i18n';
 
 const SELECT =
   'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 
 const languageName = (code: string): string =>
-  isCoreLanguage(code) ? coreLanguages[code].nativeName : code;
+  isCoreLanguage(code) ? CORE_LANGUAGES[code].nativeName : code;
 
 interface Props {
   me: MeResponse;
