@@ -22,7 +22,9 @@ const CLASS_NAME =
 export function StatusChipOverflow({ count, label, onClick, className }: StatusChipOverflowProps) {
   const content = (
     <>
-      <span aria-hidden="true">+{count}</span>
+      <bdi dir="ltr" aria-hidden="true">
+        +{count}
+      </bdi>
       <span className="sr-only">{label}</span>
     </>
   );

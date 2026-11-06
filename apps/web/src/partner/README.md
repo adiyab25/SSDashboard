@@ -1,6 +1,6 @@
 # Partner area
 
-A placeholder page at `/en/partner` and `/ar/partner` for consignment partners. It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/partner` redirects to the right language in the proxy.
+A placeholder page at `/en/partner` and `/ar/partner` for consignment partners. It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), inside the `PartnerFrame` (spec 0003, AC-18) with the neutral primary, the install's fallback name, and a navigation of only the pages that exist (the home page; statements, stock at your location and settlement join when they ship), and a plain link to the other language in the frame's actions slot. `/partner` redirects to the right language in the proxy.
 
 ## Owns
 
