@@ -53,7 +53,8 @@ test.describe('signed out', () => {
     await expect(trigger).toBeVisible();
     await trigger.click();
     await expect(page.getByText(E2E_ADMIN.email)).toBeVisible();
-    await expect(page.getByText('Administrator')).toBeVisible();
+    // The admin wears the manager hat (spec 0008, AC-11).
+    await expect(page.getByText('Manager', { exact: true })).toBeVisible();
 
     await page.getByRole('menuitem', { name: 'Sign out' }).click();
     await expect(page).toHaveURL(/\/sign-in$/);

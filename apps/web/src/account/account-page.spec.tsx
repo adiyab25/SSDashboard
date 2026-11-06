@@ -74,7 +74,7 @@ describe('AccountPage (AC-8, AC-19)', () => {
   });
 
   describe('your details', () => {
-    it('has one heading, shows email, role and staff code as text, and edits only name, phone and language', async () => {
+    it('has one heading, shows email, hats and staff code as text, and edits only name, phone and language', async () => {
       render(<AccountPage />);
 
       expect(await screen.findByLabelText(/^Name/)).toHaveValue('Sam Carter');
@@ -82,10 +82,10 @@ describe('AccountPage (AC-8, AC-19)', () => {
       expect(screen.getByLabelText('Phone')).toHaveValue('+20 100 123 4567');
       expect(screen.getByLabelText('Language')).toHaveValue('ar');
       expect(screen.getByText('sam@example.com')).toBeVisible();
-      expect(screen.getByText('Staff')).toBeVisible();
+      expect(screen.getByText('Support, Operations, Warehouse')).toBeVisible();
       expect(screen.getByText('SC1')).toBeVisible();
       expect(screen.queryByLabelText('Email')).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('Role')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Hats')).not.toBeInTheDocument();
       expect(
         screen.getByText('An administrator changes your email, role and staff code.'),
       ).toBeVisible();

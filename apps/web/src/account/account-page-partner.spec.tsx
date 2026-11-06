@@ -57,6 +57,7 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByText('mona@showroom.example')).toBeVisible();
     expect(screen.queryByText('Role')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hats')).not.toBeInTheDocument();
     expect(screen.queryByText(/staff/i)).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/staff|employee/i);
     expect(screen.getByText('An administrator changes your email.')).toBeVisible();

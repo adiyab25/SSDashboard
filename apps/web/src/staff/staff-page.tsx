@@ -16,6 +16,8 @@ import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { LoaderCircleIcon, MoreHorizontalIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { NoAccessState } from '@/access/no-access-state';
+import { useAccess } from '@/access/use-access';
 import { useMe } from '@/auth/use-me';
 import { useFormat } from '@/i18n/use-format';
 import type { MessageKey } from '@ssdashboard/i18n';
@@ -55,12 +57,14 @@ type Dialog =
 /**
  * Staff administration (spec 0005, AC-12 to AC-18): search and filter the list, add and edit
  * people, reset a password, sign someone out everywhere, and disable or enable an account.
- * Admins only; the api enforces it, and this page says so rather than showing a broken table.
+ * Needs `people.manage` (spec 0008); without it the page shows the no access state and asks the
+ * api for no staff, and the api answers 403 anyway.
  */
 export function StaffPage() {
   const { t } = useTranslation();
   const format = useFormat();
   const me = useMe();
+  const access = useAccess();
   const [text, setText] = useState('');
   const [filter, setFilter] = useState<StaffFilter>({ q: '', status: '' });
   const [reload, setReload] = useState(0);
@@ -74,7 +78,7 @@ export function StaffPage() {
 
   const key = JSON.stringify([filter, reload]);
   const loading = page === null || page.key !== key;
-  const isAdmin = me?.permissions.includes('people.manage') ?? false;
+  const canManage = access.can('people.manage');
 
   useEffect(() => {
     let active = true;
@@ -91,7 +95,7 @@ export function StaffPage() {
   // Loads the first page whenever the filter changes or something was saved. State is only set
   // when the answer arrives, so a slow answer for an old filter can never replace a newer one.
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canManage) return;
     let active = true;
     void listStaff(filter).then((result) => {
       if (!active) return;
@@ -105,7 +109,7 @@ export function StaffPage() {
     return () => {
       active = false;
     };
-  }, [isAdmin, filter, key]);
+  }, [canManage, filter, key]);
 
   function onSearch(value: string) {
     setText(value);
@@ -183,14 +187,7 @@ export function StaffPage() {
     if (failure) setMessage(failure);
   }
 
-  if (me && !isAdmin) {
-    return (
-      <div className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold">{t('staff.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('staff.forbidden')}</p>
-      </div>
-    );
-  }
+  if (access.ready && !canManage) return <NoAccessState titleKey="staff.title" />;
 
   // The table's scroll box below is `relative`: the screen reader only header text is absolutely
   // positioned and would otherwise escape the box and widen the whole page.

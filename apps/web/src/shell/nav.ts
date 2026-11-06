@@ -1,4 +1,4 @@
-import type { Hat } from '@ssdashboard/contracts';
+import type { Permission } from '@ssdashboard/contracts';
 import {
   BoxesIcon,
   HomeIcon,
@@ -23,13 +23,27 @@ export interface NavItem {
   group: NavGroup;
   /** Shown only in development builds. */
   devOnly?: true;
-  /** Shown only to administrators (spec 0005, AC-25). The api enforces it too. */
-  adminOnly?: true;
+  /**
+   * The permission a person needs to see the entry (spec 0008, AC-11), the one its page's main
+   * route declares; `ANY_HAT` for a page every signed in person may open, as `@AnyHat()` on the
+   * api. Required on every entry: `nav.spec.ts` fails an entry without it. The api enforces it too.
+   */
+  needs: Permission | typeof ANY_HAT;
 }
 
-/** Built pages only. Features 13 and 46 later filter this by role and module toggle. */
+/** The `needs` of a page open to every signed in person, whatever their hats. */
+export const ANY_HAT = 'anyHat';
+
+/** Built pages only. Feature 46 later filters this by module toggle too. */
 export const navItems: readonly NavItem[] = [
-  { id: 'home', labelKey: 'shell.nav.items.home', href: '/', icon: HomeIcon, group: 'general' },
+  {
+    id: 'home',
+    labelKey: 'shell.nav.items.home',
+    href: '/',
+    icon: HomeIcon,
+    group: 'general',
+    needs: ANY_HAT,
+  },
   {
     id: 'design',
     labelKey: 'shell.nav.items.design',
@@ -37,6 +51,7 @@ export const navItems: readonly NavItem[] = [
     icon: PaletteIcon,
     group: 'general',
     devOnly: true,
+    needs: ANY_HAT,
   },
   {
     id: 'staff',
@@ -44,7 +59,7 @@ export const navItems: readonly NavItem[] = [
     href: '/staff',
     icon: UsersIcon,
     group: 'general',
-    adminOnly: true,
+    needs: 'people.manage',
   },
   {
     id: 'stock',
@@ -52,6 +67,7 @@ export const navItems: readonly NavItem[] = [
     href: '/stock',
     icon: BoxesIcon,
     group: 'inventory',
+    needs: 'stock.view',
   },
   {
     id: 'receipts',
@@ -59,6 +75,7 @@ export const navItems: readonly NavItem[] = [
     href: '/stock-receipts',
     icon: PackagePlusIcon,
     group: 'inventory',
+    needs: 'stock.view',
   },
   {
     id: 'skus',
@@ -66,6 +83,7 @@ export const navItems: readonly NavItem[] = [
     href: '/skus',
     icon: TagIcon,
     group: 'inventory',
+    needs: 'stock.view',
   },
   {
     id: 'locations',
@@ -73,7 +91,7 @@ export const navItems: readonly NavItem[] = [
     href: '/locations',
     icon: MapPinIcon,
     group: 'inventory',
-    adminOnly: true,
+    needs: 'catalog.manage',
   },
 ];
 
@@ -84,15 +102,16 @@ export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
 ];
 
 /**
- * The entries this build shows to a person with these hats: development only pages are dropped in
- * production, and admin only pages are shown only to a manager (none while the hats are unknown).
- * Spec 0008 replaces `adminOnly` with a permission per item.
+ * The entries this build shows to a person with these permissions: development only pages are
+ * dropped in production, and an entry whose `needs` the person lacks is dropped (spec 0008,
+ * AC-11). While the permissions are unknown only `ANY_HAT` entries show, so nothing flashes in
+ * and out. It only hides: the api still answers 403.
  */
-export function visibleNavItems(hats?: readonly Hat[]): NavItem[] {
+export function visibleNavItems(permissions?: readonly Permission[]): NavItem[] {
   const production = process.env.NODE_ENV === 'production';
+  const held = new Set<string>(permissions ?? []);
   return navItems.filter(
-    (item) =>
-      !(item.devOnly && production) && !(item.adminOnly && !(hats ?? []).includes('manager')),
+    (item) => !(item.devOnly && production) && (item.needs === ANY_HAT || held.has(item.needs)),
   );
 }
 

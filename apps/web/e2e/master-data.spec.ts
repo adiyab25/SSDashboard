@@ -203,7 +203,7 @@ test.describe('admin thread: create, receive, detail with cost; staff without co
 
     await openAsPerson(clerkPage, '/locations');
     await expect(clerkPage.getByRole('heading', { level: 1, name: 'Locations' })).toBeVisible();
-    await expect(clerkPage.getByText('Only administrators can manage locations.')).toBeVisible();
+    await expect(clerkPage.getByText('You do not have access to this page')).toBeVisible();
     await expect(clerkPage.getByRole('button', { name: 'New location' })).toHaveCount(0);
     await expect(clerkPage.getByRole('table')).toHaveCount(0);
 

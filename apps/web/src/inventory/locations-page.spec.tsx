@@ -56,11 +56,12 @@ afterEach(() => {
 });
 
 describe('LocationsPage (AC-4)', () => {
-  it('says only administrators can manage locations, and asks the api for nothing, to staff', async () => {
-    me.current = { id: 's', hats: ['warehouse'], permissions: [] };
+  it('shows the no access state, and asks the api for nothing, without catalog.manage (spec 0008, AC-11)', async () => {
+    me.current = { id: 's', hats: ['warehouse'], permissions: ['stock.view', 'catalog.edit'] };
     renderWithQuery(<LocationsPage />);
 
-    expect(await screen.findByText('Only administrators can manage locations.')).toBeVisible();
+    expect(await screen.findByText('You do not have access to this page')).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Locations');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(api.listLocations).not.toHaveBeenCalled();
   });

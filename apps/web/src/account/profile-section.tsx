@@ -9,6 +9,7 @@ import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useHatsLabel } from '@/access/use-hats-label';
 import { updateProfile } from '@/auth/account-api';
 import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
 import type { MessageKey } from '@ssdashboard/i18n';
@@ -43,6 +44,7 @@ export function ProfileSection({ me, languages, audience }: Props) {
   const [pending, setPending] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
+  const hats = useHatsLabel(me.hats);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -76,11 +78,7 @@ export function ProfileSection({ me, languages, audience }: Props) {
     [t('account.profile.email'), me.email, true],
     ...(audience === 'backoffice'
       ? ([
-          [
-            t('account.profile.role'),
-            t(`shell.user.roles.${me.hats.includes('manager') ? 'admin' : 'staff'}`),
-            false,
-          ],
+          [t('access.hats.label'), hats, false],
           [
             t('account.profile.staffCode'),
             me.staffCode ?? t('account.profile.none'),

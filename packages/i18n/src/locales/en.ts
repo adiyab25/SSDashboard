@@ -779,6 +779,113 @@ export const en = {
       allReceipts: 'All receipts',
     },
   },
+  access: {
+    noAccess: {
+      title: 'You do not have access to this page',
+      description:
+        'Your hats do not include it. Ask a manager to add the hat or permission you need.',
+      home: 'Go to the overview',
+    },
+    hats: {
+      label: 'Hats',
+      separator: ', ',
+      none: 'No hats yet',
+      support: {
+        name: 'Support',
+        description: 'Answers customers: confirms orders, handles exchanges, sees stock.',
+      },
+      operations: {
+        name: 'Operations',
+        description:
+          'Runs the day: orders, refunds, fulfillment, stock, settlement, partners, and reports.',
+      },
+      warehouse: {
+        name: 'Warehouse',
+        description: 'Picks, packs, ships, and receives stock; edits SKU names and prices.',
+      },
+      manager: {
+        name: 'Manager',
+        description:
+          'Everything staff can do, plus people, settings, corrections, and the audit trail.',
+      },
+      media_buyer: {
+        name: 'Media buyer',
+        description: 'Sees campaign results only, never customers.',
+      },
+      partner: {
+        name: 'Partner',
+        description: 'A consignment partner: sees their own account and uploads sales statements.',
+      },
+    },
+    permissions: {
+      orders: {
+        view: 'See orders, their lines, both states, the outcome, and the customer and ship to on them',
+        confirm: 'Work the confirmation queue: record outcomes, fix address and lines, cancel',
+        gift: 'Create a gifted order',
+      },
+      customers: {
+        view: 'See customer profiles, phones, and history',
+        merge: 'Merge customers and undo a merge',
+      },
+      exchanges: {
+        handle: 'Open exchanges and returns for a customer, work the review desk',
+      },
+      refunds: {
+        approve: 'Approve refunds and post credit by hand',
+      },
+      fulfillment: {
+        work: 'Pick, pack, ship, scan returns, restock',
+      },
+      stock: {
+        view: 'See stock on hand, movements, receipts, and locations (no cost)',
+        receive: 'Post receipts, transfers, and counts',
+        correct: 'Void a receipt and post corrections',
+      },
+      catalog: {
+        edit: 'Create SKUs and products, edit names and prices',
+        manage: 'Change SKU codes, archive and delete SKUs, manage locations',
+      },
+      channels: {
+        map: 'Map partner and channel codes to variants',
+      },
+      settlement: {
+        work: "Import carrier and partner statements, match lines, enter a partner's statement for them",
+        close: 'Close a settlement period and revoke a close',
+      },
+      exports: {
+        run: "Run accounting exports and mark them imported on the accountant's word",
+      },
+      partners: {
+        manage: 'Manage partner accounts and handovers',
+      },
+      tasks: {
+        work: 'See and work your own tasks and the queues of your hats',
+        assign: 'Reassign any task',
+      },
+      reports: {
+        view: 'See the business dashboard (counts and cash, no customers)',
+      },
+      campaigns: {
+        view: 'See campaign results (spend, orders, kept revenue, return rate, campaign profit)',
+      },
+      people: {
+        manage: 'Manage staff and partner logins, hats, cost grants, sessions, two factor resets',
+      },
+      settings: {
+        manage: 'Change settings, module toggles, connections, and per order cost rules',
+      },
+      audit: {
+        view: 'Read the audit trail',
+      },
+      partner: {
+        view_own: 'See what was given, sold, and owed for your own partner account',
+        submit_sales: 'Upload a sales statement or declare a no sales day',
+      },
+      cost: {
+        view: 'See unit cost, stock value, cost of goods, and margin',
+      },
+    },
+  },
   mail: {
     reset: {
       subject: 'Reset your {{clientName}} password',

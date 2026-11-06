@@ -302,7 +302,7 @@ test.describe('staff page', () => {
 
     for (const theme of THEMES) {
       for (const dir of DIRECTIONS) {
-        test(`staff forbidden message: no axe violations in ${theme}, ${dir}`, async ({
+        test(`staff no access state: no axe violations in ${theme}, ${dir}`, async ({
           page,
           context,
           baseURL,

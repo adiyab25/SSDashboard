@@ -220,13 +220,13 @@ test.describe('as a person with the staff role', () => {
     await expect(page.getByRole('option', { name: /Staff/ })).toHaveCount(0);
   });
 
-  test('opening /staff by address says only administrators can manage staff (AC-15)', async ({
+  test('opening /staff by address shows the no access state (AC-15; spec 0008, AC-11)', async ({
     page,
   }) => {
     await page.goto('/staff');
 
     await expect(page.getByRole('heading', { level: 1, name: 'Staff' })).toBeVisible();
-    await expect(page.getByText('Only administrators can manage staff.')).toBeVisible();
+    await expect(page.getByText('You do not have access to this page')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add staff' })).toHaveCount(0);
     await expect(page.getByRole('table')).toHaveCount(0);
   });

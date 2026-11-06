@@ -15,7 +15,7 @@ import { SearchIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMe } from '@/auth/use-me';
+import { useAccess } from '@/access/use-access';
 import { navGroups, visibleNavItems } from './nav';
 
 /** The palette shortcut as drawn on the key: not text to translate. */
@@ -35,8 +35,8 @@ export function CommandPalette() {
   const returnFocus = useRef<HTMLElement | null>(null);
   // "Ctrl K" on the server and first paint, "⌘ K" after mount on Apple platforms.
   const apple = useSyncExternalStore(noSubscribe, isApplePlatform, () => false);
-  const me = useMe();
-  const items = visibleNavItems(me?.hats);
+  const { permissions } = useAccess();
+  const items = visibleNavItems(permissions);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

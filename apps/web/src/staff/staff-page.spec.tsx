@@ -89,11 +89,14 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
     );
   });
 
-  it('says only administrators can manage staff, and asks the api for nothing, to a staff role', async () => {
-    me.current = { id: 'x', hats: ['warehouse'], permissions: [] };
+  it('shows the no access state, and asks the api for no staff, without people.manage (spec 0008, AC-11)', async () => {
+    me.current = { id: 'x', hats: ['warehouse'], permissions: ['stock.view'] };
     render(<StaffPage />);
 
-    expect(await screen.findByText('Only administrators can manage staff.')).toBeVisible();
+    expect(await screen.findByText('You do not have access to this page')).toBeVisible();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Staff');
+    expect(screen.queryByRole('button', { name: 'Add staff' })).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(api.listStaff).not.toHaveBeenCalled();
   });

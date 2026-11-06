@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
-import { useMe } from '@/auth/use-me';
+import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
 import type { MessageKey } from '@ssdashboard/i18n';
 import {
@@ -105,8 +105,8 @@ export function ReceiptFormPage() {
   const format = useFormat();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const me = useMe();
-  const isAdmin = me?.permissions.includes('cost.view') ?? false;
+  const access = useAccess();
+  const seesCost = access.can('cost.view');
   const current = useCurrentLocation();
   const { locations, status: locationsStatus } = useLocationSwitcher();
   const { language, config } = useLanguage();
@@ -447,7 +447,7 @@ export function ReceiptFormPage() {
                   </FieldError>
                 </Field>
 
-                {isAdmin ? (
+                {seesCost ? (
                   <div className="flex flex-col gap-2 md:min-w-28 md:text-end">
                     <span className="text-sm font-medium">{t('inventory.receipt.lineTotal')}</span>
                     <span className="flex h-control items-center text-sm tabular-nums md:justify-end">
@@ -502,7 +502,7 @@ export function ReceiptFormPage() {
             <dt className="text-muted-foreground">{t('inventory.receipt.totalQuantity')}</dt>
             <dd className="font-medium tabular-nums">{format.quantity(totalQuantity)}</dd>
           </div>
-          {isAdmin && (
+          {seesCost && (
             <div className="flex gap-2">
               <dt className="text-muted-foreground">{t('inventory.receipt.referenceValue')}</dt>
               <dd className="font-medium tabular-nums">{format.money(valueText, 2)}</dd>

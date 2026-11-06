@@ -22,6 +22,7 @@ import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useHatsLabel } from '@/access/use-hats-label';
 import { saveLanguageToAccount } from '@/auth/account-api';
 import { authClient } from '@/auth/auth-client';
 import { useMe } from '@/auth/use-me';
@@ -30,7 +31,7 @@ import { useLanguage } from '@/i18n/language-provider';
 const THEMES = ['light', 'dark', 'system'] as const;
 const ITEM = 'coarse:min-h-touch';
 
-/** The signed in person (name, email, role), the theme and language switches, and sign out. */
+/** The signed in person (name, email, hats), the theme and language switches, and sign out. */
 export function UserMenu() {
   const { theme, setTheme } = useTheme();
   const { t } = useTranslation();
@@ -39,6 +40,7 @@ export function UserMenu() {
   const [signOutFailed, setSignOutFailed] = useState(false);
   const me = useMe();
   const name = me?.name ?? '';
+  const hats = useHatsLabel(me?.hats ?? []);
 
   async function signOut() {
     setSignOutFailed(false);
@@ -82,9 +84,7 @@ export function UserMenu() {
           {me && (
             <>
               <LtrText className="block truncate text-xs text-muted-foreground">{me.email}</LtrText>
-              <span className="text-xs text-muted-foreground">
-                {t(`shell.user.roles.${me.hats.includes('manager') ? 'admin' : 'staff'}`)}
-              </span>
+              <span className="text-xs text-muted-foreground">{hats}</span>
             </>
           )}
         </DropdownMenuLabel>

@@ -17,7 +17,7 @@ import { PackagePlusIcon, Undo2Icon } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMe } from '@/auth/use-me';
+import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { VoidReceiptDialog } from './void-receipt-dialog';
@@ -27,9 +27,8 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
   const { t } = useTranslation();
   const format = useFormat();
   const text = useLocalizedText();
-  const me = useMe();
-  const isAdmin =
-    (me?.permissions.includes('cost.view') ?? false) && receipt.referenceValue !== undefined;
+  const access = useAccess();
+  const seesCost = access.can('cost.view') && receipt.referenceValue !== undefined;
   const [voiding, setVoiding] = useState(false);
 
   return (
@@ -49,7 +48,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
           <Button asChild variant="outline">
             <Link href="/stock-receipts">{t('inventory.receiptDetail.allReceipts')}</Link>
           </Button>
-          {me?.permissions.includes('stock.correct') && receipt.status === 'posted' && (
+          {access.can('stock.correct') && receipt.status === 'posted' && (
             <Button variant="outline" onClick={() => setVoiding(true)}>
               <Undo2Icon aria-hidden data-icon="inline-start" className="rtl:-scale-x-100" />
               {t('inventory.void.open')}
@@ -131,7 +130,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
                 <TableHead scope="col" className="px-3 text-end font-medium">
                   {t('inventory.receipt.quantity')}
                 </TableHead>
-                {isAdmin && (
+                {seesCost && (
                   <>
                     <TableHead scope="col" className="px-3 text-end font-medium">
                       {t('inventory.receipt.unitCost')}
@@ -156,7 +155,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
                   <TableCell className="px-3 text-end tabular-nums">
                     {format.quantity(line.quantity)}
                   </TableCell>
-                  {isAdmin && (
+                  {seesCost && (
                     <>
                       <TableCell className="px-3 text-end tabular-nums">
                         {line.unitCost ? format.money(line.unitCost, 4) : ''}
@@ -177,7 +176,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
                 <TableCell className="px-3 text-end font-medium tabular-nums">
                   {format.quantity(receipt.totalQuantity)}
                 </TableCell>
-                {isAdmin && (
+                {seesCost && (
                   <>
                     <TableCell className="px-3 text-end text-muted-foreground">
                       {t('inventory.receipt.referenceValue')}

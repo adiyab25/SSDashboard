@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import type { BrowserContext, Page } from '@playwright/test';
+import type { GrantablePermission, Hat } from '@ssdashboard/contracts';
 import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { ownerDatabaseUrl } from './auth';
@@ -27,7 +28,24 @@ export async function giveHats(
   userId: string,
   preset: 'admin' | 'staff',
 ): Promise<void> {
-  const hats = preset === 'admin' ? ['manager'] : ['support', 'operations', 'warehouse'];
+  await wearHats(
+    pool,
+    userId,
+    preset === 'admin' ? ['manager'] : ['support', 'operations', 'warehouse'],
+    preset === 'admin' ? ['cost.view'] : [],
+  );
+}
+
+/**
+ * Gives a person exactly these hats and extra grants (spec 0008), replacing what they held, for
+ * a test about one hat alone (a warehouse person, a manager without cost).
+ */
+export async function wearHats(
+  pool: Pool,
+  userId: string,
+  hats: readonly Hat[],
+  grants: readonly GrantablePermission[] = [],
+): Promise<void> {
   await pool.query(`DELETE FROM hat_assignments WHERE user_id = $1::uuid`, [userId]);
   await pool.query(`DELETE FROM permission_grants WHERE user_id = $1::uuid`, [userId]);
   for (const hat of hats) {
@@ -36,11 +54,11 @@ export async function giveHats(
       hat,
     ]);
   }
-  if (preset === 'admin') {
-    await pool.query(
-      `INSERT INTO permission_grants (user_id, permission) VALUES ($1::uuid, 'cost.view')`,
-      [userId],
-    );
+  for (const permission of grants) {
+    await pool.query(`INSERT INTO permission_grants (user_id, permission) VALUES ($1::uuid, $2)`, [
+      userId,
+      permission,
+    ]);
   }
 }
 
@@ -60,6 +78,9 @@ async function deleteByEmail(pool: Pool, email: string): Promise<void> {
 export async function seedAccount(
   options: {
     role?: 'admin' | 'staff';
+    /** Exact hats instead of a `role` preset (spec 0008), with `grants` such as `cost.view`. */
+    hats?: readonly Hat[];
+    grants?: readonly GrantablePermission[];
     mustChangePassword?: boolean;
     name?: string;
     language?: string;
@@ -78,7 +99,8 @@ export async function seedAccount(
     );
     id = rows[0]?.id;
     if (!id) throw new Error('Could not seed the e2e account');
-    await giveHats(pool, id, options.role ?? 'staff');
+    if (options.hats) await wearHats(pool, id, options.hats, options.grants);
+    else await giveHats(pool, id, options.role ?? 'staff');
     await pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
