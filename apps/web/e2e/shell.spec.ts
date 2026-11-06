@@ -45,7 +45,9 @@ test.describe('accessibility matrix (AC-2, AC-5, AC-11)', () => {
           await expect(page.locator('html')).toHaveAttribute('dir', dir);
           await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
           if (path === '/design') {
-            await expect(page.getByTestId('contrast-foreground-on-background')).toHaveText(/:1$/);
+            await expect(page.getByTestId('contrast-foreground-on-background')).toHaveText(
+              /:1 meets$/,
+            );
           }
 
           await expectNoAxeViolations(page);
@@ -412,24 +414,24 @@ test.describe('location switcher (AC-10)', () => {
 test.describe('/design in development (AC-11, AC-13)', () => {
   test.beforeEach(({}, info) => desktopOnly(info.project.name));
 
-  test('shows live contrast, every pinned state, and an Arabic specimen in Plex Sans Arabic', async ({
+  test('shows live contrast, every pinned state, and an Arabic specimen in Noto Sans Arabic', async ({
     page,
   }) => {
     await openShell(page, '/design');
 
     await expect(page.getByRole('heading', { level: 1, name: 'Design system' })).toBeVisible();
     await expect(page.getByTestId('contrast-muted-foreground-on-muted')).toHaveText(
-      /^\d+\.\d\d:1$/,
+      /^\d+\.\d\d:1 meets$/,
     );
     for (const state of ['default', 'hover', 'focus', 'active', 'disabled', 'loading']) {
       await expect(page.getByRole('columnheader', { name: state })).toBeVisible();
     }
     const arabic = page.locator('[lang="ar"] p').first();
     expect(await arabic.evaluate((element) => getComputedStyle(element).fontFamily)).toMatch(
-      /IBM Plex Sans Arabic/,
+      /Noto Sans Arabic/,
     );
     expect(
       await page.locator('body').evaluate((element) => getComputedStyle(element).fontFamily),
-    ).toMatch(/IBM Plex Sans/);
+    ).toMatch(/Inter/);
   });
 });
