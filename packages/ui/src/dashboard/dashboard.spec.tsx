@@ -5,6 +5,7 @@ import { expectNoAxeViolations } from '../test/axe';
 import { ProvisionalValue } from '../status/provisional-value';
 import { StatusChip } from '../status/status-chip';
 import { BottomTabs } from './bottom-tabs';
+import { BottomTabsSpacer } from './bottom-tabs-spacer';
 import { CollapsingTable } from './collapsing-table';
 import { MetricCard } from './metric-card';
 import { NeedsYouList } from './needs-you-list';
@@ -130,6 +131,16 @@ describe('BottomTabs', () => {
   it.each(MODES)('has no axe violations in %s', async (mode) => {
     const { container } = render(inMode(mode, <BottomTabs label="Main" tabs={tabs} />));
     await expectNoAxeViolations(container);
+  });
+});
+
+describe('BottomTabsSpacer', () => {
+  it('reserves the bar height plus the safe area and a 16px gap, and is hidden from assistive tech', () => {
+    const { container } = render(<BottomTabsSpacer />);
+    const spacer = container.firstElementChild;
+    expect(spacer).toHaveAttribute('aria-hidden', 'true');
+    expect(spacer?.className).toContain('env(safe-area-inset-bottom)');
+    expect(spacer?.className).toContain('3.5rem');
   });
 });
 

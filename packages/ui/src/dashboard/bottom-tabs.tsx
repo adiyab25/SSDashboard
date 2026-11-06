@@ -28,8 +28,9 @@ type BottomTabsProps = {
  * 56px tall, each with an icon and a label that is always visible (AC-20). The current tab is
  * filled with the primary and marked `aria-current="page"`. A fifth tab is dropped, not squeezed
  * in: the bar keeps the first four and the caller must move the rest into its "More" page. It is
- * sticky at the bottom and respects the device safe area; hide it from 768px up with `md:hidden`
- * where the sidebar takes over. It must never show an icon without its label or hold text of
+ * fixed to the bottom and respects the device safe area, so the page must also render a
+ * `BottomTabsSpacer` at the end of its content or the bar covers the last targets; hide both from
+ * 768px up with `md:hidden` where the sidebar takes over. It must never show an icon without its label or hold text of
  * its own.
  */
 export function BottomTabs({ label, tabs, className }: BottomTabsProps) {
@@ -39,7 +40,7 @@ export function BottomTabs({ label, tabs, className }: BottomTabsProps) {
       aria-label={label}
       data-slot="bottom-tabs"
       className={cn(
-        'sticky bottom-0 z-30 border-t bg-background pb-[env(safe-area-inset-bottom)]',
+        'fixed inset-x-0 bottom-0 z-30 border-t bg-background pb-[env(safe-area-inset-bottom)]',
         className,
       )}
     >

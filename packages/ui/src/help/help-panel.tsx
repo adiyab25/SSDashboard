@@ -102,7 +102,14 @@ export function HelpPanel({
           <SheetTitle>{title}</SheetTitle>
           {description ? <SheetDescription>{description}</SheetDescription> : null}
         </SheetHeader>
-        <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 pb-4">
+        <div
+          role="region"
+          aria-label={title}
+          // Intentional: scrollable regions must be focusable (WCAG 2.1.1).
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+          tabIndex={0}
+          className="focus-ring-inset flex flex-1 flex-col gap-6 overflow-y-auto px-4 pb-4"
+        >
           {steps && steps.items.length > 0 ? (
             <section aria-labelledby={`${id}-steps`}>
               <h3 id={`${id}-steps`} className="mb-2 text-sm font-medium">

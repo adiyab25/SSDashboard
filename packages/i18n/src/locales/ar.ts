@@ -791,4 +791,67 @@ export const ar: Catalog = {
     },
     fallbackName: 'زميلنا',
   },
+  help: {
+    common: {
+      open: 'مساعدة',
+      close: 'إغلاق المساعدة',
+      stepsHeading: 'طريقة العمل',
+      glossaryHeading: 'معنى النتائج',
+      settingsHeading: 'إعدادات تغير هذه الشاشة',
+      checklistShow: 'أظهر الخطوات الأولى مرة أخرى',
+      checklistTitle: 'خطواتك الأولى',
+      checklistProgress: '{{done}} من {{total}}',
+      checklistDone: 'تم',
+      checklistTodo: 'قيد التنفيذ',
+      checklistDismiss: 'إخفاء الخطوات الأولى',
+    },
+    confirmationQueue: {
+      title: 'كيف تعمل قائمة التأكيد',
+      description: 'طلب واحد في كل مرة. اتصل بالعميل ثم سجل ما حدث.',
+      steps: {
+        '1': 'اقرأ الطلب: العميل والمنتجات والإجمالي والمنطقة.',
+        '2': 'اتصل بالعميل على الرقم الظاهر.',
+        '3': 'اضغط الزر المناسب لما حدث، أو مفتاح الرقم من 1 إلى 4.',
+        '4': 'يُفتح الطلب التالي تلقائياً.',
+      },
+      glossary: {
+        confirmed: {
+          chip: 'مؤكد',
+          description: 'وافق العميل على الطلب. ينتقل بعدها إلى المخزن.',
+        },
+        noAnswer: {
+          chip: 'لم يرد',
+          description:
+            'لم يرد العميل. يعود الطلب إلى قائمتك، وبعد {{limit}} مرات دون رد يُغلق الطلب.',
+        },
+        callBack: {
+          chip: 'معاودة الاتصال',
+          description: 'طلب العميل أن تتصل به لاحقاً. يعود الطلب بعد مدة الانتظار.',
+        },
+        cancelled: {
+          chip: 'ملغي',
+          description: 'لا يريد العميل الطلب. يُغلق الطلب ويُفرج عن المخزون.',
+        },
+      },
+      settings: {
+        noAnswerLimit: 'مرات عدم الرد قبل إغلاق الطلب',
+      },
+      hint: {
+        phone: {
+          label: 'مساعدة: هاتف العميل',
+          body: 'اتصل بهذا الرقم. لا يُحسب عدم الرد إلا بعد اتصال فعلي.',
+        },
+        noAnswer: {
+          label: 'مساعدة: لم يرد',
+          body: 'بعد {{limit}} مرات دون رد يُغلق الطلب، فلا تسجل ذلك إلا بعد أن تتصل.',
+        },
+      },
+      checklist: {
+        openQueue: 'افتح قائمة التأكيد',
+        confirmFirst: 'أكد أول طلب لك',
+        recordNoAnswer: 'سجل حالة لم يرد',
+        scheduleCallBack: 'حدد معاودة اتصال',
+      },
+    },
+  },
 };
