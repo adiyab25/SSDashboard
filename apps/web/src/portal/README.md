@@ -1,11 +1,11 @@
 # Returns portal
 
-A placeholder page at `/returns` for the public exchange and return portal. Anonymous, with a minimal frame.
+A placeholder page at `/en/returns` and `/ar/returns` for the public exchange and return portal. Anonymous, with a minimal frame. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/returns` redirects to the right language in the proxy.
 
 ## Owns
 
 - The page: [returns-page.tsx](returns-page.tsx)
-- The route: `src/app/(portal)/returns/page.tsx`
+- The route: `src/app/(portal)/[lang]/returns/page.tsx` and its root layout `src/app/(portal)/[lang]/layout.tsx`
 
 ## Never touches
 
@@ -17,7 +17,7 @@ A placeholder page at `/returns` for the public exchange and return portal. Anon
 
 ```bash
 pnpm --filter @ssdashboard/web test -- src/portal
-pnpm --filter @ssdashboard/web test:e2e -- e2e/audiences.spec.ts
+pnpm --filter @ssdashboard/web test:e2e -- e2e/audiences.spec.ts e2e/portal-language.spec.ts
 ```
 
 ## Governing spec

@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
-import type { MessageKey } from '../src/i18n/message-key';
-import { ar } from '../src/i18n/locales/ar';
-import { en } from '../src/i18n/locales/en';
+import type { MessageKey } from '@ssdashboard/i18n';
+import { ar } from '@ssdashboard/i18n/ar';
+import { en } from '@ssdashboard/i18n';
 import { ownerDatabaseUrl } from './auth';
 
 export type Theme = 'light' | 'dark';
@@ -97,6 +97,17 @@ export async function waitForFormHydration(page: Page) {
   await page.waitForFunction(() => {
     const form = document.querySelector('main form');
     return form !== null && Object.keys(form).some((key) => key.startsWith('__reactProps'));
+  });
+}
+
+/**
+ * Waits until React has taken over the page's controls (for a page with no form, like a list
+ * with a search box). Text typed before this is lost when hydration resets the input.
+ */
+export async function waitForPageHydration(page: Page) {
+  await page.waitForFunction(() => {
+    const control = document.querySelector('main input, main button');
+    return control !== null && Object.keys(control).some((key) => key.startsWith('__reactProps'));
   });
 }
 

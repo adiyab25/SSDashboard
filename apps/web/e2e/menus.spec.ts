@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { ownAddress, seedAccount, type SeededAccount } from './accounts';
+import { waitForPageHydration } from './support';
 
 // The dropdown menu is not modal (packages/ui), so these touch tests pin how it behaves with real
 // taps: it opens, it closes three ways, one tap away from it still reaches the other control, and
@@ -33,6 +34,7 @@ async function openTwoRows(page: Page): Promise<Rows> {
 
   await page.goto('/staff');
   await expect(page.getByRole('heading', { level: 1, name: 'Staff' })).toBeVisible();
+  await waitForPageHydration(page);
   await page.getByRole('searchbox', { name: /Search staff/ }).fill(tag);
   // Header row plus the two seeded people.
   await expect(page.getByRole('row')).toHaveCount(3);

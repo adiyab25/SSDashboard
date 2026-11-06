@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMe } from '@/auth/use-me';
 import { useFormat } from '@/i18n/use-format';
-import type { MessageKey } from '@/i18n/message-key';
+import type { MessageKey } from '@ssdashboard/i18n';
 import { loadConfig } from '@/shell/client-config';
 import {
   disableStaff,

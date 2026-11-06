@@ -6,8 +6,8 @@ import { expect, test } from '@playwright/test';
 test.use({ storageState: { cookies: [], origins: [] } });
 
 for (const [path, title] of [
-  ['/returns', 'Exchanges and returns'],
-  ['/partner', 'Partner showroom'],
+  ['/en/returns', 'Exchanges and returns'],
+  ['/en/partner', 'Partner showroom'],
 ] as const) {
   test(`anonymous ${path} stays put and calls only /api/config`, async ({ page }) => {
     const apiCalls: string[] = [];

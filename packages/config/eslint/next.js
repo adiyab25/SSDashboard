@@ -21,7 +21,9 @@ export function next(tsconfigRootDir) {
     },
     {
       // App Router special files must default export their component.
-      files: ['src/app/**/{page,layout,template,loading,error,global-error,not-found,default}.tsx'],
+      files: [
+        'src/app/**/{page,layout,template,loading,error,global-error,global-not-found,not-found,default}.tsx',
+      ],
       rules: { 'no-restricted-syntax': 'off' },
     },
   );

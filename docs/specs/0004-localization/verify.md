@@ -28,7 +28,7 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 - [x] Digits: Arabic shows Western digits for numbers, quantities, percents, money, and dates → AC-8 (checked on the real format module, no screen uses it yet)
 
 ## Commands
-- [x] `pnpm lint` → passes, and a raw JSX string, `toLocaleString`, or `new Intl.NumberFormat` outside `format.ts` fails it → AC-5, AC-8
+- [x] `pnpm lint` → passes, and a raw JSX string, `toLocaleString`, or `new Intl.NumberFormat` outside `packages/i18n/src/format.ts` (and `plural-categories.ts`) fails it, in the web and the api (amended 2026-11-05, AC-19) → AC-5, AC-8
 - [x] `pnpm typecheck` → passes, and a wrong `t('...')` key fails (`typed-keys.spec.ts`) → AC-5
 - [x] `pnpm --filter @ssdashboard/web test` → catalog parity, plurals (0, 1, 2, 3, 11, 100), formatting, localized text, provider → AC-6, AC-7, AC-8, AC-9
 - [x] `pnpm --filter @ssdashboard/config test` → lint fixtures fail where they should → AC-5, AC-8
