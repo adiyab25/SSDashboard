@@ -167,10 +167,12 @@ export interface CodDueLine {
 /**
  * `cod_due_amount`: what the customer owes for what she kept. The sum over `open`, `delivered`,
  * and `returned` lines of gross minus their prepaid and credit shares, plus the whole shipping
- * charge net of its shares while at least one such line remains, never below 0. A partial delivery
- * lowers it by the returned rows only (shipping is charged in full); a full return, a refusal, a
- * lost parcel, or a cancel takes it to 0. Reconciliation compares collected cash with this, not
- * with `codExpected`.
+ * charge net of its shares while at least one such line remains, never below 0. It reads line
+ * states only: a partial delivery lowers it by the returned rows (shipping is charged in full), and
+ * it reaches 0 once every line is `returned_to_origin`, `lost`, or `cancelled`. A refusal moves no
+ * line, so a refused order keeps its full due amount until the carrier reports the parcel back
+ * and its lines move (spec 0002 orders child; feature 19 carries the rule). Reconciliation compares
+ * collected cash with this, not with `codExpected`.
  */
 export function codDue(input: {
   lines: readonly CodDueLine[];

@@ -14,7 +14,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
 import { channels } from './channels.js';
-import { createdAt, id, tenantId, updatedAt } from './columns.js';
+import { createdAt, id, reasonCodeShape, tenantId, updatedAt } from './columns.js';
 import { connections } from './connectors.js';
 
 // The customers module (spec 0002, customers child): a customer is a normalized phone number.
@@ -147,7 +147,8 @@ export const customerMergeAction = pgEnum('customer_merge_action', ['merge', 'un
  * The append only history of merges and undos. An undo is a new row pointing at the merge it
  * undoes, and a merge is undone at most once. An insert trigger (`customer_merges_undo_matches`,
  * rules migration) refuses an undo whose target is not a merge of the same survivor and merged
- * customer. `reason` is free text: personal data, redacted.
+ * customer. `reason` is a code (`reasonCodeShape`, security review S4), never a typed note: the row
+ * is kept for ever, so a note with personal data could never be erased.
  */
 export const customerMerges = pgTable(
   'customer_merges',
@@ -181,6 +182,8 @@ export const customerMerges = pgTable(
       sql`(${t.action} = 'undo') = (${t.undoesMergeId} IS NOT NULL)`,
     ),
     check('customer_merges_two_customers', sql`${t.survivorId} <> ${t.mergedId}`),
+    // Security review S4 (feature 4 close): a code, never a note, so no personal data is kept for ever.
+    check('customer_merges_reason_shape', reasonCodeShape(t.reason)),
     index('customer_merges_survivor_idx').on(t.survivorId),
     index('customer_merges_merged_idx').on(t.mergedId),
     index('customer_merges_actor_idx').on(t.actorId),

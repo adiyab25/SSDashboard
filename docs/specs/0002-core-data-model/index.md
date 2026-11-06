@@ -1,7 +1,7 @@
 # 0002. Build the core data model around an append only stock ledger with maintained balances
 
 **Date**: 2026-11-02 (amended 2026-11-05)
-**Status**: Proposed (amendment of 2026-11-05 for scope feature 4; the original decision was accepted and built)
+**Status**: Accepted and built (amendment of 2026-11-05 for scope feature 4, built and closed 2026-11-06; the original decision was accepted and built)
 
 ## Summary
 
@@ -83,6 +83,7 @@ This feature migrates every ★ table in the children with all its checks, index
 - **Cost stays private**: `cost_records`, `order_cost_rules`, `order_lines.unit_cost`, and margin are hidden without the `cost.view` grant (spec 0008 AC-6); the media buyer hat never reads customer tables (feature 8).
 - **Partner scoping**: partner reads (feature 41) filter settlement accounts and locations by the session's party, never by a request parameter (spec 0007 section 2).
 - **Roles**: the append only revokes and the grants follow the role named by `ssd.app_role` (A2).
+- **Free text on append only rows (gate ruling, security S4)**: `customer_merges.reason` and `settlement_period_events.reason` hold codes only; a written note goes in the spec 0010 audit entry `reason`, which is trimmed, capped at 500 characters, and phone masked ([spec 0010](../0010-audit-trail/index.md) AC-5). `settlement_lines.partner_text` and `settlement_line_matches.payment_reference` are third party evidence kept by contract, and are on the redaction list for logs (`packages/config/src/redaction.ts`). Both are capped at 500 characters by database checks and the contracts.
 
 ### Configuration (amendment)
 
@@ -164,7 +165,7 @@ Owner answers to the reviewer's real brand questions, applied: full shipping is 
   > Amended 2026-11-05: unchanged; opening stock also needs a cost (AC-31).
 - **AC-4**: An outbound posting that would take a balance below zero is rejected, unless the location has `allow_negative` on. An outbound line that fulfils no reservation may not take on hand (summed over bins for that SKU, location, and lot) below the active reserved quantity. Two postings on the same balance at the same moment are applied one after the other, never losing an update, and postings touching the same balances in opposite orders never deadlock.
 - **AC-5**: Posting twice with the same idempotency key moves stock once and returns the first posting's result, rebuilt from the stored group and movements, without checking stock or the lock date again. The same key with different content (or used for a reversal and a posting) is rejected.
-- **AC-6**: A posting's effective date may be in the past but not in the future (beyond a 5 minute clock tolerance), and its date in the `timezone` setting (Cairo) must be after the inventory lock date. When none is given, it defaults to now. A reversal follows the same rule, so reversing a movement from a locked month means passing a current date.
+- **AC-6**: A posting's effective date may be in the past but not in the future (beyond a 5 minute clock tolerance), and its operating day (stamped by `ssd_operating_day`, so the cutoff hour counts) must be after the inventory lock date (gate ruling 2026-11-06, review R5). When none is given, it defaults to now. A reversal follows the same rule, so reversing a movement from a locked month means passing a current date.
 - **AC-7**: A posting with several lines (for example a transfer: out of one location, into another) is atomic. Either every line and balance change lands, or none does.
 - **AC-8**: For a lot tracked SKU every movement names a lot of that same SKU. For a serial tracked SKU every movement lists exactly as many serials as the absolute quantity; a serial must be in stock at that location (and bin) to leave it, and must not be in stock anywhere to arrive (a new serial is created, a returned one flips back to in stock). Service and bundle SKUs, and archived SKUs, locations, and bins, cannot be posted or reserved.
 - **AC-9**: Available stock per SKU, location, and lot equals on hand (summed over sellable bins, in a sellable location) minus active reservations. A reservation larger than available is rejected (unless the location allows negative stock). Partial release or fulfilment reduces the reservation's open quantity in place; it closes when that reaches zero.
@@ -320,7 +321,7 @@ Callers convert document lines to base units before posting: quantity times the 
 | `reverse` | each line | the original movement with quantity negated, same SKU, location, bin, lot, `unit_cost`, and `source_line_id`; the group keeps the original `source_type` and `source_id` |
 | `reverse` | `total_cost` | derived by the normal rules for the reversal row's direction on the balance as it is now: reversing an inbound uses the outbound rules, reversing an outbound uses the inbound rules with the original `unit_cost` as the price. No residue special case |
 | `reverse` | `cost_variance` | derived: reference cost minus `total_cost`, where the reference cost is the original's `−(total_cost + cost_variance)` (its original value or price, negated). A reversal gives back the original value exactly only when it takes the balance back to empty; otherwise the gap shows here (reversing a receipt of 5 at 20.0000 into 5 units worth 50.00 removes 75.00 at the new average, with `cost_variance` −25.00) |
-| `post` | `effective_at` | input, else now; its date in setting `timezone` must be after setting `inventory_lock_date`; at most now plus 5 minutes |
+| `post` | `effective_at` | input, else now; its stamped `operating_day` must be after setting `inventory_lock_date`; at most now plus 5 minutes |
 | `post` | `recorded_at` | database `now()` |
 | `post` | negative stock allowed? | column `locations.allow_negative` |
 | `post` | posted by | input `postedBy` (session user from feature 6; null for system jobs) |
@@ -521,11 +522,11 @@ The amendment only (Amendment 2026-11-05, with the fix pass of the same day). Tr
 - [ ] Feature 22: record any difference between the invoiced total and the ledger's stock value as a price variance, and post `stock_movements.cost_variance` (receipts into negative stock) to cost of goods sold.
 
 Amendment 2026-11-05 (current feature numbers):
-- [ ] Domain review of this amendment (`domain-reviewer`), required by scope feature 4's done when, before the build starts.
+- [x] Domain review of this amendment (`domain-reviewer`), required by scope feature 4's done when, before the build starts: [domain review](../../reviews/domain-data-model.md) approved on 2026-11-05; its build re-read of 2026-11-06 is in the same file.
 - [ ] Feature 16: build the platform `DomainEvents` service (A6) with the first projection on `orders`.
 - [x] Lost parcels have their own fulfillment state, `lost` (fix pass); feature 19 maps Bosta's lost states to it (below).
 - [ ] Feature 12: replace the trigram expression index on products with the Arabic normalization function. The scale suite (milestone 5) found the SKU name branch of `buildSkuListSql` scanning `products` because its `ILIKE` on `name->>'en'` and `name->>'ar'` does not match the indexed expression; fast at 5,000 styles, so feature 12 makes the query and the index use one expression and asserts the trigram index in the scale plan.
-- [ ] Feature 26: set per client `APP_DB_ROLE` and `REVOKE CONNECT, TEMP ... FROM PUBLIC` in the host bootstrap; refuse an app role that already exists on a first run unless the host bootstrap made it; send the app role password pre hashed; prove a restore brings back `ssd.tenant_id` and `ssd.app_role` (`docs/reviews/security-data-model-m1-m2.md`, M2, N1, N3, N5).
+- [ ] Feature 26: set per client `APP_DB_ROLE` and `REVOKE CONNECT, TEMP ... FROM PUBLIC` in the host bootstrap; refuse an app role that already exists on a first run unless the host bootstrap made it; send the app role password pre hashed; run `migrate` after every restore (since the feature 4 close it re-asserts a missing `ssd.tenant_id` from the `install` row and `ssd.app_role` from the `pgboss` schema owner, `migrate.e2e-spec.ts`) and prove that run book step on a real restore (`docs/reviews/security-data-model-m1-m2.md`, M2, N1, N3, N5). Once the baseline exists, `migrate` refuses rather than defaulting `ssd.app_role` when neither the setting nor the `pgboss` owner names a role and `APP_DB_ROLE` is unset (security review S13).
 - [ ] Features 35 and 43: the full order to refund to settlement run per owner type (spec 0007 section 8), on top of this feature's three way policy test.
 - [x] ~~Feature 59: decide whether opening stock booked with `cost_unknown` is revalued when its cost arrives.~~ Void after the fix pass: opening stock always carries a cost (B5); the current feature 59 carry is in the fix pass block below.
 - [ ] Feature 8: the cost permission over `cost_records`, `order_cost_rules`, and `order_lines.unit_cost`; who may create gifted orders (Questions for the owner, 8).
@@ -553,4 +554,10 @@ Milestone 4 reviews of 2026-11-06 (carried by name):
 - [ ] Feature 23: refuse settlement lines and match rows inside a closed period without an admin's written reason (m5).
 - [ ] Feature 8: a parity test between `tasks_owner_hat_internal` and the `InternalHat` contract.
 - [ ] Feature 16: replay reads `order_events` `ORDER BY recorded_at, id`; a test writes two events in one transaction and replays them.
+- [ ] Feature 15: decide the cost lookup answer for an unknown variant (today `not_set`, from `CostService.costFor` in `apps/api/src/catalog/cost.service.ts`).
+- [ ] Features 18 and 21: a `prepayment_release` credit kind (the prepaid share of lines returned to origin or lost, posted as a positive entry from the prepaid funding, kept out of `returned_credit_amount`), and a shipping deposit marker (for example `orders.prepaid_purpose`: `order` or `shipping_deposit`; a shipping deposit is allocated to shipping first and only its excess to lines, never spread onto pieces). The brand's refusal policy for a deposit (kept as the delivery fee, released, or kept as store credit) is an owner question ([domain review, build re-read 2026-11-06](../../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
+- [ ] Feature 19: a refused parcel in transit moves no line in the built model, so `cod_due_amount` stays full until the carrier reports it back. Add the "refused, nothing to collect" step (`unpaid` to `nothing_to_collect` once `cod_due_amount` is 0), and decide what a whole order `cancelled` does to its open lines, since `codDue` counts `open` lines and the cancelled transition names no line effect ([domain review, build re-read](../../reviews/domain-data-model.md#build-re-read-2026-11-06), D3).
+- [ ] Feature 9: validate `operating_day_cutoff_hour` as an integer 0 to 23, and `timezone` as an IANA name that PostgreSQL also knows (`pg_timezone_names`), with database checks on `settings` (security review S5, [security-data-model](../../reviews/security-data-model.md)).
+- [ ] Features 9 and 45: a backdated per order cost rule never reaches before the inventory lock date (`inventory_lock_date`); spec 0009 task 26 carries it to feature 9 ([domain review, build re-read](../../reviews/domain-data-model.md#build-re-read-2026-11-06), D5).
 - [ ] Counsel and feature 30: whether Law 181 of 2018 requires refunding delivery cost on a change of mind return (brand question 11; spec 0007 owner question q10).
+- [ ] Next catalog feature: `seasons` and `product_groups` have no `created_at` or `updated_at`, against the Timestamps convention; that feature adds them, or the convention names its exceptions ([review](../../reviews/review-data-model.md) R15).

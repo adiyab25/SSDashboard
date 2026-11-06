@@ -417,8 +417,9 @@ export const orderEvents = pgTable(
     operatingDay: date('operating_day').notNull(),
   },
   (t) => [
-    // Replay reads ORDER BY recorded_at, id: events of one transaction share recorded_at, and
-    // uuidv7() is monotonic within a session.
+    // Replay reads ORDER BY recorded_at, id. The trigger order_events_0_stamp_recorded_at sets
+    // recorded_at to clock_timestamp() (security review S1), so events keep their insert order;
+    // uuidv7() (monotonic within a session) breaks an equal instant.
     index('order_events_order_recorded_idx').on(t.orderId, t.recordedAt, t.id),
     // "Shipped yesterday" style reports.
     index('order_events_day_machine_state_idx').on(t.operatingDay, t.machine, t.toState),

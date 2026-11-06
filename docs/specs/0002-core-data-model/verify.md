@@ -1,4 +1,4 @@
-# Verify: Data model · spec 0002 · updated 2026-11-05 · original verified 2026-11-03 (PASS) · amendment 2026-11-05 not yet verified
+# Verify: Data model · spec 0002 · updated 2026-11-05 · original verified 2026-11-03 (PASS) · amendment 2026-11-05 verified 2026-11-06 (PASS)
 _Steps derived from spec 0002 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones._
 
 This feature has no screens or HTTP endpoints, so every step runs against PostgreSQL: the dev database from `deploy/compose.dev.yaml`, migrated with `pnpm db:migrate`. The database suites build their own scratch databases.
@@ -17,7 +17,7 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 
 ## Database checks (psql as the owner role)
 - [x] As `ssdashboard_app` (`SET ROLE ssdashboard_app`), `UPDATE stock_movements SET quantity = 1` → fails with permission denied; as the owner it fails with "append only" → AC-2
-- [x] `TRUNCATE stock_movements` as the owner → fails with "append only" → AC-2
+- [x] `TRUNCATE stock_movements CASCADE` as the owner → fails with "append only" (without `CASCADE` it fails earlier, on the foreign keys that reference the table, with `cannot truncate a table referenced in a foreign key constraint`) → AC-2
 - [x] `DELETE` a product variant that has movements → fails on a foreign key; setting `archived_at` works; deleting an unused variant works → AC-13
 
 ## Ledger behavior (each is a test in the api e2e suite; rerun by hand if a test changes)
@@ -54,7 +54,7 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 - [x] Outbound from zero or below: kept average; average 0 → cost 0 and `cost_unknown` → Value sourcing: outbound at or below 0
 - [x] Outbound `unit_cost` = round(|total| / |quantity|, 4) (−13.33 over 4 → 3.3325) → Value sourcing: outbound `unit_cost`
 - [x] Reversal rows keep the original SKU, place, lot, `unit_cost`, and `source_line_id`; the group keeps the original `source_type` and `source_id` → Value sourcing: reverse lines
-- [x] `effective_at` defaults to now; Cairo date compared with `inventory_lock_date`; at most 5 minutes ahead → Value sourcing: `effective_at`
+- [x] `effective_at` defaults to now; its operating day (Cairo date with `operating_day_cutoff_hour`, stamped by the database) compared with `inventory_lock_date` (review R5); at most 5 minutes ahead → Value sourcing: `effective_at`
 - [x] `recorded_at` is the database clock and matches on the group and its movements → Value sourcing: `recorded_at`
 - [x] `allow_negative` on the location decides whether stock may go below zero → Value sourcing: negative stock allowed
 - [x] `posted_by` is stored from input, null when omitted → Value sourcing: posted by
@@ -86,78 +86,88 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 - AC-14 … scale step
 
 ## Amendment 2026-11-05 checks
-_Not yet verified. Derived from AC-15 to AC-36 (as revised by the fix pass of 2026-11-05) and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
+_Verified 2026-11-06 (PASS, see `docs/reviews/verify-data-model.md`). Derived from AC-15 to AC-36 (as revised by the fix pass of 2026-11-05) and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
 
 ### Commands
-- [ ] `pnpm db:migrate` on an empty database → `Migrations applied.` from the three baseline files (`0000_baseline_extensions.sql`, `0001_baseline_tables.sql`, `0002_baseline_rules.sql`); regenerating with `pnpm db:generate` changes only `0001`; a second run applies nothing; `SELECT * FROM install` → one row whose `id` equals `current_setting('ssd.tenant_id')`; `SHOW ssd.app_role` in a new session → `ssdashboard_app` → AC-16
-- [ ] Rerun `migrate` with a different `TENANT_ID` → fails with `TenantMismatch`, nothing changed → AC-16
-- [ ] `pnpm --filter @ssdashboard/db test:e2e` → all pass, including `tenant.e2e-spec.ts`, `operating-day.e2e-spec.ts`, and an append only case per table in A4 → AC-15, AC-17, AC-33
-- [ ] `pnpm test` → all pass, including the phone, transition, outcome, line split, credit arithmetic, settlement state, ownership map, module boundary, owner type boundary, cost lookup, and redaction tests → AC-19 to AC-22, AC-24, AC-25, AC-27, AC-29, AC-30, AC-32, AC-34
-- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `location-owner-types.e2e-spec.ts` and the amended ledger suites → AC-29, AC-31
-- [ ] `pnpm test:e2e` → every pre existing api and Playwright test passes unchanged on the baseline → AC-16
-- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:scale` → every p95 under its budget (the audit entry budgets of spec 0010 included); record the measured values below → AC-36
+- [x] `pnpm db:migrate` on an empty database → `Migrations applied.` from the three baseline files (`0000_baseline_extensions.sql`, `0001_baseline_tables.sql`, `0002_baseline_rules.sql`); regenerating with `pnpm db:generate` changes only `0001`; a second run applies nothing; `SELECT * FROM install` → one row whose `id` equals `current_setting('ssd.tenant_id')`; `SHOW ssd.app_role` in a new session → `ssdashboard_app` → AC-16
+- [x] Rerun `migrate` with a different `TENANT_ID` → fails with `TenantMismatch`, nothing changed → AC-16
+- [x] `pnpm --filter @ssdashboard/db test:e2e` → all pass, including `tenant.e2e-spec.ts`, `operating-day.e2e-spec.ts`, and an append only case per table in A4 → AC-15, AC-17, AC-33
+- [x] `pnpm test` → all pass, including the phone, transition, outcome, line split, credit arithmetic, settlement state, ownership map, module boundary, owner type boundary, cost lookup, and redaction tests → AC-19 to AC-22, AC-24, AC-25, AC-27, AC-29, AC-30, AC-32, AC-34
+- [x] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `location-owner-types.e2e-spec.ts` and the amended ledger suites → AC-29, AC-31
+- [x] `pnpm test:e2e` → every pre existing api and Playwright test passes unchanged on the baseline → AC-16
+  > Caveat: in a worktree whose ports are not 3000 and 3001, set `E2E_WEB_PORT`, `E2E_API_PORT`, and `E2E_PROD_PORT`; the Playwright config then starts both servers itself (F4 of `docs/reviews/verify-data-model.md`). Two Playwright specs are known flaky and pass on rerun (F5).
+- [x] `pnpm build && pnpm --filter @ssdashboard/api test:scale` → every p95 under its budget (the audit entry budgets of spec 0010 included); record the measured values below → AC-36
+  > Caveat: the single line `ledger.post` budget (50 ms) failed once at 59.9 ms while other checkouts loaded the shared server and passed at 17.5 ms the next run; the CI `scale` job on its own PostgreSQL is the reference (F2). Not rerun in the 2026-11-06 re-verify.
   > Measured 2026-11-06 on the shared dev PostgreSQL 18 (Windows, Docker), two consecutive runs of `test:scale`, p95 in ms over 60 timed runs after 20 warm ups, each read's plan asserted to use the named index. The spec 0010 audit entry budgets wait for feature 10 (`it.todo` in the file). The budgets stay as specified: every row is far under its budget on a quiet server; the single line `ledger.post` (real commits) reached 54 ms and 205 ms in two earlier runs only while other checkouts loaded the same server, so the CI `scale` job on its own PostgreSQL service is the reference run. Seed: 233 to 306 s.
   >
   > | Read or write | Budget | Run 1 | Run 2 | Index asserted |
   > |---|---|---|---|---|
   > | SKU search by code prefix or name fragment | 150 | 5.6 | 4.3 | `product_variants_sku_c_idx` (prefix; the name branch scans `products`, carried to feature 12) |
-  > | stock on hand and available for one SKU | 50 | 2.0 | 2.2 | stock levels by variant |
+  > | stock on hand and available for one SKU | 50 | 2.0 | 2.2 | `stock_levels_key_unique` (the plan of the exact statement `getAvailable` runs, `buildAvailabilitySql`, is asserted) |
   > | single line `ledger.post` | 50 | 18.7 | 14.0 | (writes) |
   > | order by store and number | 20 | 0.6 | 0.7 | `orders_store_number_unique` |
   > | customer by phone | 20 | 0.8 | 0.9 | `customer_phones_phone_unique` |
-  > | one customer's credit balance (canonical, 3 ids) | 20 | 0.8 | 1.4 | `customers_merged_into_idx`, `credit_entries_customer_funding_idx` |
+  > | one customer's credit balance (canonical, 3 ids) | 20 | 0.8 | 1.4 | `customers_merged_into_idx` and `credit_entries_customer_funding_idx` (both asserted in the plan) |
   > | confirmation queue page | 150 | 1.0 | 1.2 | `orders_confirmation_queue_idx` |
   > | orders list page by store, keyset | 150 | 1.1 | 1.3 | `orders_store_placed_idx` (first and next page) |
   > | orders of one operating day per store | 150 | 1.6 | 1.7 | `orders_operating_day_store_idx` |
   > | My work for a person and for a hat | 150 | 0.7 | 0.8 | `tasks_open_owner_user_idx`, `tasks_open_owner_hat_idx` |
   > | unmatched settlement lines of one statement | 150 | 1.8 | 2.3 | `settlement_lines_statement_idx`, `settlement_line_matches_line_recorded_idx` |
   > | one order's event timeline | 50 | 0.6 | 0.7 | `order_events_order_recorded_idx` |
-- [ ] `pnpm test:e2e` does not run `test/scale.e2e-spec.ts`; the CI `scale` job runs it nightly and on a pull request labelled `scale` → AC-36
-- [ ] `pnpm lint` → passes; a planted `schema.orders` import in another module's folder fails the boundary test; a planted `=== 'consignment_partner'` outside the policy file fails the owner type boundary test → AC-29, AC-34
+- [x] `pnpm test:e2e` does not run `test/scale.e2e-spec.ts`; the CI `scale` job runs it nightly and on a pull request labelled `scale` → AC-36
+- [x] `pnpm lint` → passes; a planted `schema.orders` import in another module's folder fails the boundary test; a planted `=== 'consignment_partner'` outside the policy file fails the owner type boundary test → AC-29, AC-34
 
 ### Database checks (psql)
-- [ ] `INSERT INTO stores (code, name, kind) VALUES ('X', '{"en":"X"}', 'internal') RETURNING tenant_id` → the install's id; the same insert in a scratch database that has no `ssd.tenant_id` setting → fails → AC-15
-- [ ] Two stores, each with order `#1001` → both insert; a second `#1001` in one store → unique violation → AC-18
-- [ ] A `shopify` connection without a store → check violation; a second `shopify` connection on one store → unique violation; a `bosta` connection with and without a store → both insert → AC-18
-- [ ] A `gifted` order with a line gross above 0 or a shipping charge → check violation (`total_amount = 0`); a gifted line with `unit_price` 500.00 and discount 500.00 → inserts; an `exchange_replacement` without `original_order_id` → check violation → AC-23
-- [ ] An order with `fulfillment_state = 'refused'` and no `refused_reason_code` → check violation; a `gateway` connection → inserts; an order with `prepaid_amount > 0` and no `prepaid_method` → check violation → AC-18, AC-19, AC-24
-- [ ] A `goodwill` credit entry funded `cod_cash`, a `refund_payout` funded `credit_only`, and a `refund_payout` without `payout_method` → each a check violation; a reversal of a `return_credit` with a negative amount → inserts → AC-24
-- [ ] A settlement line inserted twice into one statement with one `external_line_ref` → unique violation; the same ref in a superseding statement → inserts; `settlement_lines` has no `period_id` column; an `accounted` match without `account_code` → check violation → AC-25
-- [ ] A task with `owner_hat = 'partner'` → check violation → AC-26
-- [ ] `UPDATE locations SET owner_type = 'own'` on a partner location → fails with `OwnerTypeFixed` → AC-29
-- [ ] Close a settlement period, then `UPDATE settlement_periods SET ends_on = ends_on - 1` on it → fails with `PeriodClosed`; after a revoke the same update succeeds → AC-25
-- [ ] A `consumption_release` without `order_id` → check violation; an order paid by credit, partially delivered, with its returned line's credit released, derives `kept` → AC-22, AC-24
-- [ ] Two periods of one settlement account with overlapping dates → exclusion violation; a `carrier` account with a party → check violation → AC-25
-- [ ] A task set to `done` without an outcome → check violation; two open tasks with one dedupe key → unique violation → AC-26
-- [ ] `SELECT ssd_operating_day('2026-11-05 22:30:00+00')` → the Cairo local date of that instant (`2026-11-06` when the database's zone data puts Cairo at UTC+2 that day; the e2e test, not this line, owns the transition dates) → AC-17
-- [ ] As the app role, `UPDATE credit_entries SET amount = 1` → permission denied; as the owner → "append only" (repeat for each A4 table) → AC-33
+- [x] `INSERT INTO stores (code, name, public_name, kind) VALUES ('X', '{"en":"X"}', '{"en":"X"}', 'internal') RETURNING tenant_id` → the install's id; the same insert in a scratch database that has no `ssd.tenant_id` setting → fails → AC-15
+- [x] Two stores, each with order `#1001` → both insert; a second `#1001` in one store → unique violation → AC-18
+- [x] A `shopify` connection without a store → check violation; a second `shopify` connection on one store → unique violation; a `bosta` connection with and without a store → both insert → AC-18
+- [x] A `gifted` order with a line gross above 0 or a shipping charge → check violation (`total_amount = 0`); a gifted line with `unit_price` 500.00 and discount 500.00 → inserts; an `exchange_replacement` without `original_order_id` → check violation → AC-23
+- [x] An order with `fulfillment_state = 'refused'` and no `refused_reason_code` → check violation; a `gateway` connection → inserts; an order with `prepaid_amount > 0` and no `prepaid_method` → check violation → AC-18, AC-19, AC-24
+- [x] A `goodwill` credit entry funded `cod_cash`, a `refund_payout` funded `credit_only`, and a `refund_payout` without `payout_method` → each a check violation; a reversal of a `return_credit` with a negative amount → inserts → AC-24
+- [x] A settlement line inserted twice into one statement with one `external_line_ref` → unique violation; the same ref in a superseding statement → inserts; `settlement_lines` has no `period_id` column; an `accounted` match without `account_code` → check violation → AC-25
+- [x] A task with `owner_hat = 'partner'` → check violation → AC-26
+- [x] `UPDATE locations SET owner_type = 'own'` on a partner location → fails with `OwnerTypeFixed` → AC-29
+- [x] Close a settlement period, then `UPDATE settlement_periods SET ends_on = ends_on - 1` on it → fails with `PeriodClosed`; after a revoke the same update succeeds → AC-25
+- [x] A `consumption_release` without `order_id` → check violation; an order paid by credit, partially delivered, with its returned line's credit released, derives `kept` → AC-22, AC-24
+- [x] Two periods of one settlement account with overlapping dates → exclusion violation; a `carrier` account with a party → check violation → AC-25
+- [x] A task set to `done` without an outcome → check violation; two open tasks with one dedupe key → unique violation → AC-26
+- [x] `SELECT ssd_operating_day('2026-11-05 22:30:00+00')` → the Cairo local date of that instant (`2026-11-06` when the database's zone data puts Cairo at UTC+2 that day; the e2e test, not this line, owns the transition dates) → AC-17
+- [x] As the app role, `UPDATE credit_entries SET amount = 1` → permission denied; as the owner → "append only" (repeat for each A4 table) → AC-33
+  > Caveat: this proves the 13 tables built today. `licenses`, `license_checks`, and `audit_entries` (specs 0009 and 0010) are already listed in `APPEND_ONLY_TABLES` and are checked when those tables are built (F7).
 
 ### Value sourcing (one per row: vary the input the value depends on)
-- [ ] `tenant_id` comes from the database setting, never from the writer → Tenancy child: any insert
-- [ ] `operating_day` follows its source column and the `timezone` and `operating_day_cutoff_hour` settings; changing the zone changes new rows only → Tenancy child: stamped insert
-- [ ] Order `cod_expected_amount` = total − prepaid − credit applied, frozen when the carrier delivery exists → Orders child: create order
-- [ ] `cod_due_amount`: a 2,450.00 order (three 800.00 pieces, 50.00 shipping) with one piece back gives 1,650.00 (full shipping kept); a full return to origin gives 0; a cancelled line leaves `lines_gross_amount` → Orders child: money on the order
-- [ ] Allocation: 300.00 credit on lines of 600.00 and 350.00 with 50.00 shipping gives 180.00, 105.00, and 15.00 → Orders child: allocation
-- [ ] `delivered_amount` counts `delivered` and `returned` lines, so two delivered 500 pieces with one returned and refunded give `partially_refunded` → Orders child: the derived outcome
-- [ ] A return credit splits by funding: a 1,200.00 COD line with a 300.00 `credit_only` share gives 300.00 `credit_only` and 900.00 `cod_cash` → Customers child: return credit
-- [ ] Payout matching: `gateway` funding only by `gateway_refund`; `cod_cash` and `instapay_or_transfer` by carrier cash or InstaPay; `credit_only` never → Customers child: refund payout
-- [ ] Consumption spends `credit_only` first and is 0 for a customer who owes; a `debt_payment` never exceeds the debt → Customers child: consumption, debt payment
-- [ ] A line's period is found from `occurred_on`: lines imported before the period existed join it → Settlement child: rules
-- [ ] An opening stock line without a cost raises `InvalidCost`; the onboarding import's uncosted style list comes from `CostService` returning `NotSet`; an `estimate` record is returned with its basis → Catalog child: stock ledger changes
-- [ ] First cash state from the amounts (`unpaid`, `prepaid`, `nothing_to_collect`) → Orders child: first state rule
-- [ ] Split amounts: the worked example (gross 1,000.00 over 3 units, 1 returned → 333.33 and 666.67) → Orders child: partial delivery
-- [ ] Outcome from fulfillment state, delivered amount, and refunded amount, one case per row → Orders child: the derived outcome
-- [ ] Return credit share and the last unit's exact rest (999.99 over 2 → 500.00 then 499.99) → Customers child: return credit
-- [ ] Consumption and balance due (500 credit, 800 order → 500 and 300); leftover (800 credit, 500 order → 300) → Customers child: exchange
-- [ ] Phone normalization, one case per table row → Customers child: phone normalization
-- [ ] A line's state is its latest match row; a period's status is its latest event → Settlement child: rules
-- [ ] Carrier line store from the account binding, else the delivery's store → Settlement child: import
-- [ ] Cost lookup by newest effective date, override on a tie, then newest recorded → Catalog child: cost lookup
-- [ ] Cost rule `not_set` before the first set row, never 0 → Catalog child: per order cost rules
-- [ ] Owner type answers come from the seeded policy rows → Catalog child: locations
+- [x] `tenant_id` comes from the database setting, never from the writer → Tenancy child: any insert
+- [x] `operating_day` follows its source column and the `timezone` and `operating_day_cutoff_hour` settings; changing the zone changes new rows only → Tenancy child: stamped insert
+- [x] Order `cod_expected_amount` = total − prepaid − credit applied, frozen when the carrier delivery exists → Orders child: create order
+- [x] `cod_due_amount`: a 2,450.00 order (three 800.00 pieces, 50.00 shipping) with one piece back gives 1,650.00 (full shipping kept); a full return to origin gives 0; a cancelled line leaves `lines_gross_amount` → Orders child: money on the order
+- [x] Allocation: 300.00 credit on lines of 600.00 and 350.00 with 50.00 shipping gives 180.00, 105.00, and 15.00 → Orders child: allocation
+- [x] `delivered_amount` counts `delivered` and `returned` lines, so two delivered 500 pieces with one returned and refunded give `partially_refunded` → Orders child: the derived outcome
+- [x] A return credit splits by funding: a 1,200.00 COD line with a 300.00 `credit_only` share gives 300.00 `credit_only` and 900.00 `cod_cash` → Customers child: return credit
+- [x] Payout matching: `gateway` funding only by `gateway_refund`; `cod_cash` and `instapay_or_transfer` by carrier cash or InstaPay; `credit_only` never → Customers child: refund payout
+- [x] Consumption spends `credit_only` first and is 0 for a customer who owes; a `debt_payment` never exceeds the debt → Customers child: consumption, debt payment
+- [x] A line's period is found from `occurred_on`: lines imported before the period existed join it → Settlement child: rules
+- [x] An opening stock line without a cost raises `InvalidCost`; the onboarding import's uncosted style list comes from `CostService` returning `NotSet`; an `estimate` record is returned with its basis → Catalog child: stock ledger changes
+- [x] First cash state from the amounts (`unpaid`, `prepaid`, `nothing_to_collect`) → Orders child: first state rule
+- [x] Split amounts: the worked example (gross 1,000.00 over 3 units, 1 returned → 333.33 and 666.67) → Orders child: partial delivery
+- [x] Outcome from fulfillment state, delivered amount, and refunded amount, one case per row → Orders child: the derived outcome
+- [x] Return credit share and the last unit's exact rest (999.99 over 2 → 500.00 then 499.99) → Customers child: return credit
+- [x] Consumption and balance due (500 credit, 800 order → 500 and 300); leftover (800 credit, 500 order → 300) → Customers child: exchange
+- [x] Phone normalization, one case per table row → Customers child: phone normalization
+- [x] A line's state is its latest match row; a period's status is its latest event → Settlement child: rules
+- [x] Carrier line store from the account binding, else the delivery's store → Settlement child: import
+- [x] Cost lookup by newest effective date, override on a tie, then newest recorded → Catalog child: cost lookup
+- [x] Cost rule `not_set` before the first set row, never 0 → Catalog child: per order cost rules
+- [x] Owner type answers come from the seeded policy rows → Catalog child: locations
 
 ### Scale results
-_Fill in from the first measured run (AC-36); the budgets in the catalog child are Assumed until then._
+_Measured: see the table under the `test:scale` command above (AC-36)._
+
+### Guards added by the fix pass of 2026-11-06 (security review S1 to S7, domain review D1, review R5 and R6)
+- [x] `recorded_at` is owned by the database on append only tables: an insert that supplies `recorded_at = '2999-01-01'` is stored with the database clock, on every append only table that has the column; `ssd_stamp_recorded_at` is the first insert trigger of each → `packages/db/test/schema.e2e-spec.ts` (`stamps recorded_at on every append only table that has one, first of its insert triggers (S1)`) and `settlement.e2e-spec.ts` (a closed event dated 2999 no longer locks a period). By hand: a `cost_records` insert with `recorded_at` 2999 returned `recorded_at < now() + 1 minute` true → AC-33, security S1
+- [x] The superseded clear (D1): an accounted line of a superseded statement may be cleared with the reason `superseded`, and nothing else may follow an accounted row; the clear is refused while the statement is live → `packages/db/test/settlement.e2e-spec.ts`, `describe('the superseded clear (D1)')` and `refuses a rematch, another account code, or another reason on an accounted line` → AC-25
+- [x] The lock date follows the stamped operating day, not the calendar date: with `operating_day_cutoff_hour` 3 and lock date 2026-09-30, a posting at 01:00 Cairo on 1 October is `PeriodLocked` (`lockDate` 2026-09-30) and one at 04:00 is accepted with `operating_day` 2026-10-01 → `apps/api/test/ledger.e2e-spec.ts` `applies the lock date to the operating day, with the cutoff hour (R5)` → AC-6
+- [x] The credit posting lock: two transactions cannot split one posting or reverse one original concurrently, and a reversal of an original the statement cannot see yet is refused by the guard rather than by the foreign key → `packages/db/test/credit.e2e-spec.ts` `describe('concurrent writers (S6, R6)')` → AC-24
+- [x] Guards the per table suites did not name (store, channel, and settlement account code uniqueness, split line self key, task closer, dotted codes) → `packages/db/test/guard-gaps.e2e-spec.ts` → AC-18, AC-21, AC-25, AC-26
 
 ### Acceptance criteria coverage (amendment)
 - AC-15 … tenant schema test, psql insert check

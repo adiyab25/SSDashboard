@@ -198,6 +198,83 @@ describe('runMigrations', () => {
       }).toEqual(before);
     });
 
+    // A reset setting, or a restore that left out ALTER DATABASE settings, used to need a manual
+    // ALTER DATABASE. Every run now restores a missing setting: the tenant from the install row,
+    // the role from the owner of the pgboss schema (the install row has no role column).
+    it('restores both database settings after they were reset, leaving the install row as it was', async () => {
+      const url = await freshDatabase();
+      const name = new URL(url).pathname.slice(1);
+      const role = `ssd_restore${Date.now()}_app`;
+      try {
+        await runMigrations(url, { appRole: role });
+        const before = { install: await installRows(url), settings: await databaseSettings(url) };
+        await withAdmin((client) =>
+          client.query(
+            `ALTER DATABASE "${name}" RESET ssd.tenant_id; ALTER DATABASE "${name}" RESET ssd.app_role`,
+          ),
+        );
+        expect(await databaseSettings(url)).toEqual([]);
+
+        await runMigrations(url);
+
+        expect({
+          install: await installRows(url),
+          settings: await databaseSettings(url),
+        }).toEqual(before);
+        expect(before.settings).toEqual(
+          expect.arrayContaining([
+            `ssd.tenant_id=${before.install[0]?.id}`,
+            `ssd.app_role=${role}`,
+          ]),
+        );
+        // A new session reads the restored tenant, so new rows get it again.
+        const [session] = await query<{ same: boolean }>(
+          url,
+          "SELECT current_setting('ssd.tenant_id')::uuid = (SELECT id FROM install) AS same",
+        );
+        expect(session).toEqual({ same: true });
+      } finally {
+        await Promise.all(scratch.splice(0).map(dropScratchDatabase));
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
+      }
+    });
+
+    it('stops with TenantMismatch, changing nothing, when the database setting names another tenant', async () => {
+      const url = await freshDatabase();
+      const name = new URL(url).pathname.slice(1);
+      await runMigrations(url);
+      const before = { install: await installRows(url) };
+      await withAdmin((client) =>
+        client.query(
+          `ALTER DATABASE "${name}" SET ssd.tenant_id = '01a1b120-0000-7000-8000-00000000beef'`,
+        ),
+      );
+
+      await expect(runMigrations(url)).rejects.toBeInstanceOf(TenantMismatch);
+
+      expect(await databaseSettings(url)).toContain(
+        'ssd.tenant_id=01a1b120-0000-7000-8000-00000000beef',
+      );
+      expect({ install: await installRows(url) }).toEqual(before);
+    });
+
+    it('stops with AppRoleMismatch when APP_DB_ROLE differs from the role the baseline names, the setting being reset', async () => {
+      const url = await freshDatabase();
+      const name = new URL(url).pathname.slice(1);
+      const role = `ssd_named${Date.now()}_app`;
+      try {
+        await runMigrations(url, { appRole: role });
+        await withAdmin((client) => client.query(`ALTER DATABASE "${name}" RESET ssd.app_role`));
+
+        await expect(runMigrations(url, { appRole: 'ssdashboard_app' })).rejects.toBeInstanceOf(
+          AppRoleMismatch,
+        );
+      } finally {
+        await Promise.all(scratch.splice(0).map(dropScratchDatabase));
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
+      }
+    });
+
     it('stops with TenantMismatch, changing nothing, when TENANT_ID differs from the install row', async () => {
       const url = await freshDatabase();
       await runMigrations(url, { tenantId: '0192f7a0-0000-7000-8000-0000000000cc' });
@@ -369,6 +446,116 @@ describe('runMigrations', () => {
         expect(await query(url, "SELECT 1 FROM pg_tables WHERE tablename = 'install'")).toEqual([]);
       } finally {
         await dropScratchDatabase(scratch.splice(0)[0] ?? '');
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
+      }
+    });
+
+    // Security review S2: a role that replicates, holds the owner's privileges, or belongs to any
+    // role (pg_write_all_data writes every history table) is refused, on a first run and a rerun.
+    it.each([
+      [
+        'a role that can replicate',
+        (role: string) => `ALTER ROLE "${role}" REPLICATION`,
+        /replicate/,
+      ],
+      [
+        'a role that holds the owner role',
+        (role: string) =>
+          `DO $$ BEGIN EXECUTE format('GRANT %I TO %I', current_user, '${role}'); END $$`,
+        /privileges of the role migrate connects as/,
+      ],
+      [
+        'a member of pg_write_all_data',
+        (role: string) => `GRANT pg_write_all_data TO "${role}"`,
+        /member of pg_write_all_data/,
+      ],
+      [
+        'a member of pg_read_all_data',
+        (role: string) => `GRANT pg_read_all_data TO "${role}"`,
+        /member of pg_read_all_data/,
+      ],
+      [
+        'a member of an ordinary role, without inheriting it',
+        (role: string) =>
+          `CREATE ROLE "${role}_group" NOLOGIN; GRANT "${role}_group" TO "${role}" WITH INHERIT FALSE`,
+        /member of ssd_/,
+      ],
+    ])('refuses %s as the app role, on a rerun too (S2)', async (_name, grant, reason) => {
+      const url = await freshDatabase();
+      const role = `ssd_s2${Date.now()}_app`;
+      try {
+        await runMigrations(url, { appRole: role });
+        await withAdmin((client) => client.query(grant(role)));
+
+        const failure = await runMigrations(url).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(failure).toBeInstanceOf(UnsafeAppRole);
+        expect((failure as Error).message).toMatch(reason);
+        await expect(setAppRoleLogin(url, 'secret-for-test')).rejects.toBeInstanceOf(UnsafeAppRole);
+      } finally {
+        await Promise.all(scratch.splice(0).map(dropScratchDatabase));
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
+        await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}_group"`));
+      }
+    });
+
+    // Security review S3 (b). Recorded on PostgreSQL 18.6: the app role CANNOT set ssd.tenant_id or
+    // ssd.app_role on itself ("permission denied to set parameter"), but CAN set its own
+    // search_path. The test proves both against the server it runs on, then shows that migrate
+    // refuses (never resets) either kind of role setting, whoever wrote it.
+    it('refuses app role settings for ssd.* or search_path; PG 18 lets the role set only search_path itself (S3)', async () => {
+      const url = await freshDatabase();
+      const role = `ssd_s3${Date.now()}_app`;
+      const tenant = '01a1b120-0000-7000-8000-00000000abcd';
+      const asRole = async (statement: string): Promise<string> => {
+        const client = new pg.Client({ connectionString: url });
+        await client.connect();
+        try {
+          await client.query(`SET ROLE "${role}"`);
+          await client.query(statement);
+          return 'allowed';
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        } finally {
+          await client.end();
+        }
+      };
+      try {
+        await runMigrations(url, { appRole: role });
+
+        expect(await asRole(`ALTER ROLE "${role}" SET ssd.tenant_id = '${tenant}'`)).toMatch(
+          /permission denied to set parameter "ssd.tenant_id"/,
+        );
+        expect(await asRole(`ALTER ROLE "${role}" SET search_path = pg_temp, public`)).toBe(
+          'allowed',
+        );
+        await expect(runMigrations(url)).rejects.toThrow(/role settings set search_path/);
+
+        await withAdmin((client) => client.query(`ALTER ROLE "${role}" RESET search_path`));
+        await runMigrations(url);
+        const name = new URL(url).pathname.slice(1);
+        await withAdmin((client) =>
+          client.query(
+            `ALTER ROLE "${role}" IN DATABASE "${name}" SET ssd.tenant_id = '${tenant}'`,
+          ),
+        );
+        const failure = await runMigrations(url).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(failure).toBeInstanceOf(UnsafeAppRole);
+        expect((failure as Error).message).toMatch(/role settings set ssd.tenant_id/);
+        expect((failure as Error).message).not.toContain(tenant);
+        // Refused, not reset: the setting is still there for the operator to see.
+        const left = await query<{ n: number }>(
+          url,
+          `SELECT count(*)::int AS n FROM pg_db_role_setting WHERE setrole = '${role}'::regrole`,
+        );
+        expect(left).toEqual([{ n: 1 }]);
+      } finally {
+        await Promise.all(scratch.splice(0).map(dropScratchDatabase));
         await withAdmin((client) => client.query(`DROP ROLE IF EXISTS "${role}"`));
       }
     });
