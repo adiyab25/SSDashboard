@@ -127,4 +127,25 @@ describe('Arabic digit input at the api edge', { timeout: 90_000 }, () => {
     expect(refused.status).toBe(400);
     expect(refused.body).toMatchObject({ issues: [{ path: 'lines.0.unitCost' }] });
   });
+
+  it('keeps a password with Arabic digits exactly as typed (AC-18)', async () => {
+    const person = await signInAs(base, owner.pool, { email: 'digits@example.com', role: 'staff' });
+    const typed = 'Mixed-Pass-1-٣١';
+    const changed = await call('POST', '/auth/change-password', person, {
+      currentPassword: 'Test-Password-1',
+      newPassword: typed,
+      revokeOtherSessions: false,
+    });
+    expect(changed.status).toBe(200);
+
+    const signIn = async (password: string) =>
+      fetch(`${base}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base },
+        body: JSON.stringify({ email: 'digits@example.com', password }),
+      });
+    // The same characters sign in; the Western digit lookalike does not, so nothing was normalized.
+    expect((await signIn(typed)).status).toBe(200);
+    expect((await signIn('Mixed-Pass-1-31')).status).toBe(401);
+  });
 });
