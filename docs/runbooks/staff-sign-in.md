@@ -69,7 +69,7 @@ A vendor hosted client follows the same steps. Run them in that client's own Com
 docker compose --env-file .env up -d
 ```
 
-The `migrate` service runs first. It applies the database migrations and then exits. The `api` and the `worker` start only after `migrate` finishes without error (`deploy/compose.yaml` lines 54 to 56 and 79 to 81). If `migrate` fails, the api does not start. Read the migrate log, fix the cause, and run the same command again:
+The `migrate` service runs first. It applies the database migrations and then exits. The `api` and the `worker` start only after `migrate` finishes without error (the `depends_on` blocks of `api` and `worker` in `deploy/compose.yaml`). If `migrate` fails, the api does not start. Read the migrate log, fix the cause, and run the same command again:
 
 ```bash
 docker compose --env-file .env logs migrate
@@ -304,7 +304,7 @@ What goes wrong:
 - **Behind a client proxy with `SITE_ADDRESS=:80` and an empty `TRUSTED_PROXIES`.** Caddy sees the proxy as the client. Every user shares one address. The per IP limits then apply to the whole install.
 - **A wide range, such as `0.0.0.0/0`.** Anyone can fake their address, and the per IP limits stop meaning anything. Never use one.
 
-Only `caddy` publishes ports (`deploy/compose.yaml` line 108). The api cannot be reached around Caddy, which is why it can trust that header.
+Only `caddy` publishes ports (the `ports:` of `caddy` in `deploy/compose.yaml`). The api cannot be reached around Caddy, which is why it can trust that header.
 
 **Later (feature 26):** one edge Caddy in front of many client stacks changes this chain. Each stack behind that edge must list the edge's address in its `TRUSTED_PROXIES`, and the edge must send one client address. Spec 0005 requires that `apps/api/test/compose-ports.spec.ts` stays meaningful when that change lands.
 

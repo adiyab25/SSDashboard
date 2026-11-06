@@ -499,3 +499,91 @@ _AC-27 to AC-35. Not yet run. Run against a throwaway database with the api, wor
 - AC-33 … sessions follow hat changes, revoke on loss of every hat, last admin under the lock, log line · covered by UI step 9 and Commands steps 16 to 19
 - AC-34 … both languages and both audiences, neutral wording, accessible authentication · covered by UI steps 5 to 7
 - AC-35 … run book · covered by UI step 10 (the run book edit itself is milestone 4 of the amendment build plan)
+
+# Amendment 2026-11-05 (feature 7): results · verified 2026-11-06 by the QA tester, branch `feat/identity-audience-guard`, HEAD `0d0b458`
+
+_Legend: pass, FAIL, not run (with the reason). Evidence is real output from this run. The checklist above this heading is the plan; this section is the result. No partner user exists before spec 0008, so partner steps ran against the test double of AC-29 (the e2e suites inject it)._
+
+## Gates
+
+| Command | Result |
+|---|---|
+| `pnpm --filter @ssdashboard/api test` | pass: 53 files, 645 tests |
+| `pnpm --filter @ssdashboard/api test:e2e` | pass: 26 files, 342 passed, 1 skipped (scratch databases) |
+| `E2E_BASE_URL=http://localhost:3800 E2E_PROD_BASE_URL=http://localhost:3800 pnpm exec playwright test --project=desktop --project=mobile` (next dev on 3800, api on 3801, database `ssdashboard_identity`) | first run: 440 passed, 26 failed, 131 skipped, 3 did not run. The 26 were timing failures with four parallel workers on a dev server (home, account, localization, stock, audience landing). Re run with `--last-failed --workers=2`: **29 passed, 0 failed**. Treat as flaky under load, not a product failure. The api on 3801 was a process I did not start (it restarted once during the first attempt, which gave a 500 in global setup); I did not stop it |
+
+## UI / manual
+
+- pass AC-27: signed in as the admin through Caddy on the run book stack (change password, then Overview). Account, staff and two factor are covered by the api e2e suites above
+- pass AC-28: partner lands on `/partner`, `returnTo=/stock` ignored, a staff person with `returnTo=/partner` lands on `/`: Playwright `audience-landing.spec.ts` (desktop and mobile, passed on the re run)
+- pass AC-28, AC-34: partner account screen, `partner-account.spec.ts`
+- pass AC-34: axe on every `(auth)` screen in both languages and directions, `auth-accessibility.spec.ts` (one account page case was among the 26 timing failures and passed on the re run)
+- not run AC-34: keyboard walk and copy reading by hand (Playwright specs only)
+- not run AC-31: path fallback in a browser (Caddy has no prefix rule; run book section 9.2 says so)
+- not run AC-33: live hat removal in two browsers (needs spec 0008)
+- AC-35: see the next section. Result: **FAIL on the shipped files at run book step 1.3** (migrate cannot start). Every later step passes once `deploy/compose.yaml` is patched in a scratch copy.
+
+## AC-35: the run book walked on a fresh vendor hosted stack
+
+Setup: a scratch copy of `deploy/` outside the repo, images built from `deploy/Dockerfile.app` and `deploy/Dockerfile.web` as `local/ssdashboard-{app,web}:qa` (`SSD_REGISTRY=local`, `SSD_VERSION=qa`), `CLIENT_ID=qarb` (Compose project `ssdashboard-qarb`, which is how the run book names a client; no `-p`), `SITE_ADDRESS=localhost`, `PUBLIC_URL=https://localhost` (Caddy's own certificate; the browser ignored the certificate error), mail off. Ports 80 and 443 were free, so no port deviation. The dev stack (`ssdashboard-dev`) was not touched. Torn down with `docker compose --env-file .env down -v` for the `qarb` project only, and the two local images removed.
+
+| Run book step | Result | Evidence |
+|---|---|---|
+| 1.1 log driver | pass | `docker info --format '{{.LoggingDriver}}'` printed `local` |
+| 1.2 `./bootstrap.sh`, fill `.env` | pass, with gaps (R3, R4) | wrote `.env` with fresh secrets; `docker compose config -q` ok |
+| 1.3 `docker compose --env-file .env up -d` | **FAIL as shipped** (R1) | `service "migrate" didn't complete successfully: exit 1`; `docker compose logs migrate`: `Invalid environment: ... at PUBLIC_URL ... at BETTER_AUTH_SECRET`. The same `migrate` block is on `main` |
+| 1.3 after adding `PUBLIC_URL` and `BETTER_AUTH_SECRET` to the `migrate` environment in the scratch copy | pass | migrate `Exited (0)`; api, worker, web, caddy, postgres up; `https://localhost/api/health` answered 200 |
+| 1.4 tenant id | pass | `SHOW ssd.tenant_id` and `SELECT id FROM install` both `01a1b1b5-e089-765b-90bf-3aa58dd5e753` |
+| 1.4 symptom and fix (after `ALTER DATABASE ... RESET ssd.tenant_id`) | pass, symptom text imprecise (R5) | `create-admin failed: 42704`; `SHOW` printed `unrecognized configuration parameter`; `compose run` re ran migrate and did not restore it; the run book's steps 1 to 3 restored it and `--reset-password` then worked |
+| 1.5 create-admin | pass | `Admin created: owner@example.com` plus the temporary password line, exit 0 |
+| First sign in through the web | pass | `https://localhost/sign-in` h1 `Sign in`; after sign in the URL was `/change-password`, h1 `Change your password`; cookie `__Secure-better-auth.session_token` host only (no `Domain`), `Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax` |
+| Forced password change | pass | current password plus a new one accepted; landed on `/`, h1 `Overview` |
+| Lockout (section 4) | pass | five wrong passwords gave 401 x5; the correct password then gave 401 |
+| 2.1 recovery `--reset-password --email owner@example.com` | pass | `Password reset: owner@example.com. Sessions ended and lockout cleared.`; log line `auth.admin_break_glass_reset` with no password or email; the temporary password then signed in (200); the old password gave 401 |
+| 1.6 second admin, two factor, 2.2, 2.5 | not run | time; covered by the `create-admin-reset` and `two-factor` e2e suites |
+
+## Findings
+
+Ranked: bug first, then run book findings.
+
+1. **BLOCKER (R1): `migrate` cannot start from the shipped `deploy/compose.yaml`.** `apps/api/src/migrate.ts` calls `loadEnv()`, whose schema requires `PUBLIC_URL` and `BETTER_AUTH_SECRET`; the `migrate` service gets only `x-app-env` plus its own keys, so neither is set. Reproduce: `./bootstrap.sh`, set the five values, `docker compose --env-file .env up -d`. Expected: stack up (run book 1.3). Actual: exit 1 and the api never starts. Present on `main` too (not caused by this branch). No test catches it: `apps/api/test/compose-ports.spec.ts` checks ports and env lists, not that each service's env satisfies `loadEnv`. Fix options: give `migrate` the two values, or let `migrate.ts` parse only what it needs. Suggested regression test (not written, it needs a production decision first): `compose env satisfies loadEnv for migrate`.
+2. **MAJOR (R2): the AC-35 done-when is not met on the shipped files.** A person cannot follow the run book on an empty stack to a signed in admin until R1 is fixed. It is met once R1 is patched (table above).
+3. MINOR (R3): sections 1.2 and 1.3 never say where the images come from. `compose.yaml` pulls `ghcr.io/adiyab25/ssdashboard-*:<SSD_VERSION>`; the operator needs a registry login, a published tag and the `deploy/` folder, none of which is mentioned. Caddy also mounts `../extensions/<CLIENT_ID>/locales` (Docker creates it when missing); not mentioned.
+4. MINOR (R4): section 1.2 does not say that a bare host such as `localhost` makes Caddy use its own certificate (a browser warning), or what to do for a trial run without a public name. The `:80` guidance covers only a client TLS proxy.
+5. MINOR (R5): section 1.4 gives the symptom as `create-admin failed:` plus a PostgreSQL code "or `database error`". Observed: `create-admin failed: 42704`. Name `42704` as the known value for a missing setting.
+6. MINOR (R6): stale line numbers in the run book at HEAD: staff service lines (`staff.service.ts` disable is at 387, reset password 430, two factor reset 501, invited email change 351; the book says 386, 424, 485, 350) and `env.ts` `PUBLIC_URL` (line 121; the book says 118 to 124). Someone already replaced the compose line numbers in the working tree while this ran; prefer naming the function over line numbers everywhere.
+7. NOTE (R7): section 3 says never to save the output. This walk-through saved the throwaway password to a scratch file; fine for a test, no change needed.
+8. NOTE: the first Playwright run had 26 timing failures under load; consider fewer workers for the dev server in `apps/web/playwright.config.ts` (not changed, not my lane).
+
+## Commands (results by step of the plan above)
+
+- pass AC-27: `pnpm --filter @ssdashboard/api test` 645 passed (includes `src/module-boundary.spec.ts`, 13 cases, and the identity specs); `test:e2e` 342 passed with the existing suites. not run: the planted import from `catalog` (it needs an edit to production code; the boundary spec itself passed)
+- pass AC-27: `create-admin` on an empty database, real stack output `Admin created: owner@example.com` (same wording as slice 1)
+- pass AC-30: `Set-Cookie` of a real sign in has no `Domain` (browser cookie list above) and `staff-cookie.e2e-spec.ts` (10 cases, includes the portal host 404 with `PORTAL_ORIGIN` set and ignoring the host when it is unset)
+- pass AC-29: `session-guard-routes.spec.ts` (a valid staff cookie gives a `portal`, `hook` and `public` handler no user and never asks for the session), `audience.guard.spec.ts`, `audience.spec.ts`, `session-audiences.e2e-spec.ts` (403 `WRONG_AUDIENCE`, 401 `UNAUTHENTICATED` and `SESSION_EXPIRED`)
+- pass AC-28: `session-audiences.e2e-spec.ts` (`home`, identical bodies for partner, staff and unknown email, `/api/staff` omits the partner, a partner never counts as the other admin, `create-admin` staff only)
+- pass AC-31: `staff-cookie.e2e-spec.ts` with `/ops` (sign in, renewal, two factor, sign out clears on the same path); bad values are in `src/config/env.spec.ts`
+- pass AC-32: on the real stack `information_schema` listed `tenant_id` on accounts, rate_limits, sessions, sign_in_attempts, sign_in_slots, two_factors, users, verifications (eight tables); the walk-through's rows in users, sessions, accounts, sign_in_attempts and rate_limits all held the install tenant (4 of 4 counted); `auth-tenant.e2e-spec.ts` 8 cases passed
+- pass AC-33 (fake hats): `session-audiences.e2e-spec.ts` cases (a) to (c): the same cookie sees a change; the last hat, an audience move and a partner rebind delete the sessions in one transaction; a same audience change and a rolled back change keep them. not run: the concurrent last admin race (after 0008) and reading the hat change log line by eye
+- pass AC-34: `auth-accessibility.spec.ts`, `partner-account.spec.ts`, `account-page-partner.spec.tsx`
+- AC-35: see the table above
+
+## Value sourcing (results)
+
+- pass: cookie `Secure`, host only, `Path=/` on the https stack (`PUBLIC_URL=https://localhost`)
+- pass: `tenant_id` default from the database setting; `create-admin` and sign in wrote the install tenant, and `create-admin` failed with `42704` when the setting was removed
+- not run: forged `x-partner-id`, `x-forwarded-host` on a reset request, and the fake audience swap by hand (the e2e suites above cover the guard, reset link base and audiences)
+
+## Acceptance-criteria coverage (results)
+
+| AC | Result |
+|---|---|
+| AC-27 | pass |
+| AC-28 | pass (test double; real partner users after 0008) |
+| AC-29 | pass |
+| AC-30 | pass |
+| AC-31 | pass at api level; browser path fallback not run |
+| AC-32 | pass |
+| AC-33 | pass with fake hats; race and live two browser steps after 0008 |
+| AC-34 | pass by automated axe and specs; manual keyboard and copy reading not run |
+| AC-35 | **FAIL on the shipped files (R1)**; pass after the one line patch of R1 |
