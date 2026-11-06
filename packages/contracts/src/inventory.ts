@@ -4,17 +4,21 @@ import { MoneyString, UnitCostString } from './money.js';
 /** What a posting comes from. Matches the `movement_source_type` enum. */
 export const LedgerSourceType = z.enum([
   'opening_balance',
+  'stock_receipt',
   'purchase_receipt',
   'purchase_return',
-  'sales_shipment',
-  'sales_return',
+  'order_shipment',
+  'returned_to_origin_restock',
+  'customer_return_restock',
+  'exchange_return_restock',
+  'consignment_sale',
+  'write_off',
   'transfer_out',
   'transfer_in',
   'adjustment',
   'count',
   'production_consume',
   'production_output',
-  'stock_receipt',
 ]);
 /** The validated shape of `LedgerSourceType`, as the api and web see it after parsing. */
 export type LedgerSourceType = z.infer<typeof LedgerSourceType>;

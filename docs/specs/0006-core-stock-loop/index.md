@@ -105,7 +105,7 @@ All paths are under `/api`, behind the session guard. Bodies and queries are Zod
 | `/skus` | catalog | GET | `q?`, `status?` (`active` default, `archived`), `cursor?`, `limit?` (≤ 50, picker sends 20) | `items: SkuSummary[]` (id, code, name, price, archived), `nextCursor` | signed in | 400 `INVALID_QUERY` |
 | `/skus/:id` | catalog | GET | id | `SkuDetail` (code, name, price, status, `updatedAt`) | signed in | 404 `NOT_FOUND` |
 | `/skus/:id` | catalog | PATCH | `updatedAt` (req), `name?`, `price?` (nullable) | `SkuDetail` | signed in | 409 `STALE_RECORD`; 404 |
-| `/skus/:id/code` | inventory | PATCH | `updatedAt` (req), `sku` (req) | `SkuDetail` | admin | 409 `STALE_RECORD`, `CODE_LOCKED`, `SKU_TAKEN`; 403; 404 |
+| `/skus/:id/code` | inventory | PATCH | `updatedAt` (req), `sku` (req) | `SkuDetail` | admin | 409 `STALE_RECORD`, `CODE_LOCKED`, `SKU_TAKEN`, `STYLE_CODE_TAKEN` (the new code is another product's style code, spec 0002 amendment); 403; 404 |
 | `/skus/:id/archive` · `/unarchive` | inventory | POST | id | `SkuDetail` | admin | 409 `STOCK_ON_HAND` (archive); 403; 404; 503 `BUSY` |
 | `/skus/:id` | catalog | DELETE | id | 204 | admin | 409 `IN_USE`; 403; 404 |
 | `/skus/:id/usage` | inventory | GET | id | `{ codeLocked, canArchive }` (drives the read only code field and the archive button) | signed in | 404 |

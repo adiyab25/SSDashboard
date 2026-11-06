@@ -95,7 +95,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
   async function newLocation(code: string) {
     const { status, body } = await call('POST', '/locations', {
       cookie: admin,
-      body: { code, name: { en: `Warehouse ${code}` }, type: 'warehouse' },
+      body: { code, name: { en: `Warehouse ${code}` }, kind: 'warehouse' },
     });
     expect(status).toBe(201);
     return body as { id: string };
@@ -257,7 +257,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
   it('refuses a system location and a future date (AC-5, AC-7)', async () => {
     const sku = await newSku('PLACE-1');
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO locations (code, name, type) VALUES ('TR-X', '{"en": "Transit"}', 'transit') RETURNING id`,
+      `INSERT INTO locations (code, name, kind) VALUES ('TR-X', '{"en": "Transit"}', 'transit') RETURNING id`,
     );
     const line = [{ skuId: sku.id, quantity: 1, unitCost: '1' }];
     expect(
@@ -343,7 +343,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
       (
         await call('POST', '/locations', {
           cookie: admin,
-          body: { code: 'wh-dup', name: { en: 'x' }, type: 'showroom' },
+          body: { code: 'wh-dup', name: { en: 'x' }, kind: 'shop' },
         })
       ).body,
     ).toMatchObject({ code: 'LOCATION_CODE_TAKEN' });
@@ -351,7 +351,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
       (
         await call('POST', '/locations', {
           cookie: staff,
-          body: { code: 'WH-NO', name: { en: 'x' }, type: 'warehouse' },
+          body: { code: 'WH-NO', name: { en: 'x' }, kind: 'warehouse' },
         })
       ).status,
     ).toBe(403);

@@ -88,17 +88,21 @@ export const serials = pgTable(
 /** Why stock moved. Every ledger movement carries one, and the source document is identified alongside it. */
 export const movementSourceType = pgEnum('movement_source_type', [
   'opening_balance',
+  'stock_receipt',
   'purchase_receipt',
   'purchase_return',
-  'sales_shipment',
-  'sales_return',
+  'order_shipment',
+  'returned_to_origin_restock',
+  'customer_return_restock',
+  'exchange_return_restock',
+  'consignment_sale',
+  'write_off',
   'transfer_out',
   'transfer_in',
   'adjustment',
   'count',
   'production_consume',
   'production_output',
-  'stock_receipt',
 ]);
 
 /** One row per posting. Append only. */
@@ -113,6 +117,8 @@ export const movementGroups = pgTable(
     sourceId: uuid('source_id').notNull(),
     reversesGroupId: uuid('reverses_group_id').unique(),
     effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(),
+    /** The brand's Cairo day of `effectiveAt`, stamped by trigger `ssd_stamp_operating_day`; never passed by a writer. */
+    operatingDay: date('operating_day').notNull(),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
     /** The signed in user who posted it; null for history from before sign in (spec 0005). */
     postedBy: uuid('posted_by').references(() => users.id, { onDelete: 'restrict' }),
@@ -121,6 +127,7 @@ export const movementGroups = pgTable(
     unique('movement_groups_idempotency_key_unique').on(t.tenantId, t.idempotencyKey),
     foreignKey({ columns: [t.reversesGroupId], foreignColumns: [t.id] }).onDelete('restrict'),
     index('movement_groups_source_idx').on(t.sourceType, t.sourceId),
+    index('movement_groups_operating_day_idx').on(t.operatingDay),
   ],
 );
 
@@ -151,6 +158,8 @@ export const stockMovements = pgTable(
     /** The caller's reason only. */
     reasonCode: text('reason_code'),
     effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(),
+    /** The brand's Cairo day of `effectiveAt`, stamped by trigger `ssd_stamp_operating_day`; never passed by a writer. */
+    operatingDay: date('operating_day').notNull(),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
   },
   (t) => [
@@ -168,6 +177,7 @@ export const stockMovements = pgTable(
       t.effectiveAt,
     ),
     index('stock_movements_group_idx').on(t.groupId),
+    index('stock_movements_operating_day_idx').on(t.operatingDay),
     // SKU history, newest first (spec 0006).
     index('stock_movements_variant_recorded_idx').on(t.variantId, t.recordedAt.desc(), t.id.desc()),
     index('stock_movements_recorded_brin').using('brin', t.recordedAt),

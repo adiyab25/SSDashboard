@@ -1,13 +1,19 @@
+CREATE TYPE "public"."cost_basis" AS ENUM('factory_invoice', 'production_run', 'purchase_landed', 'estimate');--> statement-breakpoint
 CREATE TYPE "public"."product_status" AS ENUM('draft', 'active', 'archived');--> statement-breakpoint
 CREATE TYPE "public"."variant_kind" AS ENUM('stocked', 'service', 'bundle');--> statement-breakpoint
 CREATE TYPE "public"."variant_tracking" AS ENUM('none', 'lot', 'serial');--> statement-breakpoint
 CREATE TYPE "public"."discrepancy_kind" AS ENUM('balance', 'reservation', 'serial');--> statement-breakpoint
 CREATE TYPE "public"."discrepancy_resolution" AS ENUM('rebuilt', 'dismissed');--> statement-breakpoint
-CREATE TYPE "public"."movement_source_type" AS ENUM('opening_balance', 'purchase_receipt', 'purchase_return', 'sales_shipment', 'sales_return', 'transfer_out', 'transfer_in', 'adjustment', 'count', 'production_consume', 'production_output', 'stock_receipt');--> statement-breakpoint
+CREATE TYPE "public"."movement_source_type" AS ENUM('opening_balance', 'stock_receipt', 'purchase_receipt', 'purchase_return', 'order_shipment', 'returned_to_origin_restock', 'customer_return_restock', 'exchange_return_restock', 'consignment_sale', 'write_off', 'transfer_out', 'transfer_in', 'adjustment', 'count', 'production_consume', 'production_output');--> statement-breakpoint
 CREATE TYPE "public"."reservation_status" AS ENUM('active', 'released', 'fulfilled');--> statement-breakpoint
 CREATE TYPE "public"."serial_status" AS ENUM('in_stock', 'out');--> statement-breakpoint
 CREATE TYPE "public"."bin_level" AS ENUM('zone', 'aisle', 'shelf', 'bin');--> statement-breakpoint
-CREATE TYPE "public"."location_type" AS ENUM('warehouse', 'showroom', 'transit', 'virtual');--> statement-breakpoint
+CREATE TYPE "public"."location_kind" AS ENUM('warehouse', 'shop', 'transit', 'virtual');--> statement-breakpoint
+CREATE TYPE "public"."location_owner_type" AS ENUM('own', 'consignment_partner', 'wholesale_customer');--> statement-breakpoint
+CREATE TYPE "public"."refund_by" AS ENUM('brand', 'location_owner');--> statement-breakpoint
+CREATE TYPE "public"."sale_recorded_at" AS ENUM('at_shipment', 'at_sell_through', 'at_handover');--> statement-breakpoint
+CREATE TYPE "public"."settlement_owner_type" AS ENUM('carrier', 'consignment_partner', 'gateway');--> statement-breakpoint
+CREATE TYPE "public"."tax_document" AS ENUM('b2c_electronic_receipt', 'b2b_electronic_invoice_at_settlement', 'b2b_electronic_invoice_at_handover');--> statement-breakpoint
 CREATE TYPE "public"."custom_field_type" AS ENUM('text', 'number', 'boolean', 'date', 'select');--> statement-breakpoint
 CREATE TYPE "public"."stock_receipt_status" AS ENUM('posted', 'voided');--> statement-breakpoint
 CREATE TABLE "accounts" (
@@ -111,6 +117,30 @@ CREATE TABLE "barcodes" (
 	CONSTRAINT "barcodes_code_unique" UNIQUE("tenant_id","code")
 );
 --> statement-breakpoint
+CREATE TABLE "cost_records" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"product_id" uuid NOT NULL,
+	"variant_id" uuid,
+	"season_id" uuid NOT NULL,
+	"cost_basis" "cost_basis" NOT NULL,
+	"unit_cost" numeric(14, 4) NOT NULL,
+	"effective_from" date NOT NULL,
+	"source" text,
+	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"recorded_by" uuid,
+	CONSTRAINT "cost_records_unit_cost_not_negative" CHECK ("cost_records"."unit_cost" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "product_groups" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"code" text NOT NULL,
+	"name" jsonb NOT NULL,
+	"archived_at" timestamp with time zone,
+	CONSTRAINT "product_groups_code_unique" UNIQUE("tenant_id","code")
+);
+--> statement-breakpoint
 CREATE TABLE "product_options" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
@@ -144,12 +174,16 @@ CREATE TABLE "product_variants" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"archived_at" timestamp with time zone,
 	CONSTRAINT "product_variants_sku_unique" UNIQUE("tenant_id","sku"),
+	CONSTRAINT "product_variants_id_product_unique" UNIQUE("id","product_id"),
 	CONSTRAINT "product_variants_tracking_stocked_only" CHECK ("product_variants"."tracking" = 'none' OR "product_variants"."kind" = 'stocked')
 );
 --> statement-breakpoint
 CREATE TABLE "products" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"style_code" text NOT NULL,
+	"season_id" uuid,
+	"product_group_id" uuid NOT NULL,
 	"name" jsonb NOT NULL,
 	"description" jsonb,
 	"status" "product_status" DEFAULT 'draft' NOT NULL,
@@ -159,7 +193,20 @@ CREATE TABLE "products" (
 	"custom_fields" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"archived_at" timestamp with time zone
+	"archived_at" timestamp with time zone,
+	CONSTRAINT "products_style_code_unique" UNIQUE("tenant_id","style_code")
+);
+--> statement-breakpoint
+CREATE TABLE "seasons" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"code" text NOT NULL,
+	"name" jsonb NOT NULL,
+	"starts_on" date,
+	"ends_on" date,
+	"archived_at" timestamp with time zone,
+	CONSTRAINT "seasons_code_unique" UNIQUE("tenant_id","code"),
+	CONSTRAINT "seasons_dates_in_order" CHECK ("seasons"."starts_on" IS NULL OR "seasons"."ends_on" IS NULL OR "seasons"."starts_on" <= "seasons"."ends_on")
 );
 --> statement-breakpoint
 CREATE TABLE "uoms" (
@@ -199,6 +246,7 @@ CREATE TABLE "movement_groups" (
 	"source_id" uuid NOT NULL,
 	"reverses_group_id" uuid,
 	"effective_at" timestamp with time zone NOT NULL,
+	"operating_day" date NOT NULL,
 	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"posted_by" uuid,
 	CONSTRAINT "movement_groups_reverses_group_id_unique" UNIQUE("reverses_group_id"),
@@ -294,6 +342,7 @@ CREATE TABLE "stock_movements" (
 	"source_line_id" uuid,
 	"reason_code" text,
 	"effective_at" timestamp with time zone NOT NULL,
+	"operating_day" date NOT NULL,
 	"recorded_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "stock_movements_quantity_not_zero" CHECK ("stock_movements"."quantity" <> 0),
 	CONSTRAINT "stock_movements_cost_sign" CHECK ("stock_movements"."total_cost" = 0 OR sign("stock_movements"."total_cost") = sign("stock_movements"."quantity"))
@@ -314,18 +363,38 @@ CREATE TABLE "bins" (
 	CONSTRAINT "bins_id_location_unique" UNIQUE("id","location_id")
 );
 --> statement-breakpoint
+CREATE TABLE "location_owner_policies" (
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"owner_type" "location_owner_type" NOT NULL,
+	"stock_owned_by_brand" boolean NOT NULL,
+	"handover_is_sale" boolean NOT NULL,
+	"sale_recorded_at" "sale_recorded_at" NOT NULL,
+	"end_customer_refund_by" "refund_by" NOT NULL,
+	"defective_piece_refund_by" "refund_by" NOT NULL,
+	"tax_document" "tax_document" NOT NULL,
+	"settlement_owner_type" "settlement_owner_type",
+	"can_sell_online" boolean NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_by" uuid,
+	CONSTRAINT "location_owner_policies_tenant_id_owner_type_pk" PRIMARY KEY("tenant_id","owner_type")
+);
+--> statement-breakpoint
 CREATE TABLE "locations" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
 	"code" text NOT NULL,
 	"name" jsonb NOT NULL,
-	"type" "location_type" NOT NULL,
+	"kind" "location_kind" NOT NULL,
+	"owner_type" "location_owner_type" DEFAULT 'own' NOT NULL,
+	"party_id" uuid,
 	"is_sellable" boolean DEFAULT true NOT NULL,
+	"sellable_online" boolean DEFAULT false NOT NULL,
 	"allow_negative" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"archived_at" timestamp with time zone,
-	CONSTRAINT "locations_code_unique" UNIQUE("tenant_id","code")
+	CONSTRAINT "locations_code_unique" UNIQUE("tenant_id","code"),
+	CONSTRAINT "locations_party_matches_owner" CHECK (("locations"."owner_type" = 'own') = ("locations"."party_id" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "parties" (
@@ -336,7 +405,8 @@ CREATE TABLE "parties" (
 	"name_ar" text,
 	"tax_id" text,
 	"is_supplier" boolean DEFAULT false NOT NULL,
-	"is_customer" boolean DEFAULT false NOT NULL,
+	"is_consignment_partner" boolean DEFAULT false NOT NULL,
+	"is_wholesale_customer" boolean DEFAULT false NOT NULL,
 	"is_factory" boolean DEFAULT false NOT NULL,
 	"contact" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"custom_fields" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -344,7 +414,7 @@ CREATE TABLE "parties" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"archived_at" timestamp with time zone,
 	CONSTRAINT "parties_code_unique" UNIQUE("tenant_id","code"),
-	CONSTRAINT "parties_has_a_role" CHECK ("parties"."is_supplier" OR "parties"."is_customer" OR "parties"."is_factory")
+	CONSTRAINT "parties_has_a_role" CHECK ("parties"."is_supplier" OR "parties"."is_factory" OR "parties"."is_consignment_partner" OR "parties"."is_wholesale_customer")
 );
 --> statement-breakpoint
 CREATE TABLE "custom_field_definitions" (
@@ -433,9 +503,15 @@ ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY
 ALTER TABLE "two_factors" ADD CONSTRAINT "two_factors_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "barcodes" ADD CONSTRAINT "barcodes_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "barcodes" ADD CONSTRAINT "barcodes_uom_id_uoms_id_fk" FOREIGN KEY ("uom_id") REFERENCES "public"."uoms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cost_records" ADD CONSTRAINT "cost_records_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cost_records" ADD CONSTRAINT "cost_records_season_id_seasons_id_fk" FOREIGN KEY ("season_id") REFERENCES "public"."seasons"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cost_records" ADD CONSTRAINT "cost_records_recorded_by_users_id_fk" FOREIGN KEY ("recorded_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cost_records" ADD CONSTRAINT "cost_records_variant_id_product_id_product_variants_id_product_id_fk" FOREIGN KEY ("variant_id","product_id") REFERENCES "public"."product_variants"("id","product_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product_options" ADD CONSTRAINT "product_options_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product_variants" ADD CONSTRAINT "product_variants_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product_variants" ADD CONSTRAINT "product_variants_base_uom_id_uoms_id_fk" FOREIGN KEY ("base_uom_id") REFERENCES "public"."uoms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "products" ADD CONSTRAINT "products_season_id_seasons_id_fk" FOREIGN KEY ("season_id") REFERENCES "public"."seasons"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "products" ADD CONSTRAINT "products_product_group_id_product_groups_id_fk" FOREIGN KEY ("product_group_id") REFERENCES "public"."product_groups"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "variant_uom_conversions" ADD CONSTRAINT "variant_uom_conversions_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "variant_uom_conversions" ADD CONSTRAINT "variant_uom_conversions_uom_id_uoms_id_fk" FOREIGN KEY ("uom_id") REFERENCES "public"."uoms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lots" ADD CONSTRAINT "lots_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -462,6 +538,8 @@ ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_bin_id_location_id
 ALTER TABLE "stock_movements" ADD CONSTRAINT "stock_movements_lot_id_variant_id_lots_id_variant_id_fk" FOREIGN KEY ("lot_id","variant_id") REFERENCES "public"."lots"("id","variant_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bins" ADD CONSTRAINT "bins_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bins" ADD CONSTRAINT "bins_parent_id_bins_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."bins"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "location_owner_policies" ADD CONSTRAINT "location_owner_policies_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "locations" ADD CONSTRAINT "locations_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "public"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipt_lines" ADD CONSTRAINT "stock_receipt_lines_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipt_lines" ADD CONSTRAINT "stock_receipt_lines_uom_id_uoms_id_fk" FOREIGN KEY ("uom_id") REFERENCES "public"."uoms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipt_lines" ADD CONSTRAINT "stock_receipt_lines_receipt_id_stock_receipts_id_fk" FOREIGN KEY ("receipt_id") REFERENCES "public"."stock_receipts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -481,11 +559,19 @@ CREATE UNIQUE INDEX "users_staff_code_unique" ON "users" USING btree ("tenant_id
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier","expires_at");--> statement-breakpoint
 CREATE INDEX "barcodes_variant_idx" ON "barcodes" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "barcodes_uom_idx" ON "barcodes" USING btree ("uom_id");--> statement-breakpoint
+CREATE INDEX "cost_records_style_idx" ON "cost_records" USING btree ("product_id","effective_from" DESC NULLS LAST,"recorded_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "cost_records_variant_idx" ON "cost_records" USING btree ("variant_id","effective_from" DESC NULLS LAST,"recorded_at" DESC NULLS LAST) WHERE "cost_records"."variant_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "cost_records_season_idx" ON "cost_records" USING btree ("season_id");--> statement-breakpoint
 CREATE INDEX "product_variants_product_idx" ON "product_variants" USING btree ("product_id");--> statement-breakpoint
 CREATE INDEX "product_variants_sku_c_idx" ON "product_variants" USING btree ("sku" COLLATE "C");--> statement-breakpoint
+CREATE INDEX "product_variants_sku_trgm_idx" ON "product_variants" USING gin ("sku" gin_trgm_ops);--> statement-breakpoint
+CREATE INDEX "products_product_group_idx" ON "products" USING btree ("product_group_id");--> statement-breakpoint
+CREATE INDEX "products_season_idx" ON "products" USING btree ("season_id");--> statement-breakpoint
 CREATE INDEX "products_tags_idx" ON "products" USING gin ("tags");--> statement-breakpoint
+CREATE INDEX "products_search_trgm_idx" ON "products" USING gin ((coalesce("name"->>'en', '') || ' ' || coalesce("name"->>'ar', '') || ' ' || "style_code") gin_trgm_ops);--> statement-breakpoint
 CREATE INDEX "variant_uom_conversions_uom_idx" ON "variant_uom_conversions" USING btree ("uom_id");--> statement-breakpoint
 CREATE INDEX "movement_groups_source_idx" ON "movement_groups" USING btree ("source_type","source_id");--> statement-breakpoint
+CREATE INDEX "movement_groups_operating_day_idx" ON "movement_groups" USING btree ("operating_day");--> statement-breakpoint
 CREATE INDEX "movement_serials_serial_idx" ON "movement_serials" USING btree ("serial_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "reservations_active_source_line_unique" ON "reservations" USING btree ("tenant_id","source_type","source_line_id") WHERE "reservations"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "reservations_active_balance_idx" ON "reservations" USING btree ("variant_id","location_id","lot_id") WHERE "reservations"."status" = 'active';--> statement-breakpoint
@@ -495,10 +581,12 @@ CREATE INDEX "stock_levels_location_variant_idx" ON "stock_levels" USING btree (
 CREATE INDEX "stock_levels_updated_idx" ON "stock_levels" USING btree ("updated_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "stock_movements_variant_location_effective_idx" ON "stock_movements" USING btree ("variant_id","location_id","effective_at");--> statement-breakpoint
 CREATE INDEX "stock_movements_group_idx" ON "stock_movements" USING btree ("group_id");--> statement-breakpoint
+CREATE INDEX "stock_movements_operating_day_idx" ON "stock_movements" USING btree ("operating_day");--> statement-breakpoint
 CREATE INDEX "stock_movements_variant_recorded_idx" ON "stock_movements" USING btree ("variant_id","recorded_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "stock_movements_recorded_brin" ON "stock_movements" USING brin ("recorded_at");--> statement-breakpoint
 CREATE INDEX "stock_movements_lot_idx" ON "stock_movements" USING btree ("lot_id") WHERE "stock_movements"."lot_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "bins_parent_idx" ON "bins" USING btree ("parent_id");--> statement-breakpoint
+CREATE INDEX "locations_party_idx" ON "locations" USING btree ("party_id");--> statement-breakpoint
 CREATE INDEX "stock_receipt_lines_variant_idx" ON "stock_receipt_lines" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "stock_receipts_effective_idx" ON "stock_receipts" USING btree ("effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "stock_receipts_location_effective_idx" ON "stock_receipts" USING btree ("location_id","effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);

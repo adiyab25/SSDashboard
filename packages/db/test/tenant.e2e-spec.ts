@@ -160,7 +160,7 @@ describe('tenant id on every table (AC-15)', () => {
   it('gives an insert without tenant_id the install id', async () => {
     const install = await owner.query<{ id: string }>('SELECT id FROM install');
     const row = await owner.query<{ tenant_id: string }>(
-      "INSERT INTO parties (code, name, is_customer) VALUES ('TENANT-1', 'A', true) RETURNING tenant_id",
+      "INSERT INTO parties (code, name, is_supplier) VALUES ('TENANT-1', 'A', true) RETURNING tenant_id",
     );
 
     expect(row.rows[0]?.tenant_id).toBe(install.rows[0]?.id);
@@ -188,7 +188,7 @@ describe('tenant id on every table (AC-15)', () => {
     await session.connect();
     try {
       await expect(
-        session.query("INSERT INTO parties (code, name, is_customer) VALUES ('X', 'X', true)"),
+        session.query("INSERT INTO parties (code, name, is_supplier) VALUES ('X', 'X', true)"),
       ).rejects.toThrow(/unrecognized configuration parameter "ssd.tenant_id"/);
     } finally {
       await session.end();

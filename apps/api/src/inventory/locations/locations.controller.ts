@@ -15,6 +15,7 @@ import {
   Query,
   Req,
   Res,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import {
   CreateLocationRequest,
@@ -31,6 +32,7 @@ import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
+import { LocationPolicyError } from './location-policy.service.js';
 import { InvalidCursorError, LocationError, LocationsService } from './locations.service.js';
 
 /** Maps location errors to the stable codes of spec 0006; ledger errors go through `ledger-http`. */
@@ -49,6 +51,22 @@ export function locationHttpError(error: unknown, response?: Response): unknown 
         return new ConflictException({ code: 'STOCK_ON_HAND', message: error.message });
       case 'InUse':
         return new ConflictException({ code: 'IN_USE', message: error.message });
+    }
+  }
+  if (error instanceof LocationPolicyError) {
+    switch (error.code) {
+      case 'NotFound':
+        return new NotFoundException({ code: 'NOT_FOUND', message: error.message });
+      case 'NotSellableOnline':
+        return new UnprocessableEntityException({
+          code: 'NOT_SELLABLE_ONLINE',
+          message: error.message,
+        });
+      case 'PartyRoleMismatch':
+        return new UnprocessableEntityException({
+          code: 'PARTY_ROLE_MISMATCH',
+          message: error.message,
+        });
     }
   }
   if (error instanceof InvalidCursorError) {
@@ -91,19 +109,20 @@ export class LocationsController {
   }
 
   /**
-   * Admin only: adds a warehouse or showroom. A code already in use is refused through
-   * `locationHttpError`.
+   * Admin only: adds a warehouse or shop. A code already in use is refused through
+   * `locationHttpError`; a lock wait that times out answers 503 `BUSY` with `Retry-After`.
    */
   @Roles('admin')
   @Post()
   async create(
     @Body(new ZodBodyPipe(CreateLocationRequest, INVALID_INPUT))
     body: z.output<typeof CreateLocationRequest>,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<LocationDetail> {
     try {
       return await this.locations.create(body);
     } catch (error) {
-      throw locationHttpError(error);
+      throw locationHttpError(error, response);
     }
   }
 

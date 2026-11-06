@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { LocationCode, WorkLocationType, type LocationDetail } from '@ssdashboard/contracts';
+import { LocationCode, WorkLocationKind, type LocationDetail } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import {
@@ -40,7 +40,7 @@ const EditLocationForm = z
     code: LocationCode,
     nameEn: z.string().trim().max(200),
     nameAr: z.string().trim().max(200),
-    type: WorkLocationType,
+    kind: WorkLocationKind,
   })
   .refine((form) => form.nameEn !== '' || form.nameAr !== '', {
     path: ['nameEn'],
@@ -49,7 +49,7 @@ const EditLocationForm = z
 type EditInput = z.input<typeof EditLocationForm>;
 type EditOutput = z.output<typeof EditLocationForm>;
 
-const TYPES = ['warehouse', 'showroom'] as const;
+const KINDS = ['warehouse', 'shop'] as const;
 
 const KNOWN = ['STALE_RECORD', 'CODE_LOCKED', 'LOCATION_CODE_TAKEN', 'BUSY'] as const;
 type KnownCode = (typeof KNOWN)[number];
@@ -58,7 +58,7 @@ const valuesOf = (location: LocationDetail): EditInput => ({
   code: location.code,
   nameEn: location.name.en ?? '',
   nameAr: location.name.ar ?? '',
-  type: location.type,
+  kind: location.kind,
 });
 
 interface Props {
@@ -99,7 +99,7 @@ export function LocationEditDialog({ location, onReload, onClose }: Props) {
           values.nameAr !== (current.name.ar ?? '')) && {
           name: { en: values.nameEn, ar: values.nameAr },
         }),
-        ...(values.type !== current.type && { type: values.type }),
+        ...(values.kind !== current.kind && { kind: values.kind }),
       }),
     onSuccess: (next) => {
       reloadSwitcher();
@@ -256,18 +256,18 @@ export function LocationEditDialog({ location, onReload, onClose }: Props) {
               <legend className="mb-2 text-sm font-medium">{t('inventory.location.type')}</legend>
               <Controller
                 control={form.control}
-                name="type"
+                name="kind"
                 render={({ field }) => (
                   <RadioGroup
                     value={field.value}
                     onValueChange={field.onChange}
                     className="flex flex-wrap gap-4"
                   >
-                    {TYPES.map((type) => (
-                      <div key={type} className="flex items-center gap-2">
-                        <RadioGroupItem value={type} id={`location-edit-type-${type}`} />
-                        <Label htmlFor={`location-edit-type-${type}`} className="font-normal">
-                          {t(`inventory.location.${type}`)}
+                    {KINDS.map((kind) => (
+                      <div key={kind} className="flex items-center gap-2">
+                        <RadioGroupItem value={kind} id={`location-edit-kind-${kind}`} />
+                        <Label htmlFor={`location-edit-kind-${kind}`} className="font-normal">
+                          {t(`inventory.location.${kind}`)}
                         </Label>
                       </div>
                     ))}

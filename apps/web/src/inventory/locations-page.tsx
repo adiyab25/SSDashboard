@@ -6,7 +6,7 @@ import { useMe } from '@/auth/use-me';
 import { LocationsView } from './locations-view';
 
 /**
- * The Locations page, admins only (spec 0006, AC-4): warehouses and showrooms with an active
+ * The Locations page, admins only (spec 0006, AC-4): warehouses and shops with an active
  * or archived filter, edit, archive, unarchive, delete, and create. The api enforces the role
  * too; staff never see this page in the navigation.
  */

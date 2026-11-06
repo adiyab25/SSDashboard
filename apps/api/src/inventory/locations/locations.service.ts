@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type {
   CreateLocationRequest,
   LocationDetail,
+  LocationOwnerType,
   LocationListResponse,
   LocationStatus,
   UpdateLocationRequest,
@@ -18,6 +19,7 @@ import {
 } from '../../database/sql.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { ledgerTransaction } from '../ledger/locks.js';
+import { LocationPolicyService } from './location-policy.service.js';
 
 /** A location as other inventory answers name it. */
 export interface LocationRef {
@@ -77,20 +79,22 @@ export function decodeCursor(cursor: string): string {
   return code;
 }
 
-/** Only warehouses and showrooms are listed or managed; transit and virtual are system rows. */
-const WORK_TYPE = sql`type IN ('warehouse', 'showroom')`;
+/** Only warehouses and shops are listed or managed; transit and virtual are system rows. */
+const WORK_KIND = sql`kind IN ('warehouse', 'shop')`;
 
 interface LocationRow extends Record<string, unknown> {
   id: string;
   code: string;
   name: { en?: string; ar?: string };
-  type: 'warehouse' | 'showroom';
+  kind: 'warehouse' | 'shop';
+  owner_type: LocationOwnerType;
+  sellable_online: boolean;
   archived: boolean;
   updated_at: string;
 }
 
 const LOCATION_COLUMNS = sql`
-  id, code, name, type, archived_at IS NOT NULL AS archived,
+  id, code, name, kind, owner_type, sellable_online, archived_at IS NOT NULL AS archived,
   to_char(updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
 
 function toDetail(row: LocationRow, codeLocked: boolean): LocationDetail {
@@ -98,7 +102,9 @@ function toDetail(row: LocationRow, codeLocked: boolean): LocationDetail {
     id: row.id,
     code: row.code,
     name: { en: row.name.en, ar: row.name.ar },
-    type: row.type === 'showroom' ? 'showroom' : 'warehouse',
+    kind: row.kind === 'shop' ? 'shop' : 'warehouse',
+    ownerType: row.owner_type,
+    sellableOnline: row.sellable_online,
     archived: row.archived,
     updatedAt: row.updated_at,
     codeLocked,
@@ -112,20 +118,21 @@ function codeTaken(error: unknown, code: string): unknown {
   return error;
 }
 
-/** Warehouses and showrooms: the switcher list and full management for admins (AC-4). */
+/** Warehouses and shops: the switcher list and full management for admins (AC-4). */
 @Injectable()
 export class LocationsService {
   /**
-   * Takes the app database connection and the ledger service that knows what stock a location
-   * holds.
+   * Takes the app database connection, the ledger service that knows what stock a location
+   * holds, and the policy service that answers what an owner type allows.
    */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LedgerService) private readonly ledger: LedgerService,
+    @Inject(LocationPolicyService) private readonly policy: LocationPolicyService,
   ) {}
 
   /**
-   * Warehouses and showrooms, active (default) or archived, ordered by code. Ordering and the
+   * Warehouses and shops, active (default) or archived, ordered by code. Ordering and the
    * keyset comparison both use the "C" collation, so pages never skip or repeat a row.
    */
   async listWorkLocations(query: {
@@ -135,7 +142,7 @@ export class LocationsService {
   }): Promise<LocationListResponse> {
     const after = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
     const filters: SQL[] = [
-      WORK_TYPE,
+      WORK_KIND,
       query.status === 'archived' ? sql`archived_at IS NOT NULL` : sql`archived_at IS NULL`,
     ];
     if (after !== undefined) filters.push(sql`code COLLATE "C" > ${after} COLLATE "C"`);
@@ -174,23 +181,36 @@ export class LocationsService {
     );
   }
 
-  /** Creates a sellable warehouse or showroom that does not allow negative stock (AC-4). */
+  /**
+   * Creates a sellable warehouse or shop that does not allow negative stock (AC-4, AC-29). The
+   * owner type defaults to the brand's own; the policy service refuses a party whose roles do not
+   * fit it (`PartyRoleMismatch`) and online selling it forbids (`NotSellableOnline`). The check and
+   * the insert run in one transaction and the party row is read `FOR SHARE`, so a party archived
+   * or stripped of its role at the same moment cannot be linked. It runs through
+   * `ledgerTransaction`, so a lock wait is capped at 5 seconds and answers `LockTimeout` (503, as
+   * ledger writes do).
+   */
   async create(input: z.output<typeof CreateLocationRequest>): Promise<LocationDetail> {
     try {
-      const { rows } = await this.connection.db.execute<LocationRow>(sql`
-        INSERT INTO locations (code, name, type, is_sellable, allow_negative)
-        VALUES (${input.code}, ${JSON.stringify(input.name)}::jsonb, ${input.type}, true, false)
+      return await ledgerTransaction(this.connection.db, async (tx) => {
+        await this.policy.assertCanCreate(input, tx);
+        const { rows } = await tx.execute<LocationRow>(sql`
+        INSERT INTO locations (code, name, kind, owner_type, party_id, sellable_online, is_sellable, allow_negative)
+        VALUES (${input.code}, ${JSON.stringify(input.name)}::jsonb, ${input.kind},
+                ${input.ownerType ?? sql`DEFAULT`}, ${input.partyId ?? null},
+                ${input.sellableOnline ?? false}, true, false)
         RETURNING ${LOCATION_COLUMNS}`);
-      const row = rows[0];
-      if (!row) throw new Error('The location insert returned no row');
-      return toDetail(row, false);
+        const row = rows[0];
+        if (!row) throw new Error('The location insert returned no row');
+        return toDetail(row, false);
+      });
     } catch (error) {
       throw codeTaken(error, input.code);
     }
   }
 
   /**
-   * Edits name, type, and code (AC-4) with the stale check on `updatedAt`. A code change first
+   * Edits name, kind, online selling, and code (AC-4) with the stale check on `updatedAt`. A code change first
    * locks the location against postings (as an archive does), then answers `CodeLocked` once
    * stock was posted there or a receipt names it.
    */
@@ -211,7 +231,11 @@ export class LocationsService {
           sets.push(sql`code = ${input.code}`);
         }
         if (input.name) sets.push(sql`name = ${JSON.stringify(input.name)}::jsonb`);
-        if (input.type) sets.push(sql`type = ${input.type}`);
+        if (input.kind) sets.push(sql`kind = ${input.kind}`);
+        if (input.sellableOnline !== undefined) {
+          if (input.sellableOnline) await this.policy.assertCanSellOnline(id, tx);
+          sets.push(sql`sellable_online = ${input.sellableOnline}`);
+        }
         const { rows } = await tx.execute<LocationRow>(sql`
           UPDATE locations SET ${sql.join(sets, sql`, `)}
           WHERE id = ${id}
@@ -267,7 +291,7 @@ export class LocationsService {
     let deleted: boolean;
     try {
       const { rows } = await this.connection.db.execute(sql`
-        DELETE FROM locations WHERE id = ${id} AND ${WORK_TYPE} RETURNING id`);
+        DELETE FROM locations WHERE id = ${id} AND ${WORK_KIND} RETURNING id`);
       deleted = rows.length > 0;
     } catch (error) {
       if (isStillReferenced(error)) {
@@ -283,11 +307,11 @@ export class LocationsService {
 
   private async findWork(tx: Transaction, id: string): Promise<LocationRow | null> {
     const { rows } = await tx.execute<LocationRow>(sql`
-      SELECT ${LOCATION_COLUMNS} FROM locations WHERE id = ${id} AND ${WORK_TYPE}`);
+      SELECT ${LOCATION_COLUMNS} FROM locations WHERE id = ${id} AND ${WORK_KIND}`);
     return rows[0] ?? null;
   }
 
-  /** `ledger.lockForArchive` for a warehouse or showroom; a system location counts as missing. */
+  /** `ledger.lockForArchive` for a warehouse or shop; a system location counts as missing. */
   private async lockWork(tx: Transaction, id: string): Promise<boolean> {
     if (!(await this.findWork(tx, id))) return false;
     return (await this.ledger.lockForArchive(tx, { locationId: id })) !== null;

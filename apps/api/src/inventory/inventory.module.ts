@@ -4,6 +4,7 @@ import { PlatformModule } from '../platform/platform.module.js';
 import { StaffDirectoryModule } from '../staff/staff-directory.js';
 import { LedgerService } from './ledger/ledger.service.js';
 import { ReconciliationService } from './ledger/reconciliation.service.js';
+import { LocationPolicyService } from './locations/location-policy.service.js';
 import { LocationsController } from './locations/locations.controller.js';
 import { LocationsService } from './locations/locations.service.js';
 import { ReceiptsController } from './receipts/receipts.controller.js';
@@ -24,10 +25,11 @@ import { StockService } from './stock/stock.service.js';
     LedgerService,
     ReconciliationService,
     LocationsService,
+    LocationPolicyService,
     ReceiptsService,
     StockService,
     SkuLifecycleService,
   ],
-  exports: [LedgerService, ReconciliationService],
+  exports: [LedgerService, ReconciliationService, LocationPolicyService],
 })
 export class InventoryModule {}

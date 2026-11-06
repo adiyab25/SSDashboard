@@ -56,9 +56,9 @@ export async function createLocation(
   request: APIRequestContext,
   code: string,
   name: { en?: string; ar?: string } = { en: `Place ${code}` },
-  type: 'warehouse' | 'showroom' = 'warehouse',
+  kind: 'warehouse' | 'shop' = 'warehouse',
 ): Promise<SeededLocation> {
-  const { status, body } = await api(request, 'POST', '/locations', { code, name, type });
+  const { status, body } = await api(request, 'POST', '/locations', { code, name, kind });
   expect(status, JSON.stringify(body)).toBe(201);
   return body as never;
 }

@@ -15,7 +15,8 @@ try {
   });
   // The application role gets its login here, so each install sets it from its own secret.
   if (env.APP_DB_PASSWORD) {
-    await setAppRoleLogin(env.MIGRATION_DATABASE_URL, env.APP_DB_PASSWORD, env.APP_DB_ROLE);
+    // The role is the one the database stored on its first run; a different APP_DB_ROLE already threw.
+    await setAppRoleLogin(env.MIGRATION_DATABASE_URL, env.APP_DB_PASSWORD);
   }
   console.log('Migrations applied.');
 } catch (error) {

@@ -1,6 +1,6 @@
 {
-  "id": "32c14d56-d0fa-4ceb-b466-3758e263ad0e",
-  "prevId": "9b054ee1-2e82-425c-8ba4-35aa846ac543",
+  "id": "c04b1f6f-1805-49fe-9fcc-78bf5fb8f1c3",
+  "prevId": "49680771-ac7f-403b-b78d-4a4e87f31f64",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -886,6 +886,274 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.cost_records": {
+      "name": "cost_records",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "product_id": {
+          "name": "product_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "variant_id": {
+          "name": "variant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "season_id": {
+          "name": "season_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_basis": {
+          "name": "cost_basis",
+          "type": "cost_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_cost": {
+          "name": "unit_cost",
+          "type": "numeric(14, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_from": {
+          "name": "effective_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "cost_records_style_idx": {
+          "name": "cost_records_style_idx",
+          "columns": [
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "effective_from",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "cost_records_variant_idx": {
+          "name": "cost_records_variant_idx",
+          "columns": [
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "effective_from",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"cost_records\".\"variant_id\" IS NOT NULL",
+          "concurrently": false
+        },
+        "cost_records_season_idx": {
+          "name": "cost_records_season_idx",
+          "columns": [
+            {
+              "expression": "season_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "cost_records_product_id_products_id_fk": {
+          "name": "cost_records_product_id_products_id_fk",
+          "tableFrom": "cost_records",
+          "columnsFrom": [
+            "product_id"
+          ],
+          "tableTo": "products",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "cost_records_season_id_seasons_id_fk": {
+          "name": "cost_records_season_id_seasons_id_fk",
+          "tableFrom": "cost_records",
+          "columnsFrom": [
+            "season_id"
+          ],
+          "tableTo": "seasons",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "cost_records_recorded_by_users_id_fk": {
+          "name": "cost_records_recorded_by_users_id_fk",
+          "tableFrom": "cost_records",
+          "columnsFrom": [
+            "recorded_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "cost_records_variant_id_product_id_product_variants_id_product_id_fk": {
+          "name": "cost_records_variant_id_product_id_product_variants_id_product_id_fk",
+          "tableFrom": "cost_records",
+          "columnsFrom": [
+            "variant_id",
+            "product_id"
+          ],
+          "tableTo": "product_variants",
+          "columnsTo": [
+            "id",
+            "product_id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "cost_records_unit_cost_not_negative": {
+          "name": "cost_records_unit_cost_not_negative",
+          "value": "\"cost_records\".\"unit_cost\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.product_groups": {
+      "name": "product_groups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "product_groups_code_unique": {
+          "name": "product_groups_code_unique",
+          "columns": [
+            "tenant_id",
+            "code"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.product_options": {
       "name": "product_options",
       "schema": "",
@@ -1133,6 +1401,22 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "product_variants_sku_trgm_idx": {
+          "name": "product_variants_sku_trgm_idx",
+          "columns": [
+            {
+              "expression": "sku",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "gin",
+          "concurrently": false
         }
       },
       "foreignKeys": {
@@ -1172,6 +1456,14 @@
             "sku"
           ],
           "nullsNotDistinct": false
+        },
+        "product_variants_id_product_unique": {
+          "name": "product_variants_id_product_unique",
+          "columns": [
+            "id",
+            "product_id"
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1200,6 +1492,24 @@
           "primaryKey": false,
           "notNull": true,
           "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "style_code": {
+          "name": "style_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "season_id": {
+          "name": "season_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_group_id": {
+          "name": "product_group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
         },
         "name": {
           "name": "name",
@@ -1269,6 +1579,36 @@
         }
       },
       "indexes": {
+        "products_product_group_idx": {
+          "name": "products_product_group_idx",
+          "columns": [
+            {
+              "expression": "product_group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "products_season_idx": {
+          "name": "products_season_idx",
+          "columns": [
+            {
+              "expression": "season_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
         "products_tags_idx": {
           "name": "products_tags_idx",
           "columns": [
@@ -1283,13 +1623,135 @@
           "with": {},
           "method": "gin",
           "concurrently": false
+        },
+        "products_search_trgm_idx": {
+          "name": "products_search_trgm_idx",
+          "columns": [
+            {
+              "expression": "(coalesce(\"name\"->>'en', '') || ' ' || coalesce(\"name\"->>'ar', '') || ' ' || \"style_code\") gin_trgm_ops",
+              "isExpression": true,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "gin",
+          "concurrently": false
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "products_season_id_seasons_id_fk": {
+          "name": "products_season_id_seasons_id_fk",
+          "tableFrom": "products",
+          "columnsFrom": [
+            "season_id"
+          ],
+          "tableTo": "seasons",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "products_product_group_id_product_groups_id_fk": {
+          "name": "products_product_group_id_product_groups_id_fk",
+          "tableFrom": "products",
+          "columnsFrom": [
+            "product_group_id"
+          ],
+          "tableTo": "product_groups",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "products_style_code_unique": {
+          "name": "products_style_code_unique",
+          "columns": [
+            "tenant_id",
+            "style_code"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.seasons": {
+      "name": "seasons",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "starts_on": {
+          "name": "starts_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ends_on": {
+          "name": "ends_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "seasons_code_unique": {
+          "name": "seasons_code_unique",
+          "columns": [
+            "tenant_id",
+            "code"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "seasons_dates_in_order": {
+          "name": "seasons_dates_in_order",
+          "value": "\"seasons\".\"starts_on\" IS NULL OR \"seasons\".\"ends_on\" IS NULL OR \"seasons\".\"starts_on\" <= \"seasons\".\"ends_on\""
+        }
+      },
       "isRLSEnabled": false
     },
     "public.uoms": {
@@ -1573,6 +2035,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "operating_day": {
+          "name": "operating_day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
         "recorded_at": {
           "name": "recorded_at",
           "type": "timestamp with time zone",
@@ -1599,6 +2067,21 @@
             },
             {
               "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "movement_groups_operating_day_idx": {
+          "name": "movement_groups_operating_day_idx",
+          "columns": [
+            {
+              "expression": "operating_day",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2552,6 +3035,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "operating_day": {
+          "name": "operating_day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
         "recorded_at": {
           "name": "recorded_at",
           "type": "timestamp with time zone",
@@ -2592,6 +3081,21 @@
           "columns": [
             {
               "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "stock_movements_operating_day_idx": {
+          "name": "stock_movements_operating_day_idx",
+          "columns": [
+            {
+              "expression": "operating_day",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2888,6 +3392,121 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.location_owner_policies": {
+      "name": "location_owner_policies",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "owner_type": {
+          "name": "owner_type",
+          "type": "location_owner_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stock_owned_by_brand": {
+          "name": "stock_owned_by_brand",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "handover_is_sale": {
+          "name": "handover_is_sale",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sale_recorded_at": {
+          "name": "sale_recorded_at",
+          "type": "sale_recorded_at",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_customer_refund_by": {
+          "name": "end_customer_refund_by",
+          "type": "refund_by",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "defective_piece_refund_by": {
+          "name": "defective_piece_refund_by",
+          "type": "refund_by",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_document": {
+          "name": "tax_document",
+          "type": "tax_document",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "settlement_owner_type": {
+          "name": "settlement_owner_type",
+          "type": "settlement_owner_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "can_sell_online": {
+          "name": "can_sell_online",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "location_owner_policies_updated_by_users_id_fk": {
+          "name": "location_owner_policies_updated_by_users_id_fk",
+          "tableFrom": "location_owner_policies",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {
+        "location_owner_policies_tenant_id_owner_type_pk": {
+          "name": "location_owner_policies_tenant_id_owner_type_pk",
+          "columns": [
+            "tenant_id",
+            "owner_type"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.locations": {
       "name": "locations",
       "schema": "",
@@ -2918,12 +3537,26 @@
           "primaryKey": false,
           "notNull": true
         },
-        "type": {
-          "name": "type",
-          "type": "location_type",
+        "kind": {
+          "name": "kind",
+          "type": "location_kind",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
+        },
+        "owner_type": {
+          "name": "owner_type",
+          "type": "location_owner_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'own'"
+        },
+        "party_id": {
+          "name": "party_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "is_sellable": {
           "name": "is_sellable",
@@ -2931,6 +3564,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "sellable_online": {
+          "name": "sellable_online",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "allow_negative": {
           "name": "allow_negative",
@@ -2960,8 +3600,38 @@
           "notNull": false
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "locations_party_idx": {
+          "name": "locations_party_idx",
+          "columns": [
+            {
+              "expression": "party_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "locations_party_id_parties_id_fk": {
+          "name": "locations_party_id_parties_id_fk",
+          "tableFrom": "locations",
+          "columnsFrom": [
+            "party_id"
+          ],
+          "tableTo": "parties",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "locations_code_unique": {
@@ -2974,7 +3644,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "locations_party_matches_owner": {
+          "name": "locations_party_matches_owner",
+          "value": "(\"locations\".\"owner_type\" = 'own') = (\"locations\".\"party_id\" IS NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.parties": {
@@ -3026,8 +3701,15 @@
           "notNull": true,
           "default": false
         },
-        "is_customer": {
-          "name": "is_customer",
+        "is_consignment_partner": {
+          "name": "is_consignment_partner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_wholesale_customer": {
+          "name": "is_wholesale_customer",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -3092,7 +3774,7 @@
       "checkConstraints": {
         "parties_has_a_role": {
           "name": "parties_has_a_role",
-          "value": "\"parties\".\"is_supplier\" OR \"parties\".\"is_customer\" OR \"parties\".\"is_factory\""
+          "value": "\"parties\".\"is_supplier\" OR \"parties\".\"is_factory\" OR \"parties\".\"is_consignment_partner\" OR \"parties\".\"is_wholesale_customer\""
         }
       },
       "isRLSEnabled": false
@@ -3748,6 +4430,16 @@
     }
   },
   "enums": {
+    "public.cost_basis": {
+      "name": "cost_basis",
+      "schema": "public",
+      "values": [
+        "factory_invoice",
+        "production_run",
+        "purchase_landed",
+        "estimate"
+      ]
+    },
     "public.product_status": {
       "name": "product_status",
       "schema": "public",
@@ -3797,17 +4489,21 @@
       "schema": "public",
       "values": [
         "opening_balance",
+        "stock_receipt",
         "purchase_receipt",
         "purchase_return",
-        "sales_shipment",
-        "sales_return",
+        "order_shipment",
+        "returned_to_origin_restock",
+        "customer_return_restock",
+        "exchange_return_restock",
+        "consignment_sale",
+        "write_off",
         "transfer_out",
         "transfer_in",
         "adjustment",
         "count",
         "production_consume",
-        "production_output",
-        "stock_receipt"
+        "production_output"
       ]
     },
     "public.reservation_status": {
@@ -3837,14 +4533,58 @@
         "bin"
       ]
     },
-    "public.location_type": {
-      "name": "location_type",
+    "public.location_kind": {
+      "name": "location_kind",
       "schema": "public",
       "values": [
         "warehouse",
-        "showroom",
+        "shop",
         "transit",
         "virtual"
+      ]
+    },
+    "public.location_owner_type": {
+      "name": "location_owner_type",
+      "schema": "public",
+      "values": [
+        "own",
+        "consignment_partner",
+        "wholesale_customer"
+      ]
+    },
+    "public.refund_by": {
+      "name": "refund_by",
+      "schema": "public",
+      "values": [
+        "brand",
+        "location_owner"
+      ]
+    },
+    "public.sale_recorded_at": {
+      "name": "sale_recorded_at",
+      "schema": "public",
+      "values": [
+        "at_shipment",
+        "at_sell_through",
+        "at_handover"
+      ]
+    },
+    "public.settlement_owner_type": {
+      "name": "settlement_owner_type",
+      "schema": "public",
+      "values": [
+        "carrier",
+        "consignment_partner",
+        "gateway"
+      ]
+    },
+    "public.tax_document": {
+      "name": "tax_document",
+      "schema": "public",
+      "values": [
+        "b2c_electronic_receipt",
+        "b2b_electronic_invoice_at_settlement",
+        "b2b_electronic_invoice_at_handover"
       ]
     },
     "public.custom_field_type": {

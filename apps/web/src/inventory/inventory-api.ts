@@ -84,7 +84,7 @@ export function searchSkus(q: string, signal?: AbortSignal) {
 export const createSku = (body: CreateProductRequest) =>
   apiRequest('POST', '/api/products', SkuDetail, { body });
 
-/** `POST /api/locations`: a new warehouse or showroom (admin). */
+/** `POST /api/locations`: a new warehouse or shop (admin). */
 export const createLocation = (body: CreateLocationRequest) =>
   apiRequest('POST', '/api/locations', LocationDetail, { body });
 

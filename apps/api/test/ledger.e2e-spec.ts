@@ -54,9 +54,9 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
           sourceType: 'purchase_receipt',
         }),
       );
-      await h.ledger.post(posting([{ ...key, quantity: -4 }], { sourceType: 'sales_shipment' }));
+      await h.ledger.post(posting([{ ...key, quantity: -4 }], { sourceType: 'order_shipment' }));
       const emptied = await h.ledger.post(
-        posting([{ ...key, quantity: -6 }], { sourceType: 'sales_shipment' }),
+        posting([{ ...key, quantity: -6 }], { sourceType: 'order_shipment' }),
       );
 
       expect(received.movements[0]).toMatchObject({
@@ -139,6 +139,35 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
         h.ledger.post(posting([{ ...key, quantity: 1, unitCost: '1.00001' }])),
         'InvalidInput',
       );
+    });
+
+    it('rejects an opening_balance line without a cost, like every inbound line (AC-31)', async () => {
+      const key = await sku();
+
+      await rejects(
+        h.ledger.post(posting([{ ...key, quantity: 5 }], { sourceType: 'opening_balance' })),
+        'InvalidCost',
+      );
+    });
+
+    it('posts a restock at the shipped line cost, not at the balance average (AC-31)', async () => {
+      const key = await sku();
+      await h.ledger.post(
+        posting([{ ...key, quantity: 10, unitCost: '140.0000' }], {
+          sourceType: 'purchase_receipt',
+        }),
+      );
+      expect((await level(h.owner, key)).avgUnitCost).toBe('140.0000');
+
+      // The piece shipped at 120.0000 (its order line's frozen cost) and comes back.
+      const restock = await h.ledger.post(
+        posting([{ ...key, quantity: 1, unitCost: '120.0000' }], {
+          sourceType: 'customer_return_restock',
+        }),
+      );
+
+      expect(restock.movements[0]).toMatchObject({ unitCost: '120.0000', totalCost: '120.00' });
+      expect(await level(h.owner, key)).toMatchObject({ onHand: 11, totalValue: '1520.00' });
     });
   });
 

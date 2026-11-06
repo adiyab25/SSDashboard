@@ -410,7 +410,7 @@ export class LedgerService {
     after?: { updatedAt: string; id: string };
     limit: number;
   }): Promise<StockListRow[]> {
-    const filters: SQL[] = [sql`l.type IN ('warehouse', 'showroom')`];
+    const filters: SQL[] = [sql`l.kind IN ('warehouse', 'shop')`];
     if (query.locationId) filters.push(sql`sl.location_id = ${query.locationId}`);
     if (query.variantId) filters.push(sql`sl.variant_id = ${query.variantId}`);
     if (!query.includeZero) filters.push(sql`sl.on_hand <> 0`);

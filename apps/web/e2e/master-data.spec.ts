@@ -704,14 +704,14 @@ test.describe('Locations page: edit, archive, delete (AC-4)', () => {
     const dialog = await edit(free.code);
     await expect(dialog.getByLabel('Location code')).toBeEditable();
     await dialog.getByLabel('Name in English').fill(`Renamed ${tag}`);
-    await dialog.getByLabel('Showroom').click();
+    await dialog.getByLabel('Shop').click();
     const newCode = code('LE3');
     await dialog.getByLabel('Location code').fill(newCode.toLowerCase());
     await dialog.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText(`Location ${newCode} saved.`)).toBeVisible();
     const renamedRow = await findRow(page, 'Locations', new RegExp(newCode));
     await expect(renamedRow).toContainText(`Renamed ${tag}`);
-    await expect(renamedRow).toContainText('Showroom');
+    await expect(renamedRow).toContainText('Shop');
     await expect(await findRow(page, 'Locations', new RegExp(free.code))).toHaveCount(0);
 
     // A taken code is refused on the field.
@@ -848,8 +848,8 @@ test.describe('Locations page: edit, archive, delete (AC-4)', () => {
     const table = page.getByRole('table', { name: 'Locations' });
     await expect(table.getByRole('row').nth(1)).toBeVisible();
     const api2 = await api(page.request, 'GET', '/locations?status=active&limit=50');
-    const items = (api2.body.items ?? []) as { type: string }[];
-    expect(items.every((item) => item.type === 'warehouse' || item.type === 'showroom')).toBe(true);
+    const items = (api2.body.items ?? []) as { kind: string }[];
+    expect(items.every((item) => item.kind === 'warehouse' || item.kind === 'shop')).toBe(true);
   });
 
   test('Locations in Arabic: right to left with Arabic names and a bilingual Load more', async ({

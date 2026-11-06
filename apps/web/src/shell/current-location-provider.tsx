@@ -60,7 +60,7 @@ interface CurrentLocation {
 const CurrentLocationContext = createContext<CurrentLocation | null>(null);
 
 /**
- * The warehouse or showroom the person is working in, kept in a cookie. Read on the
+ * The warehouse or shop the person is working in, kept in a cookie. Read on the
  * client only; `'all'` while loading, on error, or when the stored one is gone.
  */
 export function CurrentLocationProvider({ children }: { children: React.ReactNode }) {

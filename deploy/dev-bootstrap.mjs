@@ -175,26 +175,23 @@ function checkMigrationHistory() {
   );
   const user = decodeURIComponent(url.username);
   const database = decodeURIComponent(url.pathname.slice(1));
-  const sql =
-    "SELECT CASE WHEN to_regclass('drizzle.__drizzle_migrations') IS NULL THEN '' ELSE (SELECT coalesce(string_agg(hash, ' '), '') FROM drizzle.__drizzle_migrations) END";
+  // PostgreSQL resolves table names at parse time, so the hashes are read by a second query,
+  // and only once the first one has found the table.
+  const psql = (sql) =>
+    compose(['exec', '-T', 'postgres', 'psql', '-U', user, '-d', database, '-At', '-c', sql]);
   let output;
   try {
-    output = compose([
-      'exec',
-      '-T',
-      'postgres',
-      'psql',
-      '-U',
-      user,
-      '-d',
-      database,
-      '-At',
-      '-c',
-      sql,
-    ]);
-  } catch {
-    // The database named in .env does not exist yet, so there is no old history to find.
-    return;
+    if (psql("SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL").trim() !== 't') {
+      return; // Never migrated: nothing from an old history to find.
+    }
+    output = psql("SELECT coalesce(string_agg(hash, ' '), '') FROM drizzle.__drizzle_migrations");
+  } catch (error) {
+    // Only a database that does not exist yet means there is no old history to find; any other
+    // failure (a wrong password, a stopped container) must not let the migration run blind.
+    const detail = `${error?.stderr ?? ''}${error?.message ?? ''}`;
+    if (new RegExp(`database "${database}" does not exist`).test(detail)) return;
+    fail(`could not check the migration history:
+${detail.trim()}`);
   }
   const known = new Set(
     readdirSync(MIGRATIONS_DIR)
@@ -216,6 +213,8 @@ function checkMigrationHistory() {
         '(docs/adr/0003-reset-migrations-to-one-baseline.md). Drop the dev volume and start again:',
         '    docker compose -f deploy/compose.dev.yaml down -v',
         '    pnpm bootstrap',
+        'Warning: down -v removes every database in the shared dev volume, so other checkouts on this',
+        'server lose theirs too. To clear only this checkout, drop just its own database instead.',
       ].join('\n'),
     );
   }

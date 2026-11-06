@@ -12,7 +12,7 @@ x-app: &app
 
 # DATABASE_URL is the application role: it can never update or delete stock movements.
 x-app-env: &app-env
-  DATABASE_URL: postgres://ssdashboard_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}@postgres:5432/ssdashboard
+  DATABASE_URL: postgres://${APP_DB_ROLE:-ssdashboard_app}:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}@postgres:5432/ssdashboard
   APP_VERSION: ${SSD_VERSION}
   EXTENSIONS: ${EXTENSIONS:-}
 
@@ -58,7 +58,8 @@ services:
       # Only migrate connects as the owner. It also sets the application role's login password.
       MIGRATION_DATABASE_URL: postgres://ssdashboard:${POSTGRES_PASSWORD}@postgres:5432/ssdashboard
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
-      # First run only (spec 0002, A2): the tenant id (unset: generated) and the application role's name.
+      # Stored on the database's first run and checked on every run (spec 0002, A2): the tenant id
+      # (unset: generated) and the application role's name. A different value stops migrate.
       TENANT_ID: ${TENANT_ID:-}
       APP_DB_ROLE: ${APP_DB_ROLE:-ssdashboard_app}
     depends_on:

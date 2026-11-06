@@ -21,7 +21,7 @@ const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
  * The catalog rules a caller can break: code already used, SKU missing, edited by someone else
  * since it was read, or still referenced and so not deletable.
  */
-export type CatalogErrorCode = 'SkuTaken' | 'NotFound' | 'Stale' | 'InUse';
+export type CatalogErrorCode = 'SkuTaken' | 'StyleCodeTaken' | 'NotFound' | 'Stale' | 'InUse';
 
 /** A catalog rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class CatalogError extends Error {
@@ -61,6 +61,16 @@ interface SkuRow extends Record<string, unknown> {
   price: string | null;
   archived: boolean;
   updated_at: string;
+}
+
+/**
+ * A SKU code clash: the variant code, or the style code a new product takes from it.
+ */
+function isSkuTaken(error: unknown): boolean {
+  const constraint = pgConstraint(error);
+  return (
+    constraint === 'product_variants_sku_unique' || constraint === 'products_style_code_unique'
+  );
 }
 
 /** `%`, `_`, and `\` match themselves in a LIKE pattern. */
@@ -140,7 +150,10 @@ export class CatalogService {
   /** Takes the app database connection. */
   constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
 
-  /** Creates one active product with one stocked SKU (AC-1). */
+  /**
+   * Creates one active product with one stocked SKU (AC-1). The product is a style whose style
+   * code is the SKU code, in the seeded `MAIN` product group (spec 0002, A12).
+   */
   async createProduct(input: z.output<typeof CreateProductRequest>): Promise<SkuDetail> {
     const variant = input.variants[0];
     if (!variant) throw new Error('The contract allows exactly one variant');
@@ -148,8 +161,9 @@ export class CatalogService {
       return await this.connection.db.transaction(async (tx) => {
         const product = (
           await tx.execute<{ id: string }>(sql`
-            INSERT INTO products (name, status)
-            VALUES (${JSON.stringify(input.name)}::jsonb, 'active')
+            INSERT INTO products (style_code, product_group_id, name, status)
+            VALUES (${variant.sku}, (SELECT id FROM product_groups WHERE code = 'MAIN'),
+                    ${JSON.stringify(input.name)}::jsonb, 'active')
             RETURNING id`)
         ).rows[0];
         if (!product) throw new Error('The product insert returned no row');
@@ -166,7 +180,7 @@ export class CatalogService {
         return detail;
       });
     } catch (error) {
-      if (pgConstraint(error) === 'product_variants_sku_unique') {
+      if (isSkuTaken(error)) {
         throw new CatalogError('SkuTaken', `SKU ${variant.sku} is already in use`);
       }
       throw error;
@@ -214,14 +228,34 @@ export class CatalogService {
 
   /**
    * Writes a new code (AC-2). Inventory calls this inside its locked transaction, after it
-   * checked that no stock was ever posted for the SKU. A stale `updatedAt` is `Stale`.
+   * checked that no stock was ever posted for the SKU. A stale `updatedAt` is `Stale`. A product
+   * whose only variant this is, and whose style code is the old SKU code (what the create path
+   * sets), takes the new code as its style code in the same transaction, so the old code is free
+   * to use again. A code another SKU holds is `SkuTaken`; one only another product's style code holds
+   * is `StyleCodeTaken` (the variant update runs first, so each constraint names its own case).
    */
   async setCode(tx: Executor, id: string, code: string, updatedAt: string): Promise<SkuDetail> {
     try {
-      await this.touchVariant(tx, id, updatedAt, [sql`sku = ${code}`, sql`updated_at = now()`]);
+      const before = (
+        await tx.execute<{ sku: string }>(sql`SELECT sku FROM product_variants WHERE id = ${id}`)
+      ).rows[0];
+      const { productId } = await this.touchVariant(tx, id, updatedAt, [
+        sql`sku = ${code}`,
+        sql`updated_at = now()`,
+      ]);
+      if (before) {
+        await tx.execute(sql`
+          UPDATE products SET style_code = ${code}, updated_at = now()
+          WHERE id = ${productId} AND style_code = ${before.sku}
+            AND (SELECT count(*) FROM product_variants WHERE product_id = ${productId}) = 1`);
+      }
     } catch (error) {
-      if (pgConstraint(error) === 'product_variants_sku_unique') {
+      const constraint = pgConstraint(error);
+      if (constraint === 'product_variants_sku_unique') {
         throw new CatalogError('SkuTaken', `SKU ${code} is already in use`);
+      }
+      if (constraint === 'products_style_code_unique') {
+        throw new CatalogError('StyleCodeTaken', `Style code ${code} is already in use`);
       }
       throw error;
     }

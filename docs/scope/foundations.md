@@ -30,7 +30,7 @@ Also from spec 0007: order number unique per (tenant, store), never per tenant; 
 - [x] Design it (spec): `/architect data model`
 - [ ] Build it: `/develop data model`
   - [x] A new baseline with a tenant id on every row, end to end
-  - [ ] Operating day, styles and seasons with cost, locations with a fixed owner type, and the ledger changes
+  - [x] Operating day, styles and seasons with cost, locations with a fixed owner type, and the ledger changes
   - [ ] Stores, channels, customers by phone, and orders with both state machines
   - [ ] Customer credit, settlement, tasks, per order cost rules, and the module walls
   - [ ] Scale at 50,000 SKUs, in its own CI job

@@ -34,6 +34,8 @@ docker compose -f deploy/compose.dev.yaml down -v
 pnpm bootstrap
 ```
 
+Warning: `down -v` removes every database in the shared dev volume, so other checkouts on the same server lose theirs too. To start over for one checkout only, drop and recreate just its own database.
+
 **What runs where**
 
 | What                      | Address                 | Notes                                           |
