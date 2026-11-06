@@ -137,6 +137,8 @@ One module, `apps/web/src/i18n/format.ts`, formats numbers, integer quantities, 
 - **AC-10**: A shared `LtrText` component isolates codes (SKU, barcode, document number, email, URL) as left to right inside right to left text. `packages/ui/DESIGN.md` says to use it for every such value.
 - **AC-11**: A client language is added by a file `extensions/<client>/locales/<code>.json` (with a `_meta` block holding the language's own name and its Intl tag) plus the code in the `languages` setting. The file is served by Caddy at `/locales/<code>.json` and fetched at runtime, with no change to the web image. Keys it lacks fall back to English. A file that is missing, malformed, or has no `_meta` hides that language from the switcher and logs a console warning; it never breaks the shell. A client language appears in the menu only after its file has loaded and validated, and the menu always keeps the `languages` order.
 - **AC-12**: axe reports zero violations on the shell in Arabic and English. At 375px wide in Arabic nothing in the shell is clipped or overlapping, and Arabic text renders in IBM Plex Sans Arabic (spec 0003 AC-13 still holds).
+
+> Amended 2026-11-06 (Daftar built): Arabic text now renders in Noto Sans Arabic, not IBM Plex Sans Arabic (spec 0003 AC-13 as amended).
 - **AC-13**: If a language's catalog fails to load when chosen, the current language stays, the cookie is unchanged, and the Language submenu shows an inline error line, which clears on the next menu open or next choice. If two choices overlap (B chosen while A is still loading), the last choice wins and the stale load is dropped.
 
 ## Decision
@@ -303,9 +305,9 @@ Amendment work only (the original plan above is built). Tracer Bullet: Milestone
 **Done when** `pnpm build && pnpm typecheck && pnpm --filter @ssdashboard/web test && pnpm test:e2e` all pass, and `node packages/config/scripts/check-route-groups.mjs` passes.
 
 **Milestone 4: Operating day test and the time zone release step** (needs `ssd_operating_day(timestamptz)` from the data model, feature 4; start it after that migration lands)
-1. [ ] Database test `packages/db/test/operating-day-dst.e2e-spec.ts` (name to match the existing e2e files there): the fixed 2026 table, the release year's two transitions computed from the rule, a check against Node `Intl` for every row, the 23 and 25 hour day counts, and a failure when the release year does not have exactly two offset changes, satisfies **AC-21**
-2. [ ] Root script `check:timezone` (a file in `packages/config/scripts`) that prints `process.versions.tz`, `process.versions.icu`, and the PostgreSQL version, then runs the test; document it as a release step in `packages/i18n/README.md` for the feature 26 runbook, satisfies **AC-22**
-3. [ ] Update the docs this changes: `packages/i18n/README.md`, `apps/web/src/i18n/README.md`, `apps/api/src/mail/README.md`, `extensions/README.md` (portal and mail use core languages only), satisfies **AC-23**
+1. [x] Database test `packages/db/test/operating-day-dst.e2e-spec.ts` (name to match the existing e2e files there): the fixed 2026 table, the release year's two transitions computed from the rule, a check against Node `Intl` for every row, the 23 and 25 hour day counts, and a failure when the release year does not have exactly two offset changes, satisfies **AC-21**
+2. [x] Root script `check:timezone` (a file in `packages/config/scripts`) that prints `process.versions.tz`, `process.versions.icu`, and the PostgreSQL version, then runs the test; document it as a release step in `packages/i18n/README.md` for the feature 26 runbook, satisfies **AC-22**
+3. [x] Update the docs this changes: `packages/i18n/README.md`, `apps/web/src/i18n/README.md`, `apps/api/src/mail/README.md`, `extensions/README.md` (portal and mail use core languages only), satisfies **AC-23**
 
 **Done when** `pnpm db:migrate && pnpm --filter @ssdashboard/db test:e2e && pnpm check:timezone && pnpm lint` all pass.
 

@@ -20,6 +20,8 @@ for (const [path, title] of [
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(title);
     await expect(page.locator('main#main-content')).toHaveCount(1);
+    await expect(page.getByRole('main')).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     // Give a stray staff call time to fire and redirect before asserting.
     await page.waitForLoadState('networkidle');
     expect(new URL(page.url()).pathname).toBe(path);

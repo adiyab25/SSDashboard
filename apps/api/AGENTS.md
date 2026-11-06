@@ -16,6 +16,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 | `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone), `NumberingService` (gap free document numbers), and `CostRulesService` (`ruleFor`: the per order cost rule in force on a day, read from `order_cost_rules`; `not_set` and never 0 when unset) |
 | `src/platform/audience/` | `@Audience(...)` (`staff`, `partner`, `portal`, `hook`, `public`) and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `src/platform/logging/` | `RedactingLogger`: Nest's console logger with every argument passed through `redact` from `@ssdashboard/config/redaction` |
+| `src/identity/` | Staff sign in (`sign-in/`) and staff administration (`staff/`), one `IdentityModule`, see [its AGENTS.md](src/identity/AGENTS.md) |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
 | `src/audit/` | The audit trail: `AuditService.record` (the only writer of `audit_entries`), `AuditQueryService`, and `GET /api/audit/entries`, see [its README](src/audit/README.md) |
 | `src/app.module.ts` | Root module, imports each business module |
@@ -49,11 +50,11 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 
 - ESM with NodeNext resolution: relative imports need the `.js` suffix (`./app.module.js`).
 - The api never migrates on boot. Run `pnpm db:migrate`, which builds the api first.
-- Better Auth needs NestJS's body parser off for `/api/auth`, and its cookie stays host only, `Secure`, `HttpOnly`, `SameSite=Lax`.
+- Better Auth needs NestJS's body parser off for `/api/auth`, and its cookies stay host only (never a `Domain`), `Secure` on an https `PUBLIC_URL`, `HttpOnly`, `SameSite=Lax`, on `Path=<STAFF_BASE_PATH>` (else `/`); see [src/identity/AGENTS.md](src/identity/AGENTS.md).
 - The core never imports an extension; extensions load by dynamic import only.
 - `DATABASE_URL` is the application role, which cannot create databases. The e2e helpers create scratch databases with `MIGRATION_DATABASE_URL` (the owner) and run the ledger as the app role with `options=-c role=ssdashboard_app`.
 - `test/scale.e2e-spec.ts` seeds the spec 0002 load (50,000 variants, 150,000 orders and the rest); the spec 0010 audit load joins it with feature 10 (the table exists; the audit load stays an `it.todo` until spec 0010 milestone 4 task 18). It runs only through `test:scale` (`vitest.config.scale.ts`), in the `scale` CI job (nightly, `scale` label on a pull request, or by hand); `vitest.config.e2e.ts` excludes it. `pnpm --filter ... test:e2e -- <file>` does not filter in this repo (the `--` is forwarded and vitest ignores it): call `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts <file>` for one file.
-- The module wall is `src/module-boundary.spec.ts`: a file in one module that names another module's table (by Drizzle export or SQL name, from `TABLE_OWNERSHIP` in `packages/db`) fails it, and so does an extension that names a core table. Its `KNOWN_BREACHES` list may only shrink.
+- The module wall is `src/module-boundary.spec.ts`: a file in one module that names another module's table (by Drizzle export or SQL name, from `TABLE_OWNERSHIP` in `packages/db`) fails it, and so does an extension that names a core table. Its `KNOWN_BREACHES` list may only shrink. It also holds the identity import wall: another module may import only the files in `IDENTITY_PUBLIC_FILES` from `src/identity/`.
 
 ## Agent skills
 
@@ -61,7 +62,7 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - [drizzle-orm-patterns](../../.claude/skills/drizzle-orm-patterns/): `giuseppe-trisciuoglio/developer-kit`, queries, transactions, row locks
 - [pg-boss-v12](../../.claude/skills/pg-boss-v12/): `sncollective/snc-platform`, pg-boss v12 API reference (send, work, schedule, createQueue). Written inside another project: its version notes describe that project, not ours
 - [tl-pg-boss](../../.claude/skills/tl-pg-boss/): `toddlevy/tl-agent-skills`, pg-boss job patterns (cron, retries, exactly once, testing, monitoring)
-- Auth work (`src/auth/`), from `better-auth/skills`: [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/), [better-auth-security-best-practices](../../.claude/skills/better-auth-security-best-practices/), [email-and-password-best-practices](../../.claude/skills/email-and-password-best-practices/), [two-factor-authentication-best-practices](../../.claude/skills/two-factor-authentication-best-practices/), [organization-best-practices](../../.claude/skills/organization-best-practices/), [create-auth](../../.claude/skills/create-auth/).
+- Identity work (`src/identity/`), from `better-auth/skills`: [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/), [better-auth-security-best-practices](../../.claude/skills/better-auth-security-best-practices/), [email-and-password-best-practices](../../.claude/skills/email-and-password-best-practices/), [two-factor-authentication-best-practices](../../.claude/skills/two-factor-authentication-best-practices/), [organization-best-practices](../../.claude/skills/organization-best-practices/), [create-auth](../../.claude/skills/create-auth/).
 ## Related specs
 
 - [0007 Stack and architecture for the operations layer](../../docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001)

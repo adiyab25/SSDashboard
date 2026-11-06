@@ -26,8 +26,8 @@ import {
 import type { Response } from 'express';
 import { z } from 'zod';
 import { auditHttpError } from '../../audit/audit-http.js';
-import type { AuthenticatedRequest } from '../../auth/current-staff.js';
-import { Roles } from '../../auth/roles.decorator.js';
+import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
+import { Roles } from '../../identity/sign-in/roles.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';

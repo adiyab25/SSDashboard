@@ -379,6 +379,8 @@ export const ar: Catalog = {
     },
   },
   partner: {
+    nav: { label: 'أقسام الشريك', home: 'الرئيسية' },
+    frame: { partnerName: 'حساب الشريك' },
     home: {
       title: 'معرض الشريك',
       description: 'ستظهر هنا بضاعتك بالأمانة ومبيعاتك. هذه الصفحة قادمة قريبًا.',
@@ -393,6 +395,10 @@ export const ar: Catalog = {
       checking: 'جارٍ الفحص…',
       unreachable: 'لا يمكن الوصول',
       checkAgain: 'افحص مرة أخرى',
+      ok: 'يعمل',
+      degraded: 'يعمل بشكل جزئي',
+      up: 'متصل',
+      down: 'غير متصل',
     },
   },
   inventory: {

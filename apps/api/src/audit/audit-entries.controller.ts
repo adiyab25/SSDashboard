@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { AuditEntryListQuery, type AuditEntryListResponse } from '@ssdashboard/contracts';
-import { Roles } from '../auth/roles.decorator.js';
+import { Roles } from '../identity/sign-in/roles.decorator.js';
 import { Audience } from '../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';

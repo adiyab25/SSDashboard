@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { I18nextProvider } from 'react-i18next';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createI18n } from '@ssdashboard/i18n';
+import { ar } from '@ssdashboard/i18n/ar';
 import { ApiStatus } from './api-status';
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -17,6 +20,36 @@ async function valueOf(label: string): Promise<string | null> {
   const term = await screen.findByText(label, { selector: 'dt' });
   return term.nextElementSibling?.textContent ?? null;
 }
+
+describe('ApiStatus in Arabic', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  it.each([
+    ['ok', 'up', 'يعمل', 'متصل'],
+    ['degraded', 'down', 'يعمل بشكل جزئي', 'غير متصل'],
+  ] as const)(
+    'shows %s and %s as Arabic words, not raw api values',
+    async (status, database, apiText, databaseText) => {
+      fetchMock.mockResolvedValue(jsonResponse({ status, version: '0.1.0', database }));
+
+      render(
+        <I18nextProvider i18n={createI18n({ language: 'ar', catalogs: { ar } })}>
+          <ApiStatus />
+        </I18nextProvider>,
+      );
+
+      expect(await valueOf('قاعدة البيانات')).toBe(databaseText);
+      expect(await valueOf('واجهة البرمجة')).toBe(apiText);
+    },
+  );
+});
 
 describe('ApiStatus', () => {
   beforeEach(() => {

@@ -45,9 +45,9 @@ Visual language, layout primitives, and base components, shaped with the Impecca
 **Done when:** `design.md` covers type, color, spacing, and components; base components handle focus, keyboard, and right to left; there is a phone first pattern for the manager dashboard and a pattern for in screen help.
 - [x] Design it (spec): `/architect design system & UI foundation`
 - [ ] Build it: `/develop design system & UI foundation`
-  - [ ] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
-  - [ ] Status chips, provisional values, the freshness strip, and the floor density scope
-  - [ ] Portal and partner frames with per brand theming
+  - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
+  - [x] Status chips, provisional values, the freshness strip, and the floor density scope
+  - [x] Portal and partner frames with per brand theming
   - [ ] Phone first dashboard pattern and in screen help
 - [ ] Verify it: `/check verify design system & UI foundation`
 - [ ] Test it: `/test design system & UI foundation`
@@ -57,13 +57,13 @@ Spec [0003](../specs/0003-design-system-ui-foundation/index.md) (amendment of 20
 Arabic first, English always, everywhere: screens, errors, receipts, exports, and templates.
 **Done when:** every string comes from the message catalogs in both languages, layout flips right to left correctly, Arabic and Latin digits both parse, money shows in EGP, and dates show in Cairo time.
 - [x] Design it (spec): `/architect localization`
-- [ ] Build it: `/develop localization`
+- [x] Build it: `/develop localization`
   - [x] The shared catalog package, end to end (web, api mail, worker)
   - [x] Formatting and digits at every input edge
   - [x] Server rendered portal and partner pages
-  - [ ] Operating day test on the real Cairo transition dates and the time zone release step
-- [ ] Verify it: `/check verify localization`
-- [ ] Test it: `/test localization`
+  - [x] Operating day test on the real Cairo transition dates and the time zone release step
+- [x] Verify it: `/check verify localization`
+- [x] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) (amendment of 2026-11-05, Proposed)
 
 ### 7. Staff sign in · GA

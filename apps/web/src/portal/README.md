@@ -1,6 +1,6 @@
 # Returns portal
 
-A placeholder page at `/en/returns` and `/ar/returns` for the public exchange and return portal. Anonymous, with a minimal frame. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/returns` redirects to the right language in the proxy.
+A placeholder page at `/en/returns` and `/ar/returns` for the public exchange and return portal. Anonymous, with a minimal frame. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), inside the `PortalFrame` (spec 0003, AC-18) with the neutral primary and the install's fallback name (no brand settings endpoint yet), and a plain link to the other language in the frame's language switch slot. `/returns` redirects to the right language in the proxy.
 
 ## Owns
 

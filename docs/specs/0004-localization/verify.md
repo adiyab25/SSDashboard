@@ -45,34 +45,34 @@ _Steps derived from spec 0004 acceptance criteria and its Value sourcing table. 
 _Steps for AC-14 to AC-23. The checks above stay valid for `(backoffice)` and `(auth)` (AC-17) and must be re-run after milestone 3. `/check verify` runs these after the amendment is built._
 
 ### UI / manual
-- [ ] Open `/ar/returns` with JavaScript disabled → `<html lang="ar" dir="rtl">`, Arabic text, no hidden body → AC-16
-- [ ] Open `/returns` with `Accept-Language: ar-EG` and no cookie → redirected to `/ar/returns`; with cookie `ss_lang=en` → `/en/returns`; with neither → `/ar/returns` (or the owner's answer to question 1) → AC-16
-- [ ] Open `/fr/returns` → real 404 → AC-16
-- [ ] On a portal page, use the other language link → the same page in the other language, cookie `ss_lang` updated → AC-16
-- [ ] Do the same three checks on a partner page → AC-16
-- [ ] Production build: `/design` still answers 404, and an unknown path shows the not found page → AC-17
-- [ ] Sign in and use the back office in Arabic as before (cookie, no flash, Language menu) → AC-17
-- [ ] Type `٣` in a quantity field and `١٢٣٤٫٥٠` in an amount field (when a screen with each exists) → saved as `3` and `1234.50`; `1,5` shows a field error → AC-18
-- [ ] Type a password containing Arabic digits → it is not changed → AC-18
-- [ ] Send a password reset mail in Arabic → same text as before the move, right to left → AC-15
-- [ ] Ask an Arabic speaker to read the new `mail`, `report`, `export`, and `receipt` text, together with the open item above → AC-15
+- [x] Open `/ar/returns` with JavaScript disabled → `<html lang="ar" dir="rtl">`, Arabic text, no hidden body → AC-16
+- [x] Open `/returns` with `Accept-Language: ar-EG` and no cookie → redirected to `/ar/returns`; with cookie `ss_lang=en` → `/en/returns`; with neither → `/ar/returns` (or the owner's answer to question 1) → AC-16
+- [x] Open `/fr/returns` → real 404 → AC-16
+- [x] On a portal page, use the other language link → the same page in the other language, cookie `ss_lang` updated → AC-16
+- [x] Do the same three checks on a partner page → AC-16
+- [x] Production build: `/design` still answers 404, and an unknown path shows the not found page → AC-17
+- [x] Sign in and use the back office in Arabic as before (cookie, no flash, Language menu) → AC-17
+- [x] Type `٣` in a quantity field and `١٢٣٤٫٥٠` in an amount field (when a screen with each exists) → saved as `3` and `1234.50`; `1,5` shows a field error → AC-18
+- [x] Type a password containing Arabic digits → it is not changed → AC-18
+- [x] Send a password reset mail in Arabic → same text as before the move, right to left → AC-15 (checked by the mail snapshot test and the `src/mail` unit run, 33 passed; no mail was sent, MAIL_DRIVER=none)
+- [ ] Ask an Arabic speaker to read the new `mail`, `report`, `export`, and `receipt` text, together with the open item above → AC-15 (not done: needs an Arabic speaker, see the 2026-11-06 run below)
 
 ### Value sourcing
-- [ ] Change `currency` to `USD` → web, mail, and worker output all show USD; back to `EGP` → all show EGP → AC-19
-- [ ] Change `timezone` to `UTC` → the same instant shows the UTC time in web and worker output → AC-20
-- [ ] Display `2026-04-23T22:00:00Z` → `01:00` on 24 Apr 2026; `2026-10-29T20:30:00Z` and `2026-10-29T21:30:00Z` → both `23:30` on 29 Oct 2026 → AC-20
-- [ ] `ssd_operating_day()` on the seven 2026 rows in the amendment → the dates listed there → AC-21
+- [x] Change `currency` to `USD` → web, mail, and worker output all show USD; back to `EGP` → all show EGP → AC-19 (checked on the real formatter only, no screen, mail, or worker output uses money yet)
+- [x] Change `timezone` to `UTC` → the same instant shows the UTC time in web and worker output → AC-20 (checked on the real formatter only)
+- [x] Display `2026-04-23T22:00:00Z` → `01:00` on 24 Apr 2026; `2026-10-29T20:30:00Z` and `2026-10-29T21:30:00Z` → both `23:30` on 29 Oct 2026 → AC-20
+- [x] `ssd_operating_day()` on the seven 2026 rows in the amendment → the dates listed there → AC-21
 
 ### Commands
-- [ ] `pnpm --filter @ssdashboard/i18n test` → parity across all key groups, plurals, formatters, digit parsers → AC-14, AC-15, AC-18, AC-19
-- [ ] `pnpm --filter @ssdashboard/contracts test` → the digit helpers on request schemas → AC-18
-- [ ] `pnpm --filter @ssdashboard/api test` → mail snapshot, wrong key fixture, Arabic digit quantity → AC-15, AC-18
-- [ ] `pnpm lint` → a `toLocaleString` or `new Intl.*` in `apps/api` fails it; `packages/i18n/src` is exempt → AC-19
-- [ ] `node packages/config/scripts/check-route-groups.mjs` → still only the four audiences → AC-16
-- [ ] `pnpm test:e2e` (desktop, mobile, production) → portal and partner server rendered tests, back office tests → AC-16, AC-17
-- [ ] `pnpm --filter @ssdashboard/db test:e2e` → operating day on the Cairo transition dates → AC-21
-- [ ] `pnpm check:timezone` → prints `process.versions.tz`, `process.versions.icu`, the PostgreSQL version, and passes → AC-22
-- [ ] The `fr.json` extension test, then a portal page with a French cookie → English → AC-23
+- [x] `pnpm --filter @ssdashboard/i18n test` → parity across all key groups, plurals, formatters, digit parsers → AC-14, AC-15, AC-18, AC-19
+- [x] `pnpm --filter @ssdashboard/contracts test` → the digit helpers on request schemas → AC-18
+- [x] `pnpm --filter @ssdashboard/api test` → mail snapshot, wrong key fixture, Arabic digit quantity → AC-15, AC-18
+- [x] `pnpm lint` → a `toLocaleString` or `new Intl.*` in `apps/api` fails it; `packages/i18n/src` is exempt → AC-19
+- [x] `node packages/config/scripts/check-route-groups.mjs` → still only the four audiences → AC-16
+- [x] `pnpm test:e2e` (desktop, mobile, production) → portal and partner server rendered tests, back office tests → AC-16, AC-17
+- [x] `pnpm --filter @ssdashboard/db test:e2e` → operating day on the Cairo transition dates → AC-21
+- [x] `pnpm check:timezone` → prints `process.versions.tz`, `process.versions.icu`, the PostgreSQL version, and passes → AC-22 (ran on Node 22.23.2, tz 2026a, icu 78.2, PostgreSQL 18.6; the release must run it on Node 26)
+- [x] The `fr.json` extension test, then a portal page with a French cookie → English → AC-23
 
 ### Acceptance-criteria coverage (amendment)
 - AC-14 … shared package and imports · AC-15 … translator, typed keys, parity, mail snapshot · AC-16 … portal and partner server rendered by URL language · AC-17 … back office unchanged, root layouts split · AC-18 … Arabic digits at every edge · AC-19 … shared formatters, EGP, lint ban moved · AC-20 … Cairo display on transition instants · AC-21 … operating day test on real DST dates · AC-22 … time zone refresh release check · AC-23 … extension locales carried
@@ -99,6 +99,8 @@ Verdict: PASS on all 13 acceptance criteria. One item stays open for a person: t
 | AC-12 axe and 375px Arabic | PASS | `shell.spec.ts` axe loop over theme and direction (passed); `localization.spec.ts` › "at 375px in Arabic nothing in the shell is clipped or overlapping" (mobile) and "Arabic text uses IBM Plex Sans Arabic" passed |
 | AC-13 Load failure and overlapping choices | PASS | `localization.spec.ts` › "a blocked Arabic chunk keeps English, leaves the cookie, and shows an inline error" and "the last of two overlapping choices wins" passed |
 
+> Amended 2026-11-06 (Daftar built): the AC-12 row above names IBM Plex Sans Arabic as it was run; Arabic text is now Noto Sans Arabic and the `localization.spec.ts` test is renamed "Arabic text uses Noto Sans Arabic (AC-12)"; QA re-runs it.
+
 Commands run (key lines):
 - `pnpm build` → `Tasks: 4 successful`
 - `pnpm typecheck` → `Tasks: 7 successful, 7 total`
@@ -114,3 +116,7 @@ Not localization bugs, found along the way (not fixed, outside this lane):
 - With `API_INTERNAL_URL` set in the shell, `session-gate.spec.tsx` › "asks the api for the person with the cookie forwarded" fails because the test expects the default `http://localhost:3001`. It passes with the variable unset (38 of 38 files). A test hygiene issue for spec 0005's owner.
 
 Still open (needs a person): ask an Arabic speaker to read the Arabic catalog and the Arabic money, date, and time output (AC-6, AC-8 wording). The Arabic reading box above stays unticked on purpose.
+
+## Verify run 2026-11-06 (feature close, branch `feat/localization-close`)
+
+Verdict: PASS on AC-1 to AC-23; full record in [the close report](../../reviews/verify-localization-close.md). Every step above is ticked except the Arabic speaker reads (both unticked on purpose). Added tests: an api e2e and a contracts test that a password with Arabic digits stays as typed (AC-18). Findings: 3 minor (raw `ok` and `up` on the Arabic home page, the ASCII only digit rule for passwords, one load flake in `staff.spec.ts`).

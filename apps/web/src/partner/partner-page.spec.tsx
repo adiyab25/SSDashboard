@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { flatten } from '@ssdashboard/i18n';
 import { ar } from '@ssdashboard/i18n/ar';
@@ -24,9 +24,15 @@ describe('PartnerPage', () => {
       inLanguage(code);
       const other = code === 'en' ? 'ar' : 'en';
 
-      expect(screen.getByRole('link')).toHaveAttribute('href', `/${other}/partner`);
-      expect(screen.getByRole('link')).toHaveAttribute('hreflang', other);
-      expect(screen.getByRole('link')).toHaveAttribute('lang', other);
+      expect(
+        screen.getByRole('link', { name: code === 'en' ? 'العربية' : 'English' }),
+      ).toHaveAttribute('href', `/${other}/partner`);
+      expect(
+        screen.getByRole('link', { name: code === 'en' ? 'العربية' : 'English' }),
+      ).toHaveAttribute('hreflang', other);
+      expect(
+        screen.getByRole('link', { name: code === 'en' ? 'العربية' : 'English' }),
+      ).toHaveAttribute('lang', other);
     },
   );
 
@@ -38,4 +44,28 @@ describe('PartnerPage', () => {
       (code === 'en' ? enFlat : arFlat)['partner.home.title'],
     );
   });
+
+  it.each([['en'], ['ar']] as const)(
+    'renders inside its frame with one main landmark in %s',
+    (code) => {
+      const { container } = inLanguage(code);
+
+      expect(screen.getAllByRole('main')).toHaveLength(1);
+      expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
+      expect(container.querySelector('[data-slot="partner-frame"]')).not.toBeNull();
+      expect(container.querySelector('style, [style*="--brand"]')).toBeNull();
+    },
+  );
+
+  it.each([['en'], ['ar']] as const)(
+    'lists only the pages that exist in the navigation in %s',
+    (code) => {
+      inLanguage(code);
+      const nav = within(screen.getByRole('navigation'));
+
+      expect(nav.getAllByRole('link')).toHaveLength(1);
+      expect(nav.getByRole('link')).toHaveAttribute('aria-current', 'page');
+      expect(nav.getByRole('link')).toHaveAttribute('href', `/${code}/partner`);
+    },
+  );
 });

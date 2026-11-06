@@ -43,12 +43,12 @@ export function ApiStatus() {
             ? t('home.status.checking')
             : state.kind === 'error'
               ? `${t('home.status.unreachable')} (${state.message})`
-              : state.health.status}
+              : t(`home.status.${state.health.status}`)}
         </dd>
         {state.kind === 'ready' && (
           <>
             <dt className="font-medium">{t('home.status.database')}</dt>
-            <dd>{state.health.database}</dd>
+            <dd>{t(`home.status.${state.health.database}`)}</dd>
             <dt className="font-medium">{t('home.status.version')}</dt>
             <dd className="tabular-nums">
               {/* Isolated so "0.0.0-dev" keeps its order in right to left. */}

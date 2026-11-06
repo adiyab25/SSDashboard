@@ -4,7 +4,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module.js';
-import { IS_PUBLIC } from '../../auth/public.decorator.js';
+import { IS_PUBLIC } from '../../identity/sign-in/public.decorator.js';
 import { AUDIENCE_KEY, audienceOf, type AudienceName } from './audience.decorator.js';
 
 // Fails the build when a controller lacks exactly one valid audience (spec 0007, section 2).

@@ -7,6 +7,10 @@
     "./globals.css": "./src/styles/globals.css",
     "./components/*": "./src/components/*.tsx",
     "./lib/*": "./src/lib/*.ts",
+    "./status/*": "./src/status/*.tsx",
+    "./frames/*": "./src/frames/*.tsx",
+    "./dashboard/*": "./src/dashboard/*.tsx",
+    "./help/*": "./src/help/*.tsx",
     "./hooks/*": "./src/hooks/*.ts"
   },
   "scripts": {

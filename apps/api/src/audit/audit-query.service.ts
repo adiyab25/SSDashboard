@@ -9,7 +9,7 @@ import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { DATABASE } from '../database/database.module.js';
 import { pgArray } from '../database/sql.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
-import { StaffDirectory } from '../staff/staff-directory.js';
+import { StaffDirectory } from '../identity/staff/staff-directory.js';
 
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 

@@ -140,6 +140,14 @@ CREATE TABLE "sign_in_attempts" (
 	CONSTRAINT "sign_in_attempts_tenant_id_email_key_scope_pk" PRIMARY KEY("tenant_id","email_key","scope")
 );
 --> statement-breakpoint
+CREATE TABLE "sign_in_slots" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"email_key" text NOT NULL,
+	"ip" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "two_factors" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
@@ -1178,6 +1186,7 @@ CREATE INDEX "accounts_user_idx" ON "accounts" USING btree ("user_id");--> state
 CREATE UNIQUE INDEX "rate_limits_key_unique" ON "rate_limits" USING btree ("tenant_id","key");--> statement-breakpoint
 CREATE INDEX "sessions_user_idx" ON "sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "sessions_expires_idx" ON "sessions" USING btree ("expires_at");--> statement-breakpoint
+CREATE INDEX "sign_in_slots_email_ip_idx" ON "sign_in_slots" USING btree ("email_key","ip");--> statement-breakpoint
 CREATE UNIQUE INDEX "two_factors_user_unique" ON "two_factors" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "users_email_unique" ON "users" USING btree ("tenant_id",lower("email"));--> statement-breakpoint
 CREATE UNIQUE INDEX "users_staff_code_unique" ON "users" USING btree ("tenant_id","staff_code") WHERE "users"."staff_code" is not null;--> statement-breakpoint

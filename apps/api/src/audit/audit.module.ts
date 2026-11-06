@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { StaffDirectoryModule } from '../staff/staff-directory.js';
+import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { AuditEntriesController } from './audit-entries.controller.js';
 import { AuditQueryService } from './audit-query.service.js';
 import { AuditService } from './audit.service.js';
