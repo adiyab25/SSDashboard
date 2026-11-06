@@ -24,11 +24,20 @@ describe('PartnerPage', () => {
       inLanguage(code);
       const other = code === 'en' ? 'ar' : 'en';
 
-      expect(screen.getByRole('link')).toHaveAttribute('href', `/${other}/partner`);
-      expect(screen.getByRole('link')).toHaveAttribute('hreflang', other);
-      expect(screen.getByRole('link')).toHaveAttribute('lang', other);
+      const link = screen.getByRole('link', { name: other === 'en' ? 'English' : 'العربية' });
+      expect(link).toHaveAttribute('href', `/${other}/partner`);
+      expect(link).toHaveAttribute('hreflang', other);
+      expect(link).toHaveAttribute('lang', other);
     },
   );
+
+  it.each([['en'], ['ar']] as const)('links to the account page in %s', (code) => {
+    inLanguage(code);
+
+    expect(
+      screen.getByRole('link', { name: (code === 'en' ? enFlat : arFlat)['partner.home.account'] }),
+    ).toHaveAttribute('href', `/${code}/partner/account`);
+  });
 
   it.each([['en'], ['ar']] as const)('has exactly one h1 in %s', (code) => {
     inLanguage(code);

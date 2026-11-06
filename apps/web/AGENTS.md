@@ -43,7 +43,7 @@ One group per audience (spec 0007, section 2). The root `Providers` must stay fr
 
 - `(backoffice)`: staff back office, inside the app shell with the session check.
 - `(auth)`: staff sign in screens, no shell.
-- `(partner)`: consignment partners (`/en/partner`, `/ar/partner`), staff host, minimal frame, no staff shell or session check yet.
+- `(partner)`: partner users (`/en/partner`, `/ar/partner`, and the shared account screen at `/en/partner/account`), staff host, minimal frame, no staff shell. Sign in lands a partner here from `home` (spec 0005, AC-28); the account screen reads and saves through `/api/partner/me` (spec 0008) and pages still have no session gate of their own.
 - `(portal)`: the public exchange and return portal (`/en/returns`, `/ar/returns`), minimal frame, anonymous.
 
 Each group is its own root layout (spec 0004), so moving between audiences is a full page load. `(portal)` and `(partner)` sit under a `[lang]` segment (`en` or `ar`): the server renders `<html lang dir>` and the page text in that language, with no head script and no hidden body, and each page has a plain `<a>` to the other language (`src/i18n/other-language-link.tsx`). Read the language with `pageLanguage()` (`src/i18n/page-language.ts`) in pages; never reflect the raw segment (`matchPublicLanguage` first). `/design` and unknown paths answer a real 404 through `global-not-found.tsx`.

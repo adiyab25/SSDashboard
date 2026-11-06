@@ -1,10 +1,10 @@
 # My account
 
-The signed in staff member's own page at `/account`: profile, password, and two factor.
+One account screen for both audiences: the signed in person's own profile, password, and two factor. Staff open it at `/account`; a partner user at `/en/partner/account` or `/ar/partner/account`, inside the partner frame (`AccountPage` takes `audience`, which picks `/api/me` or `/api/partner/me`; a partner user sees no role or staff code).
 
 ## Owns
 
-- The page: [account-page.tsx](account-page.tsx), routed from `src/app/(backoffice)/account/page.tsx`
+- The page: [account-page.tsx](account-page.tsx), routed from `src/app/(backoffice)/account/page.tsx` and, for partners, from `src/app/(partner)/[lang]/partner/account/page.tsx` through [partner](../partner/)
 - Sections: [profile-section.tsx](profile-section.tsx), [password-section.tsx](password-section.tsx), [two-factor-section.tsx](two-factor-section.tsx)
 
 ## Never touches

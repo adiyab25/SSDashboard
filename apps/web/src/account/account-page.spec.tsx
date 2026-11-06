@@ -77,7 +77,10 @@ describe('AccountPage (AC-8, AC-19)', () => {
 
       await userEvent.click(screen.getByRole('button', { name: 'Save details' }));
 
-      expect(updateProfile).toHaveBeenCalledWith({ name: 'Samira Ali', phone: '', language: 'en' });
+      expect(updateProfile).toHaveBeenCalledWith(
+        { name: 'Samira Ali', phone: '', language: 'en' },
+        '/api/me',
+      );
       expect(await screen.findByText('Your details are saved.')).toBeVisible();
     });
 

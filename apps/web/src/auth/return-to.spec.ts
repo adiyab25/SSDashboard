@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAuthPath, safeReturnTo, signInUrl } from './return-to';
+import { isAuthPath, isInAudience, safeReturnTo, signInUrl } from './return-to';
 
 const ORIGIN = 'https://erp.example.com';
 
@@ -68,4 +68,55 @@ describe('isAuthPath', () => {
     'is false for %s',
     (path) => expect(isAuthPath(path)).toBe(false),
   );
+});
+
+describe('safeReturnTo for the audience of the person (AC-28)', () => {
+  it.each([
+    ['/stock', '/partner'],
+    ['/staff', '/partner'],
+    ['/account', '/partner'],
+    ['/en/returns', '/partner'],
+    ['/', '/partner'],
+    ['/partner-help', '/partner'],
+    ['/skus/partner', '/partner'],
+    ['/partner/../stock', '/partner'],
+    ['//evil.example', '/partner'],
+    ['https://evil.example', '/partner'],
+    ['/sign-in', '/partner'],
+    [undefined, '/partner'],
+  ])('sends a partner user asking for %s to %s', (value, expected) => {
+    expect(safeReturnTo(value, ORIGIN, 'partner')).toBe(expected);
+  });
+
+  it.each(['/partner', '/partner/account?tab=1', '/en/partner', '/ar/partner/account#top'])(
+    'keeps the partner page %s for a partner user',
+    (value) => {
+      expect(safeReturnTo(value, ORIGIN, 'partner')).toBe(value);
+    },
+  );
+
+  it.each([
+    ['/partner', '/'],
+    ['/partner/orders', '/'],
+    ['/en/partner', '/'],
+    ['/ar/partner/account', '/'],
+    ['/ar/returns', '/'],
+    ['/returns', '/'],
+  ])('sends a staff person asking for %s to %s', (value, expected) => {
+    expect(safeReturnTo(value, ORIGIN, 'backoffice')).toBe(expected);
+  });
+
+  it.each(['/stock', '/staff?q=sam', '/account', '/skus/partner', '/partners'])(
+    'keeps the back office page %s for staff',
+    (value) => {
+      expect(safeReturnTo(value, ORIGIN, 'backoffice')).toBe(value);
+      expect(safeReturnTo(value, ORIGIN)).toBe(value);
+    },
+  );
+
+  it('names the audience of a path', () => {
+    expect(isInAudience('/en/partner/account', 'partner')).toBe(true);
+    expect(isInAudience('/en/partner/account', 'backoffice')).toBe(false);
+    expect(isInAudience('/stock', 'partner')).toBe(false);
+  });
 });

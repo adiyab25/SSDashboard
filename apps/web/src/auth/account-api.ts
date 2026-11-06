@@ -1,19 +1,22 @@
 import { MeResponse } from '@ssdashboard/contracts';
 import { apiFetch } from './api-fetch';
+import { ME_PATH } from './me-path';
 import { setMe } from './use-me';
 
 /** The outcome of a profile change: the new person, or the api status and error code. */
 export type ProfileResult =
   { ok: true; me: MeResponse } | { ok: false; status: number; code: string };
 
-/** `PATCH /api/me`: the signed in person edits their own name, phone or language (AC-19). */
-export async function updateProfile(changes: {
-  name?: string;
-  phone?: string;
-  language?: string;
-}): Promise<ProfileResult> {
+/**
+ * `PATCH /api/me` (or `path`, `/api/partner/me` for a partner user): the signed in person edits
+ * their own name, phone or language (AC-19).
+ */
+export async function updateProfile(
+  changes: { name?: string; phone?: string; language?: string },
+  path: string = ME_PATH.backoffice,
+): Promise<ProfileResult> {
   try {
-    const response = await apiFetch('/api/me', {
+    const response = await apiFetch(path, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(changes),

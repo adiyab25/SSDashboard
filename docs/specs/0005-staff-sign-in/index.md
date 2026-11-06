@@ -143,11 +143,12 @@ Tracer Bullet: milestone 1 moves the module and puts the cookie contract in plac
 **Done when:** `pnpm --filter @ssdashboard/api test -- src/identity src/platform/audience && pnpm --filter @ssdashboard/api test:e2e` pass, and the audience test fails when one `@Audience` annotation is removed.
 
 **Milestone 4: Pages for both audiences and the run book** (frontend, then docs)
-1. [ ] Make the sign in page follow `home` and follow `returnTo` only inside the person's audience, with unit tests for `/partner` and `/stock`, satisfies **AC-28**
-2. [ ] Reuse the account feature folder in the partner frame (shared component, partner route), satisfies **AC-28**
-3. [ ] Copy pass: no "staff" in strings a partner can reach, in the web catalogs and the mail templates; keep the Arabic keys complete, satisfies **AC-34**
-4. [ ] Update `docs/runbooks/staff-sign-in.md` for all eight points of AC-35 (the build owner or the docs writer; Igris routes it) and point the spec link to this amendment, satisfies **AC-35**
-5. [ ] Re run the Playwright accessibility and keyboard suite for the `(auth)` screens in both languages, satisfies **AC-34**
+1. [x] Make the sign in page follow `home` and follow `returnTo` only inside the person's audience, with unit tests for `/partner` and `/stock`, satisfies **AC-28**
+2. [x] Reuse the account feature folder in the partner frame (shared component, partner route), satisfies **AC-28**
+3. [x] Copy pass: no "staff" in strings a partner can reach, in the web catalogs and the mail templates; keep the Arabic keys complete, satisfies **AC-34**
+4. [x] Update `docs/runbooks/staff-sign-in.md` for all eight points of AC-35 (the build owner or the docs writer; Igris routes it) and point the spec link to this amendment, satisfies **AC-35**
+5. [x] Re run the Playwright accessibility and keyboard suite for the `(auth)` screens in both languages, satisfies **AC-34**
+  > Built 2026-11-06: `safeReturnTo` keeps every AC-7 rule and also requires the path to be in the person's audience (partner paths `/partner` and `/{en,ar}/partner/**`; staff refuse partner and portal paths); `finishSignIn` asks `/api/me`, then `/api/partner/me` on 403 `WRONG_AUDIENCE`, and keeps the staff landing on any other failure. The partner account screen is `/{en,ar}/partner/account`, reading `/api/partner/me` once spec 0008 builds it. `packages/i18n/src/partner-copy.spec.ts` fails any `auth.`, `account.`, `partner.` or `mail.` string that says staff or employee in either language. The run book was rewritten for all eight AC-35 points.
 
 **Done when:** `pnpm lint && pnpm --filter @ssdashboard/web test && pnpm --filter @ssdashboard/web test:e2e -- auth` pass, and a person who has not seen the code follows the run book on a fresh stack to a signed in admin (recorded in `verify.md`).
 

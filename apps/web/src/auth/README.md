@@ -8,7 +8,7 @@ The staff sign in flow in the browser: sign in, two factor, forgot and reset pas
 - The minimal frame without the app shell: [auth-frame.tsx](auth-frame.tsx)
 - The session check for back office pages: [session-gate.tsx](session-gate.tsx), [use-me.ts](use-me.ts)
 - Calls to the api: [api-fetch.ts](api-fetch.ts), [auth-client.ts](auth-client.ts), [account-api.ts](account-api.ts)
-- Return to the page the staff member came from: [return-to.ts](return-to.ts)
+- Return to the page the person came from, only inside their own audience (`/partner` for a partner user, `/` for staff): [return-to.ts](return-to.ts), [finish-sign-in.ts](finish-sign-in.ts) (asks `/api/me`, then `/api/partner/me` on 403 `WRONG_AUDIENCE`, applies the saved language, picks the landing page)
 - Routes: `/sign-in`, `/two-factor`, `/forgot-password`, `/reset-password`, `/change-password` under `src/app/(auth)`
 
 ## Never touches

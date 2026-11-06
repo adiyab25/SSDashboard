@@ -184,7 +184,8 @@ export const en = {
       role: 'Role',
       staffCode: 'Staff code',
       none: 'None',
-      readOnly: 'An administrator changes your email, role and staff code.',
+      readOnly: 'An administrator changes your email.',
+      readOnlyStaff: 'An administrator changes your email, role and staff code.',
       save: 'Save details',
       saved: 'Your details are saved.',
       nameRequired: 'Enter your name.',
@@ -382,6 +383,7 @@ export const en = {
     home: {
       title: 'Partner showroom',
       description: 'Your consignment stock and sales will appear here. This page is coming soon.',
+      account: 'My account',
     },
   },
   home: {

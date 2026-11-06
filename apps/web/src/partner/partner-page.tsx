@@ -13,6 +13,12 @@ export function PartnerPage({ language }: { language: CoreLanguage }) {
     <div className="flex flex-col gap-2">
       <h1 className="text-xl font-semibold">{t('partner.home.title')}</h1>
       <p className="text-muted-foreground">{t('partner.home.description')}</p>
+      <a
+        href={`/${language}/partner/account`}
+        className="w-fit text-sm font-medium underline underline-offset-4"
+      >
+        {t('partner.home.account')}
+      </a>
       <OtherLanguageLink language={language} path="/partner" />
     </div>
   );

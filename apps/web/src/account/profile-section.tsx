@@ -1,6 +1,6 @@
 'use client';
 
-import { StaffName, StaffPhone, type MeResponse } from '@ssdashboard/contracts';
+import { StaffName, StaffPhone, type Home, type MeResponse } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@ssdashboard/ui/components/field';
@@ -10,6 +10,7 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { updateProfile } from '@/auth/account-api';
+import { ME_PATH } from '@/auth/me-path';
 import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
 import type { MessageKey } from '@ssdashboard/i18n';
 
@@ -23,14 +24,16 @@ interface Props {
   me: MeResponse;
   /** Language codes enabled on the install (`GET /api/config`). */
   languages: readonly string[];
+  /** Whose page this is: a partner user sees their email only, never a role or a staff code. */
+  audience: Home;
 }
 
 /**
  * Your details (AC-19): name, phone and language are yours to change. Email, role and staff code
- * are shown but not editable, because an administrator owns them. The language saved here is the
- * one every new sign in applies.
+ * are shown but not editable, because an administrator owns them; a partner user sees the email
+ * only. The language saved here is the one every new sign in applies.
  */
-export function ProfileSection({ me, languages }: Props) {
+export function ProfileSection({ me, languages, audience }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(me.name);
   const [phone, setPhone] = useState(me.phone ?? '');
@@ -57,7 +60,7 @@ export function ProfileSection({ me, languages }: Props) {
     if (found.phone) return void phoneRef.current?.focus();
 
     setPending(true);
-    const result = await updateProfile({ name, phone, language });
+    const result = await updateProfile({ name, phone, language }, ME_PATH[audience]);
     setPending(false);
     if (result.ok) {
       setSaved(true);
@@ -72,12 +75,16 @@ export function ProfileSection({ me, languages }: Props) {
 
   const readOnly: Array<[string, string, boolean]> = [
     [t('account.profile.email'), me.email, true],
-    [t('account.profile.role'), t(`shell.user.roles.${me.role}`), false],
-    [
-      t('account.profile.staffCode'),
-      me.staffCode ?? t('account.profile.none'),
-      Boolean(me.staffCode),
-    ],
+    ...(audience === 'backoffice'
+      ? ([
+          [t('account.profile.role'), t(`shell.user.roles.${me.role}`), false],
+          [
+            t('account.profile.staffCode'),
+            me.staffCode ?? t('account.profile.none'),
+            Boolean(me.staffCode),
+          ],
+        ] satisfies Array<[string, string, boolean]>)
+      : []),
   ];
 
   return (
@@ -94,7 +101,11 @@ export function ProfileSection({ me, languages }: Props) {
           </div>
         ))}
       </dl>
-      <p className="text-sm text-muted-foreground">{t('account.profile.readOnly')}</p>
+      <p className="text-sm text-muted-foreground">
+        {audience === 'backoffice'
+          ? t('account.profile.readOnlyStaff')
+          : t('account.profile.readOnly')}
+      </p>
 
       <form method="post" noValidate onSubmit={(event) => void submit(event)}>
         <FieldGroup className="gap-4">
