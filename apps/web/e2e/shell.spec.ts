@@ -6,6 +6,7 @@ import {
   seedLocations,
   textFor,
   useBrowserState,
+  waitForPageHydration,
   type SeededLocations,
   type TextDirection,
   type Theme,
@@ -102,7 +103,10 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
     await openShell(page);
     // The Staff entry joins the sidebar once /api/me has told the shell the role.
     await expect(page.getByRole('button', { name: /User menu: E2E Admin/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Check again' })).toBeVisible();
+    await waitForPageHydration(page);
+    // The button is disabled (so out of the tab order) while the api check runs; read the tab
+    // order only once the check has settled and the button is enabled.
+    await expect(page.getByRole('button', { name: 'Check again' })).toBeEnabled();
     const expected = [
       'Skip to main content',
       'Home',

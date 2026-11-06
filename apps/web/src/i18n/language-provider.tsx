@@ -1,6 +1,15 @@
 'use client';
 
 import type { ConfigResponse } from '@ssdashboard/contracts';
+import {
+  CORE_LANGUAGES,
+  createI18n,
+  directionOf,
+  isCoreLanguage,
+  type Catalog,
+  type LanguageInfo,
+  type TextDirection,
+} from '@ssdashboard/i18n';
 import type { i18n as I18n } from 'i18next';
 import { Direction } from 'radix-ui';
 import {
@@ -15,11 +24,7 @@ import {
 } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { loadConfig } from '@/shell/client-config';
-import type { Catalog } from './catalog';
-import { createI18n } from './create-i18n';
 import { readLanguageCookie, writeLanguageCookie } from './language-cookie';
-import { directionOf, type TextDirection } from './language-config';
-import { coreLanguages, isCoreLanguage, type LanguageInfo } from './languages';
 import { loadRuntimeLanguage, type RuntimeLanguage } from './runtime-languages';
 
 /** One entry of the Language submenu. */
@@ -27,6 +32,15 @@ export interface LanguageOption {
   code: string;
   nativeName: string;
   dir: TextDirection;
+}
+
+/**
+ * A language fixed by the server for the whole page (portal and partner, spec 0004, AC-16): its
+ * code and the catalog groups the page needs. The provider starts in it and never swaps.
+ */
+export interface InitialLanguage {
+  language: string;
+  catalog: Catalog;
 }
 
 /** Where the `/api/config` load stands. */
@@ -44,7 +58,10 @@ interface LanguageState {
   configStatus: ConfigStatus;
   /** The language whose catalog failed to load on the last choice, else null. */
   failedLanguage: LanguageOption | null;
-  /** Resolves true when this choice became the active language, false if it failed or was replaced. */
+  /**
+   * Resolves true when this choice became the active language, false if it failed or was replaced.
+   * A server fixed language (`initial`) never swaps: it resolves false and changes nothing.
+   */
   setLanguage: (code: string) => Promise<boolean>;
   clearFailure: () => void;
 }
@@ -53,7 +70,7 @@ interface LanguageState {
 const LanguageContext = createContext<LanguageState>({
   language: 'en',
   direction: 'ltr',
-  info: coreLanguages.en,
+  info: CORE_LANGUAGES.en,
   options: [],
   config: null,
   configStatus: 'loading',
@@ -83,18 +100,30 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 /** Core languages other than English load as a lazy chunk. */
 const coreLoaders: Record<string, () => Promise<Catalog>> = {
-  ar: () => import('./locales/ar').then((module) => module.ar),
+  ar: () => import('@ssdashboard/i18n/ar').then((module) => module.ar),
 };
 
 /**
  * Owns the active language: loads catalogs, keeps `<html lang dir>`, Radix's direction
  * (which every portal reads), and the `ss_lang` cookie in step. The first render is always
  * English left to right, matching the prerendered HTML; the saved language is applied in
- * an effect after hydration, behind the body the head script hid.
+ * an effect after hydration, behind the body the head script hid. With `initial` (portal and
+ * partner) the server already chose the language: it starts there and only loads the settings.
  */
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [i18n] = useState<I18n>(createI18n);
-  const [language, setActive] = useState('en');
+export function LanguageProvider({
+  children,
+  initial,
+}: {
+  children: ReactNode;
+  initial?: InitialLanguage;
+}) {
+  const [i18n] = useState<I18n>(() => {
+    const instance = createI18n({ language: initial?.language ?? 'en' });
+    if (initial && initial.language !== 'en')
+      instance.addResourceBundle(initial.language, 'translation', initial.catalog, true, true);
+    return instance;
+  });
+  const [language, setActive] = useState(initial?.language ?? 'en');
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [configStatus, setConfigStatus] = useState<ConfigStatus>('loading');
   const [runtime, setRuntime] = useState<Record<string, RuntimeLanguage>>({});
@@ -105,7 +134,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const infoOf = useCallback(
     (code: string): LanguageInfo =>
-      isCoreLanguage(code) ? coreLanguages[code] : (runtime[code]?.info ?? coreLanguages.en),
+      isCoreLanguage(code) ? CORE_LANGUAGES[code] : (runtime[code]?.info ?? CORE_LANGUAGES.en),
     [runtime],
   );
 
@@ -160,8 +189,25 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     [i18n],
   );
 
+  // A server fixed language only needs the install settings (for the formatters); the page
+  // is already in its language, so nothing is applied, saved, or swapped.
+  const fixed = initial !== undefined;
+  useEffect(() => {
+    if (!fixed) return;
+    let live = true;
+    void loadConfig().then((loaded) => {
+      if (!live) return;
+      setConfig(loaded);
+      setConfigStatus(loaded ? 'ready' : 'error');
+    });
+    return () => {
+      live = false;
+    };
+  }, [fixed]);
+
   // After hydration: pick the language, behind the body the head script hid.
   useEffect(() => {
+    if (fixed) return;
     const token = ++latest.current;
     const saved = readLanguageCookie();
 
@@ -201,18 +247,20 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         if (token === latest.current) document.documentElement.removeAttribute('data-i18n');
       });
-  }, [apply, ensureCatalog, loadRuntime]);
+  }, [apply, ensureCatalog, fixed, loadRuntime]);
 
   const options = useMemo<LanguageOption[]>(() => {
-    const enabled = config ? config.languages : Object.keys(coreLanguages);
+    const enabled = config ? config.languages : Object.keys(CORE_LANGUAGES);
     return enabled.flatMap((code) => {
-      const info = isCoreLanguage(code) ? coreLanguages[code] : runtime[code]?.info;
+      const info = isCoreLanguage(code) ? CORE_LANGUAGES[code] : runtime[code]?.info;
       return info ? [{ code, nativeName: info.nativeName, dir: directionOf(code) }] : [];
     });
   }, [config, runtime]);
 
   const setLanguage = useCallback(
     async (code: string) => {
+      // A server fixed page does not swap: its other language link is the switch.
+      if (fixed) return false;
       const token = ++latest.current;
       setFailedCode(null);
       try {
@@ -226,7 +274,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       await apply(code, true);
       return token === latest.current;
     },
-    [apply, ensureCatalog],
+    [apply, ensureCatalog, fixed],
   );
 
   const clearFailure = useCallback(() => setFailedCode(null), []);

@@ -1,0 +1,35 @@
+{
+  "name": "@ssdashboard/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ar": {
+      "types": "./dist/ar.d.ts",
+      "default": "./dist/ar.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "i18next": "catalog:"
+  },
+  "devDependencies": {
+    "@ssdashboard/config": "workspace:*",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "^4.1.12"
+  }
+}

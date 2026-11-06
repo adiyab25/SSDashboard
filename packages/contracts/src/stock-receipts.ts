@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { moneyInput, quantityInput } from './digit-input.js';
 import { LocalizedText } from './localized-text.js';
 import { MoneyString, UnitCostString } from './money.js';
 
@@ -18,8 +19,8 @@ const optionalText = (max: number) =>
 export const StockReceiptLineInput = z
   .object({
     skuId: z.uuid(),
-    quantity: z.number().int().min(1).max(1_000_000),
-    unitCost: UnitCostString,
+    quantity: quantityInput({ min: 1, max: 1_000_000 }),
+    unitCost: moneyInput(4).pipe(UnitCostString),
   })
   .strict();
 /** What a caller passes for `StockReceiptLineInput`, before defaults and transforms are applied. */

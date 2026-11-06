@@ -1,6 +1,5 @@
-import { pickKnownKeys } from './catalog';
+import { pickKnownKeys, type LanguageInfo } from '@ssdashboard/i18n';
 import { LANGUAGE_CODE } from './language-config';
-import type { LanguageInfo } from './languages';
 
 /** A client language loaded from `/locales/<code>.json`: its details and its strings. */
 export interface RuntimeLanguage {

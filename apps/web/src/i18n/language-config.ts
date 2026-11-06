@@ -1,4 +1,5 @@
 // Plain module (not 'use client'), so the server layout gets real values, not client references.
+import { RTL_LANGUAGES } from '@ssdashboard/i18n';
 
 /** Name of the cookie that holds the chosen language. */
 export const LANGUAGE_COOKIE = 'ss_lang';
@@ -7,17 +8,6 @@ export const LANGUAGE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /** A language code: two or three lowercase letters. */
 export const LANGUAGE_CODE = /^[a-z]{2,3}$/;
-
-/** Languages written right to left, by base code. */
-export const RTL_LANGUAGES = ['ar', 'he', 'fa', 'ur', 'ps', 'sd', 'ug', 'yi', 'dv', 'ckb'] as const;
-
-/** The two text directions. */
-export type TextDirection = 'ltr' | 'rtl';
-
-/** The text direction of a language code; unknown codes read left to right. */
-export function directionOf(code: string): TextDirection {
-  return (RTL_LANGUAGES as readonly string[]).includes(code) ? 'rtl' : 'ltr';
-}
 
 /** How long the page stays hidden while a language other than English loads. */
 export const HIDE_CAP_MS = 10_000;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { moneyInput } from './digit-input.js';
 import { MoneyString } from './money.js';
 
 /** Codes are trimmed and uppercased before the pattern check, and stored that way (spec 0006). */
@@ -37,7 +38,11 @@ export const CreateProductRequest = z
   .object({
     name: SkuName,
     variants: z
-      .array(z.object({ sku: SkuCode, price: PriceString.nullable().optional() }).strict())
+      .array(
+        z
+          .object({ sku: SkuCode, price: moneyInput(2).pipe(PriceString).nullable().optional() })
+          .strict(),
+      )
       .length(1),
   })
   .strict();
@@ -100,7 +105,7 @@ export const UpdateSkuRequest = z
   .object({
     updatedAt: UpdatedAt,
     name: SkuName.optional(),
-    price: PriceString.nullable().optional(),
+    price: moneyInput(2).pipe(PriceString).nullable().optional(),
   })
   .strict();
 /** What a caller passes for `UpdateSkuRequest`, before defaults and transforms are applied. */

@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import tseslint from 'typescript-eslint';
-import { i18n } from './i18n.js';
+import { formattingBan, i18n } from './i18n.js';
 
 // Spec 0004 AC-5 and AC-8: planted violations must fail lint, allowed code must pass.
 const eslint = new ESLint({
@@ -15,8 +15,26 @@ const eslint = new ESLint({
   ],
 });
 
-async function rulesFlagged(code, filePath) {
-  const [result] = await eslint.lintText(code, { filePath });
+// The api and the worker get the formatting ban alone; packages/i18n exempts its own formatters.
+const apiEslint = new ESLint({
+  cwd: fileURLToPath(new URL('..', import.meta.url)),
+  overrideConfigFile: true,
+  overrideConfig: [
+    { files: ['**/*.{ts,tsx}'], languageOptions: { parser: tseslint.parser } },
+    ...formattingBan(),
+  ],
+});
+const packageEslint = new ESLint({
+  cwd: fileURLToPath(new URL('..', import.meta.url)),
+  overrideConfigFile: true,
+  overrideConfig: [
+    { files: ['**/*.{ts,tsx}'], languageOptions: { parser: tseslint.parser } },
+    ...formattingBan({ exempt: ['src/format.ts'] }),
+  ],
+});
+
+async function rulesFlagged(code, filePath, linter = eslint) {
+  const [result] = await linter.lintText(code, { filePath });
   return result.messages.map((message) => message.ruleId);
 }
 
@@ -76,12 +94,12 @@ describe('formatting outside the shared module (AC-8)', () => {
     assert.deepEqual(await rulesFlagged(code, 'src/shell/a.ts'), []);
   });
 
-  it('allows the formatting module itself, test specs, and e2e files', async () => {
+  it('allows test specs and e2e files, and no longer exempts src/i18n/format.ts', async () => {
     const code =
       "export const f = new Intl.NumberFormat('en'); export const s = (n) => n.toLocaleString();";
-    assert.deepEqual(await rulesFlagged(code, 'src/i18n/format.ts'), []);
     assert.deepEqual(await rulesFlagged(code, 'src/i18n/format.spec.ts'), []);
     assert.deepEqual(await rulesFlagged(code, 'e2e/home.spec.ts'), []);
+    assert.deepEqual(await rulesFlagged(code, 'src/i18n/format.ts'), [RESTRICTED, RESTRICTED]);
   });
 
   it('still catches it in App Router special files, which may default export', async () => {
@@ -96,5 +114,33 @@ describe('formatting outside the shared module (AC-8)', () => {
   it('keeps the named export rule elsewhere', async () => {
     const code = 'export default function A() { return null; }';
     assert.deepEqual(await rulesFlagged(code, 'src/shell/a.tsx'), [RESTRICTED]);
+  });
+});
+
+describe('formatting ban in the api and the worker (AC-19)', () => {
+  it('fails a planted new Intl.NumberFormat, Intl call, and toLocaleString in api source', async () => {
+    for (const code of [
+      "export const f = new Intl.NumberFormat('en');",
+      "export const f = Intl.DateTimeFormat('en');",
+      'export const s = (n) => n.toLocaleDateString();',
+    ]) {
+      assert.deepEqual(await rulesFlagged(code, 'src/orders/a.ts', apiEslint), [RESTRICTED], code);
+    }
+  });
+
+  it('allows the static helpers, specs, and the e2e tests', async () => {
+    assert.deepEqual(
+      await rulesFlagged("export const t = Intl.getCanonicalLocales('en');", 'src/a.ts', apiEslint),
+      [],
+    );
+    const code = "export const f = new Intl.NumberFormat('en');";
+    assert.deepEqual(await rulesFlagged(code, 'src/a.spec.ts', apiEslint), []);
+    assert.deepEqual(await rulesFlagged(code, 'test/a.e2e-spec.ts', apiEslint), []);
+  });
+
+  it('exempts only the files packages/i18n names, not the rest of its source', async () => {
+    const code = "export const f = new Intl.NumberFormat('en');";
+    assert.deepEqual(await rulesFlagged(code, 'src/format.ts', packageEslint), []);
+    assert.deepEqual(await rulesFlagged(code, 'src/translator.ts', packageEslint), [RESTRICTED]);
   });
 });

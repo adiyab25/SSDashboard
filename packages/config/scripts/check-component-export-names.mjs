@@ -13,7 +13,7 @@
 // after the file must be there. An anonymous default export fails.
 //
 // Exempt: Next special files (page, layout, template, loading, error, global-error,
-// not-found, default, route, forbidden, unauthorized, icon, apple-icon, opengraph-image,
+// global-not-found, not-found, default, route, forbidden, unauthorized, icon, apple-icon, opengraph-image,
 // twitter-image, sitemap, robots, manifest), spec, test, and test utility files, `e2e`, and
 // `.d.ts`. Files with no PascalCase value export (hooks, helpers) are not component files.
 //
@@ -35,6 +35,7 @@ export const NEXT_SPECIAL_FILES = new Set([
   'loading',
   'error',
   'global-error',
+  'global-not-found',
   'not-found',
   'default',
   'route',

@@ -10,6 +10,8 @@ export default function config(phase: string): NextConfig {
     transpilePackages: ['@ssdashboard/ui'],
     outputFileTracingRoot: fileURLToPath(new URL('../..', import.meta.url)),
     cacheComponents: true,
+    // With several root layouts there is no single layout to build the 404 from.
+    experimental: { globalNotFound: true },
     partialPrefetching: true,
     turbopack: {
       rules: {

@@ -8,6 +8,14 @@ test.describe('production build', () => {
     expect(response?.status()).toBe(404);
   });
 
+  // Spec 0004 AC-17: with several root layouts, an unmatched path still answers a real 404.
+  test('an unknown path answers a real 404', async ({ page }) => {
+    const response = await page.goto('/no-such-page');
+
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+  });
+
   // Spec 0004 AC-2: the cookie is honoured in production, and the old switch is gone.
   test('honours the saved language, with no development direction switch', async ({
     page,
