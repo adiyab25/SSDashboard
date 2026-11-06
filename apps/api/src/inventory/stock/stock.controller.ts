@@ -6,7 +6,7 @@ import {
   type SkuStockResponse,
   type StockListResponse,
 } from '@ssdashboard/contracts';
-import type { AuthenticatedRequest } from '../../auth/current-staff.js';
+import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
 import { catalogHttpError, notFoundId } from '../../catalog/catalog.controller.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';

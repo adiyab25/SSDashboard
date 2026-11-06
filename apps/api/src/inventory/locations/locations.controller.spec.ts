@@ -7,7 +7,7 @@ import {
 import { LocationListQuery } from '@ssdashboard/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
-import type { AuthenticatedRequest } from '../../auth/current-staff.js';
+import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
 import { LocationsController, locationHttpError } from './locations.controller.js';
 import {
   decodeCursor,

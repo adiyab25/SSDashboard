@@ -21,12 +21,12 @@ import {
   type StaffDetail,
   type StaffListResponse,
 } from '@ssdashboard/contracts';
-import type { AuthenticatedRequest } from '../auth/current-staff.js';
-import { clientIp, userAgent } from '../auth/client-info.js';
-import { Roles } from '../auth/roles.decorator.js';
-import { Audience } from '../platform/audience/audience.decorator.js';
-import { ZodBodyPipe } from '../platform/zod-body.pipe.js';
-import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
+import type { AuthenticatedRequest } from '../sign-in/current-staff.js';
+import { clientIp, userAgent } from '../sign-in/client-info.js';
+import { Roles } from '../sign-in/roles.decorator.js';
+import { Audience } from '../../platform/audience/audience.decorator.js';
+import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
+import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { InvalidStaffCursorError, StaffService, type Actor } from './staff.service.js';
 
 /** The headers of an Express request as a `Headers`, so the same address and agent readers apply. */

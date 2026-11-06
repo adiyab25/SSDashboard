@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql, type Database, type DatabaseConnection } from '@ssdashboard/db';
-import { DATABASE } from '../database/database.module.js';
+import { DATABASE } from '../../database/database.module.js';
 
 /** Spec 0005, AC-3. */
 export const LOCKOUT = {

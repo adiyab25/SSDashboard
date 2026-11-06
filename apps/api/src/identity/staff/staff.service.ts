@@ -16,22 +16,22 @@ import { StaffRole } from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { randomBytes } from 'node:crypto';
-import { AuthAudit } from '../auth/auth-audit.service.js';
-import { emailKey } from '../auth/client-info.js';
-import { ADMIN_RULE_LOCK } from '../auth/locks.js';
+import { AuthAudit } from '../sign-in/auth-audit.service.js';
+import { emailKey } from '../sign-in/client-info.js';
+import { ADMIN_RULE_LOCK } from '../sign-in/locks.js';
 import {
   deleteTokens,
   deleteTwoFactorChallenges,
   issueToken,
   type Executor,
-} from '../auth/reset-tokens.js';
-import { SignInLockout } from '../auth/sign-in-lockout.js';
-import { generateTemporaryPassword } from '../auth/temporary-password.js';
-import { ENV } from '../config/config.module.js';
-import type { Env } from '../config/env.js';
-import { DATABASE } from '../database/database.module.js';
-import { MailProducer } from '../mail/mail-queue.js';
-import type { MailKind } from '../mail/mail-templates.js';
+} from '../sign-in/reset-tokens.js';
+import { SignInLockout } from '../sign-in/sign-in-lockout.js';
+import { generateTemporaryPassword } from '../sign-in/temporary-password.js';
+import { ENV } from '../../config/config.module.js';
+import type { Env } from '../../config/env.js';
+import { DATABASE } from '../../database/database.module.js';
+import { MailProducer } from '../../mail/mail-queue.js';
+import type { MailKind } from '../../mail/mail-templates.js';
 import {
   StaffCreated,
   StaffDisabled,
@@ -43,9 +43,9 @@ import {
   StaffUpdated,
   type AuthEvent,
   type AuthEventContext,
-} from '../platform/events/auth-events.js';
-import { assertLanguageEnabled } from '../platform/languages.js';
-import { SettingsService } from '../platform/settings.service.js';
+} from '../../platform/events/auth-events.js';
+import { assertLanguageEnabled } from '../../platform/languages.js';
+import { SettingsService } from '../../platform/settings.service.js';
 
 type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 

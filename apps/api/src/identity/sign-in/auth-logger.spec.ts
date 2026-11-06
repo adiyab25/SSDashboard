@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SignedIn } from '../platform/events/auth-events.js';
+import { SignedIn } from '../../platform/events/auth-events.js';
 import { AuthAudit } from './auth-audit.service.js';
 import { betterAuthLog, betterAuthLogLine, logAuthRequestFailure } from './auth-logger.js';
 

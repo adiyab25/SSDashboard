@@ -5,7 +5,7 @@ import {
   PasswordResetRequested,
   SignedIn,
   SignInFailed,
-} from '../platform/events/auth-events.js';
+} from '../../platform/events/auth-events.js';
 import {
   createAfterHook,
   createBeforeHook,

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { loadEnv } from './env.js';
+import { loadEnv, staffBase, staffOrigin } from './env.js';
 
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
 
@@ -26,6 +26,8 @@ describe('loadEnv', () => {
       'APP_VERSION',
       'CLIENT_DISPLAY_NAME',
       'PUBLIC_URL',
+      'STAFF_BASE_PATH',
+      'PORTAL_ORIGIN',
       'BETTER_AUTH_SECRET',
       'MAIL_DRIVER',
       'MAIL_FROM',
@@ -65,6 +67,7 @@ describe('loadEnv', () => {
         APP_VERSION: '0.0.0-dev',
         CLIENT_DISPLAY_NAME: 'SSDashboard',
         PUBLIC_URL: 'https://erp.example.com',
+        STAFF_BASE_PATH: '',
         BETTER_AUTH_SECRET: VALID_SECRET,
         MAIL_DRIVER: 'none',
         SMTP_PORT: 587,
@@ -261,6 +264,88 @@ describe('loadEnv', () => {
 
       expect(() => loadEnv()).toThrow('process.exit(1)');
       expect(errorLog.mock.calls[0]?.[0]).not.toContain('hunter2');
+    });
+  });
+
+  describe('staff cookie path and portal host (spec 0005, AC-30, AC-31)', () => {
+    it('leaves STAFF_BASE_PATH empty (Path=/) when it is unset or blank', () => {
+      expect(loadEnv().STAFF_BASE_PATH).toBe('');
+
+      vi.stubEnv('STAFF_BASE_PATH', '  ');
+      expect(loadEnv().STAFF_BASE_PATH).toBe('');
+    });
+
+    it.each(['/ops', '/staff/back-office', '/a.b_c~d'])('keeps STAFF_BASE_PATH %s', (path) => {
+      vi.stubEnv('STAFF_BASE_PATH', path);
+
+      expect(loadEnv().STAFF_BASE_PATH).toBe(path);
+    });
+
+    it.each([
+      ['no leading slash', 'ops', 'must start with /'],
+      ['a trailing slash', '/ops/', 'must not end with /'],
+      ['a lone slash', '/', 'must not end with /'],
+      ['a parent segment', '/ops/../admin', 'must not contain ..'],
+      ['a bare parent', '/..', 'must not contain ..'],
+      ['a semicolon, which would end the cookie attribute', '/ops;Domain=x', 'may hold only'],
+      ['a space', '/my ops', 'may hold only'],
+      ['an empty first segment', '//ops', 'must not be empty or start with a dot'],
+      ['a protocol relative host', '//evil.example', 'must not be empty or start with a dot'],
+      ['a dot segment', '/./ops', 'must not be empty or start with a dot'],
+      ['a lone dot', '/.', 'must not be empty or start with a dot'],
+      ['a dot segment inside', '/ops/./x', 'must not be empty or start with a dot'],
+      ['an empty inner segment', '/ops//x', 'must not be empty or start with a dot'],
+      ['a hidden segment', '/.ops', 'must not be empty or start with a dot'],
+    ])('stops the process for a STAFF_BASE_PATH with %s', (_case, path, message) => {
+      vi.stubEnv('STAFF_BASE_PATH', path);
+
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      const printed = errorLog.mock.calls.flat().join(' ');
+      expect(printed).toMatch(/Invalid environment[\s\S]*STAFF_BASE_PATH/);
+      expect(printed).toContain(message);
+    });
+
+    it('leaves PORTAL_ORIGIN unset by default, and counts blank as unset', () => {
+      expect(loadEnv().PORTAL_ORIGIN).toBeUndefined();
+
+      vi.stubEnv('PORTAL_ORIGIN', '');
+      expect(loadEnv().PORTAL_ORIGIN).toBeUndefined();
+    });
+
+    it('reads PORTAL_ORIGIN and drops a trailing slash', () => {
+      vi.stubEnv('PORTAL_ORIGIN', 'https://shop.example.com/');
+
+      expect(loadEnv().PORTAL_ORIGIN).toBe('https://shop.example.com');
+    });
+
+    it.each([
+      ['not a URL', 'shop.example.com', 'PORTAL_ORIGIN'],
+      ['with a path', 'https://shop.example.com/store', 'must not have a path'],
+      ['the staff host itself', 'https://erp.example.com', 'different host name from PUBLIC_URL'],
+      ['the staff name on another port', 'https://erp.example.com:8443', 'different host name'],
+      ['the staff name over http on 443', 'http://erp.example.com:443', 'different host name'],
+      ['the staff name with a trailing dot', 'https://ERP.example.com.', 'different host name'],
+    ])('stops the process for a PORTAL_ORIGIN %s', (_case, value, message) => {
+      vi.stubEnv('PORTAL_ORIGIN', value);
+
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      const printed = errorLog.mock.calls.flat().join(' ');
+      expect(printed).toContain('PORTAL_ORIGIN');
+      expect(printed).toContain(message);
+    });
+  });
+
+  describe('the one staff origin (spec 0005, AC-30)', () => {
+    it('derives the origin from PUBLIC_URL and the base from it plus STAFF_BASE_PATH', () => {
+      vi.stubEnv('PUBLIC_URL', 'https://ERP.example.com:8443/');
+      vi.stubEnv('STAFF_BASE_PATH', '/ops');
+      const env = loadEnv();
+
+      expect(staffOrigin(env)).toBe('https://erp.example.com:8443');
+      expect(staffBase(env)).toBe('https://erp.example.com:8443/ops');
+      expect(staffBase({ PUBLIC_URL: 'http://localhost:3000', STAFF_BASE_PATH: '' })).toBe(
+        'http://localhost:3000',
+      );
     });
   });
 

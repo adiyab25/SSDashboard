@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { LOCKOUT, SignInLockout } from '../src/auth/sign-in-lockout.js';
+import { LOCKOUT, SignInLockout } from '../src/identity/sign-in/sign-in-lockout.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,

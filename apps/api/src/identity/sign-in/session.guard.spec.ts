@@ -1,9 +1,9 @@
 import { ForbiddenException, UnauthorizedException, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
-import type { Env } from '../config/env.js';
+import type { Env } from '../../config/env.js';
 import type { Auth } from './auth.tokens.js';
-import { Audience, type AudienceName } from '../platform/audience/audience.decorator.js';
+import { Audience, type AudienceName } from '../../platform/audience/audience.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { SessionGuard } from './session.guard.js';
 

@@ -4,7 +4,7 @@ import { admin } from 'better-auth/plugins/admin';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@ssdashboard/contracts';
 import { schema, type Database } from '@ssdashboard/db';
-import type { Env } from '../config/env.js';
+import { staffOrigin as staffOriginOf, type Env } from '../../config/env.js';
 import { createAuthHooks, type AuthHookDeps } from './auth-hooks.js';
 import { betterAuthLog } from './auth-logger.js';
 import type { AuthMail } from './auth-mail.service.js';
@@ -14,6 +14,10 @@ import { SESSION_IDLE_SECONDS, SESSION_RENEW_SECONDS } from './session-policy.js
  * The one Better Auth instance (spec 0005). Sign up is closed, every staff account is made by
  * an admin or the `create-admin` command, and the session and user are read from the
  * database on every request (cookie caching stays off) so a disabled person fails at once.
+ *
+ * One staff origin (`staffOrigin` in `config/env.ts`, `PUBLIC_URL` today) is the base URL, the
+ * only trusted origin, the Origin check and the `Secure` flag (AC-30). The portal origin must
+ * never be added to the trusted origins.
  */
 export function createAuth(
   env: Env,
@@ -22,11 +26,12 @@ export function createAuth(
     mail: Pick<AuthMail, 'queueReset' | 'completeReset'>;
   },
 ) {
+  const staffOrigin = staffOriginOf(env);
   return betterAuth({
     appName: env.CLIENT_DISPLAY_NAME,
-    baseURL: env.PUBLIC_URL,
+    baseURL: staffOrigin,
     secret: env.BETTER_AUTH_SECRET,
-    trustedOrigins: [new URL(env.PUBLIC_URL).origin],
+    trustedOrigins: [staffOrigin],
     // Every Better Auth log line goes through the Nest logger, with a failed query reduced to its
     // pg code: the raw Drizzle error holds the query params (emails, password hashes).
     logger: { log: betterAuthLog },
@@ -95,7 +100,13 @@ export function createAuth(
       },
     },
     advanced: {
-      useSecureCookies: env.PUBLIC_URL.startsWith('https:'),
+      useSecureCookies: staffOrigin.startsWith('https:'),
+      // Host only cookies (AC-30): a `Domain` attribute would hand the session to every sibling
+      // subdomain, the portal host included. Off is Better Auth's default; stated so it stays off.
+      crossSubDomainCookies: { enabled: false },
+      // Every cookie Better Auth sets (session, two factor challenge, dont remember, and their
+      // clearing on sign out) takes this path (AC-31). Better Auth merges it over its own `/`.
+      defaultCookieAttributes: { path: env.STAFF_BASE_PATH || '/' },
       // The database makes the uuid (`uuidv7()`), like every other table.
       database: { generateId: false },
       // Caddy sets this header and overwrites any value the client sends.
@@ -104,7 +115,7 @@ export function createAuth(
     // The lock, the failure counters, and the last sign in time (AC-1, AC-2, AC-3, AC-23). The
     // after hook acts only when a full session was issued: the two factor slice keeps that rule.
     hooks: createAuthHooks({
-      origin: new URL(env.PUBLIC_URL).origin,
+      origin: staffOrigin,
       lockout: parts.lockout,
       audit: parts.audit,
     }),
