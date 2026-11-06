@@ -18,6 +18,8 @@ describe('loadEnv', () => {
       'DATABASE_URL',
       'MIGRATION_DATABASE_URL',
       'APP_DB_PASSWORD',
+      'TENANT_ID',
+      'APP_DB_ROLE',
       'EXTENSIONS',
       'LEDGER_RECONCILE_CRON',
       'AUTH_CLEANUP_CRON',
@@ -102,6 +104,35 @@ describe('loadEnv', () => {
         MIGRATION_DATABASE_URL: 'postgres://owner:pw@localhost:5433/ssdashboard',
         APP_DB_PASSWORD: 'secret',
       });
+    });
+
+    it('leaves TENANT_ID and APP_DB_ROLE unset when neither is given', () => {
+      expect(loadEnv().TENANT_ID).toBeUndefined();
+      expect(loadEnv().APP_DB_ROLE).toBeUndefined();
+    });
+
+    it('reads TENANT_ID and APP_DB_ROLE, and counts blank values as unset', () => {
+      vi.stubEnv('TENANT_ID', '0192f7a0-0000-7000-8000-000000000001');
+      vi.stubEnv('APP_DB_ROLE', 'ssd_acme_app');
+      expect(loadEnv()).toMatchObject({
+        TENANT_ID: '0192f7a0-0000-7000-8000-000000000001',
+        APP_DB_ROLE: 'ssd_acme_app',
+      });
+
+      vi.stubEnv('TENANT_ID', '');
+      vi.stubEnv('APP_DB_ROLE', '');
+      expect(loadEnv().TENANT_ID).toBeUndefined();
+      expect(loadEnv().APP_DB_ROLE).toBeUndefined();
+    });
+
+    it.each([
+      ['a TENANT_ID that is not a uuid', 'TENANT_ID', 'acme'],
+      ['an APP_DB_ROLE with a quote', 'APP_DB_ROLE', 'a"b'],
+    ])('stops on %s', (_label, name, value) => {
+      vi.stubEnv(name, value);
+
+      expect(() => loadEnv()).toThrow();
+      expect(errorLog).toHaveBeenCalledWith(expect.stringContaining(name));
     });
 
     it('keeps a custom reconciliation schedule', () => {

@@ -74,8 +74,8 @@ export function fixtures(owner: DatabaseConnection) {
     ): Promise<string> {
       const product = await insertOne(
         owner,
-        `INSERT INTO products (name) VALUES ('{"en": "Test product"}') RETURNING id`,
-        [],
+        `INSERT INTO products (style_code, product_group_id, name) VALUES ($1, (SELECT id FROM product_groups WHERE code = 'MAIN'), '{"en": "Test product"}') RETURNING id`,
+        [`STYLE-${next()}`],
       );
       return insertOne(
         owner,
@@ -87,7 +87,7 @@ export function fixtures(owner: DatabaseConnection) {
     location(options: { allowNegative?: boolean; isSellable?: boolean } = {}): Promise<string> {
       return insertOne(
         owner,
-        `INSERT INTO locations (code, name, type, allow_negative, is_sellable)
+        `INSERT INTO locations (code, name, kind, allow_negative, is_sellable)
          VALUES ($1, '{"en": "Warehouse"}', 'warehouse', $2, $3) RETURNING id`,
         [`WH-${next()}`, options.allowNegative ?? false, options.isSellable ?? true],
       );

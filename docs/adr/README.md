@@ -9,3 +9,4 @@ records one decision inside a module or area.
 
 - [0001 shadcn component files keep their vendor shape](0001-shadcn-component-files-keep-their-vendor-shape.md)
 - [0002 Garage as the S3 compatible store](0002-garage-as-the-s3-compatible-store.md)
+- [0003 Reset the migrations to one baseline](0003-reset-migrations-to-one-baseline.md)

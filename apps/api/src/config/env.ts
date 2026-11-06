@@ -57,6 +57,13 @@ const optionalText = z
   .transform((value) => value.trim() || undefined)
   .optional();
 
+/** Compose passes an unset variable as an empty string; treat blank as unset so the default applies. */
+const blankIsUnset = <T extends z.ZodType>(schema: T) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema,
+  );
+
 const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -67,6 +74,25 @@ const EnvSchema = z
     MIGRATION_DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
     /** Deploy only: `migrate` gives the application role a login with this password. */
     APP_DB_PASSWORD: z.string().min(1).optional(),
+    /**
+     * Read by `migrate` only, and only on a database's first run (spec 0002, A2): the tenant id
+     * every row is stamped with. Unset, `migrate` generates one. Later runs refuse to start if it
+     * differs from the install row.
+     */
+    TENANT_ID: blankIsUnset(z.uuid().optional()),
+    /**
+     * Read by `migrate` only: the application role's name. Roles are global to a PostgreSQL
+     * server, so each client gets its own (`ssd_<client>_app`). Unset: `ssdashboard_app` (`APP_ROLE` in `@ssdashboard/db`). A plain identifier, so it is safe to quote.
+     */
+    APP_DB_ROLE: blankIsUnset(
+      z
+        .string()
+        .regex(
+          /^[a-z][a-z0-9_]{0,62}$/,
+          'A lowercase identifier of letters, digits, and underscores',
+        )
+        .optional(),
+    ),
     /** Comma separated extension package names, loaded at startup. */
     EXTENSIONS: z
       .string()

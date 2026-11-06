@@ -16,7 +16,7 @@ test.describe('bilingual location names (AC-9)', () => {
     const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
     try {
       const insert = (code: string, name: object) =>
-        pool.query(`INSERT INTO locations (code, name, type) VALUES ($1, $2, 'warehouse')`, [
+        pool.query(`INSERT INTO locations (code, name, kind) VALUES ($1, $2, 'warehouse')`, [
           code,
           JSON.stringify(name),
         ]);

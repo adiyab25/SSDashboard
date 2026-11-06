@@ -335,7 +335,7 @@ test.describe('location switcher (AC-10)', () => {
 
   const switcher = (page: Page) => page.getByRole('button', { name: /^Location:/ });
 
-  test('lists warehouses and showrooms after All locations and remembers the choice', async ({
+  test('lists warehouses and shops after All locations and remembers the choice', async ({
     page,
   }) => {
     await openShell(page);
@@ -343,14 +343,14 @@ test.describe('location switcher (AC-10)', () => {
     await switcher(page).click();
     const options = page.getByRole('option');
     await expect(options.first()).toHaveText('All locations');
-    await page.getByRole('combobox').fill(seeded.showroom.code);
-    await page.getByRole('option', { name: new RegExp(seeded.showroom.name) }).click();
-    await expect(switcher(page)).toContainText(seeded.showroom.name);
+    await page.getByRole('combobox').fill(seeded.shop.code);
+    await page.getByRole('option', { name: new RegExp(seeded.shop.name) }).click();
+    await expect(switcher(page)).toContainText(seeded.shop.name);
     await openShell(page);
 
-    await expect(switcher(page)).toContainText(seeded.showroom.name);
+    await expect(switcher(page)).toContainText(seeded.shop.name);
     const cookies = await page.context().cookies();
-    expect(cookies.find((cookie) => cookie.name === 'ss_location')?.value).toBe(seeded.showroom.id);
+    expect(cookies.find((cookie) => cookie.name === 'ss_location')?.value).toBe(seeded.shop.id);
   });
 
   test('falls back to All locations and rewrites a cookie for a location that is gone', async ({

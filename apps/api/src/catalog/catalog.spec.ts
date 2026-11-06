@@ -21,6 +21,7 @@ describe('escapeLike', () => {
 describe('catalogHttpError', () => {
   it.each<[CatalogErrorCode, unknown, string]>([
     ['SkuTaken', ConflictException, 'SKU_TAKEN'],
+    ['StyleCodeTaken', ConflictException, 'STYLE_CODE_TAKEN'],
     ['NotFound', NotFoundException, 'NOT_FOUND'],
     ['Stale', ConflictException, 'STALE_RECORD'],
     ['InUse', ConflictException, 'IN_USE'],

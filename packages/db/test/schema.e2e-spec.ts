@@ -6,6 +6,7 @@ import { createScratchDatabase, dropScratchDatabase } from './database.js';
 // One migrated scratch database for the file; each test makes its own rows.
 describe('core data model schema (spec 0002)', () => {
   let name: string;
+  let url: string;
   let owner: pg.Client;
   let app: pg.Client;
   let counter = 0;
@@ -13,6 +14,7 @@ describe('core data model schema (spec 0002)', () => {
   beforeAll(async () => {
     const db = await createScratchDatabase();
     name = db.name;
+    url = db.url;
     await runMigrations(db.url);
     owner = new pg.Client({ connectionString: db.url });
     app = new pg.Client({ connectionString: db.url });
@@ -43,7 +45,7 @@ describe('core data model schema (spec 0002)', () => {
     counter += 1;
     const product = await one<{ id: string }>(
       owner,
-      `INSERT INTO products (name) VALUES ('{"en": "Mug"}') RETURNING id`,
+      `INSERT INTO products (style_code, product_group_id, name) VALUES ('MUG-${counter}', (SELECT id FROM product_groups WHERE code = 'MAIN'), '{"en": "Mug"}') RETURNING id`,
     );
     const variant = await one<{ id: string }>(
       owner,
@@ -58,7 +60,7 @@ describe('core data model schema (spec 0002)', () => {
     counter += 1;
     const row = await one<{ id: string }>(
       owner,
-      `INSERT INTO locations (code, name, type) VALUES ($1, '{"en": "Main"}', 'warehouse') RETURNING id`,
+      `INSERT INTO locations (code, name, kind) VALUES ($1, '{"en": "Main"}', 'warehouse') RETURNING id`,
       [`WH-${counter}`],
     );
     return row.id;
@@ -93,13 +95,17 @@ describe('core data model schema (spec 0002)', () => {
       'document_prefixes',
       'inventory_lock_date',
       'languages',
+      'operating_day_cutoff_hour',
       'prices_include_vat',
       'timezone',
     ]);
-    const locations = await owner.query<{ type: string }>(
-      "SELECT type FROM locations WHERE code IN ('TRANSIT', 'SCRAP') ORDER BY code",
+    const locations = await owner.query<{ kind: string; owner_type: string; sellable: boolean }>(
+      "SELECT kind, owner_type, sellable_online AS sellable FROM locations WHERE code IN ('TRANSIT', 'SCRAP') ORDER BY code",
     );
-    expect(locations.rows.map((row) => row.type)).toEqual(['virtual', 'transit']);
+    expect(locations.rows).toEqual([
+      { kind: 'virtual', owner_type: 'own', sellable: false },
+      { kind: 'transit', owner_type: 'own', sellable: false },
+    ]);
     await one(owner, "SELECT 1 FROM uoms WHERE code = 'pc'");
   });
 
@@ -189,6 +195,253 @@ describe('core data model schema (spec 0002)', () => {
           [reversal.id],
         ),
       ).rejects.toThrow(/cannot be reversed/);
+    });
+  });
+
+  // Security review M1: the app role may create TEMP tables, and a temp table hides an unqualified
+  // name. The guards name public.<table> and pin their search_path, so a shadow changes nothing.
+  describe('the guards under a shadowing temp table (security M1)', () => {
+    it('still refuses a reversal of a reversal and keeps the operating day', async () => {
+      const { groupId } = await makeMovement();
+      const reverse = (of: string) =>
+        `INSERT INTO public.movement_groups (idempotency_key, request_hash, source_type, source_id, reverses_group_id, effective_at)
+         VALUES (gen_random_uuid()::text, 'h', 'opening_balance', gen_random_uuid(), '${of}', now())`;
+      const reversal = await one<{ id: string }>(owner, `${reverse(groupId)} RETURNING id`);
+      const day = "SELECT to_char(ssd_operating_day('2026-11-05 12:00+00'), 'YYYY-MM-DD') AS day";
+      const expected = (await one<{ day: string }>(owner, day)).day;
+
+      const attacker = new pg.Client({ connectionString: url });
+      await attacker.connect();
+      try {
+        await attacker.query(`SET ROLE ${APP_ROLE}`);
+        await attacker.query('CREATE TEMP TABLE movement_groups (id uuid, reverses_group_id uuid)');
+        await attacker.query('CREATE TEMP TABLE settings (tenant_id uuid, key text, value jsonb)');
+        await attacker.query(
+          `INSERT INTO pg_temp.settings VALUES (current_setting('ssd.tenant_id')::uuid, 'timezone', '"Pacific/Kiritimati"')`,
+        );
+
+        await expect(attacker.query(reverse(reversal.id))).rejects.toThrow(/cannot be reversed/);
+        expect((await one<{ day: string }>(attacker, day)).day).toBe(expected);
+      } finally {
+        await attacker.end();
+      }
+    });
+  });
+
+  // AC-33 (spec 0002, A4): every table that can only grow. The app role is refused on permissions,
+  // the owner on the trigger. Later features add their tables to this list.
+  describe('the append only tables (AC-33)', () => {
+    type Seeded = { update: string; remove: string; params: string[] };
+
+    const seeds: Record<string, () => Promise<Seeded>> = {
+      movement_groups: async () => {
+        const { groupId } = await makeMovement();
+        return {
+          update: "UPDATE movement_groups SET request_hash = 'x' WHERE id = $1",
+          remove: 'DELETE FROM movement_groups WHERE id = $1',
+          params: [groupId],
+        };
+      },
+      stock_movements: async () => {
+        const { movementId } = await makeMovement();
+        return {
+          update: 'UPDATE stock_movements SET quantity = 6 WHERE id = $1',
+          remove: 'DELETE FROM stock_movements WHERE id = $1',
+          params: [movementId],
+        };
+      },
+      movement_serials: async () => {
+        const { movementId, variantId } = await makeMovement();
+        const serial = await one<{ id: string }>(
+          owner,
+          "INSERT INTO serials (variant_id, serial, status) VALUES ($1, 'S-1', 'out') RETURNING id",
+          [variantId],
+        );
+        await owner.query('INSERT INTO movement_serials (movement_id, serial_id) VALUES ($1, $2)', [
+          movementId,
+          serial.id,
+        ]);
+        return {
+          update: 'UPDATE movement_serials SET serial_id = serial_id WHERE movement_id = $1',
+          remove: 'DELETE FROM movement_serials WHERE movement_id = $1',
+          params: [movementId],
+        };
+      },
+      cost_records: async () => {
+        const variantId = await makeVariant();
+        await owner.query(
+          `INSERT INTO cost_records (product_id, season_id, cost_basis, unit_cost, effective_from)
+           SELECT product_id, (SELECT id FROM seasons WHERE code = 'CORE'), 'estimate', 10, '2026-01-01'
+           FROM product_variants WHERE id = $1`,
+          [variantId],
+        );
+        return {
+          update:
+            'UPDATE cost_records SET unit_cost = 11 WHERE product_id = (SELECT product_id FROM product_variants WHERE id = $1)',
+          remove:
+            'DELETE FROM cost_records WHERE product_id = (SELECT product_id FROM product_variants WHERE id = $1)',
+          params: [variantId],
+        };
+      },
+      stock_receipt_lines: async () => {
+        const { groupId, variantId } = await makeMovement();
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('R', $1) RETURNING id",
+          [`receipt-${counter}@example.test`],
+        );
+        const receipt = await one<{ id: string }>(
+          owner,
+          `INSERT INTO stock_receipts (id, request_hash, number, location_id, effective_at, movement_group_id, posted_by)
+           VALUES (gen_random_uuid(), 'h', $1, $2, now(), $3, $4) RETURNING id`,
+          [`SR-T-${counter}`, await makeLocation(), groupId, user.id],
+        );
+        await owner.query(
+          `INSERT INTO stock_receipt_lines (id, receipt_id, position, variant_id, uom_id, quantity, unit_cost, line_total)
+           VALUES (gen_random_uuid(), $1, 1, $2, (SELECT id FROM uoms WHERE code = 'pc'), 1, 1, 1)`,
+          [receipt.id, variantId],
+        );
+        return {
+          update: 'UPDATE stock_receipt_lines SET quantity = 2 WHERE receipt_id = $1',
+          remove: 'DELETE FROM stock_receipt_lines WHERE receipt_id = $1',
+          params: [receipt.id],
+        };
+      },
+    };
+
+    it.each(Object.keys(seeds))('refuses UPDATE, DELETE, and TRUNCATE on %s', async (table) => {
+      const seed = await seeds[table]?.();
+      if (!seed) throw new Error(`no seed for ${table}`);
+
+      for (const statement of [seed.update, seed.remove]) {
+        await expect(app.query(statement, seed.params)).rejects.toThrow(/permission denied/);
+        await expect(owner.query(statement, seed.params)).rejects.toThrow(/append only/);
+      }
+      await expect(app.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/permission denied/);
+      await expect(owner.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/append only/);
+    });
+
+    it('keeps the install row read only for the app role', async () => {
+      await expect(
+        app.query(
+          "INSERT INTO install (id, client_code, name) VALUES (gen_random_uuid(), 'x', 'x')",
+        ),
+      ).rejects.toThrow(/permission denied/);
+      const rows = await app.query('SELECT id FROM install');
+      expect(rows.rowCount).toBe(1);
+    });
+  });
+
+  describe('styles, seasons, and cost records (AC-30)', () => {
+    const MAIN = "(SELECT id FROM product_groups WHERE code = 'MAIN')";
+
+    it('seeds the MAIN group and the CORE season', async () => {
+      await one(owner, "SELECT 1 FROM product_groups WHERE code = 'MAIN'");
+      await one(owner, "SELECT 1 FROM seasons WHERE code = 'CORE' AND starts_on IS NULL");
+    });
+
+    it('keeps a style code unique per tenant and requires a product group', async () => {
+      await owner.query(
+        `INSERT INTO products (style_code, product_group_id, name) VALUES ('DUP-1', ${MAIN}, '{"en": "a"}')`,
+      );
+      await expect(
+        owner.query(
+          `INSERT INTO products (style_code, product_group_id, name) VALUES ('DUP-1', ${MAIN}, '{"en": "b"}')`,
+        ),
+      ).rejects.toThrow(/products_style_code_unique/);
+      await expect(
+        owner.query(`INSERT INTO products (style_code, name) VALUES ('NO-GROUP', '{"en": "c"}')`),
+      ).rejects.toThrow(/product_group_id/);
+    });
+
+    it('orders season dates', async () => {
+      await expect(
+        owner.query(
+          `INSERT INTO seasons (code, name, starts_on, ends_on) VALUES ('BAD', '{"en": "x"}', '2027-02-01', '2027-01-01')`,
+        ),
+      ).rejects.toThrow(/seasons_dates_in_order/);
+    });
+
+    it('keeps a cost override in its own style and refuses negative costs', async () => {
+      const variantId = await makeVariant();
+      const other = await makeVariant();
+      const insert = (product: string, variant: string, cost: number) =>
+        owner.query(
+          `INSERT INTO cost_records (product_id, variant_id, season_id, cost_basis, unit_cost, effective_from)
+           VALUES ((SELECT product_id FROM product_variants WHERE id = $1), $2,
+                   (SELECT id FROM seasons WHERE code = 'CORE'), 'estimate', $3, '2026-01-01')`,
+          [product, variant, cost],
+        );
+      await insert(variantId, variantId, 10);
+      await expect(insert(variantId, other, 10)).rejects.toThrow(/foreign key/);
+      await expect(insert(variantId, variantId, -1)).rejects.toThrow(
+        /cost_records_unit_cost_not_negative/,
+      );
+    });
+  });
+
+  describe('locations with an owner type (AC-29)', () => {
+    async function party(roles: string): Promise<string> {
+      counter += 1;
+      return (
+        await one<{ id: string }>(
+          owner,
+          `INSERT INTO parties (code, name, ${roles}) VALUES ($1, 'P', true) RETURNING id`,
+          [`P-${counter}`],
+        )
+      ).id;
+    }
+
+    it('seeds the three policy rows', async () => {
+      const rows = await owner.query<{ owner_type: string; handover_is_sale: boolean }>(
+        'SELECT owner_type, handover_is_sale FROM location_owner_policies ORDER BY owner_type',
+      );
+      expect(rows.rows).toEqual([
+        { owner_type: 'own', handover_is_sale: false },
+        { owner_type: 'consignment_partner', handover_is_sale: false },
+        { owner_type: 'wholesale_customer', handover_is_sale: true },
+      ]);
+    });
+
+    it('needs a party exactly when the owner is not the brand', async () => {
+      const partner = await party('is_consignment_partner');
+      await expect(
+        owner.query(
+          `INSERT INTO locations (code, name, kind, owner_type) VALUES ('NP-1', '{"en": "x"}', 'shop', 'consignment_partner')`,
+        ),
+      ).rejects.toThrow(/locations_party_matches_owner/);
+      await expect(
+        owner.query(
+          `INSERT INTO locations (code, name, kind, party_id) VALUES ('NP-2', '{"en": "x"}', 'shop', $1)`,
+          [partner],
+        ),
+      ).rejects.toThrow(/locations_party_matches_owner/);
+    });
+
+    it('rejects changing the owner type or party with OwnerTypeFixed', async () => {
+      const partner = await party('is_consignment_partner');
+      await owner.query(
+        `INSERT INTO locations (code, name, kind, owner_type, party_id) VALUES ('FIX-1', '{"en": "x"}', 'shop', 'consignment_partner', $1)`,
+        [partner],
+      );
+      await expect(
+        owner.query(
+          `UPDATE locations SET owner_type = 'own', party_id = NULL WHERE code = 'FIX-1'`,
+        ),
+      ).rejects.toThrow(/OwnerTypeFixed/);
+      await expect(
+        app.query("UPDATE locations SET party_id = $1 WHERE code = 'FIX-1'", [
+          await party('is_consignment_partner'),
+        ]),
+      ).rejects.toThrow(/OwnerTypeFixed/);
+      await owner.query('UPDATE locations SET name = \'{"en": "y"}\' WHERE code = \'FIX-1\'');
+    });
+
+    it('needs at least one party role', async () => {
+      await expect(
+        owner.query("INSERT INTO parties (code, name) VALUES ('NOROLE', 'x')"),
+      ).rejects.toThrow(/parties_has_a_role/);
     });
   });
 

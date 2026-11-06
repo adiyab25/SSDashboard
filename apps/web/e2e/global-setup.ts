@@ -25,7 +25,7 @@ export default async function globalSetup(config: FullConfig) {
     // the ledger's history keeps a RESTRICT reference to it (spec 0005, AC-22; spec 0006).
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO users (name, email, role, email_verified) VALUES ($1, $2, 'admin', true)
-       ON CONFLICT ((lower(email))) DO UPDATE
+       ON CONFLICT (tenant_id, (lower(email))) DO UPDATE
          SET name = EXCLUDED.name, role = 'admin', email_verified = true, banned = false,
              ban_reason = NULL, ban_expires = NULL, two_factor_enabled = false, phone = NULL,
              staff_code = NULL, language = NULL, must_change_password = false,

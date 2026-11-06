@@ -182,7 +182,7 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
 
       await h.ledger.post(
         posting([{ variantId, locationId, quantity: 1, unitCost: '1.0000', serials: ['R'] }], {
-          sourceType: 'sales_return',
+          sourceType: 'customer_return_restock',
         }),
       );
 
@@ -227,7 +227,7 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       );
       const shipment = await h.ledger.post(
         posting([{ ...place, quantity: -2, serials: ['A1', 'A2'] }], {
-          sourceType: 'sales_shipment',
+          sourceType: 'order_shipment',
         }),
       );
 

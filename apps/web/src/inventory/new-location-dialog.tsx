@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { LocationCode, WorkLocationType } from '@ssdashboard/contracts';
+import { LocationCode, WorkLocationKind } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import {
@@ -39,7 +39,7 @@ const NewLocationForm = z
     code: LocationCode,
     nameEn: z.string().trim().max(200),
     nameAr: z.string().trim().max(200),
-    type: WorkLocationType,
+    kind: WorkLocationKind,
   })
   .refine((form) => form.nameEn !== '' || form.nameAr !== '', {
     path: ['nameEn'],
@@ -48,9 +48,9 @@ const NewLocationForm = z
 type NewLocationInput = z.input<typeof NewLocationForm>;
 type NewLocationOutput = z.output<typeof NewLocationForm>;
 
-const TYPES = ['warehouse', 'showroom'] as const;
+const KINDS = ['warehouse', 'shop'] as const;
 
-/** Creates a warehouse or showroom. Admins only; the api enforces it too. */
+/** Creates a warehouse or shop. Admins only; the api enforces it too. */
 export function NewLocationDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const returnFocus = useReturnFocus();
@@ -59,7 +59,7 @@ export function NewLocationDialog({ onClose }: { onClose: () => void }) {
   const form = useForm<NewLocationInput, unknown, NewLocationOutput>({
     resolver: zodResolver(NewLocationForm),
     mode: 'onTouched',
-    defaultValues: { code: '', nameEn: '', nameAr: '', type: 'warehouse' },
+    defaultValues: { code: '', nameEn: '', nameAr: '', kind: 'warehouse' },
   });
   const { errors } = form.formState;
 
@@ -68,7 +68,7 @@ export function NewLocationDialog({ onClose }: { onClose: () => void }) {
       createLocation({
         code: values.code,
         name: { en: values.nameEn, ar: values.nameAr },
-        type: values.type,
+        kind: values.kind,
       }),
     onSuccess: (location) => {
       // The shell's switcher and every stock list name locations.
@@ -181,18 +181,18 @@ export function NewLocationDialog({ onClose }: { onClose: () => void }) {
               <legend className="mb-2 text-sm font-medium">{t('inventory.location.type')}</legend>
               <Controller
                 control={form.control}
-                name="type"
+                name="kind"
                 render={({ field }) => (
                   <RadioGroup
                     value={field.value}
                     onValueChange={field.onChange}
                     className="flex flex-wrap gap-4"
                   >
-                    {TYPES.map((type) => (
-                      <div key={type} className="flex items-center gap-2">
-                        <RadioGroupItem value={type} id={`location-type-${type}`} />
-                        <Label htmlFor={`location-type-${type}`} className="font-normal">
-                          {t(`inventory.location.${type}`)}
+                    {KINDS.map((kind) => (
+                      <div key={kind} className="flex items-center gap-2">
+                        <RadioGroupItem value={kind} id={`location-kind-${kind}`} />
+                        <Label htmlFor={`location-kind-${kind}`} className="font-normal">
+                          {t(`inventory.location.${kind}`)}
                         </Label>
                       </div>
                     ))}

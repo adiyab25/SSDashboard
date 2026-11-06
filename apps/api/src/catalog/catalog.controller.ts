@@ -32,6 +32,8 @@ import { CatalogError, CatalogService } from './catalog.service.js';
 export function catalogHttpError(error: unknown): unknown {
   if (error instanceof CatalogError) {
     switch (error.code) {
+      case 'StyleCodeTaken':
+        return new ConflictException({ code: 'STYLE_CODE_TAKEN', message: error.message });
       case 'SkuTaken':
         return new ConflictException({ code: 'SKU_TAKEN', message: error.message });
       case 'NotFound':

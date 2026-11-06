@@ -181,7 +181,7 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                       <LtrText>{row.code}</LtrText>
                     </TableCell>
                     <TableCell className="px-3">{text(row.name, row.code)}</TableCell>
-                    <TableCell className="px-3">{t(`inventory.location.${row.type}`)}</TableCell>
+                    <TableCell className="px-3">{t(`inventory.location.${row.kind}`)}</TableCell>
                     <TableCell className="px-3">
                       <Badge variant={row.archived ? 'outline' : 'secondary'}>
                         {row.archived

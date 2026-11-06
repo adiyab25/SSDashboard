@@ -173,7 +173,7 @@ export function SkuEditBody({
     },
     onError: (error) => {
       const code = knownCode(error);
-      if (code === 'SKU_TAKEN') {
+      if (code === 'SKU_TAKEN' || code === 'STYLE_CODE_TAKEN') {
         codeForm.setError('code', { message: code }, { shouldFocus: true });
         return;
       }
@@ -469,7 +469,9 @@ export function SkuEditBody({
                 <FieldError id="sku-edit-code-error">
                   {codeErrors.code.message === 'SKU_TAKEN'
                     ? t('inventory.skuEdit.errors.SKU_TAKEN')
-                    : t('inventory.sku.errors.codeInvalid')}
+                    : codeErrors.code.message === 'STYLE_CODE_TAKEN'
+                      ? t('inventory.skuEdit.errors.STYLE_CODE_TAKEN')
+                      : t('inventory.sku.errors.codeInvalid')}
                 </FieldError>
               ) : usage.data?.codeLocked ? (
                 <FieldDescription id="sku-edit-code-locked">
