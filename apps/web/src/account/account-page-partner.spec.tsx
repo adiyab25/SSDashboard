@@ -71,6 +71,13 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     expect(container.textContent).not.toMatch(/staff|employee/i);
   });
 
+  it('leaves the one h1 to the frame when drawn inFrame', async () => {
+    render(<AccountPage audience="partner" inFrame />);
+
+    await screen.findByLabelText(/^Name/);
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+  });
+
   it('saves through the partner audience', async () => {
     updateProfile.mockResolvedValue({ ok: true, me: PARTNER });
     render(<AccountPage audience="partner" />);

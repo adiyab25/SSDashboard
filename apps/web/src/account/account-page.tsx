@@ -18,9 +18,16 @@ import { TwoFactorSection } from './two-factor-section';
  * it, and `audience` picks the api route it reads and saves through (`/api/me` or
  * `/api/partner/me`). Everything here is about the signed in person only. When the person cannot
  * be loaded (the call fails or the answer breaks the contract) it shows an inline error instead of
- * loading forever; the way back is the frame's navigation (the shell, or the partner home link).
+ * loading forever; the way back is the frame's navigation. With `inFrame` the title is left to the frame's `h1`.
  */
-export function AccountPage({ audience = 'backoffice' }: { audience?: Home }) {
+export function AccountPage({
+  audience = 'backoffice',
+  inFrame = false,
+}: {
+  audience?: Home;
+  /** True when the surrounding frame already draws the page's one `h1` (the partner frame's title). */
+  inFrame?: boolean;
+}) {
   const { t } = useTranslation();
   const path = ME_PATH[audience];
   const meState = useMeState(path);
@@ -45,7 +52,7 @@ export function AccountPage({ audience = 'backoffice' }: { audience?: Home }) {
   return (
     <div className="flex max-w-2xl min-w-0 flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t('account.title')}</h1>
+        {inFrame ? null : <h1 className="text-xl font-semibold">{t('account.title')}</h1>}
         <p className="text-sm text-muted-foreground">{t('account.description')}</p>
       </div>
 

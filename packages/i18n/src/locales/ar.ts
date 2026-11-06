@@ -379,6 +379,8 @@ export const ar: Catalog = {
     },
   },
   partner: {
+    nav: { label: 'أقسام الشريك', home: 'الرئيسية' },
+    frame: { partnerName: 'حساب الشريك' },
     home: {
       title: 'معرض الشريك',
       description: 'ستظهر هنا بضاعتك بالأمانة ومبيعاتك. هذه الصفحة قادمة قريبًا.',

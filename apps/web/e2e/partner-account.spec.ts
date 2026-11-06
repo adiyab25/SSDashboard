@@ -126,7 +126,7 @@ test.describe('partner account page', () => {
   });
 
   for (const language of ['en', 'ar'] as const) {
-    test(`shows an error and the way home when /api/partner/me fails, in ${language}`, async ({
+    test(`shows an error and the way home in the navigation when /api/partner/me fails, in ${language}`, async ({
       page,
     }) => {
       const dir = language === 'ar' ? 'rtl' : 'ltr';
@@ -142,7 +142,10 @@ test.describe('partner account page', () => {
       await expect(main).not.toContainText(STAFF_WORDS);
       await expectNoAxeViolations(page);
 
-      await main.getByRole('link', { name: textFor(dir, 'partner.home.title') }).click();
+      await page
+        .getByRole('navigation')
+        .getByRole('link', { name: textFor(dir, 'partner.nav.home') })
+        .click();
       await expect(page).toHaveURL(new RegExp(`/${language}/partner$`));
     });
   }

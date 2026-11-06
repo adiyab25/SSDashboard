@@ -31,7 +31,9 @@ function publicCatalog(source: Catalog): Catalog {
  * body, no swap after hydration. The client provider starts in that language with only the
  * groups these pages use, handed over from the server. `segment` is the raw `lang` root
  * parameter; anything but `en` or `ar` is a 404 before it is used. It must never read cookies or
- * headers (the proxy owns the language choice) and never call a staff api route.
+ * headers (the proxy owns the language choice), never call a staff api route, and never render a
+ * `main`: each page draws its own frame (`PortalFrame`, `PartnerFrame`), which owns the one
+ * `main#main-content` the skip link targets.
  */
 export function PublicRootFrame({
   segment,
@@ -53,13 +55,7 @@ export function PublicRootFrame({
       <body>
         <Providers initialLanguage={{ language, catalog }}>
           <SkipLink />
-          <main
-            id="main-content"
-            tabIndex={-1}
-            className="mx-auto w-full max-w-2xl p-6 outline-none"
-          >
-            {children}
-          </main>
+          {children}
         </Providers>
       </body>
     </html>

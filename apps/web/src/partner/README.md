@@ -1,6 +1,6 @@
 # Partner area
 
-A placeholder page at `/en/partner` and `/ar/partner` for consignment partners, and their own account at `/en/partner/account` and `/ar/partner/account` (the shared [account](../account/) screen on `/api/partner/me`, which spec 0008 builds; until then it shows an inline error, and the link back to the partner home stays under it). It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/partner` redirects to the right language in the proxy.
+A placeholder page at `/en/partner` and `/ar/partner` for consignment partners, and their own account at `/en/partner/account` and `/ar/partner/account` (the shared [account](../account/) screen on `/api/partner/me`, which spec 0008 builds; until then it shows an inline error). Both pages have no staff shell and no session check yet, and are server components: their text is rendered on the server in the URL's language (spec 0004, AC-16), inside the `PartnerFrame` (spec 0003, AC-18) with the neutral primary, the install's fallback name, and a navigation of the pages that exist (home and My account; statements, stock at your location and settlement join when they ship), and a plain link to the other language in the frame's actions slot. The frame's `title` is the page's one `h1`, so the account screen is drawn with `inFrame` and adds none of its own. `/partner` redirects to the right language in the proxy.
 
 ## Owns
 
