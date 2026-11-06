@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { UpdateMeRequest } from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
-import { DATABASE } from '../database/database.module.js';
-import { assertLanguageEnabled } from '../platform/languages.js';
-import { SettingsService } from '../platform/settings.service.js';
+import { DATABASE } from '../../database/database.module.js';
+import { assertLanguageEnabled } from '../../platform/languages.js';
+import { SettingsService } from '../../platform/settings.service.js';
 
 /** A person's own profile (spec 0005, AC-19): name, phone and language, and nothing else. */
 @Injectable()

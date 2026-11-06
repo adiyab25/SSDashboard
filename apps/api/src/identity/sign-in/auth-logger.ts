@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { BetterAuthOptions } from 'better-auth';
-import { describeError } from '../database/pg-error.js';
+import { describeError } from '../../database/pg-error.js';
 
 type BetterAuthLog = NonNullable<NonNullable<BetterAuthOptions['logger']>['log']>;
 type Level = Parameters<BetterAuthLog>[0];

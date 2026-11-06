@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { sql, type Database, type DatabaseConnection } from '@ssdashboard/db';
-import { ENV } from '../config/config.module.js';
-import type { Env } from '../config/env.js';
-import { DATABASE } from '../database/database.module.js';
-import { TOKEN_IDENTIFIER_PREFIX } from '../mail/mail-links.js';
-import { MailProducer } from '../mail/mail-queue.js';
-import { PasswordResetCompleted } from '../platform/events/auth-events.js';
+import { ENV } from '../../config/config.module.js';
+import type { Env } from '../../config/env.js';
+import { DATABASE } from '../../database/database.module.js';
+import { TOKEN_IDENTIFIER_PREFIX } from '../../mail/mail-links.js';
+import { MailProducer } from '../../mail/mail-queue.js';
+import { PasswordResetCompleted } from '../../platform/events/auth-events.js';
 import { AuthAudit } from './auth-audit.service.js';
 import { clientIp, emailKey, userAgent } from './client-info.js';
 import { SignInLockout } from './sign-in-lockout.js';

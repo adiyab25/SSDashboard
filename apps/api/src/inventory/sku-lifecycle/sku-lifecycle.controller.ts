@@ -12,7 +12,7 @@ import {
 import { ChangeSkuCodeRequest, type SkuDetail, type SkuUsage } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import type { z } from 'zod';
-import { Roles } from '../../auth/roles.decorator.js';
+import { Roles } from '../../identity/sign-in/roles.decorator.js';
 import { catalogHttpError, notFoundId } from '../../catalog/catalog.controller.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';

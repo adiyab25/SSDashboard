@@ -9,7 +9,7 @@ import {
   SignInFailed,
   TwoFactorDisabled,
   TwoFactorEnabled,
-} from '../platform/events/auth-events.js';
+} from '../../platform/events/auth-events.js';
 import type { AuthAudit } from './auth-audit.service.js';
 import { clientIp, emailKey, userAgent } from './client-info.js';
 import { pastAbsoluteCap } from './session-policy.js';
