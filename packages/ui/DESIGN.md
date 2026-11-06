@@ -1,12 +1,12 @@
 ---
-source: spec 0003 (direction set in the spec, no external design)
+source: spec 0003, option B Daftar (chosen by the owner; no external design)
 tokens: packages/ui/src/styles/globals.css
 gallery: /design (development only)
 ---
 
 # SSDashboard design system
 
-The look of the back office: quiet, neutral, and dense, built for long days of tables, forms, and scan screens. Zinc grays, a black and white primary with no colored accent, 10px corners, and IBM Plex Sans in English and Arabic. Hue appears only where it means something (in stock, low, error, info).
+Direction B, "Daftar" (a daftar is a ledger notebook): the look of a well kept paper ledger, built for long days of tables, forms, and scan screens. Warm off white paper, one deep indigo for the main action, soft tinted status chips, Inter for English and Noto Sans Arabic for Arabic, JetBrains Mono for codes, 8px corners. Hue appears only where it means something (confirmed, failed, owed, provisional, info) and in the one primary action. Chosen by the owner in spec 0003; the unchosen directions (Quiet Ledger, Floor Console) stay in the spec.
 
 Token values live in [`src/styles/globals.css`](src/styles/globals.css). This file holds the rules for using them. The live versions of everything here, with measured contrast, are on `/design` in development.
 
@@ -20,93 +20,158 @@ Token values live in [`src/styles/globals.css`](src/styles/globals.css). This fi
 
 ## Color roles
 
-Light values are in `:root`, dark values in `.dark`. Modes are Light, Dark, and System (the default), chosen in the user menu.
+Light values are in `:root`, dark values in `.dark`. Modes are Light, Dark, and System (the default), chosen in the user menu. Both modes are warm: neutrals sit at hue 70 to 85 (paper and ink), the primary at hue 275 (indigo), so the page never reads cold or gray.
 
-| Role | Used for |
-|---|---|
-| `background` / `foreground` | The page and its text |
-| `card`, `popover` (+ `-foreground`) | Raised surfaces: cards, menus, dialogs, sheets |
-| `primary` (+ `-foreground`) | The one main action in a view. Near black in light, near white in dark |
-| `secondary`, `accent`, `muted` (+ `-foreground`) | Quiet fills: secondary buttons, hover and selected rows, chips |
-| `muted-foreground` | Secondary text, placeholders, captions |
-| `border` | Decorative separators and card edges only (exempt from 3:1) |
-| `input` | The boundary of anything you can operate: fields, outline buttons, checkboxes |
-| `ring` | The focus ring |
-| `destructive`, `success`, `warning`, `info` (+ `-foreground`) | Meaning only: errors and deletes, in stock, low stock, notices. Never decoration |
-| `sidebar-*` | The app shell sidebar |
+| Role                                                          | Light                  | Dark                   | Used for                                                                                              |
+| ------------------------------------------------------------- | ---------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `background`                                                  | `0.985 0.006 85`       | `0.19 0.012 70`        | The page (paper)                                                                                      |
+| `foreground`                                                  | `0.22 0.02 70`         | `0.96 0.01 85`         | Text (ink)                                                                                            |
+| `card`, `popover`                                             | `0.997 0.003 85`       | `0.23 0.014 70`        | Raised surfaces: cards, menus, dialogs, sheets. `card-foreground` and `popover-foreground` equal `foreground` |
+| `primary` (+ `-foreground`)                                   | `0.38 0.12 275` / `0.99 0.003 85` | `0.78 0.12 280` / `0.2 0.03 275` | The one main action in a view, links, selected state |
+| `secondary`, `muted`                                          | `0.955 0.01 85`        | `0.28 0.014 70`        | Quiet fills: secondary buttons, table header, chips of no meaning. `secondary-foreground` equals `foreground` |
+| `accent`                                                      | `0.935 0.014 85`       | `0.32 0.016 70`        | Hover and selected rows and menu items (a step darker than `muted`). `accent-foreground` equals `foreground` |
+| `muted-foreground`                                            | `0.46 0.02 70`         | `0.75 0.02 80`         | Secondary text, placeholders, captions                                                                |
+| `border`                                                      | `0.9 0.012 85`         | `0.33 0.014 70`        | Decorative separators and card edges only (exempt from 3:1)                                           |
+| `input`                                                       | `0.58 0.02 70`         | `0.6 0.02 75`          | The boundary of anything you can operate: fields, outline buttons, checkboxes, the dashed provisional boundary |
+| `ring`                                                        | the `primary`          | the `primary`          | The focus ring (indigo in both modes)                                                                 |
+| `success`                                                     | `0.45 0.11 150`        | `0.78 0.15 150`        | Meaning only (see the four roles below)                                                               |
+| `warning`                                                     | `0.48 0.11 65`         | `0.82 0.14 80`         | Meaning only                                                                                          |
+| `destructive`                                                 | `0.5 0.19 27`          | `0.74 0.16 25`         | Errors, deletes, failed delivery                                                                      |
+| `info`                                                        | `0.45 0.07 235`        | `0.78 0.08 235`        | Notices. A quiet slate, so it cannot be mistaken for the indigo primary                               |
+| `success-`, `warning-`, `destructive-`, `info-` `foreground`  | `0.99 0.003 85`        | `0.19 0.012 70`        | Text on a solid fill of that hue (the paper color in light, the page color in dark)                   |
+| `sidebar`                                                     | `0.972 0.008 85`       | `0.21 0.013 70`        | The app shell sidebar. `sidebar-primary`, `-ring` equal `primary`; `sidebar-border` equals `border`; `sidebar-accent` is `0.93 0.014 85` light, `0.3 0.016 70` dark |
+| `brand`, `brand-foreground`                                   | `primary` / `primary-foreground` | the same      | Portal accent (AC-19), see below                                                                      |
 
-The primary is monochrome, so hierarchy comes from fill versus outline, weight, and placement. Keep one filled primary button per view.
+All values are `oklch(L C H)`. `border` is solid in both modes. Hue never decorates: nothing outside the roles above and the portal brand tile uses a colored fill.
+
+Keep one filled `primary` button per view. Hierarchy comes from fill versus outline, weight, and placement; the indigo is rare on purpose so the main action is the first thing a tired eye finds.
+
+### Four meaning roles (AC-16)
+
+Order and cash state is shown by four roles, each an alias of an existing hue so no hue is added. They are defined in both `:root` and `.dark` and mapped in Tailwind as `text-confirmed`, `bg-confirmed-surface`, and so on.
+
+| Role | Alias of | Means | Icon | Chip surface |
+|---|---|---|---|---|
+| `confirmed` | `success` | Confirmed (cash received, order confirmed) | check | `confirmed-surface` |
+| `failed` | `destructive` | Failed delivery | cross | `failed-surface` |
+| `owed` | `warning` | Cash owed (always name who owes: Bosta, a partner, a customer) | coin | `owed-surface` |
+| `provisional` | `muted-foreground` | Not yet confirmed | dashed clock | `provisional-surface` (transparent) |
+
+- A chip surface is the hue at 12 percent mixed into `card` (`color-mix(in oklab, var(--confirmed) 12%, var(--card))`), with the hue as the text color. `info-surface` is built the same way for notices; info never carries order state.
+- A `StatusChip` always shows an icon and a word together. Color is never the only carrier of meaning. One row shows at most three chips (fulfillment, cash, attention); the rest sit behind a count ("+2"). Row order: code, who, where, how much, state, cash.
+- Chips are 4px corners (`rounded-sm`, 4.8px) and `text-xs font-medium`.
+- A brand accent never colors any of these (AC-19), so a brand whose accent is green cannot be confused with "confirmed".
+
+### Provisional values (AC-17)
+
+- A provisional number is drawn with a leading `≈` (inside a `bdi`, so it stays first in right to left), a **dashed** boundary (`border-dashed border-input` on a `provisional-surface` that is transparent, never a solid fill or solid border), and a visually hidden "provisional" label. Confirmed values are plain.
+- A total that mixes both shows the confirmed part and the provisional part separately. A provisional dashboard card is a dashed card.
+- The provisional text is `muted-foreground`; its boundary is `input`, the control boundary, so the dash itself meets 3:1.
+- Every dashboard and report view that shows provisional data carries a freshness strip: "Confirmed through <operating day>, today is provisional".
+
+### Brand accent (AC-19)
+
+`--brand` and `--brand-foreground` default to `--primary` and `--primary-foreground`. The portal frame overrides them inline from settings after `deriveBrandTokens` accepts the accent (at least 4.5:1). Use `bg-brand text-brand-foreground` only for the logo tile, a 6px top rule, and the main portal button. Never for status, text, the focus ring, or a chip.
 
 ### Measured contrast
 
-Text needs 4.5:1 (3:1 for large text). Control boundaries and the focus ring need 3:1 against what sits next to them. Measured from the tokens (oklch to sRGB, WCAG 2 formula); `/design` measures them again live in the browser.
+Text needs 4.5:1 (3:1 for large text). Control boundaries and the focus ring need 3:1 against what sits next to them. Measured from the token values with a throwaway script (oklch to sRGB, clamped, WCAG 2 relative luminance; chip surfaces are the oklab mix of 12 percent hue and 88 percent `card`). The script was first run against the spec's option B figures and reproduced them (foreground on background 16.61 light and 16.45 dark, muted-foreground 6.85 and 8.30, success 6.77 and 9.78, chips 5.80 and 7.27) before any derived value was trusted. No lightness was nudged from the spec's proposal; the roles the spec did not list were derived once and all pass. `/design` measures them again live in the browser.
 
 | Pair | Light | Dark | Needs |
 |---|---|---|---|
-| foreground on background | 19.89 | 19.05 | 4.5 |
-| card-foreground on card | 19.89 | 16.98 | 4.5 |
-| popover-foreground on popover | 19.89 | 16.98 | 4.5 |
-| primary-foreground on primary | 16.98 | 16.98 | 4.5 |
-| secondary-foreground on secondary | 16.11 | 14.26 | 4.5 |
-| accent-foreground on accent | 16.11 | 14.26 | 4.5 |
-| muted-foreground on background | 6.85 | 8.60 | 4.5 |
-| muted-foreground on card | 6.85 | 7.67 | 4.5 |
-| muted-foreground on muted | 6.22 | 6.44 | 4.5 |
-| muted-foreground on sidebar | 6.56 | 7.67 | 4.5 |
-| destructive on background | 5.85 | 7.44 | 4.5 |
-| destructive-foreground on destructive | 5.60 | 7.44 | 4.5 |
-| success on background | 5.90 | 9.90 | 4.5 |
-| success-foreground on success | 5.65 | 9.90 | 4.5 |
-| warning on background | 6.34 | 10.54 | 4.5 |
-| warning-foreground on warning | 6.07 | 10.54 | 4.5 |
-| info on background | 6.58 | 8.59 | 4.5 |
-| info-foreground on info | 6.30 | 8.59 | 4.5 |
-| sidebar-foreground on sidebar | 19.05 | 16.98 | 4.5 |
-| sidebar-accent-foreground on sidebar-accent | 14.87 | 14.26 | 4.5 |
-| input on background | 3.96 | 5.02 | 3 |
-| input on card / popover | 3.96 | 4.48 | 3 |
-| input on sidebar | 3.79 | 4.48 | 3 |
-| ring on background | 17.73 | 19.05 | 3 |
-| ring on card / sidebar | 17.73 / 16.98 | 16.98 | 3 |
+| foreground on background | 16.61 | 16.45 | 4.5 |
+| foreground on card (also `card-foreground`, `popover-foreground`) | 17.20 | 15.06 | 4.5 |
+| foreground on muted (also `secondary-foreground`) | 15.22 | 13.01 | 4.5 |
+| foreground on accent | 14.33 | 11.32 | 4.5 |
+| muted-foreground on background | 6.85 | 8.30 | 4.5 |
+| muted-foreground on card | 7.09 | 7.59 | 4.5 |
+| muted-foreground on muted | 6.27 | 6.56 | 4.5 |
+| muted-foreground on accent | 5.91 | 5.71 | 4.5 |
+| muted-foreground on sidebar | 6.59 | 7.96 | 4.5 |
+| primary-foreground on primary | 10.05 | 8.82 | 4.5 |
+| primary on background (links) | 9.91 | 8.99 | 4.5 |
+| primary on card | 10.26 | 8.22 | 4.5 |
+| success on background / card | 6.77 / 7.01 | 9.78 / 8.95 | 4.5 |
+| warning on background / card | 6.45 / 6.68 | 10.45 / 9.56 | 4.5 |
+| destructive on background / card | 6.34 / 6.57 | 7.46 / 6.83 | 4.5 |
+| info on background / card | 7.02 / 7.27 | 9.37 / 8.58 | 4.5 |
+| success-foreground on success | 6.87 | 9.78 | 4.5 |
+| warning-foreground on warning | 6.54 | 10.45 | 4.5 |
+| destructive-foreground on destructive | 6.44 | 7.46 | 4.5 |
+| info-foreground on info | 7.12 | 9.37 | 4.5 |
+| confirmed on confirmed-surface (chip) | 5.80 | 7.27 | 4.5 |
+| owed on owed-surface (chip) | 5.55 | 7.71 | 4.5 |
+| failed on failed-surface (chip) | 5.47 | 5.73 | 4.5 |
+| info on info-surface (chip) | 6.00 | 7.01 | 4.5 |
+| provisional text on card / background | 7.09 / 6.85 | 7.59 / 8.30 | 4.5 |
+| brand-foreground on brand (default, the primary pair) | 10.05 | 8.82 | 4.5 |
+| sidebar-foreground on sidebar | 16.00 | 15.79 | 4.5 |
+| sidebar-primary-foreground on sidebar-primary | 10.05 | 8.82 | 4.5 |
+| sidebar-accent-foreground on sidebar-accent | 14.11 | 12.16 | 4.5 |
+| input on background | 4.11 | 4.67 | 3 |
+| input on card / popover (also the dashed provisional boundary on its transparent surface over a card) | 4.26 | 4.28 | 3 |
+| input on muted | 3.77 | 3.70 | 3 |
+| input on sidebar | 3.96 | 4.48 | 3 |
+| ring on background | 9.91 | 8.99 | 3 |
+| ring on card | 10.26 | 8.22 | 3 |
+| ring on muted | 9.08 | 7.11 | 3 |
+| ring on sidebar | 9.54 | 8.62 | 3 |
+
+Weakest text pair: failed on its chip (5.47 light, 5.73 dark). Weakest boundary: input on muted in dark (3.70). A brand accent that replaces `brand` is checked by `deriveBrandTokens`, not by this table.
 
 Disabled controls are exempt from contrast but stay at 3:1 or more, so a disabled "No locations yet" is still readable.
 
 ## Type
 
-| Step | Utility | Size / line height | Weight |
-|---|---|---|---|
-| Page title (`h1`) | `text-xl font-semibold` | 20px / 28px | 600 |
-| Section title (`h2`) | `text-base font-semibold` | 16px / 24px | 600 |
-| Body, the default | `text-sm` | 14px / 20px | 400 |
-| Labels, emphasis | `text-sm font-medium` | 14px / 20px | 500 |
-| Secondary, captions | `text-xs text-muted-foreground` | 12px / 16px | 400 |
+Fonts: Inter (Latin), Noto Sans Arabic (Arabic), JetBrains Mono (codes). All SIL OFL 1.1, self hosted by the app (`next/font`, variables `--font-inter`, `--font-noto-arabic`, `--font-jetbrains-mono` on `<html>` from `apps/web/src/shell/root-fonts.ts`), never from a font host at runtime. Tailwind maps them: `font-sans` and `font-heading` are Inter; `font-arabic` is Noto Sans Arabic then Inter; `font-mono` is JetBrains Mono.
+
+| Step | Utility | Latin size / line | Arabic size / line | Weight |
+|---|---|---|---|---|
+| Page title (`h1`) | `text-xl font-semibold` | 20px / 28px | 21px / 1.7 | 600 |
+| Section title (`h2`) | `text-base font-semibold` | 17px / 25.5px | 18px / 1.7 | 600 |
+| Body, the default | `text-sm` | 15px / 22.5px | 16px / 1.75 | 400 |
+| Labels, emphasis | `text-sm font-medium` | 15px / 22.5px | 16px / 1.75 | 500 |
+| Secondary, captions, chips | `text-xs` (captions add `text-muted-foreground`) | 12px / 16px | 13px / 1.75 | 400 |
 
 - Weights 400, 500, and 600 only.
-- IBM Plex Sans for Latin text. Anything under `lang="ar"` switches to IBM Plex Sans Arabic with one more step of line height. Both are served by the app (`next/font`), never from a font host at runtime.
-- Numbers in columns, totals, and quantities use `tabular-nums` so digits line up.
-- Every code that must read left to right (SKU, barcode, document number, email, URL, version such as `0.0.0-dev`) sits in `LtrText` (`@ssdashboard/ui/components/ltr-text`), never bare text, so right to left pages keep its order.
+- **How 15px body is expressed (AC-23).** Components keep their classes (`text-sm`, `text-base`); the tokens change instead. `globals.css` retunes `--text-sm` to 0.9375rem and `--text-base` to 1.0625rem, and `body` stays `text-sm`. So every shadcn control and table cell that says `text-sm` is 15px with no component edit. `text-xs` (12px) and `text-xl` (20px) keep Tailwind's defaults. Never write `text-[15px]`.
+- **Arabic rule.** Anything under `lang="ar"` (the `:lang(ar)` base rule) switches to `font-arabic` and overrides the same size and line height variables: each step is one pixel larger than the Latin step beside it (body 16px beside 15px, `xs` 13px, section 18px, page title 21px), and the line height is at least 1.7 at every step (body and captions 1.75). Noto Sans Arabic has a smaller optical size than Inter at the same pixel size, hence the extra pixel. The first look at it beside Inter in a table row is owed by the visual check of task 1.1 (`/design`); tune the `:lang(ar)` sizes there, not in components.
+- Numbers in columns, totals, and quantities use `tabular-nums` (Inter has tabular figures). Digits are Western in both languages, formatted by the app.
+- Every code that must read left to right (SKU, barcode, document number, email, URL, version such as `0.0.0-dev`) sits in `LtrText` (`@ssdashboard/ui/components/ltr-text`), never bare text, so right to left pages keep its order. `LtrText` sets `font-mono` (JetBrains Mono), so codes read apart from names. It keeps the surrounding size; do not mix it into prose.
 
 ## Spacing, radius, density
 
 - Spacing follows Tailwind's 4px scale. Use `gap-*` for layout, not margins between siblings.
-- Radius is `--radius: 0.625rem` (10px): `rounded-lg` for cards and dialogs, `rounded-md` for controls, `rounded-sm` for items inside menus.
-- Density is compact for data and normal for forms. There is no density toggle.
+- Radius is `--radius: 0.5rem` (8px): `rounded-lg` (8px) for cards and dialogs, `rounded-md` (6.4px, read as 6px) for buttons and controls, `rounded-sm` (4.8px, read as 4px) for chips and items inside menus, `rounded-xl` (11.2px) rarely. The preview draws cards 8px, buttons 6px, chips 4px; the 0.6 and 0.8 multipliers land within a pixel of it.
+- Density is compact for data and normal for forms; there is no density toggle. One scope, `floor`, raises it for the hands on a touch screen (below).
 
-| Element | Utility | Height |
-|---|---|---|
-| Table row | `h-row` | 36px |
-| Table header | `h-row-header` | 40px |
-| Form control | `h-control` (the Vega default) | 36px |
-| Sidebar item (fine pointer) | `h-nav-item` | 32px |
-| Shell top bar | `h-topbar` | 56px |
-| Touch target | `h-touch` / `size-touch` | 44px |
+| Element | Utility | Default | `floor` on a coarse pointer |
+|---|---|---|---|
+| Table row | `h-row` (`--spacing-row`) | 40px | 48px |
+| Table header | `h-row-header` | 44px | 52px |
+| Form control | `h-control` | 40px | 48px |
+| Focus ring width | `--focus-width` | 2px | 3px |
+| Sidebar item (fine pointer) | `h-nav-item` | 32px | unchanged |
+| Shell top bar | `h-topbar` | 56px | unchanged |
+| Touch target | `h-touch` / `size-touch` | 44px | unchanged |
+
+About 20 table rows fit a 1080p screen at 40px.
+
+### The `floor` scope (AC-22)
+
+`floor` is for people who tap and scan all day on a tablet or handheld, not for the operations lead's long tables.
+
+- Put `data-density="floor"` on the container of the confirmation queue and of every scan screen. In `globals.css`, `[data-density='floor']` inside `@media (pointer: coarse)` sets `--spacing-row` 3rem, `--spacing-row-header` 3.25rem, `--spacing-control` 3rem, and `--focus-width` 3px. Everything inside that uses `h-row`, `h-control`, `focus-ring` follows with no class change.
+- On a fine pointer (mouse) the scope does nothing: the queue keeps 40px controls there. The scan screens add their own large outcome buttons, at least 48 by 48.
+- One outcome per button, with its shortcut visible on the button. On phones the action bar is sticky at the bottom.
+- Not for: the order tables, settings, and reports. Do not set it on the page shell.
 
 ## Focus, targets, motion, elevation
 
-- **Focus**: `focus-visible` only, the same everywhere: a 2px `ring` outline with a 2px gap (`focus-ring`). Items inside clipped lists (menu items) use `focus-ring-inset`. Never remove an outline without replacing it.
-- **Targets**: every interactive target is at least 24 by 24px. On touch screens (`coarse:` variant, `pointer: coarse`), shell controls and menu, sheet, and command items are at least 44 by 44px.
+- **Focus**: `focus-visible` only, the same everywhere: an indigo `ring` outline of `--focus-width` (2px, 3px in `floor`) with a 2px gap (`focus-ring`, and the base `:focus-visible` rule). Items inside clipped lists (menu items) use `focus-ring-inset`, which draws the ring inside by the same width. The ring is 3:1 or better on every surface (table above). Never remove an outline without replacing it.
+- **Targets**: every interactive target is at least 24 by 24px. On touch screens (`coarse:` variant, `pointer: coarse`), shell controls and menu, sheet, and command items are at least 44 by 44px; `floor` controls are 48px.
 - **Motion**: the shadcn defaults (150 to 200ms fades, zooms, and slides), all switched off under `prefers-reduced-motion: reduce`.
-- **Elevation**: flat by default. Popovers and menus use `shadow-md` plus a hairline ring; dialogs and sheets `shadow-lg` over a dimmed overlay. No shadows on cards inside pages.
+- **Elevation**: flat by default. Popovers and menus use `shadow-md` plus a hairline ring; dialogs and sheets `shadow-lg` over a dimmed overlay. No shadows on cards inside pages; cards are `card` on `background` with a `border` hairline.
 
 ## Icons
 
@@ -129,9 +194,9 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 
 ### Data tables (built by features 7 and 8)
 
-- Build on TanStack Table with the shadcn `Table` parts. Rows are `h-row` (36px), the header `h-row-header` (40px) on `bg-muted` with `font-medium` labels.
+- Build on TanStack Table with the shadcn `Table` parts. Rows are `h-row` (40px; 48px in the `floor` scope on touch), the header `h-row-header` (44px; 52px) on `bg-muted` with `font-medium` labels.
 - Numbers, quantities, and money are end aligned (`text-end`) with `tabular-nums`. Text columns are start aligned.
-- Row hover is `hover:bg-muted`; a selected row is `bg-accent` plus a checked row checkbox. Never color alone.
+- Row hover is `hover:bg-muted`; a selected row is `bg-accent` plus a checked row checkbox. Never color alone. Status in a row is a `StatusChip` (icon plus word, at most three, then a "+2" count), in the column order code, who, where, how much, state, cash; provisional amounts follow the provisional rules above.
 - Sortable headers are buttons with `aria-sort` on the `th`, and the sort icon is decorative.
 - Keep the header row sticky in long tables. Wide tables scroll inside their container, never the page.
 - Row actions sit in a trailing column as an icon button with a dropdown menu; the button's name includes the row ("Actions for TBL-OAK-120").
@@ -141,7 +206,7 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 ### Forms (built by features 7 and 8)
 
 - Use the shadcn `Field` parts: a visible label above every control (placeholders are hints, never labels), help text below in `text-xs text-muted-foreground`.
-- Controls are the Vega default height (36px) with an `input` border.
+- Controls are `h-control` (40px; 48px in the `floor` scope on touch) with an `input` border.
 - Validation: `aria-invalid` on the control and `data-invalid` on the field, a `destructive` message linked with `aria-describedby`, shown after blur or submit, never while typing. On submit with errors, focus the first invalid field.
 - Required fields say so in the label text ("Required"), not only with an asterisk.
 - Buttons: one primary submit at the end of the form, then secondary actions. A pending submit disables the button and shows a spinner with the same label.

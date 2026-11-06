@@ -15,6 +15,7 @@ describe('LtrText', () => {
     const code = screen.getByText('SKU-A/12');
     expect(code.tagName).toBe('BDI');
     expect(code).toHaveAttribute('dir', 'ltr');
+    expect(code).toHaveClass('font-mono');
     await expectNoAxeViolations(container);
   });
 

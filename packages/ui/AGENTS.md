@@ -2,7 +2,7 @@
 
 ## Overview
 
-`@ssdashboard/ui`, the shared design system: shadcn/ui components (Radix primitives, Vega style, zinc), the design tokens, and the hooks they need. Plain React, so a future storefront or POS app can use it too. Decision: [spec 0003](../../docs/specs/0003-design-system-ui-foundation/index.md).
+`@ssdashboard/ui`, the shared design system: shadcn/ui components (Radix primitives, Vega style), the Daftar design tokens (warm paper, indigo primary, Inter, Noto Sans Arabic, JetBrains Mono), and the hooks they need. Plain React, so a future storefront or POS app can use it too. Decision: [spec 0003](../../docs/specs/0003-design-system-ui-foundation/index.md).
 
 ## Key files
 
@@ -13,7 +13,7 @@
 | `src/lib/utils.ts` | `cn()`; the one file allowed the banned name `utils` (ADR 0001) |
 | `src/hooks/*.ts` | Hooks the components use (`use-mobile`) |
 | `src/test/axe.ts` | `expectNoAxeViolations()` for component tests |
-| `DESIGN.md` | The written design standard: color roles with measured contrast, type, density, focus, icons, and table, form, and feedback rules |
+| `DESIGN.md` | The written design standard (direction B, Daftar): color and meaning roles with measured contrast, type, density and the `floor` scope, focus, icons, and table, form, and feedback rules |
 
 ## Commands
 
@@ -36,6 +36,7 @@ pnpm --filter @ssdashboard/ui typecheck
 
 - `shadcn add` run inside this folder writes to the wrong place in this repo. Generate components in a scratch shadcn monorepo (`init --template next --monorepo --base radix --preset vega --rtl`), copy them into `src/components/`, rewrite `@workspace/ui/` to `@ssdashboard/ui/`, then run Prettier and the logical CSS check.
 - `shadcn init --rtl` leaves some physical side classes behind (sheet, sidebar, popper animations); convert them when you copy a component in.
+- Type is token driven: `--text-sm` is 15px and `:lang(ar)` re-sets the size and line height variables, so never hard code a font size in a component. Density and focus width are variables too (`--spacing-row`, `--spacing-control`, `--focus-width`); the `floor` scope (`data-density="floor"`, coarse pointers only) changes them.
 - DropdownMenu is non-modal by default (a modal menu aria-hides the shell and fails axe aria-hidden-focus); no scroll lock; one outside press closes the menu AND activates the pressed control. Keep this when re-copying from shadcn.
 
 ## Agent skills

@@ -6,7 +6,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 
 ## Owns
 
-- Tokens and the Tailwind theme mapping: [src/styles/globals.css](src/styles/globals.css)
+- Tokens (Daftar: colors, the four meaning roles, brand, type, density and the `floor` scope) and the Tailwind theme mapping: [src/styles/globals.css](src/styles/globals.css)
 - Components, one per file: [src/components/](src/components/)
 - The `cn()` helper: [src/lib/utils.ts](src/lib/utils.ts)
 - Hooks the components use: [src/hooks/use-mobile.ts](src/hooks/use-mobile.ts)
