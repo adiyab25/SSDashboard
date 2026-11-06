@@ -32,7 +32,7 @@ const env = {
   AUTH_CLEANUP_CRON: '15 4 * * *',
 } as Env;
 
-function makeJob(rowCounts: Array<number | null> = [1, 2, 3, 4]) {
+function makeJob(rowCounts: Array<number | null> = [1, 2, 3, 4, 5]) {
   const execute = vi.fn();
   for (const rowCount of rowCounts) execute.mockResolvedValueOnce({ rowCount });
   const settings = { read: vi.fn().mockResolvedValue({ timezone: 'Africa/Cairo' }) };
@@ -74,25 +74,27 @@ describe('AuthCleanupJob', () => {
     });
   });
 
-  it('counts what each of the four deletes removed (covers: AC-22)', async () => {
-    const { job, execute } = makeJob([5, 4, 3, 2]);
+  it('counts what each of the five deletes removed (covers: AC-22)', async () => {
+    const { job, execute } = makeJob([6, 5, 4, 3, 2]);
 
     await expect(job.cleanup()).resolves.toEqual({
-      sessions: 5,
-      verifications: 4,
-      signInAttempts: 3,
+      sessions: 6,
+      verifications: 5,
+      signInAttempts: 4,
+      signInSlots: 3,
       rateLimits: 2,
     });
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(5);
   });
 
   it('counts a missing row count as zero', async () => {
-    const { job } = makeJob([null, null, null, null]);
+    const { job } = makeJob([null, null, null, null, null]);
 
     await expect(job.cleanup()).resolves.toEqual({
       sessions: 0,
       verifications: 0,
       signInAttempts: 0,
+      signInSlots: 0,
       rateLimits: 0,
     });
   });
@@ -105,7 +107,13 @@ describe('AuthCleanupJob', () => {
     const output = await handler();
 
     expect(boss.work.mock.calls[0]?.[0]).toBe(AUTH_CLEANUP_QUEUE);
-    expect(output).toEqual({ sessions: 1, verifications: 2, signInAttempts: 3, rateLimits: 4 });
+    expect(output).toEqual({
+      sessions: 1,
+      verifications: 2,
+      signInAttempts: 3,
+      signInSlots: 4,
+      rateLimits: 5,
+    });
   });
 
   it('stops the queue gracefully on shutdown, and does nothing if it never started', async () => {

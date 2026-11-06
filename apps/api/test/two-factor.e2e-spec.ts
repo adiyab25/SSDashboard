@@ -385,6 +385,52 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
       expect(ok.status).toBe(200);
     });
 
+    it('turns a code away with no free slot without ending the pending sign in, and gives each slot back', async () => {
+      const person = await addPerson();
+      const { secret } = await enroll(person.email);
+      const { cookie, ip } = await challenge(person.email);
+      const slots = async () =>
+        (await owner.pool.query(`SELECT 1 FROM sign_in_slots WHERE email_key = $1`, [person.email]))
+          .rows.length;
+      // The password step waits for a code: its slot was given back, nothing counted.
+      expect(await slots()).toBe(0);
+      expect(await attempts(person.email)).toBe(0);
+
+      // Five codes in flight hold every place for this pair (no lock is running).
+      for (let i = 0; i < 5; i += 1) {
+        await owner.pool.query(`INSERT INTO sign_in_slots (email_key, ip) VALUES ($1, $2)`, [
+          person.email,
+          ip,
+        ]);
+      }
+      const turnedAway = await call(
+        cookie,
+        'POST',
+        '/api/auth/two-factor/verify-totp',
+        { code: totpCode(secret) },
+        ip,
+      );
+      expect(turnedAway.status).toBe(401);
+      expect(turnedAway.body).toMatchObject({ code: 'INVALID_CODE' });
+      expect(await attempts(person.email)).toBe(0);
+
+      // Those slots age out; the same challenge still works, so it was not ended.
+      await owner.pool.query(
+        `UPDATE sign_in_slots SET created_at = now() - interval '61 seconds' WHERE email_key = $1`,
+        [person.email],
+      );
+      const done = await call(
+        cookie,
+        'POST',
+        '/api/auth/two-factor/verify-totp',
+        { code: totpCode(secret) },
+        ip,
+      );
+      expect(done.status).toBe(200);
+      expect(cookieNamed(done, 'session_token')).toBeDefined();
+      await owner.pool.query(`DELETE FROM sign_in_slots WHERE email_key = $1`, [person.email]);
+    });
+
     it('lets a backup code sign in once, and not again', async () => {
       const person = await addPerson();
       const { backupCodes } = await enroll(person.email);

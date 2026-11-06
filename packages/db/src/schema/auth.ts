@@ -155,6 +155,24 @@ export const signInAttempts = pgTable(
 );
 
 /**
+ * One row per password or code being checked right now (spec 0005, AC-3), so a burst can never
+ * check more than the lock limits allow. No foreign key: an unknown email behaves like a real
+ * one. A row older than 60 seconds holds no place and is removed nightly (AC-22). Never insert
+ * one outside `SignInLockout.takeSlot`, which hands slots out under the per email lock.
+ */
+export const signInSlots = pgTable(
+  'sign_in_slots',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    emailKey: text('email_key').notNull(),
+    ip: text('ip').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('sign_in_slots_email_ip_idx').on(t.emailKey, t.ip)],
+);
+
+/**
  * One authenticator app secret and its backup codes per person (spec 0005, AC-20). Better Auth
  * encrypts `secret` and `backup_codes` with `BETTER_AUTH_SECRET`. The three columns after
  * `backup_codes` are the ones its two factor plugin adds: `verified` stays false until the first

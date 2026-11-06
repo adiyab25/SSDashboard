@@ -15,12 +15,12 @@ The identity module: staff sign in for the api (Better Auth wired into NestJS, a
 | `../platform/audience/` | `@Audience(...)` and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `sign-in/roles.guard.ts`, `sign-in/roles.decorator.ts` | Admin only routes |
 | `sign-in/current-staff.ts` | Reads the signed in user from the request. Ledger routes take the poster from here |
-| `sign-in/session-policy.ts`, `sign-in/sign-in-lockout.ts` | 12 hour sliding session with a 7 day cap, five strikes lockout |
-| `sign-in/auth-hooks.ts` | Origin check, forced password change, lockout counting |
+| `sign-in/session-policy.ts`, `sign-in/sign-in-lockout.ts` | 12 hour sliding session with a 7 day cap, five strikes lockout, and the `sign_in_slots` that cap how many passwords or codes are checked at once (`takeSlot`, `giveBack`) |
+| `sign-in/auth-hooks.ts` | Origin check, forced password change, lockout counting; the before hook takes a sign in slot as its last step and the after hook gives it back on every ending |
 | `sign-in/first-admin.ts`, `sign-in/reset-admin.ts` | The logic behind `create-admin` and `create-admin --reset-password` |
-| `sign-in/auth-cleanup.job.ts` | Nightly worker job that deletes expired sessions, tokens and counters |
+| `sign-in/auth-cleanup.job.ts` | Nightly worker job that deletes expired sessions, tokens, counters and sign in slots older than 60 seconds |
 | `sign-in/mail-recipients.ts` | `MailRecipients`: the recipient and token row the mail worker reads at send time |
-| `sign-in/locks.ts` | The advisory lock that protects the last admin rule |
+| `sign-in/locks.ts` | The advisory locks: `ADMIN_RULE_LOCK` (the last admin rule) and `SIGN_IN_SLOT_LOCK` (slots for one email handed out one at a time) |
 | `staff/staff.service.ts`, `staff/staff.controller.ts` | `/api/staff`: invite, edit, disable, reset, revoke |
 | `staff/staff-directory.ts` | `StaffDirectory`: read only names for other modules |
 
@@ -43,6 +43,8 @@ docker compose --env-file .env run --rm api node dist/create-admin.js --reset-tw
 - A route that posts to the ledger validates with `PostingRequest` or `ReverseRequest` from `@ssdashboard/contracts`, never `PostingInput`, and sets `postedBy` from `sign-in/current-staff.ts`. `src/inventory/controller-contracts.spec.ts` fails if a controller imports the service schemas.
 - Sign in failures give identical answers for unknown emails, wrong passwords and locked accounts, so the api never reveals which accounts exist.
 - Take `ADMIN_RULE_LOCK` (`sign-in/locks.ts`) before any change that could remove the last active admin.
+- A password, second factor code or current password answer is checked only with a slot in `sign_in_slots` (spec 0005, AC-3). `SignInLockout.takeSlot` hands slots out under `pg_advisory_xact_lock(SIGN_IN_SLOT_LOCK, hashtext(email_key))` with `lock_timeout` 2s, and it must stay the last step of the before hook: once a slot is held nothing may throw before the after hook, which gives it back on every ending (a counted failure in the same transaction as the upsert). A new route that checks a password or code takes a slot the same way. A slot older than 60 seconds (`clock_timestamp()`) holds no place.
+- Raw SQL in this module never names `tenant_id` except as an `ON CONFLICT` target; the column default fills it (spec 0005, AC-32; `test/auth-tenant.e2e-spec.ts`).
 - One staff origin (`PUBLIC_URL` today, `STAFF_ORIGIN` after spec 0007's rename) is the Better Auth base URL, the only trusted origin, the Origin check, the `Secure` flag and the base of email links. Email links are that origin plus `STAFF_BASE_PATH` plus the route (`src/mail/mail.worker.ts`). Never add `PORTAL_ORIGIN` to the trusted origins.
 - Cron settings (`AUTH_CLEANUP_CRON`, `LEDGER_RECONCILE_CRON`), `STAFF_BASE_PATH` and `PORTAL_ORIGIN` are checked at startup in `src/config/env.ts`; a bad value stops the process.
 
@@ -50,6 +52,7 @@ docker compose --env-file .env run --rm api node dist/create-admin.js --reset-tw
 
 - Better Auth encrypts two factor secrets and backup codes with `BETTER_AUTH_SECRET`. Changing that secret makes every enrolled authenticator unusable.
 - The `X-Forwarded-For` header is trusted only because `caddy` is the one service that publishes ports in `deploy/compose.yaml`. `test/compose-ports.spec.ts` guards that.
+- Better Auth skips the after hooks when a route ends with an error that is not an `APIError`, so such a request holds its slot until it is 60 seconds old.
 - Better Auth keeps pending two factor challenges as `verifications` rows with an identifier starting `2fa-`. Any reset that must end a half finished sign in has to delete them too.
 - Cookie `Path` comes from `advanced.defaultCookieAttributes.path`, which Better Auth 1.7.15 merges over its own `path: "/"` for every cookie it creates, the clearing on sign out included (`dist/cookies/index.mjs`). A per cookie `advanced.cookies.<name>.attributes` would override it, so never set one. `test/staff-cookie.e2e-spec.ts` proves the path and the missing `Domain`.
 - `deploy/Caddyfile` sets only `X-Forwarded-For` on the way to the api; it does not set `X-Forwarded-Host` itself, and today it serves one site, so there is no portal host yet. The portal check reads both `X-Forwarded-Host` and `Host`, and only refuses. Recheck it when feature 26 adds the portal site block.

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SIGN_IN_SLOT_LOCK } from '../src/identity/sign-in/locks.js';
 import { LOCKOUT, SignInLockout } from '../src/identity/sign-in/sign-in-lockout.js';
 import {
   createScratchDatabase,
@@ -111,13 +112,20 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       )
       .then((result) => result.rows);
 
+  const slots = (email: string) =>
+    owner.pool
+      .query<{ n: number }>(`SELECT count(*)::int AS n FROM sign_in_slots WHERE email_key = $1`, [
+        email,
+      ])
+      .then((result) => result.rows[0]?.n ?? 0);
+
   const me = (cookie: string) => fetch(`${base}/api/me`, { headers: { cookie } });
 
   describe('the schema', () => {
     it('has the counter tables live after the migration', async () => {
       const { rows } = await owner.pool.query<{ table_name: string; column_name: string }>(
         `SELECT table_name, column_name FROM information_schema.columns
-          WHERE table_name IN ('rate_limits', 'sign_in_attempts') ORDER BY 1, 2`,
+          WHERE table_name IN ('rate_limits', 'sign_in_attempts', 'sign_in_slots') ORDER BY 1, 2`,
       );
       const columns = (table: string) =>
         rows.filter((row) => row.table_name === table).map((row) => row.column_name);
@@ -129,6 +137,13 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
         'scope',
         'tenant_id',
         'window_started_at',
+      ]);
+      expect(columns('sign_in_slots')).toEqual([
+        'created_at',
+        'email_key',
+        'id',
+        'ip',
+        'tenant_id',
       ]);
     });
   });
@@ -204,7 +219,7 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       expect((await signIn(person.email, PASSWORD, freshIp())).status).toBe(401);
     });
 
-    it('does not lose a count when attempts arrive at the same moment', async () => {
+    it('checks at most five passwords when attempts for one pair arrive at the same moment, and counts each one', async () => {
       const person = await addUser();
       const ip = freshIp();
 
@@ -214,10 +229,10 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
 
       // Every attempt gets the same generic answer: none fell over or hit a rate limit.
       expect(answers.every((a) => a.status === 401 && a.text === answers[0]?.text)).toBe(true);
-      // An attempt that arrives once the lock is set is turned away before its password is
-      // checked, and is not counted (AC-3). How many do depends on timing, so each attempt is
-      // read from its audit line: a checked password is `bad_credentials`, a turned away one is
-      // `locked`. The lines reach the pipe a moment after the answers.
+      // An attempt that gets no free slot is turned away before its password is checked, and
+      // is not counted (AC-3). Each attempt is read from its audit line: a checked password is
+      // `bad_credentials`, a turned away one is `locked`. The lines reach the pipe a moment
+      // after the answers.
       const reasons = (): string[] =>
         (api as RunningProcess)
           .output()
@@ -228,14 +243,115 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       const checked = reasons().filter((r) => r === 'bad_credentials').length;
       expect(checked + reasons().filter((r) => r === 'locked').length).toBe(10);
 
-      // Every checked password was counted, on both rows: none was lost to the race.
+      // Whatever the concurrency, no more passwords are checked than the pair limit, and every
+      // checked one was counted on both rows: none was lost to the race.
+      expect(checked).toBe(LOCKOUT.pairLimit);
       const rows = await attempts(person.email);
-      expect(checked).toBeGreaterThanOrEqual(LOCKOUT.pairLimit);
-      expect(rows.find((row) => row.scope === ip)).toMatchObject({
-        failures: checked,
-        locked: true,
-      });
-      expect(rows.find((row) => row.scope === '*')?.failures).toBe(checked);
+      expect(rows.find((row) => row.scope === ip)).toMatchObject({ failures: 5, locked: true });
+      expect(rows.find((row) => row.scope === '*')?.failures).toBe(5);
+      // Every slot was given back.
+      expect(await slots(person.email)).toBe(0);
+    });
+
+    it('stops counting a slot left behind for more than 60 seconds', async () => {
+      const person = await addUser();
+      const ip = freshIp();
+      // Five slots from requests that died before they could give them back.
+      for (let i = 0; i < LOCKOUT.pairLimit; i += 1) {
+        await owner.pool.query(
+          `INSERT INTO sign_in_slots (email_key, ip, created_at) VALUES ($1, $2, now())`,
+          [person.email, ip],
+        );
+      }
+      // While they are young they hold every place: the right password is turned away.
+      expect((await signIn(person.email, PASSWORD, ip)).status).toBe(401);
+      expect(await attempts(person.email)).toEqual([]);
+
+      await owner.pool.query(
+        `UPDATE sign_in_slots SET created_at = now() - interval '61 seconds' WHERE email_key = $1`,
+        [person.email],
+      );
+      const answer = await signIn(person.email, PASSWORD, ip);
+      expect(answer.status).toBe(200);
+      expect(answer.cookie).toBeDefined();
+    });
+
+    it('caps the email across addresses: held slots plus failures at 20 turn a new address away', async () => {
+      const person = await addUser();
+      // 16 failures in the window from eight addresses, two each, then four slots held from four
+      // of them: no pair reaches five (at most 2 + 1), but the email is at 16 + 4 = 20.
+      const ips = Array.from({ length: 8 }, () => freshIp());
+      for (const ip of ips) {
+        await owner.pool.query(
+          `INSERT INTO sign_in_attempts (email_key, scope, failures, window_started_at)
+           VALUES ($1, $2, 2, now())`,
+          [person.email, ip],
+        );
+      }
+      await owner.pool.query(
+        `INSERT INTO sign_in_attempts (email_key, scope, failures, window_started_at)
+         VALUES ($1, '*', 16, now())`,
+        [person.email],
+      );
+      for (const ip of ips.slice(0, 4)) {
+        await owner.pool.query(
+          `INSERT INTO sign_in_slots (email_key, ip, created_at) VALUES ($1, $2, now())`,
+          [person.email, ip],
+        );
+      }
+      const before = await attempts(person.email);
+
+      // A fresh address with the right password is turned away, and nothing is counted.
+      const newIp = freshIp();
+      const turnedAway = await signIn(person.email, PASSWORD, newIp);
+      expect(turnedAway.status).toBe(401);
+      expect(turnedAway.cookie).toBeUndefined();
+      expect(await attempts(person.email)).toEqual(before);
+      expect(await slots(person.email)).toBe(4);
+
+      // Once the held slots are older than 60 seconds they hold no place: 16 is under 20.
+      await owner.pool.query(
+        `UPDATE sign_in_slots SET created_at = now() - interval '61 seconds' WHERE email_key = $1`,
+        [person.email],
+      );
+      const answer = await signIn(person.email, PASSWORD, newIp);
+      expect(answer.status).toBe(200);
+      expect(answer.cookie).toBeDefined();
+    });
+
+    it('turns a request away, uncounted, when it waits too long for its turn on the email', async () => {
+      const email = `waiting${counter}@example.com`;
+      const appUrl = new URL(scratch.url);
+      appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
+      const app = createDatabase(appUrl.toString(), { max: 2 });
+      const holder = await owner.pool.connect();
+      try {
+        // Another request holds the email's turn for longer than the lock timeout.
+        await holder.query('BEGIN');
+        await holder.query(`SELECT pg_advisory_xact_lock($1::int, hashtext($2::text))`, [
+          SIGN_IN_SLOT_LOCK,
+          email,
+        ]);
+        const taken = await new SignInLockout(app).takeSlot(email, freshIp());
+        expect(taken).toEqual({ slot: null, locked: false });
+        expect(await slots(email)).toBe(0);
+        expect(await attempts(email)).toEqual([]);
+      } finally {
+        await holder.query('ROLLBACK');
+        holder.release();
+        await app.pool.end();
+      }
+    });
+
+    it('gives the slot back after an attempt that is not counted', async () => {
+      const banned = await addUser({ banned: true });
+      const ip = freshIp();
+      expect((await signIn(banned.email, PASSWORD, ip)).status).toBe(403);
+      expect(await slots(banned.email)).toBe(0);
+
+      const person = await addUser();
+      expect((await signIn(person.email, PASSWORD, ip)).status).toBe(200);
+      expect(await slots(person.email)).toBe(0);
     });
 
     it('counts every one of many failures recorded at the same moment, and locks once', async () => {
