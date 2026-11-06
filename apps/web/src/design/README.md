@@ -1,6 +1,6 @@
 # Design gallery
 
-A development only `/design` page that shows the design system components, plus the contrast helper used to check color roles. Production bundles drop it.
+A development only `/design` page that shows the design system components, plus the contrast helper used to check color roles (text, meaning color, and boundary pairs) and the type specimens (Inter, Noto Sans Arabic, JetBrains Mono). Production bundles drop it.
 
 ## Owns
 

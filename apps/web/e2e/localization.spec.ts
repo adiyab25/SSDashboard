@@ -234,7 +234,7 @@ test.describe('layout and accessibility (AC-10, AC-12)', () => {
     expect(await version.evaluate((element) => getComputedStyle(element).direction)).toBe('ltr');
   });
 
-  test('Arabic text uses IBM Plex Sans Arabic (AC-12)', async ({ page }, info) => {
+  test('Arabic text uses Noto Sans Arabic (AC-12)', async ({ page }, info) => {
     desktopOnly(info.project.name);
     await setLanguageCookie(page, 'ar');
 
@@ -246,7 +246,7 @@ test.describe('layout and accessibility (AC-10, AC-12)', () => {
       await document.fonts.ready;
       return [...document.fonts].filter((face) => face.status === 'loaded').map((f) => f.family);
     });
-    expect(loaded.some((family) => /Plex Sans Arabic/i.test(family))).toBe(true);
+    expect(loaded.some((family) => /Noto Sans Arabic/i.test(family))).toBe(true);
   });
 
   test('at 375px in Arabic nothing in the shell is clipped or overlapping (AC-12)', async ({
