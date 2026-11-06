@@ -1,9 +1,8 @@
 'use client';
 
-import { Popover, PopoverAnchor, PopoverContent } from '@ssdashboard/ui/components/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@ssdashboard/ui/components/popover';
 import { StatusChip } from '@ssdashboard/ui/status/status-chip';
 import { StatusChipOverflow } from '@ssdashboard/ui/status/status-chip-overflow';
-import { useEffect, useRef, useState } from 'react';
 
 type OverflowStatusesSampleProps = {
   /** The accessible name of the "+N" button, already translated. */
@@ -14,41 +13,17 @@ type OverflowStatusesSampleProps = {
 
 /**
  * The "+N" chip of an order row as a button that opens a popover listing the hidden statuses, so
- * a failed or owed status is never unreachable. `StatusChipOverflow` does not forward trigger
- * props, so the open state is held here and mirrored to `aria-expanded` on its button. It must
- * never be used for anything but the sample: a product screen needs the component to carry
- * those attributes itself.
+ * a failed or owed status is never unreachable. `PopoverTrigger asChild` supplies the open state,
+ * `aria-expanded`, `aria-haspopup`, and focus return to `StatusChipOverflow`, which forwards them
+ * to its button. It must never be used for anything but the sample.
  */
 export function OverflowStatusesSample({ label, statuses }: OverflowStatusesSampleProps) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const button = anchorRef.current?.querySelector('button');
-    button?.setAttribute('aria-expanded', String(open));
-    button?.setAttribute('aria-haspopup', 'dialog');
-  }, [open]);
-
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <span ref={anchorRef} className="inline-flex">
-          <StatusChipOverflow
-            count={statuses.length}
-            label={label}
-            onClick={() => setOpen((current) => !current)}
-          />
-        </span>
-      </PopoverAnchor>
-      <PopoverContent
-        align="start"
-        aria-label={label}
-        className="w-auto gap-2 p-3"
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          anchorRef.current?.querySelector('button')?.focus();
-        }}
-      >
+    <Popover>
+      <PopoverTrigger asChild>
+        <StatusChipOverflow count={statuses.length} label={label} />
+      </PopoverTrigger>
+      <PopoverContent align="start" aria-label={label} className="w-auto gap-2 p-3">
         <ul className="flex flex-col items-start gap-2">
           {statuses.map((status) => (
             <li key={status.label}>
