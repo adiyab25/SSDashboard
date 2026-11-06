@@ -455,7 +455,7 @@ The amendment only (Amendment 2026-11-05, with the fix pass of the same day). Tr
 
 **Milestone 5: Scale at 50,000 SKUs, in its own CI job**
 19. [x] `apps/api/test/scale-seed.ts` and `scale.e2e-spec.ts` reshaped to the catalog child's load (50,000 variants, 500,000 movements, 150,000 orders, and the related rows) with one p95 assertion per budget row; a foreign key index check in `schema.e2e-spec.ts`; the measured p95 values recorded in `verify.md` and the budgets reset from the first run where they were **Assumed**, satisfies **AC-36**
-20. [ ] A `scale` job in `.github/workflows/ci.yml` that runs the scale file on a nightly schedule and on pull requests labelled `scale`, and the default api `test:e2e` excluding `test/scale.e2e-spec.ts`; spec 0010's 5,000,000 audit entry check runs in the same file and job, satisfies **AC-36**
+20. [x] A `scale` job in `.github/workflows/ci.yml` that runs the scale file on a nightly schedule and on pull requests labelled `scale`, and the default api `test:e2e` excluding `test/scale.e2e-spec.ts`; spec 0010's 5,000,000 audit entry check runs in the same file and job, satisfies **AC-36**
 
 **Done when** `pnpm build && pnpm --filter @ssdashboard/api test:scale` passes with every p95 under its budget; `pnpm test:e2e` no longer runs the scale file; the `scale` job is green on a labelled pull request; and `pnpm --filter @ssdashboard/db test:e2e` passes including the foreign key index check.
 
