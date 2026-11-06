@@ -1,7 +1,7 @@
 # 0005. Staff sign in with Better Auth: email and password, admin managed accounts, optional two factor
 
 **Date**: 2026-11-03
-**Status**: Proposed (amendment of 2026-11-05 for scope feature 7; the original decision was accepted and built)
+**Status**: Accepted and built (the amendment of 2026-11-05 for scope feature 7 was built on 2026-11-06; the original decision was accepted and built before it)
 
 ## Summary
 

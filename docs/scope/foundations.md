@@ -75,11 +75,11 @@ Staff accounts, sessions, and lockouts for the brand's team, with a break glass 
   - [x] Tenant id on the auth tables
   - [x] Audience aware guard, partner users, and sessions on hat changes
   - [x] Sign in pages for both audiences and the run book
-- [ ] Verify it: `/check verify staff sign in`
-- [ ] Test it: `/test staff sign in`
-- [ ] Review it: `/check review staff sign in`
-- [ ] Document it: `/document staff sign in`
-Spec [0005](../specs/0005-staff-sign-in/index.md) (amendment of 2026-11-05, Proposed)
+- [x] Verify it: `/check verify staff sign in`
+- [x] Test it: `/test staff sign in`
+- [x] Review it: `/check review staff sign in`
+- [x] Document it: `/document staff sign in`
+Spec [0005](../specs/0005-staff-sign-in/index.md) (amendment of 2026-11-05, built 2026-11-06)
 
 ### 8. Roles as hats · GA
 Permissions as hats one person can wear several of: support, operations, warehouse, manager, plus external hats for the media buyer (campaign results only, no customer data) and partners (their own given, sold, owed). Cost and margin are a separate permission, off for support by default. Teams and routing are later settings on the same data.
