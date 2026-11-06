@@ -75,6 +75,36 @@ describe('lineMatchState', () => {
     expect(lineMatchState(rows)).toMatchObject({ result: 'accounted', terminal: true });
   });
 
+  it('ends an accounted line as cleared by the superseded clear (D1)', () => {
+    const rows = [match('a', null, 'accounted'), match('b', 'a', 'cleared', 'superseded')];
+    expect(lineMatchState(rows)).toMatchObject({
+      result: 'cleared',
+      reasonCode: 'superseded',
+      terminal: true,
+      settled: true,
+      latestMatchId: 'b',
+    });
+  });
+
+  it.each([
+    ['a rematch', match('b', 'a', 'matched')],
+    ['another account code', match('b', 'a', 'accounted')],
+    ['an unmatch', match('b', 'a', 'unmatched', 'accounted_in_error')],
+    ['a clear with another reason', match('b', 'a', 'cleared', 'accounted_in_error')],
+  ])('throws on %s after an accounted row (D1, the database refuses it too)', (_case, row) => {
+    expect(() => lineMatchState([match('a', null, 'accounted'), row])).toThrow(InvalidMatchChain);
+  });
+
+  // Review R17: a cleared line belongs to a superseded statement, so nothing follows it.
+  it.each([
+    ['an accounting', match('c', 'b', 'accounted')],
+    ['a rematch', match('c', 'b', 'matched')],
+    ['another clear', match('c', 'b', 'cleared', 'superseded')],
+  ])('throws on %s after a cleared row (R17, the database refuses it too)', (_case, row) => {
+    const chain = [match('a', null, 'accounted'), match('b', 'a', 'cleared', 'superseded'), row];
+    expect(() => lineMatchState(chain)).toThrow(InvalidMatchChain);
+  });
+
   it('throws when two rows are heads (a corrupt chain)', () => {
     expect(() =>
       lineMatchState([match('a', null, 'matched'), match('b', null, 'matched')]),

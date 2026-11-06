@@ -78,7 +78,11 @@ export const settlementLineKind = pgEnum('settlement_line_kind', [
   'adjustment',
 ]);
 
-/** What one match row says about a line. `accounted` is terminal; `cleared` is only for superseded statements. */
+/**
+ * What one match row says about a line. `accounted` is terminal, except that a line of a superseded
+ * statement may still be `cleared` with the reason `superseded` (domain review D1); `cleared` is
+ * only for superseded statements.
+ */
 export const settlementMatchResult = pgEnum('settlement_match_result', [
   'matched',
   'accounted',
@@ -174,7 +178,7 @@ export const settlementPeriodEvents = pgTable(
     action: settlementPeriodAction('action').notNull(),
     /** A close: the statement total, the matched plus accounted total, the checksum, and how it closed. */
     evidence: jsonb('evidence'),
-    /** Required on a revoke. */
+    /** Required on a revoke: a code (`reasonCodeShape`, security review S4), never a typed note. */
     reason: text('reason'),
     actorType: settlementPeriodActorType('actor_type').notNull(),
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'restrict' }),
@@ -196,6 +200,7 @@ export const settlementPeriodEvents = pgTable(
       'settlement_period_events_person_has_actor',
       sql`${t.actorType} <> 'person' OR ${t.actorId} IS NOT NULL`,
     ),
+    check('settlement_period_events_reason_shape', reasonCodeShape(t.reason)),
   ],
 );
 
@@ -279,7 +284,7 @@ export const settlementLines = pgTable(
       .references(() => settlementAccounts.id, { onDelete: 'restrict' }),
     statementId: uuid('statement_id').notNull(),
     lineKind: settlementLineKind('line_kind').notNull(),
-    /** The carrier's own fee name on an `other_fee` line. */
+    /** The carrier's own fee name: set on every `other_fee` line and on no other kind (two checks). */
     feeCode: text('fee_code'),
     /** Signed: positive is owed to the brand by the account owner. */
     amount: money('amount').notNull(),
@@ -291,7 +296,7 @@ export const settlementLines = pgTable(
     businessReference: text('business_reference'),
     storeId: uuid('store_id').references(() => stores.id, { onDelete: 'restrict' }),
     partnerCode: text('partner_code'),
-    /** The statement's own wording (an `adjustment`, a partner line). */
+    /** The statement's own wording (an `adjustment`, a partner line), at most 500 characters; redacted in logs. */
     partnerText: text('partner_text'),
     partnerOrderRef: text('partner_order_ref'),
     /** Negative for a return. */
@@ -308,12 +313,11 @@ export const settlementLines = pgTable(
       columns: [t.statementId, t.accountId],
       foreignColumns: [settlementStatements.id, settlementStatements.accountId],
     }).onDelete('restrict'),
-    unique('settlement_lines_statement_ref_unique').on(
-      t.tenantId,
-      t.accountId,
-      t.statementId,
-      t.externalLineRef,
-    ),
+    // Domain review D6 (feature 4 close): `fee_code` is part of a line's identity, so two different
+    // `other_fee` fees on one delivery in one cash cycle are two lines. Null for every other kind.
+    unique('settlement_lines_statement_ref_unique')
+      .on(t.tenantId, t.accountId, t.statementId, t.externalLineRef, t.feeCode)
+      .nullsNotDistinct(),
     index('settlement_lines_tracking_idx').on(t.trackingNumber),
     // Leads with the (statement_id, account_id) foreign key, so it also serves statement_id alone.
     index('settlement_lines_statement_idx').on(t.statementId, t.accountId),
@@ -323,6 +327,14 @@ export const settlementLines = pgTable(
       'settlement_lines_other_fee_has_code',
       sql`${t.lineKind} <> 'other_fee' OR ${t.feeCode} IS NOT NULL`,
     ),
+    // Domain review, fix re-check: the reverse, so a fee name can never split the dedupe key of
+    // any other kind (two `cod_collected` lines under one reference with different fee names).
+    check(
+      'settlement_lines_fee_code_only_on_other_fee',
+      sql`${t.lineKind} = 'other_fee' OR ${t.feeCode} IS NULL`,
+    ),
+    // Security review S4: the partner's wording stays bounded (it is kept for ever and redacted in logs).
+    check('settlement_lines_partner_text_length', sql`char_length(${t.partnerText}) <= 500`),
   ],
 );
 
@@ -348,6 +360,7 @@ export const settlementLineMatches = pgTable(
     accountCode: text('account_code'),
     /** The refund an accounted line settles; its foreign key arrives with feature 35. */
     refundId: uuid('refund_id'),
+    /** At most 500 characters; redacted in logs (security review S4). */
     paymentReference: text('payment_reference'),
     /** Required on `unmatched` and `cleared`. */
     reasonCode: text('reason_code'),
@@ -361,7 +374,8 @@ export const settlementLineMatches = pgTable(
     // One chain per line (security review m4, n2): a row supersedes a row of its own line, each
     // row is superseded at most once (which serializes concurrent matchers), and a line has one
     // first row. The insert trigger `settlement_line_matches_extends_chain` (rules migration) keeps
-    // every new row on the current head and refuses to supersede an `accounted` row.
+    // every new row on the current head and refuses to supersede an `accounted` row, except with a
+    // `cleared` row, reason `superseded`, once the line's statement is superseded (domain review D1).
     unique('settlement_line_matches_id_line_unique').on(t.id, t.lineId),
     foreignKey({
       columns: [t.supersedesMatchId, t.lineId],
@@ -413,5 +427,9 @@ export const settlementLineMatches = pgTable(
     check('settlement_line_matches_reason_code_shape', reasonCodeShape(t.reasonCode)),
     check('settlement_line_matches_account_code_shape', reasonCodeShape(t.accountCode)),
     check('settlement_line_matches_rule_code_shape', reasonCodeShape(t.ruleCode)),
+    check(
+      'settlement_line_matches_payment_reference_length',
+      sql`char_length(${t.paymentReference}) <= 500`,
+    ),
   ],
 );

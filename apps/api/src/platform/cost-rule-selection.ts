@@ -54,7 +54,8 @@ export interface CostRuleCandidate {
 /**
  * Picks the rule in force on `onDay` from the rows of one kind (spec 0002, catalog child, "Per
  * order cost rules"): the latest `effectiveFrom` not after the day, then the latest `recordedAt`,
- * then the greatest `id` (two rows written in one transaction share `recordedAt`). A day before
+ * then the greatest `id` (the last tiebreaker for an equal instant; the database sets `recordedAt`
+ * to the moment of the insert, whatever the writer sends, security review S1). A day before
  * the first row, or a winning `not_set` row, is `not_set`. Pure: it never reads the database and
  * never answers 0 for a rule that is not set (AC-32).
  */

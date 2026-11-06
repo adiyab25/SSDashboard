@@ -26,7 +26,16 @@ function audit(event: string, targetId: string): void {
 }
 
 const env = loadEnv();
-const { db, pool } = createDatabase(env.DATABASE_URL, { max: 1 });
+// Review R22: the connection checks its session tenant before it serves any query, like the api and
+// worker pool, so a forged ssd.tenant_id never stamps the admin's rows. The message names tenant ids
+// only (no personal data).
+const { db, pool } = createDatabase(env.DATABASE_URL, {
+  max: 1,
+  onTenantMismatch: (error) => {
+    console.error(`create-admin failed: ${error.name}: ${error.message}`);
+    process.exit(1);
+  },
+});
 // Who is staff, for "is there an admin" and "is this an admin" (spec 0005, AC-28). This command has
 // no Nest container, so it must name the same class `identity.module.ts` binds to
 // `SESSION_AUDIENCES`: spec 0008 passes its hat based one here when it rebinds the module.

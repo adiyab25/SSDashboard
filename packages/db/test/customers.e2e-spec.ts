@@ -288,6 +288,14 @@ describe('customers by phone (AC-27, AC-28)', () => {
       );
     });
 
+    it('takes a reason only as a code, never a typed note (security review S4)', async () => {
+      for (const note of ['Same lady, called from her sister phone', 'Duplicate', '01001234567']) {
+        await expect(merge({ reason: note })).rejects.toThrow(/customer_merges_reason_shape/);
+      }
+      await merge({ reason: 'same_phone' });
+      await merge({ reason: null });
+    });
+
     it('records the customers a merge repointed', async () => {
       const repointed = [await customer(), await customer()];
       const id = await merge({ repointed_ids: repointed });

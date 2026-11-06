@@ -22,7 +22,7 @@ Products and their SKUs (variants) for the staff back office: create a product, 
 ```bash
 pnpm --filter @ssdashboard/api test -- src/catalog
 pnpm --filter @ssdashboard/api build
-pnpm --filter @ssdashboard/api test:e2e -- test/master-data.e2e-spec.ts test/cost.e2e-spec.ts
+pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts test/cost.e2e-spec.ts
 ```
 
 ## Governing spec
