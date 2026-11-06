@@ -99,7 +99,7 @@ describe('Arabic digit input at the api edge', { timeout: 90_000 }, () => {
       await call('POST', '/locations', admin, {
         code: 'wh-dig',
         name: { en: 'Digit warehouse' },
-        type: 'warehouse',
+        kind: 'warehouse',
       })
     ).body as { id: string };
 
