@@ -120,3 +120,108 @@ describe('safeReturnTo for the audience of the person (AC-28)', () => {
     expect(isInAudience('/stock', 'partner')).toBe(false);
   });
 });
+
+describe('safeReturnTo after URL normalization (AC-7, review finding 1)', () => {
+  const HOMES = [
+    ['backoffice', '/'],
+    ['partner', '/partner'],
+  ] as const;
+
+  // Each of these is a single slash path as typed, but the URL parser collapses its dot segments
+  // into `//evil.example`, which a browser follows to another site.
+  const COLLAPSING = [
+    '/.//evil.example',
+    '/%2e//evil.example',
+    '/%2E//evil.example',
+    '/a/..//evil.example',
+    '/%2e%2e//evil.example',
+    '/stock/..//evil.example/x',
+    '/x/%2E%2E//evil.example',
+  ];
+
+  // Refused on the raw text already: a backslash, a tab, or a newline anywhere in the path.
+  const RAW_UNSAFE = [
+    '/./\\evil.example',
+    '/\\evil.example',
+    '/\tevil',
+    '/st\tock',
+    '/\nevil',
+    '/sto\nck',
+  ];
+
+  for (const [home, fallback] of HOMES) {
+    it.each([...COLLAPSING, ...RAW_UNSAFE])(
+      `falls back to ${fallback} for ${home}: %j`,
+      (value) => {
+        expect(safeReturnTo(value, ORIGIN, home)).toBe(fallback);
+      },
+    );
+
+    it(`never answers a protocol relative path for ${home}, whatever the dot prefix`, () => {
+      const prefixes = [
+        '/.',
+        '/%2e',
+        '/%2E',
+        '/./.',
+        '/a/..',
+        '/a/%2e%2e',
+        '/a/b/../..',
+        '/stock/..',
+      ];
+      const targets = [
+        '//evil.example',
+        '//evil.example/x?q=1#h',
+        '/\\evil.example',
+        '///evil.example',
+      ];
+      for (const prefix of prefixes) {
+        for (const target of targets) {
+          const answer = safeReturnTo(`${prefix}${target}`, ORIGIN, home);
+          expect(answer, `${prefix}${target}`).toBe(fallback);
+          expect(answer.startsWith('//') || answer.includes('\\')).toBe(false);
+        }
+      }
+    });
+  }
+
+  // An escaped slash is not a path separator: the browser asks this site for the literal path
+  // `/%2F%2Fevil.example` (or `/.%2f/evil.example`), which is a same origin page that does not
+  // exist. Staff keep it as a relative path; a partner user falls back because it is not a
+  // partner page.
+  it.each(['/%2F%2Fevil.example', '/%2f%2fevil.example', '/.%2f/evil.example'])(
+    'keeps the escaped slash path %s on this site for staff, and sends a partner user home',
+    (value) => {
+      expect(safeReturnTo(value, ORIGIN, 'backoffice')).toBe(value);
+      expect(safeReturnTo(value, ORIGIN, 'partner')).toBe('/partner');
+    },
+  );
+});
+
+describe('isInAudience reads the decoded, lowercased path (review finding 7)', () => {
+  it.each(['/EN/partner', '/%70artner', '/%72eturns', '/en/%50ARTNER/account', '/AR/Returns'])(
+    'refuses the partner or portal path %s to staff',
+    (value) => {
+      expect(isInAudience(value, 'backoffice')).toBe(false);
+      expect(safeReturnTo(value, ORIGIN, 'backoffice')).toBe('/');
+    },
+  );
+
+  it.each(['/EN/partner', '/%70artner'])(
+    'sends a partner user asking for the unusual spelling %s to the plain partner home',
+    (value) => {
+      expect(isInAudience(value, 'partner')).toBe(false);
+      expect(safeReturnTo(value, ORIGIN, 'partner')).toBe('/partner');
+    },
+  );
+
+  it('refuses a malformed escape to both audiences', () => {
+    expect(isInAudience('/stock%zz', 'backoffice')).toBe(false);
+    expect(isInAudience('/partner/%E0%A4%A', 'partner')).toBe(false);
+    expect(safeReturnTo('/stock%zz', ORIGIN, 'backoffice')).toBe('/');
+    expect(safeReturnTo('/partner/%E0%A4%A', ORIGIN, 'partner')).toBe('/partner');
+  });
+
+  it('still keeps escaped text that is not a partner or portal page for staff', () => {
+    expect(safeReturnTo('/skus/a%20b', ORIGIN, 'backoffice')).toBe('/skus/a%20b');
+  });
+});

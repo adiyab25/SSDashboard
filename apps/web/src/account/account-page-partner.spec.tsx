@@ -21,16 +21,16 @@ const PARTNER: MeResponse = {
   home: 'partner',
 };
 
-const useMe = vi.hoisted(() => vi.fn());
-vi.mock('@/auth/use-me', () => ({ useMe }));
+const useMeState = vi.hoisted(() => vi.fn());
+vi.mock('@/auth/use-me', () => ({ useMeState, setMe: () => undefined }));
 vi.mock('@/shell/client-config', () => ({
   loadConfig: () => Promise.resolve({ languages: ['en', 'ar'], mailEnabled: false }),
 }));
 
 describe('AccountPage for a partner user (AC-28, AC-34)', () => {
-  beforeEach(() => useMe.mockReturnValue(PARTNER));
+  beforeEach(() => useMeState.mockReturnValue({ status: 'ready', me: PARTNER }));
   afterEach(() => {
-    useMe.mockReset();
+    useMeState.mockReset();
     updateProfile.mockReset();
   });
 
@@ -38,14 +38,14 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     render(<AccountPage audience="partner" />);
 
     await screen.findByLabelText(/^Name/);
-    expect(useMe).toHaveBeenCalledWith('/api/partner/me');
+    expect(useMeState).toHaveBeenCalledWith('/api/partner/me');
   });
 
   it('keeps the back office route for the default audience', async () => {
     render(<AccountPage />);
 
     await screen.findByLabelText(/^Name/);
-    expect(useMe).toHaveBeenCalledWith('/api/me');
+    expect(useMeState).toHaveBeenCalledWith('/api/me');
   });
 
   it('has one heading and shows the email only, with no role or staff code and no staff wording', async () => {
@@ -60,7 +60,18 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     expect(screen.getByText('An administrator changes your email.')).toBeVisible();
   });
 
-  it('saves through /api/partner/me', async () => {
+  it('shows an inline error with no staff wording when /api/partner/me settles empty', async () => {
+    useMeState.mockReturnValue({ status: 'failed' });
+    const { container } = render(<AccountPage audience="partner" />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Check your connection and try again.',
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/staff|employee/i);
+  });
+
+  it('saves through the partner audience', async () => {
     updateProfile.mockResolvedValue({ ok: true, me: PARTNER });
     render(<AccountPage audience="partner" />);
     const name = await screen.findByLabelText(/^Name/);
@@ -71,7 +82,7 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
 
     expect(updateProfile).toHaveBeenCalledWith(
       { name: 'Mona A', phone: '', language: '' },
-      '/api/partner/me',
+      'partner',
     );
   });
 });

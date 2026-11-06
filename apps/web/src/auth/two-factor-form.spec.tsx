@@ -70,18 +70,23 @@ describe('TwoFactorForm (AC-20, AC-3)', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/me', { cache: 'no-store' });
   });
 
-  it.each(['//evil.example', 'https://evil.example'])(
-    'ignores an unsafe returnTo (%s)',
-    async (returnTo) => {
-      atPage(`?returnTo=${encodeURIComponent(returnTo)}`);
-      verifyTotp.mockResolvedValue({ data: {}, error: null });
-      render(<TwoFactorForm />);
+  it.each([
+    '//evil.example',
+    'https://evil.example',
+    '/.//evil.example',
+    '/%2e//evil.example',
+    '/a/..//evil.example',
+    '/%2e%2e//evil.example',
+    '/stock/..//evil.example/x',
+  ])('ignores an unsafe returnTo (%s)', async (returnTo) => {
+    atPage(`?returnTo=${encodeURIComponent(returnTo)}`);
+    verifyTotp.mockResolvedValue({ data: {}, error: null });
+    render(<TwoFactorForm />);
 
-      await verify();
+    await verify();
 
-      await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
-    },
-  );
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
+  });
 
   it('switches to a backup code and back, clearing what was typed', async () => {
     verifyBackupCode.mockResolvedValue({ data: {}, error: null });

@@ -1,4 +1,4 @@
-import { MeResponse } from '@ssdashboard/contracts';
+import { type Home, MeResponse } from '@ssdashboard/contracts';
 import { apiFetch } from './api-fetch';
 import { ME_PATH } from './me-path';
 import { setMe } from './use-me';
@@ -8,13 +8,16 @@ export type ProfileResult =
   { ok: true; me: MeResponse } | { ok: false; status: number; code: string };
 
 /**
- * `PATCH /api/me` (or `path`, `/api/partner/me` for a partner user): the signed in person edits
- * their own name, phone or language (AC-19).
+ * `PATCH` on the signed in person's own route for `audience` (`/api/me` for staff,
+ * `/api/partner/me` for a partner user, through `ME_PATH`): the person edits their own name,
+ * phone or language (AC-19, AC-28). It must never take a free path, so no caller can aim it at
+ * another route.
  */
 export async function updateProfile(
   changes: { name?: string; phone?: string; language?: string },
-  path: string = ME_PATH.backoffice,
+  audience: Home = 'backoffice',
 ): Promise<ProfileResult> {
+  const path = ME_PATH[audience];
   try {
     const response = await apiFetch(path, {
       method: 'PATCH',
@@ -24,7 +27,7 @@ export async function updateProfile(
     const json: unknown = await response.json().catch(() => null);
     if (response.ok) {
       const me = MeResponse.parse(json);
-      setMe(me);
+      setMe(me, path);
       return { ok: true, me };
     }
     const code =

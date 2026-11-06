@@ -23,8 +23,17 @@ const ME: MeResponse = {
   home: 'backoffice',
 };
 
-const me = vi.hoisted((): { current: unknown } => ({ current: null }));
-vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
+const me = vi.hoisted((): { current: unknown; failed: boolean } => ({
+  current: null,
+  failed: false,
+}));
+vi.mock('@/auth/use-me', () => ({
+  useMeState: () => {
+    if (me.current) return { status: 'ready', me: me.current };
+    return { status: me.failed ? 'failed' : 'loading' };
+  },
+  setMe: () => undefined,
+}));
 
 const loadConfig = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 vi.mock('@/shell/client-config', () => ({ loadConfig: () => loadConfig() }));
@@ -32,6 +41,7 @@ vi.mock('@/shell/client-config', () => ({ loadConfig: () => loadConfig() }));
 describe('AccountPage (AC-8, AC-19)', () => {
   beforeEach(() => {
     me.current = ME;
+    me.failed = false;
     loadConfig.mockResolvedValue({ languages: ['en', 'ar'], mailEnabled: false });
   });
   afterEach(() => {
@@ -46,6 +56,19 @@ describe('AccountPage (AC-8, AC-19)', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Loading your account…');
     expect(screen.queryByLabelText(/^Name/)).not.toBeInTheDocument();
+  });
+
+  it('shows an inline error, not an endless loader, when the person could not be loaded', async () => {
+    me.current = null;
+    me.failed = true;
+    render(<AccountPage />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Check your connection and try again.',
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Name/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
   describe('your details', () => {
@@ -79,7 +102,7 @@ describe('AccountPage (AC-8, AC-19)', () => {
 
       expect(updateProfile).toHaveBeenCalledWith(
         { name: 'Samira Ali', phone: '', language: 'en' },
-        '/api/me',
+        'backoffice',
       );
       expect(await screen.findByText('Your details are saved.')).toBeVisible();
     });

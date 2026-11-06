@@ -1,6 +1,6 @@
 # My account
 
-One account screen for both audiences: the signed in person's own profile, password, and two factor. Staff open it at `/account`; a partner user at `/en/partner/account` or `/ar/partner/account`, inside the partner frame (`AccountPage` takes `audience`, which picks `/api/me` or `/api/partner/me`; a partner user sees no role or staff code).
+One account screen for both audiences: the signed in person's own profile, password, and two factor. Staff open it at `/account`; a partner user at `/en/partner/account` or `/ar/partner/account`, inside the partner frame (`AccountPage` takes `audience`, which picks `/api/me` or `/api/partner/me`; a partner user sees no role or staff code). When the person cannot be loaded (the call fails, or `/api/partner/me` does not exist yet), the page shows an inline error instead of loading forever; the way back is the frame's navigation.
 
 ## Owns
 
@@ -17,7 +17,7 @@ One account screen for both audiences: the signed in person's own profile, passw
 
 ```bash
 pnpm --filter @ssdashboard/web test -- src/account
-pnpm --filter @ssdashboard/web test:e2e -- e2e/account.spec.ts
+pnpm --filter @ssdashboard/web test:e2e -- e2e/account.spec.ts e2e/partner-account.spec.ts
 ```
 
 ## Governing spec

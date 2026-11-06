@@ -10,7 +10,7 @@ const THEMES: readonly Theme[] = ['light', 'dark'];
 const DIRECTIONS: readonly TextDirection[] = ['ltr', 'rtl'];
 const LANGUAGE = { ltr: 'en', rtl: 'ar' } as const;
 /** The words a partner must never read, in English and Arabic (AC-34). */
-const STAFF_WORDS = /staff|employee|موظف/i;
+const STAFF_WORDS = /staff|employee|موظف|طاقم|العاملين|(?<![\p{L}\p{M}])عامل(?![\p{L}\p{M}])/iu;
 
 const PARTNER = {
   id: '0190c0de-0000-7000-8000-0000000000aa',
@@ -124,4 +124,26 @@ test.describe('partner account page', () => {
       textFor('rtl', 'account.title'),
     );
   });
+
+  for (const language of ['en', 'ar'] as const) {
+    test(`shows an error and the way home when /api/partner/me fails, in ${language}`, async ({
+      page,
+    }) => {
+      const dir = language === 'ar' ? 'rtl' : 'ltr';
+      await page.route('**/api/partner/me', (route) =>
+        route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: 'Not found' } }),
+      );
+      await page.goto(`/${language}/partner/account`);
+
+      const main = page.getByRole('main');
+      await expect(main.getByRole('alert')).toHaveText(textFor(dir, 'account.twoFactor.failed'));
+      await expect(main.getByRole('status')).toHaveCount(0);
+      await expect(page.locator('#account-name')).toHaveCount(0);
+      await expect(main).not.toContainText(STAFF_WORDS);
+      await expectNoAxeViolations(page);
+
+      await main.getByRole('link', { name: textFor(dir, 'partner.home.title') }).click();
+      await expect(page).toHaveURL(new RegExp(`/${language}/partner$`));
+    });
+  }
 });

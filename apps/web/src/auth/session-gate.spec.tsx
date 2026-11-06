@@ -15,12 +15,25 @@ function setRequest(values: Record<string, string>) {
   for (const [key, value] of Object.entries(values)) incoming.set(key, value);
 }
 
+const ME = {
+  id: '0190c0de-0000-7000-8000-000000000001',
+  name: 'Sam',
+  email: 'sam@example.com',
+  role: 'staff',
+  phone: null,
+  staffCode: null,
+  language: null,
+  twoFactorEnabled: false,
+  mustChangePassword: false,
+  home: 'backoffice',
+};
+
 describe('SessionGate (AC-7)', () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    fetchMock.mockImplementation(() => Promise.resolve(Response.json(ME)));
   });
 
   afterEach(() => {
@@ -40,7 +53,7 @@ describe('SessionGate (AC-7)', () => {
   });
 
   it('sends a person with a temporary password to change it first, bringing the page along (AC-14)', async () => {
-    fetchMock.mockResolvedValue(Response.json({ mustChangePassword: true }));
+    fetchMock.mockResolvedValue(Response.json({ ...ME, mustChangePassword: true }));
     setRequest({ cookie: 'better-auth.session_token=abc', 'x-pathname': '/staff?q=sam' });
 
     await expect(SessionGate({ children: 'page' })).rejects.toThrow(
@@ -49,7 +62,7 @@ describe('SessionGate (AC-7)', () => {
   });
 
   it('lets a person with no forced change through', async () => {
-    fetchMock.mockResolvedValue(Response.json({ mustChangePassword: false }));
+    fetchMock.mockResolvedValue(Response.json({ ...ME, mustChangePassword: false }));
     setRequest({ cookie: 'better-auth.session_token=abc', 'x-pathname': '/' });
 
     await expect(SessionGate({ children: 'page' })).resolves.toBe('page');
@@ -87,5 +100,20 @@ describe('SessionGate (AC-7)', () => {
     setRequest({ cookie: 'better-auth.session_token=abc' });
 
     await expect(SessionGate({ children: 'page' })).rejects.toThrow('answered 500');
+  });
+
+  it.each([
+    ['an empty object', '{}'],
+    ['a person without home', JSON.stringify({ ...ME, home: undefined })],
+    [
+      'a forced change flag that is not a boolean',
+      JSON.stringify({ ...ME, mustChangePassword: 'yes' }),
+    ],
+    ['text that is not JSON', '<html>'],
+  ])('fails loudly on a 200 that breaks the MeResponse contract (%s)', async (_case, body) => {
+    fetchMock.mockResolvedValue(new Response(body, { status: 200 }));
+    setRequest({ cookie: 'better-auth.session_token=abc', 'x-pathname': '/stock' });
+
+    await expect(SessionGate({ children: 'page' })).rejects.toThrow('unknown shape');
   });
 });

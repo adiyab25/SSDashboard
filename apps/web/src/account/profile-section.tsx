@@ -10,7 +10,6 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { updateProfile } from '@/auth/account-api';
-import { ME_PATH } from '@/auth/me-path';
 import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
 import type { MessageKey } from '@ssdashboard/i18n';
 
@@ -60,7 +59,7 @@ export function ProfileSection({ me, languages, audience }: Props) {
     if (found.phone) return void phoneRef.current?.focus();
 
     setPending(true);
-    const result = await updateProfile({ name, phone, language }, ME_PATH[audience]);
+    const result = await updateProfile({ name, phone, language }, audience);
     setPending(false);
     if (result.ok) {
       setSaved(true);

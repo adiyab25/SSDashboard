@@ -60,6 +60,26 @@ test.describe('as a partner user', () => {
 
     await expect(page).toHaveURL(/\/en\/partner\/account$/);
   });
+
+  test('lands on /partner even when /api/partner/me then fails', async ({ page }) => {
+    await page.route('**/api/partner/me', (route) =>
+      route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: 'Not found' } }),
+    );
+    await signInThroughPage(page, person, '/sign-in?returnTo=%2Fstock');
+
+    await expect(page).toHaveURL(/\/en\/partner$/);
+  });
+
+  test('sends a partner user with a temporary password to change it, carrying /partner', async ({
+    page,
+  }) => {
+    await page.route('**/api/partner/me', (route) =>
+      route.fulfill({ json: { ...PARTNER, mustChangePassword: true } }),
+    );
+    await signInThroughPage(page, person, '/sign-in?returnTo=%2Fstock');
+
+    await expect(page).toHaveURL(/\/change-password\?returnTo=%2Fpartner$/);
+  });
 });
 
 test.describe('as a staff person', () => {
@@ -74,5 +94,27 @@ test.describe('as a staff person', () => {
     await signInThroughPage(page, person, '/sign-in?returnTo=%2Faccount');
 
     await expect(page).toHaveURL(/\/account$/);
+  });
+
+  test('lands on / when returnTo collapses into another site after normalization', async ({
+    page,
+    baseURL,
+  }) => {
+    await signInThroughPage(page, person, '/sign-in?returnTo=%2F.%2F%2Fevil.example');
+
+    await expect(page).toHaveURL(new URL('/', baseURL).href);
+  });
+
+  test('goes straight to change password when the password is temporary, carrying returnTo', async ({
+    page,
+  }) => {
+    const temporary = await seedAccount({ role: 'staff', mustChangePassword: true });
+    try {
+      await signInThroughPage(page, temporary, '/sign-in?returnTo=%2Fstock');
+
+      await expect(page).toHaveURL(/\/change-password\?returnTo=%2Fstock$/);
+    } finally {
+      await temporary.remove();
+    }
   });
 });

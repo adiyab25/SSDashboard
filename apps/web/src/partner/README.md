@@ -1,6 +1,6 @@
 # Partner area
 
-A placeholder page at `/en/partner` and `/ar/partner` for consignment partners, and their own account at `/en/partner/account` and `/ar/partner/account` (the shared [account](../account/) screen on `/api/partner/me`, which spec 0008 builds). It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/partner` redirects to the right language in the proxy.
+A placeholder page at `/en/partner` and `/ar/partner` for consignment partners, and their own account at `/en/partner/account` and `/ar/partner/account` (the shared [account](../account/) screen on `/api/partner/me`, which spec 0008 builds; until then it shows an inline error, and the link back to the partner home stays under it). It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), with a plain link to the other language. `/partner` redirects to the right language in the proxy.
 
 ## Owns
 
@@ -17,7 +17,7 @@ A placeholder page at `/en/partner` and `/ar/partner` for consignment partners, 
 
 ```bash
 pnpm --filter @ssdashboard/web test -- src/partner
-pnpm --filter @ssdashboard/web test:e2e -- e2e/audiences.spec.ts
+pnpm --filter @ssdashboard/web test:e2e -- e2e/audiences.spec.ts e2e/partner-account.spec.ts
 ```
 
 ## Governing spec
