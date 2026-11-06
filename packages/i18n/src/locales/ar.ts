@@ -392,6 +392,10 @@ export const ar: Catalog = {
       checking: 'جارٍ الفحص…',
       unreachable: 'لا يمكن الوصول',
       checkAgain: 'افحص مرة أخرى',
+      ok: 'يعمل',
+      degraded: 'يعمل بشكل جزئي',
+      up: 'متصل',
+      down: 'غير متصل',
     },
   },
   inventory: {
