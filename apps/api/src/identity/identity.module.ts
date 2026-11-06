@@ -11,6 +11,7 @@ import { AuthAudit } from './sign-in/auth-audit.service.js';
 import { AuthMail } from './sign-in/auth-mail.service.js';
 import { createAuth } from './sign-in/auth.factory.js';
 import { AUTH, type Auth } from './sign-in/auth.tokens.js';
+import { SESSION_AUDIENCES, StaffOnlySessionAudiences } from './sessions/session-audiences.js';
 import { MeController } from './sign-in/me.controller.js';
 import { ProfileService } from './sign-in/profile.service.js';
 import { RolesGuard } from './sign-in/roles.guard.js';
@@ -40,6 +41,8 @@ import { StaffService } from './staff/staff.service.js';
     AuthMail,
     ProfileService,
     StaffService,
+    // Who may use which audience. Spec 0008 rebinds this token to the hat based implementation.
+    { provide: SESSION_AUDIENCES, useClass: StaffOnlySessionAudiences },
     {
       provide: AUTH,
       inject: [ENV, DATABASE, SignInLockout, AuthAudit, AuthMail],

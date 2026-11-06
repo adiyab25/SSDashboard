@@ -1,22 +1,37 @@
 'use client';
 
+import type { Home } from '@ssdashboard/contracts';
+import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMe } from '@/auth/use-me';
+import { ME_PATH } from '@/auth/me-path';
+import { setMe, useMeState } from '@/auth/use-me';
 import { loadConfig } from '@/shell/client-config';
-import { setMe } from '@/auth/use-me';
 import { PasswordSection } from './password-section';
 import { ProfileSection } from './profile-section';
 import { TwoFactorSection } from './two-factor-section';
 
 /**
- * Your own account (spec 0005, AC-19, AC-25): your details and your password. Two factor sign in
- * joins this page in a later slice. Everything here is about the signed in person only.
+ * Your own account (spec 0005, AC-19, AC-25, AC-28): your details, your password and two factor
+ * sign in. One component for both audiences: the back office route and the partner route render
+ * it, and `audience` picks the api route it reads and saves through (`/api/me` or
+ * `/api/partner/me`). Everything here is about the signed in person only. When the person cannot
+ * be loaded (the call fails or the answer breaks the contract) it shows an inline error instead of
+ * loading forever; the way back is the frame's navigation. With `inFrame` the title is left to the frame's `h1`.
  */
-export function AccountPage() {
+export function AccountPage({
+  audience = 'backoffice',
+  inFrame = false,
+}: {
+  audience?: Home;
+  /** True when the surrounding frame already draws the page's one `h1` (the partner frame's title). */
+  inFrame?: boolean;
+}) {
   const { t } = useTranslation();
-  const me = useMe();
+  const path = ME_PATH[audience];
+  const meState = useMeState(path);
+  const me = meState.status === 'ready' ? meState.me : null;
   const [languages, setLanguages] = useState<readonly string[]>(['en']);
   const [settled, setSettled] = useState(false);
   // Set once two factor is turned on or off here, so the buttons follow without a reload.
@@ -37,22 +52,26 @@ export function AccountPage() {
   return (
     <div className="flex max-w-2xl min-w-0 flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t('account.title')}</h1>
+        {inFrame ? null : <h1 className="text-xl font-semibold">{t('account.title')}</h1>}
         <p className="text-sm text-muted-foreground">{t('account.description')}</p>
       </div>
 
       {me && settled ? (
         <>
-          <ProfileSection me={me} languages={languages} />
+          <ProfileSection me={me} languages={languages} audience={audience} />
           <PasswordSection />
           <TwoFactorSection
             enabled={twoFactor ?? me.twoFactorEnabled}
             onChange={(value) => {
               setTwoFactor(value);
-              setMe({ ...me, twoFactorEnabled: value });
+              setMe({ ...me, twoFactorEnabled: value }, path);
             }}
           />
         </>
+      ) : meState.status === 'failed' ? (
+        <Alert variant="destructive">
+          <AlertDescription>{t('account.twoFactor.failed')}</AlertDescription>
+        </Alert>
       ) : (
         <div role="status" className="flex flex-col gap-3">
           <span className="sr-only">{t('account.loading')}</span>

@@ -1,10 +1,10 @@
 # Partner area
 
-A placeholder page at `/en/partner` and `/ar/partner` for consignment partners. It uses a minimal frame with no staff shell and no session check yet. The page is a server component: its text is rendered on the server in the URL's language (spec 0004, AC-16), inside the `PartnerFrame` (spec 0003, AC-18) with the neutral primary, the install's fallback name, and a navigation of only the pages that exist (the home page; statements, stock at your location and settlement join when they ship), and a plain link to the other language in the frame's actions slot. `/partner` redirects to the right language in the proxy.
+A placeholder page at `/en/partner` and `/ar/partner` for consignment partners, and their own account at `/en/partner/account` and `/ar/partner/account` (the shared [account](../account/) screen on `/api/partner/me`, which spec 0008 builds; until then it shows an inline error). Both pages have no staff shell and no session check yet, and are server components: their text is rendered on the server in the URL's language (spec 0004, AC-16), inside the `PartnerFrame` (spec 0003, AC-18) with the neutral primary, the install's fallback name, and a navigation of the pages that exist (home and My account; statements, stock at your location and settlement join when they ship), and a plain link to the other language in the frame's actions slot. The frame's `title` is the page's one `h1`, so the account screen is drawn with `inFrame` and adds none of its own. `/partner` redirects to the right language in the proxy.
 
 ## Owns
 
-- The page: [partner-page.tsx](partner-page.tsx)
+- The pages: [partner-page.tsx](partner-page.tsx), [partner-account-page.tsx](partner-account-page.tsx) with [partner-account-strings.tsx](partner-account-strings.tsx) (hands the account and sign in Arabic groups to the frame, which carries only the partner groups)
 - The route: `src/app/(partner)/[lang]/partner/page.tsx` and its root layout `src/app/(partner)/[lang]/layout.tsx`
 
 ## Never touches
@@ -17,7 +17,7 @@ A placeholder page at `/en/partner` and `/ar/partner` for consignment partners. 
 
 ```bash
 pnpm --filter @ssdashboard/web test -- src/partner
-pnpm --filter @ssdashboard/web test:e2e -- e2e/audiences.spec.ts
+pnpm --filter @ssdashboard/web test:e2e -- e2e/audiences.spec.ts e2e/partner-account.spec.ts
 ```
 
 ## Governing spec

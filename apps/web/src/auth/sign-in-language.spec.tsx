@@ -20,6 +20,7 @@ const ME = {
   language: null,
   twoFactorEnabled: false,
   mustChangePassword: false,
+  home: 'backoffice',
 };
 
 async function signIn() {

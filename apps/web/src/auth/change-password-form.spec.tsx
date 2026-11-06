@@ -75,18 +75,23 @@ describe('ChangePasswordForm (AC-8, AC-14)', () => {
     await waitFor(() => expect(assign).toHaveBeenCalledWith('/staff?q=sam'));
   });
 
-  it.each(['//evil.example', 'https://evil.example'])(
-    'ignores an unsafe returnTo (%s)',
-    async (returnTo) => {
-      atPage(`?returnTo=${encodeURIComponent(returnTo)}`);
-      changePassword.mockResolvedValue({ data: {}, error: null });
-      render(<ChangePasswordForm />);
+  it.each([
+    '//evil.example',
+    'https://evil.example',
+    '/.//evil.example',
+    '/%2e//evil.example',
+    '/a/..//evil.example',
+    '/%2e%2e//evil.example',
+    '/stock/..//evil.example/x',
+  ])('ignores an unsafe returnTo (%s)', async (returnTo) => {
+    atPage(`?returnTo=${encodeURIComponent(returnTo)}`);
+    changePassword.mockResolvedValue({ data: {}, error: null });
+    render(<ChangePasswordForm />);
 
-      await fillAndSave();
+    await fillAndSave();
 
-      await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
-    },
-  );
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
+  });
 
   it.each([
     [400, 'The current password is not right. Check it and try again.'],

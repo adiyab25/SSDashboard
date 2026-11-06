@@ -63,9 +63,15 @@ describe('PartnerPage', () => {
       inLanguage(code);
       const nav = within(screen.getByRole('navigation'));
 
-      expect(nav.getAllByRole('link')).toHaveLength(1);
-      expect(nav.getByRole('link')).toHaveAttribute('aria-current', 'page');
-      expect(nav.getByRole('link')).toHaveAttribute('href', `/${code}/partner`);
+      const flat = code === 'en' ? enFlat : arFlat;
+      const home = nav.getByRole('link', { name: flat['partner.nav.home'] });
+      const account = nav.getByRole('link', { name: flat['partner.home.account'] });
+
+      expect(nav.getAllByRole('link')).toHaveLength(2);
+      expect(home).toHaveAttribute('aria-current', 'page');
+      expect(home).toHaveAttribute('href', `/${code}/partner`);
+      expect(account).not.toHaveAttribute('aria-current');
+      expect(account).toHaveAttribute('href', `/${code}/partner/account`);
     },
   );
 });

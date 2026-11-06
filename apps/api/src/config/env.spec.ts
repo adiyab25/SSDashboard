@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { loadEnv, staffBase, staffOrigin } from './env.js';
+import { loadEnv, loadMigrateEnv, staffBase, staffOrigin } from './env.js';
 
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
 
@@ -442,6 +442,72 @@ describe('loadEnv', () => {
       loadEnv();
 
       expect(loadEnvFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('loadMigrateEnv', () => {
+    const OWNER_URL = 'postgres://ssdashboard:pw@postgres:5432/ssdashboard';
+
+    beforeEach(() => {
+      // migrate's container gets none of the api's settings (deploy/compose.yaml).
+      vi.stubEnv('DATABASE_URL', undefined);
+      vi.stubEnv('PUBLIC_URL', undefined);
+      vi.stubEnv('BETTER_AUTH_SECRET', undefined);
+    });
+
+    it('needs only MIGRATION_DATABASE_URL, not the api auth settings', () => {
+      vi.stubEnv('MIGRATION_DATABASE_URL', OWNER_URL);
+
+      expect(loadMigrateEnv()).toEqual({
+        NODE_ENV: 'development',
+        MIGRATION_DATABASE_URL: OWNER_URL,
+      });
+    });
+
+    it('reads the app role password, TENANT_ID and APP_DB_ROLE, blank counting as unset', () => {
+      vi.stubEnv('MIGRATION_DATABASE_URL', OWNER_URL);
+      vi.stubEnv('APP_DB_PASSWORD', 'secret');
+      vi.stubEnv('TENANT_ID', '0192f7a0-0000-7000-8000-000000000001');
+      vi.stubEnv('APP_DB_ROLE', 'ssd_acme_app');
+      expect(loadMigrateEnv()).toMatchObject({
+        APP_DB_PASSWORD: 'secret',
+        TENANT_ID: '0192f7a0-0000-7000-8000-000000000001',
+        APP_DB_ROLE: 'ssd_acme_app',
+      });
+
+      vi.stubEnv('TENANT_ID', '');
+      vi.stubEnv('APP_DB_ROLE', '');
+      expect(loadMigrateEnv()).toMatchObject({ TENANT_ID: undefined, APP_DB_ROLE: undefined });
+    });
+
+    it('stops the process and names MIGRATION_DATABASE_URL when it is missing', () => {
+      expect(() => loadMigrateEnv()).toThrow('process.exit(1)');
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(errorLog.mock.calls[0]?.[0]).toMatch(
+        /Invalid environment[\s\S]*MIGRATION_DATABASE_URL/,
+      );
+    });
+
+    it.each([
+      ['a non postgres MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_URL', 'mysql://u:p@h/db'],
+      ['a TENANT_ID that is not a uuid', 'TENANT_ID', 'acme'],
+      ['an APP_DB_ROLE with a quote', 'APP_DB_ROLE', 'a"b'],
+    ])('stops on %s, with the same rules as loadEnv', (_label, name, value) => {
+      vi.stubEnv('MIGRATION_DATABASE_URL', OWNER_URL);
+      vi.stubEnv(name, value);
+
+      expect(() => loadMigrateEnv()).toThrow('process.exit(1)');
+      expect(errorLog).toHaveBeenCalledWith(expect.stringContaining(name));
+    });
+
+    it('loads the local .env outside production, like loadEnv', () => {
+      vi.stubEnv('MIGRATION_DATABASE_URL', OWNER_URL);
+      vi.mocked(existsSync).mockReturnValue(true);
+      const loadEnvFile = vi.spyOn(process, 'loadEnvFile').mockImplementation(() => {});
+
+      loadMigrateEnv();
+
+      expect(loadEnvFile).toHaveBeenCalledOnce();
     });
   });
 });

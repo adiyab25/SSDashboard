@@ -19,6 +19,7 @@ const ME = {
   language: null,
   twoFactorEnabled: false,
   mustChangePassword: false,
+  home: 'backoffice',
 };
 
 describe('UserMenu identity and sign out (AC-25)', () => {

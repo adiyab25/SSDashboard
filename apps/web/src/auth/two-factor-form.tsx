@@ -8,9 +8,8 @@ import { LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { applySavedLanguage } from './apply-saved-language';
 import { authClient } from './auth-client';
-import { safeReturnTo } from './return-to';
+import { finishSignIn } from './finish-sign-in';
 
 /** Better Auth's code for a missing, expired or already used challenge cookie (status 401). */
 const CHALLENGE_ENDED = 'INVALID_TWO_FACTOR_COOKIE';
@@ -49,10 +48,10 @@ export function TwoFactorForm() {
         ? await client.verifyBackupCode({ code: trimmed })
         : await client.verifyTotp({ code: trimmed });
       if (!error) {
-        await applySavedLanguage();
         const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+        const landing = await finishSignIn(returnTo, window.location.origin);
         // A full load, so the shell starts from the new session with no state from before.
-        window.location.assign(safeReturnTo(returnTo, window.location.origin));
+        window.location.assign(landing);
         return;
       }
       if (error.status === 429) setFailure(t('auth.twoFactor.rateLimited'));

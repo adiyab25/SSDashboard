@@ -1,4 +1,5 @@
 import { UnprocessableEntityException } from '@nestjs/common';
+import { MeResponse } from '@ssdashboard/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { assertLanguageEnabled } from '../../platform/languages.js';
 import type { SettingsService } from '../../platform/settings.service.js';
@@ -16,6 +17,7 @@ const STAFF = {
   language: null,
   twoFactorEnabled: false,
   mustChangePassword: false,
+  home: 'backoffice',
   sessionId: 'session-1',
 } as const;
 
@@ -35,6 +37,7 @@ describe('MeController (AC-19, AC-25)', () => {
 
     expect(me).toMatchObject({ name: 'Sam', email: 'sam@example.com', role: 'staff' });
     expect(me).not.toHaveProperty('sessionId');
+    expect(MeResponse.parse(me).home).toBe('backoffice');
   });
 
   it('saves the change for the signed in person only, and answers with the new profile', async () => {
