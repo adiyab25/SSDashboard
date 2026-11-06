@@ -10,6 +10,8 @@ English and Arabic in the browser: the language provider, the cookie and head sc
 - Client language files loaded at runtime: [runtime-languages.ts](runtime-languages.ts)
 - The portal and partner audiences (language in the URL, spec 0004 AC-16): [public-language.ts](public-language.ts) (the two served languages, matching a URL segment), [choose-public-language.ts](choose-public-language.ts) (cookie, then `Accept-Language`, then Arabic, used by the proxy), [page-language.ts](page-language.ts) (`lang` root parameter, 404 otherwise), [other-language-link.tsx](other-language-link.tsx) (the plain link to the other language)
 
+Client languages (runtime files) apply to the back office only (spec 0004, AC-23). The portal and partner pages serve only `en` and `ar`: a saved `ss_lang` that is a valid but non core code (such as a client's `fr`) sends an unprefixed portal or partner link to `/en`, a prefixed path never overwrites that cookie, and a user whose saved language is a client language gets English there until a server side loader exists.
+
 ## Never touches
 
 - Business data or api calls.

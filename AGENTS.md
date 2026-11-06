@@ -24,6 +24,7 @@ pnpm build && pnpm typecheck                  # Build, type check
 pnpm lint                                     # ESLint per workspace + the repo checks (pnpm lint:repo runs those alone)
 pnpm format:check                             # Prettier
 pnpm test                                     # Unit tests (Vitest)
+pnpm check:timezone                           # Release step: tz data of Node and PostgreSQL, then the Cairo daylight saving test (needs Postgres)
 pnpm test:e2e                                 # Database backed e2e + Playwright (needs Postgres); excludes the api scale suite
 pnpm --filter @ssdashboard/api test:scale     # The api scale suite alone (needs Postgres, tens of minutes)
 pnpm db:generate                              # New SQL migration from the Drizzle schema

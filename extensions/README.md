@@ -18,4 +18,6 @@ A client adds a language with no code change and no new web image (spec 0004):
 2. Add the code to the `languages` setting (for example `["en","ar","fr"]`). Optionally set `default_language`.
 3. Reload the back office. Caddy serves the file at `/locales/<code>.json` (it is mounted read only from `extensions/<client>/locales`). A file that is missing, malformed, or has no `_meta` hides that language and logs a console warning; it never breaks the shell.
 
+A client language applies to the back office only. Portal and partner pages, mail, the report, and exports use the core languages (`en`, `ar`); a user whose saved language is a client language gets English there until a server side loader exists, and a `ss_lang` cookie holding a client code sends portal and partner links to `/en` (spec 0004, AC-23).
+
 Right to left is decided by the language code (`ar`, `he`, `fa`, `ur`, `ps`, `sd`, `ug`, `yi`, `dv`, `ckb`).

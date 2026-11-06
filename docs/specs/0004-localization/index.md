@@ -305,9 +305,9 @@ Amendment work only (the original plan above is built). Tracer Bullet: Milestone
 **Done when** `pnpm build && pnpm typecheck && pnpm --filter @ssdashboard/web test && pnpm test:e2e` all pass, and `node packages/config/scripts/check-route-groups.mjs` passes.
 
 **Milestone 4: Operating day test and the time zone release step** (needs `ssd_operating_day(timestamptz)` from the data model, feature 4; start it after that migration lands)
-1. [ ] Database test `packages/db/test/operating-day-dst.e2e-spec.ts` (name to match the existing e2e files there): the fixed 2026 table, the release year's two transitions computed from the rule, a check against Node `Intl` for every row, the 23 and 25 hour day counts, and a failure when the release year does not have exactly two offset changes, satisfies **AC-21**
-2. [ ] Root script `check:timezone` (a file in `packages/config/scripts`) that prints `process.versions.tz`, `process.versions.icu`, and the PostgreSQL version, then runs the test; document it as a release step in `packages/i18n/README.md` for the feature 26 runbook, satisfies **AC-22**
-3. [ ] Update the docs this changes: `packages/i18n/README.md`, `apps/web/src/i18n/README.md`, `apps/api/src/mail/README.md`, `extensions/README.md` (portal and mail use core languages only), satisfies **AC-23**
+1. [x] Database test `packages/db/test/operating-day-dst.e2e-spec.ts` (name to match the existing e2e files there): the fixed 2026 table, the release year's two transitions computed from the rule, a check against Node `Intl` for every row, the 23 and 25 hour day counts, and a failure when the release year does not have exactly two offset changes, satisfies **AC-21**
+2. [x] Root script `check:timezone` (a file in `packages/config/scripts`) that prints `process.versions.tz`, `process.versions.icu`, and the PostgreSQL version, then runs the test; document it as a release step in `packages/i18n/README.md` for the feature 26 runbook, satisfies **AC-22**
+3. [x] Update the docs this changes: `packages/i18n/README.md`, `apps/web/src/i18n/README.md`, `apps/api/src/mail/README.md`, `extensions/README.md` (portal and mail use core languages only), satisfies **AC-23**
 
 **Done when** `pnpm db:migrate && pnpm --filter @ssdashboard/db test:e2e && pnpm check:timezone && pnpm lint` all pass.
 
