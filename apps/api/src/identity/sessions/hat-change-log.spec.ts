@@ -47,6 +47,36 @@ describe('hatChangeLogLine (spec 0005, AC-33 e)', () => {
       'userAgent',
     ]);
   });
+
+  it('adds the before and after holdings and the reason when given (spec 0008, AC-13)', () => {
+    const line = hatChangeLogLine(context, ['support'], ['support'], {
+      before: { hats: ['support'], costView: false, partnerAccountId: null },
+      after: { hats: ['support', 'support'], costView: true, partnerAccountId: null },
+      reason: 'Needs margins for the monthly report',
+    });
+
+    // A cost only change: no hat moved, and the line still says what changed.
+    expect(line).toMatchObject({
+      hatsAdded: [],
+      hatsRemoved: [],
+      before: { hats: ['support'], costView: false, partnerAccountId: null },
+      after: { hats: ['support'], costView: true, partnerAccountId: null },
+      reason: 'Needs margins for the monthly report',
+    });
+  });
+
+  it('copies only the named fields of a holding, so a wider object adds nothing', () => {
+    const wide = {
+      hats: ['partner'],
+      costView: false,
+      partnerAccountId: 'p1',
+      email: 'someone@example.com',
+    };
+
+    const line = hatChangeLogLine(context, [], ['partner'], { after: wide });
+
+    expect(line.after).toEqual({ hats: ['partner'], costView: false, partnerAccountId: 'p1' });
+  });
 });
 
 describe('AuthAudit.hatsChanged', () => {
@@ -63,5 +93,24 @@ describe('AuthAudit.hatsChanged', () => {
     expect(log).toHaveBeenCalledTimes(1);
     expect(JSON.parse(log.mock.calls[0]?.[0] as string)).toEqual(line);
     expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('writes only the named fields, never the rest of a wider object', () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const audit = new AuthAudit({ emit: vi.fn() } as unknown as EventEmitter2);
+    const line = hatChangeLogLine(context, ['warehouse'], ['support'], {
+      before: { hats: ['warehouse'], costView: false, partnerAccountId: null },
+      after: { hats: ['support'], costView: false, partnerAccountId: null },
+      reason: 'Moved to the support desk',
+    });
+    const wider = {
+      ...line,
+      email: 'someone@example.com',
+      after: { ...line.after, phone: '+201000000000' },
+    } as typeof line;
+
+    audit.hatsChanged(wider);
+
+    expect(JSON.parse(log.mock.calls[0]?.[0] as string)).toEqual(line);
   });
 });

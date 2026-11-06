@@ -1,7 +1,7 @@
 import { schema, sql, type Database } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
-import { StaffOnlySessionAudiences, type SessionAudiences } from '../sessions/session-audiences.js';
+import type { SessionAudiences } from '../sessions/session-audiences.js';
 import { ADMIN_RULE_LOCK } from './locks.js';
 import { generateTemporaryPassword } from './temporary-password.js';
 
@@ -23,12 +23,13 @@ export type FirstAdminResult =
  * change at first sign in. It refuses when an active staff admin already exists or the email
  * already belongs to any account, under the same lock the staff service takes. It creates staff
  * only, and a partner user never counts as an existing admin (AC-28): `audiences` says who is
- * staff, the staff only answer until spec 0008 passes the hat based one.
+ * staff. It is required on purpose: the caller (`src/create-admin.ts`) must pass the class
+ * `identity.module.ts` binds to `SESSION_AUDIENCES`, which a spec checks.
  */
 export async function createFirstAdmin(
   db: Database,
   input: { email: string; name: string },
-  audiences: Pick<SessionAudiences, 'staffCondition'> = new StaffOnlySessionAudiences(),
+  audiences: Pick<SessionAudiences, 'staffCondition'>,
 ): Promise<FirstAdminResult> {
   const parsed = FirstAdminInput.safeParse(input);
   if (!parsed.success) {

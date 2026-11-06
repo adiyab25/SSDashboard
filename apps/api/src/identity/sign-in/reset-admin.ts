@@ -2,7 +2,8 @@ import { sql, type Database } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import { emailKey } from './client-info.js';
-import { StaffOnlySessionAudiences, type SessionAudiences } from '../sessions/session-audiences.js';
+import { revokeSessions } from '../sessions/revoke-sessions.js';
+import type { SessionAudiences } from '../sessions/session-audiences.js';
 import { ADMIN_RULE_LOCK } from './locks.js';
 import { deleteTokens, deleteTwoFactorChallenges } from './reset-tokens.js';
 import { generateTemporaryPassword } from './temporary-password.js';
@@ -39,13 +40,14 @@ export type BreakGlassResult =
  * Takes the same lock as the staff service and first admin, then locks the user row. A new
  * password is hashed before the transaction opens: hashing is slow and must not hold the lock.
  * Staff admins only (AC-28): a partner user is refused as not an admin, whatever their row says;
- * `audiences` says who is staff, the staff only answer until spec 0008 passes the hat based one.
+ * `audiences` says who is staff. It is required on purpose: the caller (`src/create-admin.ts`) must
+ * pass the class `identity.module.ts` binds to `SESSION_AUDIENCES`, which a spec checks.
  */
 export async function breakGlassReset(
   db: Database,
   input: { email: string },
   modes: BreakGlassModes,
-  audiences: Pick<SessionAudiences, 'staffCondition'> = new StaffOnlySessionAudiences(),
+  audiences: Pick<SessionAudiences, 'staffCondition'>,
 ): Promise<BreakGlassResult> {
   const parsed = ResetAdminInput.safeParse(input);
   if (!parsed.success) {
@@ -90,7 +92,7 @@ export async function breakGlassReset(
         sql`UPDATE users SET two_factor_enabled = false, updated_at = now() WHERE id = ${user.id}::uuid`,
       );
     }
-    await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${user.id}::uuid`);
+    await revokeSessions(user.id, tx);
     await deleteTwoFactorChallenges(tx, user.id);
     await tx.execute(sql`DELETE FROM sign_in_attempts WHERE email_key = ${emailKey(email)}`);
     return { reset: true, userId: user.id, email, temporaryPassword };

@@ -132,21 +132,27 @@ export class SessionGuard implements CanActivate {
       throw new ForbiddenException({ code: 'WRONG_AUDIENCE', message: 'Not allowed here.' });
     }
 
-    const person: CurrentStaff = {
-      id: user.id,
+    const shared = {
       name: user.name,
       email: user.email,
-      role: StaffRole.catch('staff').parse(user.role),
       phone: user.phone ?? null,
-      staffCode: user.staffCode ?? null,
       language: user.language ?? null,
       twoFactorEnabled: user.twoFactorEnabled ?? false,
       mustChangePassword: user.mustChangePassword,
       home: homeOf(allowed),
       sessionId: session.id,
     };
-    if (needed === 'partner') request.partner = person;
-    else request.staff = person;
+    // A partner user gets the partner shape, which has no staff role to authorize on.
+    if (needed === 'partner') {
+      request.partner = { userId: user.id, ...shared } satisfies CurrentPartner;
+    } else {
+      request.staff = {
+        id: user.id,
+        role: StaffRole.catch('staff').parse(user.role),
+        staffCode: user.staffCode ?? null,
+        ...shared,
+      } satisfies CurrentStaff;
+    }
 
     // A temporary password must be changed first (AC-14): only "who am I" works until then. Change
     // password and sign out are Better Auth routes, which their own before hook lets through.

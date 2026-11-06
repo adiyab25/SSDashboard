@@ -1,6 +1,6 @@
 # Identity
 
-Who may use the back office: staff sign in (Better Auth inside NestJS at `/api/auth`, a global session guard, lockout and rate limits in PostgreSQL, optional two factor, the `create-admin` break glass commands, the signed in person's own profile at `/api/me`) and the admin managed staff accounts at `/api/staff`. One `IdentityModule` ([identity.module.ts](identity.module.ts)); the sign in parts live in [sign-in/](sign-in/) and the staff administration parts in [staff/](staff/).
+Who may use the back office and the partner pages: sign in for staff and partner users (Better Auth inside NestJS at `/api/auth`, a global audience aware session guard, lockout and rate limits in PostgreSQL, optional two factor, the `create-admin` break glass commands, the signed in person's own profile at `/api/me`), which audiences a person may use and how their sessions follow hat changes, and the admin managed staff accounts at `/api/staff`. One `IdentityModule` ([identity.module.ts](identity.module.ts)); the sign in parts live in [sign-in/](sign-in/), the audience and session parts in [sessions/](sessions/), and the staff administration parts in [staff/](staff/).
 
 Agent gotchas and the full file table: [AGENTS.md](AGENTS.md).
 

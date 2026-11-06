@@ -22,6 +22,7 @@ import {
 } from '../src/identity/sessions/revoke-sessions.js';
 import {
   SESSION_AUDIENCES,
+  StaffOnlySessionAudiences,
   type SessionAudience,
   type SessionAudiences,
 } from '../src/identity/sessions/session-audiences.js';
@@ -290,7 +291,11 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       expect(hats.asked.filter((id) => id === person.id).length - askedBefore).toBe(3);
     });
 
-    it('ends every session when the last hat goes, in the same transaction (b)', async () => {
+    it('ends every session when the last hat goes, in the same transaction, and no one else’s (b)', async () => {
+      // Someone else signs in first, so their sessions are older rows the revoke must leave alone.
+      const bystander = await addPerson({ holding: staffHolding('warehouse') });
+      const bystanderCookie = await signIn(bystander.email);
+      await signIn(bystander.email);
       const person = await addPerson({ holding: staffHolding('warehouse') });
       const first = await signIn(person.email);
       const second = await signIn(person.email);
@@ -303,6 +308,8 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
         expect(reply.status).toBe(401);
         expect(reply.body).toMatchObject({ code: 'SESSION_EXPIRED' });
       }
+      expect(await sessionsOf(bystander.id)).toBe(2);
+      expect((await call(bystanderCookie, 'GET', '/api/me')).status).toBe(200);
     });
 
     it('ends every session on a move between the staff and partner audiences (b)', async () => {
@@ -366,6 +373,99 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
     });
   });
 
+  describe('a partner user signs in under the staff rules (AC-28)', () => {
+    interface Answer {
+      status: number;
+      /** The body as text, so two answers can be compared byte for byte. */
+      text: string;
+      cookie: string | undefined;
+    }
+
+    async function post(path: string, body: unknown, ip: string): Promise<Answer> {
+      const response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base, 'x-forwarded-for': ip },
+        body: JSON.stringify(body),
+      });
+      const cookie = response.headers.getSetCookie().find((c) => c.includes('session_token'));
+      return {
+        status: response.status,
+        text: await response.text(),
+        cookie: cookie?.split(';')[0],
+      };
+    }
+
+    const signInFrom = (email: string, password: string, ip: string) =>
+      post('/api/auth/sign-in/email', { email, password }, ip);
+
+    const lockedAt = (email: string, ip: string) =>
+      owner.pool
+        .query<{ locked: boolean }>(
+          `SELECT COALESCE(locked_until > now(), false) AS locked
+             FROM sign_in_attempts WHERE email_key = $1 AND scope = $2`,
+          [email, ip],
+        )
+        .then((result) => result.rows[0]?.locked ?? false);
+
+    it('locks a partner email after five wrong passwords, answering byte for byte as for staff and an unknown email', async () => {
+      const partner = await addPerson({ holding: partnerHolding('p1') });
+      const staff = await addPerson({ holding: staffHolding('warehouse') });
+      counter += 1;
+      const unknown = `nobody${counter}@example.com`;
+
+      const answers: Array<{ email: string; ip: string; wrong: Answer; locked: Answer }> = [];
+      for (const email of [partner.email, staff.email, unknown]) {
+        const ip = freshIp();
+        const wrong = await signInFrom(email, 'Wrong-Password-1', ip);
+        for (let i = 1; i < 5; i += 1) await signInFrom(email, 'Wrong-Password-1', ip);
+        // The right password now meets the lock, for the two real people.
+        const locked = await signInFrom(email, PASSWORD, ip);
+        answers.push({ email, ip, wrong, locked });
+      }
+
+      const generic = answers[0]?.wrong;
+      expect(generic?.status).toBe(401);
+      expect(JSON.parse(generic?.text ?? '{}')).toMatchObject({
+        code: 'INVALID_EMAIL_OR_PASSWORD',
+      });
+      for (const answer of answers) {
+        expect(answer.wrong.status, answer.email).toBe(generic?.status);
+        expect(answer.wrong.text, answer.email).toBe(generic?.text);
+        expect(answer.locked.status, answer.email).toBe(generic?.status);
+        expect(answer.locked.text, answer.email).toBe(generic?.text);
+        expect(answer.locked.cookie, answer.email).toBeUndefined();
+        expect(await lockedAt(answer.email, answer.ip), answer.email).toBe(true);
+      }
+      expect(await sessionsOf(partner.id)).toBe(0);
+      // The lock, not the audience, turned the partner away: another address lets them in.
+      expect((await signInFrom(partner.email, PASSWORD, freshIp())).cookie).toBeDefined();
+    });
+
+    it('answers a reset request for a partner user exactly as for staff and an unknown email', async () => {
+      const partner = await addPerson({ holding: partnerHolding('p1') });
+      const staff = await addPerson({ holding: staffHolding('warehouse') });
+      counter += 1;
+      const unknown = `nobody${counter}@example.com`;
+
+      const replies: Answer[] = [];
+      for (const email of [partner.email, staff.email, unknown]) {
+        replies.push(
+          await post(
+            '/api/auth/request-password-reset',
+            { email, redirectTo: `${base}/reset-password` },
+            freshIp(),
+          ),
+        );
+      }
+
+      expect(replies[0]?.status).toBe(200);
+      for (const reply of replies) {
+        expect(reply.status).toBe(replies[0]?.status);
+        expect(reply.text).toBe(replies[0]?.text);
+      }
+    });
+  });
+
   // Runs last: it disables every other admin to reach the last admin rule.
   describe('staff administration stays staff only (AC-28)', () => {
     let admin: { id: string; email: string };
@@ -421,10 +521,11 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       await owner.pool.query(`UPDATE users SET banned = true WHERE id = $1::uuid`, [admin.id]);
 
       // The staff only port counts every row, the planted partner admin too.
-      const staffOnly = await createFirstAdmin(appDb.db, {
-        email: 'first@example.com',
-        name: 'First',
-      });
+      const staffOnly = await createFirstAdmin(
+        appDb.db,
+        { email: 'first@example.com', name: 'First' },
+        new StaffOnlySessionAudiences(),
+      );
       expect(staffOnly).toMatchObject({ created: false, reason: 'admin_exists' });
 
       const made = await createFirstAdmin(

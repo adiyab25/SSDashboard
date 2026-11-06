@@ -377,7 +377,25 @@ describe('SessionGuard', () => {
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
       expect(request.staff).toBeUndefined();
-      expect(request.partner).toMatchObject({ id: USER.id, home: 'partner', sessionId: 's1' });
+      expect(request.partner).toMatchObject({ userId: USER.id, home: 'partner', sessionId: 's1' });
+    });
+
+    it('gives a partner user the partner shape: no staff role, staff code or staff id', async () => {
+      const { guard, context, request } = signedIn('partner', ['partner']);
+
+      await guard.canActivate(context);
+
+      expect(Object.keys(request.partner as object).sort()).toEqual([
+        'email',
+        'home',
+        'language',
+        'mustChangePassword',
+        'name',
+        'phone',
+        'sessionId',
+        'twoFactorEnabled',
+        'userId',
+      ]);
     });
 
     it('asks SessionAudiences on every request, with the person from the session', async () => {

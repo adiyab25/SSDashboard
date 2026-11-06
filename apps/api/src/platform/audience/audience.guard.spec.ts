@@ -24,6 +24,7 @@ function controllerWith(audience: AudienceName | undefined): object {
 
 const guard = new AudienceGuard();
 const staffRequest = { staff: { id: 's1' } };
+const partnerRequest = { partner: { userId: 'p1' } };
 
 function responseOf(run: () => unknown): unknown {
   try {
@@ -60,11 +61,30 @@ describe('AudienceGuard', () => {
     },
   );
 
-  it('answers 403 to nobody on a staff route', () => {
-    const context = contextFor(controllerWith('staff'), {});
-
-    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  it('lets a partner session reach a partner route', () => {
+    expect(guard.canActivate(contextFor(controllerWith('partner'), partnerRequest))).toBe(true);
   });
+
+  it.each<AudienceName>(['staff', 'portal', 'hook'])(
+    'answers 403 WRONG_AUDIENCE to a partner session on a %s route',
+    (audience) => {
+      const context = contextFor(controllerWith(audience), partnerRequest);
+
+      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+      expect(responseOf(() => guard.canActivate(context))).toMatchObject({
+        code: 'WRONG_AUDIENCE',
+      });
+    },
+  );
+
+  it.each<AudienceName>(['staff', 'partner', 'portal', 'hook'])(
+    'answers 403 to nobody on a %s route, so portal and hook routes stay shut until they prove callers',
+    (audience) => {
+      const context = contextFor(controllerWith(audience), {});
+
+      expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    },
+  );
 
   it('lets anyone reach a public route, signed in or not', () => {
     expect(guard.canActivate(contextFor(controllerWith('public'), {}))).toBe(true);

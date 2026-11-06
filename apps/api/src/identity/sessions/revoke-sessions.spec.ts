@@ -1,3 +1,4 @@
+import type { SQL } from '@ssdashboard/db';
 import { describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../../database/sql.js';
 import { hatChangeEndsSessions, revokeSessions, type HatStanding } from './revoke-sessions.js';
@@ -34,12 +35,49 @@ describe('hatChangeEndsSessions (spec 0005, AC-33 b)', () => {
   });
 });
 
-describe('revokeSessions (AC-33 c)', () => {
-  it('deletes the person’s sessions through the caller’s transaction, and counts them', async () => {
-    const execute = vi.fn(() => Promise.resolve({ rowCount: 2, rows: [] }));
-    const tx = { execute } as unknown as Transaction;
+/**
+ * The statement as text with `$n` for each bound value, and the values: Drizzle keeps the literal
+ * parts as string chunks and an interpolated value as itself.
+ */
+function rendered(query: SQL): { text: string; params: unknown[] } {
+  const params: unknown[] = [];
+  let text = '';
+  for (const chunk of query.queryChunks as unknown[]) {
+    const literal = (chunk as { value?: unknown } | null)?.value;
+    if (Array.isArray(literal)) {
+      text += literal.join('');
+    } else {
+      params.push(chunk);
+      text += `$${params.length}`;
+    }
+  }
+  return { text: text.replace(/\s+/g, ' ').trim(), params };
+}
 
-    await expect(revokeSessions('0190c0de-0000-7000-8000-000000000001', tx)).resolves.toBe(2);
+describe('revokeSessions (AC-33 c)', () => {
+  const USER_ID = '0190c0de-0000-7000-8000-000000000001';
+
+  function fakeTx() {
+    const execute = vi.fn((_query: SQL) => Promise.resolve({ rowCount: 2, rows: [] }));
+    return { tx: { execute } as unknown as Transaction, execute };
+  }
+
+  it('deletes the person’s sessions through the caller’s transaction, and counts them', async () => {
+    const { tx, execute } = fakeTx();
+
+    await expect(revokeSessions(USER_ID, tx)).resolves.toBe(2);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('deletes only that person’s rows: the WHERE names user_id and binds their id', async () => {
+    const { tx, execute } = fakeTx();
+
+    await revokeSessions(USER_ID, tx);
+
+    const query = execute.mock.calls[0]?.[0];
+    if (!query) throw new Error('no statement ran');
+    const { text, params } = rendered(query);
+    expect(text).toBe('DELETE FROM sessions WHERE user_id = $1::uuid');
+    expect(params).toEqual([USER_ID]);
   });
 });

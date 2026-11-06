@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import type { MeResponse } from '@ssdashboard/contracts';
+import type { Home, MeResponse } from '@ssdashboard/contracts';
 
 /** The signed in person and their session, read fresh from the database by the guard. */
 export interface CurrentStaff extends MeResponse {
@@ -8,10 +8,27 @@ export interface CurrentStaff extends MeResponse {
 
 /**
  * The signed in partner user on a `partner` route (spec 0005, AC-29), read fresh from the
- * database by the guard in the same way. Spec 0008 adds the partner account id, read from the
- * person's own row: a handler must never take an account id from a header, path or body.
+ * database by the guard on every request. Its own shape, not the staff one: it carries no staff
+ * `role` and no staff code, so a partner handler can never authorize on a staff role. It holds
+ * the person's id and what the partner "who am I" answer (`GET /api/partner/me`, spec 0008
+ * AC-11) needs about the person.
+ *
+ * Spec 0008 (AC-9) adds `partnerAccountId`, read from the person's own hat row by the guard: a
+ * handler must never take an account id from a header, path, query or body.
  */
-export type CurrentPartner = CurrentStaff;
+export interface CurrentPartner {
+  /** The partner user's id (`users.id`), named as spec 0008 AC-9 names it. */
+  userId: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  language: string | null;
+  twoFactorEnabled: boolean;
+  mustChangePassword: boolean;
+  /** Where the person lands; `partner` for anyone the guard lets onto a partner route. */
+  home: Home;
+  sessionId: string;
+}
 
 /**
  * An Express request after the session guard ran, with the signed in person on `staff`. Use it

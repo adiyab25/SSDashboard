@@ -25,6 +25,7 @@ import {
   issueToken,
   type Executor,
 } from '../sign-in/reset-tokens.js';
+import { revokeSessions } from '../sessions/revoke-sessions.js';
 import { SESSION_AUDIENCES, type SessionAudiences } from '../sessions/session-audiences.js';
 import { SignInLockout } from '../sign-in/sign-in-lockout.js';
 import { generateTemporaryPassword } from '../sign-in/temporary-password.js';
@@ -347,7 +348,7 @@ export class StaffService {
           // password is shown here; the admin issues one with Reset password (AC-13).
           unusableHash ??= await hashPassword(randomBytes(32).toString('base64url'));
           await this.replacePassword(tx, id, unusableHash);
-          await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+          await revokeSessions(id, tx);
           await deleteTwoFactorChallenges(tx, id);
           inviteTokenId = await this.replaceInvite(tx, id);
         }
@@ -383,21 +384,26 @@ export class StaffService {
              WHERE id = ${id}::uuid`,
       );
       // The same transaction: a disabled person has no live session, and no link that could log them in.
-      await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+      await revokeSessions(id, tx);
       await deleteTokens(tx, id);
     });
     this.emit(new StaffDisabled(this.context(actor, id), reason ?? null));
     return this.get(id);
   }
 
-  /** Re-enables a disabled account; 404 for an unknown id. */
+  /**
+   * Re-enables a disabled account; 404 for an unknown id. The staff check locks the row and the
+   * write follows in the same transaction, so a person who stops being staff in between is never
+   * enabled from here (AC-28).
+   */
   async enable(id: string, actor: Actor): Promise<StaffDetail> {
-    if (!(await this.find(this.db, id))) throw notFound();
-    const result = await this.db.execute(
-      sql`UPDATE users SET banned = false, ban_reason = NULL, ban_expires = NULL, updated_at = now()
-           WHERE id = ${id}::uuid`,
-    );
-    if ((result.rowCount ?? 0) === 0) throw notFound();
+    await this.db.transaction(async (tx) => {
+      if (!(await this.find(tx, id, true))) throw notFound();
+      await tx.execute(
+        sql`UPDATE users SET banned = false, ban_reason = NULL, ban_expires = NULL, updated_at = now()
+             WHERE id = ${id}::uuid`,
+      );
+    });
     this.emit(new StaffEnabled(this.context(actor, id)));
     return this.get(id);
   }
@@ -421,7 +427,7 @@ export class StaffService {
       await tx.execute(
         sql`UPDATE users SET must_change_password = true, updated_at = now() WHERE id = ${id}::uuid`,
       );
-      await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+      await revokeSessions(id, tx);
       await deleteTwoFactorChallenges(tx, id);
       let tokenId: string | undefined;
       if (this.mailOn) tokenId = (await issueToken(tx, id, 'reset')).tokenId;
@@ -441,32 +447,42 @@ export class StaffService {
 
   /**
    * Issues a fresh invite link to an account that has never signed in. Throws 409 `NOT_INVITED`
-   * or `MAIL_DISABLED` when that cannot work.
+   * or `MAIL_DISABLED` when that cannot work. The staff check locks the row and the token is
+   * issued in the same transaction, so a staff invite never goes to a person who stopped being
+   * staff in between (AC-28); the mail is queued after the commit.
    */
   async resendInvite(id: string, actor: Actor): Promise<{ ok: true }> {
-    const target = await this.find(this.db, id);
-    if (!target) throw notFound();
-    if (statusOf(target) !== 'invited') {
-      throw conflict('NOT_INVITED', 'Only an account that has not signed in yet can be re-invited');
-    }
-    if (!this.mailOn) throw conflict('MAIL_DISABLED', 'This install does not send email');
-    const { tokenId } = await issueToken(this.db, id, 'invite');
+    const tokenId = await this.db.transaction(async (tx) => {
+      const target = await this.find(tx, id, true);
+      if (!target) throw notFound();
+      if (statusOf(target) !== 'invited') {
+        throw conflict(
+          'NOT_INVITED',
+          'Only an account that has not signed in yet can be re-invited',
+        );
+      }
+      if (!this.mailOn) throw conflict('MAIL_DISABLED', 'This install does not send email');
+      return (await issueToken(tx, id, 'invite')).tokenId;
+    });
     await this.queue(id, 'invite', tokenId);
     this.emit(new StaffUpdated(this.context(actor, id)));
     return { ok: true };
   }
 
   /**
-   * Deletes every session of another person. Throws 409 `SELF_ACTION` when the admin targets
-   * themselves.
+   * Deletes every session of another person, the `POST /api/staff/:id/revoke-sessions` action.
+   * Throws 409 `SELF_ACTION` when the admin targets themselves. The staff check locks the row and
+   * the delete goes through the module's one writer, `revokeSessions(userId, tx)` from
+   * `sessions/revoke-sessions.ts` (the bare call below, not this method), in the same transaction.
    */
   async revokeSessions(id: string, actor: Actor): Promise<RevokeSessionsResponse> {
     refuseSelf(id, actor, 'sign out every session of');
-    const target = await this.find(this.db, id);
-    if (!target) throw notFound();
-    const result = await this.db.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+    const count = await this.db.transaction(async (tx) => {
+      if (!(await this.find(tx, id, true))) throw notFound();
+      return revokeSessions(id, tx);
+    });
     this.emit(new StaffSessionsRevoked(this.context(actor, id)));
-    return { count: result.rowCount ?? 0 };
+    return { count };
   }
 
   /**
@@ -482,7 +498,7 @@ export class StaffService {
       await tx.execute(
         sql`UPDATE users SET two_factor_enabled = false, updated_at = now() WHERE id = ${id}::uuid`,
       );
-      await tx.execute(sql`DELETE FROM sessions WHERE user_id = ${id}::uuid`);
+      await revokeSessions(id, tx);
       await deleteTwoFactorChallenges(tx, id);
     });
     this.emit(new StaffTwoFactorReset(this.context(actor, id)));

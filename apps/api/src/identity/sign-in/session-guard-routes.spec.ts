@@ -10,16 +10,21 @@ import { Audience } from '../../platform/audience/audience.decorator.js';
 import { AudienceGuard } from '../../platform/audience/audience.guard.js';
 import type { SessionAudience, SessionAudiences } from '../sessions/session-audiences.js';
 import type { Auth } from './auth.tokens.js';
-import type { CurrentStaff } from './current-staff.js';
+import type { CurrentPartner, CurrentStaff } from './current-staff.js';
 import { Public } from './public.decorator.js';
 import { RolesGuard } from './roles.guard.js';
 import { SessionGuard } from './session.guard.js';
 
-// Spec 0005, AC-29, through real HTTP and Nest's own guard wiring. These controllers live only in
-// this test module: never add them to AppModule (`audience.spec.ts` walks it).
+// Spec 0005, AC-29, through real HTTP and Nest's guard pipeline. The guards are built by hand
+// here, in the order `identity.module.ts` registers them; this file does not load IdentityModule.
+// These controllers live only in this test module: never add them to AppModule (`audience.spec.ts`
+// walks it).
 
-type Seen = Request & { staff?: CurrentStaff; partner?: CurrentStaff };
-const who = (req: Seen) => ({ staff: req.staff?.id ?? null, partner: req.partner?.id ?? null });
+type Seen = Request & { staff?: CurrentStaff; partner?: CurrentPartner };
+const who = (req: Seen) => ({
+  staff: req.staff?.id ?? null,
+  partner: req.partner?.userId ?? null,
+});
 
 @Audience('staff')
 @Controller('things')
@@ -224,7 +229,7 @@ describe('the session guard over HTTP (AC-29)', () => {
     );
   });
 
-  describe('as IdentityModule wires it: session, roles, then audience guard', () => {
+  describe('the session, roles and audience guards in that order, built by hand', () => {
     it('lets a staff session use a staff route', async () => {
       const made = await createApp({ fullChain: true, audiences: ['staff'] });
       app = made.app;
@@ -264,9 +269,7 @@ describe('the session guard over HTTP (AC-29)', () => {
       expect(response.body).toMatchObject({ code: 'WRONG_AUDIENCE' });
     });
 
-    // Deny by default: platform's AudienceGuard knows only `request.staff` today, so a partner
-    // route stays closed end to end until spec 0008 teaches it `request.partner`.
-    it('keeps a partner route closed to a partner session until AudienceGuard knows partners', async () => {
+    it('lets a partner session reach a partner handler end to end, as a partner only', async () => {
       const made = await createApp({ fullChain: true, audiences: ['partner'] });
       app = made.app;
 
@@ -274,8 +277,35 @@ describe('the session guard over HTTP (AC-29)', () => {
         .get('/partner/things')
         .set('cookie', COOKIE);
 
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ staff: null, partner: USER_ID });
+    });
+
+    it('answers 403 WRONG_AUDIENCE to a partner session on a staff route', async () => {
+      const made = await createApp({ fullChain: true, audiences: ['partner'] });
+      app = made.app;
+
+      const response = await request(app.getHttpServer()).get('/things').set('cookie', COOKIE);
+
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ code: 'WRONG_AUDIENCE' });
     });
+
+    it.each([
+      ['a portal route', 'get', '/portal/things'],
+      ['a hook route', 'post', '/hooks/things'],
+    ] as const)(
+      'refuses a valid partner cookie on %s without ever reading it',
+      async (_case, method, path) => {
+        const made = await createApp({ fullChain: true, audiences: ['partner'] });
+        app = made.app;
+
+        const response = await request(app.getHttpServer())[method](path).set('cookie', COOKIE);
+
+        expect(response.status).toBe(403);
+        expect(response.body).toMatchObject({ code: 'WRONG_AUDIENCE' });
+        expect(made.getSession).not.toHaveBeenCalled();
+      },
+    );
   });
 });

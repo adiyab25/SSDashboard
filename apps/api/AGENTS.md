@@ -16,7 +16,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 | `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone), `NumberingService` (gap free document numbers), and `CostRulesService` (`ruleFor`: the per order cost rule in force on a day, read from `order_cost_rules`; `not_set` and never 0 when unset) |
 | `src/platform/audience/` | `@Audience(...)` (`staff`, `partner`, `portal`, `hook`, `public`) and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `src/platform/logging/` | `RedactingLogger`: Nest's console logger with every argument passed through `redact` from `@ssdashboard/config/redaction` |
-| `src/identity/` | Staff sign in (`sign-in/`) and staff administration (`staff/`), one `IdentityModule`, see [its AGENTS.md](src/identity/AGENTS.md) |
+| `src/identity/` | Staff and partner sign in (`sign-in/`), audiences and hat driven sessions (`sessions/`), and staff administration (`staff/`), one `IdentityModule`, see [its AGENTS.md](src/identity/AGENTS.md) |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
 | `src/app.module.ts` | Root module, imports each business module |
 | `src/config/env.ts` | Zod env schema, validated at startup |
