@@ -1,3 +1,4 @@
+import { PASSWORD_MAX_LENGTH } from '@ssdashboard/contracts';
 import { APIError, getSessionFromCtx } from 'better-auth/api';
 import { hashPassword } from 'better-auth/crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,7 +44,10 @@ function setup(lock = { locked: false }) {
     giveBack: vi.fn((): Promise<FailureOutcome> => Promise.resolve(NO_LOCK)),
     reset: vi.fn(() => Promise.resolve()),
   };
-  const audit = { record: vi.fn<(event: unknown) => void>() };
+  const audit = {
+    record: vi.fn<(event: unknown) => void>(),
+    turnedAway: vi.fn<(route: string, context: unknown, locked: boolean) => void>(),
+  };
   const deps = { origin: ORIGIN, lockout, audit, now: () => NOW };
   const internalAdapter = {
     updateUser: vi.fn(() => Promise.resolve()),
@@ -126,25 +130,69 @@ describe('before hook', () => {
       });
     });
 
-    it('keys the lock on the trimmed lowercase email and the client address', async () => {
+    it('keys the lock on the lowercase email and the client address', async () => {
       const { before, context, lockout } = setup();
 
       await before(
         context('/sign-in/email', {
           origin: ORIGIN,
-          body: { email: '  Sam@Example.com ', password: 'x' },
+          body: { email: 'Sam@Example.COM', password: 'x' },
         }),
       );
 
       expect(lockout.takeSlot).toHaveBeenCalledWith('sam@example.com', '203.0.113.7');
     });
 
-    it('leaves a body with no email to Better Auth', async () => {
+    it.each([
+      ['no email', { password: 'Correct-Horse-1' }],
+      ['no password', { email: 'sam@example.com' }],
+      ['a password that is not text', { email: 'sam@example.com', password: 12345678 }],
+      [
+        'a password one past the maximum',
+        { email: 'sam@example.com', password: 'x'.repeat(PASSWORD_MAX_LENGTH + 1) },
+      ],
+      ['an email Better Auth refuses', { email: 'not an email', password: 'Correct-Horse-1' }],
+      [
+        'an email with spaces around it',
+        { email: ' sam@example.com ', password: 'Correct-Horse-1' },
+      ],
+      [
+        'a remember me that is not true or false',
+        { email: 'sam@example.com', password: 'Correct-Horse-1', rememberMe: 'yes' },
+      ],
+      ['no body', undefined],
+    ])(
+      'leaves a body with %s to Better Auth, taking no slot and hashing nothing, locked or not',
+      async (_name, body) => {
+        for (const locked of [false, true]) {
+          const { before, context, lockout, audit } = setup({ locked });
+
+          await expect(
+            before(context('/sign-in/email', { origin: ORIGIN, body })),
+          ).resolves.toBeUndefined();
+
+          expect(lockout.takeSlot).not.toHaveBeenCalled();
+          expect(audit.record).not.toHaveBeenCalled();
+        }
+        expect(hashPassword).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['the maximum length', 'x'.repeat(PASSWORD_MAX_LENGTH)],
+      // Better Auth's sign in sets no minimum, so a short password is checked and must count.
+      ['one character', 'x'],
+    ])('takes a slot for a password of %s', async (_name, password) => {
       const { before, context, lockout } = setup();
 
-      await before(context('/sign-in/email', { origin: ORIGIN, body: { password: 'x' } }));
+      await before(
+        context('/sign-in/email', {
+          origin: ORIGIN,
+          body: { email: 'sam@example.com', password, rememberMe: false, callbackURL: '/stock' },
+        }),
+      );
 
-      expect(lockout.takeSlot).not.toHaveBeenCalled();
+      expect(lockout.takeSlot).toHaveBeenCalledTimes(1);
     });
 
     it('answers a full window (no free slot, no lock) like a lock, holding no slot', async () => {
@@ -459,7 +507,29 @@ describe('routes that ask for the current password (AC-3)', () => {
     expect((error as APIError).statusCode).toBe(400);
     expect((error as APIError).body).toMatchObject({ code: 'INVALID_PASSWORD' });
     expect(s.lockout.giveBack).not.toHaveBeenCalled();
+    // AC-23 has no event for it: one log line with the ids, and no event.
     expect(s.audit.record).not.toHaveBeenCalled();
+    expect(s.audit.turnedAway).toHaveBeenCalledTimes(1);
+    expect(s.audit.turnedAway).toHaveBeenCalledWith(
+      '/two-factor/disable',
+      expect.objectContaining({ actorId: USER_ID, targetId: USER_ID, ip: '203.0.113.7' }),
+      false,
+    );
+  });
+
+  it('logs a turn away while locked with the lock named', async () => {
+    const s = setup({ locked: true });
+    signedIn();
+
+    await expect(
+      s.before(s.context('/change-password', { origin: ORIGIN, body })),
+    ).rejects.toMatchObject({ body: { code: 'INVALID_PASSWORD' } });
+
+    expect(s.audit.turnedAway).toHaveBeenCalledWith(
+      '/change-password',
+      expect.objectContaining({ actorId: USER_ID }),
+      true,
+    );
   });
 });
 
@@ -525,6 +595,31 @@ describe('second factor codes (AC-3, AC-20)', () => {
     });
     expect(consumeVerificationValue).not.toHaveBeenCalled();
     expect(s.lockout.giveBack).not.toHaveBeenCalled();
+    // Recorded like a turned away sign in.
+    expect(s.audit.record).toHaveBeenCalledTimes(1);
+    expect(s.audit.record.mock.calls[0]?.[0]).toBeInstanceOf(SignInFailed);
+    expect(s.audit.record.mock.calls[0]?.[0]).toMatchObject({
+      reason: 'locked',
+      context: { actorId: null, targetId: USER_ID, ip: '203.0.113.7' },
+    });
+    expect(s.audit.turnedAway).not.toHaveBeenCalled();
+  });
+
+  it('logs a first code turned away while turning two factor on, with no sign in event', async () => {
+    const s = setup();
+    signedIn();
+    s.lockout.takeSlot.mockResolvedValueOnce({ slot: null, locked: false });
+
+    await expect(
+      s.before(s.context(PATH, { origin: ORIGIN, body: { code: '000000' } })),
+    ).rejects.toMatchObject({ statusCode: 401, body: { code: 'INVALID_CODE' } });
+
+    expect(s.audit.record).not.toHaveBeenCalled();
+    expect(s.audit.turnedAway).toHaveBeenCalledWith(
+      PATH,
+      expect.objectContaining({ actorId: USER_ID, targetId: USER_ID }),
+      false,
+    );
   });
 
   it('turns a code away while locked (locked: true) and ends the pending sign in', async () => {
@@ -548,7 +643,10 @@ describe('password reset request (AC-9)', () => {
       clock += ms;
       return Promise.resolve();
     });
-    const audit = { record: vi.fn<(event: unknown) => void>() };
+    const audit = {
+      record: vi.fn<(event: unknown) => void>(),
+      turnedAway: vi.fn<(route: string, context: unknown, locked: boolean) => void>(),
+    };
     const deps = {
       origin: ORIGIN,
       lockout: { takeSlot: vi.fn(), giveBack: vi.fn(), reset: vi.fn() },

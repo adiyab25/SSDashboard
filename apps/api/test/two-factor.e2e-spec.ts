@@ -413,6 +413,22 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
       expect(turnedAway.status).toBe(401);
       expect(turnedAway.body).toMatchObject({ code: 'INVALID_CODE' });
       expect(await attempts(person.email)).toBe(0);
+      // Recorded like a turned away sign in: `SignInFailed` with reason `locked`, ids only.
+      await expect
+        .poll(
+          () =>
+            (api as RunningProcess)
+              .output()
+              .split('\n')
+              .filter(
+                (l) =>
+                  l.includes('"event":"SignInFailed"') &&
+                  l.includes('"reason":"locked"') &&
+                  l.includes(`"ip":"${ip}"`) &&
+                  l.includes(`"targetId":"${person.id}"`),
+              ).length,
+        )
+        .toBe(1);
 
       // Those slots age out; the same challenge still works, so it was not ended.
       await owner.pool.query(
@@ -550,6 +566,24 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
         (await call(cookie, 'POST', '/api/auth/two-factor/disable', { password: PASSWORD }, ip))
           .status,
       ).toBe(400);
+      // The turn away writes one log line with the route and the ids (AC-23 names no event for
+      // it), and never the email.
+      await expect
+        .poll(() =>
+          (api as RunningProcess)
+            .output()
+            .split('\n')
+            .filter((l) => l.includes('"outcome":"turned_away"') && l.includes(`"ip":"${ip}"`)),
+        )
+        .toHaveLength(1);
+      const turnedAwayLine = (api as RunningProcess)
+        .output()
+        .split('\n')
+        .find((l) => l.includes('"outcome":"turned_away"') && l.includes(`"ip":"${ip}"`));
+      expect(turnedAwayLine).toContain('"route":"/two-factor/disable"');
+      expect(turnedAwayLine).toContain(`"actorId":"${person.id}"`);
+      expect(turnedAwayLine).toContain('"locked":true');
+      expect(turnedAwayLine).not.toContain(person.email);
 
       const off = await call(cookie, 'POST', '/api/auth/two-factor/disable', {
         password: PASSWORD,

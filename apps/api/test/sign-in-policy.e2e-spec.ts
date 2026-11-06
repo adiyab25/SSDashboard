@@ -3,7 +3,8 @@ import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from
 import { hashPassword } from 'better-auth/crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SIGN_IN_SLOT_LOCK } from '../src/identity/sign-in/locks.js';
-import { LOCKOUT, SignInLockout } from '../src/identity/sign-in/sign-in-lockout.js';
+import { PASSWORD_MAX_LENGTH } from '@ssdashboard/contracts';
+import { LOCKOUT, SignInLockout, SLOT_WAIT_MS } from '../src/identity/sign-in/sign-in-lockout.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,
@@ -84,11 +85,15 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
     return `198.51.${Math.floor(counter / 250)}.${(counter % 250) + 1}`;
   };
 
-  async function signIn(email: string, password: string, ip: string): Promise<Answer> {
+  const signIn = (email: string, password: string, ip: string): Promise<Answer> =>
+    signInWith({ email, password }, ip);
+
+  /** A sign in with any body, well formed or not. */
+  async function signInWith(body: unknown, ip: string): Promise<Answer> {
     const response = await fetch(`${base}/api/auth/sign-in/email`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', origin: base, 'x-forwarded-for': ip },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     });
     const cookie = response.headers.getSetCookie().find((c) => c.includes('session_token'));
     return {
@@ -145,6 +150,17 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
         'ip',
         'tenant_id',
       ]);
+    });
+
+    it('lets the app role take and give back a sign in slot, never change one', async () => {
+      const { rows } = await owner.pool.query<Record<string, boolean>>(
+        `SELECT has_table_privilege($1, 'sign_in_slots', 'INSERT') AS insert,
+                has_table_privilege($1, 'sign_in_slots', 'SELECT') AS select,
+                has_table_privilege($1, 'sign_in_slots', 'DELETE') AS delete,
+                has_table_privilege($1, 'sign_in_slots', 'UPDATE') AS update`,
+        [APP_ROLE],
+      );
+      expect(rows[0]).toEqual({ insert: true, select: true, delete: true, update: false });
     });
   });
 
@@ -319,21 +335,33 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       expect(answer.cookie).toBeDefined();
     });
 
-    it('turns a request away, uncounted, when it waits too long for its turn on the email', async () => {
+    it('turns a request away, uncounted, when it waits too long for its turn on the email, holding no connection while it waits', async () => {
       const email = `waiting${counter}@example.com`;
       const appUrl = new URL(scratch.url);
       appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
-      const app = createDatabase(appUrl.toString(), { max: 2 });
+      // One connection only: if a waiter held it, nothing else could run until the wait ends.
+      const app = createDatabase(appUrl.toString(), { max: 1 });
       const holder = await owner.pool.connect();
       try {
-        // Another request holds the email's turn for longer than the lock timeout.
+        // Another request holds the email's turn for longer than the wait.
         await holder.query('BEGIN');
         await holder.query(`SELECT pg_advisory_xact_lock($1::int, hashtext($2::text))`, [
           SIGN_IN_SLOT_LOCK,
           email,
         ]);
-        const taken = await new SignInLockout(app).takeSlot(email, freshIp());
-        expect(taken).toEqual({ slot: null, locked: false });
+        const started = Date.now();
+        const waiting = new SignInLockout(app).takeSlot(email, freshIp());
+
+        // Meanwhile the same one connection pool answers another query at once.
+        await new Promise((done) => setTimeout(done, 300));
+        const queryStarted = Date.now();
+        await app.pool.query('SELECT 1');
+        expect(Date.now() - queryStarted).toBeLessThan(500);
+
+        expect(await waiting).toEqual({ slot: null, locked: false });
+        const waited = Date.now() - started;
+        expect(waited).toBeGreaterThanOrEqual(SLOT_WAIT_MS - 50);
+        expect(waited).toBeLessThan(SLOT_WAIT_MS + 1_500);
         expect(await slots(email)).toBe(0);
         expect(await attempts(email)).toEqual([]);
       } finally {
@@ -341,6 +369,62 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
         holder.release();
         await app.pool.end();
       }
+    });
+
+    it('takes the slot once the email turn frees up within the wait', async () => {
+      const email = `released${counter}@example.com`;
+      const appUrl = new URL(scratch.url);
+      appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
+      const app = createDatabase(appUrl.toString(), { max: 1 });
+      const holder = await owner.pool.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query(`SELECT pg_advisory_xact_lock($1::int, hashtext($2::text))`, [
+          SIGN_IN_SLOT_LOCK,
+          email,
+        ]);
+        const waiting = new SignInLockout(app).takeSlot(email, freshIp());
+        await new Promise((done) => setTimeout(done, 300));
+        await holder.query('COMMIT');
+
+        const taken = await waiting;
+        expect(taken.slot).toEqual(expect.any(String));
+        expect(await slots(email)).toBe(1);
+        await new SignInLockout(app).giveBack(taken.slot as string);
+        expect(await slots(email)).toBe(0);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        holder.release();
+        await app.pool.end();
+      }
+    });
+
+    it('answers a malformed sign in the same whether the email is locked or not, taking no slot', async () => {
+      const person = await addUser();
+      const ip = freshIp();
+      const bodies = [
+        { email: person.email },
+        { email: person.email, password: 'x'.repeat(PASSWORD_MAX_LENGTH + 1) },
+      ];
+      const unlocked: Answer[] = [];
+      for (const body of bodies) unlocked.push(await signInWith(body, ip));
+      // Better Auth refuses these itself (400), before any password is checked.
+      expect(unlocked.map((a) => a.status)).toEqual([400, 400]);
+      expect(await attempts(person.email)).toEqual([]);
+
+      for (let i = 0; i < 5; i += 1) await signIn(person.email, 'Wrong-Password-1', ip);
+      expect((await attempts(person.email)).find((row) => row.scope === ip)).toMatchObject({
+        locked: true,
+      });
+
+      for (const [i, body] of bodies.entries()) {
+        const locked = await signInWith(body, ip);
+        expect(locked.status).toBe(unlocked[i]?.status);
+        expect(locked.text).toBe(unlocked[i]?.text);
+      }
+      // Nothing counted and no slot held for them.
+      expect((await attempts(person.email)).find((row) => row.scope === ip)?.failures).toBe(5);
+      expect(await slots(person.email)).toBe(0);
     });
 
     it('gives the slot back after an attempt that is not counted', async () => {

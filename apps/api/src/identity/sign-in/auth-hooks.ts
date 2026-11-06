@@ -1,6 +1,7 @@
-import { unmetPasswordRules } from '@ssdashboard/contracts';
+import { PASSWORD_MAX_LENGTH, unmetPasswordRules } from '@ssdashboard/contracts';
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { hashPassword } from 'better-auth/crypto';
+import { z } from 'zod';
 import {
   AccountLocked,
   PasswordChanged,
@@ -46,7 +47,7 @@ export interface HookContext {
 export interface AuthHookDeps {
   origin: string;
   lockout: Pick<SignInLockout, 'takeSlot' | 'giveBack' | 'reset'>;
-  audit: Pick<AuthAudit, 'record'>;
+  audit: Pick<AuthAudit, 'record' | 'turnedAway'>;
   now?: () => Date;
   /** Waits this many milliseconds; replaced in tests. */
   sleep?: (ms: number) => Promise<void>;
@@ -104,6 +105,21 @@ const GENERIC_MESSAGE = 'Invalid email or password';
  */
 export const genericSignInError = () =>
   APIError.from('UNAUTHORIZED', { code: GENERIC_CODE, message: GENERIC_MESSAGE });
+
+/**
+ * A sign in body Better Auth 1.7.15 goes on to check (`/sign-in/email` in
+ * `better-auth/dist/api/routes/sign-in.mjs`): its body schema, then `z.email()` on the email and
+ * the maximum password length it is given (`PASSWORD_MAX_LENGTH`). That route sets no minimum, so
+ * a short password is a real, counted attempt. Any other body Better Auth refuses before checking
+ * anything, the same whether the email is locked or not, so it takes no slot (AC-3) and the no
+ * slot answer never hashes a password longer than the maximum.
+ */
+const wellFormedSignIn = z.object({
+  email: z.email(),
+  password: z.string().max(PASSWORD_MAX_LENGTH),
+  callbackURL: z.string().optional(),
+  rememberMe: z.boolean().optional(),
+});
 
 const bodyField = (body: unknown, name: string): string | undefined => {
   if (typeof body !== 'object' || body === null) return undefined;
@@ -186,15 +202,16 @@ export function createBeforeHook(deps: AuthHookDeps) {
     }
 
     if (path === SIGN_IN) {
-      const email = bodyField(ctx.body, 'email');
-      if (email === undefined) return; // Better Auth answers a malformed body itself.
-      const key = emailKey(email);
+      const attempt = wellFormedSignIn.safeParse(ctx.body);
+      // Better Auth answers a malformed body itself, without checking a password.
+      if (!attempt.success) return;
+      const key = emailKey(attempt.data.email);
       // The last step: once a slot is held, nothing here may throw before the after hook runs.
       const taken = await deps.lockout.takeSlot(key, clientIp(requestHeaders(ctx)));
       if (taken.slot === null) {
         // No free slot answers like a lock, uncounted. Hash a password the way a real attempt
         // would, so it cannot be told by timing.
-        await hashPassword(bodyField(ctx.body, 'password') ?? '');
+        await hashPassword(attempt.data.password);
         const found = await ctx.context.internalAdapter.findUserByEmail(key);
         deps.audit.record(
           new SignInFailed(eventContext(ctx, null, found?.user.id ?? null, now()), 'locked'),
@@ -226,6 +243,7 @@ export function createBeforeHook(deps: AuthHookDeps) {
       // as for a wrong one.
       const taken = await deps.lockout.takeSlot(emailKey(who.email), clientIp(requestHeaders(ctx)));
       if (taken.slot === null) {
+        deps.audit.turnedAway(path, eventContext(ctx, who.id, who.id, now()), taken.locked);
         throw APIError.from('BAD_REQUEST', {
           code: 'INVALID_PASSWORD',
           message: 'Invalid password',
@@ -290,6 +308,17 @@ export function createBeforeHook(deps: AuthHookDeps) {
     if (taken.slot === null) {
       // Only a real lock ends the pending sign in; a full window just turns this code away.
       if (taken.locked && who.challenge) await endChallenge(ctx, who.challenge);
+      // Recorded as the after hook records a wrong code: a sign in failure unless the person is
+      // confirming their first code, which AC-23 has no event for.
+      if (who.enrolling) {
+        deps.audit.turnedAway(
+          ctx.path ?? '',
+          eventContext(ctx, who.id, who.id, now()),
+          taken.locked,
+        );
+      } else {
+        deps.audit.record(new SignInFailed(eventContext(ctx, null, who.id, now()), 'locked'));
+      }
       throw APIError.from('UNAUTHORIZED', route);
     }
     heldSlots.set(ctx.request, taken.slot);

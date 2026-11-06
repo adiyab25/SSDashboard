@@ -26,7 +26,10 @@ export const SessionErrorCode = z.enum(['UNAUTHENTICATED', 'SESSION_EXPIRED']);
 /** The validated shape of `SessionErrorCode`, as the api and web see it after parsing. */
 export type SessionErrorCode = z.infer<typeof SessionErrorCode>;
 
-/** The password rule (spec 0005, AC-8): 8 to 128 characters with a lowercase, an uppercase and a digit. */
+/**
+ * The password rule (spec 0005, AC-8): 8 to 128 characters with a lowercase, an uppercase and a
+ * digit, any decimal digit (Western, Arabic-Indic, and the rest of Unicode `Nd`).
+ */
 export const PASSWORD_MIN_LENGTH = 8;
 /** Longest password accepted; a cap so hashing cost cannot be abused with huge input. */
 export const PASSWORD_MAX_LENGTH = 128;
@@ -43,7 +46,8 @@ export function unmetPasswordRules(password: string): PasswordRule[] {
   if (password.length > PASSWORD_MAX_LENGTH) unmet.push('max_length');
   if (!/\p{Ll}/u.test(password)) unmet.push('lowercase');
   if (!/\p{Lu}/u.test(password)) unmet.push('uppercase');
-  if (!/\d/.test(password)) unmet.push('digit');
+  // Any decimal digit counts (Arabic-Indic too); the password is stored and compared as typed.
+  if (!/\p{Nd}/u.test(password)) unmet.push('digit');
   return unmet;
 }
 

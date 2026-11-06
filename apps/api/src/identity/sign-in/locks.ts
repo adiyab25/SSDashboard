@@ -7,7 +7,8 @@ export const ADMIN_RULE_LOCK = 727_002;
 
 /**
  * The first key of the per email lock that hands out sign in slots one at a time (spec 0005,
- * AC-3), taken as `pg_advisory_xact_lock(SIGN_IN_SLOT_LOCK, hashtext(email_key))`. The two key
- * form is a separate key space from the single key locks above and in the ledger.
+ * AC-3), tried as `pg_try_advisory_xact_lock(SIGN_IN_SLOT_LOCK, hashtext(email_key))` and never
+ * waited on. The two key form is a separate key space from the single key locks above and in
+ * the ledger.
  */
 export const SIGN_IN_SLOT_LOCK = 727_003;
