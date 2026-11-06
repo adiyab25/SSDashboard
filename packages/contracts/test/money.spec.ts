@@ -32,6 +32,19 @@ describe('Money', () => {
     expect(Money.of('0.07').toString()).toBe('0.07');
   });
 
+  it('never copies the rejected input into the error message', () => {
+    for (const bad of ['12,50 secret', '1.005', 'Mona 0100']) {
+      try {
+        Money.of(bad);
+        expect.unreachable();
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidAmountError);
+        expect((error as Error).message).not.toContain(bad);
+      }
+    }
+    expect(() => Quantity.of(1.5)).toThrow(/whole number$/);
+  });
+
   it('rejects more than 2 decimals instead of rounding silently', () => {
     expect(() => Money.of('1.005')).toThrow(InvalidAmountError);
   });

@@ -87,7 +87,12 @@ describe('runMigrations', () => {
 
     await runMigrations(url);
 
-    const locks = await query(url, "SELECT 1 FROM pg_locks WHERE locktype = 'advisory'");
+    // pg_locks is server wide and other suites migrate in parallel: count this database's only.
+    const locks = await query(
+      url,
+      `SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+    );
     expect(locks).toHaveLength(0);
   });
 
@@ -107,6 +112,33 @@ describe('runMigrations', () => {
         url,
         'SELECT id, client_code, name, created_at FROM install',
       );
+
+    const costRuleRows = (url: string) =>
+      query<{ id: string; kind: string; status: string; tenant_id: string; today: boolean }>(
+        url,
+        `SELECT id, kind, status, tenant_id, effective_from = ssd_operating_day(now()) AS today
+         FROM order_cost_rules ORDER BY kind`,
+      );
+
+    // AC-32: a new install reads every per order cost rule as not set, never 0.
+    it('seeds one not_set order cost rule per kind on the install day, after the install row', async () => {
+      const url = await freshDatabase();
+
+      await runMigrations(url);
+
+      const [install] = await installRows(url);
+      const rules = await costRuleRows(url);
+      expect(
+        rules.map(({ kind, status, tenant_id, today }) => ({ kind, status, tenant_id, today })),
+      ).toEqual(
+        [
+          'cod_fee_percent',
+          'gateway_fee_percent',
+          'packaging_per_order',
+          'rto_unrestocked_percent',
+        ].map((kind) => ({ kind, status: 'not_set', tenant_id: install?.id, today: true })),
+      );
+    });
 
     it('generates a tenant id, sets both database settings, and writes the install row', async () => {
       const url = await freshDatabase();
@@ -149,6 +181,7 @@ describe('runMigrations', () => {
           url,
           'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id',
         ),
+        costRules: await costRuleRows(url),
       };
 
       await runMigrations(url);
@@ -161,6 +194,7 @@ describe('runMigrations', () => {
           url,
           'SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id',
         ),
+        costRules: await costRuleRows(url),
       }).toEqual(before);
     });
 

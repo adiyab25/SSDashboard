@@ -1,15 +1,29 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
+  date,
+  index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
   primaryKey,
   text,
+  timestamp,
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { archivedAt, createdAt, id, tenantId, updatedAt, type LocalizedText } from './columns.js';
+import { users } from './auth.js';
+import {
+  archivedAt,
+  createdAt,
+  id,
+  tenantId,
+  unitCost,
+  updatedAt,
+  type LocalizedText,
+} from './columns.js';
 
 /** Install settings, one row per key. Seeded by the core data model migration. */
 export const settings = pgTable(
@@ -76,3 +90,50 @@ export const install = pgTable('install', {
   name: text('name').notNull(),
   createdAt: createdAt(),
 });
+
+/** Which per order cost a rule sets. Percents are 0 to 100; `packaging_per_order` is EGP per order. */
+export const orderCostRuleKind = pgEnum('order_cost_rule_kind', [
+  'cod_fee_percent',
+  'gateway_fee_percent',
+  'packaging_per_order',
+  'rto_unrestocked_percent',
+]);
+
+/** Whether a rule row sets a value. `not_set` is shown as "not set", never read as 0. */
+export const orderCostRuleStatus = pgEnum('order_cost_rule_status', ['set', 'not_set']);
+
+/**
+ * The per order cost rules (spec 0002, catalog child, AC-32), effective dated and append only: a
+ * change is a newer row (later `effective_from`, or the same day recorded later). `migrate` seeds
+ * one `not_set` row per kind from the install's operating day. Read only through
+ * `CostRulesService.ruleFor` in the api's platform module, which never answers 0 for a rule that
+ * is not set.
+ */
+export const orderCostRules = pgTable(
+  'order_cost_rules',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    kind: orderCostRuleKind('kind').notNull(),
+    status: orderCostRuleStatus('status').notNull(),
+    /** A percent (0 to 100, never a fraction) or EGP for `packaging_per_order`; set exactly when `status = 'set'`. */
+    value: unitCost('value'),
+    effectiveFrom: date('effective_from').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+    recordedBy: uuid('recorded_by').references(() => users.id, { onDelete: 'restrict' }),
+  },
+  (t) => [
+    check('order_cost_rules_value_when_set', sql`(${t.status} = 'set') = (${t.value} IS NOT NULL)`),
+    check('order_cost_rules_value_not_negative', sql`${t.value} >= 0`),
+    check(
+      'order_cost_rules_percent_at_most_100',
+      sql`${t.kind} = 'packaging_per_order' OR ${t.value} <= 100`,
+    ),
+    index('order_cost_rules_kind_effective_idx').on(
+      t.kind,
+      t.effectiveFrom.desc(),
+      t.recordedAt.desc(),
+    ),
+    index('order_cost_rules_recorded_by_idx').on(t.recordedBy),
+  ],
+);

@@ -2,7 +2,8 @@ import { base } from '@ssdashboard/config/eslint/base';
 import { FORMATTING_BANS, formattingBan } from '@ssdashboard/config/eslint/i18n';
 
 // Spec 0002: only the inventory module writes the stock ledger. Other modules call its
-// exported services; reaching for its Drizzle tables fails lint (and a unit test).
+// exported services; reaching for its Drizzle tables fails lint. The full wall, every module's
+// tables by Drizzle export and SQL name (spec 0002, A5), is src/module-boundary.spec.ts.
 const LEDGER_TABLES =
   '^(stockMovements|movementGroups|movementSerials|stockLevels|reservations|serials)$';
 

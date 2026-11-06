@@ -39,6 +39,8 @@ const ALLOWED = new Set([
   'apps/api/src/inventory/locations/owner-type-boundary.spec.ts',
   // The one definition of the values for the api and web (a z.enum of the three names).
   'packages/contracts/src/locations.ts',
+  // SettlementOwnerType, a different enum (who an account settles with) that shares the partner name.
+  'packages/contracts/src/settlement/settlement-enums.ts',
   // Web test fixtures of API answers: data, not rules.
   'apps/web/src/inventory/locations-page.spec.tsx',
   'apps/web/src/shell/location-switcher.spec.tsx',
@@ -49,6 +51,8 @@ const POLICY_TABLE_ALLOWED = new Set([
   'apps/api/src/inventory/locations/location-policy.service.ts',
   'apps/api/src/inventory/locations/owner-type-boundary.spec.ts',
   'packages/db/src/schema/locations.ts',
+  // The table ownership map (spec 0002, A5) lists every table with its module.
+  'packages/db/src/table-ownership.ts',
   'packages/db/migrations/0001_baseline_tables.sql',
   'packages/db/migrations/0002_baseline_rules.sql',
   'packages/db/test/migrate.e2e-spec.ts',

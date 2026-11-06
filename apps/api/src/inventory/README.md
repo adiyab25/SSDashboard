@@ -20,8 +20,8 @@ Agent rules, locking and costing gotchas: [AGENTS.md](AGENTS.md).
 ## Never touches
 
 - Updating or deleting a stock movement. Correct with `reverse`.
-- Other modules' tables, with one recorded exception: `LocationPolicyService` reads `parties` (the role check for a partner or wholesale location) until the partners module exists. The milestone 4 table ownership map owed by spec 0002 routes that read through the partners module.
-- Ledger tables from any other folder. Other modules import `LedgerService`, `ReconciliationService`, and `LocationPolicyService` from [inventory.module.ts](inventory.module.ts). [module-boundary.spec.ts](module-boundary.spec.ts) and a lint rule enforce this.
+- Other modules' tables, with recorded exceptions listed in `KNOWN_BREACHES` of [../module-boundary.spec.ts](../module-boundary.spec.ts): `LocationPolicyService` reads `parties` (the role check for a partner or wholesale location) until the partners module has a service, and the ledger and reconciliation lock `product_variants` rows (spec 0006) until catalog offers a locking service.
+- Ledger tables from any other folder. Other modules import `LedgerService`, `ReconciliationService`, and `LocationPolicyService` from [inventory.module.ts](inventory.module.ts). [../module-boundary.spec.ts](../module-boundary.spec.ts) (every module's tables, from `TABLE_OWNERSHIP` in `packages/db`) and a lint rule enforce this.
 - The service schemas `PostingInput` in controllers. Routes validate with `PostingRequest` or `ReverseRequest` from `@ssdashboard/contracts` ([controller-contracts.spec.ts](controller-contracts.spec.ts)).
 
 ## How to test

@@ -518,6 +518,9 @@ importers:
       '@ssdashboard/config':
         specifier: workspace:*
         version: link:../config
+      '@ssdashboard/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
