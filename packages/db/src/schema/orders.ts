@@ -16,18 +16,22 @@ import {
 import { users } from './auth.js';
 import { productVariants } from './catalog.js';
 import { channels, stores } from './channels.js';
-import { createdAt, id, money, taxRate, tenantId, unitCost, updatedAt } from './columns.js';
+import {
+  createdAt,
+  id,
+  money,
+  reasonCodeShape,
+  taxRate,
+  tenantId,
+  unitCost,
+  updatedAt,
+} from './columns.js';
 import { customers } from './customers.js';
 
 // The orders module (spec 0002, orders child): an order with two state machines (the parcel and
 // the money), its lines, and the append only event history of every move. Only the orders module
 // writes these tables; `order_events` is append only (trigger and revoke in the rules migration),
 // and `operating_day` on `orders` and `order_events` is stamped by trigger, never passed.
-
-// A reason is a code (`edit_removal`, `size`), never a typed note: a note would be personal data
-// kept for ever on an append only row.
-const reasonCodeShape = (column: AnyPgColumn): SQL =>
-  sql`${column} IS NULL OR ${column} ~ '^[a-z][a-z0-9_.]{0,63}$'`;
 
 // The E.164 pattern of `customer_phones.phone_e164`.
 const e164Shape = (column: AnyPgColumn): SQL =>
@@ -338,6 +342,8 @@ export const orderLines = pgTable(
   (t) => [
     unique('order_lines_order_position_unique').on(t.tenantId, t.orderId, t.position),
     foreignKey({ columns: [t.splitFromLineId], foreignColumns: [t.id] }).onDelete('restrict'),
+    // The target of composite keys that keep a line on its own order (credit entries, match rows).
+    unique('order_lines_id_order_unique').on(t.id, t.orderId),
     index('order_lines_order_idx').on(t.orderId),
     index('order_lines_variant_idx').on(t.variantId),
     index('order_lines_split_from_idx').on(t.splitFromLineId),

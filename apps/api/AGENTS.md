@@ -13,7 +13,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 | `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD`; `TENANT_ID` and `APP_DB_ROLE` are read here only: stored on a database's first run, then only checked on every run (a different value throws `TenantMismatch` or `AppRoleMismatch`); the app role's password is set for the stored role |
 | `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, logs through `RedactingLogger`, runs pg-boss jobs (the nightly ledger reconciliation) |
 | `src/database/sql.ts` | `Transaction`/`Executor` types, `pgArray` (arrays as one bound literal), PostgreSQL error code helpers |
-| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone) and `NumberingService` (gap free document numbers) |
+| `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone), `NumberingService` (gap free document numbers), and `CostRulesService` (`ruleFor`: the per order cost rule in force on a day, read from `order_cost_rules`; `not_set` and never 0 when unset) |
 | `src/platform/audience/` | `@Audience(...)` (`staff`, `partner`, `portal`, `hook`, `public`) and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `src/platform/logging/` | `RedactingLogger`: Nest's console logger with every argument passed through `redact` from `@ssdashboard/config/redaction` |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
@@ -50,6 +50,7 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - The core never imports an extension; extensions load by dynamic import only.
 - `DATABASE_URL` is the application role, which cannot create databases. The e2e helpers create scratch databases with `MIGRATION_DATABASE_URL` (the owner) and run the ledger as the app role with `options=-c role=ssdashboard_app`.
 - `test/scale.e2e-spec.ts` seeds 100,000 SKUs and 1,000,000 movements; it adds about 1m45s to `test:e2e`.
+- The module wall is `src/module-boundary.spec.ts`: a file in one module that names another module's table (by Drizzle export or SQL name, from `TABLE_OWNERSHIP` in `packages/db`) fails it, and so does an extension that names a core table. Its `KNOWN_BREACHES` list may only shrink.
 
 ## Agent skills
 

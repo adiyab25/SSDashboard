@@ -229,9 +229,44 @@ describe('core data model schema (spec 0002)', () => {
   });
 
   // AC-33 (spec 0002, A4): every table that can only grow. The app role is refused on permissions,
-  // the owner on the trigger. Later features add their tables to this list.
+  // the owner on the trigger. The A4 tables not built yet join this list with their features:
+  // `audit_entries` (feature 10, spec 0010), `licenses` and `license_checks` (feature 9, spec 0009),
+  // and `export_runs` (feature 45, its status columns stay updatable).
   describe('the append only tables (AC-33)', () => {
     type Seeded = { update: string; remove: string; params: string[] };
+
+    /** A carrier settlement account with one statement and one line, for the settlement seeds. */
+    async function makeSettlementLine(): Promise<{
+      accountId: string;
+      statementId: string;
+      lineId: string;
+    }> {
+      counter += 1;
+      const connection = await one<{ id: string }>(
+        owner,
+        "INSERT INTO connections (provider, label) VALUES ('bosta', $1) RETURNING id",
+        [`Bosta ${counter}`],
+      );
+      const account = await one<{ id: string }>(
+        owner,
+        `INSERT INTO settlement_accounts (code, name, owner_type, owner_connection_id)
+         VALUES ($1, '{"en": "Bosta"}', 'carrier', $2) RETURNING id`,
+        [`BOSTA-${counter}`, connection.id],
+      );
+      const statement = await one<{ id: string }>(
+        owner,
+        `INSERT INTO settlement_statements (account_id, kind, external_reference)
+         VALUES ($1, 'carrier_file', 'cycle-1') RETURNING id`,
+        [account.id],
+      );
+      const line = await one<{ id: string }>(
+        owner,
+        `INSERT INTO settlement_lines (account_id, statement_id, line_kind, amount, external_line_ref, occurred_on)
+         VALUES ($1, $2, 'cod_collected', 100, '1', '2026-11-03') RETURNING id`,
+        [account.id, statement.id],
+      );
+      return { accountId: account.id, statementId: statement.id, lineId: line.id };
+    }
 
     const seeds: Record<string, () => Promise<Seeded>> = {
       movement_groups: async () => {
@@ -350,7 +385,89 @@ describe('core data model schema (spec 0002)', () => {
           params: [merge.id],
         };
       },
+      credit_entries: async () => {
+        const entry = await one<{ id: string }>(
+          owner,
+          `WITH customer AS (INSERT INTO customers DEFAULT VALUES RETURNING id)
+           INSERT INTO credit_entries (posting_id, customer_id, kind, funding, amount, reason_code, actor_type, idempotency_key, request_hash, effective_at)
+           SELECT gen_random_uuid(), customer.id, 'opening_balance', 'credit_only', 50, 'opening', 'import', gen_random_uuid()::text, 'h', now()
+           FROM customer RETURNING id`,
+        );
+        return {
+          update: 'UPDATE credit_entries SET amount = 60 WHERE id = $1',
+          remove: 'DELETE FROM credit_entries WHERE id = $1',
+          params: [entry.id],
+        };
+      },
+      settlement_statements: async () => {
+        const { statementId } = await makeSettlementLine();
+        return {
+          update: "UPDATE settlement_statements SET external_reference = 'x' WHERE id = $1",
+          remove: 'DELETE FROM settlement_statements WHERE id = $1',
+          params: [statementId],
+        };
+      },
+      settlement_lines: async () => {
+        const { lineId } = await makeSettlementLine();
+        return {
+          update: 'UPDATE settlement_lines SET amount = 1 WHERE id = $1',
+          remove: 'DELETE FROM settlement_lines WHERE id = $1',
+          params: [lineId],
+        };
+      },
+      settlement_line_matches: async () => {
+        const { lineId } = await makeSettlementLine();
+        const match = await one<{ id: string }>(
+          owner,
+          `INSERT INTO settlement_line_matches (line_id, result, reason_code, matched_by_type)
+           VALUES ($1, 'unmatched', 'not_yet_matched', 'rule') RETURNING id`,
+          [lineId],
+        );
+        return {
+          update: "UPDATE settlement_line_matches SET reason_code = 'amount_differs' WHERE id = $1",
+          remove: 'DELETE FROM settlement_line_matches WHERE id = $1',
+          params: [match.id],
+        };
+      },
+      settlement_period_events: async () => {
+        const { accountId } = await makeSettlementLine();
+        const event = await one<{ id: string }>(
+          owner,
+          `WITH period AS (
+             INSERT INTO settlement_periods (account_id, starts_on, ends_on)
+             VALUES ($1, '2026-11-01', '2026-11-30') RETURNING id)
+           INSERT INTO settlement_period_events (period_id, action, evidence, actor_type)
+           SELECT period.id, 'closed', '{"statement_total": "0.00"}', 'rule' FROM period RETURNING id`,
+          [accountId],
+        );
+        return {
+          update: "UPDATE settlement_period_events SET reason = 'x' WHERE id = $1",
+          remove: 'DELETE FROM settlement_period_events WHERE id = $1',
+          params: [event.id],
+        };
+      },
+      order_cost_rules: async () => {
+        const rule = await one<{ id: string }>(
+          owner,
+          `INSERT INTO order_cost_rules (kind, status, value, effective_from)
+           VALUES ('cod_fee_percent', 'set', 2.5, '2027-01-01') RETURNING id`,
+        );
+        return {
+          update: 'UPDATE order_cost_rules SET value = 3 WHERE id = $1',
+          remove: 'DELETE FROM order_cost_rules WHERE id = $1',
+          params: [rule.id],
+        };
+      },
     };
+
+    it('covers every table the database marks append only', async () => {
+      const { rows } = await owner.query<{ table: string }>(
+        `SELECT DISTINCT event_object_table AS table FROM information_schema.triggers
+         WHERE right(trigger_name, 12) = '_append_only' ORDER BY 1`,
+      );
+
+      expect(rows.map((row) => row.table)).toEqual(Object.keys(seeds).sort());
+    });
 
     it.each(Object.keys(seeds))('refuses UPDATE, DELETE, and TRUNCATE on %s', async (table) => {
       const seed = await seeds[table]?.();

@@ -10,7 +10,7 @@ Loads the per client extension packages named in the `EXTENSIONS` setting. Today
 
 - Extension code by static import. The core never imports an extension.
 - Core tables. Extensions keep their own tables in their own schema.
-- Ledger tables. [../inventory/module-boundary.spec.ts](../inventory/module-boundary.spec.ts) fails if an extension names one.
+- Core tables, the ledger's included. [../module-boundary.spec.ts](../module-boundary.spec.ts) fails if an extension names one.
 
 ## How to test
 

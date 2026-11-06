@@ -18,11 +18,11 @@ The inventory module and its ledger service, the only writer of stock in the sys
 | `ledger/ledger.errors.ts` | `LedgerError` with a stable `code`; feature 7 maps codes to HTTP errors |
 | `locations/location-policy.service.ts` | `LocationPolicyService`: the only reader of `location_owner_policies`, the only code naming an owner type, and the owner type to party role map; `NotSellableOnline` and `PartyRoleMismatch` |
 | `locations/owner-type-boundary.spec.ts` | Fails on an owner type literal (quoted, as a bare object key, or via `LocationOwnerType.enum`, `.options`, `.extract`, `.exclude`) in api, web, contracts, or extensions source, outside the allow list by full path: the policy service files, `packages/contracts/src/locations.ts`, and two web fixture specs |
-| `module-boundary.spec.ts` | Fails if any file outside this folder (or any extension) names a ledger table |
+| `../module-boundary.spec.ts` | The module wall for every module (spec 0002, A5), not only inventory: fails if a file names another module's table by Drizzle export or SQL name, or an extension names a core table. `KNOWN_BREACHES` lists the recorded exceptions and may only shrink |
 
 ## Conventions
 
-- Only this folder may touch `movement_groups`, `stock_movements`, `movement_serials`, `stock_levels`, `reservations`, and `serials`. A lint rule in `apps/api/eslint.config.js` and `module-boundary.spec.ts` enforce it.
+- Only this folder may touch `movement_groups`, `stock_movements`, `movement_serials`, `stock_levels`, `reservations`, and `serials`. A lint rule in `apps/api/eslint.config.js` and the module wall, `apps/api/src/module-boundary.spec.ts`, enforce it.
 - Every writer of balances, reservations, or discrepancies runs inside `ledgerTransaction` and takes `lockPairs` for each SKU and location before it reads or locks any balance or reservation row. A new writer that skips either breaks the AC-4 reserved stock check or can deadlock.
 - Money is `Money` and `UnitCost` from `@ssdashboard/contracts` (bigint, rounded once, half away from zero). Cost rules change in `costing.ts` only, with a test per rule, never inline in SQL.
 - Dates are compared in SQL against the stored values (`effective_at`, `recorded_at`), and calendar dates use the `timezone` setting (Africa/Cairo); never parse timestamps in JS for a rule.

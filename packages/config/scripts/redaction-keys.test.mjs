@@ -202,3 +202,92 @@ describe('redaction of the order, customer, and task rows', () => {
     });
   });
 });
+
+/** The real row shapes of packages/db/src/schema/settlement.ts (camelCase, as Drizzle returns them). */
+const periodEventRow = {
+  id: 'e-1',
+  tenantId: 't-1',
+  periodId: 'sp-1',
+  action: 'revoked',
+  evidence: null,
+  reason: 'partner called: Mona at 01001234567 says the sales were wrong',
+  actorType: 'person',
+  actorId: 'u-1',
+  recordedAt: '2026-11-06T00:00:00Z',
+};
+
+const settlementLineRow = {
+  id: 'l-1',
+  tenantId: 't-1',
+  accountId: 'a-1',
+  statementId: 'st-1',
+  lineKind: 'adjustment',
+  amount: '-120.00',
+  externalLineRef: '14',
+  occurredOn: '2026-11-04',
+  trackingNumber: 'TRK-1',
+  partnerCode: 'SH-1',
+  partnerText: 'returned by Mona Hassan, 12 Tahrir St',
+  partnerOrderRef: 'PO-77',
+  quantity: -1,
+};
+
+const settlementMatchRow = {
+  id: 'mt-1',
+  tenantId: 't-1',
+  lineId: 'l-1',
+  result: 'accounted',
+  orderId: null,
+  accountCode: 'payment_received',
+  paymentReference: 'InstaPay from mona.h@bank 01001234567',
+  reasonCode: null,
+  matchedByType: 'person',
+  supersedesMatchId: null,
+};
+
+describe('redaction of the settlement rows', () => {
+  it('redacts a period event reason, keeping the action and ids', () => {
+    checkRow(periodEventRow, ['reason'], ['id', 'periodId', 'action', 'actorType', 'actorId']);
+  });
+
+  it('redacts a period event reason in snake case', () => {
+    const out = redact(snake(periodEventRow));
+    assert.equal(out.reason, REDACTED);
+    assert.equal(out.period_id, 'sp-1');
+  });
+
+  it('marks a period event by periodId with action, not by either alone', () => {
+    assert.equal(redact({ periodId: 'p', action: 'closed', reason: 'x' }).reason, REDACTED);
+    assert.equal(redact({ action: 'closed', reason: 'locked_out' }).reason, 'locked_out');
+    assert.equal(redact({ periodId: 'p', reason: 'locked_out' }).reason, 'locked_out');
+  });
+
+  it('redacts the partner wording on a statement line, keeping the facts', () => {
+    checkRow(
+      settlementLineRow,
+      ['partnerText'],
+      [
+        'id',
+        'lineKind',
+        'amount',
+        'externalLineRef',
+        'trackingNumber',
+        'partnerCode',
+        'partnerOrderRef',
+      ],
+    );
+  });
+
+  it('redacts a match row payment reference, keeping the result and codes', () => {
+    checkRow(
+      settlementMatchRow,
+      ['paymentReference'],
+      ['id', 'lineId', 'result', 'accountCode', 'reasonCode', 'supersedesMatchId'],
+    );
+  });
+
+  it('redacts both in snake case', () => {
+    assert.equal(redact(snake(settlementLineRow)).partner_text, REDACTED);
+    assert.equal(redact(snake(settlementMatchRow)).payment_reference, REDACTED);
+  });
+});

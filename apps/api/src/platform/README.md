@@ -1,18 +1,19 @@
 # Platform
 
-Services every module shares: install settings, gap free document numbers, the audience guard, request validation pipes, and the public client config route.
+Services every module shares: install settings, gap free document numbers, the per order cost rules, the audience guard, request validation pipes, and the public client config route.
 
 ## Owns
 
 - `GET /api/config`, open to everyone: [config.controller.ts](config.controller.ts)
 - Typed install settings and local dates in the install time zone: [settings.service.ts](settings.service.ts)
 - Gap free document numbers: [numbering.service.ts](numbering.service.ts)
+- The per order cost rules in force on a day (`CostRulesService.ruleFor`, `not_set` and never 0 when no rule is set): [cost-rules.service.ts](cost-rules.service.ts), selection in [cost-rule-selection.ts](cost-rule-selection.ts)
 - `@Audience(...)` and the deny by default guard: [audience/audience.decorator.ts](audience/audience.decorator.ts), [audience/audience.guard.ts](audience/audience.guard.ts)
 - Request validation: [zod-body.pipe.ts](zod-body.pipe.ts), [zod-query.pipe.ts](zod-query.pipe.ts)
 - Keyset paging cursors: [keyset-cursor.ts](keyset-cursor.ts)
 - Mapping query errors to answers: [query-error.filter.ts](query-error.filter.ts)
 - Auth events other modules can listen to: [events/auth-events.ts](events/auth-events.ts)
-- The settings, document counter and custom field tables, defined in [packages/db](../../../../packages/db/src/schema/platform.ts)
+- The settings, document counter, custom field, and order cost rule tables (`install` too, written only by `migrate`, which also seeds one `not_set` rule per kind), defined in [packages/db](../../../../packages/db/src/schema/platform.ts)
 
 ## Never touches
 
@@ -25,7 +26,7 @@ Services every module shares: install settings, gap free document numbers, the a
 ```bash
 pnpm --filter @ssdashboard/api test -- src/platform
 pnpm --filter @ssdashboard/api build
-pnpm --filter @ssdashboard/api test:e2e -- test/numbering-reconcile.e2e-spec.ts
+pnpm --filter @ssdashboard/api test:e2e test/numbering-reconcile.e2e-spec.ts test/cost-rules.e2e-spec.ts
 ```
 
 [audience/audience.spec.ts](audience/audience.spec.ts) fails the build for a controller without exactly one `@Audience(...)`.

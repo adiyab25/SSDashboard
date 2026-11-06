@@ -22,6 +22,33 @@ describe('migrate entry point (dist/migrate.js)', { timeout: 30_000 }, () => {
     expect(result.output).toContain('Migrations applied.');
   });
 
+  it('seeds one not_set cost rule per kind on the install day, and a rerun adds none (AC-32)', async () => {
+    const db = await createScratchDatabase();
+    scratch.push(db.name);
+    const env = { DATABASE_URL: db.url, MIGRATION_DATABASE_URL: db.url };
+
+    expect((await run('migrate.js', env)).code).toBe(0);
+    expect((await run('migrate.js', env)).code).toBe(0);
+
+    const owner = createDatabase(db.url, { max: 1 });
+    try {
+      const { rows } = await owner.pool.query<{ kind: string; status: string; today: boolean }>(
+        `SELECT kind, status, effective_from = ssd_operating_day(now()) AS today
+         FROM order_cost_rules ORDER BY kind`,
+      );
+      expect(rows).toEqual(
+        [
+          'cod_fee_percent',
+          'gateway_fee_percent',
+          'packaging_per_order',
+          'rto_unrestocked_percent',
+        ].map((kind) => ({ kind, status: 'not_set', today: true })),
+      );
+    } finally {
+      await owner.pool.end();
+    }
+  });
+
   it('exits 1 when the database cannot be reached, so the api never starts', async () => {
     const result = await run('migrate.js', {
       DATABASE_URL: UNREACHABLE_DB,

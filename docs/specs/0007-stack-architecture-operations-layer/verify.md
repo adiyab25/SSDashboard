@@ -16,7 +16,7 @@ _Steps derived from spec 0007. It is a decision spec, so its checks map to the r
 - [ ] *Assessment of the existing build* has a row for specs 0002, 0003, 0004, 0005, 0006 and the inventory module, each with keep, amend, or replace, a reason, cited paths, and the new requirements (tenant id; store, channel, source; two order state machines; outcome enum; credit ledger; settlement primitive; owner type and sellable flag; tasks; period close; channel code mapping).
 - [ ] Each shape has 2 to 5 milestones with a "Done when" a person can run, its own keep list, and a cost line; the recommendation is a separate line, not inside a shape.
 - [ ] Every convention in *Conventions* names its enforcer or says **review only**; every named ESLint plugin and rule is listed with a link in rationale.md.
-- [ ] Every repo path cited exists, or the text marks it "to be created". Spot check: `ls apps/api/src/inventory/module-boundary.spec.ts apps/api/src/inventory/locations/locations.service.ts packages/db/src/schema/locations.ts packages/db/src/schema/parties.ts apps/web/src/api/client.ts apps/api/test/scale.e2e-spec.ts`.
+- [ ] Every repo path cited exists, or the text marks it "to be created". Spot check: `ls apps/api/src/module-boundary.spec.ts apps/api/src/inventory/locations/locations.service.ts packages/db/src/schema/locations.ts packages/db/src/schema/parties.ts apps/web/src/api/client.ts apps/api/test/scale.e2e-spec.ts`.
 - [x] Domain review (wave 2b) of sections 1 to 6 has no open blocker (`docs/reviews/domain-stack.md`; Igris confirms B1 and B2 against this revision).
 
 ## Part 2: after wave 3 (both shapes unless marked)

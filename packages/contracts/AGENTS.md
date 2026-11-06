@@ -18,8 +18,8 @@ pnpm --filter @ssdashboard/contracts test   # test/*.spec.ts
 ## Conventions
 
 - One file per module's shapes (`src/health.ts`), re-exported from `src/index.ts`.
-- A module with several pure parts is a folder: `src/customers/` and `src/orders/`, one file per concern. Each file is re-exported from `src/index.ts`, so consumers import from the package root, not from the folder path.
-- The enums in `src/orders/` and `src/customers/` match the database enums of the same meaning (for example `FulfillmentState` and `orders.fulfillment_state`). Keep both in step in one change.
+- A module with several pure parts is a folder: `src/customers/`, `src/orders/`, `src/credit/`, `src/settlement/`, and `src/tasks/`, plus `src/platform/cost-rules.ts` beside `src/platform.ts`. One file per concern. Each file is re-exported from `src/index.ts`, so consumers import from the package root, not from the folder path.
+- The enums in `src/orders/`, `src/customers/`, `src/credit/`, `src/settlement/`, `src/tasks/`, and `src/platform/cost-rules.ts` match the database enums of the same meaning (for example `FulfillmentState` and `orders.fulfillment_state`). `packages/db/test/enum-parity.e2e-spec.ts` fails when one drifts. Keep both in step in one change.
 - `deriveOrderOutcome` is the only place an order outcome is computed. Never set `orders.outcome` by hand.
 - `InvalidPhone` never carries the input text (Law 151). Never put raw phone text into an error message or a log line.
 - Schemas are the source of truth; export types with `z.infer`, never a hand written duplicate.

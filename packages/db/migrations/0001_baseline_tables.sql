@@ -9,6 +9,10 @@ CREATE TYPE "public"."connection_status" AS ENUM('active', 'paused', 'restricted
 CREATE TYPE "public"."outbound_linked_type" AS ENUM('order', 'customer', 'variant', 'exchange', 'refund');--> statement-breakpoint
 CREATE TYPE "public"."outbound_resolution" AS ENUM('retried', 'fixed_in_provider', 'edit_undone');--> statement-breakpoint
 CREATE TYPE "public"."outbound_sync_state" AS ENUM('waiting', 'synced', 'failed', 'resolved');--> statement-breakpoint
+CREATE TYPE "public"."credit_actor_type" AS ENUM('person', 'rule', 'system_job', 'import');--> statement-breakpoint
+CREATE TYPE "public"."credit_entry_kind" AS ENUM('return_credit', 'shipping_credit', 'order_consumption', 'refund_payout', 'retention_bonus', 'goodwill', 'opening_balance', 'inspection_reversal', 'return_not_collected', 'consumption_release', 'debt_payment', 'adjustment');--> statement-breakpoint
+CREATE TYPE "public"."credit_funding" AS ENUM('cod_cash', 'gateway', 'instapay_or_transfer', 'credit_only');--> statement-breakpoint
+CREATE TYPE "public"."credit_payout_method" AS ENUM('carrier_cash_refund', 'gateway_refund', 'instapay_or_transfer');--> statement-breakpoint
 CREATE TYPE "public"."customer_external_id_kind" AS ENUM('shopify_customer', 'partner_reference', 'whatsapp_contact');--> statement-breakpoint
 CREATE TYPE "public"."customer_merge_action" AS ENUM('merge', 'undo');--> statement-breakpoint
 CREATE TYPE "public"."customer_phone_kind" AS ENUM('mobile', 'landline', 'foreign');--> statement-breakpoint
@@ -38,7 +42,19 @@ CREATE TYPE "public"."order_source_captured_from" AS ENUM('landing_page', 'shopi
 CREATE TYPE "public"."order_type" AS ENUM('sale', 'exchange_replacement', 'gifted');--> statement-breakpoint
 CREATE TYPE "public"."order_write_back_state" AS ENUM('none', 'waiting', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."custom_field_type" AS ENUM('text', 'number', 'boolean', 'date', 'select');--> statement-breakpoint
+CREATE TYPE "public"."order_cost_rule_kind" AS ENUM('cod_fee_percent', 'gateway_fee_percent', 'packaging_per_order', 'rto_unrestocked_percent');--> statement-breakpoint
+CREATE TYPE "public"."order_cost_rule_status" AS ENUM('set', 'not_set');--> statement-breakpoint
+CREATE TYPE "public"."settlement_line_kind" AS ENUM('cod_collected', 'cod_fee', 'shipping_fee', 'opening_package_fee', 'other_fee', 'fee_vat', 'customer_refund', 'compensation', 'deposit', 'consignment_sale', 'consignment_return', 'defective_return_credit', 'missing_piece_charge', 'partner_payment', 'adjustment');--> statement-breakpoint
+CREATE TYPE "public"."settlement_match_result" AS ENUM('matched', 'accounted', 'unmatched', 'cleared');--> statement-breakpoint
+CREATE TYPE "public"."settlement_matched_by_type" AS ENUM('rule', 'person');--> statement-breakpoint
+CREATE TYPE "public"."settlement_period_action" AS ENUM('closed', 'revoked');--> statement-breakpoint
+CREATE TYPE "public"."settlement_period_actor_type" AS ENUM('person', 'rule');--> statement-breakpoint
+CREATE TYPE "public"."settlement_period_status" AS ENUM('open', 'closed');--> statement-breakpoint
+CREATE TYPE "public"."settlement_statement_kind" AS ENUM('carrier_file', 'carrier_api', 'partner_file', 'partner_upload', 'partner_api', 'count');--> statement-breakpoint
 CREATE TYPE "public"."stock_receipt_status" AS ENUM('posted', 'voided');--> statement-breakpoint
+CREATE TYPE "public"."task_created_by_type" AS ENUM('person', 'system_job');--> statement-breakpoint
+CREATE TYPE "public"."task_linked_type" AS ENUM('order', 'customer', 'exchange', 'refund', 'shipment', 'settlement_line', 'settlement_statement', 'settlement_period', 'outbound_command', 'party', 'location');--> statement-breakpoint
+CREATE TYPE "public"."task_status" AS ENUM('open', 'done', 'cancelled');--> statement-breakpoint
 CREATE TABLE "accounts" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
@@ -311,6 +327,49 @@ CREATE TABLE "outbound_commands" (
 	CONSTRAINT "outbound_commands_resolution_when_resolved" CHECK (("outbound_commands"."sync_state" = 'resolved') = ("outbound_commands"."resolution" IS NOT NULL)),
 	CONSTRAINT "outbound_commands_resolved_at_when_resolved" CHECK (("outbound_commands"."sync_state" = 'resolved') = ("outbound_commands"."resolved_at" IS NOT NULL)),
 	CONSTRAINT "outbound_commands_attempts_not_negative" CHECK ("outbound_commands"."attempts" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "credit_entries" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"posting_id" uuid NOT NULL,
+	"customer_id" uuid NOT NULL,
+	"kind" "credit_entry_kind" NOT NULL,
+	"funding" "credit_funding" NOT NULL,
+	"amount" numeric(14, 2) NOT NULL,
+	"payout_method" "credit_payout_method",
+	"order_id" uuid,
+	"order_line_id" uuid,
+	"quantity" integer,
+	"exchange_id" uuid,
+	"refund_id" uuid,
+	"reverses_entry_id" uuid,
+	"reason_code" text NOT NULL,
+	"actor_type" "credit_actor_type" NOT NULL,
+	"actor_id" uuid,
+	"idempotency_key" text NOT NULL,
+	"request_hash" text NOT NULL,
+	"effective_at" timestamp with time zone NOT NULL,
+	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"operating_day" date NOT NULL,
+	CONSTRAINT "credit_entries_id_customer_unique" UNIQUE("id","customer_id"),
+	CONSTRAINT "credit_entries_posting_funding_unique" UNIQUE("tenant_id","idempotency_key","funding"),
+	CONSTRAINT "credit_entries_reverses_entry_unique" UNIQUE("reverses_entry_id"),
+	CONSTRAINT "credit_entries_amount_not_zero" CHECK ("credit_entries"."amount" <> 0),
+	CONSTRAINT "credit_entries_not_reversing_self" CHECK ("credit_entries"."reverses_entry_id" IS DISTINCT FROM "credit_entries"."id"),
+	CONSTRAINT "credit_entries_line_needs_order" CHECK ("credit_entries"."order_line_id" IS NULL OR "credit_entries"."order_id" IS NOT NULL),
+	CONSTRAINT "credit_entries_payout_method_matches_funding" CHECK ("credit_entries"."kind" <> 'refund_payout' OR (("credit_entries"."payout_method" = 'gateway_refund') = ("credit_entries"."funding" = 'gateway'))),
+	CONSTRAINT "credit_entries_idempotency_key_shape" CHECK ("credit_entries"."idempotency_key" ~ '^[A-Za-z0-9:_.-]{1,200}$'),
+	CONSTRAINT "credit_entries_sign_by_kind" CHECK ("credit_entries"."kind" = 'adjustment'
+        OR ("credit_entries"."kind" IN ('return_credit', 'shipping_credit', 'retention_bonus', 'goodwill', 'opening_balance', 'consumption_release', 'debt_payment')) = (("credit_entries"."amount" > 0) = ("credit_entries"."reverses_entry_id" IS NULL))),
+	CONSTRAINT "credit_entries_payout_method_on_payout" CHECK (("credit_entries"."kind" = 'refund_payout') = ("credit_entries"."payout_method" IS NOT NULL)),
+	CONSTRAINT "credit_entries_payout_never_credit_only" CHECK ("credit_entries"."kind" <> 'refund_payout' OR "credit_entries"."funding" <> 'credit_only'),
+	CONSTRAINT "credit_entries_bonus_and_goodwill_credit_only" CHECK ("credit_entries"."kind" NOT IN ('retention_bonus', 'goodwill') OR "credit_entries"."funding" = 'credit_only'),
+	CONSTRAINT "credit_entries_return_credit_has_line" CHECK ("credit_entries"."kind" <> 'return_credit' OR ("credit_entries"."order_line_id" IS NOT NULL AND coalesce("credit_entries"."quantity", 0) > 0)),
+	CONSTRAINT "credit_entries_consumption_has_order" CHECK ("credit_entries"."kind" NOT IN ('order_consumption', 'consumption_release') OR "credit_entries"."order_id" IS NOT NULL),
+	CONSTRAINT "credit_entries_not_collected_has_exchange" CHECK ("credit_entries"."kind" <> 'return_not_collected' OR "credit_entries"."exchange_id" IS NOT NULL),
+	CONSTRAINT "credit_entries_person_has_actor" CHECK ("credit_entries"."actor_type" <> 'person' OR "credit_entries"."actor_id" IS NOT NULL),
+	CONSTRAINT "credit_entries_reason_code_shape" CHECK ("credit_entries"."reason_code" IS NULL OR "credit_entries"."reason_code" ~ '^[a-z][a-z0-9_.]{0,63}$')
 );
 --> statement-breakpoint
 CREATE TABLE "customer_external_ids" (
@@ -593,6 +652,7 @@ CREATE TABLE "order_lines" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "order_lines_order_position_unique" UNIQUE("tenant_id","order_id","position"),
+	CONSTRAINT "order_lines_id_order_unique" UNIQUE("id","order_id"),
 	CONSTRAINT "order_lines_quantity_positive" CHECK ("order_lines"."quantity" > 0),
 	CONSTRAINT "order_lines_amounts_not_negative" CHECK ("order_lines"."unit_price" >= 0 AND "order_lines"."discount_amount" >= 0 AND "order_lines"."net_amount" >= 0
         AND "order_lines"."tax_rate" >= 0 AND "order_lines"."tax_amount" >= 0 AND "order_lines"."gross_amount" >= 0
@@ -744,6 +804,20 @@ CREATE TABLE "install" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "order_cost_rules" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"kind" "order_cost_rule_kind" NOT NULL,
+	"status" "order_cost_rule_status" NOT NULL,
+	"value" numeric(14, 4),
+	"effective_from" date NOT NULL,
+	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"recorded_by" uuid,
+	CONSTRAINT "order_cost_rules_value_when_set" CHECK (("order_cost_rules"."status" = 'set') = ("order_cost_rules"."value" IS NOT NULL)),
+	CONSTRAINT "order_cost_rules_value_not_negative" CHECK ("order_cost_rules"."value" >= 0),
+	CONSTRAINT "order_cost_rules_percent_at_most_100" CHECK ("order_cost_rules"."kind" = 'packaging_per_order' OR "order_cost_rules"."value" <= 100)
+);
+--> statement-breakpoint
 CREATE TABLE "settings" (
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
 	"key" text NOT NULL,
@@ -751,6 +825,130 @@ CREATE TABLE "settings" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_by" uuid,
 	CONSTRAINT "settings_tenant_id_key_pk" PRIMARY KEY("tenant_id","key")
+);
+--> statement-breakpoint
+CREATE TABLE "settlement_accounts" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"code" text NOT NULL,
+	"name" jsonb NOT NULL,
+	"owner_type" "settlement_owner_type" NOT NULL,
+	"owner_connection_id" uuid,
+	"owner_party_id" uuid,
+	"archived_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "settlement_accounts_code_unique" UNIQUE("tenant_id","code"),
+	CONSTRAINT "settlement_accounts_owner_matches_type" CHECK (CASE "settlement_accounts"."owner_type"
+            WHEN 'consignment_partner' THEN "settlement_accounts"."owner_party_id" IS NOT NULL AND "settlement_accounts"."owner_connection_id" IS NULL
+            ELSE "settlement_accounts"."owner_connection_id" IS NOT NULL AND "settlement_accounts"."owner_party_id" IS NULL
+          END)
+);
+--> statement-breakpoint
+CREATE TABLE "settlement_line_matches" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"line_id" uuid NOT NULL,
+	"result" "settlement_match_result" NOT NULL,
+	"order_id" uuid,
+	"order_line_id" uuid,
+	"variant_id" uuid,
+	"account_code" text,
+	"refund_id" uuid,
+	"payment_reference" text,
+	"reason_code" text,
+	"matched_by_type" "settlement_matched_by_type" NOT NULL,
+	"matched_by" uuid,
+	"rule_code" text,
+	"supersedes_match_id" uuid,
+	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "settlement_line_matches_id_line_unique" UNIQUE("id","line_id"),
+	CONSTRAINT "settlement_line_matches_supersedes_unique" UNIQUE("supersedes_match_id"),
+	CONSTRAINT "settlement_line_matches_line_needs_order" CHECK ("settlement_line_matches"."order_line_id" IS NULL OR "settlement_line_matches"."order_id" IS NOT NULL),
+	CONSTRAINT "settlement_line_matches_matched_has_target" CHECK ("settlement_line_matches"."result" <> 'matched' OR "settlement_line_matches"."order_id" IS NOT NULL OR "settlement_line_matches"."variant_id" IS NOT NULL),
+	CONSTRAINT "settlement_line_matches_account_code_when_accounted" CHECK (("settlement_line_matches"."result" = 'accounted') = ("settlement_line_matches"."account_code" IS NOT NULL)),
+	CONSTRAINT "settlement_line_matches_reason_when_unmatched" CHECK ("settlement_line_matches"."result" NOT IN ('unmatched', 'cleared') OR "settlement_line_matches"."reason_code" IS NOT NULL),
+	CONSTRAINT "settlement_line_matches_person_has_actor" CHECK ("settlement_line_matches"."matched_by_type" <> 'person' OR "settlement_line_matches"."matched_by" IS NOT NULL),
+	CONSTRAINT "settlement_line_matches_reason_code_shape" CHECK ("settlement_line_matches"."reason_code" IS NULL OR "settlement_line_matches"."reason_code" ~ '^[a-z][a-z0-9_.]{0,63}$'),
+	CONSTRAINT "settlement_line_matches_account_code_shape" CHECK ("settlement_line_matches"."account_code" IS NULL OR "settlement_line_matches"."account_code" ~ '^[a-z][a-z0-9_.]{0,63}$'),
+	CONSTRAINT "settlement_line_matches_rule_code_shape" CHECK ("settlement_line_matches"."rule_code" IS NULL OR "settlement_line_matches"."rule_code" ~ '^[a-z][a-z0-9_.]{0,63}$')
+);
+--> statement-breakpoint
+CREATE TABLE "settlement_lines" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"account_id" uuid NOT NULL,
+	"statement_id" uuid NOT NULL,
+	"line_kind" "settlement_line_kind" NOT NULL,
+	"fee_code" text,
+	"amount" numeric(14, 2) NOT NULL,
+	"external_line_ref" text NOT NULL,
+	"occurred_on" date NOT NULL,
+	"tracking_number" text,
+	"business_reference" text,
+	"store_id" uuid,
+	"partner_code" text,
+	"partner_text" text,
+	"partner_order_ref" text,
+	"quantity" integer,
+	"unit_price" numeric(14, 2),
+	"gross_amount" numeric(14, 2),
+	"discount_amount" numeric(14, 2),
+	"net_amount" numeric(14, 2),
+	"amounts_include_vat" boolean,
+	CONSTRAINT "settlement_lines_statement_ref_unique" UNIQUE("tenant_id","account_id","statement_id","external_line_ref"),
+	CONSTRAINT "settlement_lines_other_fee_has_code" CHECK ("settlement_lines"."line_kind" <> 'other_fee' OR "settlement_lines"."fee_code" IS NOT NULL)
+);
+--> statement-breakpoint
+CREATE TABLE "settlement_period_events" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"period_id" uuid NOT NULL,
+	"action" "settlement_period_action" NOT NULL,
+	"evidence" jsonb,
+	"reason" text,
+	"actor_type" "settlement_period_actor_type" NOT NULL,
+	"actor_id" uuid,
+	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "settlement_period_events_revoke_has_reason" CHECK ("settlement_period_events"."action" <> 'revoked' OR ("settlement_period_events"."reason" IS NOT NULL AND btrim("settlement_period_events"."reason") <> '')),
+	CONSTRAINT "settlement_period_events_close_has_evidence" CHECK ("settlement_period_events"."action" <> 'closed' OR "settlement_period_events"."evidence" IS NOT NULL),
+	CONSTRAINT "settlement_period_events_person_has_actor" CHECK ("settlement_period_events"."actor_type" <> 'person' OR "settlement_period_events"."actor_id" IS NOT NULL)
+);
+--> statement-breakpoint
+CREATE TABLE "settlement_periods" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"account_id" uuid NOT NULL,
+	"starts_on" date NOT NULL,
+	"ends_on" date NOT NULL,
+	"status" "settlement_period_status" DEFAULT 'open' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "settlement_periods_dates_in_order" CHECK ("settlement_periods"."starts_on" <= "settlement_periods"."ends_on")
+);
+--> statement-breakpoint
+CREATE TABLE "settlement_statements" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"account_id" uuid NOT NULL,
+	"kind" "settlement_statement_kind" NOT NULL,
+	"external_reference" text NOT NULL,
+	"covers_from" date,
+	"covers_to" date,
+	"object_key" text,
+	"sha256" text,
+	"statement_total" numeric(14, 2),
+	"statement_units" integer,
+	"deposited_amount" numeric(14, 2),
+	"deposited_on" date,
+	"supersedes_statement_id" uuid,
+	"imported_by" uuid,
+	"received_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "settlement_statements_reference_unique" UNIQUE NULLS NOT DISTINCT("tenant_id","account_id","external_reference","sha256"),
+	CONSTRAINT "settlement_statements_supersedes_unique" UNIQUE("supersedes_statement_id"),
+	CONSTRAINT "settlement_statements_id_account_unique" UNIQUE("id","account_id"),
+	CONSTRAINT "settlement_statements_not_superseding_self" CHECK ("settlement_statements"."supersedes_statement_id" IS DISTINCT FROM "settlement_statements"."id"),
+	CONSTRAINT "settlement_statements_covers_in_order" CHECK ("settlement_statements"."covers_from" IS NULL OR "settlement_statements"."covers_to" IS NULL OR "settlement_statements"."covers_from" <= "settlement_statements"."covers_to")
 );
 --> statement-breakpoint
 CREATE TABLE "stock_receipt_lines" (
@@ -797,6 +995,37 @@ CREATE TABLE "stock_receipts" (
 	CONSTRAINT "stock_receipts_voided_fields" CHECK (num_nonnulls("stock_receipts"."voided_at", "stock_receipts"."voided_by", "stock_receipts"."void_reason", "stock_receipts"."void_group_id") = CASE WHEN "stock_receipts"."status" = 'voided' THEN 4 ELSE 0 END)
 );
 --> statement-breakpoint
+CREATE TABLE "tasks" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"type" text NOT NULL,
+	"linked_type" "task_linked_type" NOT NULL,
+	"linked_id" uuid NOT NULL,
+	"owner_user_id" uuid,
+	"owner_hat" text,
+	"due_at" timestamp with time zone,
+	"status" "task_status" DEFAULT 'open' NOT NULL,
+	"outcome_code" text,
+	"note" text,
+	"dedupe_key" text,
+	"created_by_type" "task_created_by_type" NOT NULL,
+	"created_by" uuid,
+	"closed_at" timestamp with time zone,
+	"closed_by" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"operating_day" date NOT NULL,
+	CONSTRAINT "tasks_owner_hat_internal" CHECK ("tasks"."owner_hat" IS NULL OR "tasks"."owner_hat" IN ('support', 'operations', 'warehouse', 'manager')),
+	CONSTRAINT "tasks_has_owner" CHECK ("tasks"."owner_user_id" IS NOT NULL OR "tasks"."owner_hat" IS NOT NULL),
+	CONSTRAINT "tasks_outcome_when_done" CHECK (("tasks"."status" = 'done') = ("tasks"."outcome_code" IS NOT NULL)),
+	CONSTRAINT "tasks_closed_at_when_closed" CHECK (("tasks"."status" = 'open') = ("tasks"."closed_at" IS NULL)),
+	CONSTRAINT "tasks_closed_by_when_closed" CHECK ("tasks"."closed_by" IS NULL OR "tasks"."status" <> 'open'),
+	CONSTRAINT "tasks_person_has_creator" CHECK ("tasks"."created_by_type" <> 'person' OR "tasks"."created_by" IS NOT NULL),
+	CONSTRAINT "tasks_type_shape" CHECK ("tasks"."type" IS NULL OR "tasks"."type" ~ '^[a-z][a-z0-9_.]{0,63}$'),
+	CONSTRAINT "tasks_outcome_code_shape" CHECK ("tasks"."outcome_code" IS NULL OR "tasks"."outcome_code" ~ '^[a-z][a-z0-9_.]{0,63}$'),
+	CONSTRAINT "tasks_dedupe_key_shape" CHECK ("tasks"."dedupe_key" IS NULL OR "tasks"."dedupe_key" ~ '^[A-Za-z0-9:_.-]{1,200}$')
+);
+--> statement-breakpoint
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "two_factors" ADD CONSTRAINT "two_factors_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -818,6 +1047,11 @@ ALTER TABLE "channels" ADD CONSTRAINT "channels_location_id_locations_id_fk" FOR
 ALTER TABLE "connections" ADD CONSTRAINT "connections_store_id_stores_id_fk" FOREIGN KEY ("store_id") REFERENCES "public"."stores"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "outbound_commands" ADD CONSTRAINT "outbound_commands_connection_id_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."connections"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "outbound_commands" ADD CONSTRAINT "outbound_commands_resolved_by_users_id_fk" FOREIGN KEY ("resolved_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_entries" ADD CONSTRAINT "credit_entries_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_entries" ADD CONSTRAINT "credit_entries_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_entries" ADD CONSTRAINT "credit_entries_actor_id_users_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_entries" ADD CONSTRAINT "credit_entries_reverses_entry_id_customer_id_credit_entries_id_customer_id_fk" FOREIGN KEY ("reverses_entry_id","customer_id") REFERENCES "public"."credit_entries"("id","customer_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "credit_entries" ADD CONSTRAINT "credit_entries_order_line_id_order_id_order_lines_id_order_id_fk" FOREIGN KEY ("order_line_id","order_id") REFERENCES "public"."order_lines"("id","order_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_external_ids" ADD CONSTRAINT "customer_external_ids_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_external_ids" ADD CONSTRAINT "customer_external_ids_connection_id_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."connections"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_external_ids" ADD CONSTRAINT "customer_external_ids_channel_id_channels_id_fk" FOREIGN KEY ("channel_id") REFERENCES "public"."channels"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -865,6 +1099,24 @@ ALTER TABLE "orders" ADD CONSTRAINT "orders_source_media_buyer_id_users_id_fk" F
 ALTER TABLE "orders" ADD CONSTRAINT "orders_confirmed_by_users_id_fk" FOREIGN KEY ("confirmed_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "orders" ADD CONSTRAINT "orders_original_order_id_orders_id_fk" FOREIGN KEY ("original_order_id") REFERENCES "public"."orders"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "orders" ADD CONSTRAINT "orders_related_order_id_orders_id_fk" FOREIGN KEY ("related_order_id") REFERENCES "public"."orders"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "order_cost_rules" ADD CONSTRAINT "order_cost_rules_recorded_by_users_id_fk" FOREIGN KEY ("recorded_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_accounts" ADD CONSTRAINT "settlement_accounts_owner_connection_id_connections_id_fk" FOREIGN KEY ("owner_connection_id") REFERENCES "public"."connections"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_accounts" ADD CONSTRAINT "settlement_accounts_owner_party_id_parties_id_fk" FOREIGN KEY ("owner_party_id") REFERENCES "public"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_line_matches" ADD CONSTRAINT "settlement_line_matches_line_id_settlement_lines_id_fk" FOREIGN KEY ("line_id") REFERENCES "public"."settlement_lines"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_line_matches" ADD CONSTRAINT "settlement_line_matches_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_line_matches" ADD CONSTRAINT "settlement_line_matches_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_line_matches" ADD CONSTRAINT "settlement_line_matches_matched_by_users_id_fk" FOREIGN KEY ("matched_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_line_matches" ADD CONSTRAINT "settlement_line_matches_supersedes_match_id_line_id_settlement_line_matches_id_line_id_fk" FOREIGN KEY ("supersedes_match_id","line_id") REFERENCES "public"."settlement_line_matches"("id","line_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_line_matches" ADD CONSTRAINT "settlement_line_matches_order_line_id_order_id_order_lines_id_order_id_fk" FOREIGN KEY ("order_line_id","order_id") REFERENCES "public"."order_lines"("id","order_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_lines" ADD CONSTRAINT "settlement_lines_account_id_settlement_accounts_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."settlement_accounts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_lines" ADD CONSTRAINT "settlement_lines_store_id_stores_id_fk" FOREIGN KEY ("store_id") REFERENCES "public"."stores"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_lines" ADD CONSTRAINT "settlement_lines_statement_id_account_id_settlement_statements_id_account_id_fk" FOREIGN KEY ("statement_id","account_id") REFERENCES "public"."settlement_statements"("id","account_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_period_events" ADD CONSTRAINT "settlement_period_events_period_id_settlement_periods_id_fk" FOREIGN KEY ("period_id") REFERENCES "public"."settlement_periods"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_period_events" ADD CONSTRAINT "settlement_period_events_actor_id_users_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_periods" ADD CONSTRAINT "settlement_periods_account_id_settlement_accounts_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."settlement_accounts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_statements" ADD CONSTRAINT "settlement_statements_account_id_settlement_accounts_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."settlement_accounts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_statements" ADD CONSTRAINT "settlement_statements_imported_by_users_id_fk" FOREIGN KEY ("imported_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "settlement_statements" ADD CONSTRAINT "settlement_statements_supersedes_statement_id_account_id_settlement_statements_id_account_id_fk" FOREIGN KEY ("supersedes_statement_id","account_id") REFERENCES "public"."settlement_statements"("id","account_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipt_lines" ADD CONSTRAINT "stock_receipt_lines_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipt_lines" ADD CONSTRAINT "stock_receipt_lines_uom_id_uoms_id_fk" FOREIGN KEY ("uom_id") REFERENCES "public"."uoms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipt_lines" ADD CONSTRAINT "stock_receipt_lines_receipt_id_stock_receipts_id_fk" FOREIGN KEY ("receipt_id") REFERENCES "public"."stock_receipts"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -873,6 +1125,9 @@ ALTER TABLE "stock_receipts" ADD CONSTRAINT "stock_receipts_movement_group_id_mo
 ALTER TABLE "stock_receipts" ADD CONSTRAINT "stock_receipts_posted_by_users_id_fk" FOREIGN KEY ("posted_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipts" ADD CONSTRAINT "stock_receipts_voided_by_users_id_fk" FOREIGN KEY ("voided_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_receipts" ADD CONSTRAINT "stock_receipts_void_group_id_movement_groups_id_fk" FOREIGN KEY ("void_group_id") REFERENCES "public"."movement_groups"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_closed_by_users_id_fk" FOREIGN KEY ("closed_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "accounts_provider_account_unique" ON "accounts" USING btree ("tenant_id","provider_id","account_id");--> statement-breakpoint
 CREATE INDEX "accounts_user_idx" ON "accounts" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "rate_limits_key_unique" ON "rate_limits" USING btree ("tenant_id","key");--> statement-breakpoint
@@ -902,6 +1157,14 @@ CREATE INDEX "connections_store_idx" ON "connections" USING btree ("store_id");-
 CREATE INDEX "outbound_commands_open_linked_idx" ON "outbound_commands" USING btree ("linked_type","linked_id") WHERE "outbound_commands"."sync_state" IN ('waiting', 'failed');--> statement-breakpoint
 CREATE INDEX "outbound_commands_connection_idx" ON "outbound_commands" USING btree ("connection_id");--> statement-breakpoint
 CREATE INDEX "outbound_commands_resolved_by_idx" ON "outbound_commands" USING btree ("resolved_by");--> statement-breakpoint
+CREATE INDEX "credit_entries_customer_funding_idx" ON "credit_entries" USING btree ("customer_id","funding","recorded_at");--> statement-breakpoint
+CREATE INDEX "credit_entries_posting_idx" ON "credit_entries" USING btree ("posting_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_order_idx" ON "credit_entries" USING btree ("order_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_order_line_idx" ON "credit_entries" USING btree ("order_line_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_exchange_idx" ON "credit_entries" USING btree ("exchange_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_refund_idx" ON "credit_entries" USING btree ("refund_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_actor_idx" ON "credit_entries" USING btree ("actor_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_operating_day_idx" ON "credit_entries" USING btree ("operating_day");--> statement-breakpoint
 CREATE INDEX "customer_external_ids_customer_idx" ON "customer_external_ids" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX "customer_external_ids_connection_idx" ON "customer_external_ids" USING btree ("connection_id");--> statement-breakpoint
 CREATE INDEX "customer_external_ids_channel_idx" ON "customer_external_ids" USING btree ("channel_id");--> statement-breakpoint
@@ -947,6 +1210,37 @@ CREATE INDEX "orders_discount_code_idx" ON "orders" USING btree ("discount_code"
 CREATE INDEX "orders_channel_idx" ON "orders" USING btree ("channel_id");--> statement-breakpoint
 CREATE INDEX "orders_source_media_buyer_idx" ON "orders" USING btree ("source_media_buyer_id");--> statement-breakpoint
 CREATE INDEX "orders_confirmed_by_idx" ON "orders" USING btree ("confirmed_by");--> statement-breakpoint
+CREATE INDEX "order_cost_rules_kind_effective_idx" ON "order_cost_rules" USING btree ("kind","effective_from" DESC NULLS LAST,"recorded_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "order_cost_rules_recorded_by_idx" ON "order_cost_rules" USING btree ("recorded_by");--> statement-breakpoint
+CREATE UNIQUE INDEX "settlement_accounts_live_connection_unique" ON "settlement_accounts" USING btree ("tenant_id","owner_connection_id") WHERE "settlement_accounts"."archived_at" IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "settlement_accounts_live_party_unique" ON "settlement_accounts" USING btree ("tenant_id","owner_party_id") WHERE "settlement_accounts"."archived_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "settlement_accounts_connection_idx" ON "settlement_accounts" USING btree ("owner_connection_id");--> statement-breakpoint
+CREATE INDEX "settlement_accounts_party_idx" ON "settlement_accounts" USING btree ("owner_party_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "settlement_line_matches_one_first_row_unique" ON "settlement_line_matches" USING btree ("line_id") WHERE "settlement_line_matches"."supersedes_match_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_line_recorded_idx" ON "settlement_line_matches" USING btree ("line_id","recorded_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_order_idx" ON "settlement_line_matches" USING btree ("order_id");--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_order_line_idx" ON "settlement_line_matches" USING btree ("order_line_id");--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_variant_idx" ON "settlement_line_matches" USING btree ("variant_id");--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_matched_by_idx" ON "settlement_line_matches" USING btree ("matched_by");--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_refund_idx" ON "settlement_line_matches" USING btree ("refund_id");--> statement-breakpoint
+CREATE INDEX "settlement_lines_tracking_idx" ON "settlement_lines" USING btree ("tracking_number");--> statement-breakpoint
+CREATE INDEX "settlement_lines_statement_idx" ON "settlement_lines" USING btree ("statement_id");--> statement-breakpoint
+CREATE INDEX "settlement_lines_account_occurred_idx" ON "settlement_lines" USING btree ("account_id","occurred_on");--> statement-breakpoint
+CREATE INDEX "settlement_lines_store_idx" ON "settlement_lines" USING btree ("store_id");--> statement-breakpoint
+CREATE INDEX "settlement_period_events_period_recorded_idx" ON "settlement_period_events" USING btree ("period_id","recorded_at");--> statement-breakpoint
+CREATE INDEX "settlement_period_events_actor_idx" ON "settlement_period_events" USING btree ("actor_id");--> statement-breakpoint
+CREATE INDEX "settlement_periods_account_starts_idx" ON "settlement_periods" USING btree ("account_id","starts_on" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "settlement_statements_account_received_idx" ON "settlement_statements" USING btree ("account_id","received_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "settlement_statements_account_covers_idx" ON "settlement_statements" USING btree ("account_id","covers_from","covers_to");--> statement-breakpoint
+CREATE INDEX "settlement_statements_imported_by_idx" ON "settlement_statements" USING btree ("imported_by");--> statement-breakpoint
 CREATE INDEX "stock_receipt_lines_variant_idx" ON "stock_receipt_lines" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "stock_receipts_effective_idx" ON "stock_receipts" USING btree ("effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
-CREATE INDEX "stock_receipts_location_effective_idx" ON "stock_receipts" USING btree ("location_id","effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);
+CREATE INDEX "stock_receipts_location_effective_idx" ON "stock_receipts" USING btree ("location_id","effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE UNIQUE INDEX "tasks_open_dedupe_key_unique" ON "tasks" USING btree ("tenant_id","dedupe_key") WHERE "tasks"."status" = 'open';--> statement-breakpoint
+CREATE INDEX "tasks_open_owner_user_idx" ON "tasks" USING btree ("owner_user_id","due_at") WHERE "tasks"."status" = 'open';--> statement-breakpoint
+CREATE INDEX "tasks_open_owner_hat_idx" ON "tasks" USING btree ("owner_hat","due_at") WHERE "tasks"."status" = 'open' AND "tasks"."owner_user_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "tasks_linked_idx" ON "tasks" USING btree ("linked_type","linked_id");--> statement-breakpoint
+CREATE INDEX "tasks_operating_day_idx" ON "tasks" USING btree ("operating_day");--> statement-breakpoint
+CREATE INDEX "tasks_owner_user_idx" ON "tasks" USING btree ("owner_user_id");--> statement-breakpoint
+CREATE INDEX "tasks_created_by_idx" ON "tasks" USING btree ("created_by");--> statement-breakpoint
+CREATE INDEX "tasks_closed_by_idx" ON "tasks" USING btree ("closed_by");

@@ -102,6 +102,10 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   'shiptozonecode',
   'couriernote',
   'riskflagnote',
+  // Settlement free text (security m6): the partner's own wording on a statement line, and the
+  // bank or InstaPay reference a person typed when accounting a line.
+  'partnertext',
+  'paymentreference',
 ];
 
 /**
@@ -176,7 +180,7 @@ export interface RowMarkerRule {
 
 /**
  * The owner aware rows (security-data-model-m3 MJ1): `customers` (`name`), `customer_merges`
- * (`reason`), and `outbound_commands` (`payload`, `failure_reason`). Matching works for snake or
+ * (`reason`), `settlement_period_events` (`reason`), and `outbound_commands` (`payload`, `failure_reason`). Matching works for snake or
  * camel case, bare, nested under any key, and inside arrays.
  */
 export const ROW_MARKER_RULES: readonly RowMarkerRule[] = [
@@ -186,6 +190,11 @@ export const ROW_MARKER_RULES: readonly RowMarkerRule[] = [
   },
   {
     identifiedBy: [['survivorid'], ['mergedid'], ['undoesmergeid'], ['repointedids']],
+    redact: ['reason'],
+  },
+  {
+    // settlement_period_events: `reason` is the free text of a revoke.
+    identifiedBy: [['periodid', 'action']],
     redact: ['reason'],
   },
   {

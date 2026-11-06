@@ -1,5 +1,5 @@
-import { sql } from 'drizzle-orm';
-import { numeric, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql, type SQL } from 'drizzle-orm';
+import { type AnyPgColumn, numeric, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /** Bilingual text, `{ "en": ..., "ar": ... }`. At least one language is enforced by the Zod contract. */
 export type LocalizedText = { en?: string; ar?: string } & Record<string, string | undefined>;
@@ -43,3 +43,12 @@ export const updatedAt = () =>
 
 /** Master data is archived, never deleted once referenced. */
 export const archivedAt = () => timestamp('archived_at', { withTimezone: true });
+
+/**
+ * The check body for a reason, outcome, or account code column: null, or a lower case code of at
+ * most 64 characters (`edit_removal`, `not_yet_matched`, `confirmation.call`). A reason is a code,
+ * never a typed note: a note would be personal data kept for ever on an append only row. Never
+ * use it for free text columns.
+ */
+export const reasonCodeShape = (column: AnyPgColumn): SQL =>
+  sql`${column} IS NULL OR ${column} ~ '^[a-z][a-z0-9_.]{0,63}$'`;

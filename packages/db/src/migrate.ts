@@ -120,7 +120,8 @@ async function runFormatted(client: pg.Client, template: string, values: string[
  * settings, and checked on every later run: a different `TENANT_ID` throws `TenantMismatch`, a
  * different `APP_DB_ROLE` throws `AppRoleMismatch`, and a privileged role throws `UnsafeAppRole`,
  * all before anything changes. Order: checks, set both settings (new databases) and in this
- * session, apply the migrations, then write the `install` row if it is missing.
+ * session, apply the migrations, write the `install` row if it is missing, then seed the per order
+ * cost rules a new install starts with (`seedOrderCostRules`).
  */
 export async function runMigrations(
   connectionString: string,
@@ -174,12 +175,29 @@ export async function runMigrations(
           [tenantId, clientCodeFor(appRole)],
         );
       }
+      await seedOrderCostRules(client);
     } finally {
       await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
     }
   } finally {
     await client.end();
   }
+}
+
+/**
+ * Seeds one `not_set` row per kind of `order_cost_rules` (spec 0002, catalog child, AC-32), from
+ * the install's operating day, so a new install reads "not set", never 0. Runs after the `install`
+ * row on every migrate, and adds a row only for a kind that has none: a rerun adds nothing and a
+ * rule someone set is never touched (the table is append only).
+ */
+async function seedOrderCostRules(client: pg.Client): Promise<void> {
+  await client.query(
+    `INSERT INTO order_cost_rules (kind, status, effective_from)
+     SELECT k.kind, 'not_set', ssd_operating_day(now())
+     FROM unnest(enum_range(NULL::order_cost_rule_kind)) AS k(kind)
+     WHERE NOT EXISTS (SELECT 1 FROM order_cost_rules r WHERE r.kind = k.kind)
+     ORDER BY k.kind`,
+  );
 }
 
 /** The tenant id in the `install` row, or undefined when the table or the row does not exist yet. */
