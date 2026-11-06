@@ -64,6 +64,13 @@ const blankIsUnset = <T extends z.ZodType>(schema: T) =>
     schema,
   );
 
+/**
+ * The host name a browser scopes cookies by: lowercased, no port, no trailing dot, so
+ * `https://ERP.example.com.:8443` and `http://erp.example.com` are the same cookie host.
+ */
+const cookieHostname = (url: string): string =>
+  new URL(url).hostname.toLowerCase().replace(/\.+$/, '');
+
 const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -131,6 +138,12 @@ const EnvSchema = z
           (value) => /^[A-Za-z0-9/._~-]*$/.test(value),
           'STAFF_BASE_PATH may hold only letters, digits, and / . _ ~ -',
         )
+        // `//evil.example` would be a protocol relative redirect once the web prefixes links
+        // with it, and `/./ops` or `//ops` give a cookie path the browser never matches.
+        .refine(
+          (value) => /^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+$/.test(value),
+          'STAFF_BASE_PATH segments must not be empty or start with a dot',
+        )
         .optional(),
     ).transform((value) => value ?? ''),
     /**
@@ -181,14 +194,15 @@ const EnvSchema = z
       if (!present) ctx.addIssue({ code: 'custom', path: [name], message: why });
     };
     // The portal host answers 404 on every auth route, so on the staff host it would lock
-    // everyone out (spec 0005, AC-30).
+    // everyone out (spec 0005, AC-30). Compared by host name: cookies ignore the port, so a
+    // portal on the staff name and another port would receive the staff cookie.
     need(
       'PORTAL_ORIGIN',
       env.PORTAL_ORIGIN === undefined ||
         !URL.canParse(env.PORTAL_ORIGIN) ||
         !URL.canParse(env.PUBLIC_URL) ||
-        new URL(env.PORTAL_ORIGIN).host !== new URL(env.PUBLIC_URL).host,
-      'PORTAL_ORIGIN must be a different host from PUBLIC_URL',
+        cookieHostname(env.PORTAL_ORIGIN) !== cookieHostname(env.PUBLIC_URL),
+      'PORTAL_ORIGIN must be a different host name from PUBLIC_URL',
     );
     if (env.MAIL_DRIVER === 'none') return;
     need(
@@ -214,6 +228,25 @@ const EnvSchema = z
  * variable is typed the moment it is added there.
  */
 export type Env = z.infer<typeof EnvSchema>;
+
+/**
+ * The one staff origin (spec 0005, AC-30): `PUBLIC_URL` today, `STAFF_ORIGIN` once spec 0007's
+ * rename lands. It is the Better Auth base URL, the only trusted origin, the Origin check, the
+ * `Secure` flag and the start of every email link, so all of them read it here and a rename
+ * changes one line. Never build it from a request header, and never put `PORTAL_ORIGIN` here.
+ */
+export function staffOrigin(env: Pick<Env, 'PUBLIC_URL'>): string {
+  return new URL(env.PUBLIC_URL).origin;
+}
+
+/**
+ * The staff origin plus `STAFF_BASE_PATH` (spec 0005, AC-31), with no trailing slash: the base
+ * every email link appends its route to (`https://erp.example.com/ops`). Never add the route's
+ * own leading part here, and never read it from the request.
+ */
+export function staffBase(env: Pick<Env, 'PUBLIC_URL' | 'STAFF_BASE_PATH'>): string {
+  return `${staffOrigin(env)}${env.STAFF_BASE_PATH}`;
+}
 
 // Local development reads the repo root `.env`. Installs get env vars from Compose.
 const DEV_ENV_FILE = new URL('../../../../.env', import.meta.url);

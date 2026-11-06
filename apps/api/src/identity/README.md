@@ -16,10 +16,11 @@ Agent gotchas and the full file table: [AGENTS.md](AGENTS.md).
 - The nightly cleanup of expired sessions, tokens and counters: [sign-in/auth-cleanup.job.ts](sign-in/auth-cleanup.job.ts)
 - Sign in and reset mail callbacks: [sign-in/auth-mail.service.ts](sign-in/auth-mail.service.ts)
 - Staff administration under `/api/staff`, staff audience: [staff/staff.controller.ts](staff/staff.controller.ts), [staff/staff.service.ts](staff/staff.service.ts)
-- What other modules may use (the module's only exports):
+- What other modules may import, the public surface. `IDENTITY_PUBLIC_FILES` in [src/module-boundary.spec.ts](../module-boundary.spec.ts) holds this list, and its import wall fails any other import of a file inside `identity/` from another module (spec 0005, AC-27). `IdentityModule` has no Nest `exports`; the app entry points and `apps/api/test` sit outside the wall.
+  - the module itself, for the app root: [identity.module.ts](identity.module.ts)
   - the current user reader, the request type ledger routes take `postedBy` from: [sign-in/current-staff.ts](sign-in/current-staff.ts)
-  - `StaffDirectory`, read only display names for "posted by": [staff/staff-directory.ts](staff/staff-directory.ts)
-  - `MailRecipients`, the recipient and token row a queued email needs: [sign-in/mail-recipients.ts](sign-in/mail-recipients.ts)
+  - `StaffDirectoryModule`, read only display names for "posted by": [staff/staff-directory.ts](staff/staff-directory.ts)
+  - `MailRecipientsModule`, the recipient and token row a queued email needs (never log what it returns): [sign-in/mail-recipients.ts](sign-in/mail-recipients.ts)
   - the route decorators `@Public()` and `@Roles(...)`: [sign-in/public.decorator.ts](sign-in/public.decorator.ts), [sign-in/roles.decorator.ts](sign-in/roles.decorator.ts)
 
 ## Never touches
@@ -34,12 +35,12 @@ Agent gotchas and the full file table: [AGENTS.md](AGENTS.md).
 ## How to test
 
 ```bash
-pnpm --filter @ssdashboard/api test -- src/identity
+pnpm --filter @ssdashboard/api exec vitest run src/identity
 pnpm --filter @ssdashboard/api build
 pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/sign-in.e2e-spec.ts
 ```
 
-End to end specs in `apps/api/test` (all `*.e2e-spec.ts`, they need Postgres and a build): `sign-in`, `sign-in-policy`, `two-factor`, `password-reset`, `profile`, `staff`, `staff-cookie`, `create-admin-reset`, `create-admin-two-factor`, `auth-cleanup`, `auth-error-log`. The table wall is `src/module-boundary.spec.ts`.
+End to end specs in `apps/api/test` (all `*.e2e-spec.ts`, they need Postgres and a build): `sign-in`, `sign-in-policy`, `two-factor`, `password-reset`, `profile`, `staff`, `staff-cookie`, `create-admin-reset`, `create-admin-two-factor`, `auth-cleanup`, `auth-error-log`. The table wall and the identity import wall are `src/module-boundary.spec.ts`.
 
 ## Governing spec
 

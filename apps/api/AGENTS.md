@@ -52,7 +52,7 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - The core never imports an extension; extensions load by dynamic import only.
 - `DATABASE_URL` is the application role, which cannot create databases. The e2e helpers create scratch databases with `MIGRATION_DATABASE_URL` (the owner) and run the ledger as the app role with `options=-c role=ssdashboard_app`.
 - `test/scale.e2e-spec.ts` seeds the spec 0002 load (50,000 variants, 150,000 orders and the rest); the spec 0010 audit load joins it with feature 10 (an `it.todo` until `audit_entries` exists). It runs only through `test:scale` (`vitest.config.scale.ts`), in the `scale` CI job (nightly, `scale` label on a pull request, or by hand); `vitest.config.e2e.ts` excludes it. `pnpm --filter ... test:e2e -- <file>` does not filter in this repo (the `--` is forwarded and vitest ignores it): call `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts <file>` for one file.
-- The module wall is `src/module-boundary.spec.ts`: a file in one module that names another module's table (by Drizzle export or SQL name, from `TABLE_OWNERSHIP` in `packages/db`) fails it, and so does an extension that names a core table. Its `KNOWN_BREACHES` list may only shrink.
+- The module wall is `src/module-boundary.spec.ts`: a file in one module that names another module's table (by Drizzle export or SQL name, from `TABLE_OWNERSHIP` in `packages/db`) fails it, and so does an extension that names a core table. Its `KNOWN_BREACHES` list may only shrink. It also holds the identity import wall: another module may import only the files in `IDENTITY_PUBLIC_FILES` from `src/identity/`.
 
 ## Agent skills
 

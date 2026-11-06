@@ -28,7 +28,8 @@ interface TokenRow extends MailToken, Record<string, unknown> {}
  * Read only lookups the mail worker needs to send a queued email (spec 0005, AC-11): the
  * recipient and the token row, both read at send time so no link sits in the queue. It lets the
  * mail module work without reading the auth tables itself (spec 0002, A5). It never writes, and
- * never returns a password, hash or two factor secret.
+ * never returns a password, hash or two factor secret. Never log what this returns: the token
+ * row holds a live reset or invite token, and the recipient is personal data (Law 151).
  */
 @Injectable()
 export class MailRecipients {
@@ -44,7 +45,10 @@ export class MailRecipients {
     return row && { name: row.name, email: row.email, language: row.language, banned: row.banned };
   }
 
-  /** The token row an email links to, or undefined once it was used, replaced or deleted. */
+  /**
+   * The token row an email links to, or undefined once it was used, replaced or deleted. The
+   * identifier holds the live token: never log what this returns.
+   */
   async token(tokenId: string): Promise<MailToken | undefined> {
     const { rows } = await this.connection.db.execute<TokenRow>(
       sql`SELECT identifier, expires_at <= now() AS expired FROM verifications WHERE id = ${tokenId}::uuid`,
@@ -55,8 +59,9 @@ export class MailRecipients {
 }
 
 /**
- * Exports `MailRecipients` to the mail worker. It holds no Better Auth, guard or mail
- * dependency, so the worker can load it without the HTTP side of identity.
+ * Exports `MailRecipients` to the mail worker, which imports this module directly (it is on the
+ * identity import wall's public list; `IdentityModule` does not re-export it). It holds no Better
+ * Auth, guard or mail dependency, so the worker can load it without the HTTP side of identity.
  */
 @Module({ providers: [MailRecipients], exports: [MailRecipients] })
 export class MailRecipientsModule {}

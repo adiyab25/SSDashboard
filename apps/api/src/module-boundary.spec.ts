@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, posix, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { schemaTables, TABLE_OWNERSHIP } from '@ssdashboard/db';
 import ts from 'typescript';
@@ -240,6 +240,103 @@ const KNOWN_BREACHES: readonly { file: string; table: string; count: number; why
 
 const keyOf = (file: string, table: string) => `${file} ${table}`;
 
+// Spec 0005, AC-27: the import path wall around identity. A file under apps/api/src whose module
+// is not identity, and that is not an app entry point, may import from apps/api/src/identity/
+// only the files on IDENTITY_PUBLIC_FILES; anything else (the Better Auth instance, the lockout,
+// the audit service, the guards) stays inside. apps/api/test is outside the wall.
+
+/**
+ * The files under `apps/api/src/identity/` another module may import, each with why it is
+ * public. This list, not `IdentityModule`'s Nest `exports` (it has none), is identity's public
+ * surface. Add an entry only for a file that holds no Better Auth, lockout or audit dependency
+ * and never writes an auth table; a new entry is a decision for identity's README.
+ */
+const IDENTITY_PUBLIC_FILES: Readonly<Record<string, string>> = {
+  'apps/api/src/identity/identity.module.ts':
+    'the module itself, imported by the app root to load sign in, staff and the global guards',
+  'apps/api/src/identity/sign-in/current-staff.ts':
+    'the AuthenticatedRequest type: handlers read the signed in person, ledger routes postedBy',
+  'apps/api/src/identity/sign-in/public.decorator.ts':
+    '@Public(): open routes (health, config) mark themselves for the global session guard',
+  'apps/api/src/identity/sign-in/roles.decorator.ts':
+    '@Roles(...): admin only routes in other modules declare the role the roles guard checks',
+  'apps/api/src/identity/staff/staff-directory.ts':
+    'StaffDirectoryModule: read only display names for "posted by", no auth dependency',
+  'apps/api/src/identity/sign-in/mail-recipients.ts':
+    'MailRecipientsModule: the read only recipient and token row the mail worker sends with',
+};
+
+/**
+ * The app entry points directly under apps/api/src: they wire identity's internals (mounting
+ * Better Auth, the create-admin command, the cleanup job) and sit outside the wall.
+ */
+const APP_ENTRY_POINTS: ReadonlySet<string> = new Set(
+  [
+    'app.module.ts',
+    'app.setup.ts',
+    'create-admin.ts',
+    'worker.module.ts',
+    'main.ts',
+    'worker.ts',
+    'migrate.ts',
+  ].map((name) => `apps/api/src/${name}`),
+);
+
+/** One import of an identity file that is not on the public list. */
+interface ImportBreach {
+  file: string;
+  line: number;
+  target: string;
+}
+
+/** Every relative module specifier a file imports, re exports, or loads with `import()`. */
+function relativeImports(file: SourceFile): { specifier: string; line: number }[] {
+  const source = ts.createSourceFile(file.path, file.text, ts.ScriptTarget.Latest, true);
+  const found: { specifier: string; line: number }[] = [];
+  const add = (node: ts.Node | undefined) => {
+    if (!node || !ts.isStringLiteralLike(node) || !node.text.startsWith('.')) return;
+    found.push({
+      specifier: node.text,
+      line: source.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+    });
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) add(node.moduleSpecifier);
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      add(node.arguments[0]);
+    }
+    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      add(node.argument.literal);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/** The repo path a relative specifier resolves to, as its `.ts` source file. */
+const resolveSource = (from: string, specifier: string): string =>
+  `${posix.join(posix.dirname(from), specifier).replace(/\.(?:js|mjs|cjs|ts)$/, '')}.ts`;
+
+/** Every import across the identity wall that does not land on a public file. */
+function identityImportBreaches(files: readonly SourceFile[]): ImportBreach[] {
+  return files.flatMap((file) => {
+    if (!file.path.startsWith('apps/api/src/')) return [];
+    if (moduleOf(file.path) === 'identity' || APP_ENTRY_POINTS.has(file.path)) return [];
+    return relativeImports(file)
+      .map(({ specifier, line }) => ({
+        file: file.path,
+        line,
+        target: resolveSource(file.path, specifier),
+      }))
+      .filter(
+        ({ target }) =>
+          target.startsWith('apps/api/src/identity/') &&
+          !Object.hasOwn(IDENTITY_PUBLIC_FILES, target),
+      );
+  });
+}
+
 describe('module boundary (spec 0002, A5)', () => {
   // This file is skipped: its planted cases and its list name tables on purpose.
   const files = [...sourceFiles(API_SRC), ...sourceFiles(EXTENSIONS)]
@@ -389,5 +486,75 @@ describe('module boundary (spec 0002, A5)', () => {
     expect(breaches).toEqual([
       { file: 'apps/api/src/main.ts', line: 1, table: 'users', owner: 'identity' },
     ]);
+  });
+});
+
+describe('identity import wall (spec 0005, AC-27)', () => {
+  const files = sourceFiles(API_SRC).map((path) => ({
+    path: toRepoPath(path),
+    text: readFileSync(path, 'utf8'),
+  }));
+
+  it('lists only identity files that exist', () => {
+    const paths = new Set(files.map((file) => file.path));
+
+    expect(Object.keys(IDENTITY_PUBLIC_FILES).filter((path) => !paths.has(path))).toEqual([]);
+  });
+
+  it('lets other modules import only the public identity files', () => {
+    expect(
+      identityImportBreaches(files).map((b) => `${b.file}:${b.line} imports ${b.target}`),
+    ).toEqual([]);
+  });
+
+  it('reports a planted import of an identity internal, and allows a public one', () => {
+    const planted: SourceFile[] = [
+      {
+        path: 'apps/api/src/orders/a.ts',
+        text: "import { AUTH } from '../identity/sign-in/auth.tokens.js';",
+      },
+      {
+        path: 'apps/api/src/orders/b.ts',
+        text: "import { StaffDirectory } from '../identity/staff/staff-directory.js';",
+      },
+    ];
+
+    expect(identityImportBreaches(planted)).toEqual([
+      {
+        file: 'apps/api/src/orders/a.ts',
+        line: 1,
+        target: 'apps/api/src/identity/sign-in/auth.tokens.ts',
+      },
+    ]);
+  });
+
+  it.each([
+    ['a type import', "import type { Auth } from '../../identity/sign-in/auth.tokens.js';"],
+    ['a re export', "export { SignInLockout } from '../../identity/sign-in/sign-in-lockout.js';"],
+    ['a dynamic import', "await import('../../identity/sign-in/auth-audit.service.js');"],
+    ['an import type node', "let a: import('../../identity/sign-in/auth.tokens.js').Auth;"],
+  ])('reports %s of an identity internal', (_form, text) => {
+    const breaches = identityImportBreaches([{ path: 'apps/api/src/orders/deep/c.ts', text }]);
+
+    expect(breaches).toHaveLength(1);
+  });
+
+  it('leaves identity itself, the app entry points, and apps/api/test outside the wall', () => {
+    expect(
+      identityImportBreaches([
+        {
+          path: 'apps/api/src/identity/staff/d.ts',
+          text: "import { AUTH } from '../sign-in/auth.tokens.js';",
+        },
+        {
+          path: 'apps/api/src/app.setup.ts',
+          text: "import { AUTH } from './identity/sign-in/auth.tokens.js';",
+        },
+        {
+          path: 'apps/api/test/e.e2e-spec.ts',
+          text: "import { AUTH } from '../src/identity/sign-in/auth.tokens.js';",
+        },
+      ]),
+    ).toEqual([]);
   });
 });

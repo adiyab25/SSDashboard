@@ -11,8 +11,8 @@ import { PlatformModule } from './platform/platform.module.js';
 
 /**
  * The root module of the `app` entry point (the api process): wires config, database, mail,
- * identity (sign in and staff), platform, catalog and inventory. The worker uses its own module so no HTTP code
- * runs there.
+ * identity (sign in and staff), platform, catalog and inventory. The worker uses its own module
+ * so no HTTP code runs there.
  */
 @Module({
   imports: [
