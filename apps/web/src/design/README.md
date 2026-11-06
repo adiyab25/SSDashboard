@@ -7,6 +7,7 @@ A development only `/design` page that shows the design system components, plus 
 - The gallery: [design-gallery.tsx](design-gallery.tsx)
 - The client side loader that imports it only outside production: [design-loader.tsx](design-loader.tsx)
 - Contrast math: [contrast.ts](contrast.ts)
+- The status samples: order rows in both reading directions ([order-rows-sample.tsx](order-rows-sample.tsx)) and the `floor` scope confirmation queue card ([confirmation-queue-sample.tsx](confirmation-queue-sample.tsx)), joined by [order-status-section.tsx](order-status-section.tsx). The Playwright check in `e2e/design-status.spec.ts` measures the card's buttons.
 - The route: `src/app/(backoffice)/design/page.tsx`
 
 ## Never touches

@@ -8,6 +8,7 @@ import { ButtonMatrix } from './button-matrix';
 import { ContrastPair, type ContrastPairSpec } from './contrast-pair';
 import { DesignSection } from './design-section';
 import { FieldStates } from './field-states';
+import { OrderStatusSection } from './order-status-section';
 import { Overlays } from './overlays';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { PaletteSample } from './palette-sample';
@@ -175,6 +176,10 @@ export function DesignGallery() {
 
       <DesignSection id="command" title="Command list">
         <PaletteSample />
+      </DesignSection>
+
+      <DesignSection id="orders" title="Order rows and confirmation queue">
+        <OrderStatusSection />
       </DesignSection>
 
       <DesignSection id="rtl" title="Right to left">
