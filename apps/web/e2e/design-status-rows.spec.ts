@@ -150,14 +150,15 @@ test.describe('focus ring width (AC-4, AC-22)', () => {
   test('is 2px on a mouse and 3px in the floor scope on a touch screen', async ({ page }, info) => {
     await useBrowserState(page, { theme: 'light', language: 'en' });
     await openShell(page, '/design');
-    const button = page
-      .getByTestId('confirmation-queue-card')
-      .getByRole('group', { name: 'Outcome' })
-      .getByRole('button')
-      .first();
-    await button.scrollIntoViewIfNeeded();
 
+    // The gallery remounts once after the shell loads; re-resolve the button and retry the whole step.
     await expect(async () => {
+      const button = page
+        .getByTestId('confirmation-queue-card')
+        .getByRole('group', { name: 'Outcome' })
+        .getByRole('button')
+        .first();
+      await button.scrollIntoViewIfNeeded({ timeout: 2_000 });
       await button.focus();
       // The app never sets focus from a pointer here, so :focus-visible applies on keyboard.
       await page.keyboard.press('Shift+Tab');
