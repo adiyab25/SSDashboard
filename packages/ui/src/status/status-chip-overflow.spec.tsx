@@ -36,4 +36,17 @@ describe('StatusChipOverflow', () => {
 
     await expectNoAxeViolations(container);
   });
+
+  it('keeps the plus before the digits inside an ltr isolate under rtl', () => {
+    const { container } = render(
+      <div dir="rtl" lang="ar">
+        <StatusChipOverflow count={2} label="حالتان أخريان" />
+      </div>,
+    );
+
+    const isolate = container.querySelector('bdi');
+    expect(isolate).toHaveAttribute('dir', 'ltr');
+    expect(isolate?.textContent).toBe('+2');
+    expect(isolate?.firstChild?.textContent).toBe('+');
+  });
 });
