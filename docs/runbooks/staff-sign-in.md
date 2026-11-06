@@ -20,6 +20,7 @@ Run every command from the `deploy/` folder, with the install's `.env` in place.
 | A portal site in the Caddyfile | Not built. `deploy/Caddyfile` serves one site | Feature 26 |
 | A path prefix rule in the Caddyfile for `STAFF_BASE_PATH` | Not built | Features 26 and 47 |
 | One shared Postgres and one edge Caddy for many clients | Not built. Each client runs its own stack | Features 4 and 26 |
+| Published images in a registry | Not built. Each install builds its own images (section 1.2) | Feature 26 |
 
 Each step that depends on a part that is not built says so where it appears.
 
@@ -51,19 +52,58 @@ Create `.env` from the template. It generates fresh values for `POSTGRES_PASSWOR
 
 | Name | What to put | Why |
 |---|---|---|
-| `CLIENT_ID` | A short name for the client, for example `acme` | It names the Compose project `ssdashboard-<CLIENT_ID>` (`deploy/compose.yaml` line 5), so each client's containers and volumes stay apart. |
-| `SSD_VERSION` | An exact release, never `latest` | `deploy/compose.yaml` lines 1 to 3 |
-| `SITE_ADDRESS` | The host name Caddy serves, or `:80` behind the client's own TLS proxy | `deploy/Caddyfile` line 20 |
-| `PUBLIC_URL` | The full https address with no path, for example `https://erp.example.com` | This is the staff origin today. It sets the sign in address, the cookie `Secure` flag and the links in emails (`apps/api/src/config/env.ts` lines 118 to 124). |
+| `CLIENT_ID` | A short name for the client, for example `acme` | It names the Compose project `ssdashboard-<CLIENT_ID>` (the top-level `name:` key of `deploy/compose.yaml`), so each client's containers and volumes stay apart. |
+| `SSD_VERSION` | An exact release, never `latest` | It is the image tag. The header of `deploy/compose.yaml` pins it, and section "Where the images come from" below names the images |
+| `SSD_REGISTRY` | `local` for an install that builds its own images. Leave it unset only once published images exist | Part of the image names. See "Where the images come from" below |
+| `SITE_ADDRESS` | The host name Caddy serves, or `:80` behind the client's own TLS proxy. For a trial on one machine, `localhost` (see "Trial run without a public name") | The `{$SITE_ADDRESS}` site block of `deploy/Caddyfile`. A bare host gets automatic HTTPS |
+| `PUBLIC_URL` | The full https address with no path, for example `https://erp.example.com`. It must match the address people type in the browser | This is the staff origin today. It sets the sign in address, the cookie `Secure` flag and the links in emails (`PUBLIC_URL` in `EnvSchema`, `apps/api/src/config/env.ts`). |
 | `PORTAL_ORIGIN` | Leave empty unless the install has a public portal | Only the api reads it. See section 9.4. |
 | `STAFF_BASE_PATH` | Leave empty | Read section 9 before you set it. |
 | `TRUSTED_PROXIES` | Leave empty unless a client proxy sits in front of Caddy | See section 5. |
 
 About the names: `STAFF_ORIGIN` is not in the code yet. Spec 0007 renames `PUBLIC_URL` to `STAFF_ORIGIN` later. When that rename lands, set `STAFF_ORIGIN` to the same address. The address does not change.
 
-A vendor hosted client follows the same steps. Run them in that client's own Compose project, with that client's own `.env`. Keep that `.env` in the private store for the client (`deploy/.env.example` line 2). Spec 0007 names `STAFF_ORIGIN` and `PORTAL_ORIGIN` as the two hostnames of a client. Today the staff host is `PUBLIC_URL`, and `PORTAL_ORIGIN` is set only when the client has a portal. A self hosted install runs the same steps on the client's own machine.
+A vendor hosted client follows the same steps. Run them in that client's own Compose project, with that client's own `.env`. Keep that `.env` in the private store for the client (the header comment of `deploy/.env.example`). Spec 0007 names `STAFF_ORIGIN` and `PORTAL_ORIGIN` as the two hostnames of a client. Today the staff host is `PUBLIC_URL`, and `PORTAL_ORIGIN` is set only when the client has a portal. A self hosted install runs the same steps on the client's own machine.
+
+#### Where the images come from
+
+`deploy/compose.yaml` runs two images. Their names come from `SSD_REGISTRY` and `SSD_VERSION`:
+
+- `${SSD_REGISTRY}/ssdashboard-app:${SSD_VERSION}` for `api`, `worker` and `migrate` (the `image:` line of the `x-app` anchor).
+- `${SSD_REGISTRY}/ssdashboard-web:${SSD_VERSION}` for `web` (the `image:` line of the `web` service).
+
+`SSD_REGISTRY` defaults to `ghcr.io/adiyab25` when it is unset. No published image exists there yet. The CI `images` job in `.github/workflows/ci.yml` builds both images and does not push them (`push: false`). Publishing comes with feature 26. Until then, an operator builds the two images on the host, with the tag that compose expects:
+
+1. In `.env`, set `SSD_REGISTRY=local` and `SSD_VERSION` to the release number you want, for example `0.1.0`.
+2. Build from a checkout of the repository root. The build context is the root, so a copy of `deploy/` alone is not enough. The header of `deploy/Dockerfile.web` gives the same build from the root.
+
+   ```bash
+   docker build -f deploy/Dockerfile.app -t local/ssdashboard-app:0.1.0 .
+   docker build -f deploy/Dockerfile.web -t local/ssdashboard-web:0.1.0 .
+   ```
+
+The image name and tag must equal `${SSD_REGISTRY}/ssdashboard-app:${SSD_VERSION}` and `${SSD_REGISTRY}/ssdashboard-web:${SSD_VERSION}` exactly. QA's walk-through used this method: `SSD_REGISTRY=local`, `SSD_VERSION=qa`, and images tagged `local/ssdashboard-app:qa` and `local/ssdashboard-web:qa` (spec 0005, verify.md, AC-35).
+
+#### Trial run without a public name
+
+To try an install on one machine, set these two values in `.env`:
+
+```
+SITE_ADDRESS=localhost
+PUBLIC_URL=https://localhost
+```
+
+A bare host makes Caddy use its own internal certificate, because the `{$SITE_ADDRESS}` site block of `deploy/Caddyfile` gives a bare host automatic HTTPS. A browser does not trust that certificate, so it shows a certificate warning. QA's walk-through accepted the warning and signed in on `https://localhost` (spec 0005, verify.md, AC-35). Accept the warning for a trial only.
+
+`PUBLIC_URL` must match the address typed in the browser. Better Auth trusts only that origin (`createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts`, `trustedOrigins`).
+
+A real client needs a public name that points at the host, for example `SITE_ADDRESS=erp.example.com` and `PUBLIC_URL=https://erp.example.com`. `SITE_ADDRESS=:80` is only for a client's own TLS proxy (section 5).
 
 ### 1.3 Start the stack
+
+Before you start, the two images from 1.2 must exist under the names in `.env`.
+
+Caddy mounts `../extensions/<CLIENT_ID>/locales` (the `caddy` service's `volumes` in `deploy/compose.yaml`) at `/srv/locales`, read only. That folder sits in the repository next to `deploy/`. QA's walk-through saw Docker create it when it was missing (spec 0005, verify.md, R3). To add a client language, drop a `<code>.json` file into that folder. Caddy serves it at `/locales/<code>.json` (`deploy/Caddyfile`, the `handle /locales/*` block).
 
 ```bash
 docker compose --env-file .env up -d
@@ -75,22 +115,24 @@ The `migrate` service runs first. It applies the database migrations and then ex
 docker compose --env-file .env logs migrate
 ```
 
+The `migrate` service checks only its own settings at start (`loadMigrateEnv` in `apps/api/src/config/env.ts`): the owner database address, the app role password and name, and the tenant id. It never needs the auth secret or `PUBLIC_URL`. A missing owner database address stops it with `Invalid environment` and names `MIGRATION_DATABASE_URL`.
+
 ### 1.4 Where the tenant id comes from
 
 Every row in the database carries one tenant id. The auth tables take it from a database setting, `ssd.tenant_id`. You do not set it by hand on a new install.
 
-- On the first run, `migrate` chooses the tenant id. It uses `TENANT_ID` from `.env` when that is set, and makes a new one when it is not (`apps/api/src/config/env.ts` lines 84 to 89). It stores the id as the database setting `ssd.tenant_id` and writes the `install` row (`packages/db/src/migrate.ts` lines 135 to 177).
+- On the first run, `migrate` chooses the tenant id. It uses `TENANT_ID` from `.env` when that is set, and makes a new one when it is not (`TENANT_ID` in `EnvSchema`, `apps/api/src/config/env.ts`). It stores the id as the database setting `ssd.tenant_id` and writes the `install` row (`runMigrations`, `packages/db/src/migrate.ts`).
 - `create-admin` writes to the same database. It needs that setting. The auth tables fill `tenant_id` from it by default (`packages/db/AGENTS.md`, the `tenantId()` convention).
 
-**Symptom when the setting is missing:** `create-admin` prints `create-admin failed:` followed by a PostgreSQL error code, or by `database error`. It exits with code 1 and creates nothing.
+**Symptom when the setting is missing:** `create-admin` prints `create-admin failed: 42704`. That is the code QA observed for a missing `ssd.tenant_id`. Another database error prints `create-admin failed: database error` or another PostgreSQL code. It exits with code 1 and creates nothing (`apps/api/src/create-admin.ts`).
 
-**Check the setting.** A uuid in the output means the setting is there. An error or an empty value means it is missing:
+**Check the setting.** A uuid in the output means the setting is there. An error or an empty value means it is missing. On QA's run, a missing setting made `SHOW` print `unrecognized configuration parameter`:
 
 ```bash
 docker compose --env-file .env exec postgres psql -U ssdashboard -d ssdashboard -c "SHOW ssd.tenant_id"
 ```
 
-**Fix it.** Running `migrate` again does not set it when the `install` row already exists (`packages/db/src/migrate.ts` lines 140 to 157). So set it by hand, as the database owner:
+**Fix it.** Running `migrate` again does not set it when the `install` row already exists (`runMigrations`, the stored tenant check in `packages/db/src/migrate.ts`). So set it by hand, as the database owner:
 
 1. Read the tenant id from the install row:
 
@@ -104,7 +146,7 @@ docker compose --env-file .env exec postgres psql -U ssdashboard -d ssdashboard 
    docker compose --env-file .env exec postgres psql -U ssdashboard -d ssdashboard -c "ALTER DATABASE ssdashboard SET ssd.tenant_id = '<tenant id>'"
    ```
 
-3. Run `create-admin` again (section 1.5). A new connection reads the setting. `ALTER DATABASE` reaches new sessions only (`packages/db/src/migrate.ts` line 168).
+3. Run `create-admin` again (section 1.5). A new connection reads the setting. `ALTER DATABASE` reaches new sessions only (the `ALTER DATABASE` statement in `runMigrations`, `packages/db/src/migrate.ts`).
 
 Do not guess the id. If step 1 prints nothing, the database has no `install` row. Stop and ask the vendor.
 
@@ -220,9 +262,9 @@ After the run, the admin signs in with the password and turns two factor on agai
 
 An admin does this from the staff page. Find the person, then use the action you need:
 
-- **Reset password.** With mail on, the person gets a link that is valid for 1 hour. With mail off, a temporary password shows once. Either way the old password stops working at once, the person's sessions end, the person must change the password at the next sign in, and the lock clears (`apps/api/src/identity/staff/staff.service.ts`, lines 405 to 432; spec 0005, AC-18).
+- **Reset password.** With mail on, the person gets a link that is valid for 1 hour. With mail off, a temporary password shows once. Either way the old password stops working at once, the person's sessions end, the person must change the password at the next sign in, and the lock clears (`StaffService.resetPassword` in `apps/api/src/identity/staff/staff.service.ts`; spec 0005, AC-18).
 - **Sign out everywhere.** Ends every session of the person. The password stays the same.
-- **Reset two factor.** Turns two factor off and ends the person's sessions (`staff.service.ts`, the two factor reset, which deletes sessions at line 485).
+- **Reset two factor.** Turns two factor off and ends the person's sessions (`StaffService.resetTwoFactor` in `staff.service.ts`, in the same transaction).
 
 Staff cannot reset their own password from the staff page. They use the Account page, or the forgot password link when mail is on.
 
@@ -240,7 +282,7 @@ Run both reset flags in one command:
 docker compose --env-file .env run --rm api node dist/create-admin.js --reset-password --reset-two-factor --email <email>
 ```
 
-Both changes happen in one transaction. Either both apply or neither does. The command prints one temporary password (`apps/api/src/create-admin.ts` lines 31 to 58). Each mode writes its own audit line. The output holds a live password, so follow section 3 for it. The admin signs in with the temporary password, chooses a new one, and then turns two factor on again.
+Both changes happen in one transaction. Either both apply or neither does. The command prints one temporary password (the `reset` case in `apps/api/src/create-admin.ts`). Each mode writes its own audit line. The output holds a live password, so follow section 3 for it. The admin signs in with the temporary password, chooses a new one, and then turns two factor on again.
 
 Do not add `--name` to a reset run. With a reset flag, `--name` prints the usage and exits with code 1.
 
@@ -260,7 +302,7 @@ The command prints the password to its standard output, and the app never logs i
 
 ## 4. Lockouts and abuse
 
-Limits (from `apps/api/src/identity/sign-in/sign-in-lockout.ts`, lines 9 to 18):
+Limits (from the `LOCKOUT` constant in `apps/api/src/identity/sign-in/sign-in-lockout.ts`):
 
 | Rule | Limit | Lock |
 |---|---|---|
@@ -271,7 +313,7 @@ Limits (from `apps/api/src/identity/sign-in/sign-in-lockout.ts`, lines 9 to 18):
 - Failures count: a wrong password, an unknown email, a wrong two factor code, and a wrong current password on change password or on two factor disable.
 - During a lock, every attempt gets the same answer as a wrong password (`The email or password is not right. Check both and try again.`), even the correct one. Locked attempts are refused before they are counted, so they do not extend the lock.
 - A full sign in clears the counters.
-- Per IP, sign in is also limited to 30 attempts per minute (`apps/api/src/identity/sign-in/auth.factory.ts` line 73). Going over returns 429 with an `X-Retry-After` header. A shift change can hit this. Wait a minute.
+- Per IP, sign in is also limited to 30 attempts per minute (`createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts`, the `/sign-in/email` rule of `rateLimit.customRules`). Going over returns 429 with an `X-Retry-After` header. A shift change can hit this. Wait a minute.
 
 **Abuse:** anyone who knows a staff email can lock that person out for 15 minutes by sending 20 wrong passwords from any addresses. A patient attacker can repeat this every 15 minutes. The per IP limit does not stop this. Look for `AccountLocked` and `SignInFailed` lines in the api log to spot it.
 
@@ -289,13 +331,13 @@ The chain, from the browser to the api:
 
 1. The browser connects to the client's own TLS proxy, if there is one.
 2. That proxy adds the client's address to the `X-Forwarded-For` header.
-3. Caddy reads that header. It trusts only the proxies listed in `TRUSTED_PROXIES`, and it reads the list from the right. A value a user forges on the left is ignored (`deploy/Caddyfile` lines 1 to 9).
-4. Caddy passes the api exactly one address. It sets `X-Forwarded-For` to the client address it found (`deploy/Caddyfile` line 15).
-5. The api trusts only that header for the address (`apps/api/src/identity/sign-in/auth.factory.ts` lines 112 to 113).
+3. Caddy reads that header. It trusts only the proxies listed in `TRUSTED_PROXIES`, and it reads the list from the right. A value a user forges on the left is ignored (the global options block at the top of `deploy/Caddyfile`).
+4. Caddy passes the api exactly one address. It sets `X-Forwarded-For` to the client address it found (the `upstream_headers` snippet in `deploy/Caddyfile`).
+5. The api trusts only that header for the address (`createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts`, the `advanced.ipAddress` setting).
 
 Where to set it:
 
-- `TRUSTED_PROXIES` in `.env` (`deploy/.env.example` lines 27 to 32). It is empty by default. The `caddy` service reads it (`deploy/compose.yaml` line 115).
+- `TRUSTED_PROXIES` in `.env` (the `TRUSTED_PROXIES` comment in `deploy/.env.example`). It is empty by default. The `caddy` service reads it (the `caddy` service's `environment` in `deploy/compose.yaml`).
 - Set it only to the client's own TLS proxy, as space separated addresses or CIDRs. For example `10.0.0.5/32`.
 - Leave it empty when Caddy faces users directly.
 
@@ -316,12 +358,12 @@ Only `caddy` publishes ports (the `ports:` of `caddy` in `deploy/compose.yaml`).
 - **`smtp`:** needs `MAIL_FROM` and `SMTP_HOST`. `SMTP_USER` and `SMTP_PASSWORD` go together, or both stay empty.
 - **`postmark`:** needs `MAIL_FROM` and `POSTMARK_SERVER_TOKEN`. The sender must be verified in Postmark before the first send.
 - With mail on, a reset link is valid for 1 hour and works once. An invite link is valid for 7 days.
-- The worker tries each email up to 5 times (`apps/api/src/mail/mail-queue.ts`, `MAIL_RETRY_LIMIT` plus the first try). A failed try logs `Mail job <id> failed (try N), will retry: <detail>`. The last failure logs `Mail job <id> failed for good after N tries: <detail>` (`apps/api/src/mail/mail.worker.ts` lines 67 to 73). The log never holds the link.
+- The worker tries each email up to 5 times (`apps/api/src/mail/mail-queue.ts`, `MAIL_RETRY_LIMIT` plus the first try). A failed try logs `Mail job <id> failed (try N), will retry: <detail>`. The last failure logs `Mail job <id> failed for good after N tries: <detail>` (`MailWorker.handle` in `apps/api/src/mail/mail.worker.ts`). The log never holds the link.
 - A missing required setting stops the process at startup with `Invalid environment`, and names the setting.
 
 ## 7. Nightly cleanup
 
-- Schedule: `AUTH_CLEANUP_CRON`. Default `0 3 * * *` (03:00 every day). It is set in `deploy/compose.yaml` line 91 for the worker, and in `apps/api/src/config/env.ts` line 116.
+- Schedule: `AUTH_CLEANUP_CRON`. Default `0 3 * * *` (03:00 every day). It is set for the `worker` service in `deploy/compose.yaml`, and read as `AUTH_CLEANUP_CRON` in `EnvSchema` (`apps/api/src/config/env.ts`).
 - Timezone: the `timezone` setting. The baseline migration seeds `Africa/Cairo` (`packages/db/migrations/0002_baseline_rules.sql`). The worker reads it at startup, so restart the worker after a change.
 - Deletes:
   - sessions past `expires_at`
@@ -330,7 +372,7 @@ Only `caddy` publishes ports (the `ports:` of `caddy` in `deploy/compose.yaml`).
   - sign in slots older than 60 seconds (a slot is normally given back at once, so these are left by requests that died)
   - rate limit counters whose last request is more than 1 day old
 - Keeps live sessions, live tokens, and counters still in use.
-- Logs one line from the worker (`apps/api/src/identity/sign-in/auth-cleanup.job.ts` lines 80 to 84):
+- Logs one line from the worker (`AuthCleanupJob.onApplicationBootstrap`, in `apps/api/src/identity/sign-in/auth-cleanup.job.ts`):
   `Removed <n> sessions, <n> tokens, <n> sign in counters, <n> sign in slots, <n> rate limit counters.`
 - A malformed cron value (not five valid fields) stops the api and the worker at startup with `Invalid environment`, naming the setting.
 
@@ -339,19 +381,19 @@ Only `caddy` publishes ports (the `ports:` of `caddy` in `deploy/compose.yaml`).
 ### 8.1 What sessions do today
 
 - A session lasts 12 hours without use. Each use renews it, at most once an hour. It never lasts longer than 7 days from sign in (spec 0005, AC-5; `apps/api/src/identity/sign-in/session-policy.ts`).
-- The cookie is never cached. The session and the role are read from the database on every request (`apps/api/src/identity/sign-in/auth.factory.ts` line 91). A change acts on the next request.
+- The cookie is never cached. The session and the role are read from the database on every request (`createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts`, the `session.cookieCache` setting). A change acts on the next request.
 - A request with a cookie but no live session gets `SESSION_EXPIRED`, and the person is sent to sign in again. A request with no cookie gets `UNAUTHENTICATED`.
 
 What the actions in the staff page do to sessions today:
 
 | What you do | What happens to the person's sessions |
 |---|---|
-| Disable an account | All sessions end in the same step. The next request is refused. The sign in is refused with `This account is disabled. Ask an administrator for help.` (`staff.service.ts` line 386; AC-16) |
+| Disable an account | All sessions end in the same step. The next request is refused. The sign in is refused with `This account is disabled. Ask an administrator for help.` (`StaffService.disable`; AC-16) |
 | Enable an account | Nothing ends. The person can sign in again |
-| Reset a password (admin) | All sessions end at once. The person must change the password at the next sign in (`staff.service.ts` line 424; AC-18) |
+| Reset a password (admin) | All sessions end at once. The person must change the password at the next sign in (`StaffService.resetPassword`; AC-18) |
 | Sign out everywhere (admin) | All sessions end. The password stays |
-| Reset two factor (admin) | All sessions end (`staff.service.ts` line 485) |
-| Change the email of an invited account (admin) | All sessions end (`staff.service.ts` line 350) |
+| Reset two factor (admin) | All sessions end (`StaffService.resetTwoFactor`) |
+| Change the email of an invited account (admin) | All sessions end (`StaffService.update`, the email branch for an invited account) |
 | Change own password | The person's other sessions end. The current session stays (AC-19) |
 | Change a role (admin or staff) | **Nothing ends.** The new role applies on the person's next request, with the same sign in. This is the one change today that does not end sessions |
 
@@ -374,10 +416,10 @@ The rules the spec sets (spec 0005, AC-33), in operator words:
 
 ### 9.1 What the staff cookie is
 
-- **Host only.** The cookie never carries a `Domain` attribute. This is set in `apps/api/src/identity/sign-in/auth.factory.ts` (lines 102 to 106). The test `apps/api/test/staff-cookie.e2e-spec.ts` reads a real sign in and fails on a `Domain`.
-- **`HttpOnly`, `SameSite=Lax`**, and **`Secure`** when `PUBLIC_URL` is https (`auth.factory.ts` line 103).
+- **Host only.** The cookie never carries a `Domain` attribute. This is set in `createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts` (the `advanced` block). The test `apps/api/test/staff-cookie.e2e-spec.ts` reads a real sign in and fails on a `Domain`.
+- **`HttpOnly`, `SameSite=Lax`**, and **`Secure`** when `PUBLIC_URL` is https (`createAuth`, `advanced.useSecureCookies`).
 - **Why `Domain` matters.** A `Domain` cookie goes to every subdomain, the portal host included. The portal would then receive the staff session. If you ever see `Domain` in a `Set-Cookie` header from this install, stop and report it. Do not run the install until it is fixed.
-- **`Path`.** It is `/` by default. `STAFF_BASE_PATH` sets it (`auth.factory.ts` line 109). The value must start with `/`, must not end with `/`, must not contain `..`, may hold only letters, digits and `/ . _ ~ -`, and no segment may be empty or start with a dot (`apps/api/src/config/env.ts` lines 131 to 148). A bad value stops the process at startup with `Invalid environment`.
+- **`Path`.** It is `/` by default. `STAFF_BASE_PATH` sets it (`createAuth`, `advanced.defaultCookieAttributes`). The value must start with `/`, must not end with `/`, must not contain `..`, may hold only letters, digits and `/ . _ ~ -`, and no segment may be empty or start with a dot (`STAFF_BASE_PATH` in `EnvSchema`, `apps/api/src/config/env.ts`). A bad value stops the process at startup with `Invalid environment`.
 
 ### 9.2 The path prefix: when it breaks
 
@@ -406,8 +448,8 @@ Pick the value before go live where you can. An install that never changes it ne
 
 ### 9.4 The portal host
 
-- `PORTAL_ORIGIN` is the portal's address, for example `https://shop.example.com`. It must have a different host name from `PUBLIC_URL`. A different port is not enough, because cookies ignore the port (`apps/api/src/config/env.ts` lines 199 to 206).
-- When it is set, the api answers 404 to every `/api/auth/*` request that carries the portal host. The api reads `X-Forwarded-Host` and `Host` (`apps/api/src/identity/sign-in/mount-auth.ts` lines 50 to 53, `portal-host.ts`).
+- `PORTAL_ORIGIN` is the portal's address, for example `https://shop.example.com`. It must have a different host name from `PUBLIC_URL`. A different port is not enough, because cookies ignore the port (the `superRefine` of `EnvSchema` in `apps/api/src/config/env.ts`).
+- When it is set, the api answers 404 to every `/api/auth/*` request that carries the portal host. The api reads `X-Forwarded-Host` and `Host` (`mountAuth` in `apps/api/src/identity/sign-in/mount-auth.ts`, and `isPortalRequest` in `portal-host.ts`).
 - **The portal host must never show a sign in page.** Keeping the web sign in pages off the portal host is Caddy's job, and that work is feature 26. Today `deploy/Caddyfile` serves one site and has no portal site. It also does not set `X-Forwarded-Host`, so feature 26 must confirm what Caddy sends when it adds the portal site.
 - If a portal host ever shows a sign in page, report it. Do not add a Caddy rule by hand.
 
@@ -423,7 +465,7 @@ Do not rotate it to get around a lost second factor. Rotate it only if one of th
 - No account has two factor on.
 - A second active admin who has two factor off can sign in. That admin resets the other accounts' two factor from the staff page.
 
-If the secret is rotated while two factor is on, each admin with two factor on needs the two factor reset in section 2.2, once, for their own email. The reset refuses for an account that is not an admin. So an admin resets those accounts from the staff page, after signing in again. The reset deletes the unreadable rows without decrypting them (`apps/api/src/identity/sign-in/reset-admin.ts` line 87).
+If the secret is rotated while two factor is on, each admin with two factor on needs the two factor reset in section 2.2, once, for their own email. The reset refuses for an account that is not an admin. So an admin resets those accounts from the staff page, after signing in again. The reset deletes the unreadable rows without decrypting them (`breakGlassReset` in `apps/api/src/identity/sign-in/reset-admin.ts`, the two factor branch).
 
 ## 11. Troubleshooting
 
@@ -438,7 +480,7 @@ If the secret is rotated while two factor is on, each admin with two factor on n
 | The forgot password page says to ask an administrator | `MAIL_DRIVER=none` | An admin resets the password (section 2.1 or 2.3). Or set `MAIL_DRIVER` to `smtp` or `postmark`, and restart (section 6) |
 | `create-admin` prints `An active admin already exists. ...` | The first admin was already created | Sign in as that admin. For a locked out admin, use section 2.1 |
 | `create-admin` prints `... already belongs to an account.` | The email is taken | Use another email. If it is an admin, use section 2.1 |
-| `create-admin failed:` and a code, or `create-admin failed: database error` | The tenant id setting is missing (section 1.4), or another database error | Check `ssd.tenant_id` as section 1.4 says. If the setting is there, report the code |
+| `create-admin failed: 42704` (or another code), or `create-admin failed: database error` | `42704` is the code for a missing `ssd.tenant_id` setting (section 1.4). Other codes are other database errors | Check `ssd.tenant_id` as section 1.4 says. If the setting is there, report the code |
 | `--reset-password` prints `... is not an admin` | The account is staff | An admin resets it from the staff page (section 2.3) |
 | `--reset-password` or `--reset-two-factor` prints `... is disabled` | The account is disabled | Enable it first |
 | `No account has the email <email>.` | The email is mistyped, or no account has it | Check the spelling |
