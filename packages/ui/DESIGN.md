@@ -228,6 +228,49 @@ About 20 table rows fit a 1080p screen at 40px.
 - **Loading**: skeletons in the shape of the content for lists and cards; a spinner only inside buttons. Announce long loads in a polite live region.
 - **Error**: an inline `Alert` with the `destructive` role tokens, what failed in plain words, and a retry. Keep the rest of the page usable.
 
+## Frames
+
+Three frames, one system (AC-18). A frame is a layout plus a few props, not a second set of tokens or components.
+
+| | Back office | Public portal | Partner |
+|---|---|---|---|
+| Component | `AppShell` | `PortalFrame` (`@ssdashboard/ui/frames/portal-frame`) | `PartnerFrame` (`@ssdashboard/ui/frames/partner-frame`) |
+| Audience | staff, `(backoffice)` | customers, `(portal)` | consignment partners, `(partner)` |
+| Navigation | sidebar by module, command palette, location switcher | none: logo, language switch, optional back link | top bar links (statements, stock at your location, settlement) and the partner's name |
+| Density | dense tables and forms, `floor` on scan screens | one column, 320px baseline | dense, simpler tables, no cost columns |
+| Identity | client name | brand logo and accent (AC-19) | brand logo, partner name |
+| Network budget | normal | tight (AC-23): one Arabic weight pair first, system face meanwhile, few icons | normal |
+
+**`PortalFrame`** contains: a 6px `bg-brand` top rule, a header (36px logo tile, brand name, a `languageSwitch` slot), an optional `backLink` slot, the one `h1`, and one centred column (`max-w-88` with `px-4`, so 20rem of content at 320px and never wider). It never contains a sidebar, command palette, staff navigation, or location switcher. It has `overflow-x-clip`, so the frame adds no sideways scroll at 320 to 430px; large inputs and the main button are the page's job.
+
+**`PartnerFrame`** contains: a bar with the logo tile, brand name, the partner's name and an `actions` slot, then a `<nav aria-label>` of plain `<a>` links (`aria-current="page"` on the current one, 44px tall) and the `main` with the one `h1`. On a phone the bar wraps and the navigation scrolls inside itself, so the page does not scroll sideways. It never contains a sidebar, location switcher, or command palette.
+
+Both render exactly one `<main id="main-content" tabindex="-1">` and exactly one `<h1>` (the `title` prop), take all text through props, and use logical sides and role tokens only. They do not suppress the landmark; a page that nests a frame inside another `main` is the page's bug (see integration below).
+
+### Brand rule (AC-19)
+
+The brand is `{ name, logoUrl?, tokens? }`. When `tokens` (the output of an accepted `deriveBrandTokens`) is given, the frame sets `--brand` and `--brand-foreground` inline on its root; without tokens no inline style is written and the neutral primary shows. The logo `<img>` takes its `alt` from the brand name; with no logo the tile shows the first letter of the name.
+
+- The accent may colour only: the logo tile, the 6px portal top rule, and the one main portal button (`bg-brand text-brand-foreground`).
+- It may never colour: status or meaning colours, text, links, the focus ring, chips, borders of inputs, or the partner navigation.
+- `deriveBrandTokens(accent)` takes `#RGB` or `#RRGGBB`, picks white (`#FFFFFF`) or the near black `#211910` (the light `--foreground`, `oklch(0.22 0.02 70)` converted to sRGB), whichever has more WCAG 2 contrast, and accepts at 4.5:1 or more. Below that it refuses (`reason: 'contrast'`) and returns the best ratio plus a `suggestion`: the nearest passing colour, found by moving only HSL lightness in 0.25 percent steps (darker tried before lighter), so hue and saturation stay the brand's. A bad string answers `reason: 'invalid'`. It never throws. On any refusal the caller passes no tokens, so the portal falls back to the neutral primary; it never applies a refused accent.
+- Until a brand sends its own, design against the sample green `#0A7C39` (owner answer 6).
+
+Worked examples (measured with the WCAG 2 formula, `node --experimental-strip-types` against `src/lib/brand-tokens.ts`):
+
+| Accent | With white | With `#211910` | Result |
+|---|---|---|---|
+| `#0A7C39` sample green | 5.31 | 3.27 | accepted, white, 5.31 |
+| `#F2C230` yellow | 1.68 | 10.35 | accepted, near black, 10.35 |
+| `#A9780B` mid ochre | 3.90 | 4.44 | refused (4.44); suggestion `#AB7A0B`, 4.56 with near black |
+| `#808080` mid grey | 3.95 | 4.39 | refused (4.39); suggestion `#828282`, 4.51 with near black |
+
+A colour fails both foregrounds only near mid luminance (relative luminance roughly 0.15 to 0.22 against this near black); a pale yellow passes with the dark foreground.
+
+### Integration note (not done here)
+
+`apps/web/src/shell/public-root-frame.tsx` already renders `<main id="main-content">` around every portal and partner page. When a feature wires `PortalFrame` or `PartnerFrame` into those route groups, the root frame must stop rendering `main` (keep the skip link and providers), or the page gets two landmarks. The `/design` gallery has its own `main`, so show the frames there in a dev only preview route (or an iframe), not nested inside the gallery.
+
 ## Right to left
 
 - `dir` on `<html>` drives layout; Radix reads its own `DirectionProvider`, so both always change together. Direction follows the language: Arabic is right to left, English left to right. The language switch (user menu, Language) changes `lang`, `dir`, and the Radix direction at once and saves the choice in the `ss_lang` cookie (spec 0004).

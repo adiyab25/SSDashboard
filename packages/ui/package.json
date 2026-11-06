@@ -8,6 +8,7 @@
     "./components/*": "./src/components/*.tsx",
     "./lib/*": "./src/lib/*.ts",
     "./status/*": "./src/status/*.tsx",
+    "./frames/*": "./src/frames/*.tsx",
     "./hooks/*": "./src/hooks/*.ts"
   },
   "scripts": {
