@@ -1,6 +1,8 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { AUTH, type Auth } from './auth/auth.tokens.js';
-import { mountAuth } from './auth/mount-auth.js';
+import { ENV } from './config/config.module.js';
+import type { Env } from './config/env.js';
+import { AUTH, type Auth } from './identity/sign-in/auth.tokens.js';
+import { mountAuth } from './identity/sign-in/mount-auth.js';
 import { QueryErrorFilter } from './platform/query-error.filter.js';
 
 /**
@@ -13,7 +15,7 @@ export function configureApp(app: NestExpressApplication): void {
   app.setGlobalPrefix('api');
   // A failed query is logged with its pg code only, never with its params.
   app.useGlobalFilters(new QueryErrorFilter(app.getHttpAdapter()));
-  mountAuth(app, app.get<Auth>(AUTH));
+  mountAuth(app, app.get<Auth>(AUTH), app.get<Env>(ENV));
   app.useBodyParser('json');
   app.useBodyParser('urlencoded', { extended: true });
   app.enableShutdownHooks();

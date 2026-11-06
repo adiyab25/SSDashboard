@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { PlatformModule } from '../platform/platform.module.js';
-import { StaffDirectoryModule } from '../staff/staff-directory.js';
+import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { LedgerService } from './ledger/ledger.service.js';
 import { ReconciliationService } from './ledger/reconciliation.service.js';
 import { LocationPolicyService } from './locations/location-policy.service.js';

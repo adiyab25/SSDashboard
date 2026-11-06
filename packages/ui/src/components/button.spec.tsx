@@ -30,4 +30,10 @@ describe('Button', () => {
 
     expect(screen.getByRole('link', { name: 'Go' })).toHaveAttribute('data-slot', 'button');
   });
+
+  it('takes its default height from the density token so the floor scope reaches it', () => {
+    render(<Button>Save</Button>);
+
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveClass('h-control');
+  });
 });

@@ -1,8 +1,12 @@
 import { Logger } from '@nestjs/common';
-import type { DatabaseConnection } from '@ssdashboard/db';
 import type { Job } from 'pg-boss';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Env } from '../config/env.js';
+import type {
+  MailRecipient,
+  MailRecipients,
+  MailToken,
+} from '../identity/sign-in/mail-recipients.js';
 import type { SettingsService } from '../platform/settings.service.js';
 import { MAIL_RETRY_LIMIT, type MailJob } from './mail-queue.js';
 import { MailWorker } from './mail.worker.js';
@@ -10,16 +14,18 @@ import type { Mailer } from './mailer.js';
 
 const env = {
   PUBLIC_URL: 'https://erp.example.com',
+  STAFF_BASE_PATH: '',
   CLIENT_DISPLAY_NAME: 'Acme Home',
 } as Env;
 
 const JOB: MailJob = { userId: 'user-1', kind: 'reset', tokenId: 'token-1' };
 
 function setup(options: {
-  person?: Record<string, unknown> | null;
-  token?: Record<string, unknown> | null;
+  person?: MailRecipient | null;
+  token?: MailToken | null;
   installLanguage?: string;
   mailer?: Mailer | null;
+  basePath?: string;
 }) {
   const person =
     options.person === undefined
@@ -29,17 +35,17 @@ function setup(options: {
     options.token === undefined
       ? { identifier: 'reset-password:secrettoken', expired: false }
       : options.token;
-  const execute = vi
-    .fn()
-    .mockResolvedValueOnce({ rows: person ? [person] : [] })
-    .mockResolvedValueOnce({ rows: token ? [token] : [] });
+  const recipients = {
+    recipient: vi.fn(() => Promise.resolve(person ?? undefined)),
+    token: vi.fn(() => Promise.resolve(token ?? undefined)),
+  } as unknown as MailRecipients;
   const send = vi.fn<Mailer['send']>(() => Promise.resolve());
   const mailer = options.mailer === undefined ? { send } : options.mailer;
   const read = vi.fn(() => Promise.resolve({ default_language: options.installLanguage ?? 'en' }));
   const settings = { read } as unknown as SettingsService;
   const worker = new MailWorker(
-    env,
-    { db: { execute } } as unknown as DatabaseConnection,
+    { ...env, STAFF_BASE_PATH: options.basePath ?? '' },
+    recipients,
     mailer,
     settings,
   );
@@ -68,6 +74,18 @@ describe('MailWorker', () => {
     expect(mail?.to).toBe('sam@example.com');
     expect(mail?.subject).toBe('Reset your Acme Home password');
     expect(mail?.text).toContain('https://erp.example.com/api/auth/reset-password/secrettoken?');
+  });
+
+  it('puts STAFF_BASE_PATH between the staff origin and the route (AC-31)', async () => {
+    const { worker, send, job } = setup({ basePath: '/ops' });
+
+    await worker.handle(job());
+
+    const text = send.mock.calls[0]?.[0].text ?? '';
+    expect(text).toContain('https://erp.example.com/ops/api/auth/reset-password/secrettoken?');
+    expect(text).toContain(
+      `callbackURL=${encodeURIComponent('https://erp.example.com/ops/reset-password')}`,
+    );
   });
 
   it("writes the email in the person's saved language, else the install's default", async () => {

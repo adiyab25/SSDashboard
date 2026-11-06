@@ -9,11 +9,15 @@ import { ContrastPair, type ContrastPairSpec } from './contrast-pair';
 import { DesignSection } from './design-section';
 import { FieldStates } from './field-states';
 import { Overlays } from './overlays';
+import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { PaletteSample } from './palette-sample';
 import { RightToLeftRow } from './right-to-left-row';
 import { useThemeVersion } from './use-theme-version';
 
-/** Text pairs need 4.5:1, control boundaries and the focus ring 3:1 (WCAG 2.2 AA). */
+/**
+ * Text pairs need 4.5:1, control boundaries (including the dashed provisional boundary, the
+ * `input` role) and the focus ring 3:1 (WCAG 2.2 AA).
+ */
 const PAIRS: readonly ContrastPairSpec[] = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
@@ -32,6 +36,22 @@ const PAIRS: readonly ContrastPairSpec[] = [
   { fg: 'warning-foreground', bg: 'warning', min: 4.5 },
   { fg: 'info', bg: 'background', min: 4.5 },
   { fg: 'info-foreground', bg: 'info', min: 4.5 },
+  { fg: 'brand-foreground', bg: 'brand', min: 4.5 },
+  // Meaning colors (Daftar): text on the page, on a card, and on its own chip surface. The
+  // provisional chip surface is transparent, so it is measured on the card only.
+  { fg: 'confirmed', bg: 'background', min: 4.5 },
+  { fg: 'confirmed', bg: 'card', min: 4.5 },
+  { fg: 'confirmed', bg: 'confirmed-surface', min: 4.5 },
+  { fg: 'failed', bg: 'background', min: 4.5 },
+  { fg: 'failed', bg: 'card', min: 4.5 },
+  { fg: 'failed', bg: 'failed-surface', min: 4.5 },
+  { fg: 'owed', bg: 'background', min: 4.5 },
+  { fg: 'owed', bg: 'card', min: 4.5 },
+  { fg: 'owed', bg: 'owed-surface', min: 4.5 },
+  { fg: 'provisional', bg: 'background', min: 4.5 },
+  { fg: 'provisional', bg: 'card', min: 4.5 },
+  { fg: 'info', bg: 'card', min: 4.5 },
+  { fg: 'info', bg: 'info-surface', min: 4.5 },
   { fg: 'sidebar-foreground', bg: 'sidebar', min: 4.5 },
   { fg: 'sidebar-accent-foreground', bg: 'sidebar-accent', min: 4.5 },
   { fg: 'input', bg: 'background', min: 3 },
@@ -40,19 +60,19 @@ const PAIRS: readonly ContrastPairSpec[] = [
 ];
 
 const TYPE_SCALE = [
-  { name: 'Page title', className: 'text-xl font-semibold', spec: '20px · 600' },
-  { name: 'Section title', className: 'text-base font-semibold', spec: '16px · 600' },
-  { name: 'Body', className: 'text-sm', spec: '14px / 20px · 400' },
-  { name: 'Label', className: 'text-sm font-medium', spec: '14px · 500' },
-  { name: 'Secondary', className: 'text-xs text-muted-foreground', spec: '12px · 400' },
+  { name: 'Page title', className: 'text-xl font-semibold', spec: '20px / 28px · 600' },
+  { name: 'Section title', className: 'text-base font-semibold', spec: '17px / 25.5px · 600' },
+  { name: 'Body', className: 'text-sm', spec: '15px / 22.5px · 400' },
+  { name: 'Label', className: 'text-sm font-medium', spec: '15px / 22.5px · 500' },
+  { name: 'Secondary', className: 'text-xs text-muted-foreground', spec: '12px / 16px · 400' },
 ];
 
 const SPACING = [1, 2, 3, 4, 6, 8, 12];
 const RADII = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];
 const DENSITY = [
-  { name: 'Table row', className: 'h-row', px: 36 },
-  { name: 'Table header', className: 'h-row-header', px: 40 },
-  { name: 'Form control', className: 'h-control', px: 36 },
+  { name: 'Table row', className: 'h-row', px: 40 },
+  { name: 'Table header', className: 'h-row-header', px: 44 },
+  { name: 'Form control', className: 'h-control', px: 40 },
   { name: 'Sidebar item', className: 'h-nav-item', px: 32 },
   { name: 'Top bar', className: 'h-topbar', px: 56 },
   { name: 'Touch target (coarse pointer)', className: 'h-touch', px: 44 },
@@ -93,7 +113,13 @@ export function DesignGallery() {
         </ul>
         <div lang="ar" dir="rtl" className="flex flex-col gap-1 rounded-lg border p-4">
           <p className="text-base font-semibold">استلام ٢٤ طاولة من خشب البلوط</p>
-          <p>نص تجريبي بخط IBM Plex Sans Arabic لعرض شكل الحروف والمسافات بين الأسطر.</p>
+          <p>نص تجريبي بخط Noto Sans Arabic لعرض شكل الحروف والمسافات بين الأسطر.</p>
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg border p-4">
+          <LtrText className="font-mono text-sm">
+            SKU-0042 · 6223001234567 · const total = 1204.5;
+          </LtrText>
+          <span className="text-xs text-muted-foreground">Code specimen in JetBrains Mono</span>
         </div>
       </DesignSection>
 

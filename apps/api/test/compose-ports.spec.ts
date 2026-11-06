@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 // Why this test exists: the api trusts the first X-Forwarded-For entry as the client address
-// (auth/client-info.ts, auth.factory.ts ipAddressHeaders) for sign-in lockout and rate limits.
+// (identity/sign-in/client-info.ts, auth.factory.ts ipAddressHeaders) for sign-in lockout and
+// rate limits.
 // That is only safe while Caddy is the sole way in, because Caddy overwrites X-Forwarded-For.
 // Publishing a port on api, web or any other service would let a client forge its address.
 

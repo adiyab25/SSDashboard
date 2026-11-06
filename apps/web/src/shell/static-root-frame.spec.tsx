@@ -11,8 +11,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('next/font/google', () => ({
-  IBM_Plex_Sans: () => ({ variable: 'plex-sans' }),
-  IBM_Plex_Sans_Arabic: () => ({ variable: 'plex-arabic' }),
+  Inter: () => ({ variable: 'font-inter' }),
+  Noto_Sans_Arabic: () => ({ variable: 'font-noto-arabic' }),
+  JetBrains_Mono: () => ({ variable: 'font-jetbrains-mono' }),
 }));
 
 const render = (children: React.ReactNode) =>
@@ -29,7 +30,9 @@ describe('StaticRootFrame', () => {
   });
 
   it('exposes both font families as CSS variables on the document', () => {
-    expect(render('page')).toMatch(/^<html[^>]* class="plex-sans plex-arabic"/);
+    expect(render('page')).toMatch(
+      /^<html[^>]* class="font-inter font-noto-arabic font-jetbrains-mono"/,
+    );
   });
 
   it('sets the saved language and direction before first paint, in every build', () => {

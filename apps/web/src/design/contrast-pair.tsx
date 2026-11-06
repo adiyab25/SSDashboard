@@ -47,7 +47,7 @@ export function ContrastPair({ fg, bg, min, version }: ContrastPairSpec & { vers
         className={passes ? 'text-success tabular-nums' : 'text-destructive tabular-nums'}
         data-testid={`contrast-${fg}-on-${bg}`}
       >
-        {ratio === null ? '…' : `${ratio.toFixed(2)}:1`}
+        {ratio === null ? '…' : `${ratio.toFixed(2)}:1 ${passes ? 'meets' : 'fails'}`}
       </span>
     </li>
   );

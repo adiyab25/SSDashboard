@@ -45,7 +45,7 @@ Visual language, layout primitives, and base components, shaped with the Impecca
 **Done when:** `design.md` covers type, color, spacing, and components; base components handle focus, keyboard, and right to left; there is a phone first pattern for the manager dashboard and a pattern for in screen help.
 - [x] Design it (spec): `/architect design system & UI foundation`
 - [ ] Build it: `/develop design system & UI foundation`
-  - [ ] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
+  - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
   - [ ] Status chips, provisional values, the freshness strip, and the floor density scope
   - [ ] Portal and partner frames with per brand theming
   - [ ] Phone first dashboard pattern and in screen help
@@ -62,8 +62,8 @@ Arabic first, English always, everywhere: screens, errors, receipts, exports, an
   - [x] Formatting and digits at every input edge
   - [x] Server rendered portal and partner pages
   - [x] Operating day test on the real Cairo transition dates and the time zone release step
-- [ ] Verify it: `/check verify localization`
-- [ ] Test it: `/test localization`
+- [x] Verify it: `/check verify localization`
+- [x] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) (amendment of 2026-11-05, Proposed)
 
 ### 7. Staff sign in · GA

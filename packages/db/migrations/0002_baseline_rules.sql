@@ -425,6 +425,8 @@ BEGIN
   EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "location_owner_policies" FROM %I', app_role);
   -- Only migrate writes the install row.
   EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "install" FROM %I', app_role);
+  -- A sign in slot is taken and given back, never changed (spec 0005, AC-3).
+  EXECUTE format('REVOKE UPDATE ON "sign_in_slots" FROM %I', app_role);
 END;
 $$;--> statement-breakpoint
 

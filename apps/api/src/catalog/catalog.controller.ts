@@ -21,7 +21,7 @@ import {
   type SkuListResponse,
 } from '@ssdashboard/contracts';
 import type { z } from 'zod';
-import { Roles } from '../auth/roles.decorator.js';
+import { Roles } from '../identity/sign-in/roles.decorator.js';
 import { Audience } from '../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';

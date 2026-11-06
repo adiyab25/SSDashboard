@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Password } from './auth.js';
 import { CreateProductRequest, UpdateSkuRequest } from './catalog.js';
 import { moneyInput, quantityInput, westernDigits } from './digit-input.js';
 import { CreateStockReceiptRequest } from './stock-receipts.js';
@@ -49,5 +50,12 @@ describe('request schemas', () => {
     expect(product.variants[0]?.price).toBe('1234.50');
     expect(UpdateSkuRequest.parse({ updatedAt: 'x', price: null }).price).toBeNull();
     expect(UpdateSkuRequest.safeParse({ updatedAt: 'x', price: '-١' }).success).toBe(false);
+  });
+});
+
+describe('passwords are never normalized (AC-18)', () => {
+  it('returns a password with Arabic digits exactly as typed', () => {
+    const typed = 'Mixed-Pass-1-\u0663\u0661';
+    expect(Password.parse(typed)).toBe(typed);
   });
 });

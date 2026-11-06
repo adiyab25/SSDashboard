@@ -272,5 +272,25 @@ describe('own profile and password', { timeout: 180_000 }, () => {
       expect((await call(elsewhere, 'GET', '/api/me')).status).toBe(401);
       expect((await signIn(person.email, NEW_PASSWORD)).length).toBeGreaterThan(0);
     });
+
+    it('accepts an Arabic-Indic digit as the digit, and keeps the password exactly as typed', async () => {
+      const person = await addPerson();
+      const here = await signIn(person.email);
+      const arabicDigit = 'Abcdefg\u0663';
+
+      const changed = await call(here, 'POST', '/api/auth/change-password', {
+        currentPassword: PASSWORD,
+        newPassword: arabicDigit,
+        revokeOtherSessions: true,
+      });
+      expect(changed.status).toBe(200);
+      // Stored as typed: the same text signs in, and the Western digit is a different password.
+      expect((await signIn(person.email, arabicDigit)).length).toBeGreaterThan(0);
+      const western = await call(undefined, 'POST', '/api/auth/sign-in/email', {
+        email: person.email,
+        password: 'Abcdefg3',
+      });
+      expect(western.status).toBe(401);
+    });
   });
 });
