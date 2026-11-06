@@ -1,6 +1,6 @@
 # Staff sign in run book
 
-For the person who runs a client install (`deploy/`). Covers the first admin, break glass recovery, lockouts, mail, the nightly cleanup, and common symptoms. Spec: [0005](../specs/0005-staff-sign-in/index.md).
+For the person who runs a client install (`deploy/`). Covers the first admin, break glass recovery, lockouts, mail, the nightly cleanup, changing the staff base path, and common symptoms. Spec: [0005](../specs/0005-staff-sign-in/index.md).
 
 Run every command from the `deploy/` folder, with the install's `.env` in place.
 
@@ -178,7 +178,26 @@ How to clear a lock:
 - Logs one line from the worker: `Removed <n> sessions, <n> tokens, <n> sign in counters, <n> rate limit counters.`
 - A malformed cron value (not five valid fields) stops the api and the worker at startup with `Invalid environment`, naming the setting.
 
-## 7. Troubleshooting
+## 7. Changing STAFF_BASE_PATH on a live install
+
+`STAFF_BASE_PATH` sets the `Path` of every sign in cookie. After it changes (for example from empty to `/ops`), each browser still holds its old session cookie on the wider path (`Path=/`). The browser sends both cookies, and the api reads the old one, so a person either acts in an older session (on a shared terminal, possibly someone else's) or is signed out again right after signing in, until the old cookie expires. Signing out clears only the new path.
+
+So a change of `STAFF_BASE_PATH` on a live install always comes with these steps:
+
+1. Set the new value in `.env`, and the matching prefix in Caddy.
+2. Restart the stack: `docker compose --env-file .env up -d`
+3. Revoke every session, and every sign in waiting for a two factor code, as the owner role:
+
+   ```bash
+   docker compose --env-file .env exec postgres psql -U ssdashboard -d ssdashboard -c "DELETE FROM sessions" -c "DELETE FROM verifications WHERE identifier LIKE '2fa-%'"
+   ```
+
+   Everyone is signed out. Reset and invite links keep working.
+4. Ask every staff member to clear this site's cookies in their browser (or sign in from a private window once), then sign in again.
+
+Pick the value before go live where you can: an install that never changes it never needs this.
+
+## 8. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|

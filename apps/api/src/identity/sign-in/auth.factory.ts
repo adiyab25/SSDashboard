@@ -4,7 +4,7 @@ import { admin } from 'better-auth/plugins/admin';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@ssdashboard/contracts';
 import { schema, type Database } from '@ssdashboard/db';
-import type { Env } from '../../config/env.js';
+import { staffOrigin as staffOriginOf, type Env } from '../../config/env.js';
 import { createAuthHooks, type AuthHookDeps } from './auth-hooks.js';
 import { betterAuthLog } from './auth-logger.js';
 import type { AuthMail } from './auth-mail.service.js';
@@ -15,9 +15,9 @@ import { SESSION_IDLE_SECONDS, SESSION_RENEW_SECONDS } from './session-policy.js
  * an admin or the `create-admin` command, and the session and user are read from the
  * database on every request (cookie caching stays off) so a disabled person fails at once.
  *
- * One staff origin, `PUBLIC_URL` today (`STAFF_ORIGIN` once spec 0007's rename lands), is the
- * base URL, the only trusted origin, the Origin check and the `Secure` flag (AC-30). The portal
- * origin must never be added to the trusted origins.
+ * One staff origin (`staffOrigin` in `config/env.ts`, `PUBLIC_URL` today) is the base URL, the
+ * only trusted origin, the Origin check and the `Secure` flag (AC-30). The portal origin must
+ * never be added to the trusted origins.
  */
 export function createAuth(
   env: Env,
@@ -26,7 +26,7 @@ export function createAuth(
     mail: Pick<AuthMail, 'queueReset' | 'completeReset'>;
   },
 ) {
-  const staffOrigin = new URL(env.PUBLIC_URL).origin;
+  const staffOrigin = staffOriginOf(env);
   return betterAuth({
     appName: env.CLIENT_DISPLAY_NAME,
     baseURL: staffOrigin,

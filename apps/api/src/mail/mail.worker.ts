@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PgBoss, type Job } from 'pg-boss';
 import { ENV } from '../config/config.module.js';
-import type { Env } from '../config/env.js';
+import { staffBase, type Env } from '../config/env.js';
 import { MailRecipients } from '../identity/sign-in/mail-recipients.js';
 import { JOB_SCHEMA } from '../inventory/ledger/reconcile.job.js';
 import { SettingsService } from '../platform/settings.service.js';
@@ -98,7 +98,7 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
       language,
       name: person.name,
       clientName: this.env.CLIENT_DISPLAY_NAME,
-      link: tokenLink(`${this.env.PUBLIC_URL}${this.env.STAFF_BASE_PATH}`, token, kind),
+      link: tokenLink(staffBase(this.env), token, kind),
     });
     await mailer.send({ to: person.email, ...mail });
     this.logger.log(`Sent a ${kind} email for ${userId}`);

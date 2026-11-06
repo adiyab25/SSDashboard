@@ -11,7 +11,7 @@ import { StaffRole, type SessionErrorCode } from '@ssdashboard/contracts';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { Request, Response } from 'express';
 import { ENV } from '../../config/config.module.js';
-import type { Env } from '../../config/env.js';
+import { staffOrigin, type Env } from '../../config/env.js';
 import type { CurrentStaff } from './current-staff.js';
 import { audienceOf } from '../../platform/audience/audience.decorator.js';
 import { IS_PUBLIC } from './public.decorator.js';
@@ -41,7 +41,7 @@ export class SessionGuard implements CanActivate {
     @Inject(AUTH) private readonly auth: Auth,
     @Inject(ENV) env: Env,
   ) {
-    this.origin = new URL(env.PUBLIC_URL).origin;
+    this.origin = staffOrigin(env);
   }
 
   /**

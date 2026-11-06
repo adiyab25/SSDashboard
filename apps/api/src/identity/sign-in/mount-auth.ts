@@ -4,7 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import type { Env } from '../../config/env.js';
 import { logAuthRequestFailure } from './auth-logger.js';
 import type { Auth } from './auth.tokens.js';
-import { isPortalRequest, portalHosts } from './portal-host.js';
+import { isPortalRequest, portalHostname } from './portal-host.js';
 
 const BASE = '/api/auth';
 
@@ -45,7 +45,7 @@ export function mountAuth(
 ): void {
   const handle = toNodeHandler(auth);
   const server = app.getHttpAdapter().getInstance() as Mountable;
-  const portal = portalHosts(env.PORTAL_ORIGIN);
+  const portal = portalHostname(env.PORTAL_ORIGIN);
 
   server.all(`${BASE}/*splat`, (req, res) => {
     if (isPortalRequest(req.headers, portal)) {

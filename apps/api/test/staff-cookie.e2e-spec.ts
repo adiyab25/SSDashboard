@@ -16,6 +16,7 @@ import {
 
 const PASSWORD = 'Cookie-Contract-1';
 const PORTAL_HOST = 'shop.example.test';
+const SECURE_ORIGIN = 'https://erp.example.test';
 
 interface Reply {
   status: number;
@@ -23,9 +24,11 @@ interface Reply {
   cookies: string[];
 }
 
-/** One running api: its address and how it was configured. */
+/** One running api: its address, the staff origin it trusts, and its process. */
 interface Api {
   base: string;
+  /** `PUBLIC_URL`, sent as `Origin`: the plain address unless the api was given another one. */
+  origin: string;
   proc: RunningProcess;
 }
 
@@ -58,6 +61,7 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
   let owner: DatabaseConnection;
   let scoped: Api | undefined;
   let plain: Api | undefined;
+  let secure: Api | undefined;
   let hash: string;
   let counter = 0;
 
@@ -74,7 +78,7 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
       ...extra,
     });
     await waitForHttp(`${base}/api/health`, proc);
-    return { base, proc };
+    return { base, origin: extra.PUBLIC_URL ?? base, proc };
   }
 
   beforeAll(async () => {
@@ -87,11 +91,14 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
       PORTAL_ORIGIN: `https://${PORTAL_HOST}`,
     });
     plain = await startApi({});
-  }, 90_000);
+    // An https staff origin; the test still talks plain http to the process, as Caddy does.
+    secure = await startApi({ PUBLIC_URL: SECURE_ORIGIN, STAFF_BASE_PATH: '/ops' });
+  }, 120_000);
 
   afterAll(async () => {
     await stop(scoped?.proc);
     await stop(plain?.proc);
+    await stop(secure?.proc);
     await owner?.pool.end();
     if (scratch) await dropScratchDatabase(scratch.name);
   });
@@ -128,7 +135,7 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
       method,
       headers: {
         'content-type': 'application/json',
-        origin: api.base,
+        origin: api.origin,
         'x-forwarded-for': freshIp(),
         ...(options.cookie && { cookie: options.cookie }),
         ...options.headers,
@@ -240,6 +247,48 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
 
       expect(reply.status).toBe(200);
       expectScoped(reply, '/');
+    });
+  });
+
+  describe('with an https PUBLIC_URL (AC-30)', () => {
+    /** Every Set-Cookie line is Secure, named with the `__Secure-` prefix, host only, on /ops. */
+    function expectSecure(reply: Reply) {
+      expectScoped(reply, '/ops');
+      for (const cookie of reply.cookies) {
+        expect(cookie, cookie).toMatch(/^__Secure-/);
+        expect(
+          cookie
+            .split(';')
+            .slice(1)
+            .some((part) => part.trim().toLowerCase() === 'secure'),
+          cookie,
+        ).toBe(true);
+      }
+    }
+
+    it('sets the session cookie Secure with the __Secure- prefix, host only, on Path=/ops', async () => {
+      const person = await addPerson();
+
+      const reply = await signIn(secure, person.email);
+
+      expect(reply.status).toBe(200);
+      expect(cookieNamed(reply, '__Secure-better-auth.session_token')).toBeDefined();
+      expectSecure(reply);
+    });
+
+    it('serves the session and clears it on sign out with the same attributes', async () => {
+      const person = await addPerson();
+      const cookie = cookieNamed(await signIn(secure, person.email), 'session_token') as string;
+
+      const me = await call(secure, 'GET', '/api/me', { cookie });
+      expect(me.status).toBe(200);
+
+      const out = await call(secure, 'POST', '/api/auth/sign-out', { cookie, body: {} });
+      expect(out.status).toBe(200);
+      const cleared = out.cookies.find((c) => c.includes('session_token'));
+      expect(cleared).toBeDefined();
+      expect(attribute(cleared as string, 'Max-Age')).toBe('0');
+      expectSecure(out);
     });
   });
 
