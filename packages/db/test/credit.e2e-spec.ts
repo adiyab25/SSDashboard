@@ -8,6 +8,7 @@ import { createScratchDatabase, dropScratchDatabase } from './database.js';
 // scratch database for the file; each test makes its own rows.
 describe('the customer credit ledger (AC-24, AC-33)', () => {
   let name: string;
+  let url: string;
   let owner: pg.Client;
   let app: pg.Client;
   let customer: string;
@@ -22,6 +23,7 @@ describe('the customer credit ledger (AC-24, AC-33)', () => {
   beforeAll(async () => {
     const db = await createScratchDatabase();
     name = db.name;
+    url = db.url;
     await runMigrations(db.url);
     owner = new pg.Client({ connectionString: db.url });
     app = new pg.Client({ connectionString: db.url });
@@ -549,6 +551,132 @@ describe('the customer credit ledger (AC-24, AC-33)', () => {
           reverses_entry_id: payout,
         }),
       );
+    });
+  });
+
+  // Security review S6 and S12, review R6 and R16: two connections as the app role, the second one
+  // started while the first one's transaction is still open.
+  describe('concurrent writers (S6, S12, R6, R16)', () => {
+    async function appClient(): Promise<pg.Client> {
+      const client = new pg.Client({ connectionString: url });
+      await client.connect();
+      await client.query(`SET ROLE ${APP_ROLE}`);
+      return client;
+    }
+
+    /** The backend process id of one connection. */
+    async function pidOf(client: pg.Client): Promise<number> {
+      const { rows } = await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+      const pid = rows[0]?.pid;
+      if (pid === undefined) throw new Error('no backend pid');
+      return pid;
+    }
+
+    /**
+     * Waits until the session `pid` waits on any lock, or the given promise settles first. Review
+     * R20: only that session's waits count, so another suite's lock never answers for it.
+     */
+    async function blockedOnLock(pending: Promise<unknown>, pid: number): Promise<boolean> {
+      let settled = false;
+      void pending.finally(() => {
+        settled = true;
+      });
+      const deadline = Date.now() + 5_000;
+      while (!settled && Date.now() < deadline) {
+        const { rows } = await owner.query<{ n: number }>(
+          'SELECT count(*)::int AS n FROM pg_locks WHERE pid = $1 AND NOT granted',
+          [pid],
+        );
+        if ((rows[0]?.n ?? 0) > 0) return true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return false;
+    }
+
+    const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+    // The exclusion constraint waits for the first writer's uncommitted entry and then refuses, at
+    // every isolation level (REPEATABLE READ included, S12), without a lock per entry (R16).
+    it.each(['READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'])(
+      'never commits a posting split by a second %s transaction while the first one is open',
+      async (isolation) => {
+        const [first, second] = [await appClient(), await appClient()];
+        try {
+          const original = entry();
+          await first.query(`BEGIN ISOLATION LEVEL ${isolation}`);
+          await second.query(`BEGIN ISOLATION LEVEL ${isolation}`);
+          // Both transactions take their snapshot before either writes.
+          await first.query('SELECT 1');
+          await second.query('SELECT 1');
+          // Read before the second session blocks: a busy client queues every later query.
+          const secondPid = await pidOf(second);
+          await insert(original, first);
+
+          // Another posting under the same key, on another funding, so the funding unique key
+          // does not serialize the two: only the posting guard can see the split.
+          const pending = insert(
+            entry({
+              idempotency_key: original.idempotency_key,
+              funding: 'credit_only',
+              amount: '100.00',
+            }),
+            second,
+          ).then(() => second.query('COMMIT').then(() => 'committed', message), message);
+
+          expect(await blockedOnLock(pending, secondPid)).toBe(true);
+          await first.query('COMMIT');
+
+          expect(await pending).toMatch(
+            /credit_entries_posting_holds_together|could not serialize access/,
+          );
+          const { rows } = await owner.query<{ postings: number }>(
+            'SELECT count(DISTINCT posting_id)::int AS postings FROM credit_entries WHERE idempotency_key = $1',
+            [original.idempotency_key],
+          );
+          expect(rows).toEqual([{ postings: 1 }]);
+        } finally {
+          await second.query('ROLLBACK').catch(() => undefined);
+          await first.end();
+          await second.end();
+        }
+      },
+    );
+
+    // Review R16: the old guard took one lock per entry until commit and a 20,000 entry insert ran
+    // out of shared memory (max_locks_per_transaction 64). The constraint takes none per entry.
+    it('writes 20,000 entries in one statement without filling the lock table', async () => {
+      const writer = await appClient();
+      try {
+        const { rowCount } = await writer.query(
+          `WITH c AS (INSERT INTO customers (name) SELECT 'Bulk ' || g FROM generate_series(1, 20000) g RETURNING id)
+           INSERT INTO credit_entries (posting_id, customer_id, kind, funding, amount, reason_code,
+                                       actor_type, idempotency_key, request_hash, effective_at)
+           SELECT gen_random_uuid(), c.id, 'opening_balance', 'credit_only', 50, 'opening', 'import',
+                  'bulk-' || c.id, 'seed', now()
+           FROM c`,
+        );
+        expect(rowCount).toBe(20_000);
+      } finally {
+        await writer.end();
+      }
+    });
+
+    it('refuses a reversal of an original the statement cannot see yet, rather than leave it to the foreign key', async () => {
+      const [first, second] = [await appClient(), await appClient()];
+      try {
+        await first.query('BEGIN');
+        const original = await insert(entry(), first);
+
+        await expect(
+          insert(entry({ amount: '-500.00', reverses_entry_id: original }), second),
+        ).rejects.toThrow(/credit_entries_reverses_existing_entry/);
+        await first.query('COMMIT');
+
+        await insert(entry({ amount: '-500.00', reverses_entry_id: original }), second);
+      } finally {
+        await first.end();
+        await second.end();
+      }
     });
   });
 

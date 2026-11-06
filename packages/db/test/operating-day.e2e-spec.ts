@@ -129,14 +129,16 @@ describe('operating day (AC-17)', () => {
 
   // Spec 0010, AC-7: an audit entry's day comes from recorded_at, so 00:30 Cairo time with a
   // cutoff hour of 2 is the previous day, and a day a writer passes is ignored. recorded_at is
-  // always now (trigger audit_entries_recorded_now), so the owner plants the 00:30 instant with
-  // that trigger disabled for this one insert.
+  // always now (trigger audit_entries_0_stamp_recorded_at), so the owner plants the 00:30 instant with
+  // that stamp trigger disabled for this one insert.
   it('stamps an audit entry from recorded_at, honouring the cutoff hour', async () => {
     const { rows } = await owner.query<{ at: string }>(`
       SELECT to_char(('2026-01-16 00:30:00'::timestamp AT TIME ZONE 'Africa/Cairo') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at`);
     const instant = rows[0]?.at ?? '';
     await setCutoff(2);
-    await owner.query('ALTER TABLE audit_entries DISABLE TRIGGER audit_entries_recorded_now');
+    await owner.query(
+      'ALTER TABLE audit_entries DISABLE TRIGGER audit_entries_0_stamp_recorded_at',
+    );
     try {
       const entry = await owner.query<{ day: string }>(
         `INSERT INTO audit_entries (recorded_at, operating_day, correlation_id, actor_kind,
@@ -148,7 +150,9 @@ describe('operating day (AC-17)', () => {
       );
       expect(entry.rows[0]?.day).toBe('2026-01-15');
     } finally {
-      await owner.query('ALTER TABLE audit_entries ENABLE TRIGGER audit_entries_recorded_now');
+      await owner.query(
+        'ALTER TABLE audit_entries ENABLE TRIGGER audit_entries_0_stamp_recorded_at',
+      );
       await setCutoff(0);
     }
   });

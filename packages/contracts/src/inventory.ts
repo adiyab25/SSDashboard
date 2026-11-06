@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MoneyString, UnitCostString } from './money.js';
+import { ReasonCode } from './orders/order-states.js';
 
 /** What a posting comes from. Matches the `movement_source_type` enum. */
 export const LedgerSourceType = z.enum([
@@ -46,7 +47,8 @@ export const PostingLine = z.object({
   serials: z.array(z.string().trim().min(1).max(200)).optional(),
   /** Outbound only: the reservation this line fulfils. */
   reservationId: Uuid.optional(),
-  reasonCode: z.string().trim().min(1).max(100).optional(),
+  /** A code (`ReasonCode`, review R7), never a typed note: the movement is kept for ever. */
+  reasonCode: ReasonCode.optional(),
 });
 /** The validated shape of `PostingLine`, as the api and web see it after parsing. */
 export type PostingLine = z.infer<typeof PostingLine>;
@@ -88,7 +90,8 @@ export const ReverseInput = z.object({
    * schemas must omit this field; the controller takes it from the guard's signed in user.
    */
   postedBy: Uuid.nullable(),
-  reasonCode: z.string().trim().min(1).max(100),
+  /** A code (`ReasonCode`, review R7), for example `wrong_supplier`, never a typed note. */
+  reasonCode: ReasonCode,
 });
 /** What a caller passes for `ReverseInput`, before defaults and transforms are applied. */
 export type ReverseInput = z.input<typeof ReverseInput>;

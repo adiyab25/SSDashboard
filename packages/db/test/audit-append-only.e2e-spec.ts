@@ -116,16 +116,17 @@ describe('audit entries are append only (spec 0010)', () => {
   });
 
   // Review AR8: information_schema.triggers never lists TRUNCATE triggers, so read pg_trigger.
-  it('has exactly its four guards and stamps', async () => {
+  it('has exactly its five guards and stamps', async () => {
     const { rows } = await owner.query<{ trigger: string }>(
       `SELECT t.tgname AS trigger FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
        WHERE c.relname = 'audit_entries' AND NOT t.tgisinternal AND t.tgenabled = 'O'
        ORDER BY 1`,
     );
     expect(rows.map((row) => row.trigger)).toEqual([
+      'audit_entries_0_stamp_recorded_at',
+      'audit_entries_1_stamp_id',
       'audit_entries_append_only',
       'audit_entries_no_truncate',
-      'audit_entries_recorded_now',
       'audit_entries_stamp_operating_day',
     ]);
   });

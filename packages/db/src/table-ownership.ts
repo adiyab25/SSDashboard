@@ -120,6 +120,36 @@ export const TABLE_OWNERSHIP = {
 /** The SQL name of a table in the ownership map. */
 export type OwnedTable = keyof typeof TABLE_OWNERSHIP;
 
+/**
+ * The append only tables (spec 0002, tenancy child, A4; security review S7): the one declared list.
+ * Each built one must have the `ssd_reject_change` row and truncate triggers and the app role's
+ * UPDATE, DELETE, and TRUNCATE revoked in the rules migration, and `test/schema.e2e-spec.ts`
+ * fails when this list, the trigger set, and the revoked set differ. Tables later features build
+ * (`licenses`, `license_checks`, `audit_entries`) are listed now, so they are checked the day
+ * they land. Never take a table off this list: history that could be edited is no history.
+ */
+export const APPEND_ONLY_TABLES = [
+  'movement_groups',
+  'stock_movements',
+  'movement_serials',
+  'stock_receipt_lines',
+  'cost_records',
+  'order_events',
+  'customer_merges',
+  'credit_entries',
+  'settlement_statements',
+  'settlement_lines',
+  'settlement_line_matches',
+  'settlement_period_events',
+  'order_cost_rules',
+  'licenses',
+  'license_checks',
+  'audit_entries',
+] as const satisfies readonly OwnedTable[];
+
+/** The SQL name of a table in the append only list. */
+export type AppendOnlyTable = (typeof APPEND_ONLY_TABLES)[number];
+
 /** A Drizzle table of the schema: the name it is exported under and its SQL name. */
 export interface SchemaTable {
   /** The export name, for example `stockMovements`. */

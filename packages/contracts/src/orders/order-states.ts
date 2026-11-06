@@ -70,6 +70,22 @@ export type RefusedReasonCode = z.infer<typeof RefusedReasonCode>;
 /** The shape of every reason code column: a code, never a typed note. */
 const REASON_CODE_PATTERN = /^[a-z][a-z0-9_.]{0,63}$/;
 
+/**
+ * A reason, outcome, or account code: lower case letters, digits, `_` and `.`, starting with a
+ * letter, at most 64 characters (`edit_removal`, `confirmation.call`). The Zod twin of the
+ * database's `reasonCodeShape` check, used for every code column on append only history: the
+ * ledger's `stock_movements.reason_code` (PostingLine, ReverseInput), `customer_merges.reason`,
+ * `settlement_period_events.reason`, and the settlement match codes. A reason is a code, never a
+ * typed note: a note would be personal data kept for ever (security review S4). Surrounding
+ * spaces are trimmed first; never use it for free text.
+ */
+export const ReasonCode = z
+  .string()
+  .trim()
+  .regex(REASON_CODE_PATTERN, 'A reason is a lower case code, for example wrong_supplier');
+/** One ReasonCode value. */
+export type ReasonCode = z.infer<typeof ReasonCode>;
+
 /** Which of the two machines an event belongs to. Matches the `order_events.machine` enum. */
 export const OrderMachine = z.enum(['fulfillment', 'cash']);
 /** One order machine. */

@@ -70,7 +70,8 @@ const POSITIVE_KINDS = sql.raw(
 /**
  * One signed entry of a customer's credit (positive is owed to her; negative is spent, paid out,
  * or owed back). The entries one action posts share `postingId` and `idempotencyKey`, one per
- * funding, with one customer and one request hash (trigger `credit_entries_posting_holds_together`).
+ * funding, with one customer and one request hash (exclusion constraint
+ * `credit_entries_posting_holds_together`, rules migration).
  * Append only: a correction is a reversal entry (`reversesEntryId`) of the same customer with the
  * original's kind, funding, order, line, quantity, exchange, refund, and payout method and the
  * negated amount; an entry never reverses itself and a reversal is never reversed. `operatingDay`

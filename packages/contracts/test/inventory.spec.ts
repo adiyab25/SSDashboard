@@ -45,6 +45,15 @@ describe('PostingLine', () => {
     expect(parsed.serials).toEqual(['SN-1']);
     expect(parsed.reasonCode).toBe('found');
   });
+
+  // Review R7: the ledger keeps a reason for ever, so it is a code, like the database check
+  // stock_movements_reason_code_shape.
+  it.each(['wrong supplier', 'Mistake', '9late', 'a'.repeat(65), ''])(
+    'refuses %j as a reason code (R7)',
+    (reasonCode) => {
+      expect(PostingLine.safeParse({ ...line, reasonCode }).success).toBe(false);
+    },
+  );
 });
 
 describe('PostingInput', () => {
@@ -108,6 +117,15 @@ describe('PostingRequest / ReverseRequest (HTTP bodies) (covers: AC-22)', () => 
   it('parse a body without postedBy', () => {
     expect(PostingRequest.safeParse(request).success).toBe(true);
     expect(ReverseRequest.safeParse(reverseRequest).success).toBe(true);
+  });
+
+  it('takes a reversal reason only as a code (R7)', () => {
+    expect(
+      ReverseRequest.safeParse({ ...reverseRequest, reasonCode: 'wrong_supplier' }).success,
+    ).toBe(true);
+    for (const reasonCode of ['wrong supplier', 'Entered twice', 'x'.repeat(65)]) {
+      expect(ReverseRequest.safeParse({ ...reverseRequest, reasonCode }).success).toBe(false);
+    }
   });
 
   it('reject a smuggled postedBy (a user id or null) instead of stripping it', () => {

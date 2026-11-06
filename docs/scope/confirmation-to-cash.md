@@ -43,6 +43,7 @@ One task primitive (type, linked record, owner, due time, outcome code) that eve
 ### 18. Confirmation queue · GA · needs a decision
 Where support confirms every order before it ships: oldest first, grouped by phone, with a WhatsApp deep link, outcome codes, callbacks, address zones, and edits written back to Shopify.
 **Done when:** an agent opens WhatsApp with a prefilled message or calls, records one outcome (confirmed, no answer with an automatic callback, call back at a time, cancelled with reason, duplicate, fake); three no answers close the order; duplicates merge in one tap and cancel on Shopify with a reason; the address is fixed into the carrier's governorate, city, and zone with suggestions from past orders; size changes and added pieces write back to Shopify; confirmed orders move on to fulfillment.
+The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
 - [ ] Design it (spec): `/architect confirmation queue`
 
 ### 19. Bosta connector, mirror mode · GA · needs a decision
@@ -59,6 +60,7 @@ Scan to find a variant and scan to move stock, on a phone camera or a handheld s
 ### 21. Delivery failures & returned to origin · GA · needs a decision
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
 **Done when:** a failed attempt schedules the next try; a returned to origin piece is restocked by scan and both shipping legs post against the order and its campaign; a partial delivery splits the order into delivered and returned lines with the partial cash amount; the returned to origin rate shows by governorate, product, and carrier; every order ends with an outcome.
+The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
 - [ ] Design it (spec): `/architect delivery failures & returned to origin`
 
 ### 22. Settlement & Bosta reconciliation · GA · needs a decision

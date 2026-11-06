@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { APP_ROLE, runMigrations } from '../src/index.js';
+import { APP_ROLE, APPEND_ONLY_TABLES, runMigrations } from '../src/index.js';
 import { createScratchDatabase, dropScratchDatabase } from './database.js';
 
 /** One foreign key whose columns no index leads with. */
@@ -233,6 +233,23 @@ describe('core data model schema (spec 0002)', () => {
       ).rejects.toThrow(/stock_movements_cost_sign/);
     });
 
+    // Review R7: a movement is kept for ever, so its reason is a code like every newer history row.
+    it('takes a movement reason only as a code (R7)', async () => {
+      const { groupId, variantId } = await makeMovement();
+      const locationId = await makeLocation();
+      const insert = (reason: string) =>
+        app.query(
+          `INSERT INTO stock_movements (group_id, variant_id, location_id, quantity, unit_cost, total_cost, effective_at, reason_code)
+           VALUES ($1, $2, $3, 1, 1, 1, now(), $4)`,
+          [groupId, variantId, locationId, reason],
+        );
+
+      for (const note of ['wrong supplier', 'Found in the back room', 'UPPER']) {
+        await expect(insert(note)).rejects.toThrow(/stock_movements_reason_code_shape/);
+      }
+      await insert('wrong_supplier');
+    });
+
     it('refuses to reverse a reversal group', async () => {
       const { groupId } = await makeMovement();
       const reversal = await one<{ id: string }>(
@@ -249,6 +266,32 @@ describe('core data model schema (spec 0002)', () => {
           [reversal.id],
         ),
       ).rejects.toThrow(/cannot be reversed/);
+    });
+
+    // Security review S6: the guard reads the original itself. One it cannot see (not committed
+    // yet) is refused here, never left to the foreign key, which checks later on a newer snapshot.
+    it('refuses to reverse a group another transaction has not committed yet (S6)', async () => {
+      const writer = new pg.Client({ connectionString: url });
+      await writer.connect();
+      try {
+        await writer.query(`SET ROLE ${APP_ROLE}`);
+        await writer.query('BEGIN');
+        const original = await one<{ id: string }>(
+          writer,
+          `INSERT INTO movement_groups (idempotency_key, request_hash, source_type, source_id, effective_at)
+           VALUES (gen_random_uuid()::text, 'h', 'adjustment', gen_random_uuid(), now()) RETURNING id`,
+        );
+        const reverse = `INSERT INTO movement_groups (idempotency_key, request_hash, source_type, source_id, reverses_group_id, effective_at)
+           VALUES (gen_random_uuid()::text, 'h', 'adjustment', gen_random_uuid(), $1, now())`;
+
+        await expect(app.query(reverse, [original.id])).rejects.toThrow(
+          /movement_groups_reverses_existing_group/,
+        );
+        await writer.query('COMMIT');
+        await app.query(reverse, [original.id]);
+      } finally {
+        await writer.end();
+      }
     });
   });
 
@@ -536,6 +579,189 @@ describe('core data model schema (spec 0002)', () => {
 
       expect(rows.map((row) => row.table)).toEqual(Object.keys(seeds).sort());
     });
+
+    // Security review S7: the declared list (APPEND_ONLY_TABLES in table-ownership.ts, the tables
+    // built so far), the tables with both ssd_reject_change triggers, and the tables the app role
+    // may insert into but never update, delete, or truncate are one and the same set. A new
+    // history table missing from the list, a trigger, or a revoke fails here by name.
+    it('keeps the declared append only list, the trigger set, and the revoked set equal (S7)', async () => {
+      const built = await owner.query<{ table: string }>(
+        `SELECT tablename::text AS table FROM pg_tables
+          WHERE schemaname = 'public' AND tablename = ANY($1::text[]) ORDER BY 1`,
+        [[...APPEND_ONLY_TABLES]],
+      );
+      const triggered = await owner.query<{ table: string }>(
+        `SELECT c.relname::text AS table FROM pg_class c
+           JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+          WHERE c.relkind = 'r'
+            AND EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                         WHERE t.tgrelid = c.oid AND p.proname = 'ssd_reject_change'
+                           AND t.tgname = c.relname || '_append_only')
+            AND EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                         WHERE t.tgrelid = c.oid AND p.proname = 'ssd_reject_change'
+                           AND t.tgname = c.relname || '_no_truncate')
+          ORDER BY 1`,
+      );
+      const revoked = await owner.query<{ table: string }>(
+        `SELECT tablename::text AS table FROM pg_tables
+          WHERE schemaname = 'public'
+            AND has_table_privilege($1, format('%I.%I', schemaname, tablename), 'INSERT')
+            AND NOT has_table_privilege($1, format('%I.%I', schemaname, tablename), 'UPDATE')
+            AND NOT has_table_privilege($1, format('%I.%I', schemaname, tablename), 'DELETE')
+            AND NOT has_table_privilege($1, format('%I.%I', schemaname, tablename), 'TRUNCATE')
+          ORDER BY 1`,
+        [APP_ROLE],
+      );
+      const names = (result: { rows: { table: string }[] }) => result.rows.map((row) => row.table);
+
+      expect(names(built)).toEqual(Object.keys(seeds).sort());
+      expect(names(triggered)).toEqual(names(built));
+      expect(names(revoked)).toEqual(names(built));
+    });
+
+    // Security review S1: on append only history `recorded_at` belongs to the database. Each case
+    // inserts a row with a writer chosen recorded_at in 2999 and reads back what was stored.
+    const FUTURE = '2999-01-01T00:00:00Z';
+    const stampCases: Record<string, () => Promise<{ stamped: boolean }>> = {
+      movement_groups: () =>
+        one(
+          app,
+          `INSERT INTO movement_groups (idempotency_key, request_hash, source_type, source_id, effective_at, recorded_at)
+           VALUES (gen_random_uuid()::text, 'h', 'opening_balance', gen_random_uuid(), now(), $1)
+           RETURNING recorded_at = now() AS stamped`,
+          [FUTURE],
+        ),
+      stock_movements: async () => {
+        const { groupId, variantId } = await makeMovement();
+        return one(
+          owner,
+          `INSERT INTO stock_movements (group_id, variant_id, location_id, quantity, unit_cost, total_cost, effective_at, recorded_at)
+           VALUES ($1, $2, $3, 1, 1, 1, now(), $4) RETURNING recorded_at = now() AS stamped`,
+          [groupId, variantId, await makeLocation(), FUTURE],
+        );
+      },
+      credit_entries: () =>
+        one(
+          app,
+          `WITH customer AS (INSERT INTO customers DEFAULT VALUES RETURNING id)
+           INSERT INTO credit_entries (posting_id, customer_id, kind, funding, amount, reason_code, actor_type, idempotency_key, request_hash, effective_at, recorded_at)
+           SELECT gen_random_uuid(), customer.id, 'opening_balance', 'credit_only', 50, 'opening', 'import', gen_random_uuid()::text, 'h', now(), $1
+           FROM customer RETURNING recorded_at = now() AS stamped`,
+          [FUTURE],
+        ),
+      cost_records: async () =>
+        one(
+          app,
+          `INSERT INTO cost_records (product_id, season_id, cost_basis, unit_cost, effective_from, recorded_at)
+           SELECT product_id, (SELECT id FROM seasons WHERE code = 'CORE'), 'estimate', 10, '2026-01-01', $2
+           FROM product_variants WHERE id = $1
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [await makeVariant(), FUTURE],
+        ),
+      order_cost_rules: () =>
+        one(
+          app,
+          `INSERT INTO order_cost_rules (kind, status, value, effective_from, recorded_at)
+           VALUES ('cod_fee_percent', 'set', 2.5, '2027-01-01', $1)
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [FUTURE],
+        ),
+      order_events: async () => {
+        counter += 1;
+        const order = await one<{ id: string }>(
+          owner,
+          `INSERT INTO orders (store_id, channel_id, order_number, placed_at, fulfillment_state, cash_state, outcome, payment_method)
+           VALUES ((SELECT id FROM stores WHERE code = 'MAIN'), (SELECT id FROM channels WHERE code = 'manual'),
+                   $1, now(), 'new', 'nothing_to_collect', 'open', 'none') RETURNING id`,
+          [`RA-${counter}`],
+        );
+        return one(
+          app,
+          `INSERT INTO order_events (order_id, machine, to_state, actor_type, occurred_at, recorded_at)
+           VALUES ($1, 'fulfillment', 'new', 'system_job', now(), $2)
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [order.id, FUTURE],
+        );
+      },
+      customer_merges: async () => {
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('M', $1) RETURNING id",
+          [`stamp-${counter}@example.test`],
+        );
+        return one(
+          app,
+          `WITH survivor AS (INSERT INTO customers DEFAULT VALUES RETURNING id),
+                merged AS (INSERT INTO customers DEFAULT VALUES RETURNING id)
+           INSERT INTO customer_merges (action, survivor_id, merged_id, actor_id, recorded_at)
+           SELECT 'merge', survivor.id, merged.id, $1, $2 FROM survivor, merged
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [user.id, FUTURE],
+        );
+      },
+      settlement_line_matches: async () =>
+        one(
+          app,
+          `INSERT INTO settlement_line_matches (line_id, result, reason_code, matched_by_type, recorded_at)
+           VALUES ($1, 'unmatched', 'not_yet_matched', 'rule', $2)
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [(await makeSettlementLine()).lineId, FUTURE],
+        ),
+      settlement_period_events: async () => {
+        const { accountId } = await makeSettlementLine();
+        const period = await one<{ id: string }>(
+          owner,
+          `INSERT INTO settlement_periods (account_id, starts_on, ends_on)
+           VALUES ($1, '2026-11-01', '2026-11-30') RETURNING id`,
+          [accountId],
+        );
+        return one(
+          app,
+          `INSERT INTO settlement_period_events (period_id, action, evidence, actor_type, recorded_at)
+           VALUES ($1, 'closed', '{"statement_total": "0.00"}', 'rule', $2)
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [period.id, FUTURE],
+        );
+      },
+      // Spec 0010 AS1: the audit trail's instant is the database's too (its id stamp follows).
+      audit_entries: () =>
+        one(
+          app,
+          `INSERT INTO audit_entries (recorded_at, correlation_id, actor_kind, actor_ref, action, record_type, record_id)
+           VALUES ($1, gen_random_uuid(), 'carrier', 'bosta', 'stock_receipt.voided', 'stock_receipt', gen_random_uuid())
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [FUTURE],
+        ),
+    };
+
+    it('stamps recorded_at on every append only table that has one, first of its insert triggers (S1)', async () => {
+      // The row (1), BEFORE (2), and INSERT (4) bits of pg_trigger.tgtype.
+      const { rows } = await owner.query<{ table: string; first: string | null }>(
+        `SELECT c.table_name::text AS table,
+                (SELECT t.tgname::text FROM pg_trigger t
+                  WHERE t.tgrelid = format('public.%I', c.table_name)::regclass
+                    AND NOT t.tgisinternal AND (t.tgtype & 7) = 7
+                  ORDER BY t.tgname COLLATE "C" LIMIT 1) AS first
+           FROM information_schema.columns c
+          WHERE c.table_schema = 'public' AND c.column_name = 'recorded_at'
+            AND c.table_name::text = ANY($1::text[])
+          ORDER BY 1`,
+        [[...APPEND_ONLY_TABLES]],
+      );
+
+      expect(rows.map((row) => row.table)).toEqual(Object.keys(stampCases).sort());
+      for (const row of rows) expect(row.first).toBe(`${row.table}_0_stamp_recorded_at`);
+    });
+
+    it.each(Object.keys(stampCases))(
+      'overwrites a writer chosen recorded_at on %s (S1)',
+      async (table) => {
+        const result = await stampCases[table]?.();
+
+        expect(result).toEqual({ stamped: true });
+      },
+    );
 
     it.each(Object.keys(seeds))('refuses UPDATE, DELETE, and TRUNCATE on %s', async (table) => {
       const seed = await seeds[table]?.();

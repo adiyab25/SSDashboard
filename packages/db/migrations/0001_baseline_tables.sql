@@ -442,7 +442,8 @@ CREATE TABLE "customer_merges" (
 	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "customer_merges_undoes_merge_unique" UNIQUE("undoes_merge_id"),
 	CONSTRAINT "customer_merges_undo_names_merge" CHECK (("customer_merges"."action" = 'undo') = ("customer_merges"."undoes_merge_id" IS NOT NULL)),
-	CONSTRAINT "customer_merges_two_customers" CHECK ("customer_merges"."survivor_id" <> "customer_merges"."merged_id")
+	CONSTRAINT "customer_merges_two_customers" CHECK ("customer_merges"."survivor_id" <> "customer_merges"."merged_id"),
+	CONSTRAINT "customer_merges_reason_shape" CHECK ("customer_merges"."reason" IS NULL OR "customer_merges"."reason" ~ '^[a-z][a-z0-9_.]{0,63}$')
 );
 --> statement-breakpoint
 CREATE TABLE "customer_phones" (
@@ -591,7 +592,8 @@ CREATE TABLE "stock_movements" (
 	"operating_day" date NOT NULL,
 	"recorded_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "stock_movements_quantity_not_zero" CHECK ("stock_movements"."quantity" <> 0),
-	CONSTRAINT "stock_movements_cost_sign" CHECK ("stock_movements"."total_cost" = 0 OR sign("stock_movements"."total_cost") = sign("stock_movements"."quantity"))
+	CONSTRAINT "stock_movements_cost_sign" CHECK ("stock_movements"."total_cost" = 0 OR sign("stock_movements"."total_cost") = sign("stock_movements"."quantity")),
+	CONSTRAINT "stock_movements_reason_code_shape" CHECK ("stock_movements"."reason_code" IS NULL OR "stock_movements"."reason_code" ~ '^[a-z][a-z0-9_.]{0,63}$')
 );
 --> statement-breakpoint
 CREATE TABLE "bins" (
@@ -915,7 +917,8 @@ CREATE TABLE "settlement_line_matches" (
 	CONSTRAINT "settlement_line_matches_person_has_actor" CHECK ("settlement_line_matches"."matched_by_type" <> 'person' OR "settlement_line_matches"."matched_by" IS NOT NULL),
 	CONSTRAINT "settlement_line_matches_reason_code_shape" CHECK ("settlement_line_matches"."reason_code" IS NULL OR "settlement_line_matches"."reason_code" ~ '^[a-z][a-z0-9_.]{0,63}$'),
 	CONSTRAINT "settlement_line_matches_account_code_shape" CHECK ("settlement_line_matches"."account_code" IS NULL OR "settlement_line_matches"."account_code" ~ '^[a-z][a-z0-9_.]{0,63}$'),
-	CONSTRAINT "settlement_line_matches_rule_code_shape" CHECK ("settlement_line_matches"."rule_code" IS NULL OR "settlement_line_matches"."rule_code" ~ '^[a-z][a-z0-9_.]{0,63}$')
+	CONSTRAINT "settlement_line_matches_rule_code_shape" CHECK ("settlement_line_matches"."rule_code" IS NULL OR "settlement_line_matches"."rule_code" ~ '^[a-z][a-z0-9_.]{0,63}$'),
+	CONSTRAINT "settlement_line_matches_payment_reference_length" CHECK (char_length("settlement_line_matches"."payment_reference") <= 500)
 );
 --> statement-breakpoint
 CREATE TABLE "settlement_lines" (
@@ -940,8 +943,10 @@ CREATE TABLE "settlement_lines" (
 	"discount_amount" numeric(14, 2),
 	"net_amount" numeric(14, 2),
 	"amounts_include_vat" boolean,
-	CONSTRAINT "settlement_lines_statement_ref_unique" UNIQUE("tenant_id","account_id","statement_id","external_line_ref"),
-	CONSTRAINT "settlement_lines_other_fee_has_code" CHECK ("settlement_lines"."line_kind" <> 'other_fee' OR "settlement_lines"."fee_code" IS NOT NULL)
+	CONSTRAINT "settlement_lines_statement_ref_unique" UNIQUE NULLS NOT DISTINCT("tenant_id","account_id","statement_id","external_line_ref","fee_code"),
+	CONSTRAINT "settlement_lines_other_fee_has_code" CHECK ("settlement_lines"."line_kind" <> 'other_fee' OR "settlement_lines"."fee_code" IS NOT NULL),
+	CONSTRAINT "settlement_lines_fee_code_only_on_other_fee" CHECK ("settlement_lines"."line_kind" = 'other_fee' OR "settlement_lines"."fee_code" IS NULL),
+	CONSTRAINT "settlement_lines_partner_text_length" CHECK (char_length("settlement_lines"."partner_text") <= 500)
 );
 --> statement-breakpoint
 CREATE TABLE "settlement_period_events" (
@@ -956,7 +961,8 @@ CREATE TABLE "settlement_period_events" (
 	"recorded_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "settlement_period_events_revoke_has_reason" CHECK ("settlement_period_events"."action" <> 'revoked' OR ("settlement_period_events"."reason" IS NOT NULL AND btrim("settlement_period_events"."reason") <> '')),
 	CONSTRAINT "settlement_period_events_close_has_evidence" CHECK ("settlement_period_events"."action" <> 'closed' OR "settlement_period_events"."evidence" IS NOT NULL),
-	CONSTRAINT "settlement_period_events_person_has_actor" CHECK ("settlement_period_events"."actor_type" <> 'person' OR "settlement_period_events"."actor_id" IS NOT NULL)
+	CONSTRAINT "settlement_period_events_person_has_actor" CHECK ("settlement_period_events"."actor_type" <> 'person' OR "settlement_period_events"."actor_id" IS NOT NULL),
+	CONSTRAINT "settlement_period_events_reason_shape" CHECK ("settlement_period_events"."reason" IS NULL OR "settlement_period_events"."reason" ~ '^[a-z][a-z0-9_.]{0,63}$')
 );
 --> statement-breakpoint
 CREATE TABLE "settlement_periods" (

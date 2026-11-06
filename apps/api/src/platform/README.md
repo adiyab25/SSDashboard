@@ -38,4 +38,6 @@ pnpm --filter @ssdashboard/api test:e2e test/numbering-reconcile.e2e-spec.ts tes
 
 ## Decisions
 
-None yet. Record non obvious decisions as ADRs in docs/adr/ and link them here.
+- The projection rule (A6): a module publishes a past tense domain event inside its own transaction, and no module reads another module's table to fill an order projection column (`orders.write_back_state`, `returned_credit_amount`, `exchange_consumed_amount`, the cash amounts). See [0002 tenancy child](../../../../docs/specs/0002-core-data-model/0002-tenancy-platform.md).
+
+Record other non obvious decisions as ADRs in docs/adr/ and link them here.

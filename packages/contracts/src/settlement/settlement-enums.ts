@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** The settlement primitive's closed lists, matching the settlement database enums (spec 0002 settlement). Keep both in step in one change. */
+/** The settlement primitive's closed lists, matching the settlement database enums (spec 0002 settlement), and its two bounded free text fields. Keep both in step in one change. */
 
 /** Who a settlement account settles with. Matches `settlement_accounts.owner_type`. */
 export const SettlementOwnerType = z.enum(['carrier', 'consignment_partner', 'gateway']);
@@ -64,3 +64,27 @@ export type SettlementPeriodAction = z.infer<typeof SettlementPeriodAction>;
 export const SettlementPeriodActorType = z.enum(['person', 'rule']);
 /** One SettlementPeriodActorType value. */
 export type SettlementPeriodActorType = z.infer<typeof SettlementPeriodActorType>;
+
+/**
+ * The longest free text a statement line or a match row keeps (security review S4): the database
+ * checks `settlement_lines_partner_text_length` and `settlement_line_matches_payment_reference_length`.
+ */
+export const SETTLEMENT_TEXT_MAX = 500;
+
+/**
+ * The statement's own wording on a line (`settlement_lines.partner_text`), at most 500
+ * characters. It may name a person, so it is on the log redaction list (`partnerText`) and is
+ * never put in an error message.
+ */
+export const SettlementPartnerText = z.string().max(SETTLEMENT_TEXT_MAX);
+/** One SettlementPartnerText value. */
+export type SettlementPartnerText = z.infer<typeof SettlementPartnerText>;
+
+/**
+ * The bank or InstaPay reference a person typed when accounting a line
+ * (`settlement_line_matches.payment_reference`), at most 500 characters, trimmed, never empty. On
+ * the log redaction list (`paymentReference`).
+ */
+export const SettlementPaymentReference = z.string().trim().min(1).max(SETTLEMENT_TEXT_MAX);
+/** One SettlementPaymentReference value. */
+export type SettlementPaymentReference = z.infer<typeof SettlementPaymentReference>;

@@ -35,6 +35,6 @@ Grants and revokes read the app role name from the database setting `ssd.app_rol
 - Developers recreate their dev database once: `docker compose -f deploy/compose.dev.yaml down -v`, then `pnpm bootstrap`. `pnpm bootstrap` detects a database migrated by the old history and stops with that instruction instead of failing halfway. CI starts from an empty Postgres service and needs no step. The step is also in the [root README](../../README.md).
 - A reader can tell at a glance which file may be edited by hand and which one only Drizzle writes.
 - Before the freeze, an edit to a baseline file is allowed but means every developer recreates their database again; after the freeze it is forbidden.
-- A restore needs `pg_dump --create`, or the two database settings (`ssd.tenant_id`, `ssd.app_role`) reapplied from the `install` row, because a plain dump leaves out `ALTER DATABASE` settings. Feature 27 owns that step.
+- A restore needs `pg_dump --create`, or the two database settings (`ssd.tenant_id`, `ssd.app_role`) reapplied from the `install` row, because a plain dump leaves out `ALTER DATABASE` settings. Feature 27 owns that step. *Since the feature 4 close:* running `migrate` after the restore reapplies both when they are missing (the tenant from the `install` row, the role from the `pgboss` schema owner).
 - Rolling back means reverting the commit and recreating the dev database again.
 - Follow up: `packages/db/test/migrate.e2e-spec.ts` is updated in the same milestone, and the freeze date is noted here when the pilot import runs.

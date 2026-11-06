@@ -198,9 +198,11 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
   // Review AR4: entries sharing one recorded_at, and two a microsecond away, page one at a time in
   // (recorded_at desc, id desc) order, each exactly once. A keyset without the id tie breaker, or
   // truncated to milliseconds, fails here. The owner plants the instants with the trigger that
-  // stamps recorded_at (audit_entries_recorded_now) disabled for the plant only.
+  // stamps recorded_at (audit_entries_0_stamp_recorded_at, with audit_entries_1_stamp_id for the id) disabled for the plant only.
   it('pages ties and microsecond neighbours one at a time, each once (AC-12)', async () => {
-    await owner.pool.query('ALTER TABLE audit_entries DISABLE TRIGGER audit_entries_recorded_now');
+    await owner.pool.query(
+      'ALTER TABLE audit_entries DISABLE TRIGGER audit_entries_0_stamp_recorded_at, DISABLE TRIGGER audit_entries_1_stamp_id',
+    );
     try {
       await owner.pool.query(
         `INSERT INTO audit_entries (id, recorded_at, correlation_id, actor_kind, actor_ref, action,
@@ -214,7 +216,9 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
            '2026-11-05 10:00:00+00']::timestamptz[]) AS at`,
       );
     } finally {
-      await owner.pool.query('ALTER TABLE audit_entries ENABLE TRIGGER audit_entries_recorded_now');
+      await owner.pool.query(
+        'ALTER TABLE audit_entries ENABLE TRIGGER audit_entries_0_stamp_recorded_at, ENABLE TRIGGER audit_entries_1_stamp_id',
+      );
     }
     const { rows } = await owner.pool.query<{ id: string }>(
       "SELECT id FROM audit_entries WHERE action = 'planted.paged' ORDER BY recorded_at DESC, id DESC",

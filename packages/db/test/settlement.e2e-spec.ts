@@ -235,9 +235,55 @@ describe('the settlement primitive (AC-25, AC-33)', () => {
         app.query("UPDATE settlement_periods SET ends_on = '2026-11-29' WHERE id = $1", [id]),
       ).rejects.toThrow(/PeriodClosed/);
 
-      await event(id, { action: 'revoked', reason: 'Bosta resent the cash cycle' });
+      await event(id, { action: 'revoked', reason: 'carrier_resent_cycle' });
       expect(await statusOf(id)).toBe('open');
       await app.query("UPDATE settlement_periods SET ends_on = '2026-11-29' WHERE id = $1", [id]);
+    });
+
+    // Security review S1: a close a writer dated in 2999 used to stay the latest event for ever, so
+    // no revoke could reopen the period. The database now owns recorded_at.
+    it('still reopens a period whose close a writer tried to date in the future (S1)', async () => {
+      const id = await period(await carrierAccount(), '2026-11-01', '2026-11-30');
+      await event(id, {
+        action: 'closed',
+        evidence: { statement_total: '0.00' },
+        recorded_at: '2999-01-01T00:00:00Z',
+      });
+      expect(await statusOf(id)).toBe('closed');
+
+      await event(id, { action: 'revoked', reason: 'carrier_resent_cycle' });
+
+      expect(await statusOf(id)).toBe('open');
+      const stored = await one<{ future: boolean }>(
+        `SELECT bool_or(recorded_at > now() + interval '1 day') AS future
+           FROM settlement_period_events WHERE period_id = $1`,
+        [id],
+      );
+      expect(stored.future).toBe(false);
+    });
+
+    it('keeps the order of a close and a revoke written in one transaction (S1, clock_timestamp)', async () => {
+      const id = await period(await carrierAccount(), '2026-11-01', '2026-11-30');
+      await app.query('BEGIN');
+      try {
+        await event(id, { action: 'closed', evidence: { statement_total: '0.00' } });
+        await event(id, { action: 'revoked', reason: 'closed_in_error' });
+        await app.query('COMMIT');
+      } catch (error) {
+        await app.query('ROLLBACK');
+        throw error;
+      }
+
+      expect(await statusOf(id)).toBe('open');
+      const order = await owner.query<{ action: string; distinct_times: boolean }>(
+        `SELECT action, count(*) OVER (PARTITION BY recorded_at) = 1 AS distinct_times
+           FROM settlement_period_events WHERE period_id = $1 ORDER BY recorded_at`,
+        [id],
+      );
+      expect(order.rows).toEqual([
+        { action: 'closed', distinct_times: true },
+        { action: 'revoked', distinct_times: true },
+      ]);
     });
 
     it('keeps the status to its latest event (security review MJ2)', async () => {
@@ -318,7 +364,7 @@ describe('the settlement primitive (AC-25, AC-33)', () => {
       ).rejects.toThrow(/settlement_period_events_revoke_has_reason/);
       await expect(
         insert('settlement_period_events', { ...event, action: 'revoked', reason: '  ' }),
-      ).rejects.toThrow(/settlement_period_events_revoke_has_reason/);
+      ).rejects.toThrow(/settlement_period_events_(revoke_has_reason|reason_shape)/);
       await insert('settlement_period_events', {
         ...event,
         action: 'closed',
@@ -326,9 +372,30 @@ describe('the settlement primitive (AC-25, AC-33)', () => {
       });
       await insert(
         'settlement_period_events',
-        { ...event, action: 'revoked', reason: 'Bosta resent the file' },
+        { ...event, action: 'revoked', reason: 'carrier_resent_file' },
         app,
       );
+    });
+
+    it('takes a revoke reason only as a code, never a typed note (security review S4)', async () => {
+      const id = await period(await carrierAccount(), '2026-11-01', '2026-11-30');
+      await insert('settlement_period_events', {
+        period_id: id,
+        actor_type: 'rule',
+        action: 'closed',
+        evidence: { statement_total: '0.00' },
+      });
+
+      for (const note of ['Bosta resent the file', 'Sara asked', 'UPPER']) {
+        await expect(
+          insert('settlement_period_events', {
+            period_id: id,
+            actor_type: 'rule',
+            action: 'revoked',
+            reason: note,
+          }),
+        ).rejects.toThrow(/settlement_period_events_reason_shape/);
+      }
     });
 
     it('refuses a person without an actor', async () => {
@@ -424,6 +491,54 @@ describe('the settlement primitive (AC-25, AC-33)', () => {
         fee_code: 'Insurance',
         external_line_ref: '2',
       });
+    });
+
+    // Domain review D6: one delivery can carry two different carrier fees of kind other_fee in one
+    // cash cycle, so the fee name is part of a line's identity (external_line_ref plus fee_code).
+    it('keeps two other_fee lines with one reference apart by their fee name (D6)', async () => {
+      const account = await carrierAccount();
+      const statementId = await statement(account);
+      const fee = (feeCode: string) =>
+        line(account, statementId, {
+          line_kind: 'other_fee',
+          amount: '-5.00',
+          external_line_ref: 'cycle-9:TRK-9:other_fee',
+          fee_code: feeCode,
+        });
+
+      await fee('flex_ship_fees');
+      await fee('insurance_fees');
+
+      await expect(fee('flex_ship_fees')).rejects.toThrow(/settlement_lines_statement_ref_unique/);
+      // A kind without a fee name still dedupes on the reference alone (NULLS NOT DISTINCT).
+      await line(account, statementId, { external_line_ref: 'cycle-9:TRK-9:cod_collected' });
+      await expect(
+        line(account, statementId, { external_line_ref: 'cycle-9:TRK-9:cod_collected' }),
+      ).rejects.toThrow(/settlement_lines_statement_ref_unique/);
+    });
+
+    // Domain review, fix re-check: a fee name on any other kind would let two lines of that kind
+    // share one reference (the key holds fee_code), so it is refused.
+    it.each(['cod_collected', 'cod_fee', 'shipping_fee', 'adjustment'])(
+      'refuses a fee name on a %s line',
+      async (kind) => {
+        const account = await carrierAccount();
+        const statementId = await statement(account);
+
+        await expect(
+          line(account, statementId, { line_kind: kind, fee_code: 'flex_ship_fees' }),
+        ).rejects.toThrow(/settlement_lines_fee_code_only_on_other_fee/);
+      },
+    );
+
+    it('caps the partner wording at 500 characters (security review S4)', async () => {
+      const account = await carrierAccount();
+      const statementId = await statement(account);
+
+      await expect(
+        line(account, statementId, { line_kind: 'adjustment', partner_text: 'x'.repeat(501) }),
+      ).rejects.toThrow(/settlement_lines_partner_text_length/);
+      await line(account, statementId, { line_kind: 'adjustment', partner_text: 'x'.repeat(500) });
     });
 
     it("refuses a line on another account's statement", async () => {
@@ -579,6 +694,112 @@ describe('the settlement primitive (AC-25, AC-33)', () => {
           supersedes_match_id: accounted,
         }),
       ).rejects.toThrow(/settlement_line_matches_accounted_terminal/);
+    });
+
+    // Domain review D1, gate ruling: an accounted line of a superseded statement may still be
+    // cleared with the reason superseded; nothing else may follow an accounted row.
+    describe('the superseded clear (D1)', () => {
+      async function accountedLine(): Promise<{
+        account: string;
+        old: string;
+        head: string;
+        lineId: string;
+      }> {
+        const account = await carrierAccount();
+        const old = await statement(account);
+        const lineId = await line(account, old, {
+          line_kind: 'partner_payment',
+          amount: '-500.00',
+        });
+        const head = await match(lineId, { result: 'accounted', account_code: 'payment_received' });
+        return { account, old, head, lineId };
+      }
+
+      it('clears an accounted line once a statement supersedes its statement', async () => {
+        const { account, old, head, lineId } = await accountedLine();
+        await statement(account, { supersedes_statement_id: old });
+
+        await match(lineId, {
+          result: 'cleared',
+          reason_code: 'superseded',
+          supersedes_match_id: head,
+        });
+
+        const heads = await owner.query<{ result: string; reason_code: string }>(
+          `SELECT result, reason_code FROM settlement_line_matches m
+            WHERE line_id = $1 AND NOT EXISTS (
+              SELECT 1 FROM settlement_line_matches n WHERE n.supersedes_match_id = m.id)`,
+          [lineId],
+        );
+        expect(heads.rows).toEqual([{ result: 'cleared', reason_code: 'superseded' }]);
+      });
+
+      // Review R17: a cleared line belongs to a superseded statement, so nothing follows it.
+      it('refuses any row after the superseded clear', async () => {
+        const { account, old, head, lineId } = await accountedLine();
+        await statement(account, { supersedes_statement_id: old });
+        const cleared = await match(lineId, {
+          result: 'cleared',
+          reason_code: 'superseded',
+          supersedes_match_id: head,
+        });
+
+        for (const row of [
+          { result: 'accounted', account_code: 'payment_received' },
+          { result: 'matched', order_id: order },
+          { result: 'cleared', reason_code: 'superseded' },
+        ]) {
+          await expect(match(lineId, { ...row, supersedes_match_id: cleared })).rejects.toThrow(
+            /settlement_line_matches_cleared_terminal/,
+          );
+        }
+      });
+
+      it('refuses the superseded clear while the statement is live', async () => {
+        const { head, lineId } = await accountedLine();
+
+        await expect(
+          match(lineId, {
+            result: 'cleared',
+            reason_code: 'superseded',
+            supersedes_match_id: head,
+          }),
+        ).rejects.toThrow(/settlement_line_matches_accounted_terminal/);
+      });
+
+      it.each([false, true])(
+        'refuses a rematch, another account code, or another reason on an accounted line (statement superseded: %s)',
+        async (superseded) => {
+          const { account, old, head, lineId } = await accountedLine();
+          if (superseded) await statement(account, { supersedes_statement_id: old });
+
+          for (const row of [
+            { result: 'matched', order_id: order },
+            { result: 'accounted', account_code: 'bank_charge' },
+            { result: 'unmatched', reason_code: 'accounted_in_error' },
+            { result: 'cleared', reason_code: 'accounted_in_error' },
+          ]) {
+            await expect(match(lineId, { ...row, supersedes_match_id: head })).rejects.toThrow(
+              /settlement_line_matches_accounted_terminal/,
+            );
+          }
+        },
+      );
+    });
+
+    it('caps the payment reference at 500 characters (security review S4)', async () => {
+      await expect(
+        match(await newLine(), {
+          result: 'accounted',
+          account_code: 'payment_received',
+          payment_reference: '7'.repeat(501),
+        }),
+      ).rejects.toThrow(/settlement_line_matches_payment_reference_length/);
+      await match(await newLine(), {
+        result: 'accounted',
+        account_code: 'payment_received',
+        payment_reference: '7'.repeat(500),
+      });
     });
   });
 
