@@ -797,10 +797,24 @@ export const ar: Catalog = {
       import: 'استيراد',
       portalCustomer: 'عميل',
     },
-    recordTypes: { stockReceipt: 'إذن استلام' },
+    recordTypes: {
+      stockReceipt: 'إذن استلام',
+      sku: 'صنف',
+      location: 'موقع',
+      customer: 'عميل',
+      order: 'طلب',
+      exchange: 'استبدال',
+      outboundCommand: 'طلب لشركة الشحن',
+    },
     // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
     actions: {
       stockReceiptVoided: 'إلغاء إذن استلام',
+      skuArchived: 'أرشفة صنف',
+      skuUnarchived: 'إلغاء أرشفة صنف',
+      skuCodeChanged: 'تغيير رمز صنف',
+      locationEdited: 'تعديل موقع',
+      locationArchived: 'أرشفة موقع',
+      locationUnarchived: 'إلغاء أرشفة موقع',
     },
   },
   mail: {

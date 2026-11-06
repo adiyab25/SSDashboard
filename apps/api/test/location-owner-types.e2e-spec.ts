@@ -6,7 +6,12 @@ import {
   LocationPolicyService,
   type LocationPolicy,
 } from '../src/inventory/locations/location-policy.service.js';
-import { LocationError, LocationsService } from '../src/inventory/locations/locations.service.js';
+import { AuditService } from '../src/audit/audit.service.js';
+import {
+  LocationError,
+  LocationsService,
+  type LocationCaller,
+} from '../src/inventory/locations/locations.service.js';
 import {
   driftedBalances,
   fixtures,
@@ -74,12 +79,15 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
   let policies: LocationPolicyService;
   let locations: LocationsService;
   let counter = 0;
+  /** The admin the archives and edits are recorded for (spec 0010). */
+  let admin: LocationCaller;
 
   beforeAll(async () => {
     h = await ledgerHarness();
     make = fixtures(h.owner);
     policies = new LocationPolicyService(h.app);
-    locations = new LocationsService(h.app, h.ledger, policies);
+    locations = new LocationsService(h.app, h.ledger, policies, new AuditService());
+    admin = { id: await make.user(), role: 'admin' };
   });
 
   afterAll(async () => {
@@ -194,7 +202,9 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
 
       // Closing: stock the brand still owns blocks the archive until it moves out.
       if (policy.stockOwnedByBrand) {
-        await expect(locations.archive(shop.id)).rejects.toMatchObject({ code: 'StockOnHand' });
+        await expect(locations.archive(shop.id, admin)).rejects.toMatchObject({
+          code: 'StockOnHand',
+        });
         const left = (await level(h.owner, { variantId, locationId: shop.id })).onHand;
         expect(left).toBeGreaterThan(0);
         await h.ledger.post(
@@ -208,7 +218,7 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
           }),
         );
       }
-      const archived = await locations.archive(shop.id);
+      const archived = await locations.archive(shop.id, admin);
       expect(archived.archived).toBe(true);
       expect(await driftedBalances(h.owner)).toEqual([]);
     },
@@ -231,7 +241,7 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
 
       const shop = await newShop(partner);
       await expect(
-        locations.update(shop.id, { updatedAt: shop.updatedAt, sellableOnline: true }),
+        locations.update(shop.id, { updatedAt: shop.updatedAt, sellableOnline: true }, admin),
       ).rejects.toBeInstanceOf(LocationPolicyError);
     });
 

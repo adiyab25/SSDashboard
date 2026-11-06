@@ -5,6 +5,7 @@ import {
   CreateStockReceiptRequest,
   Money,
   mulDivRound,
+  personActor,
   UnitCost,
   type LocalizedText,
   type StaffRole,
@@ -337,7 +338,7 @@ export class ReceiptsService {
             // Recorded before the update, so a missing reason fails on the audit policy (422)
             // rather than on the void_reason check; either way the void rolls back whole.
             await this.audit.record(tx, {
-              actor: { kind: 'person', userId: caller.id, hat: caller.role },
+              actor: personActor(caller.id, caller.role),
               action: 'stock_receipt.voided',
               record: { type: 'stock_receipt', id, label: locked.number },
               before: { status: 'posted' },

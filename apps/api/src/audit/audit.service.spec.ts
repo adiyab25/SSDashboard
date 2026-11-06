@@ -2,30 +2,47 @@ import type * as Contracts from '@ssdashboard/contracts';
 import type { AuditActionCode } from '@ssdashboard/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../database/sql.js';
+import { personActor, systemJobActor } from '@ssdashboard/contracts';
 import {
+  AuditCorrelationMismatch,
   AuditPersonalDataRefused,
+  AuditReasonInvalid,
   AuditReasonRequired,
   AuditReasonTooLong,
   AuditRecordTypeMismatch,
   UnknownAuditAction,
 } from './audit.errors.js';
-import { AuditService, type AuditEntryInput } from './audit.service.js';
+import { AuditService, type AuditEntryInput, type JsonObject } from './audit.service.js';
 
-// A scratch code with an optional reason, as features 8 and 9 add (`hat.revoked`,
-// `setting.changed`); the real registry has only required codes so far.
-const OPTIONAL_CODE = 'scratch_record.changed';
+// Scratch codes, as later features add them (AC-19): a customer edit, whose record type masks a
+// bare name, email, reason, and external id and takes a reason code (security reviews AS2, AS13,
+// AS18), and an order edit, whose label has no code contract of its own. The real registry has no
+// customer or order action yet.
+const CUSTOMER_CODE = 'customer.scratch_edited';
+const ORDER_CODE = 'order.scratch_edited';
+const OUTBOUND_CODE = 'outbound_command.scratch_sent';
 vi.mock('@ssdashboard/contracts', async (importOriginal) => {
   const actual = await importOriginal<typeof Contracts>();
+  const optional = { ...actual.AUDIT_ACTIONS['stock_receipt.voided'], reason: 'optional' };
   return {
     ...actual,
-    auditActionOf: (code: string) =>
-      code === OPTIONAL_CODE
-        ? {
-            ...actual.AUDIT_ACTIONS['stock_receipt.voided'],
-            recordType: 'scratch_record',
-            reason: 'optional',
-          }
-        : actual.auditActionOf(code),
+    auditActionOf: (code: string) => {
+      if (code === CUSTOMER_CODE) {
+        return {
+          ...optional,
+          module: 'customers',
+          recordType: 'customer',
+          reasonCodes: ['duplicate_contact'],
+        };
+      }
+      if (code === ORDER_CODE) {
+        return { ...optional, module: 'orders', recordType: 'order', reasonCodes: ['address_fix'] };
+      }
+      if (code === OUTBOUND_CODE) {
+        return { ...optional, module: 'connectors', recordType: 'outbound_command' };
+      }
+      return actual.auditActionOf(code);
+    },
   };
 });
 
@@ -233,8 +250,8 @@ describe('AuditService.record (spec 0010)', () => {
     const { tx, execute } = fakeTx();
     const optional: AuditEntryInput = {
       ...voidEntry(),
-      action: OPTIONAL_CODE as AuditActionCode,
-      record: { type: 'scratch_record', id: RECEIPT },
+      action: 'sku.archived',
+      record: { type: 'sku', id: RECEIPT, label: 'TEE-BLK-M' },
       reason: '  ',
     };
 
@@ -283,10 +300,408 @@ describe('AuditService.record (spec 0010)', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('issues a new correlation id each time', () => {
+  it('issues a new correlation id each time, and a system job its own job id (AC-6)', () => {
     const first = audit.newCorrelationId();
 
     expect(first).toMatch(/^[0-9a-f-]{36}$/);
     expect(audit.newCorrelationId()).not.toBe(first);
+    expect(audit.newCorrelationId(personActor(USER, 'admin'))).not.toBe(first);
+    expect(audit.newCorrelationId(systemJobActor('reconcile', RECEIPT))).toBe(RECEIPT);
+  });
+
+  it('refuses one recordMany call that mixes correlation ids (AC-6)', async () => {
+    const { tx, execute } = fakeTx();
+
+    await expect(
+      audit.recordMany(tx, [voidEntry(), voidEntry({ correlationId: 'corr-2' })]),
+    ).rejects.toBeInstanceOf(AuditCorrelationMismatch);
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+/** A customer edit entry through the scratch customer code. */
+function customerEntry(overrides: Partial<AuditEntryInput> = {}): AuditEntryInput {
+  return {
+    ...voidEntry(),
+    action: CUSTOMER_CODE as AuditActionCode,
+    record: { type: 'customer', id: RECEIPT },
+    reason: undefined,
+    ...overrides,
+  };
+}
+
+// Milestone 2 task 9, the personal data guard (security review AS2, AS3, AS4, AS9).
+describe('AuditService personal data guard (spec 0010, AC-4)', () => {
+  const audit = new AuditService();
+
+  // AS2: a changed fields diff has no marker key, so the record type says which bare keys are
+  // personal. The sentinels appear in no bound value.
+  it('masks a bare name, email, and reason in a customer diff, and lists them', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(
+      tx,
+      customerEntry({
+        before: { name: 'SENTINEL OLD NAME', email: 'sentinel-old@example.eg', tier: 'gold' },
+        after: {
+          name: 'SENTINEL NEW NAME',
+          email: 'sentinel-new@example.eg',
+          merge: { reason: 'SENTINEL merged on request' },
+          tier: 'silver',
+        },
+      }),
+    );
+
+    const params = statements[0] ?? [];
+    expect(JSON.stringify(params)).not.toMatch(/sentinel/i);
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({
+      name: '[REDACTED]',
+      email: '[REDACTED]',
+      merge: { reason: '[REDACTED]' },
+      tier: 'silver',
+    });
+    expect(params[PARAM.personalFields]).toBe('{"email","merge.reason","name"}');
+  });
+
+  it('keeps a bare name and reason where the record type does not mark them personal', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, voidEntry({ after: { name: 'Main warehouse', reason: 'void' } }));
+
+    const params = statements[0] ?? [];
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({
+      name: 'Main warehouse',
+      reason: 'void',
+    });
+    expect(params[PARAM.personalFields]).toBe('{}');
+  });
+
+  /** An entry of `type` labelled `label`, through a code whose registry type it is. */
+  function labelled(type: string, label: string): AuditEntryInput {
+    const action = {
+      stock_receipt: 'stock_receipt.voided',
+      sku: 'sku.archived',
+      location: 'location.archived',
+      order: ORDER_CODE,
+      customer: CUSTOMER_CODE,
+    }[type] as AuditActionCode;
+    // Only the void requires a reason; the others take none here (a customer or order would
+    // refuse the void's typed note).
+    const reason = type === 'stock_receipt' ? 'Entered twice' : undefined;
+    return { ...voidEntry(), action, reason, record: { type, id: RECEIPT, label } };
+  }
+
+  // AS3, AS16, AS17: a label fits its record type. Its own code contract is trusted as it is; a
+  // label without one is refused when it is a name, a sentence, or phone shaped; a customer has
+  // no label at all.
+  it.each([
+    ['stock_receipt', 'Ahmed Mohamed'],
+    ['stock_receipt', 'TEE-BLK-M'],
+    ['stock_receipt', ''],
+    ['sku', 'tee-blk-m'],
+    ['sku', 'x'.repeat(65)],
+    ['location', 'TOO-LONG-LOCATION-CODE'],
+    ['order', 'Ahmed Mohamed'],
+    ['order', '\u0623\u062d\u0645\u062f'],
+    ['order', 'x'.repeat(65)],
+    ['order', '01012345678'],
+    ['customer', 'C-1'],
+  ])('refuses the %s label %j', async (type, label) => {
+    const { tx, execute } = fakeTx();
+
+    await expect(audit.record(tx, labelled(type, label))).rejects.toBeInstanceOf(
+      AuditPersonalDataRefused,
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['stock_receipt', 'SR-2026-000001'],
+    ['sku', 'TEE-BLK-M'],
+    ['sku', '01012345678'],
+    ['sku', '0012345678905'],
+    ['location', '01012345678'],
+    ['order', '#1042'],
+    ['order', 'WH_CAI.2'],
+  ])('accepts the %s label %j', async (type, label) => {
+    const { tx, execute } = fakeTx();
+
+    await audit.record(tx, labelled(type, label));
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  // AS16: a SKU or location code is the record's own code, never a phone, in the diff too.
+  it('keeps a phone shaped SKU code in the diff and the label', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, {
+      ...labelled('sku', '01012345679'),
+      action: 'sku.code_changed',
+      before: { code: '01012345678' },
+      after: { code: '01012345679' },
+    });
+
+    const params = statements[0] ?? [];
+    expect(params[PARAM.label]).toBe('01012345679');
+    expect(JSON.parse(String(params[PARAM.before]))).toEqual({ code: '01012345678' });
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({ code: '01012345679' });
+    expect(params[PARAM.personalFields]).toBe('{}');
+  });
+
+  it('still masks a phone in any other field of a SKU diff, and a code that is not a SKU code', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, {
+      ...labelled('sku', 'TEE-BLK-M'),
+      after: { code: 'call 01012345678', note: 'x' },
+    });
+
+    const params = statements[0] ?? [];
+    expect(String(params[PARAM.after])).not.toContain('01012345678');
+  });
+
+  // AS3: undo arguments hold ids, codes, and numbers only.
+  it.each<[JsonObject, boolean]>([
+    [{ customerId: RECEIPT, ids: [RECEIPT], count: 2, rule: 'exact_match' }, true],
+    [{ note: 'Ahmed asked for it' }, false],
+    [{ flag: true }, false],
+    [{ missing: null }, false],
+    [{ number: 201012345678 }, false],
+  ])('checks the undo arguments %o', async (args, accepted) => {
+    const { tx, execute } = fakeTx();
+    const run = audit.record(tx, voidEntry({ undo: { action: 'stock_receipt.undo', args } }));
+
+    if (accepted) {
+      await run;
+      expect(execute).toHaveBeenCalledTimes(1);
+    } else {
+      await expect(run).rejects.toBeInstanceOf(AuditPersonalDataRefused);
+      expect(execute).not.toHaveBeenCalled();
+    }
+  });
+
+  // AS4: a phone used as a key is refused; a phone length number is masked.
+  it.each(['01012345678', '+201012345678', '201012345678'])(
+    'refuses the phone shaped key %j anywhere in a diff',
+    async (key) => {
+      const { tx, execute } = fakeTx();
+
+      await expect(
+        audit.record(tx, voidEntry({ after: { calls: { [key]: 2 } } })),
+      ).rejects.toBeInstanceOf(AuditPersonalDataRefused);
+      expect(execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('masks a 10 to 15 digit number and keeps shorter ones', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(
+      tx,
+      voidEntry({ after: { contact: 1012345678, wide: 201012345678901, quantity: 999999999 } }),
+    );
+
+    const params = statements[0] ?? [];
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({
+      contact: '[REDACTED]',
+      wide: '[REDACTED]',
+      quantity: 999999999,
+    });
+    expect(params[PARAM.personalFields]).toBe('{"contact","wide"}');
+  });
+
+  // AS9, AS14: JSON text is stored as its parsed and walked value written back, never as the
+  // input; it is listed only when something inside was masked.
+  it('stores JSON looking text that holds nothing personal written back, unlisted', async () => {
+    const { tx, statements } = fakeTx();
+    const raw = '{ "status" : "posted",  "lines": [1, 2] }';
+
+    await audit.record(tx, voidEntry({ after: { raw } }));
+
+    const params = statements[0] ?? [];
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({
+      raw: '{"status":"posted","lines":[1,2]}',
+    });
+    expect(params[PARAM.personalFields]).toBe('{}');
+  });
+
+  it('drops a duplicate key the parser never kept, so its phone is not stored', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, voidEntry({ after: { raw: '{"y":"01012345678","y":"ok"}' } }));
+
+    const params = statements[0] ?? [];
+    expect(String(params[PARAM.after])).not.toContain('01012345678');
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({ raw: '{"y":"ok"}' });
+  });
+
+  it('masks a phone length number inside JSON looking text, and lists it', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, voidEntry({ after: { raw: '{"p":1012345678}' } }));
+
+    const params = statements[0] ?? [];
+    expect(String(params[PARAM.after])).not.toContain('1012345678');
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({ raw: '{"p":"[REDACTED]"}' });
+    expect(params[PARAM.personalFields]).toBe('{"raw"}');
+  });
+
+  it('still masks a phone inside JSON looking text, and lists it', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, voidEntry({ after: { raw: '{"phone":"01012345678"}' } }));
+
+    const params = statements[0] ?? [];
+    expect(String(params[PARAM.after])).not.toContain('01012345678');
+    expect(params[PARAM.personalFields]).toBe('{"raw"}');
+  });
+
+  // AS13: a customer facing record type takes a reason code, never a typed note.
+  it.each([
+    'Customer called, Ahmed Mohamed',
+    'ahmed@example.com',
+    'Wrong',
+    // AS23: a code shaped value the action does not list, a name, or a phone, is refused too.
+    'ahmed_mohamed',
+    'call_01012345678',
+    'address_fix',
+  ])('refuses the typed note %j on a customer entry', async (reason) => {
+    const { tx, execute } = fakeTx();
+
+    await expect(audit.record(tx, customerEntry({ reason }))).rejects.toBeInstanceOf(
+      AuditReasonInvalid,
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps a reason code on a customer entry', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, customerEntry({ reason: ' duplicate_contact ' }));
+
+    expect(statements[0]?.[PARAM.reason]).toBe('duplicate_contact');
+  });
+
+  it('masks emails and phones in a free text reason', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(
+      tx,
+      voidEntry({ reason: 'Ahmed (sentinel@example.eg, 02 2345 6789) asked' }),
+    );
+
+    expect(statements[0]?.[PARAM.reason]).toBe('Ahmed ([email], [phone]) asked');
+  });
+
+  // AS17, AS18: undo keys are codes, the record type's keys apply to undo arguments, and an
+  // external id is personal on a customer.
+  it('refuses an undo argument key that is not a code, and a personal one of the record type', async () => {
+    const { tx, execute } = fakeTx();
+
+    await expect(
+      audit.record(tx, voidEntry({ undo: { action: 'x.undo', args: { 'first name': 'C-1' } } })),
+    ).rejects.toBeInstanceOf(AuditPersonalDataRefused);
+    await expect(
+      audit.record(tx, customerEntry({ undo: { action: 'x.undo', args: { name: 'Ahmed' } } })),
+    ).rejects.toBeInstanceOf(AuditPersonalDataRefused);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('masks a customer external id', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(
+      tx,
+      customerEntry({ after: { externalId: '201012345678', source: 'whatsapp' } }),
+    );
+
+    const params = statements[0] ?? [];
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({
+      externalId: '[REDACTED]',
+      source: 'whatsapp',
+    });
+  });
+
+  // AS19: the writer checks the actor's shape itself.
+  it('refuses a malformed actor before writing', async () => {
+    const { tx, execute } = fakeTx();
+    const actor = { kind: 'person', userId: 'not-a-uuid', hat: 'admin' } as const;
+
+    await expect(audit.record(tx, voidEntry({ actor }))).rejects.toThrow();
+    await expect(
+      audit.record(tx, voidEntry({ actor: { kind: 'person', userId: USER, hat: '' } })),
+    ).rejects.toThrow();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  // AS21: a personal key's JSON text is masked whole; other JSON text is walked at its own path.
+  it.each<[string, string, JsonObject, RegExp]>([
+    [
+      'a note holding JSON',
+      'stock_receipt.voided',
+      { note: '{"x":"Ahmed lives in Nasr City"}' },
+      /Ahmed|Nasr/,
+    ],
+    [
+      'a ship to address array',
+      'stock_receipt.voided',
+      { shipToAddress: '["12 Tahrir St","Nasr City"]' },
+      /Tahrir|Nasr/,
+    ],
+    ['a customer name array', CUSTOMER_CODE, { name: '["Ahmed Mohamed"]' }, /Ahmed/],
+    [
+      'an outbound payload',
+      OUTBOUND_CODE,
+      { payload: '{"consignee":"Ahmed","phone":"x"}' },
+      /Ahmed/,
+    ],
+    [
+      'a customer object as text',
+      'stock_receipt.voided',
+      { customer: '{"name":"Ahmed","email":"a@x.eg"}' },
+      /Ahmed|a@x\.eg/,
+    ],
+  ])('masks %s', async (_case, action, after, leak) => {
+    const { tx, statements } = fakeTx();
+    const entry: AuditEntryInput =
+      action === 'stock_receipt.voided'
+        ? voidEntry({ after })
+        : action === OUTBOUND_CODE
+          ? {
+              ...voidEntry({ after }),
+              action: action as AuditActionCode,
+              reason: undefined,
+              record: { type: 'outbound_command', id: RECEIPT },
+            }
+          : customerEntry({ after });
+
+    await audit.record(tx, entry);
+
+    const params = statements[0] ?? [];
+    expect(String(params[PARAM.after])).not.toMatch(leak);
+    expect(String(params[PARAM.personalFields])).not.toBe('{}');
+  });
+
+  // AS22: an id is an id, never a phone, in a diff and in undo arguments.
+  it('keeps uuids in a diff and in undo arguments as they are', async () => {
+    const { tx, statements } = fakeTx();
+    const ids = ['7b7d0081-4350-41ce-8a02-0223456789ab', '01012345-6789-4abc-8def-020123456789'];
+
+    await audit.record(
+      tx,
+      voidEntry({ after: { ids }, undo: { action: 'x.undo', args: { ids } } }),
+    );
+
+    const params = statements[0] ?? [];
+    expect(JSON.parse(String(params[PARAM.after]))).toEqual({ ids });
+    expect(params[PARAM.personalFields]).toBe('{}');
+  });
+
+  it('accepts a listed reason code on a customer entry', async () => {
+    const { tx, statements } = fakeTx();
+
+    await audit.record(tx, customerEntry({ reason: 'duplicate_contact' }));
+
+    expect(statements[0]?.[PARAM.reason]).toBe('duplicate_contact');
   });
 });

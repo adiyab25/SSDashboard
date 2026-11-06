@@ -1,14 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  CreateLocationRequest,
-  LocationDetail,
-  LocationOwnerType,
-  LocationListResponse,
-  LocationStatus,
-  UpdateLocationRequest,
+import {
+  personActor,
+  type CreateLocationRequest,
+  type LocationDetail,
+  type LocationOwnerType,
+  type LocationListResponse,
+  type LocationStatus,
+  type StaffRole,
+  type UpdateLocationRequest,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
+import { AuditService, type JsonObject } from '../../audit/audit.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import {
   pgArray,
@@ -20,6 +23,15 @@ import {
 import { LedgerService } from '../ledger/ledger.service.js';
 import { ledgerTransaction } from '../ledger/locks.js';
 import { LocationPolicyService } from './location-policy.service.js';
+
+/**
+ * The signed in admin changing a location. `role` is recorded as the audit actor's hat until hats
+ * reach the session (spec 0008).
+ */
+export interface LocationCaller {
+  id: string;
+  role: StaffRole;
+}
 
 /** A location as other inventory answers name it. */
 export interface LocationRef {
@@ -111,6 +123,36 @@ function toDetail(row: LocationRow, codeLocked: boolean): LocationDetail {
   };
 }
 
+/** The audited fields of a location row, as the audit diff names them. */
+function auditedFields(row: LocationRow): JsonObject {
+  return {
+    code: row.code,
+    name: {
+      ...(row.name.en ? { en: row.name.en } : {}),
+      ...(row.name.ar ? { ar: row.name.ar } : {}),
+    },
+    kind: row.kind,
+    sellableOnline: row.sellable_online,
+  };
+}
+
+/** Only the fields an edit changed, before and after, or null when nothing changed. */
+function changedFields(
+  before: LocationRow,
+  after: LocationRow,
+): { before: JsonObject; after: JsonObject } | null {
+  const old = auditedFields(before);
+  const now = auditedFields(after);
+  const keys = Object.keys(now).filter(
+    (key) => JSON.stringify(old[key]) !== JSON.stringify(now[key]),
+  );
+  if (!keys.length) return null;
+  return {
+    before: Object.fromEntries(keys.map((key) => [key, old[key] ?? null])),
+    after: Object.fromEntries(keys.map((key) => [key, now[key] ?? null])),
+  };
+}
+
 function codeTaken(error: unknown, code: string): unknown {
   if (pgConstraint(error) === 'locations_code_unique') {
     return new LocationError('CodeTaken', `Location code ${code} is already in use`);
@@ -129,6 +171,7 @@ export class LocationsService {
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LedgerService) private readonly ledger: LedgerService,
     @Inject(LocationPolicyService) private readonly policy: LocationPolicyService,
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   /**
@@ -212,9 +255,15 @@ export class LocationsService {
   /**
    * Edits name, kind, online selling, and code (AC-4) with the stale check on `updatedAt`. A code change first
    * locks the location against postings (as an archive does), then answers `CodeLocked` once
-   * stock was posted there or a receipt names it.
+   * stock was posted there or a receipt names it. The fields that really changed are recorded as
+   * one `location.edited` entry in the same transaction (spec 0010, AC-11).
    */
-  async update(id: string, input: z.output<typeof UpdateLocationRequest>): Promise<LocationDetail> {
+  async update(
+    id: string,
+    input: z.output<typeof UpdateLocationRequest>,
+    caller: LocationCaller,
+  ): Promise<LocationDetail> {
+    const correlationId = this.audit.newCorrelationId();
     try {
       return await ledgerTransaction(this.connection.db, async (tx) => {
         const current = await this.findWork(tx, id);
@@ -250,6 +299,16 @@ export class LocationsService {
             'Someone else changed this location. Reload and try again.',
           );
         }
+        const changed = changedFields(current, row);
+        if (changed) {
+          await this.audit.record(tx, {
+            actor: personActor(caller.id, caller.role),
+            action: 'location.edited',
+            record: { type: 'location', id, label: row.code },
+            ...changed,
+            correlationId,
+          });
+        }
         return toDetail(row, await this.isCodeLocked(tx, id));
       });
     } catch (error) {
@@ -260,10 +319,13 @@ export class LocationsService {
   /**
    * Archives a location with nothing on hand and nothing reserved (AC-4), with the same locking
    * as a SKU archive: the row `FOR UPDATE` through `ledger.lockForArchive`, then `usage`.
+   * Archiving an active location records `location.archived`.
    */
-  async archive(id: string): Promise<LocationDetail> {
+  async archive(id: string, caller: LocationCaller): Promise<LocationDetail> {
+    const correlationId = this.audit.newCorrelationId();
     return ledgerTransaction(this.connection.db, async (tx) => {
       if (!(await this.lockWork(tx, id))) throw notFound();
+      const before = await this.findWork(tx, id);
       const usage = (await this.ledger.usage({ locationIds: [id] }, tx)).get(id);
       if (usage?.onHandNonZero || usage?.activeReserved) {
         throw new LocationError(
@@ -271,15 +333,40 @@ export class LocationsService {
           'This location still has stock on hand or reserved. Move or adjust it first.',
         );
       }
-      return this.setArchived(tx, id, true);
+      const location = await this.setArchived(tx, id, true);
+      if (before && !before.archived) {
+        await this.recordArchive(tx, location, caller, correlationId);
+      }
+      return location;
     });
   }
 
-  /** Brings an archived location back to the switcher and pickers. */
-  async unarchive(id: string): Promise<LocationDetail> {
+  /** Brings an archived location back to the switcher and pickers, recording `location.unarchived`. */
+  async unarchive(id: string, caller: LocationCaller): Promise<LocationDetail> {
+    const correlationId = this.audit.newCorrelationId();
     return ledgerTransaction(this.connection.db, async (tx) => {
       if (!(await this.lockWork(tx, id))) throw notFound();
-      return this.setArchived(tx, id, false);
+      const before = await this.findWork(tx, id);
+      const location = await this.setArchived(tx, id, false);
+      if (before?.archived) await this.recordArchive(tx, location, caller, correlationId);
+      return location;
+    });
+  }
+
+  /** The archive or unarchive entry: `archived` before and after, labelled with the code. */
+  private async recordArchive(
+    tx: Transaction,
+    location: LocationDetail,
+    caller: LocationCaller,
+    correlationId: string,
+  ): Promise<void> {
+    await this.audit.record(tx, {
+      actor: personActor(caller.id, caller.role),
+      action: location.archived ? 'location.archived' : 'location.unarchived',
+      record: { type: 'location', id: location.id, label: location.code },
+      before: { archived: !location.archived },
+      after: { archived: location.archived },
+      correlationId,
     });
   }
 

@@ -114,8 +114,8 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
  * and `a.b.customer.name`. `*` stands for exactly one segment. Segments are compared like
  * `PERSONAL_DATA_KEYS`. Array indexes are not part of a path.
  *
- * Staff emails are deliberately outside this list: staff identities are logged for audit, and the
- * auth logger already reduces failed queries (which carry params) to a pg code.
+ * Email addresses need no path: `redact` masks every address in every string with `maskEmails`,
+ * staff and customer alike (Law 151, gate ruling 2026-11-07). Log lines name staff by id.
  */
 export const PERSONAL_DATA_PATHS: readonly string[] = [
   'customer.name',
@@ -203,48 +203,157 @@ export const ROW_MARKER_RULES: readonly RowMarkerRule[] = [
   },
 ];
 
+/** What an email address inside free text becomes (`maskEmails`). */
+export const EMAIL_MASK = '[email]';
+
 /**
- * Phone shaped text, matched on text whose Arabic-Indic digits are already folded to Western:
- * Egyptian mobiles (`01012345678`, `+20 101 234 5678`, `0020-1012345678`, `201012345678`) and international
- * numbers (`+` or `00`, then 8 to 15 digits). Digit runs with no phone shape (order numbers,
- * ids, timestamps) are left alone on purpose.
+ * The characters allowed between the digits of one phone number: white space, dot, dash, the
+ * brackets around an area code, slash, and underscore (security review AS15).
+ */
+const SEP = '[\\s.\\-()/_]*';
+
+/**
+ * Phone shaped text, matched on text whose Arabic-Indic, Extended Arabic-Indic, and full width
+ * digits are already folded to Western and whose invisible format characters (direction and zero
+ * width marks, `\p{Cf}`) are dropped: Egyptian mobiles (`01012345678`, `+20 101 234 5678`,
+ * `0020-1012345678`, `201012345678`), Egyptian landlines with their trunk 0 (`02 2345 6789`,
+ * `03 123 4567`, `040 123 4567`), and international numbers (`+` or `00`, then 8 to 15 digits).
+ * Digit runs with no phone shape (order numbers, ids, timestamps) are left alone on purpose. A
+ * match never starts or ends inside a longer digit run, but may sit right next to letters
+ * (`call01012345678`, `01012345678ext`, security review AS27); `maskPhones` skips a match only
+ * when it lies wholly inside a uuid (AS22, AS25).
  */
 const PHONE_PATTERN = new RegExp(
   [
     // Egyptian mobile: +20 / 0020 / bare 20 (optional trunk 0) or a leading 0, then 1[0125] + 8 digits.
     // Never starts with a separator, and a bare 10 digit run with no prefix is not a phone.
-    '(?<![0-9])(?:(?:\\+|00)[\\s.\\-]*20[\\s.\\-]*0?|20[\\s.\\-]*0?|0[\\s.\\-]*)1[0125](?:[\\s.\\-]*[0-9]){8}(?![0-9])',
+    `(?<![0-9])(?:(?:\\+|00)${SEP}20${SEP}0?|20${SEP}0?|0${SEP})1[0125](?:${SEP}[0-9]){8}(?![0-9])`,
+    // Egyptian landline with its trunk 0, 9 or 10 digits in all: Cairo and Giza 02 + 8 digits,
+    // Alexandria 03 + 7 digits, and the two digit area codes (040, 045, 050, 082, 093, ...) + 7
+    // digits. So 0, an area code of one or two digits starting 2 to 9, then the subscriber number
+    // as one run or two groups (3 or 4 digits, then 4). Slashes and underscores are not accepted
+    // here, so a date such as 06/11/2026 or 06.11.2026 never reads as a landline.
+    '(?<![0-9])0[\\s.\\-()]*[2-9][0-9]?[\\s.\\-()]*[0-9]{3,4}[\\s.\\-]?[0-9]{4}(?![0-9])',
     // International: + or 00, a non-zero country digit, then 7 to 14 more digits.
-    '(?<![0-9])(?:\\+|00)[\\s.\\-]*[1-9](?:[\\s.\\-]*[0-9]){7,14}(?![0-9])',
+    `(?<![0-9])(?:\\+|00)${SEP}[1-9](?:${SEP}[0-9]){7,14}(?![0-9])`,
   ].join('|'),
   'g',
 );
 
-/** Folds Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digits to Western ones, one to one. */
-function foldDigits(text: string): string {
-  return text
-    .replace(/[٠-٩]/g, (c) => String(c.charCodeAt(0) - 0x0660))
-    .replace(/[۰-۹]/g, (c) => String(c.charCodeAt(0) - 0x06f0));
+/**
+ * A uuid in text (any version), standing alone: not glued to a Latin letter or digit on either
+ * side, so `01012345678-0000-...` or `x0000...` is not one (security review AS25).
+ */
+const UUID_PATTERN =
+  /(?<![0-9A-Za-z])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9A-Za-z])/gi;
+
+/** Invisible format characters (left to right and right to left marks, zero width joiners). */
+const FORMAT_CHARACTER = /^\p{Cf}$/u;
+
+/**
+ * The digit a character stands for when it is Arabic-Indic (٠-٩), Extended Arabic-Indic (۰-۹),
+ * or full width (０-９), else the character itself.
+ */
+function foldDigit(char: string): string {
+  const code = char.charCodeAt(0);
+  if (code >= 0x0660 && code <= 0x0669) return String(code - 0x0660);
+  if (code >= 0x06f0 && code <= 0x06f9) return String(code - 0x06f0);
+  if (code >= 0xff10 && code <= 0xff19) return String(code - 0xff10);
+  return char;
+}
+
+/** Any character the match text must change: a format character or a non Western digit. */
+const NEEDS_FOLDING = /[\p{Cf}\u0660-\u0669\u06f0-\u06f9\uff10-\uff19]/u;
+
+/**
+ * The text to match phones in: digits folded and format characters dropped, with the index in
+ * `text` of every code unit kept, so a match maps back to its span in the original. Text with
+ * nothing to fold is its own match text (`origin` null: every index maps to itself), the common
+ * case in log lines. Otherwise one pass over the code units: ASCII is copied as it is, and only
+ * other characters are looked at, so the walk stays linear and cheap (security review AS26).
+ */
+function matchableText(text: string): { folded: string; origin: number[] | null } {
+  if (!NEEDS_FOLDING.test(text)) return { folded: text, origin: null };
+  const parts: string[] = [];
+  const origin: number[] = [];
+  let index = 0;
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) {
+      parts.push(text.charAt(index));
+      origin.push(index);
+      index += 1;
+      continue;
+    }
+    const char = String.fromCodePoint(text.codePointAt(index) ?? code);
+    if (!FORMAT_CHARACTER.test(char)) {
+      const kept = foldDigit(char);
+      for (let unit = 0; unit < kept.length; unit += 1) origin.push(index + unit);
+      parts.push(kept);
+    }
+    index += char.length;
+  }
+  return { folded: parts.join(''), origin };
 }
 
 /**
- * Replaces every phone shaped substring of `text` with `[phone]`, in Western or Arabic-Indic
- * digits, with spaces, dots, or dashes between them. Pure; returns `text` unchanged when nothing
- * matches. Names and addresses written in free text cannot be found by shape: they are removed
- * by field (see `PERSONAL_DATA_KEYS`), so put personal text in a named field.
+ * Replaces every phone shaped substring of `text` with `[phone]`: Western, Arabic-Indic, or full
+ * width digits, with spaces, dots, dashes, brackets, slashes, or underscores between them, and
+ * any invisible format character inside (the whole original span is masked, marks included).
+ * Pure; returns `text` unchanged when nothing matches. Names and addresses written in free text
+ * cannot be found by shape: they are removed by field (see `PERSONAL_DATA_KEYS`), so put personal
+ * text in a named field.
+ *
+ * A match that lies wholly inside a standalone uuid is an id and is left alone; one that only
+ * touches or overlaps a uuid is masked. So `ref aaaaaaaa-bbbb-cccc-dddd-201012345678` is kept: a
+ * phone written as a uuid's last group cannot be told apart from a uuid (security review AS25).
+ * Runs in time linear in the text: the phone and uuid matches are both in text order and are
+ * walked together once (AS26).
  *
  * Must never throw, and must never return the matched digits.
  */
 export function maskPhones(text: string): string {
-  // Folding keeps every character's position, so match offsets in the folded text apply to `text`.
-  const folded = foldDigits(text);
+  const { folded, origin } = matchableText(text);
+  const uuids = [...text.matchAll(UUID_PATTERN)].map((m) => ({
+    from: m.index,
+    to: m.index + m[0].length,
+  }));
+  let next = 0;
   let out = '';
   let last = 0;
+  let found = false;
   for (const match of folded.matchAll(PHONE_PATTERN)) {
-    out += text.slice(last, match.index) + PHONE_MASK;
-    last = match.index + match[0].length;
+    const start = origin ? (origin[match.index] ?? 0) : match.index;
+    // A match always ends with a digit, one code unit long in the folded text.
+    const tail = match.index + match[0].length - 1;
+    const end = (origin ? (origin[tail] ?? start) : tail) + 1;
+    // Both lists are in text order: pass the uuids that end before this match, once overall.
+    while (next < uuids.length && (uuids[next]?.to ?? 0) <= start) next += 1;
+    const uuid = uuids[next];
+    // Digits wholly inside a uuid are an id, never a phone (security reviews AS22, AS25).
+    if (uuid && uuid.from <= start && end <= uuid.to) continue;
+    out += text.slice(last, start) + PHONE_MASK;
+    last = end;
+    found = true;
   }
-  return last === 0 && out === '' ? text : out + text.slice(last);
+  return found ? out + text.slice(last) : text;
+}
+
+/**
+ * An email address inside free text: local part, `@`, and a dotted domain. The local part may
+ * only start where the previous character cannot belong to it, so a long run of letters is
+ * scanned once, not once per position (security review AS24: linear time).
+ */
+const EMAIL_PATTERN =
+  /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)+/gu;
+
+/**
+ * Replaces every email address in `text` with `[email]` (security review AS15). Pure, never
+ * throws, linear in the text's length. `redact` applies it to every string, staff and customer
+ * addresses alike (Law 151, gate ruling 2026-11-07); log lines name staff by id instead.
+ */
+export function maskEmails(text: string): string {
+  return text.replace(EMAIL_PATTERN, EMAIL_MASK);
 }
 
 /** A key reduced to its comparable form: lower case with `_`, `-`, and spaces removed. */
@@ -302,7 +411,7 @@ export function createRedactor(rules: RedactionRules): (value: unknown) => unkno
     });
   }
 
-  /** A string: JSON text is parsed, redacted by field, and written back; any text gets phones masked. */
+  /** A string: JSON text is parsed, redacted by field, and written back; any text gets phones and emails masked. */
   function walkString(text: string, path: readonly string[], seen: WeakSet<object>): string {
     const trimmed = text.trimStart();
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -312,7 +421,7 @@ export function createRedactor(rules: RedactionRules): (value: unknown) => unkno
         // Not JSON after all: fall through to the plain text rule.
       }
     }
-    return maskPhones(text);
+    return maskEmails(maskPhones(text));
   }
 
   function walk(value: unknown, path: readonly string[], seen: WeakSet<object>): unknown {
@@ -362,7 +471,7 @@ export function createRedactor(rules: RedactionRules): (value: unknown) => unkno
       };
       hidden('name', walk(value.name, path, seen));
       hidden('message', walk(value.message, path, seen));
-      if (typeof value.stack === 'string') hidden('stack', maskPhones(value.stack));
+      if (typeof value.stack === 'string') hidden('stack', maskEmails(maskPhones(value.stack)));
       if ('cause' in value) hidden('cause', walk(value.cause, path, seen));
       return Object.assign(copy, result);
     } finally {
@@ -376,7 +485,7 @@ export function createRedactor(rules: RedactionRules): (value: unknown) => unkno
 /**
  * Returns a copy of `value` that is safe to log or report: fields named in
  * `PERSONAL_DATA_KEYS` or `PERSONAL_DATA_PATHS` become `[REDACTED]`, and phone shaped text in every
- * remaining string becomes `[phone]`. A string holding JSON is parsed and redacted by field too. Handles nested objects, arrays, errors (as plain objects
+ * remaining string becomes `[phone]`, and every email address `[email]`. A string holding JSON is parsed and redacted by field too. Handles nested objects, arrays, errors (as plain objects
  * keeping their type with a redacted message, stack and cause), and cycles.
  *
  * Call it from every sink: the Nest logger now, pino's `formatters.log` and the error tracker's

@@ -33,7 +33,18 @@ import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { LocationPolicyError } from './location-policy.service.js';
-import { InvalidCursorError, LocationError, LocationsService } from './locations.service.js';
+import {
+  InvalidCursorError,
+  LocationError,
+  LocationsService,
+  type LocationCaller,
+} from './locations.service.js';
+
+/** The signed in admin, as the location service records the actor. */
+const callerOf = (request: AuthenticatedRequest): LocationCaller => ({
+  id: request.staff.id,
+  role: request.staff.role,
+});
 
 /** Maps location errors to the stable codes of spec 0006; ledger errors go through `ledger-http`. */
 export function locationHttpError(error: unknown, response?: Response): unknown {
@@ -136,10 +147,11 @@ export class LocationsController {
     @Param('id', locationId()) id: string,
     @Body(new ZodBodyPipe(UpdateLocationRequest, INVALID_INPUT))
     body: z.output<typeof UpdateLocationRequest>,
+    @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<LocationDetail> {
     try {
-      return await this.locations.update(id, body);
+      return await this.locations.update(id, body, callerOf(request));
     } catch (error) {
       throw locationHttpError(error, response);
     }
@@ -151,10 +163,11 @@ export class LocationsController {
   @HttpCode(200)
   async archive(
     @Param('id', locationId()) id: string,
+    @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<LocationDetail> {
     try {
-      return await this.locations.archive(id);
+      return await this.locations.archive(id, callerOf(request));
     } catch (error) {
       throw locationHttpError(error, response);
     }
@@ -166,10 +179,11 @@ export class LocationsController {
   @HttpCode(200)
   async unarchive(
     @Param('id', locationId()) id: string,
+    @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<LocationDetail> {
     try {
-      return await this.locations.unarchive(id);
+      return await this.locations.unarchive(id, callerOf(request));
     } catch (error) {
       throw locationHttpError(error, response);
     }

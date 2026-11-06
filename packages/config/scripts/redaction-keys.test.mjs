@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { describe, it } from 'node:test';
-import { REDACTED, redact } from '../dist/redaction.js';
+import {
+  EMAIL_MASK,
+  PHONE_MASK,
+  REDACTED,
+  maskEmails,
+  maskPhones,
+  redact,
+} from '../dist/redaction.js';
 
 /** The real row shapes of packages/db/src/schema/{customers,connectors,orders}.ts (camelCase, as Drizzle returns them). */
 const customerRow = {
@@ -289,5 +297,146 @@ describe('redaction of the settlement rows', () => {
   it('redacts both in snake case', () => {
     assert.equal(redact(snake(settlementLineRow)).partner_text, REDACTED);
     assert.equal(redact(snake(settlementMatchRow)).payment_reference, REDACTED);
+  });
+});
+
+// Security review AS15 (spec 0010, milestone 2): notations the phone rule missed, and emails in
+// free text. Every log sink shares this function, so the codes and instants a log line carries
+// must stay readable.
+describe('maskPhones notations', () => {
+  const masked = [
+    ['a left to right mark and a right to left mark inside', 'call 010‎1234‏5678 now'],
+    ['a zero width space inside', '0101​2345678'],
+    ['brackets around the prefix', '(010) 1234 5678'],
+    ['slashes', '010/1234/5678'],
+    ['underscores', '010_1234_5678'],
+    ['full width digits', '０１０１２３４５６７８'],
+    ['a Cairo landline in groups', '02 2345 6789'],
+    ['a Cairo landline in one run', '0223456789'],
+    ['an Alexandria landline', '03 123 4567'],
+    ['a two digit area code landline', '040 123 4567'],
+    ['a bracketed area code', '(02) 2345-6789'],
+  ];
+  for (const [what, text] of masked) {
+    it(`masks a phone with ${what}`, () => {
+      const out = maskPhones(text);
+      assert.ok(out.includes(PHONE_MASK), out);
+      assert.ok(!/[0-9０-９]{4}/.test(out), out);
+    });
+  }
+
+  it('masks the whole original span, marks included', () => {
+    assert.equal(maskPhones('call 010‎1234‏5678 now'), `call ${PHONE_MASK} now`);
+  });
+
+  const kept = [
+    'SR-2026-000001',
+    'TEE-BLK-M',
+    '2026-11-06T10:00:00.123456Z',
+    '10:00:00.023456Z',
+    'order #1001 total 2450.00',
+    '06/11/2026 12:30',
+    '06.11.2026 12:30',
+    'WH_CAI.2',
+  ];
+  for (const text of kept) {
+    it(`keeps ${text}`, () => assert.equal(maskPhones(text), text));
+  }
+});
+
+describe('maskEmails', () => {
+  it('masks an email in free text, Latin or Arabic domain', () => {
+    assert.equal(
+      maskEmails('write to sentinel.name+x@example.co.eg today'),
+      `write to ${EMAIL_MASK} today`,
+    );
+    assert.equal(maskEmails('a@مثال.com'), EMAIL_MASK);
+  });
+
+  it('keeps text with no address', () => {
+    assert.equal(
+      maskEmails('voided: entered twice @ the counter'),
+      'voided: entered twice @ the counter',
+    );
+  });
+
+  // Gate ruling 2026-11-07 (Law 151): redact masks every address in every string; staff are
+  // named by id in log lines.
+  it('is applied by redact to free text and to a database error message', () => {
+    assert.equal(redact('signed in ahmed@example.com'), `signed in ${EMAIL_MASK}`);
+    const pgError = Object.assign(
+      new Error('duplicate key value violates unique constraint "users_email_unique"'),
+      { detail: 'Key (lower(email))=(ahmed@example.com) already exists.', code: '23505' },
+    );
+    const out = redact(pgError);
+    assert.ok(out instanceof Error);
+    assert.equal(out.detail, `Key (lower(email))=(${EMAIL_MASK}) already exists.`);
+    assert.equal(out.code, '23505');
+    assert.equal(
+      redact({ message: 'mail to ahmed@example.com failed' }).message,
+      `mail to ${EMAIL_MASK} failed`,
+    );
+  });
+
+  // Security review AS24: one pass over the text, so a long line cannot stall a log call.
+  it('runs in linear time: 100,000 characters in under 50 ms', () => {
+    for (const text of ['a'.repeat(100_000), 'a@'.repeat(50_000), `${'a.'.repeat(50_000)}@x`]) {
+      const started = performance.now();
+      maskEmails(text);
+      assert.ok(performance.now() - started < 50, `${text.slice(0, 4)}...`);
+    }
+  });
+});
+
+// Security review AS22: the wider separators and the landline rule must not read ids as phones.
+describe('maskPhones and ids', () => {
+  it('masks no digits of 10,000 random uuids, bare or inside text', () => {
+    for (let i = 0; i < 10_000; i += 1) {
+      const id = randomUUID();
+      assert.equal(maskPhones(id), id);
+      assert.equal(redact(`order ${id} failed`), `order ${id} failed`);
+    }
+  });
+
+  // Security review AS27: a phone may sit right next to letters; only a longer digit run is not one.
+  it('masks a phone glued to letters, but not a longer digit run', () => {
+    assert.equal(maskPhones('call01012345678'), `call${PHONE_MASK}`);
+    assert.equal(maskPhones('01012345678ext'), `${PHONE_MASK}ext`);
+    assert.equal(maskPhones('x01012345678y'), `x${PHONE_MASK}y`);
+    assert.equal(maskPhones('SKU-01012345678'), `SKU-${PHONE_MASK}`);
+    assert.equal(maskPhones('9010123456789'), '9010123456789');
+  });
+
+  // Security review AS25: only a match wholly inside a standalone uuid is skipped.
+  it('masks a phone that only touches or overlaps a uuid like text', () => {
+    assert.equal(
+      maskPhones('call 01012345678-0000-0000-0000-000000000000'),
+      `call ${PHONE_MASK}-0000-0000-0000-000000000000`,
+    );
+    assert.equal(
+      maskPhones('call 01012345678-aaaa-bbbb-cccc-dddddddddddd'),
+      `call ${PHONE_MASK}-aaaa-bbbb-cccc-dddddddddddd`,
+    );
+    assert.equal(
+      maskPhones('+20 10 12345678-0000-0000-0000-000000000000'),
+      `${PHONE_MASK}-0000-0000-0000-000000000000`,
+    );
+  });
+
+  it('keeps a phone written as a uuid last group: it cannot be told apart from a uuid', () => {
+    const text = 'ref aaaaaaaa-bbbb-cccc-dddd-201012345678';
+    assert.equal(maskPhones(text), text);
+  });
+
+  // Security review AS26: phones and uuids are walked together once.
+  it('masks 5,000 phones among 5,000 uuids in under 50 ms', () => {
+    const parts = [];
+    for (let i = 0; i < 5_000; i += 1) parts.push(`01012345678 ${randomUUID()}`);
+    const text = parts.join(' ');
+    maskPhones(text);
+    const started = performance.now();
+    const out = maskPhones(text);
+    assert.ok(performance.now() - started < 50);
+    assert.equal(out.split(PHONE_MASK).length - 1, 5_000);
   });
 });

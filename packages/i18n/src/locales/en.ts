@@ -802,10 +802,24 @@ export const en = {
       import: 'Import',
       portalCustomer: 'Customer',
     },
-    recordTypes: { stockReceipt: 'Stock receipt' },
+    recordTypes: {
+      stockReceipt: 'Stock receipt',
+      sku: 'SKU',
+      location: 'Location',
+      customer: 'Customer',
+      order: 'Order',
+      exchange: 'Exchange',
+      outboundCommand: 'Carrier request',
+    },
     // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
     actions: {
       stockReceiptVoided: 'Stock receipt voided',
+      skuArchived: 'SKU archived',
+      skuUnarchived: 'SKU unarchived',
+      skuCodeChanged: 'SKU code changed',
+      locationEdited: 'Location edited',
+      locationArchived: 'Location archived',
+      locationUnarchived: 'Location unarchived',
     },
   },
   mail: {

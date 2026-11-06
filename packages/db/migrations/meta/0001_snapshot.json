@@ -334,7 +334,7 @@
         },
         "audit_actor_shape": {
           "name": "audit_actor_shape",
-          "value": "CASE \"audit_entries\".\"actor_kind\"\n        WHEN 'person' THEN \"audit_entries\".\"actor_user_id\" IS NOT NULL AND \"audit_entries\".\"actor_ref\" IS NULL AND \"audit_entries\".\"job_id\" IS NULL\n        WHEN 'partner_user' THEN \"audit_entries\".\"actor_user_id\" IS NOT NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n        WHEN 'system_job' THEN \"audit_entries\".\"actor_user_id\" IS NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n        ELSE \"audit_entries\".\"actor_user_id\" IS NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n      END"
+          "value": "CASE \"audit_entries\".\"actor_kind\"\n        WHEN 'person' THEN \"audit_entries\".\"actor_user_id\" IS NOT NULL AND \"audit_entries\".\"actor_ref\" IS NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NOT NULL\n        WHEN 'partner_user' THEN \"audit_entries\".\"actor_user_id\" IS NOT NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n        WHEN 'system_job' THEN \"audit_entries\".\"actor_user_id\" IS NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"actor_hat\" IS NULL AND \"audit_entries\".\"job_id\" IS NOT NULL\n        ELSE \"audit_entries\".\"actor_user_id\" IS NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n      END"
         },
         "audit_action_format": {
           "name": "audit_action_format",
@@ -343,6 +343,10 @@
         "audit_reason_length": {
           "name": "audit_reason_length",
           "value": "\"audit_entries\".\"reason\" IS NULL OR length(btrim(\"audit_entries\".\"reason\")) BETWEEN 1 AND 500"
+        },
+        "audit_record_label_length": {
+          "name": "audit_record_label_length",
+          "value": "\"audit_entries\".\"record_label\" IS NULL OR char_length(\"audit_entries\".\"record_label\") BETWEEN 1 AND 64"
         },
         "audit_json_objects": {
           "name": "audit_json_objects",

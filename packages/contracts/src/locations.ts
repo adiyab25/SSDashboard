@@ -46,12 +46,15 @@ export const LocationSummary = z.object({
 /** The validated shape of `LocationSummary`, as the api and web see it after parsing. */
 export type LocationSummary = z.infer<typeof LocationSummary>;
 
+/** A stored location code: upper case letters, digits, dot, dash, and underscore, up to 16. */
+export const LOCATION_CODE_PATTERN = /^[A-Z0-9._-]{1,16}$/;
+
 /** Location codes are trimmed and uppercased before the pattern check (spec 0006, AC-4). */
 export const LocationCode = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z0-9._-]{1,16}$/, 'Letters, digits, dot, dash, and underscore, up to 16');
+  .regex(LOCATION_CODE_PATTERN, 'Letters, digits, dot, dash, and underscore, up to 16');
 
 const LocationNameText = z.string().trim().min(1).max(200);
 

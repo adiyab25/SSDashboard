@@ -5,12 +5,14 @@ One append only log of who did what, when, and why, written in the same database
 ## Owns
 
 - The table `audit_entries` (schema in [packages/db/src/schema/audit.ts](../../../../packages/db/src/schema/audit.ts)); the app role may only insert and read it, triggers refuse every update, delete, and truncate, and the database stamps each entry's `id` and `recorded_at` itself, whatever the writer passes.
-- `AuditService.record(tx, entry)`, `recordMany(tx, entries)`, and `newCorrelationId()`, the only writer: [audit.service.ts](audit.service.ts). It checks the action code and its record type against the registry, applies the reason policy (a call may tighten it with `reasonRequired: true`, never loosen it), masks personal values in `before` and `after` (listing their paths in `personal_fields`), refuses personal data in the record label and undo arguments, masks phones in the reason, and inserts through the caller's transaction.
+- `AuditService.record(tx, entry)`, `recordMany(tx, entries)` (one business action, one correlation id), and `newCorrelationId(actor?)` (a system job's own job id, else a new one), the only writer: [audit.service.ts](audit.service.ts). It checks the action code and its record type against the registry, applies the reason policy (a call may tighten it with `reasonRequired: true`, never loosen it), masks personal values in `before` and `after` with the shared list plus the record type's own personal keys (listing their paths in `personal_fields`), refuses a phone shaped key, a label that is not a short code, and undo arguments that are not ids, codes, or numbers, masks phones in the reason, and inserts through the caller's transaction.
 - `AuditQueryService`, the only reader: [audit-query.service.ts](audit-query.service.ts).
 - `GET /api/audit/entries`, staff audience, `admin` role until hats land: [audit-entries.controller.ts](audit-entries.controller.ts).
 - The typed errors and their api mapping: [audit.errors.ts](audit.errors.ts), [audit-http.ts](audit-http.ts) (`AuditReasonRequired` is 422 `REASON_REQUIRED`, `AuditReasonTooLong` 422 `REASON_TOO_LONG`).
-- The masking rules over the shared redaction list: [personal-data.ts](personal-data.ts).
-- The action registry and its labels live in contracts: [packages/contracts/src/audit/audit-actions.ts](../../../../packages/contracts/src/audit/audit-actions.ts).
+- The masking rules over the shared redaction list: [personal-data.ts](personal-data.ts) (record type keys, phone shaped keys and numbers, undo argument shape).
+- External ids (a Shopify customer id, a WhatsApp contact id) travel in a diff as text, never as numbers: a whole number of 10 to 15 digits is masked as phone shaped, so a numeric id would be hidden (security review AS20).
+- Reasons follow the record type: customer facing types keep a reason code only, one of the action's `reasonCodes` (422 `REASON_INVALID` for a typed note or an unlisted code), every other type keeps free text with phones and emails masked (spec 0010, AC-5).
+- The action registry, the record types with their labels and personal keys, and the six actor constructors live in contracts: [audit-actions.ts](../../../../packages/contracts/src/audit/audit-actions.ts), [audit-record-types.ts](../../../../packages/contracts/src/audit/audit-record-types.ts), [audit-actor.ts](../../../../packages/contracts/src/audit/audit-actor.ts).
 
 ## Never touches
 

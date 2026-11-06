@@ -1,12 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import {
+  AUDIT_ACTIONS,
   AuditEntryListResponse,
+  personActor,
   SkuDetail,
+  type AuditActionCode,
+  type AuditActionDefinition,
   StockReceiptDetail,
   StockReceiptListResponse,
 } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuditReasonInvalid } from '../src/audit/audit.errors.js';
+import { AuditService } from '../src/audit/audit.service.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,
@@ -328,5 +334,228 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
       (await listEntries('?action=stock_receipt.voided&limit=200')).body,
     );
     expect(entries.items.map((item) => item.record.id).sort()).toEqual([...voidedIds].sort());
+  });
+});
+
+// Spec 0010, milestone 2 (tasks 8, 9, 11) against PostgreSQL, through the writer itself as a
+// later feature calls it: no personal value reaches any column (AC-4), a reason with a phone is
+// stored masked (AC-5), one business action shares one correlation id (AC-6), the table refuses
+// a wrong actor (AC-3), the day follows the cutoff hour (AC-7), and a scratch registry entry needs
+// no schema change (AC-19).
+describe('audit writer against PostgreSQL (spec 0010, milestone 2)', { timeout: 60_000 }, () => {
+  const SCRATCH_CODE = 'customer.scratch_edited';
+  const registry = AUDIT_ACTIONS as Record<string, AuditActionDefinition>;
+  let scratch: { name: string; url: string };
+  let owner: DatabaseConnection;
+  let app: DatabaseConnection;
+  let userId: string;
+  const audit = new AuditService();
+
+  beforeAll(async () => {
+    scratch = await createScratchDatabase();
+    await runMigrations(scratch.url);
+    owner = createDatabase(scratch.url, { max: 2 });
+    const appUrl = new URL(scratch.url);
+    appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
+    app = createDatabase(appUrl.toString(), { max: 2 });
+    const { rows } = await owner.pool.query<{ id: string }>(
+      "INSERT INTO users (name, email, role) VALUES ('Writer', 'writer@example.com', 'admin') RETURNING id",
+    );
+    userId = rows[0]?.id ?? '';
+    // AC-19: a later feature adds one registry row (with its labels and proof test); no
+    // migration and no change to the audit module. Planted here for this run only.
+    registry[SCRATCH_CODE] = {
+      module: 'customers',
+      recordType: 'customer',
+      reason: 'optional',
+      automatic: false,
+      undoable: false,
+      label: 'audit.recordTypes.customer',
+      proof: 'apps/api/test/audit.e2e-spec.ts',
+      reasonCodes: ['duplicate_contact'],
+    };
+  });
+
+  afterAll(async () => {
+    delete registry[SCRATCH_CODE];
+    await app?.pool.end();
+    await owner?.pool.end();
+    if (scratch) await dropScratchDatabase(scratch.name);
+  });
+
+  /** Every column of the entries of one record, as JSON text, read as the owner. */
+  async function columnsOf(recordId: string): Promise<string> {
+    const { rows } = await owner.pool.query<{ row: string }>(
+      'SELECT row_to_json(e)::text AS row FROM audit_entries e WHERE record_id = $1',
+      [recordId],
+    );
+    return rows.map((row) => row.row).join('\n');
+  }
+
+  it('stores no sentinel in any column, with a reason code (AC-4, AC-5, AC-19)', async () => {
+    const customerId = randomUUID();
+    await app.db.transaction((tx) =>
+      audit.record(tx, {
+        actor: personActor(userId, 'admin'),
+        action: SCRATCH_CODE as AuditActionCode,
+        record: { type: 'customer', id: customerId },
+        before: {
+          name: 'SENTINEL-OLD-NAME',
+          phone: '01011111111',
+          address: 'SENTINEL-OLD-ADDRESS',
+          email: 'sentinel-old@example.eg',
+        },
+        after: {
+          name: 'SENTINEL-NEW-NAME',
+          phone: '01022222222',
+          address: 'SENTINEL-NEW-ADDRESS',
+          email: 'sentinel-new@example.eg',
+          merge: { reason: 'SENTINEL-MERGE-REASON' },
+          // Security review AS21: personal JSON text, under a personal key or a path rule.
+          note: '{"x":"SENTINEL lives in Nasr City"}',
+          shipToAddress: '["SENTINEL 12 Tahrir St","Nasr City"]',
+          contact: '{"name":"SENTINEL-CONTACT","email":"sentinel-contact@example.eg"}',
+        },
+        reason: 'duplicate_contact',
+        correlationId: audit.newCorrelationId(),
+      }),
+    );
+
+    const stored = await columnsOf(customerId);
+    expect(stored).toContain(customerId);
+    expect(stored).not.toMatch(/sentinel|01011111111|01022222222/i);
+    const { rows } = await owner.pool.query<{ fields: string[]; reason: string }>(
+      'SELECT personal_fields AS fields, reason FROM audit_entries WHERE record_id = $1',
+      [customerId],
+    );
+    expect(rows[0]).toEqual({
+      fields: [
+        'address',
+        'contact',
+        'email',
+        'merge.reason',
+        'name',
+        'note',
+        'phone',
+        'shipToAddress',
+      ],
+      reason: 'duplicate_contact',
+    });
+  });
+
+  it('writes a two record action with one correlation id (AC-6)', async () => {
+    const correlationId = audit.newCorrelationId();
+    const [survivor = '', merged = ''] = [randomUUID(), randomUUID()];
+    await app.db.transaction((tx) =>
+      audit.recordMany(
+        tx,
+        [survivor, merged].map((id) => ({
+          actor: personActor(userId, 'admin'),
+          action: SCRATCH_CODE as AuditActionCode,
+          record: { type: 'customer', id },
+          after: { status: id === merged ? 'merged' : 'survivor' },
+          correlationId,
+        })),
+      ),
+    );
+
+    const { rows } = await owner.pool.query<{ record_id: string }>(
+      'SELECT record_id FROM audit_entries WHERE correlation_id = $1 ORDER BY record_id',
+      [correlationId],
+    );
+    expect(rows.map((row) => row.record_id)).toEqual([survivor, merged].sort());
+  });
+
+  it('refuses each wrong actor shape at the table (AC-3)', async () => {
+    const wrong: (string | null)[][] = [
+      ['person', null, null, null],
+      ['system_job', userId, 'nightly', randomUUID()],
+      ['carrier', null, 'bosta', randomUUID()],
+      ['partner_user', userId, null, null],
+      // Security review AS19: no hat for a person, no job id for a system job.
+      ['person', userId, null, null],
+      ['system_job', null, 'nightly', null],
+    ];
+    for (const [kind, user, ref, job] of wrong) {
+      await expect(
+        app.pool.query(
+          `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
+                                      action, record_type, record_id)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'sku.archived', 'sku', gen_random_uuid())`,
+          [kind, user, ref, job],
+        ),
+      ).rejects.toThrow(/audit_actor_shape/);
+    }
+  });
+
+  it('stamps the operating day with the cutoff hour, from the entry instant (AC-7)', async () => {
+    await owner.pool.query(
+      "UPDATE settings SET value = to_jsonb(2) WHERE key = 'operating_day_cutoff_hour'",
+    );
+    try {
+      const recordId = randomUUID();
+      await app.db.transaction((tx) =>
+        audit.record(tx, {
+          actor: personActor(userId, 'admin'),
+          action: 'sku.archived',
+          record: { type: 'sku', id: recordId, label: 'CUT-OFF-1' },
+          before: { archived: false },
+          after: { archived: true },
+          correlationId: audit.newCorrelationId(),
+        }),
+      );
+      const { rows } = await owner.pool.query<{ same: boolean }>(
+        `SELECT operating_day =
+                  ((recorded_at AT TIME ZONE 'Africa/Cairo') - interval '2 hours')::date AS same
+         FROM audit_entries WHERE record_id = $1`,
+        [recordId],
+      );
+      expect(rows[0]?.same).toBe(true);
+    } finally {
+      await owner.pool.query(
+        "UPDATE settings SET value = to_jsonb(0) WHERE key = 'operating_day_cutoff_hour'",
+      );
+    }
+  });
+
+  // Security review AS13: a customer facing record takes a reason code, never a typed note; the
+  // note with a name and an email is refused and nothing is stored.
+  it('refuses a typed note with a name and an email on a customer entry (AC-5)', async () => {
+    const customerId = randomUUID();
+    await expect(
+      app.db.transaction((tx) =>
+        audit.record(tx, {
+          actor: personActor(userId, 'admin'),
+          action: SCRATCH_CODE as AuditActionCode,
+          record: { type: 'customer', id: customerId },
+          after: { tier: 'gold' },
+          reason: 'Sentinel Ahmed asked, write to sentinel@example.eg',
+          correlationId: audit.newCorrelationId(),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AuditReasonInvalid);
+    expect(await columnsOf(customerId)).toBe('');
+  });
+
+  it('stores a free text reason with its email and phone masked (AC-5, AC-16)', async () => {
+    const recordId = randomUUID();
+    await app.db.transaction((tx) =>
+      audit.record(tx, {
+        actor: personActor(userId, 'admin'),
+        action: 'sku.archived',
+        record: { type: 'sku', id: recordId, label: 'MASK-1' },
+        before: { archived: false },
+        after: { archived: true },
+        reason: 'asked by sentinel@example.eg on 02 2345 6789',
+        correlationId: audit.newCorrelationId(),
+      }),
+    );
+
+    const { rows } = await owner.pool.query<{ reason: string }>(
+      'SELECT reason FROM audit_entries WHERE record_id = $1',
+      [recordId],
+    );
+    expect(rows[0]?.reason).toBe('asked by [email] on [phone]');
+    expect(await columnsOf(recordId)).not.toMatch(/sentinel|2345/);
   });
 });

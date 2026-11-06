@@ -142,9 +142,9 @@ describe('audit entries are append only (spec 0010)', () => {
       day: boolean;
     }>(
       `INSERT INTO audit_entries (id, recorded_at, operating_day, correlation_id, actor_kind,
-                                  actor_user_id, action, record_type, record_id)
+                                  actor_user_id, actor_hat, action, record_type, record_id)
        VALUES ($1, '2020-01-01T00:00:00Z', '2020-01-01', gen_random_uuid(), 'person', $2,
-               'stock_receipt.voided', 'stock_receipt', gen_random_uuid())
+               'admin', 'stock_receipt.voided', 'stock_receipt', gen_random_uuid())
        RETURNING id,
                  recorded_at BETWEEN clock_timestamp() - interval '1 minute' AND clock_timestamp() AS fresh,
                  operating_day = ssd_operating_day(recorded_at) AS day`,
@@ -158,6 +158,9 @@ describe('audit entries are append only (spec 0010)', () => {
   it.each([
     ['a person with no user', "'person', NULL, NULL, NULL"],
     ['a person with an actor ref', "'person', $1::uuid, 'x', NULL"],
+    // Security review AS19: the table is as strict as the contract.
+    ['a person without a hat', "'person', $1::uuid, NULL, NULL"],
+    ['a system job without a job id', "'system_job', NULL, 'nightly', NULL"],
     ['a system job with a user', "'system_job', $1::uuid, 'nightly', NULL"],
     ['a carrier with a job id', "'carrier', NULL, 'bosta', gen_random_uuid()"],
     ['a partner user without a partner account', "'partner_user', $1::uuid, NULL, NULL"],
@@ -178,20 +181,20 @@ describe('audit entries are append only (spec 0010)', () => {
   it('accepts each of the six actor kinds in its right shape', async () => {
     const user = await makeUser('kinds@example.test');
     const actors = [
-      ['person', user, null, null],
-      ['partner_user', user, 'partner-account', null],
-      ['system_job', null, 'reconcile', '01937f3a-0000-7000-8000-000000000001'],
-      ['carrier', null, 'bosta', null],
-      ['import', null, 'run-1', null],
-      ['portal_customer', null, 'customer-1', null],
+      ['person', user, null, null, 'admin'],
+      ['partner_user', user, 'partner-account', null, null],
+      ['system_job', null, 'reconcile', '01937f3a-0000-7000-8000-000000000001', null],
+      ['carrier', null, 'bosta', null, null],
+      ['import', null, 'run-1', null, null],
+      ['portal_customer', null, 'customer-1', null, null],
     ];
-    for (const [kind, userId, ref, job] of actors) {
+    for (const [kind, userId, ref, job, hat] of actors) {
       await app.query(
         `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
-                                    action, record_type, record_id)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, 'stock_receipt.voided', 'stock_receipt',
+                                    actor_hat, action, record_type, record_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'stock_receipt.voided', 'stock_receipt',
                  gen_random_uuid())`,
-        [kind, userId, ref, job],
+        [kind, userId, ref, job, hat],
       );
     }
     const { rows } = await app.query<{ kinds: number }>(
@@ -224,10 +227,10 @@ describe('audit entries are append only (spec 0010)', () => {
     const target = await appEntry(user);
     const undo = () =>
       app.query(
-        `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, action, record_type,
-                                    record_id, reason, undoes_entry_id)
-         VALUES (gen_random_uuid(), 'person', $1, 'stock_receipt.voided_undone', 'stock_receipt',
-                 gen_random_uuid(), 'Wrong call', $2)`,
+        `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_hat, action,
+                                    record_type, record_id, reason, undoes_entry_id)
+         VALUES (gen_random_uuid(), 'person', $1, 'admin', 'stock_receipt.voided_undone',
+                 'stock_receipt', gen_random_uuid(), 'Wrong call', $2)`,
         [user, target],
       );
     await undo();

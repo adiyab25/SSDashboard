@@ -84,6 +84,7 @@ This feature migrates every ★ table in the children with all its checks, index
 - **Partner scoping**: partner reads (feature 41) filter settlement accounts and locations by the session's party, never by a request parameter (spec 0007 section 2).
 - **Roles**: the append only revokes and the grants follow the role named by `ssd.app_role` (A2).
 - **Free text on append only rows (gate ruling, security S4)**: `customer_merges.reason` and `settlement_period_events.reason` hold codes only; a written note goes in the spec 0010 audit entry `reason`, which is trimmed, capped at 500 characters, and phone masked ([spec 0010](../0010-audit-trail/index.md) AC-5). `settlement_lines.partner_text` and `settlement_line_matches.payment_reference` are third party evidence kept by contract, and are on the redaction list for logs (`packages/config/src/redaction.ts`). Both are capped at 500 characters by database checks and the contracts.
+  > Amended 2026-11-07 (spec 0010 security review AS13, gate ruling): the written note no longer goes in the audit entry `reason` for customer facing record types (`customer`, `order`, `exchange`, `outbound_command`); those entries keep a reason code only, and a typed explanation lives in the owning module's own note row, which can be edited and erased. See [spec 0010](../0010-audit-trail/index.md) AC-5.
 
 ### Configuration (amendment)
 

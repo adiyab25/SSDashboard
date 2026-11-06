@@ -47,6 +47,21 @@ describe('AuditPage (AC-12, AC-18)', () => {
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
   });
 
+  it('labels a record type from the contracts registry and shows an unknown one as its code', async () => {
+    api.listAuditEntries.mockResolvedValue({
+      items: [
+        entry(1, { record: { type: 'outbound_command', id: uuid(1), label: 'CMD-1' } }),
+        entry(2, { record: { type: 'future_record', id: uuid(2), label: 'FR-2' } }),
+      ],
+      nextCursor: null,
+    });
+    renderWithQuery(<AuditPage />);
+
+    const table = await screen.findByRole('table', { name: 'Audit entries' });
+    expect(await within(table).findByText(/Carrier request/)).toBeVisible();
+    expect(within(table).getByText('future_record')).toBeVisible();
+  });
+
   it('names a system actor by its kind and reference, and an unknown action by its code', async () => {
     api.listAuditEntries.mockResolvedValue({
       items: [
