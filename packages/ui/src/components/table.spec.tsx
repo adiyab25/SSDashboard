@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { Table, TableBody, TableCell, TableRow } from './table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 
 describe('Table', () => {
   it('wraps the table in a focusable, named scroll region', () => {
@@ -27,5 +27,20 @@ describe('Table', () => {
     );
     expect(screen.getByRole('region', { name: 'Stock' })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Stock' })).toBeInTheDocument();
+  });
+
+  it('takes row and header heights from the density tokens', () => {
+    render(
+      <Table aria-label="SKUs">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Code</TableHead>
+          </TableRow>
+        </TableHeader>
+      </Table>,
+    );
+
+    expect(screen.getByRole('columnheader', { name: 'Code' })).toHaveClass('h-row-header');
+    expect(screen.getByRole('row')).toHaveClass('h-row');
   });
 });

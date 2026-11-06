@@ -10,6 +10,8 @@
 |---|---|
 | `src/styles/globals.css` | Tokens (oklch CSS variables, light in `:root`, dark in `.dark`), the `@theme inline` mapping, base layer |
 | `src/components/*.tsx` | shadcn components in their vendor shape (compound files like `dialog.tsx` hold several components; exempt from the one component rule by [ADR 0001](../../docs/adr/0001-shadcn-component-files-keep-their-vendor-shape.md)), imported as `@ssdashboard/ui/components/<name>` |
+| `src/status/*.tsx` | Status display, one component per file (`status-chip`, `status-chip-overflow`, `provisional-value`, `freshness-strip`), imported as `@ssdashboard/ui/status/<name>`; outside `src/components/`, so the one component rules apply |
+| `src/lib/status-meaning.ts`, `src/lib/row-stripe.ts` | The `StatusMeaning` type and the decorative `rowStripeClassName` |
 | `src/lib/utils.ts` | `cn()`; the one file allowed the banned name `utils` (ADR 0001) |
 | `src/hooks/*.ts` | Hooks the components use (`use-mobile`) |
 | `src/test/axe.ts` | `expectNoAxeViolations()` for component tests |

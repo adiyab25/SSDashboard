@@ -8,6 +8,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 
 - Tokens (Daftar: colors, the four meaning roles, brand, type, density and the `floor` scope) and the Tailwind theme mapping: [src/styles/globals.css](src/styles/globals.css)
 - Components, one per file: [src/components/](src/components/)
+- Status display, one per file: [src/status/](src/status/) (`StatusChip`, `StatusChipOverflow`, `ProvisionalValue`, `FreshnessStrip`), plus `rowStripeClassName` and the `StatusMeaning` type in [src/lib/](src/lib/)
 - The `cn()` helper: [src/lib/utils.ts](src/lib/utils.ts)
 - Hooks the components use: [src/hooks/use-mobile.ts](src/hooks/use-mobile.ts)
 - The axe test helper: [src/test/axe.ts](src/test/axe.ts)
