@@ -1,4 +1,4 @@
-import { PriceString, SkuCode, type SkuDetail } from '@ssdashboard/contracts';
+import { moneyInput, PriceString, SkuCode, type SkuDetail } from '@ssdashboard/contracts';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
 
@@ -7,7 +7,7 @@ export const EditSkuForm = z
   .object({
     nameEn: z.string().trim().max(200),
     nameAr: z.string().trim().max(200),
-    price: z.union([z.literal(''), z.string().trim().pipe(PriceString)]),
+    price: z.union([z.literal(''), moneyInput(2).pipe(PriceString)]),
   })
   .refine((form) => form.nameEn !== '' || form.nameAr !== '', {
     path: ['nameEn'],

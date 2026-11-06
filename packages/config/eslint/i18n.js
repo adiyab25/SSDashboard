@@ -4,38 +4,60 @@ const DEFAULT_EXPORT = { selector: 'ExportDefaultDeclaration', message: 'Use a n
 
 const LOCALE_STRING = {
   selector: 'CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/]',
-  message: 'Format through the shared formatters in src/i18n/format.ts (useFormat).',
+  message: 'Format through createFormatter from @ssdashboard/i18n (useFormat in the web).',
 };
 
 const INTL_CONSTRUCTOR = {
   selector: "NewExpression[callee.object.name='Intl']",
-  message: 'Build Intl formatters only in src/i18n/format.ts; use the formatters from useFormat.',
+  message:
+    'Build Intl formatters only in packages/i18n/src; use createFormatter from @ssdashboard/i18n (useFormat in the web).',
 };
 
 // `Intl.NumberFormat(...)` works without `new`; the static helpers are fine.
 const INTL_CALL = {
   selector:
     "CallExpression[callee.object.name='Intl']:not([callee.property.name=/^(getCanonicalLocales|supportedValuesOf)$/])",
-  message: 'Build Intl formatters only in src/i18n/format.ts; use the formatters from useFormat.',
+  message:
+    'Build Intl formatters only in packages/i18n/src; use createFormatter from @ssdashboard/i18n (useFormat in the web).',
 };
 
-const FORMATTING_BANS = [LOCALE_STRING, INTL_CONSTRUCTOR, INTL_CALL];
+/** The `no-restricted-syntax` selectors of the formatting ban, for configs that merge their own. */
+export const FORMATTING_BANS = [LOCALE_STRING, INTL_CONSTRUCTOR, INTL_CALL];
 
 /** Attributes that carry text a person reads or hears. Anything else may hold a literal. */
 const TEXT_ATTRIBUTES = ['aria-label', 'title', 'placeholder', 'alt'];
 
+const SPECS = ['**/*.spec.{ts,tsx}', '**/*.test-support.{ts,tsx}', 'e2e/**', 'test/**'];
+
 /**
- * Localization rules for the web app (spec 0004): no raw text in markup, and number, money,
- * and date output only through the shared formatting module. Test specs and e2e files are
- * exempt from both; the `/design` specimens (development only) from the text rule.
+ * The formatting ban alone, for workspaces without JSX (the api and the worker): no
+ * `toLocale*String` and no `Intl.*` formatter outside `packages/i18n/src/`, where
+ * `createFormatter` lives. Test specs and e2e files are exempt. Only `packages/i18n` passes
+ * `exempt` (its own files that build `Intl` objects); every other workspace passes nothing.
  * Pass the workspace's source folder, for example `src`.
  */
-export function i18n({ source = 'src', formatModule = 'src/i18n/format.ts' } = {}) {
-  const specs = ['**/*.spec.{ts,tsx}', '**/*.test-support.{ts,tsx}', 'e2e/**'];
+export function formattingBan({ source = 'src', exempt = [] } = {}) {
+  return [
+    {
+      files: [`${source}/**/*.ts`],
+      ignores: [...SPECS, ...exempt],
+      rules: { 'no-restricted-syntax': ['error', ...FORMATTING_BANS] },
+    },
+  ];
+}
+
+/**
+ * Localization rules for the web app (spec 0004): no raw text in markup, and number, money,
+ * and date output only through `createFormatter` (`@ssdashboard/i18n`, `useFormat` in the
+ * web). Test specs and e2e files are exempt from both; the `/design` specimens (development
+ * only) from the text rule. Pass the workspace's source folder, for example `src`.
+ */
+export function i18n({ source = 'src', exempt = [] } = {}) {
+  const specs = SPECS;
   return [
     {
       files: [`${source}/**/*.{ts,tsx}`],
-      ignores: [formatModule, ...specs],
+      ignores: [...specs, ...exempt],
       rules: { 'no-restricted-syntax': ['error', DEFAULT_EXPORT, ...FORMATTING_BANS] },
     },
     {

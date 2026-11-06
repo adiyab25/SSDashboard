@@ -129,6 +129,40 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     expect(api.getSkuUsage).not.toHaveBeenCalled();
   });
 
+  it('accepts an Arabic price and sends it in Western digits (AC-18)', async () => {
+    api.getSku.mockResolvedValue(detail(1));
+    api.updateSku.mockResolvedValue({ ...detail(1), price: '15.50' });
+    const dialog = await openEdit();
+
+    const price = within(dialog).getByLabelText(/Selling price/);
+    expect(price).toHaveAttribute('dir', 'ltr');
+    await userEvent.clear(price);
+    await userEvent.type(price, '١٥٫٥٠');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() =>
+      expect(api.updateSku).toHaveBeenCalledWith(detail(1).id, {
+        updatedAt: '2026-11-03T10:00:00.123456Z',
+        price: '15.50',
+      }),
+    );
+  });
+
+  it('shows the price error for a decimal comma (AC-18)', async () => {
+    api.getSku.mockResolvedValue(detail(1));
+    const dialog = await openEdit();
+
+    const price = within(dialog).getByLabelText(/Selling price/);
+    await userEvent.clear(price);
+    await userEvent.type(price, '1,5');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(
+      await within(dialog).findByText('Enter 0 or more with at most 2 decimals.'),
+    ).toBeVisible();
+    expect(api.updateSku).not.toHaveBeenCalled();
+  });
+
   it('shows the stale message with a Reload that fetches the latest version', async () => {
     api.getSku.mockResolvedValueOnce(detail(1));
     api.updateSku.mockRejectedValue(new ApiError(409, { code: 'STALE_RECORD' }));

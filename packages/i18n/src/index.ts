@@ -10,6 +10,9 @@ export {
 export type { Catalog } from './catalog.js';
 export { createI18n } from './create-i18n.js';
 export type { CreateI18nOptions } from './create-i18n.js';
+export { InvalidDigitInputError, normalizeDigits, parseMoney, parseQuantity } from './digits.js';
+export { createFormatter, isValidTimeZone } from './format.js';
+export type { Formatter, FormatterOptions } from './format.js';
 export { CORE_LANGUAGES, isCoreLanguage } from './languages.js';
 export type { CoreLanguage, LanguageInfo } from './languages.js';
 export { en } from './locales/en.js';

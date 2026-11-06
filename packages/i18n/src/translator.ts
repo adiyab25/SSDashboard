@@ -34,7 +34,7 @@ function loadCoreCatalog(code: string): Promise<Catalog> | undefined {
   if (code !== 'ar') return undefined;
   let pending = loaded.get(code);
   if (!pending) {
-    pending = import('./locales/ar.js').then((module) => module.ar);
+    pending = import('./ar.js').then((module) => module.ar);
     // A failed load is not cached, so the next call can try again.
     pending.catch(() => loaded.delete(code));
     loaded.set(code, pending);

@@ -1,71 +1,69 @@
-// The only place that builds `Intl` formatters (lint bans them everywhere else), so every
-// figure and date looks the same on every screen and matches exports. Digits are always
-// Western (0 to 9): every formatter sets `numberingSystem: 'latn'`.
+// The only place that builds `Intl` formatters (lint bans them everywhere else, in the web, the
+// api and the worker), so every figure and date looks the same on every screen, in every
+// export and in every process. Digits are always Western (0 to 9): every formatter sets
+// `numberingSystem: 'latn'`.
+import { CORE_LANGUAGES, isCoreLanguage } from './languages.js';
 
-/** What the formatters need: the language's Intl tag and clock, and the install settings. */
-export interface FormatContext {
-  /** The Intl locale tag of the active language, for example `en-GB`. */
-  intl: string;
-  /** 12 hour clock. Left out, the language's Intl default decides. */
-  hour12?: boolean;
-  /** ISO 4217 code from the `currency` setting. Missing until config loads. */
+/** What `createFormatter` needs: the language and the install's currency and time zone. */
+export interface FormatterOptions {
+  /** A language code (`en`, `ar`) or, for a client language, any code with `intl` set. */
+  language: string;
+  /** ISO 4217 code from the `currency` setting. Missing until settings are known. */
   currency?: string;
-  /** IANA name from the `timezone` setting. Missing until config loads. */
+  /** IANA name from the `timezone` setting. Missing until settings are known. */
   timezone?: string;
+  /** The Intl locale tag. Left out, a core language's tag is used, else `language` itself. */
+  intl?: string;
+  /** 12 hour clock. Left out, a core language's clock is used, else the Intl tag decides. */
+  hour12?: boolean;
 }
 
-/** `loading` and `error` mean a setting is missing or an `Intl` call failed. */
-export type FormatStatus = 'ready' | 'loading' | 'error';
-
 type Decimal = number | string;
+type Instant = Date | string | number;
 
-/** The number, money, date and time formatters for the active language and install settings. */
-export interface Format {
-  /** `'ready'`, or why money and date output is the raw value. Reads live. */
-  readonly status: FormatStatus;
+/** The number, money, date and time formatters for one language and one set of install settings. */
+export interface Formatter {
+  /** True once an `Intl` call failed and the raw value was returned instead. Reads live. */
+  readonly failed: boolean;
   number: (value: Decimal) => string;
   quantity: (value: number) => string;
   percent: (value: Decimal) => string;
   money: (value: string, digits: 2 | 4) => string;
-  date: (instant: Date | string | number) => string;
-  dateNumeric: (instant: Date | string | number) => string;
+  date: (instant: Instant) => string;
+  dateNumeric: (instant: Instant) => string;
   dateOnly: (value: string) => string;
-  time: (instant: Date | string | number) => string;
-  dateTime: (instant: Date | string | number) => string;
+  time: (instant: Instant) => string;
+  dateTime: (instant: Instant) => string;
   /**
    * The calendar date of an instant in the install's time zone, as `YYYY-MM-DD` (for date
    * inputs and api fields, not for display). Null until the time zone is known.
    */
-  calendarDate: (instant: Date | string | number) => string | null;
+  calendarDate: (instant: Instant) => string | null;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * The plural forms a language needs (`one`, `few`, ...), from `Intl.PluralRules` and never
- * hand written. Kept here because this is the only module allowed to build `Intl` objects.
- */
-export function pluralCategories(intl: string): readonly string[] {
-  return new Intl.PluralRules(intl).resolvedOptions().pluralCategories;
-}
 
 /** A decimal string goes to `Intl` as a string, so `"12.3456"` never loses precision. */
 function numeric(value: Decimal): number | `${number}` {
   return typeof value === 'string' ? (value as `${number}`) : value;
 }
 
-function toDate(instant: Date | string | number): Date | null {
+function toDate(instant: Instant): Date | null {
   const date = instant instanceof Date ? instant : new Date(instant);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /**
- * Formatters for one language and one set of install settings. Settings the call needs but
- * does not have (`loading`), or an `Intl` failure (`error`), return the raw value instead of
- * a guess, and set `status`, so a screen shows its own loading or error state.
+ * Formatters for one language and one set of install settings. A setting the call needs but
+ * does not have, or an `Intl` failure, returns the raw value instead of a guess; an `Intl`
+ * failure also sets `failed`, so a screen can show its own error state. Never builds an
+ * `Intl` object per call: they are cached per formatter.
  */
-export function createFormat(context: FormatContext, settings: FormatStatus = 'ready'): Format {
-  const { intl, hour12, currency, timezone } = context;
+export function createFormatter(options: FormatterOptions): Formatter {
+  const { language, currency, timezone } = options;
+  const core = isCoreLanguage(language) ? CORE_LANGUAGES[language] : undefined;
+  const intl = options.intl ?? core?.intl ?? language;
+  const hour12 = options.hour12 ?? core?.hour12;
   const cache = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat>();
   let failed = false;
 
@@ -110,22 +108,16 @@ export function createFormat(context: FormatContext, settings: FormatStatus = 'r
     );
 
   /** An instant shown in the install's time zone; the raw value until that is known. */
-  function instant(
-    key: string,
-    options: Intl.DateTimeFormatOptions,
-    value: Date | string | number,
-  ): string {
+  function instant(key: string, options: Intl.DateTimeFormatOptions, value: Instant): string {
     const date = toDate(value);
     const raw = date && value instanceof Date ? date.toISOString() : String(value);
     if (!timezone || !date) return raw;
     return guard(raw, () => dates(key, options, timezone).format(date));
   }
 
-  const format: Format = {
-    get status(): FormatStatus {
-      if (failed) return 'error';
-      if (settings === 'loading') return 'loading';
-      return settings === 'ready' && currency && timezone ? 'ready' : 'error';
+  const format: Formatter = {
+    get failed(): boolean {
+      return failed;
     },
 
     number: (value) =>
@@ -197,4 +189,18 @@ export function createFormat(context: FormatContext, settings: FormatStatus = 'r
   };
 
   return format;
+}
+
+/**
+ * True when `name` is an IANA time zone this runtime knows (`Africa/Cairo`). Used to check the
+ * `timezone` setting. Never throws; an empty or unknown name is false.
+ */
+export function isValidTimeZone(name: string): boolean {
+  if (!name) return false;
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: name });
+    return true;
+  } catch {
+    return false;
+  }
 }
