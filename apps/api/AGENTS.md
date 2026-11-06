@@ -17,6 +17,7 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 | `src/platform/audience/` | `@Audience(...)` (`staff`, `partner`, `portal`, `hook`, `public`) and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `src/platform/logging/` | `RedactingLogger`: Nest's console logger with every argument passed through `redact` from `@ssdashboard/config/redaction` |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
+| `src/audit/` | The audit trail: `AuditService.record` (the only writer of `audit_entries`), `AuditQueryService`, and `GET /api/audit/entries`, see [its README](src/audit/README.md) |
 | `src/app.module.ts` | Root module, imports each business module |
 | `src/config/env.ts` | Zod env schema, validated at startup |
 | `src/database/database.module.ts` | Drizzle client provider |
@@ -40,7 +41,8 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - Database access goes through the Drizzle client from `database.module.ts`; tables are defined in `packages/db`, not here.
 - Import Drizzle helpers (`sql`, `inArray`, `SQL`) from `@ssdashboard/db`, never from `drizzle-orm`: pg-boss's `@opentelemetry/api` peer makes pnpm create a second drizzle-orm copy whose types do not match.
 - Pass an array to raw SQL as one literal, `${pgArray(ids)}::uuid[]`; Drizzle expands a plain JS array into a list of parameters.
-- Validate query strings with `new ZodQueryPipe(<contract schema>)` (`src/platform/zod-query.pipe.ts`); a bad query answers 400 with the stable code `INVALID_QUERY`.
+- Validate query strings with `new ZodQueryPipe(<contract schema>)` (`src/platform/zod-query.pipe.ts`); a bad query answers 400 with the stable code `INVALID_QUERY`, or the code passed as its second argument (`new ZodQueryPipe(schema, 'INVALID_FILTER')` in the audit list).
+- A module that changes a record a manager must be able to trace calls `AuditService.record(tx, entry)` inside its own transaction, with an action code from the registry in `packages/contracts/src/audit/audit-actions.ts` (spec 0010 AC-11, AC-19).
 - List endpoints page with a keyset cursor (the last row's sort key, base64url encoded) and compare and order with `COLLATE "C"`, so pages never skip or repeat rows (`src/inventory/locations/locations.service.ts`).
 
 ## Gotchas
@@ -50,7 +52,7 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 - Better Auth needs NestJS's body parser off for `/api/auth`, and its cookie stays host only, `Secure`, `HttpOnly`, `SameSite=Lax`.
 - The core never imports an extension; extensions load by dynamic import only.
 - `DATABASE_URL` is the application role, which cannot create databases. The e2e helpers create scratch databases with `MIGRATION_DATABASE_URL` (the owner) and run the ledger as the app role with `options=-c role=ssdashboard_app`.
-- `test/scale.e2e-spec.ts` seeds the spec 0002 load (50,000 variants, 150,000 orders and the rest); the spec 0010 audit load joins it with feature 10 (an `it.todo` until `audit_entries` exists). It runs only through `test:scale` (`vitest.config.scale.ts`), in the `scale` CI job (nightly, `scale` label on a pull request, or by hand); `vitest.config.e2e.ts` excludes it. `pnpm --filter ... test:e2e -- <file>` does not filter in this repo (the `--` is forwarded and vitest ignores it): call `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts <file>` for one file.
+- `test/scale.e2e-spec.ts` seeds the spec 0002 load (50,000 variants, 150,000 orders and the rest); the spec 0010 audit load joins it with feature 10 (the table exists; the audit load stays an `it.todo` until spec 0010 milestone 4 task 18). It runs only through `test:scale` (`vitest.config.scale.ts`), in the `scale` CI job (nightly, `scale` label on a pull request, or by hand); `vitest.config.e2e.ts` excludes it. `pnpm --filter ... test:e2e -- <file>` does not filter in this repo (the `--` is forwarded and vitest ignores it): call `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts <file>` for one file.
 - The module wall is `src/module-boundary.spec.ts`: a file in one module that names another module's table (by Drizzle export or SQL name, from `TABLE_OWNERSHIP` in `packages/db`) fails it, and so does an extension that names a core table. Its `KNOWN_BREACHES` list may only shrink.
 
 ## Agent skills

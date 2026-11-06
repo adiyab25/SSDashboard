@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditModule } from '../audit/audit.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { PlatformModule } from '../platform/platform.module.js';
 import { StaffDirectoryModule } from '../staff/staff-directory.js';
@@ -16,10 +17,11 @@ import { StockService } from './stock/stock.service.js';
 
 /**
  * Stock: the ledger service is the only writer of movements, balances, serials, and
- * reservations. Imports catalog one way; catalog never imports inventory.
+ * reservations. Imports catalog one way; catalog never imports inventory. Records voids and
+ * other audited actions through the audit module's exported `AuditService`.
  */
 @Module({
-  imports: [PlatformModule, CatalogModule, StaffDirectoryModule],
+  imports: [PlatformModule, CatalogModule, StaffDirectoryModule, AuditModule],
   controllers: [LocationsController, ReceiptsController, StockController, SkuLifecycleController],
   providers: [
     LedgerService,

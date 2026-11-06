@@ -118,7 +118,7 @@ Agent accountability: who did what, when, and why, across edits, merges, overrid
 **Done when:** each of those actions writes an audit entry with actor, time, before and after, and reason where one is required; managers can filter it by person and record; nothing can edit or delete an entry.
 - [x] Design it (spec): `/architect audit trail`
 - [ ] Build it: `/develop audit trail`
-  - [ ] The thin thread: void a receipt, see the entry, cannot change it
+  - [x] The thin thread: void a receipt, see the entry, cannot change it
   - [ ] Every action recorded, with no raw personal data
   - [ ] The manager screen and the export
   - [ ] One step undo and scale

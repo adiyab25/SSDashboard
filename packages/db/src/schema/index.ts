@@ -1,4 +1,5 @@
 // Drizzle tables for every module, one file per module.
+export * from './audit.js';
 export * from './auth.js';
 export * from './catalog.js';
 export * from './channels.js';

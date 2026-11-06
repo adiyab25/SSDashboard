@@ -1,5 +1,5 @@
 # Verify: audit trail · spec 0010 · updated 2026-11-05
-_Steps derived from spec 0010 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones append theirs. Nothing is ticked yet: the spec is Proposed._
+_Steps derived from spec 0010 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones append theirs. Nothing is ticked yet: the spec is In Progress (milestone 1 built, 2026-11-06)._
 
 ## UI / manual
 - [ ] As a manager, void a posted stock receipt with the reason "wrong supplier" → `/audit` lists a row: your name, the time in Cairo time, "Receipt voided" (Arabic label in Arabic), the receipt number, the reason → AC-1, AC-5, AC-12
@@ -16,7 +16,7 @@ _Steps derived from spec 0010 acceptance criteria and its Value sourcing table. 
 ## Commands
 - [ ] `pnpm --filter @ssdashboard/db test:e2e -- test/audit-append-only.e2e-spec.ts` → app role `UPDATE`, `DELETE`, `TRUNCATE` denied; owner changes rejected "append only"; planted `GRANT UPDATE` still rejected → AC-8
 - [ ] `pnpm --filter @ssdashboard/db test:e2e` → the tenancy schema test, the operating day test, and the append only list all include `audit_entries` → AC-1, AC-7, AC-8, AC-9
-- [ ] `pnpm --filter @ssdashboard/api test` → `audit-registry.spec.ts` (fields, both labels, proof file, handler for every undoable) and `module-boundary.spec.ts` pass → AC-9, AC-10, AC-19
+- [ ] `pnpm --filter @ssdashboard/contracts test` → `test/audit.spec.ts` (fields, both labels, proof file; handler for every undoable with milestone 2) and `pnpm --filter @ssdashboard/api test` → `module-boundary.spec.ts` pass → AC-9, AC-10, AC-19
 - [ ] `pnpm --filter @ssdashboard/api test:e2e -- test/audit.e2e-spec.ts` → thread, rollback both ways, reason rules, actor shapes, privacy sentinels, correlation, paging, permissions, undo cases, export cases → AC-2 to AC-6, AC-12 to AC-15
 - [ ] `pnpm --filter @ssdashboard/web test:e2e -- e2e/audit.spec.ts --project=desktop` → the thread in both languages, axe clean, keyboard only → AC-12, AC-18
 - [ ] `pnpm --filter @ssdashboard/api test:scale` → with 5,000,000 entries, p95 under 150 ms per filter and for the unfiltered page, `record` under 10 ms; measured values pasted into AC-17 → AC-17

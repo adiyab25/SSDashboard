@@ -284,8 +284,9 @@ describe('core data model schema (spec 0002)', () => {
 
   // AC-33 (spec 0002, A4): every table that can only grow. The app role is refused on permissions,
   // the owner on the trigger. The A4 tables not built yet join this list with their features:
-  // `audit_entries` (feature 10, spec 0010), `licenses` and `license_checks` (feature 9, spec 0009),
-  // and `export_runs` (feature 45, its status columns stay updatable).
+  // `licenses` and `license_checks` (feature 9, spec 0009), and `export_runs` (feature 45, its
+  // status columns stay updatable). `audit_entries` (spec 0010) is here, and its own suite
+  // (`audit-append-only.e2e-spec.ts`) adds the planted grant.
   describe('the append only tables (AC-33)', () => {
     type Seeded = { update: string; remove: string; params: string[] };
 
@@ -498,6 +499,19 @@ describe('core data model schema (spec 0002)', () => {
           update: "UPDATE settlement_period_events SET reason = 'x' WHERE id = $1",
           remove: 'DELETE FROM settlement_period_events WHERE id = $1',
           params: [event.id],
+        };
+      },
+      audit_entries: async () => {
+        const entry = await one<{ id: string }>(
+          owner,
+          `INSERT INTO audit_entries (correlation_id, actor_kind, actor_ref, action, record_type, record_id)
+           VALUES (gen_random_uuid(), 'carrier', 'bosta', 'stock_receipt.voided', 'stock_receipt', gen_random_uuid())
+           RETURNING id`,
+        );
+        return {
+          update: "UPDATE audit_entries SET reason = 'x' WHERE id = $1",
+          remove: 'DELETE FROM audit_entries WHERE id = $1',
+          params: [entry.id],
         };
       },
       order_cost_rules: async () => {

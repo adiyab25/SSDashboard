@@ -4,6 +4,361 @@
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.audit_entries": {
+      "name": "audit_entries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "clock_timestamp()"
+        },
+        "operating_day": {
+          "name": "operating_day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "correlation_id": {
+          "name": "correlation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_ref": {
+          "name": "actor_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_hat": {
+          "name": "actor_hat",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_type": {
+          "name": "record_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_id": {
+          "name": "record_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "record_label": {
+          "name": "record_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "before": {
+          "name": "before",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after": {
+          "name": "after",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "personal_fields": {
+          "name": "personal_fields",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "undo_action": {
+          "name": "undo_action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "undo_args": {
+          "name": "undo_args",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "undoes_entry_id": {
+          "name": "undoes_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "audit_entries_recorded_idx": {
+          "name": "audit_entries_recorded_idx",
+          "columns": [
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_entries_actor_recorded_idx": {
+          "name": "audit_entries_actor_recorded_idx",
+          "columns": [
+            {
+              "expression": "actor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"audit_entries\".\"actor_user_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_entries_record_recorded_idx": {
+          "name": "audit_entries_record_recorded_idx",
+          "columns": [
+            {
+              "expression": "record_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "record_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_entries_action_recorded_idx": {
+          "name": "audit_entries_action_recorded_idx",
+          "columns": [
+            {
+              "expression": "action",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_entries_correlation_idx": {
+          "name": "audit_entries_correlation_idx",
+          "columns": [
+            {
+              "expression": "correlation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_entries_undoes_entry_unique": {
+          "name": "audit_entries_undoes_entry_unique",
+          "columns": [
+            {
+              "expression": "undoes_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"audit_entries\".\"undoes_entry_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_entries_operating_day_brin": {
+          "name": "audit_entries_operating_day_brin",
+          "columns": [
+            {
+              "expression": "operating_day",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "brin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "audit_entries_actor_user_id_users_id_fk": {
+          "name": "audit_entries_actor_user_id_users_id_fk",
+          "tableFrom": "audit_entries",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "audit_entries_undoes_entry_id_audit_entries_id_fk": {
+          "name": "audit_entries_undoes_entry_id_audit_entries_id_fk",
+          "tableFrom": "audit_entries",
+          "tableTo": "audit_entries",
+          "columnsFrom": [
+            "undoes_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "audit_actor_kind": {
+          "name": "audit_actor_kind",
+          "value": "\"audit_entries\".\"actor_kind\" IN ('person', 'partner_user', 'system_job', 'carrier', 'import', 'portal_customer')"
+        },
+        "audit_actor_shape": {
+          "name": "audit_actor_shape",
+          "value": "CASE \"audit_entries\".\"actor_kind\"\n        WHEN 'person' THEN \"audit_entries\".\"actor_user_id\" IS NOT NULL AND \"audit_entries\".\"actor_ref\" IS NULL AND \"audit_entries\".\"job_id\" IS NULL\n        WHEN 'partner_user' THEN \"audit_entries\".\"actor_user_id\" IS NOT NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n        WHEN 'system_job' THEN \"audit_entries\".\"actor_user_id\" IS NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n        ELSE \"audit_entries\".\"actor_user_id\" IS NULL AND \"audit_entries\".\"actor_ref\" IS NOT NULL AND \"audit_entries\".\"job_id\" IS NULL AND \"audit_entries\".\"actor_hat\" IS NULL\n      END"
+        },
+        "audit_action_format": {
+          "name": "audit_action_format",
+          "value": "\"audit_entries\".\"action\" ~ '^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$'"
+        },
+        "audit_reason_length": {
+          "name": "audit_reason_length",
+          "value": "\"audit_entries\".\"reason\" IS NULL OR length(btrim(\"audit_entries\".\"reason\")) BETWEEN 1 AND 500"
+        },
+        "audit_json_objects": {
+          "name": "audit_json_objects",
+          "value": "(\"audit_entries\".\"before\" IS NULL OR jsonb_typeof(\"audit_entries\".\"before\") = 'object') AND (\"audit_entries\".\"after\" IS NULL OR jsonb_typeof(\"audit_entries\".\"after\") = 'object')"
+        },
+        "audit_undo_pair": {
+          "name": "audit_undo_pair",
+          "value": "(\"audit_entries\".\"undo_action\" IS NULL) = (\"audit_entries\".\"undo_args\" IS NULL)"
+        },
+        "audit_undo_entry_not_undoable": {
+          "name": "audit_undo_entry_not_undoable",
+          "value": "\"audit_entries\".\"undoes_entry_id\" IS NULL OR \"audit_entries\".\"undo_action\" IS NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.accounts": {
       "name": "accounts",
       "schema": "",

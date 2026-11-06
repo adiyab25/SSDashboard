@@ -126,4 +126,49 @@ describe('operating day (AC-17)', () => {
     expect(movement.rows[0]?.day).toBe(await dayOf(instant));
     expect(movement.rows[0]?.day).toBe(await cairoDate(instant));
   });
+
+  // Spec 0010, AC-7: an audit entry's day comes from recorded_at, so 00:30 Cairo time with a
+  // cutoff hour of 2 is the previous day, and a day a writer passes is ignored. recorded_at is
+  // always now (trigger audit_entries_recorded_now), so the owner plants the 00:30 instant with
+  // that trigger disabled for this one insert.
+  it('stamps an audit entry from recorded_at, honouring the cutoff hour', async () => {
+    const { rows } = await owner.query<{ at: string }>(`
+      SELECT to_char(('2026-01-16 00:30:00'::timestamp AT TIME ZONE 'Africa/Cairo') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at`);
+    const instant = rows[0]?.at ?? '';
+    await setCutoff(2);
+    await owner.query('ALTER TABLE audit_entries DISABLE TRIGGER audit_entries_recorded_now');
+    try {
+      const entry = await owner.query<{ day: string }>(
+        `INSERT INTO audit_entries (recorded_at, operating_day, correlation_id, actor_kind,
+                                    actor_ref, action, record_type, record_id)
+         VALUES ($1, '1999-01-01', gen_random_uuid(), 'carrier', 'bosta', 'stock_receipt.voided',
+                 'stock_receipt', gen_random_uuid())
+         RETURNING to_char(operating_day, 'YYYY-MM-DD') AS day`,
+        [instant],
+      );
+      expect(entry.rows[0]?.day).toBe('2026-01-15');
+    } finally {
+      await owner.query('ALTER TABLE audit_entries ENABLE TRIGGER audit_entries_recorded_now');
+      await setCutoff(0);
+    }
+  });
+
+  it('stamps exactly the tables of the A3 list', async () => {
+    const { rows } = await owner.query<{ table: string; source: string }>(
+      `SELECT c.relname AS "table",
+              encode(t.tgargs, 'escape') AS source
+       FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+       WHERE NOT t.tgisinternal AND t.tgname LIKE '%\\_stamp\\_operating\\_day'
+       ORDER BY 1`,
+    );
+    expect(rows.map((row) => `${row.table}.${row.source.replace(/\\000$/, '')}`)).toEqual([
+      'audit_entries.recorded_at',
+      'credit_entries.effective_at',
+      'movement_groups.effective_at',
+      'order_events.occurred_at',
+      'orders.placed_at',
+      'stock_movements.effective_at',
+      'tasks.created_at',
+    ]);
+  });
 });

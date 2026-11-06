@@ -20,4 +20,10 @@ describe('visibleNavItems (AC-25)', () => {
     expect(ids()).not.toContain('locations');
     expect(ids('staff')).toContain('skus');
   });
+
+  it('shows Audit trail to an administrator only', () => {
+    expect(ids('admin')).toContain('audit');
+    expect(ids('staff')).not.toContain('audit');
+    expect(ids()).not.toContain('audit');
+  });
 });

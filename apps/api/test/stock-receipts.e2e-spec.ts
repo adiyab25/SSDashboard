@@ -455,7 +455,13 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
     const posted = await receiveOne(warehouse.id, sku.id, 10, '5');
 
     expect((await voidReceipt(posted.id, staff)).status).toBe(403);
-    expect((await voidReceipt(posted.id, admin, '')).body).toMatchObject({ code: 'INVALID_INPUT' });
+    // A blank reason is refused by the audit reason policy (spec 0010, AC-5); too long is still 400.
+    const blank = await voidReceipt(posted.id, admin, '  ');
+    expect(blank.status).toBe(422);
+    expect(blank.body).toMatchObject({ code: 'REASON_REQUIRED' });
+    expect((await voidReceipt(posted.id, admin, 'x'.repeat(501))).body).toMatchObject({
+      code: 'INVALID_INPUT',
+    });
 
     const voided = await voidReceipt(posted.id);
     expect(voided.status).toBe(200);
