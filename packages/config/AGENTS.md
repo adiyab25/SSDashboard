@@ -15,7 +15,7 @@ Shared configuration every workspace extends: TypeScript presets, ESLint rules, 
 | `eslint/base.js` | Shared rules for every workspace, including the spec 0007 conventions: `jsdoc/require-jsdoc` (`REQUIRE_JSDOC`, publicOnly, no fixer) and `tsdoc/syntax` on `.ts`/`.tsx`, and `unicorn/filename-case` (kebab case, `[param]` and `(group)` names kept). `TSDOC_EXEMPT_FILES` (specs, `*.test-support.ts(x)` (the deliberate home of test helpers: the word `utils` is banned, so name them `<thing>.test-support.ts`), `e2e/`, `__fixtures__/`, `.d.ts`, `*.config.ts`, `vitest.setup.ts`) skips TSDoc and the one component rule |
 | `eslint/react.js`, `eslint/next.js` | ESLint for React packages and the Next app: the base rules plus jsx-a11y and `react/no-multi-comp` (one component per `.tsx` file; `packages/ui/src/components/**` exempt by ADR 0001) |
 | `eslint/i18n.js` | The web's i18n rules: no raw text in JSX or labelling attributes, no `toLocale*` or `new Intl.*` outside `src/i18n/format.ts` |
-| `src/redaction.ts` | The personal data redaction list and the pure `redact` function (Law 151, spec 0007); built to `dist/`, imported as `@ssdashboard/config/redaction` by the api logger and later by pino and the error tracker |
+| `src/redaction.ts` | The personal data redaction list, `ROW_MARKER_RULES` (a bare `name`, `reason`, or `payload` is redacted only on a row that one table's own keys identify), and the pure `redact` function (Law 151, spec 0007); built to `dist/`, imported as `@ssdashboard/config/redaction` by the api logger and later by pino and the error tracker |
 | `scripts/check-logical-css.mjs` | Fails `lint` on physical side styles in `packages/ui` and `apps/web` (spec 0003); its tests and planted fixtures sit beside it |
 | `scripts/check-module-readmes.mjs` | Fails `lint` when an api module, web feature folder, or package lacks a README with the five headings of `docs/templates/module-readme.md` (spec 0007) |
 | `scripts/check-route-groups.mjs` | Fails `lint` on any top level route group in `apps/web/src/app` other than `(backoffice)`, `(portal)`, `(partner)`, `(auth)` |
@@ -36,7 +36,7 @@ pnpm lint:repo                           # the repo wide checks; `pnpm lint` run
 
 ## Conventions
 
-- Emptying or trimming `PERSONAL_DATA_KEYS` in `src/redaction.ts` leaks customer data into logs; its test is `apps/api/src/platform/logging/redacting-logger.spec.ts`. Build this package (`pnpm --filter @ssdashboard/config build`) before testing the api against a changed list.
+- Emptying or trimming `PERSONAL_DATA_KEYS` in `src/redaction.ts` leaks customer data into logs. Its tests are `apps/api/src/platform/logging/redacting-logger.spec.ts` and `scripts/redaction-keys.test.mjs` (the order, customer, and task keys). The key test imports `../dist/redaction.js`, so run `pnpm --filter @ssdashboard/config test`, which builds first. Build this package (`pnpm --filter @ssdashboard/config build`) before testing the api against a changed list.
 - Loosening an option here loosens it everywhere. Keep `strict` and `noUncheckedIndexedAccess` on; override per workspace only with a reason in a comment.
 - A line the logical CSS check must skip carries `logical-css-ignore: <reason>` on it or the line above; `ltr:` and `rtl:` scoped utilities are always allowed.
 

@@ -24,7 +24,7 @@ A customer is a normalized Egyptian phone number. One customer holds many phones
 One value object, `EgyptianPhone.parse(raw: string)` in `packages/contracts/src/customers/egyptian-phone.ts`, used by every input edge (Shopify import, portal lookup, confirmation queue, imports, staff forms). It returns `{ e164, kind }` or throws `InvalidPhone`. Steps, in order:
 
 1. Replace Arabic Indic digits (U+0660 to U+0669) and Eastern Arabic Indic digits (U+06F0 to U+06F9) with ASCII `0` to `9`.
-2. Remove spaces, non breaking spaces, `-`, `.`, `(`, `)`, `/`, and the direction and zero width marks (U+200B to U+200F, U+202A to U+202E, U+2066 to U+2069, U+FEFF). Keep one leading `+` if present. Any other character left means `InvalidPhone`.
+2. Remove spaces, non breaking spaces, `-`, `.`, `(`, `)`, `/`, and the direction and zero width marks (U+200B to U+200F, U+202A to U+202E, U+2066 to U+2069, U+FEFF, and, added at the build, U+061C, U+2060, U+00AD, which Arabic keyboards and copied text carry). Keep one leading `+` if present. Any other character left means `InvalidPhone`.
 3. Turn an international prefix into `+`: a leading `00` becomes `+`.
 4. Apply the Egyptian rules to what is left:
 
@@ -37,6 +37,7 @@ One value object, `EgyptianPhone.parse(raw: string)` in `packages/contracts/src/
 | `+201XXXXXXXXX` | already normalized | as is |
 | `+` then exactly 10 digits matching `1[0125]` plus 8 digits (came from `0010...`, `0011...`, `0012...`, `0015...`: the national number with its zero doubled) | doubled zero, **Assumed** reading of the final plan's "0010" form | `+20` then those 10 digits |
 | `0[2-9]X...` (9 or 10 digits, not starting `01`) | national landline | `+20` without the zero, kind `landline` |
+| `+20` then 8 or 9 digits starting `[2-9]`, the national landline without its zero (added at the build, 2026-11-06, so a normalized landline parses again: Shopify sends E.164) | landline already normalized | as is, kind `landline` |
 | `+` then a country code other than `20`, 8 to 15 digits in all | foreign number | as is, kind `foreign` |
 | anything else | | `InvalidPhone` |
 
@@ -50,6 +51,7 @@ The doubled zero row looks like the North American country code `+1`, but a Nort
 - **Reads resolve the canonical customer.** `CustomersService.canonicalOf(id)` follows `merged_into_id` once; `CustomersService.idsOf(canonicalId)` returns the canonical id plus every id merged into it. A phone or external id lookup lands on its row's customer and resolves to the canonical one. Other modules query their own tables with `customer_id = ANY(:ids)` for a timeline, a credit balance, or a risk check.
 - **Canonical values**: the canonical customer's phones are the union over its ids; the risk flag is the canonical row's, or else any flag found on its ids (`fake` before `abusive` before `refuser` before `returner`); the name is the canonical row's. One phone, one customer (decided default 10) means a flag covers everyone ordering on that phone, which is what a brand's blacklist does today.
 - **Undo** is a new `customer_merges` row (`action = 'undo'`, `undoes_merge_id`) that clears `merged_id.merged_into_id` and moves the `repointed_ids` back to `merged_id`. Undoing a merge whose survivor has since been merged into a third customer is refused with `MergeNotLatest` (undo the later merge first), so pointers are always restored exactly.
+- **The database guards the undo** (added at the build, 2026-11-06): an insert trigger refuses an undo row whose `undoes_merge_id` is not a `merge` row with the same `survivor_id` and `merged_id`, so an append only row can never point at the wrong merge.
 - **Locking**: a merge and an undo take the transaction advisory lock of each affected customer id (ascending), in namespace `customer`, the same lock credit writes take below, so a credit consumption never runs against a half merged customer.
 
 ## Customer credit ledger
@@ -131,7 +133,7 @@ A reversal has the original's `kind` and `funding`, the negated amount, and `rev
 
 ## Critical test scenarios
 
-- Normalization: `01001234567`, `٠١٠٠١٢٣٤٥٦٧` (Arabic Indic), `۰۱۰۰۱۲۳۴۵۶۷` (Eastern), `+20 100 123 4567`, `00201001234567`, `+2001001234567`, `201001234567`, `1001234567`, and `0010 0123 4567` with a right to left mark all give `+201001234567`; `0131234567` and `abc` raise `InvalidPhone`; `+971501234567` is `foreign`; `0223456789` is `landline`, verifies **AC-27**.
+- Normalization: `01001234567`, `٠١٠٠١٢٣٤٥٦٧` (Arabic Indic), `۰۱۰۰۱۲۳۴۵۶۷` (Eastern), `+20 100 123 4567`, `00201001234567`, `+2001001234567`, `201001234567`, `1001234567`, and `0010 0123 4567` with a right to left mark all give `+201001234567`; `0131234567` and `abc` raise `InvalidPhone`; `+971501234567` is `foreign`; `0223456789` is `landline`; `parse(parse(x).e164)` equals `parse(x)` for every row (round trip), verifies **AC-27**.
 - The same phone on two Shopify stores' customers resolves to one customer with two external ids; a second customer with an existing phone fails the unique key; a risk flag without a source fails its check, verifies **AC-27**.
 - Merges: `UPDATE` and `DELETE` on `customer_merges` fail; a second undo of one merge fails the unique key; an undo row without `undoes_merge_id` fails its check; `merged_into_id = id` fails, verifies **AC-28**, **AC-33**.
 - (feature 14) Merge B into A, then C (with B already merged into it) into A: lookups by B's and C's phones land on A, A's id set has three ids; undo the second merge restores C and B's pointer to C; undoing the first while the second is live raises `MergeNotLatest`; no `orders` or `credit_entries` row changed, verifies **AC-28**.

@@ -29,12 +29,12 @@ BEGIN
 END;
 $$;--> statement-breakpoint
 
--- The ledger history is append only (AC-2, AC-33). The application role cannot UPDATE, DELETE,
--- or TRUNCATE these tables (revokes below); this trigger function is the second guard, for every
--- role, the owner included.
+-- The history tables are append only (AC-2, AC-33). The application role cannot UPDATE, DELETE,
+-- or TRUNCATE them (revokes below); this trigger function is the second guard, for every role,
+-- the owner included. A correction is always a new row (a reversal, a later event, an undo).
 CREATE FUNCTION "ssd_reject_change"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
-  RAISE EXCEPTION '% is append only: % is not allowed. Correct it with a reversal posting.', TG_TABLE_NAME, TG_OP
+  RAISE EXCEPTION '% is append only: % is not allowed. Correct it with a new row.', TG_TABLE_NAME, TG_OP
     USING ERRCODE = 'restrict_violation';
 END;
 $$;--> statement-breakpoint
@@ -51,6 +51,13 @@ CREATE TRIGGER "stock_receipt_lines_no_truncate" BEFORE TRUNCATE ON "stock_recei
 -- Cost records are write once (spec 0002, A4): a correction is a newer record.
 CREATE TRIGGER "cost_records_append_only" BEFORE UPDATE OR DELETE ON "cost_records" FOR EACH ROW EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
 CREATE TRIGGER "cost_records_no_truncate" BEFORE TRUNCATE ON "cost_records" FOR EACH STATEMENT EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
+
+-- Order events are write once (spec 0002, A4): a correction is a later event.
+CREATE TRIGGER "order_events_append_only" BEFORE UPDATE OR DELETE ON "order_events" FOR EACH ROW EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
+CREATE TRIGGER "order_events_no_truncate" BEFORE TRUNCATE ON "order_events" FOR EACH STATEMENT EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
+-- Customer merges are write once (spec 0002, A4): a merge is corrected by an undo row.
+CREATE TRIGGER "customer_merges_append_only" BEFORE UPDATE OR DELETE ON "customer_merges" FOR EACH ROW EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
+CREATE TRIGGER "customer_merges_no_truncate" BEFORE TRUNCATE ON "customer_merges" FOR EACH STATEMENT EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
 
 -- The operating day (spec 0002, A3): the brand's local calendar day of an instant, with an
 -- optional cutoff hour (an order at 01:30 with cutoff 2 belongs to the previous day). It reads the
@@ -78,6 +85,18 @@ END;
 $$;--> statement-breakpoint
 CREATE TRIGGER "movement_groups_stamp_operating_day" BEFORE INSERT OR UPDATE OF "effective_at" ON "movement_groups" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('effective_at');--> statement-breakpoint
 CREATE TRIGGER "stock_movements_stamp_operating_day" BEFORE INSERT OR UPDATE OF "effective_at" ON "stock_movements" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('effective_at');--> statement-breakpoint
+CREATE TRIGGER "orders_stamp_operating_day" BEFORE INSERT OR UPDATE OF "placed_at" ON "orders" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('placed_at');--> statement-breakpoint
+CREATE TRIGGER "order_events_stamp_operating_day" BEFORE INSERT OR UPDATE OF "occurred_at" ON "order_events" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('occurred_at');--> statement-breakpoint
+-- An order is the first updatable stamped table: its operating day changes only through placed_at
+-- (security review m3, m1). The guard runs before the stamp trigger (triggers fire in name order),
+-- so a placed_at change still restamps the day. A day is never restated otherwise.
+CREATE FUNCTION "orders_reject_operating_day_change"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  RAISE EXCEPTION 'orders_operating_day_follows_placed_at: the operating day of order % changes only with placed_at', OLD.id
+    USING ERRCODE = 'restrict_violation', CONSTRAINT = 'orders_operating_day_follows_placed_at';
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER "orders_operating_day_follows_placed_at" BEFORE UPDATE ON "orders" FOR EACH ROW WHEN (OLD."operating_day" IS DISTINCT FROM NEW."operating_day" AND OLD."placed_at" IS NOT DISTINCT FROM NEW."placed_at") EXECUTE FUNCTION "orders_reject_operating_day_change"();--> statement-breakpoint
 
 -- A location's owner type and party are fixed for its life (spec 0002, A13). A showroom that
 -- closes, or a partner that becomes a wholesale customer, gets a new location.
@@ -103,6 +122,24 @@ END;
 $$;--> statement-breakpoint
 CREATE TRIGGER "movement_groups_no_reversal_of_reversal" BEFORE INSERT ON "movement_groups" FOR EACH ROW EXECUTE FUNCTION "movement_groups_reject_reversal_of_reversal"();--> statement-breakpoint
 
+-- An undo names a merge of the same two customers (spec 0002, customers child, "The database
+-- guards the undo"), so an append only undo row can never point at the wrong merge. An undo with
+-- no target is left to the check customer_merges_undo_names_merge.
+CREATE FUNCTION "customer_merges_reject_mismatched_undo"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NEW.action = 'undo' AND NEW.undoes_merge_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.customer_merges m
+     WHERE m.id = NEW.undoes_merge_id AND m.action = 'merge'
+       AND m.survivor_id = NEW.survivor_id AND m.merged_id = NEW.merged_id
+  ) THEN
+    RAISE EXCEPTION 'customer_merges_undo_matches: undo % must name a merge of the same survivor and merged customer', NEW.id
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'customer_merges_undo_matches';
+  END IF;
+  RETURN NEW;
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER "customer_merges_undo_matches" BEFORE INSERT ON "customer_merges" FOR EACH ROW EXECUTE FUNCTION "customer_merges_reject_mismatched_undo"();--> statement-breakpoint
+
 -- At most one open discrepancy per balance and kind (AC-11). Drizzle cannot express a partial
 -- unique index with NULLS NOT DISTINCT. It leads with tenant_id because `kind` is not a uuid.
 CREATE UNIQUE INDEX "stock_level_discrepancies_open_unique" ON "stock_level_discrepancies" ("tenant_id","kind","variant_id","location_id","bin_id","lot_id") NULLS NOT DISTINCT WHERE "resolved_at" IS NULL;--> statement-breakpoint
@@ -122,9 +159,11 @@ BEGIN
   EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', app_role);
   EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I', app_role);
   -- Append only history (A4): the app role inserts and reads, never changes.
-  EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON "movement_groups", "stock_movements", "movement_serials", "stock_receipt_lines", "cost_records" FROM %I', app_role);
+  EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON "movement_groups", "stock_movements", "movement_serials", "stock_receipt_lines", "cost_records", "order_events", "customer_merges" FROM %I', app_role);
   -- Receipts are never deleted; the app role keeps UPDATE for the void columns (spec 0006).
   EXECUTE format('REVOKE DELETE, TRUNCATE ON "stock_receipts" FROM %I', app_role);
+  -- Outbound commands are the single truth for open edits: a failed one is resolved, never removed.
+  EXECUTE format('REVOKE DELETE, TRUNCATE ON "outbound_commands" FROM %I', app_role);
   -- The owner type policy is read only for the app role until feature 9 grants editing back.
   EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "location_owner_policies" FROM %I', app_role);
   -- Only migrate writes the install row.
@@ -155,4 +194,10 @@ INSERT INTO "locations" ("code", "name", "kind", "owner_type", "is_sellable") VA
 INSERT INTO "location_owner_policies" ("owner_type", "stock_owned_by_brand", "handover_is_sale", "sale_recorded_at", "end_customer_refund_by", "defective_piece_refund_by", "tax_document", "settlement_owner_type", "can_sell_online") VALUES
   ('own', true, false, 'at_shipment', 'brand', 'brand', 'b2c_electronic_receipt', NULL, true),
   ('consignment_partner', true, false, 'at_sell_through', 'location_owner', 'brand', 'b2b_electronic_invoice_at_settlement', 'consignment_partner', false),
-  ('wholesale_customer', false, true, 'at_handover', 'location_owner', 'location_owner', 'b2b_electronic_invoice_at_handover', NULL, false);
+  ('wholesale_customer', false, true, 'at_handover', 'location_owner', 'location_owner', 'b2b_electronic_invoice_at_handover', NULL, false);--> statement-breakpoint
+-- The internal store for manual, landing page, and WhatsApp orders, and the manual channel that
+-- lands in it (spec 0002, orders child).
+INSERT INTO "stores" ("code", "name", "public_name", "kind") VALUES
+  ('MAIN', '{"en": "Main store", "ar": "المتجر الرئيسي"}', '{"en": "Main store", "ar": "المتجر الرئيسي"}', 'internal');--> statement-breakpoint
+INSERT INTO "channels" ("code", "name", "kind", "default_store_id")
+  SELECT 'manual', '{"en": "Manual", "ar": "يدوي"}', 'manual', "id" FROM "stores" WHERE "code" = 'MAIN';

@@ -31,6 +31,8 @@ pnpm --filter @ssdashboard/db test:e2e           # Against Postgres from deploy/
 ## Gotchas
 
 - Never edit or delete a migration that has shipped. Fix forward with a new one.
+- `order_events` and `customer_merges` are append only, like the ledger: `0002_baseline_rules.sql` has their triggers and the revoke. A correction is a new row.
+- `orders.operating_day` and `order_events.operating_day` come from the `ssd_stamp_operating_day` trigger. Writers never pass them. The seeds are the store `MAIN` and the channel `manual` (default store `MAIN`), both in `0002_baseline_rules.sql`.
 - Each migration runs in a transaction. Anything that cannot (`CREATE INDEX CONCURRENTLY`) goes in its own small migration that is safe to run twice.
 - Expand and contract: add the new column, move data in SQL, drop the old one at least one minor release later.
 - Extensions keep their own tables in their own schema and never migrate core tables.

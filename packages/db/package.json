@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@ssdashboard/config": "workspace:*",
+    "@ssdashboard/contracts": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "drizzle-kit": "catalog:",

@@ -85,6 +85,23 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   'whatsappmessage',
   'telegrammessage',
   'telegramtext',
+  // Orders, customers, and tasks tables (spec 0002 amendment). Bare `name`, `reason`, `payload`
+  // are NOT global keys: products, staff, and operational lines (lockout and void reasons) carry
+  // them. They are redacted only on rows a `ROW_MARKER_RULES` entry identifies. `tasks.note` is
+  // covered by `note` above, and `risk_flag_note` is listed because it is free text.
+  'shiptoname',
+  'shiptophone',
+  'shiptophonealt',
+  'contactphoneraw',
+  'phonee164',
+  'shiptoaddress',
+  // Decision (security n2): the carrier's geography codes stay redacted. With the area list they
+  // narrow a person to a zone, and a log line never needs them.
+  'shiptogovernoratecode',
+  'shiptocitycode',
+  'shiptozonecode',
+  'couriernote',
+  'riskflagnote',
 ];
 
 /**
@@ -136,10 +153,46 @@ export const CONTACT_MARKER_KEYS: readonly string[] = [
   'firstname',
   'lastname',
   'fullname',
+  'phonee164',
+  'shiptophone',
+  'shiptoname',
 ];
 
 /** The generic keys redacted in an object that has a contact marker. */
-const CONTACT_IDENTITY_KEYS: ReadonlySet<string> = new Set(['name', 'email']);
+const CONTACT_IDENTITY_KEYS: readonly string[] = ['name', 'email'];
+
+/**
+ * A row that one table owns, found by keys only that table's row has. When an object matches,
+ * the generic keys in `redact` (a bare `name`, `reason`, `payload`) are personal in THAT object
+ * only. `identifiedBy` lists alternatives; each alternative is a set of keys that must all be
+ * present. Keys are normalized like `PERSONAL_DATA_KEYS`.
+ */
+export interface RowMarkerRule {
+  /** Any one alternative matching marks the row; each alternative needs all of its keys. */
+  readonly identifiedBy: readonly (readonly string[])[];
+  /** Keys redacted in a marked row. */
+  readonly redact: readonly string[];
+}
+
+/**
+ * The owner aware rows (security-data-model-m3 MJ1): `customers` (`name`), `customer_merges`
+ * (`reason`), and `outbound_commands` (`payload`, `failure_reason`). Matching works for snake or
+ * camel case, bare, nested under any key, and inside arrays.
+ */
+export const ROW_MARKER_RULES: readonly RowMarkerRule[] = [
+  {
+    identifiedBy: [['mergedintoid'], ['riskflagsource'], ['riskflagnote'], ['riskflag']],
+    redact: ['name'],
+  },
+  {
+    identifiedBy: [['survivorid'], ['mergedid'], ['undoesmergeid'], ['repointedids']],
+    redact: ['reason'],
+  },
+  {
+    identifiedBy: [['idempotencykey', 'linkedtype'], ['syncstate']],
+    redact: ['payload', 'failurereason'],
+  },
+];
 
 /**
  * Phone shaped text, matched on text whose Arabic-Indic digits are already folded to Western:
@@ -198,6 +251,8 @@ export interface RedactionRules {
   readonly paths: readonly string[];
   /** Keys that make an object a contact record (see `CONTACT_MARKER_KEYS`). */
   readonly contactMarkers: readonly string[];
+  /** Owner aware rows (see `ROW_MARKER_RULES`); none when omitted. */
+  readonly rowMarkers?: readonly RowMarkerRule[];
 }
 
 /** The rules every sink uses unless a test passes its own. */
@@ -205,6 +260,7 @@ export const DEFAULT_REDACTION_RULES: RedactionRules = {
   keys: PERSONAL_DATA_KEYS,
   paths: PERSONAL_DATA_PATHS,
   contactMarkers: CONTACT_MARKER_KEYS,
+  rowMarkers: ROW_MARKER_RULES,
 };
 
 const MAX_DEPTH = 24;
@@ -216,7 +272,17 @@ const MAX_DEPTH = 24;
  */
 export function createRedactor(rules: RedactionRules): (value: unknown) => unknown {
   const keySet = new Set(rules.keys.map(normalizeKey));
-  const markerSet = new Set(rules.contactMarkers.map(normalizeKey));
+  // The contact markers are one row rule per marker: any one of them marks the row.
+  const compiled = [
+    {
+      identifiedBy: rules.contactMarkers.map((marker) => [normalizeKey(marker)]),
+      redact: new Set(CONTACT_IDENTITY_KEYS),
+    },
+    ...(rules.rowMarkers ?? []).map((rule) => ({
+      identifiedBy: rule.identifiedBy.map((alternative) => alternative.map(normalizeKey)),
+      redact: new Set(rule.redact.map(normalizeKey)),
+    })),
+  ];
   const pathSegments = rules.paths.map((p) => p.split('.').map(normalizeKey));
 
   function pathMatches(path: readonly string[]): boolean {
@@ -252,16 +318,18 @@ export function createRedactor(rules: RedactionRules): (value: unknown) => unkno
       const isError = value instanceof Error;
       const source = value as Record<string, unknown>;
       const keys = Object.keys(source);
-      const isContact = keys.some((k) => markerSet.has(normalizeKey(k)));
+      const present = new Set(keys.map(normalizeKey));
+      const rowKeys = new Set<string>();
+      for (const rule of compiled) {
+        if (rule.identifiedBy.some((alternative) => alternative.every((k) => present.has(k)))) {
+          for (const k of rule.redact) rowKeys.add(k);
+        }
+      }
       const result: Record<string, unknown> = {};
       for (const key of keys) {
         const normalized = normalizeKey(key);
         const childPath = [...path, normalized];
-        if (
-          keySet.has(normalized) ||
-          (isContact && CONTACT_IDENTITY_KEYS.has(normalized)) ||
-          pathMatches(childPath)
-        ) {
+        if (keySet.has(normalized) || rowKeys.has(normalized) || pathMatches(childPath)) {
           result[key] = REDACTED;
           continue;
         }

@@ -8,7 +8,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 
 - TypeScript presets: [tsconfig/base.json](tsconfig/base.json), [tsconfig/nextjs.json](tsconfig/nextjs.json), [tsconfig/node-library.json](tsconfig/node-library.json), [tsconfig/react-library.json](tsconfig/react-library.json)
 - ESLint rules, including the i18n rules: [eslint/](eslint/)
-- The personal data redaction list and `redact` function, shared by every log and error sink: [src/redaction.ts](src/redaction.ts)
+- The personal data redaction list and `redact` function, shared by every log and error sink: [src/redaction.ts](src/redaction.ts). Its key test, [scripts/redaction-keys.test.mjs](scripts/redaction-keys.test.mjs), covers the order, customer, and task keys.
 - The logical CSS check that fails `lint` on physical side styles: [scripts/check-logical-css.mjs](scripts/check-logical-css.mjs)
 - The commit subject and branch name checks, shared by the `.husky/commit-msg` hook and the CI `conventions` job: [scripts/check-commit-subject.mjs](scripts/check-commit-subject.mjs), [scripts/check-branch-name.mjs](scripts/check-branch-name.mjs)
 
@@ -24,9 +24,9 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 pnpm --filter @ssdashboard/config test
 ```
 
-The redaction function is tested through the api logger: `pnpm --filter @ssdashboard/api test -- src/platform/logging`.
+The redaction function is tested through the api logger, in [apps/api/src/platform/logging/redacting-logger.spec.ts](../../apps/api/src/platform/logging/redacting-logger.spec.ts): `pnpm --filter @ssdashboard/api test -- src/platform/logging`. Its key test, [scripts/redaction-keys.test.mjs](scripts/redaction-keys.test.mjs), runs in this package.
 
-This runs `node --test` on [scripts/check-logical-css.test.mjs](scripts/check-logical-css.test.mjs) and [eslint/i18n.test.mjs](eslint/i18n.test.mjs).
+The package `test` script first builds `dist/` (`tsc -p tsconfig.build.json`), because the redaction key test imports `../dist/redaction.js`. Then it runs `node --test` on the redaction key test, on the test file of every check script (for example [scripts/check-logical-css.test.mjs](scripts/check-logical-css.test.mjs)), and on [eslint/i18n.test.mjs](eslint/i18n.test.mjs).
 
 ## Governing spec
 

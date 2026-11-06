@@ -308,6 +308,48 @@ describe('core data model schema (spec 0002)', () => {
           params: [receipt.id],
         };
       },
+      order_events: async () => {
+        counter += 1;
+        const order = await one<{ id: string }>(
+          owner,
+          `INSERT INTO orders (store_id, channel_id, order_number, placed_at, fulfillment_state, cash_state, outcome, payment_method)
+           VALUES ((SELECT id FROM stores WHERE code = 'MAIN'), (SELECT id FROM channels WHERE code = 'manual'),
+                   $1, now(), 'new', 'nothing_to_collect', 'open', 'none') RETURNING id`,
+          [`AO-${counter}`],
+        );
+        const event = await one<{ id: string }>(
+          owner,
+          `INSERT INTO order_events (order_id, machine, to_state, actor_type, occurred_at)
+           VALUES ($1, 'fulfillment', 'new', 'system_job', now()) RETURNING id`,
+          [order.id],
+        );
+        return {
+          update: "UPDATE order_events SET to_state = 'confirmed' WHERE id = $1",
+          remove: 'DELETE FROM order_events WHERE id = $1',
+          params: [event.id],
+        };
+      },
+      customer_merges: async () => {
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('M', $1) RETURNING id",
+          [`merge-${counter}@example.test`],
+        );
+        const merge = await one<{ id: string }>(
+          owner,
+          `WITH survivor AS (INSERT INTO customers DEFAULT VALUES RETURNING id),
+                merged AS (INSERT INTO customers DEFAULT VALUES RETURNING id)
+           INSERT INTO customer_merges (action, survivor_id, merged_id, actor_id)
+           SELECT 'merge', survivor.id, merged.id, $1 FROM survivor, merged RETURNING id`,
+          [user.id],
+        );
+        return {
+          update: "UPDATE customer_merges SET reason = 'x' WHERE id = $1",
+          remove: 'DELETE FROM customer_merges WHERE id = $1',
+          params: [merge.id],
+        };
+      },
     };
 
     it.each(Object.keys(seeds))('refuses UPDATE, DELETE, and TRUNCATE on %s', async (table) => {

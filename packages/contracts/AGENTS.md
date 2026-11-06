@@ -18,6 +18,10 @@ pnpm --filter @ssdashboard/contracts test   # test/*.spec.ts
 ## Conventions
 
 - One file per module's shapes (`src/health.ts`), re-exported from `src/index.ts`.
+- A module with several pure parts is a folder: `src/customers/` and `src/orders/`, one file per concern. Each file is re-exported from `src/index.ts`, so consumers import from the package root, not from the folder path.
+- The enums in `src/orders/` and `src/customers/` match the database enums of the same meaning (for example `FulfillmentState` and `orders.fulfillment_state`). Keep both in step in one change.
+- `deriveOrderOutcome` is the only place an order outcome is computed. Never set `orders.outcome` by hand.
+- `InvalidPhone` never carries the input text (Law 151). Never put raw phone text into an error message or a log line.
 - Schemas are the source of truth; export types with `z.infer`, never a hand written duplicate.
 - ESM with NodeNext resolution: relative imports need the `.js` suffix.
 - Money never touches a float. Amounts and unit costs cross boundaries as `numeric` text (`MoneyString`, `UnitCostString`) and are parsed into `Money` (cents) and `UnitCost` (ten thousandths) on bigints; every rounding is half away from zero, once. Line totals come from `LineAmounts.compute` (`src/money.ts`).

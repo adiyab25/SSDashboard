@@ -6,7 +6,7 @@ import { z } from 'zod';
  * a cost. Every rounding is half away from zero and happens once, at the end of a step.
  */
 
-/** Thrown when an amount, cost, quantity, or rate is malformed or out of range. */
+/** Thrown when an amount, cost, quantity, or rate is malformed or out of range. The message never repeats the input, which may be typed personal text and reaches logs. */
 export class InvalidAmountError extends Error {
   readonly code = 'InvalidAmount';
 }
@@ -25,10 +25,10 @@ export function mulDivRound(a: bigint, b: bigint, c: bigint): bigint {
 
 function parseScaled(value: string, scale: number, label: string): bigint {
   const match = /^(-)?(\d+)(?:\.(\d+))?$/.exec(value.trim());
-  if (!match) throw new InvalidAmountError(`${label} is not a decimal number: "${value}"`);
+  if (!match) throw new InvalidAmountError(`${label} is not a decimal number`);
   const [, sign, whole = '0', fraction = ''] = match;
   if (fraction.length > scale) {
-    throw new InvalidAmountError(`${label} has more than ${scale} decimals: "${value}"`);
+    throw new InvalidAmountError(`${label} has more than ${scale} decimals`);
   }
   const scaled = BigInt(whole + fraction.padEnd(scale, '0'));
   return sign ? -scaled : scaled;
@@ -59,7 +59,7 @@ export class Money {
   /** Parses text or a number with at most 2 decimals; throws `InvalidAmountError` otherwise. */
   static of(value: string | number): Money {
     if (typeof value === 'number' && !Number.isFinite(value)) {
-      throw new InvalidAmountError(`Amount is not finite: ${value}`);
+      throw new InvalidAmountError('Amount is not finite');
     }
     return new Money(parseScaled(String(value), 2, 'Amount'));
   }
@@ -173,7 +173,7 @@ export class Quantity {
   /** A whole number; throws `InvalidAmountError` for fractions, NaN, or unsafe integers. */
   static of(value: number): Quantity {
     if (!Number.isSafeInteger(value)) {
-      throw new InvalidAmountError(`Quantity must be a whole number: ${value}`);
+      throw new InvalidAmountError('Quantity must be a whole number');
     }
     return new Quantity(value);
   }
