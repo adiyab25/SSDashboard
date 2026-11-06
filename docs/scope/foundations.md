@@ -45,7 +45,7 @@ Visual language, layout primitives, and base components, shaped with the Impecca
 **Done when:** `design.md` covers type, color, spacing, and components; base components handle focus, keyboard, and right to left; there is a phone first pattern for the manager dashboard and a pattern for in screen help.
 - [x] Design it (spec): `/architect design system & UI foundation`
 - [ ] Build it: `/develop design system & UI foundation`
-  - [ ] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
+  - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
   - [ ] Status chips, provisional values, the freshness strip, and the floor density scope
   - [ ] Portal and partner frames with per brand theming
   - [ ] Phone first dashboard pattern and in screen help
