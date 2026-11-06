@@ -116,6 +116,36 @@ const EnvSchema = z
       .transform((value) => value.replace(/\/+$/, ''))
       .refine((value) => new URL(value).pathname === '/', 'PUBLIC_URL must not have a path'),
     /**
+     * The path prefix of the staff surface when it shares a host with the portal (spec 0005,
+     * AC-31): every staff cookie gets `Path=<STAFF_BASE_PATH>`, and email links are
+     * `PUBLIC_URL` + this + the route. Blank or unset means the staff surface is the whole host
+     * (`Path=/`). Read by the api (cookies) and the worker (email links).
+     */
+    STAFF_BASE_PATH: blankIsUnset(
+      z
+        .string()
+        .refine((value) => value.startsWith('/'), 'STAFF_BASE_PATH must start with /')
+        .refine((value) => !value.endsWith('/'), 'STAFF_BASE_PATH must not end with /')
+        .refine((value) => !value.includes('..'), 'STAFF_BASE_PATH must not contain ..')
+        .refine(
+          (value) => /^[A-Za-z0-9/._~-]*$/.test(value),
+          'STAFF_BASE_PATH may hold only letters, digits, and / . _ ~ -',
+        )
+        .optional(),
+    ).transform((value) => value ?? ''),
+    /**
+     * The public portal's origin (spec 0005, AC-30), when the install has one. Read by the api
+     * only: every `/api/auth/*` request that carries this host answers 404, so Better Auth is
+     * reachable on the staff host alone. Never a trusted origin. A trailing slash is dropped.
+     */
+    PORTAL_ORIGIN: blankIsUnset(
+      z
+        .url({ protocol: /^https?$/ })
+        .transform((value) => value.replace(/\/+$/, ''))
+        .refine((value) => new URL(value).pathname === '/', 'PORTAL_ORIGIN must not have a path')
+        .optional(),
+    ),
+    /**
      * Signs sessions and encrypts two factor secrets. Rotating it signs everyone out and makes
      * every enrolled two factor secret and backup code unreadable.
      */
@@ -150,6 +180,16 @@ const EnvSchema = z
     const need = (name: string, present: boolean, why: string) => {
       if (!present) ctx.addIssue({ code: 'custom', path: [name], message: why });
     };
+    // The portal host answers 404 on every auth route, so on the staff host it would lock
+    // everyone out (spec 0005, AC-30).
+    need(
+      'PORTAL_ORIGIN',
+      env.PORTAL_ORIGIN === undefined ||
+        !URL.canParse(env.PORTAL_ORIGIN) ||
+        !URL.canParse(env.PUBLIC_URL) ||
+        new URL(env.PORTAL_ORIGIN).host !== new URL(env.PUBLIC_URL).host,
+      'PORTAL_ORIGIN must be a different host from PUBLIC_URL',
+    );
     if (env.MAIL_DRIVER === 'none') return;
     need(
       'MAIL_FROM',

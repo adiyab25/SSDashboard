@@ -1,7 +1,7 @@
 import { Controller, Get, Inject } from '@nestjs/common';
 import type { HealthResponse } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
-import { Public } from '../auth/public.decorator.js';
+import { Public } from '../identity/sign-in/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';

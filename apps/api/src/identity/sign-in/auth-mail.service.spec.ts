@@ -1,8 +1,8 @@
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { describe, expect, it, vi } from 'vitest';
-import type { Env } from '../config/env.js';
-import type { MailProducer } from '../mail/mail-queue.js';
-import { PasswordResetCompleted } from '../platform/events/auth-events.js';
+import type { Env } from '../../config/env.js';
+import type { MailProducer } from '../../mail/mail-queue.js';
+import { PasswordResetCompleted } from '../../platform/events/auth-events.js';
 import type { AuthAudit } from './auth-audit.service.js';
 import { AuthMail } from './auth-mail.service.js';
 import type { SignInLockout } from './sign-in-lockout.js';

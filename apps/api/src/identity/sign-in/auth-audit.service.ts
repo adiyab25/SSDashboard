@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { describeError } from '../database/pg-error.js';
-import { eventName, type AuthEvent } from '../platform/events/auth-events.js';
+import { describeError } from '../../database/pg-error.js';
+import { eventName, type AuthEvent } from '../../platform/events/auth-events.js';
 
 /**
  * One structured log line and one domain event for every sign in outcome (spec 0005, AC-23).

@@ -5,11 +5,10 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from '@nestjs/common';
-import { sql, type Database, type DatabaseConnection } from '@ssdashboard/db';
 import { PgBoss, type Job } from 'pg-boss';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
-import { DATABASE } from '../database/database.module.js';
+import { MailRecipients } from '../identity/sign-in/mail-recipients.js';
 import { JOB_SCHEMA } from '../inventory/ledger/reconcile.job.js';
 import { SettingsService } from '../platform/settings.service.js';
 import { tokenFromIdentifier, tokenLink } from './mail-links.js';
@@ -18,37 +17,22 @@ import { renderMail } from './mail-templates.js';
 import { MAILER } from './mail.tokens.js';
 import type { Mailer } from './mailer.js';
 
-interface RecipientRow extends Record<string, unknown> {
-  name: string;
-  email: string;
-  language: string | null;
-  banned: boolean;
-}
-
-interface TokenRow extends Record<string, unknown> {
-  identifier: string;
-  expired: boolean;
-}
-
 /** Sends the queued emails in the `worker` entry point (spec 0005, AC-11). */
 @Injectable()
 export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger('Mail');
-  private readonly db: Database;
   private boss: PgBoss | undefined;
 
   /**
-   * Takes the env, the app database connection, the mailer (null when `MAIL_DRIVER` is none) and
-   * the settings service.
+   * Takes the env, identity's mail recipient reader (the recipient and token rows belong to
+   * identity), the mailer (null when `MAIL_DRIVER` is none) and the settings service.
    */
   constructor(
     @Inject(ENV) private readonly env: Env,
-    @Inject(DATABASE) connection: DatabaseConnection,
+    @Inject(MailRecipients) private readonly recipients: MailRecipients,
     @Inject(MAILER) private readonly mailer: Mailer | null,
     private readonly settings: SettingsService,
-  ) {
-    this.db = connection.db;
-  }
+  ) {}
 
   /**
    * Starts the queue and the send handler. Does nothing on an install without a mailer, because
@@ -97,14 +81,8 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
     const mailer = this.mailer;
     if (!mailer) return;
 
-    const people = await this.db.execute<RecipientRow>(
-      sql`SELECT name, email, language, banned FROM users WHERE id = ${userId}::uuid`,
-    );
-    const person = people.rows[0];
-    const tokens = await this.db.execute<TokenRow>(
-      sql`SELECT identifier, expires_at <= now() AS expired FROM verifications WHERE id = ${tokenId}::uuid`,
-    );
-    const row = tokens.rows[0];
+    const person = await this.recipients.recipient(userId);
+    const row = await this.recipients.token(tokenId);
     const token = row ? tokenFromIdentifier(row.identifier) : undefined;
 
     // The token was used, replaced by a newer one, deleted with a disable, or has expired since
@@ -120,7 +98,7 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
       language,
       name: person.name,
       clientName: this.env.CLIENT_DISPLAY_NAME,
-      link: tokenLink(this.env.PUBLIC_URL, token, kind),
+      link: tokenLink(`${this.env.PUBLIC_URL}${this.env.STAFF_BASE_PATH}`, token, kind),
     });
     await mailer.send({ to: person.email, ...mail });
     this.logger.log(`Sent a ${kind} email for ${userId}`);

@@ -1,8 +1,10 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { toNodeHandler } from 'better-auth/node';
 import type { NextFunction, Request, Response } from 'express';
+import type { Env } from '../../config/env.js';
 import { logAuthRequestFailure } from './auth-logger.js';
 import type { Auth } from './auth.tokens.js';
+import { isPortalRequest, portalHosts } from './portal-host.js';
 
 const BASE = '/api/auth';
 
@@ -32,13 +34,24 @@ type Mountable = {
 
 /**
  * Mounts Better Auth at `/api/auth`. It runs before any body parser, so Better Auth reads the
- * raw request itself. Better Auth routes skip the NestJS guard, hence the allowlist here.
+ * raw request itself. Better Auth routes skip the NestJS guard, hence the allowlist here. When
+ * `PORTAL_ORIGIN` is set, a request that carries the portal host answers 404 on every auth
+ * route (spec 0005, AC-30): sign in exists on the staff host only.
  */
-export function mountAuth(app: NestExpressApplication, auth: Auth): void {
+export function mountAuth(
+  app: NestExpressApplication,
+  auth: Auth,
+  env: Pick<Env, 'PORTAL_ORIGIN'>,
+): void {
   const handle = toNodeHandler(auth);
   const server = app.getHttpAdapter().getInstance() as Mountable;
+  const portal = portalHosts(env.PORTAL_ORIGIN);
 
   server.all(`${BASE}/*splat`, (req, res) => {
+    if (isPortalRequest(req.headers, portal)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Not found' });
+      return;
+    }
     const path = new URL(req.originalUrl, 'http://localhost').pathname
       .slice(BASE.length)
       .replace(/\/+$/, '');

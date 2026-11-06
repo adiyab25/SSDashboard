@@ -70,7 +70,7 @@ export type PostingInput = z.input<typeof PostingInput>;
 
 /**
  * The only schemas an HTTP route may validate a body with; the controller adds postedBy from the
- * signed in user (request.staff.id, see apps/api/src/auth/current-staff.ts). `.strict()` rejects
+ * signed in user (request.staff.id, see apps/api/src/identity/sign-in/current-staff.ts). `.strict()` rejects
  * any unknown top level key, postedBy included, instead of stripping it; the objects inside
  * `lines` are not strict.
  */

@@ -13,7 +13,7 @@ import {
 } from '@ssdashboard/contracts';
 import { CatalogService } from '../../catalog/catalog.service.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
-import { StaffDirectory } from '../../staff/staff-directory.js';
+import { StaffDirectory } from '../../identity/staff/staff-directory.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { LocationsService } from '../locations/locations.service.js';
 import { ReceiptsService } from '../receipts/receipts.service.js';

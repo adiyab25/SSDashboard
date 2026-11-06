@@ -131,7 +131,7 @@ The command prints the password to its standard output, and the app never logs i
 
 ## 4. Lockouts and abuse
 
-Limits (from `apps/api/src/auth/sign-in-lockout.ts`):
+Limits (from `apps/api/src/identity/sign-in/sign-in-lockout.ts`):
 
 | Rule | Limit | Lock |
 |---|---|---|

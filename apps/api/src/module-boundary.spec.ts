@@ -14,8 +14,9 @@ import { describe, expect, it } from 'vitest';
 const API_SRC = fileURLToPath(new URL('.', import.meta.url));
 const EXTENSIONS = fileURLToPath(new URL('../../../extensions', import.meta.url));
 
-// `auth` and `staff` are the identity module until feature 7 moves them into src/identity/.
-const FOLDER_MODULE: Record<string, string> = { auth: 'identity', staff: 'identity' };
+// A folder under apps/api/src whose name is not its module's name. Empty since feature 7 moved
+// `auth` and `staff` into src/identity/ (spec 0005, AC-27); add an entry only for such a folder.
+const FOLDER_MODULE: Record<string, string> = {};
 
 /** One table named where its module may not name it. */
 interface Breach {
@@ -224,18 +225,6 @@ const KNOWN_BREACHES: readonly { file: string; table: string; count: number; why
     why: 'the party role check reads parties directly; needs a partners module service',
   },
   {
-    file: 'apps/api/src/mail/mail.worker.ts',
-    table: 'users',
-    count: 1,
-    why: 'the mail job reads the recipient; needs an identity service',
-  },
-  {
-    file: 'apps/api/src/mail/mail.worker.ts',
-    table: 'verifications',
-    count: 1,
-    why: 'the mail job reads the token row; needs an identity service',
-  },
-  {
     file: 'apps/api/src/database/pg-error.spec.ts',
     table: 'users',
     count: 1,
@@ -262,6 +251,7 @@ describe('module boundary (spec 0002, A5)', () => {
     const paths = files.map((file) => file.path);
 
     expect(paths).toContain('apps/api/src/inventory/inventory.module.ts');
+    expect(paths).toContain('apps/api/src/identity/sign-in/mail-recipients.ts');
     expect(paths).toContain('apps/api/src/migrate.ts');
   });
 
@@ -301,11 +291,14 @@ describe('module boundary (spec 0002, A5)', () => {
   it('reports schema access, SQL names, and extensions, and allows a module its own tables', () => {
     const planted: SourceFile[] = [
       { path: 'apps/api/src/catalog/a.ts', text: 'db.insert(schema.stockMovements);' },
-      { path: 'apps/api/src/staff/b.ts', text: "q('UPDATE stock_levels SET on_hand = 0');" },
+      {
+        path: 'apps/api/src/identity/staff/b.ts',
+        text: "q('UPDATE stock_levels SET on_hand = 0');",
+      },
       { path: 'apps/api/src/credit/c.ts', text: 'sql`SELECT id FROM orders WHERE id = ${id}`;' },
       { path: 'extensions/acme/d.ts', text: "q('SELECT * FROM public.settings');" },
       {
-        path: 'apps/api/src/auth/e.ts',
+        path: 'apps/api/src/identity/sign-in/e.ts',
         text: "import { users, sessions } from '@ssdashboard/db';",
       },
       { path: 'apps/api/src/orders/f.ts', text: "throw new Error('two orders share a number');" },
@@ -314,7 +307,7 @@ describe('module boundary (spec 0002, A5)', () => {
 
     expect(breachesIn(planted).map((b) => `${b.file} ${b.table}`)).toEqual([
       'apps/api/src/catalog/a.ts stock_movements',
-      'apps/api/src/staff/b.ts stock_levels',
+      'apps/api/src/identity/staff/b.ts stock_levels',
       'apps/api/src/credit/c.ts orders',
       'extensions/acme/d.ts settings',
     ]);
@@ -369,6 +362,23 @@ describe('module boundary (spec 0002, A5)', () => {
     const breaches = breachesIn([{ path: 'apps/api/src/customers/planted.ts', text }]);
 
     expect(breaches.map((b) => b.table)).toEqual([table]);
+  });
+
+  it('keeps the auth tables to identity: mail reads them through MailRecipients (AC-27)', () => {
+    const breaches = breachesIn([
+      {
+        path: 'apps/api/src/mail/mail.worker.ts',
+        text: 'sql`SELECT identifier FROM verifications WHERE id = ${id}`;',
+      },
+      {
+        path: 'apps/api/src/identity/sign-in/mail-recipients.ts',
+        text: 'sql`SELECT name FROM users WHERE id = ${id}`;',
+      },
+    ]);
+
+    expect(breaches.map((b) => `${b.file} ${b.table} (${b.owner})`)).toEqual([
+      'apps/api/src/mail/mail.worker.ts verifications (identity)',
+    ]);
   });
 
   it('treats a file directly under apps/api/src as the app, which owns no tables', () => {
