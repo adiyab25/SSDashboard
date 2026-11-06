@@ -1,6 +1,7 @@
-import { unmetPasswordRules } from '@ssdashboard/contracts';
+import { PASSWORD_MAX_LENGTH, unmetPasswordRules } from '@ssdashboard/contracts';
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { hashPassword } from 'better-auth/crypto';
+import { z } from 'zod';
 import {
   AccountLocked,
   PasswordChanged,
@@ -13,7 +14,7 @@ import {
 import type { AuthAudit } from './auth-audit.service.js';
 import { clientIp, emailKey, userAgent } from './client-info.js';
 import { pastAbsoluteCap } from './session-policy.js';
-import type { SignInLockout } from './sign-in-lockout.js';
+import type { FailureOutcome, SignInLockout } from './sign-in-lockout.js';
 
 /** What a hook reads of Better Auth's request context; kept narrow so tests can fake it. */
 export interface HookContext {
@@ -45,8 +46,8 @@ export interface HookContext {
  */
 export interface AuthHookDeps {
   origin: string;
-  lockout: Pick<SignInLockout, 'isLocked' | 'recordFailure' | 'reset'>;
-  audit: Pick<AuthAudit, 'record'>;
+  lockout: Pick<SignInLockout, 'takeSlot' | 'giveBack' | 'reset'>;
+  audit: Pick<AuthAudit, 'record' | 'turnedAway'>;
   now?: () => Date;
   /** Waits this many milliseconds; replaced in tests. */
   sleep?: (ms: number) => Promise<void>;
@@ -71,6 +72,7 @@ const CODE_ROUTES = new Map([
   ],
 ]);
 const TWO_FACTOR_COOKIE = 'two_factor';
+const NO_LOCK: FailureOutcome = { pairLocked: false, emailLocked: false };
 interface Acting {
   id: string;
   email: string;
@@ -81,6 +83,8 @@ interface Acting {
 }
 /** Who is acting on a password or code route, from the before hook to the after hook. */
 const acting = new WeakMap<object, Acting>();
+/** The slot a request holds while its password or code is checked (AC-3), until the after hook. */
+const heldSlots = new WeakMap<object, string>();
 /** A reset request answers no faster than this, so the time cannot tell a real email from a fake one. */
 export const RESET_RESPONSE_FLOOR_MS = 500;
 /** When each reset request started, from the before hook to the after hook. */
@@ -101,6 +105,21 @@ const GENERIC_MESSAGE = 'Invalid email or password';
  */
 export const genericSignInError = () =>
   APIError.from('UNAUTHORIZED', { code: GENERIC_CODE, message: GENERIC_MESSAGE });
+
+/**
+ * A sign in body Better Auth 1.7.15 goes on to check (`/sign-in/email` in
+ * `better-auth/dist/api/routes/sign-in.mjs`): its body schema, then `z.email()` on the email and
+ * the maximum password length it is given (`PASSWORD_MAX_LENGTH`). That route sets no minimum, so
+ * a short password is a real, counted attempt. Any other body Better Auth refuses before checking
+ * anything, the same whether the email is locked or not, so it takes no slot (AC-3) and the no
+ * slot answer never hashes a password longer than the maximum.
+ */
+const wellFormedSignIn = z.object({
+  email: z.email(),
+  password: z.string().max(PASSWORD_MAX_LENGTH),
+  callbackURL: z.string().optional(),
+  rememberMe: z.boolean().optional(),
+});
 
 const bodyField = (body: unknown, name: string): string | undefined => {
   if (typeof body !== 'object' || body === null) return undefined;
@@ -145,7 +164,7 @@ export function forceRevokeOtherSessions(body: unknown): BeforeHookResult | unde
 /**
  * Runs before every Better Auth route that the allowlist lets through (spec 0005, AC-2, AC-3,
  * AC-7, AC-8): the Origin check, the weak password answer, the 7 day cap, the must change rule,
- * and the sign in lock. Routes our own guard protects never come here.
+ * and the sign in slot. Routes our own guard protects never come here.
  */
 export function createBeforeHook(deps: AuthHookDeps) {
   const now = deps.now ?? (() => new Date());
@@ -183,18 +202,23 @@ export function createBeforeHook(deps: AuthHookDeps) {
     }
 
     if (path === SIGN_IN) {
-      const email = bodyField(ctx.body, 'email');
-      if (email === undefined) return; // Better Auth answers a malformed body itself.
-      const key = emailKey(email);
-      if (await deps.lockout.isLocked(key, clientIp(requestHeaders(ctx)))) {
-        // Hash a password the way a real attempt would, so a lock cannot be told by timing.
-        await hashPassword(bodyField(ctx.body, 'password') ?? '');
+      const attempt = wellFormedSignIn.safeParse(ctx.body);
+      // Better Auth answers a malformed body itself, without checking a password.
+      if (!attempt.success) return;
+      const key = emailKey(attempt.data.email);
+      // The last step: once a slot is held, nothing here may throw before the after hook runs.
+      const taken = await deps.lockout.takeSlot(key, clientIp(requestHeaders(ctx)));
+      if (taken.slot === null) {
+        // No free slot answers like a lock, uncounted. Hash a password the way a real attempt
+        // would, so it cannot be told by timing.
+        await hashPassword(attempt.data.password);
         const found = await ctx.context.internalAdapter.findUserByEmail(key);
         deps.audit.record(
           new SignInFailed(eventContext(ctx, null, found?.user.id ?? null, now()), 'locked'),
         );
         throw genericSignInError();
       }
+      heldSlots.set(ctx.request, taken.slot);
       return;
     }
 
@@ -215,14 +239,17 @@ export function createBeforeHook(deps: AuthHookDeps) {
       const who: Acting = { id: session.user.id, email: session.user.email };
       acting.set(ctx.request, who);
       // A wrong current password counts toward the same lock as sign in (AC-3), so a stolen
-      // session cannot be used to guess the password. During a lock the answer is the same
+      // session cannot be used to guess the password. With no free slot the answer is the same
       // as for a wrong one.
-      if (await deps.lockout.isLocked(emailKey(who.email), clientIp(requestHeaders(ctx)))) {
+      const taken = await deps.lockout.takeSlot(emailKey(who.email), clientIp(requestHeaders(ctx)));
+      if (taken.slot === null) {
+        deps.audit.turnedAway(path, eventContext(ctx, who.id, who.id, now()), taken.locked);
         throw APIError.from('BAD_REQUEST', {
           code: 'INVALID_PASSWORD',
           message: 'Invalid password',
         });
       }
+      heldSlots.set(ctx.request, taken.slot);
     }
   }
 
@@ -277,10 +304,24 @@ export function createBeforeHook(deps: AuthHookDeps) {
     }
     if (!who || !ctx.request) return; // The route itself answers a missing challenge.
     acting.set(ctx.request, who);
-    if (await deps.lockout.isLocked(emailKey(who.email), clientIp(requestHeaders(ctx)))) {
-      if (who.challenge) await endChallenge(ctx, who.challenge);
+    const taken = await deps.lockout.takeSlot(emailKey(who.email), clientIp(requestHeaders(ctx)));
+    if (taken.slot === null) {
+      // Only a real lock ends the pending sign in; a full window just turns this code away.
+      if (taken.locked && who.challenge) await endChallenge(ctx, who.challenge);
+      // Recorded as the after hook records a wrong code: a sign in failure unless the person is
+      // confirming their first code, which AC-23 has no event for.
+      if (who.enrolling) {
+        deps.audit.turnedAway(
+          ctx.path ?? '',
+          eventContext(ctx, who.id, who.id, now()),
+          taken.locked,
+        );
+      } else {
+        deps.audit.record(new SignInFailed(eventContext(ctx, null, who.id, now()), 'locked'));
+      }
       throw APIError.from('UNAUTHORIZED', route);
     }
+    heldSlots.set(ctx.request, taken.slot);
   }
 
   /** The person behind a sign in that is waiting on a second factor, from the signed cookie. */
@@ -322,6 +363,20 @@ export function createAfterHook(deps: AuthHookDeps) {
     if (wait > 0) await sleep(wait);
   }
 
+  /**
+   * Counts a failure (AC-3). The request's slot is given back in the same transaction, so no
+   * reader sees the slot gone before the failure counts.
+   */
+  async function countFailure(ctx: HookContext, key: string, ip: string): Promise<FailureOutcome> {
+    const slot = ctx.request ? heldSlots.get(ctx.request) : undefined;
+    // Every route that counts takes a slot in the before hook, and one turned away never reaches
+    // the after hook, so a failure here always holds a slot. Without one there was no checked
+    // password or code to count.
+    if (slot === undefined || !ctx.request) return NO_LOCK;
+    heldSlots.delete(ctx.request);
+    return deps.lockout.giveBack(slot, { emailKey: key, ip });
+  }
+
   function lockEvents(
     ctx: HookContext,
     who: { id: string | null },
@@ -356,7 +411,7 @@ export function createAfterHook(deps: AuthHookDeps) {
       lockEvents(
         ctx,
         who,
-        await deps.lockout.recordFailure(emailKey(who.email), clientIp(requestHeaders(ctx))),
+        await countFailure(ctx, emailKey(who.email), clientIp(requestHeaders(ctx))),
       );
       return;
     }
@@ -379,10 +434,7 @@ export function createAfterHook(deps: AuthHookDeps) {
     const { returned } = ctx.context;
     if (returned instanceof APIError) {
       if (errorCode(returned) !== route.code) return;
-      const outcome = await deps.lockout.recordFailure(
-        emailKey(who.email),
-        clientIp(requestHeaders(ctx)),
-      );
+      const outcome = await countFailure(ctx, emailKey(who.email), clientIp(requestHeaders(ctx)));
       if (!who.enrolling) {
         deps.audit.record(
           new SignInFailed(eventContext(ctx, null, who.id, now()), 'bad_credentials'),
@@ -403,7 +455,30 @@ export function createAfterHook(deps: AuthHookDeps) {
   }
 
   return async function afterAuth(ctx: HookContext): Promise<void> {
-    if (ctx.request === undefined) return;
+    const { request } = ctx;
+    if (request === undefined) return;
+    let routeError: { error: unknown } | undefined;
+    try {
+      await afterRoute(ctx);
+    } catch (error) {
+      routeError = { error };
+    }
+    // Every ending that did not count a failure gives the slot back without counting (AC-3).
+    const slot = heldSlots.get(request);
+    if (slot !== undefined) {
+      heldSlots.delete(request);
+      try {
+        await deps.lockout.giveBack(slot);
+      } catch (giveBackError) {
+        // The hooks have no logger. An error already in flight is the one to report, so this one
+        // is dropped; the stale slot frees itself after `LOCKOUT.slotSeconds`.
+        if (!routeError) throw giveBackError;
+      }
+    }
+    if (routeError) throw routeError.error;
+  };
+
+  async function afterRoute(ctx: HookContext): Promise<void> {
     if (ctx.path === REQUEST_RESET) return afterResetRequest(ctx);
     if (ctx.path && PASSWORD_ROUTES.has(ctx.path)) return afterPasswordRoute(ctx);
     if (ctx.path && CODE_ROUTES.has(ctx.path)) return afterCode(ctx);
@@ -432,12 +507,12 @@ export function createAfterHook(deps: AuthHookDeps) {
       deps.audit.record(new SignInFailed(eventContext(ctx, null, targetId, now()), 'disabled'));
       return;
     }
-    const outcome = await deps.lockout.recordFailure(key, clientIp(requestHeaders(ctx)));
+    const outcome = await countFailure(ctx, key, clientIp(requestHeaders(ctx)));
     deps.audit.record(
       new SignInFailed(eventContext(ctx, null, targetId, now()), 'bad_credentials'),
     );
     lockEvents(ctx, { id: null }, outcome);
-  };
+  }
 }
 
 /** Wraps both hooks for Better Auth's `hooks` option. */

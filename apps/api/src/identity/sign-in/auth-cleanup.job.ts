@@ -30,6 +30,7 @@ export interface AuthCleanupCounts {
   sessions: number;
   verifications: number;
   signInAttempts: number;
+  signInSlots: number;
   rateLimits: number;
 }
 
@@ -78,7 +79,8 @@ export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShut
       const counts = await this.cleanup();
       this.logger.log(
         `Removed ${counts.sessions} sessions, ${counts.verifications} tokens, ` +
-          `${counts.signInAttempts} sign in counters, ${counts.rateLimits} rate limit counters.`,
+          `${counts.signInAttempts} sign in counters, ${counts.signInSlots} sign in slots, ` +
+          `${counts.rateLimits} rate limit counters.`,
       );
       return { ...counts };
     });
@@ -96,10 +98,15 @@ export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShut
       DELETE FROM sign_in_attempts
        WHERE (locked_until IS NULL OR locked_until <= now())
          AND window_started_at + make_interval(mins => ${LOCKOUT.windowMinutes}::int) <= now()`);
+    // Every request gives its slot back, so normally there are none: these are from requests
+    // that died, and already hold no place (AC-3).
+    const signInSlots = await count(sql`
+      DELETE FROM sign_in_slots
+       WHERE created_at <= clock_timestamp() - make_interval(secs => ${LOCKOUT.slotSeconds}::int)`);
     const rateLimits = await count(sql`
       DELETE FROM rate_limits
        WHERE last_request < (extract(epoch FROM now()) * 1000)::bigint - ${RATE_LIMIT_KEEP_MS}::bigint`);
-    return { sessions, verifications, signInAttempts, rateLimits };
+    return { sessions, verifications, signInAttempts, signInSlots, rateLimits };
   }
 
   /**

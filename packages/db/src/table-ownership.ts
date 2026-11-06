@@ -50,6 +50,7 @@ export const TABLE_OWNERSHIP = {
   verifications: 'identity',
   rate_limits: 'identity',
   sign_in_attempts: 'identity',
+  sign_in_slots: 'identity',
   two_factors: 'identity',
   hat_assignments: 'identity',
   permission_grants: 'identity',

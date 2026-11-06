@@ -108,3 +108,31 @@ describe('AuthAudit listener failures', () => {
     expect(text).not.toContain(HASH);
   });
 });
+
+describe('AuthAudit turn aways', () => {
+  it('writes one line with the route, the ids and the lock, and emits no event', () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const events = new EventEmitter2();
+    const emit = vi.spyOn(events, 'emit');
+    const at = new Date('2026-11-06T10:00:00Z');
+
+    new AuthAudit(events).turnedAway(
+      '/change-password',
+      { actorId: 'a', targetId: 'a', ip: '127.0.0.1', userAgent: null, at },
+      true,
+    );
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      outcome: 'turned_away',
+      route: '/change-password',
+      actorId: 'a',
+      targetId: 'a',
+      ip: '127.0.0.1',
+      userAgent: null,
+      at: at.toISOString(),
+      locked: true,
+    });
+    expect(emit).not.toHaveBeenCalled();
+  });
+});

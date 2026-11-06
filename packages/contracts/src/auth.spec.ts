@@ -19,6 +19,20 @@ describe('the password rule (AC-8)', () => {
     expect(Password.safeParse(password).success).toBe(false);
   });
 
+  it.each([
+    ['Arabic-Indic', 'Abcdefg\u0663'],
+    ['Extended Arabic-Indic', 'Abcdefg\u06f3'],
+  ])('counts an %s digit as a digit', (_name, password) => {
+    expect(unmetPasswordRules(password)).toEqual([]);
+    expect(Password.safeParse(password).success).toBe(true);
+  });
+
+  it('still asks for a digit when there is none in any script', () => {
+    expect(unmetPasswordRules('Abcdefgh')).toEqual(['digit']);
+    // Arabic letters and the Arabic comma are not digits.
+    expect(unmetPasswordRules('Abcdefg\u0628\u060c')).toEqual(['digit']);
+  });
+
   it('counts Arabic and other non Latin letters by case where they have one, and requires a digit', () => {
     // Arabic letters have no case, so they cannot satisfy upper or lower on their own.
     expect(unmetPasswordRules('كلمةالسر12')).toEqual(['lowercase', 'uppercase']);
