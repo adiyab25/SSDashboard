@@ -324,7 +324,7 @@ Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milesto
 
 **Done when:**
 - `pnpm --filter @ssdashboard/api test:e2e -- test/audit.e2e-spec.ts` passes the undo cases (one undo, `ALREADY_UNDONE`, `UNDO_NOT_POSSIBLE` changes nothing, parallel calls give one entry).
-- `pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` passes the audit budgets and prints the measured p95 values to paste into this spec's AC-17.
+- `pnpm --filter @ssdashboard/api test:scale` passes the audit budgets and prints the measured p95 values to paste into this spec's AC-17.
 - `pnpm lint:repo` passes (the README headings, doc links).
 
 ## Consequences

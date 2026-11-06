@@ -975,13 +975,13 @@
               "expression": "effective_from",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "recorded_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -1002,13 +1002,13 @@
               "expression": "effective_from",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "recorded_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -1022,6 +1022,43 @@
           "columns": [
             {
               "expression": "season_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "cost_records_variant_product_idx": {
+          "name": "cost_records_variant_product_idx",
+          "columns": [
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"cost_records\".\"variant_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "cost_records_recorded_by_idx": {
+          "name": "cost_records_recorded_by_idx",
+          "columns": [
+            {
+              "expression": "recorded_by",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1197,7 +1234,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "product_options_product_idx": {
+          "name": "product_options_product_idx",
+          "columns": [
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "product_options_product_id_products_id_fk": {
           "name": "product_options_product_id_products_id_fk",
@@ -1377,6 +1430,21 @@
           "columns": [
             {
               "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "product_variants_base_uom_idx": {
+          "name": "product_variants_base_uom_idx",
+          "columns": [
+            {
+              "expression": "base_uom_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2689,9 +2757,38 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
+          "where": "\"credit_entries\".\"order_line_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "credit_entries_reverses_entry_customer_idx": {
+          "name": "credit_entries_reverses_entry_customer_idx",
+          "columns": [
+            {
+              "expression": "reverses_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"credit_entries\".\"reverses_entry_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3562,7 +3659,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "lots_variant_idx": {
+          "name": "lots_variant_idx",
+          "columns": [
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "lots_variant_id_product_variants_id_fk": {
           "name": "lots_variant_id_product_variants_id_fk",
@@ -3704,6 +3817,21 @@
           "columns": [
             {
               "expression": "operating_day",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "movement_groups_posted_by_idx": {
+          "name": "movement_groups_posted_by_idx",
+          "columns": [
+            {
+              "expression": "posted_by",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3992,6 +4120,58 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "reservations_lot_idx": {
+          "name": "reservations_lot_idx",
+          "columns": [
+            {
+              "expression": "lot_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"reservations\".\"lot_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reservations_variant_idx": {
+          "name": "reservations_variant_idx",
+          "columns": [
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reservations_location_idx": {
+          "name": "reservations_location_idx",
+          "columns": [
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -4144,6 +4324,80 @@
           ],
           "isUnique": false,
           "where": "\"serials\".\"status\" = 'in_stock'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "serials_bin_idx": {
+          "name": "serials_bin_idx",
+          "columns": [
+            {
+              "expression": "bin_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"serials\".\"bin_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "serials_lot_idx": {
+          "name": "serials_lot_idx",
+          "columns": [
+            {
+              "expression": "lot_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"serials\".\"lot_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "serials_location_idx": {
+          "name": "serials_location_idx",
+          "columns": [
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "serials_variant_idx": {
+          "name": "serials_variant_idx",
+          "columns": [
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4457,6 +4711,50 @@
           "method": "btree",
           "with": {}
         },
+        "stock_levels_bin_idx": {
+          "name": "stock_levels_bin_idx",
+          "columns": [
+            {
+              "expression": "bin_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"stock_levels\".\"bin_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_levels_lot_idx": {
+          "name": "stock_levels_lot_idx",
+          "columns": [
+            {
+              "expression": "lot_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"stock_levels\".\"lot_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "stock_levels_updated_idx": {
           "name": "stock_levels_updated_idx",
           "columns": [
@@ -4464,13 +4762,13 @@
               "expression": "updated_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "id",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -4741,13 +5039,13 @@
               "expression": "recorded_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "id",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -4778,10 +5076,53 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
           "where": "\"stock_movements\".\"lot_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_movements_bin_idx": {
+          "name": "stock_movements_bin_idx",
+          "columns": [
+            {
+              "expression": "bin_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"stock_movements\".\"bin_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_movements_location_idx": {
+          "name": "stock_movements_location_idx",
+          "columns": [
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -4960,6 +5301,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "bins_location_idx": {
+          "name": "bins_location_idx",
+          "columns": [
+            {
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5099,7 +5455,23 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "location_owner_policies_updated_by_idx": {
+          "name": "location_owner_policies_updated_by_idx",
+          "columns": [
+            {
+              "expression": "updated_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "location_owner_policies_updated_by_users_id_fk": {
           "name": "location_owner_policies_updated_by_users_id_fk",
@@ -6244,13 +6616,13 @@
               "expression": "placed_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "id",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -6983,13 +7355,13 @@
               "expression": "effective_from",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "recorded_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -7430,7 +7802,7 @@
               "expression": "recorded_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -7461,9 +7833,38 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
+          "where": "\"settlement_line_matches\".\"order_line_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "settlement_line_matches_supersedes_line_idx": {
+          "name": "settlement_line_matches_supersedes_line_idx",
+          "columns": [
+            {
+              "expression": "supersedes_match_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "line_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"settlement_line_matches\".\"supersedes_match_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7811,6 +8212,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": false,
@@ -8142,7 +8549,7 @@
               "expression": "starts_on",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -8296,7 +8703,7 @@
               "expression": "received_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,
@@ -8342,6 +8749,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "settlement_statements_supersedes_account_idx": {
+          "name": "settlement_statements_supersedes_account_idx",
+          "columns": [
+            {
+              "expression": "supersedes_statement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"settlement_statements\".\"supersedes_statement_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8497,6 +8926,21 @@
           "columns": [
             {
               "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_receipt_lines_uom_idx": {
+          "name": "stock_receipt_lines_uom_idx",
+          "columns": [
+            {
+              "expression": "uom_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -8706,16 +9150,47 @@
               "expression": "effective_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "id",
               "isExpression": false,
               "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_receipts_posted_by_idx": {
+          "name": "stock_receipts_posted_by_idx",
+          "columns": [
+            {
+              "expression": "posted_by",
+              "isExpression": false,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stock_receipts_voided_by_idx": {
+          "name": "stock_receipts_voided_by_idx",
+          "columns": [
+            {
+              "expression": "voided_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"stock_receipts\".\"voided_by\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -8733,13 +9208,13 @@
               "expression": "effective_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             },
             {
               "expression": "id",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
             }
           ],
           "isUnique": false,

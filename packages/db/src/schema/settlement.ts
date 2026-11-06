@@ -155,7 +155,7 @@ export const settlementPeriods = pgTable(
   },
   (t) => [
     check('settlement_periods_dates_in_order', sql`${t.startsOn} <= ${t.endsOn}`),
-    index('settlement_periods_account_starts_idx').on(t.accountId, t.startsOn.desc()),
+    index('settlement_periods_account_starts_idx').on(t.accountId, t.startsOn.desc().nullsFirst()),
   ],
 );
 
@@ -251,9 +251,16 @@ export const settlementStatements = pgTable(
       'settlement_statements_covers_in_order',
       sql`${t.coversFrom} IS NULL OR ${t.coversTo} IS NULL OR ${t.coversFrom} <= ${t.coversTo}`,
     ),
-    index('settlement_statements_account_received_idx').on(t.accountId, t.receivedAt.desc()),
+    index('settlement_statements_account_received_idx').on(
+      t.accountId,
+      t.receivedAt.desc().nullsFirst(),
+    ),
     index('settlement_statements_account_covers_idx').on(t.accountId, t.coversFrom, t.coversTo),
     index('settlement_statements_imported_by_idx').on(t.importedBy),
+    // Foreign key index: the (supersedes_statement_id, account_id) key (spec 0002 item 19).
+    index('settlement_statements_supersedes_account_idx')
+      .on(t.supersedesStatementId, t.accountId)
+      .where(sql`${t.supersedesStatementId} IS NOT NULL`),
   ],
 );
 
@@ -308,7 +315,8 @@ export const settlementLines = pgTable(
       t.externalLineRef,
     ),
     index('settlement_lines_tracking_idx').on(t.trackingNumber),
-    index('settlement_lines_statement_idx').on(t.statementId),
+    // Leads with the (statement_id, account_id) foreign key, so it also serves statement_id alone.
+    index('settlement_lines_statement_idx').on(t.statementId, t.accountId),
     index('settlement_lines_account_occurred_idx').on(t.accountId, t.occurredOn),
     index('settlement_lines_store_idx').on(t.storeId),
     check(
@@ -367,9 +375,18 @@ export const settlementLineMatches = pgTable(
       columns: [t.orderLineId, t.orderId],
       foreignColumns: [orderLines.id, orderLines.orderId],
     }).onDelete('restrict'),
-    index('settlement_line_matches_line_recorded_idx').on(t.lineId, t.recordedAt.desc()),
+    index('settlement_line_matches_line_recorded_idx').on(
+      t.lineId,
+      t.recordedAt.desc().nullsFirst(),
+    ),
     index('settlement_line_matches_order_idx').on(t.orderId),
-    index('settlement_line_matches_order_line_idx').on(t.orderLineId),
+    // Foreign key indexes: the (order_line_id, order_id) and (supersedes_match_id, line_id) keys.
+    index('settlement_line_matches_order_line_idx')
+      .on(t.orderLineId, t.orderId)
+      .where(sql`${t.orderLineId} IS NOT NULL`),
+    index('settlement_line_matches_supersedes_line_idx')
+      .on(t.supersedesMatchId, t.lineId)
+      .where(sql`${t.supersedesMatchId} IS NOT NULL`),
     index('settlement_line_matches_variant_idx').on(t.variantId),
     index('settlement_line_matches_matched_by_idx').on(t.matchedBy),
     index('settlement_line_matches_refund_idx').on(t.refundId),

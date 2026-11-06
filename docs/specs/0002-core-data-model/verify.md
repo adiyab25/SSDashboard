@@ -95,7 +95,23 @@ _Not yet verified. Derived from AC-15 to AC-36 (as revised by the fix pass of 20
 - [ ] `pnpm test` → all pass, including the phone, transition, outcome, line split, credit arithmetic, settlement state, ownership map, module boundary, owner type boundary, cost lookup, and redaction tests → AC-19 to AC-22, AC-24, AC-25, AC-27, AC-29, AC-30, AC-32, AC-34
 - [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `location-owner-types.e2e-spec.ts` and the amended ledger suites → AC-29, AC-31
 - [ ] `pnpm test:e2e` → every pre existing api and Playwright test passes unchanged on the baseline → AC-16
-- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` → every p95 under its budget (the audit entry budgets of spec 0010 included); record the measured values below → AC-36
+- [ ] `pnpm build && pnpm --filter @ssdashboard/api test:scale` → every p95 under its budget (the audit entry budgets of spec 0010 included); record the measured values below → AC-36
+  > Measured 2026-11-06 on the shared dev PostgreSQL 18 (Windows, Docker), two consecutive runs of `test:scale`, p95 in ms over 60 timed runs after 20 warm ups, each read's plan asserted to use the named index. The spec 0010 audit entry budgets wait for feature 10 (`it.todo` in the file). The budgets stay as specified: every row is far under its budget on a quiet server; the single line `ledger.post` (real commits) reached 54 ms and 205 ms in two earlier runs only while other checkouts loaded the same server, so the CI `scale` job on its own PostgreSQL service is the reference run. Seed: 233 to 306 s.
+  >
+  > | Read or write | Budget | Run 1 | Run 2 | Index asserted |
+  > |---|---|---|---|---|
+  > | SKU search by code prefix or name fragment | 150 | 5.6 | 4.3 | `product_variants_sku_c_idx` (prefix; the name branch scans `products`, carried to feature 12) |
+  > | stock on hand and available for one SKU | 50 | 2.0 | 2.2 | stock levels by variant |
+  > | single line `ledger.post` | 50 | 18.7 | 14.0 | (writes) |
+  > | order by store and number | 20 | 0.6 | 0.7 | `orders_store_number_unique` |
+  > | customer by phone | 20 | 0.8 | 0.9 | `customer_phones_phone_unique` |
+  > | one customer's credit balance (canonical, 3 ids) | 20 | 0.8 | 1.4 | `customers_merged_into_idx`, `credit_entries_customer_funding_idx` |
+  > | confirmation queue page | 150 | 1.0 | 1.2 | `orders_confirmation_queue_idx` |
+  > | orders list page by store, keyset | 150 | 1.1 | 1.3 | `orders_store_placed_idx` (first and next page) |
+  > | orders of one operating day per store | 150 | 1.6 | 1.7 | `orders_operating_day_store_idx` |
+  > | My work for a person and for a hat | 150 | 0.7 | 0.8 | `tasks_open_owner_user_idx`, `tasks_open_owner_hat_idx` |
+  > | unmatched settlement lines of one statement | 150 | 1.8 | 2.3 | `settlement_lines_statement_idx`, `settlement_line_matches_line_recorded_idx` |
+  > | one order's event timeline | 50 | 0.6 | 0.7 | `order_events_order_recorded_idx` |
 - [ ] `pnpm test:e2e` does not run `test/scale.e2e-spec.ts`; the CI `scale` job runs it nightly and on a pull request labelled `scale` → AC-36
 - [ ] `pnpm lint` → passes; a planted `schema.orders` import in another module's folder fails the boundary test; a planted `=== 'consignment_partner'` outside the policy file fails the owner type boundary test → AC-29, AC-34
 

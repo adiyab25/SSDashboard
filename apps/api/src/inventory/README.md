@@ -32,7 +32,7 @@ pnpm build && pnpm --filter @ssdashboard/api test:e2e
 pnpm --filter @ssdashboard/api test:e2e -- test/ledger.e2e-spec.ts
 ```
 
-`owner-type-boundary.spec.ts` fails when an owner type value is compared outside the policy service (api and web source). End to end specs in `apps/api/test`: `ledger`, `ledger-tracking`, `location-owner-types` (the three way test), `locations`, `stock-receipts`, `numbering-reconcile`, `scale` (all `*.e2e-spec.ts`). `scale` seeds 100,000 SKUs and adds about 1m45s. They need Postgres.
+`owner-type-boundary.spec.ts` fails when an owner type value is compared outside the policy service (api and web source). End to end specs in `apps/api/test`: `ledger`, `ledger-tracking`, `location-owner-types` (the three way test), `locations`, `stock-receipts`, `numbering-reconcile`, `scale` (all `*.e2e-spec.ts`). `scale` is excluded from `test:e2e`; it runs through `pnpm --filter @ssdashboard/api test:scale` and the `scale` CI job. They need Postgres.
 
 ## Governing spec
 

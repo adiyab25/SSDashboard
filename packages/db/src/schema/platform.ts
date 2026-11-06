@@ -131,8 +131,8 @@ export const orderCostRules = pgTable(
     ),
     index('order_cost_rules_kind_effective_idx').on(
       t.kind,
-      t.effectiveFrom.desc(),
-      t.recordedAt.desc(),
+      t.effectiveFrom.desc().nullsFirst(),
+      t.recordedAt.desc().nullsFirst(),
     ),
     index('order_cost_rules_recorded_by_idx').on(t.recordedBy),
   ],

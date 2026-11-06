@@ -58,11 +58,19 @@ export const stockReceipts = pgTable(
   },
   (t) => [
     unique('stock_receipts_number_unique').on(t.tenantId, t.number),
-    index('stock_receipts_effective_idx').on(t.effectiveAt.desc(), t.id.desc()),
+    index('stock_receipts_effective_idx').on(
+      t.effectiveAt.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
+    ),
+    // Foreign key indexes: posted_by and voided_by (spec 0002 item 19).
+    index('stock_receipts_posted_by_idx').on(t.postedBy),
+    index('stock_receipts_voided_by_idx')
+      .on(t.voidedBy)
+      .where(sql`${t.voidedBy} IS NOT NULL`),
     index('stock_receipts_location_effective_idx').on(
       t.locationId,
-      t.effectiveAt.desc(),
-      t.id.desc(),
+      t.effectiveAt.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
     ),
     check(
       'stock_receipts_reference_length',
@@ -108,6 +116,8 @@ export const stockReceiptLines = pgTable(
     unique('stock_receipt_lines_receipt_variant_unique').on(t.receiptId, t.variantId),
     unique('stock_receipt_lines_receipt_position_unique').on(t.tenantId, t.receiptId, t.position),
     index('stock_receipt_lines_variant_idx').on(t.variantId),
+    // Foreign key index: uom_id (spec 0002 item 19).
+    index('stock_receipt_lines_uom_idx').on(t.uomId),
     check('stock_receipt_lines_position_range', sql`${t.position} BETWEEN 1 AND 200`),
     check('stock_receipt_lines_quantity_range', sql`${t.quantity} BETWEEN 1 AND 1000000`),
     check('stock_receipt_lines_unit_cost_not_negative', sql`${t.unitCost} >= 0`),

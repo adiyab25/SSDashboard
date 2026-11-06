@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:scale": "vitest run --config ./vitest.config.scale.ts",
     "lint": "eslint ."
   },
   "dependencies": {

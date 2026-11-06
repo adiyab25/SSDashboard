@@ -4,9 +4,17 @@ on:
   push:
     branches: [main, "release/**"]
   pull_request:
+    # `labeled` starts the scale job when the `scale` label is added; the other jobs skip that event.
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    # Nightly scale suite at a quiet hour (UTC).
+    - cron: "30 2 * * *"
+  workflow_dispatch:
 
+# The nightly run, each manual dispatch, and a label event get their own groups, so they never cancel a push or pull
+# request run (and a new push never cancels a scale run started by a label).
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
   cancel-in-progress: true
 
 env:
@@ -17,7 +25,7 @@ env:
 jobs:
   conventions:
     name: Branch name and commit subjects
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -42,6 +50,7 @@ jobs:
 
   images:
     name: Build the ${{ matrix.image }} image (not pushed)
+    if: github.event.action != 'labeled' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -60,6 +69,7 @@ jobs:
 
   checks:
     name: Format, lint, typecheck, unit tests
+    if: github.event.action != 'labeled' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -76,6 +86,7 @@ jobs:
 
   e2e:
     name: Database and browser e2e
+    if: github.event.action != 'labeled' && github.event_name != 'schedule'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -112,3 +123,49 @@ jobs:
       - run: pnpm --filter @ssdashboard/web exec playwright install --with-deps chromium
       - run: pnpm db:migrate
       - run: pnpm test:e2e
+
+  # The spec 0002 scale suite (and the spec 0010 audit load): too long for the default e2e job, so
+  # it runs nightly, by hand, and on pull requests carrying the `scale` label.
+  scale:
+    name: Scale suite
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'scale') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'scale'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: ssdashboard
+          POSTGRES_USER: ssdashboard
+          POSTGRES_PASSWORD: ssdashboard
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U ssdashboard -d ssdashboard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:5433/ssdashboard
+      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:5433/ssdashboard
+      APP_DB_PASSWORD: ssdashboard_app
+      API_INTERNAL_URL: http://localhost:3001
+      PUBLIC_URL: http://localhost:3000
+      # A public, test only value for this throwaway CI database. Never use it anywhere real.
+      BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm db:migrate
+      - run: pnpm --filter @ssdashboard/api test:scale

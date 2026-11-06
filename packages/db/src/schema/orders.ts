@@ -266,7 +266,11 @@ export const orders = pgTable(
     check('orders_refused_reason_code_shape', reasonCodeShape(t.refusedReasonCode)),
     check('orders_gift_reason_code_shape', reasonCodeShape(t.giftReasonCode)),
     // A store's order list, newest first.
-    index('orders_store_placed_idx').on(t.storeId, t.placedAt.desc(), t.id.desc()),
+    index('orders_store_placed_idx').on(
+      t.storeId,
+      t.placedAt.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
+    ),
     // The confirmation queue, oldest first.
     index('orders_confirmation_queue_idx')
       .on(t.placedAt, t.id)

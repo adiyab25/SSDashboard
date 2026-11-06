@@ -101,7 +101,11 @@ export const locationOwnerPolicies = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'restrict' }),
   },
-  (t) => [primaryKey({ columns: [t.tenantId, t.ownerType] })],
+  (t) => [
+    primaryKey({ columns: [t.tenantId, t.ownerType] }),
+    // Foreign key index: updated_by (spec 0002 item 19).
+    index('location_owner_policies_updated_by_idx').on(t.updatedBy),
+  ],
 );
 
 /** Depth in the bin tree, from a whole zone down to a single bin. */
@@ -130,5 +134,7 @@ export const bins = pgTable(
     // Target of the (bin_id, location_id) composite keys: a bin always belongs to the row's location.
     unique('bins_id_location_unique').on(t.id, t.locationId),
     index('bins_parent_idx').on(t.parentId),
+    // Foreign key index: location_id; the unique keys lead with tenant_id (spec 0002 item 19).
+    index('bins_location_idx').on(t.locationId),
   ],
 );

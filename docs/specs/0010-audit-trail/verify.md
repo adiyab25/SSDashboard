@@ -19,7 +19,7 @@ _Steps derived from spec 0010 acceptance criteria and its Value sourcing table. 
 - [ ] `pnpm --filter @ssdashboard/api test` → `audit-registry.spec.ts` (fields, both labels, proof file, handler for every undoable) and `module-boundary.spec.ts` pass → AC-9, AC-10, AC-19
 - [ ] `pnpm --filter @ssdashboard/api test:e2e -- test/audit.e2e-spec.ts` → thread, rollback both ways, reason rules, actor shapes, privacy sentinels, correlation, paging, permissions, undo cases, export cases → AC-2 to AC-6, AC-12 to AC-15
 - [ ] `pnpm --filter @ssdashboard/web test:e2e -- e2e/audit.spec.ts --project=desktop` → the thread in both languages, axe clean, keyboard only → AC-12, AC-18
-- [ ] `pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` → with 5,000,000 entries, p95 under 150 ms per filter and for the unfiltered page, `record` under 10 ms; measured values pasted into AC-17 → AC-17
+- [ ] `pnpm --filter @ssdashboard/api test:scale` → with 5,000,000 entries, p95 under 150 ms per filter and for the unfiltered page, `record` under 10 ms; measured values pasted into AC-17 → AC-17
 - [ ] `pnpm lint && pnpm typecheck && pnpm format:check` → clean → all
 - [ ] `node packages/config/scripts/check-doc-links.mjs` → passes → doc rule
 
