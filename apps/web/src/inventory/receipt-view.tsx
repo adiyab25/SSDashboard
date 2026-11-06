@@ -54,12 +54,14 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
               {t('inventory.void.open')}
             </Button>
           )}
-          <Button asChild>
-            <Link href="/stock-receipts/new">
-              <PackagePlusIcon aria-hidden data-icon="inline-start" />
-              {t('inventory.receiptDetail.receiveMore')}
-            </Link>
-          </Button>
+          {access.can('stock.receive') && (
+            <Button asChild>
+              <Link href="/stock-receipts/new">
+                <PackagePlusIcon aria-hidden data-icon="inline-start" />
+                {t('inventory.receiptDetail.receiveMore')}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 

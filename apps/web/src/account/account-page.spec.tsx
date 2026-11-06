@@ -86,9 +86,7 @@ describe('AccountPage (AC-8, AC-19)', () => {
       expect(screen.getByText('SC1')).toBeVisible();
       expect(screen.queryByLabelText('Email')).not.toBeInTheDocument();
       expect(screen.queryByLabelText('Hats')).not.toBeInTheDocument();
-      expect(
-        screen.getByText('An administrator changes your email, role and staff code.'),
-      ).toBeVisible();
+      expect(screen.getByText('A manager changes your email, hats and staff code.')).toBeVisible();
     });
 
     it('saves the changes and says so', async () => {

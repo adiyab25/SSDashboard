@@ -34,8 +34,9 @@ const MAX_LINE_TOTAL_CENTS = 999_999_999_999n;
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
 /**
- * The receipt rules a caller can break: missing, replayed key with a different body, bad lines
- * or location, future date, already voided, or a void that would take stock below zero.
+ * The receipt rules a caller can break: missing, replayed key with a different body or by
+ * another person, bad lines or location, future date, already voided, or a void that would take
+ * stock below zero.
  */
 export type ReceiptErrorCode =
   | 'NotFound'
@@ -384,8 +385,14 @@ export class ReceiptsService {
     return rows.map((row) => row.variant_id);
   }
 
+  /**
+   * The answer to a key that already holds a receipt. Only the person who posted it gets a
+   * replay; anyone else gets `IdempotencyConflict` whatever the body, before the hash is compared,
+   * so the answer never tells a caller without `cost.view` whether a guessed unit cost was right
+   * (spec 0008 security review M1).
+   */
   private replayOf(stored: StoredReceipt, hash: string, caller: ReceiptCaller) {
-    if (stored.requestHash !== hash) {
+    if (stored.detail.postedBy.id !== caller.id || stored.requestHash !== hash) {
       throw new ReceiptError(
         'IdempotencyConflict',
         'This idempotency key was already used for a different receipt',

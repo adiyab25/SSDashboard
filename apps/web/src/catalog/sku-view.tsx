@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { SkuEditDialog } from './sku-edit-dialog';
@@ -18,6 +19,7 @@ import { SkuStockSection } from './sku-stock-section';
 /** The loaded SKU: header, price, stock per location, movement history, and the edit dialog. */
 export function SkuView({ sku }: { sku: SkuDetail }) {
   const { t } = useTranslation();
+  const canEdit = useAccess().can('catalog.edit');
   const format = useFormat();
   const text = useLocalizedText();
   const router = useRouter();
@@ -39,10 +41,12 @@ export function SkuView({ sku }: { sku: SkuDetail }) {
           <Button asChild variant="outline">
             <Link href="/skus">{t('inventory.skuDetail.back')}</Link>
           </Button>
-          <Button onClick={() => setEditing(true)}>
-            <PencilIcon aria-hidden data-icon="inline-start" />
-            {t('inventory.skuDetail.edit')}
-          </Button>
+          {canEdit && (
+            <Button onClick={() => setEditing(true)}>
+              <PencilIcon aria-hidden data-icon="inline-start" />
+              {t('inventory.skuDetail.edit')}
+            </Button>
+          )}
         </div>
       </div>
 

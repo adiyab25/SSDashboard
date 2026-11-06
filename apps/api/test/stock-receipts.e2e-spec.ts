@@ -182,8 +182,9 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
     const [a, b] = await Promise.all([receipt(key, body), receipt(key, body)]);
     expect([a.status, b.status].sort()).toEqual([200, 201]);
     expect((a.body as { id: string }).id).toBe((b.body as { id: string }).id);
-    // An admin's replay of a staff receipt shows cost; a staff replay never does.
+    // The poster's own replay never shows cost without cost.view; anyone else's is a conflict.
     expect((await receipt(key, body)).body).not.toHaveProperty('referenceValue');
+    expect((await receipt(key, body, admin)).body).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
 
     expect((await receipt(key, { ...body, note: 'second' })).body).toMatchObject({
       code: 'IDEMPOTENCY_CONFLICT',

@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { useMe } from '@/auth/use-me';
 
 /** What the signed in person may use, as `GET /api/me` (or `/api/partner/me`) answered it. */
-export interface Access {
+export interface WebAccess {
   /** False until the who am I answer is in; `can` is false for everything until then. */
   ready: boolean;
   /** The hats the person wears (spec 0008, AC-1); empty until ready. */
@@ -27,7 +27,7 @@ const NONE: readonly never[] = [];
  * route whatever the web shows. While the answer is loading, `can` is false, so a page never
  * flashes an action or a cost column it then takes away.
  */
-export function useAccess(path?: string): Access {
+export function useAccess(path?: string): WebAccess {
   const me = useMe(path);
   const hats = me?.hats ?? NONE;
   const permissions = me?.permissions ?? NONE;

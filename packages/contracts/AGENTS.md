@@ -12,7 +12,7 @@ TypeScript, Zod (`catalog:` version). Built to `dist/` with `tsc`; consumers imp
 
 ```bash
 pnpm --filter @ssdashboard/contracts build
-pnpm --filter @ssdashboard/contracts test   # test/*.spec.ts
+pnpm --filter @ssdashboard/contracts test   # src/**/*.spec.ts and test/*.spec.ts
 ```
 
 ## Conventions

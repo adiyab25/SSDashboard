@@ -29,5 +29,6 @@ pnpm --filter @ssdashboard/web test:e2e -- e2e/access.spec.ts
 
 ## Decisions
 
+- An action button whose api route needs a permission is hidden without it (`can(...)`): New SKU and Edit SKU need `catalog.edit`, New receipt needs `stock.receive` ([gated-actions.spec.tsx](gated-actions.spec.tsx)).
 - A page wires the no access state with `if (access.ready && !access.can(...)) return <NoAccessState titleKey="..." />` and keeps its data loads behind the same check, so the page asks the api for nothing. Wired so far: `/staff` (`people.manage`) and `/locations` (`catalog.manage`); milestone 4 of spec 0008 does the rest.
 - Record other non obvious decisions as ADRs in docs/adr/ and link them here.

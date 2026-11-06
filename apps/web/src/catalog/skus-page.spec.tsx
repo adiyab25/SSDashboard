@@ -24,7 +24,7 @@ vi.mock('@/inventory/inventory-api', async (original) => ({
 
 const me = vi.hoisted(
   (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
-    current: { id: 'me', hats: ['warehouse'], permissions: [] },
+    current: { id: 'me', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] },
   }),
 );
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
@@ -47,7 +47,7 @@ const detail = (n: number) => ({
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
-  me.current = { id: 'me', hats: ['warehouse'], permissions: [] };
+  me.current = { id: 'me', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] };
 });
 
 describe('SkusPage (AC-13)', () => {
@@ -292,7 +292,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: false });
@@ -312,7 +319,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
@@ -338,7 +352,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
@@ -363,7 +384,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
@@ -386,7 +414,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: true });
@@ -404,7 +439,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
@@ -431,7 +473,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: true });
@@ -448,7 +497,14 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
       me.current = {
         id: 'a',
         hats: ['manager'],
-        permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
       };
       api.getSku.mockResolvedValue({ ...detail(1), archived: true, status: 'archived' });
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: true });

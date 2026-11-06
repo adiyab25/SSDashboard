@@ -96,7 +96,7 @@ export type SkuListResponse = z.infer<typeof SkuListResponse>;
 export const UpdatedAt = z.string().min(1).max(40);
 
 /**
- * `PATCH /api/skus/:id`: name and price, any signed in person. `name`, when sent, replaces
+ * `PATCH /api/skus/:id`: name and price (`catalog.edit`). `name`, when sent, replaces
  * both languages (a language left out of it is cleared, not kept). `price: null` clears it; an
  * absent field is left as is. A stored `updatedAt` other than the one sent answers 409
  * `STALE_RECORD` (AC-2).

@@ -19,6 +19,7 @@ import { LoaderCircleIcon, PackagePlusIcon, ReceiptTextIcon } from 'lucide-react
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAccess } from '@/access/use-access';
 import { useLanguage } from '@/i18n/language-provider';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
@@ -39,6 +40,7 @@ const COLUMNS = ['number', 'date', 'location', 'reference', 'lines', 'status', '
  */
 export function ReceiptsPage() {
   const { t } = useTranslation();
+  const canReceive = useAccess().can('stock.receive');
   const format = useFormat();
   const text = useLocalizedText();
   const current = useCurrentLocation();
@@ -78,12 +80,14 @@ export function ReceiptsPage() {
           <h1 className="text-xl font-semibold">{t('inventory.receipts.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('inventory.receipts.description')}</p>
         </div>
-        <Button asChild>
-          <Link href="/stock-receipts/new">
-            <PackagePlusIcon aria-hidden data-icon="inline-start" />
-            {t('inventory.receipts.receive')}
-          </Link>
-        </Button>
+        {canReceive && (
+          <Button asChild>
+            <Link href="/stock-receipts/new">
+              <PackagePlusIcon aria-hidden data-icon="inline-start" />
+              {t('inventory.receipts.receive')}
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -159,11 +163,13 @@ export function ReceiptsPage() {
                               {t('inventory.receipts.emptyBody')}
                             </p>
                           </div>
-                          <Button asChild size="sm">
-                            <Link href="/stock-receipts/new">
-                              {t('inventory.receipts.receive')}
-                            </Link>
-                          </Button>
+                          {canReceive && (
+                            <Button asChild size="sm">
+                              <Link href="/stock-receipts/new">
+                                {t('inventory.receipts.receive')}
+                              </Link>
+                            </Button>
+                          )}
                         </>
                       )}
                     </div>

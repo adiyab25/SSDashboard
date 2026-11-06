@@ -92,10 +92,22 @@ async function allControllers(): Promise<Found[]> {
   return [...files.values()];
 }
 
-/** The route handlers a controller class defines itself: methods Nest maps to an HTTP method. */
+/**
+ * The route handlers of a controller class, its own and inherited: Nest routes every method on the
+ * prototype chain that carries an HTTP method, so this walks up to `Object.prototype` and reads
+ * each name through the class's prototype (an override replaces the method it shadows).
+ */
 function handlersOf(target: ControllerClass): Array<{ method: string; handler: object }> {
   const prototype = target.prototype as Record<string, unknown>;
-  return Object.getOwnPropertyNames(prototype)
+  const names = new Set<string>();
+  for (
+    let level: object | null = prototype;
+    level !== null && level !== Object.prototype;
+    level = Object.getPrototypeOf(level) as object | null
+  ) {
+    for (const name of Object.getOwnPropertyNames(level)) names.add(name);
+  }
+  return [...names]
     .filter((method) => method !== 'constructor')
     .map((method) => ({ method, handler: prototype[method] }))
     .filter(
@@ -227,6 +239,41 @@ class PortalWithAnyHat {
 }
 
 @Audience('staff')
+@Controller('planted-empty')
+class EmptyPermission {
+  @Permission()
+  @Get()
+  read(): string {
+    return 'empty';
+  }
+}
+
+/** A base class whose handler declares nothing; only the subclass is a controller. */
+class UndeclaredBase {
+  @Get()
+  read(): string {
+    return 'inherited';
+  }
+}
+
+@Audience('staff')
+@Controller('planted-inherited')
+class InheritedHandler extends UndeclaredBase {}
+
+/** A base class whose handler declares its permission, inherited as is. */
+class DeclaredBase {
+  @Permission('stock.view')
+  @Get()
+  read(): string {
+    return 'inherited';
+  }
+}
+
+@Audience('staff')
+@Controller('planted-inherited-good')
+class InheritedDeclaredHandler extends DeclaredBase {}
+
+@Audience('staff')
 @Permission('stock.view')
 @Controller('planted-good')
 class ClassDeclarationWithOverride {
@@ -274,9 +321,15 @@ describe('route permissions (spec 0008, AC-4)', () => {
       ],
       [HookWithClassPermission, 'HookWithClassPermission: a hook controller declares a permission'],
       [PortalWithAnyHat, 'PortalWithAnyHat.read: a portal controller declares a permission'],
+      [EmptyPermission, 'EmptyPermission.read: an empty @Permission()'],
+      [InheritedHandler, 'InheritedHandler.read: no permission declaration'],
     ] as const)('%o', (target, problem) => {
       expect(permissionProblems(planted(target))).toEqual([problem]);
     });
+  });
+
+  it('accepts an inherited handler that carries its own declaration', () => {
+    expect(permissionProblems(planted(InheritedDeclaredHandler))).toEqual([]);
   });
 
   it('accepts a class declaration that a handler replaces with its own', () => {

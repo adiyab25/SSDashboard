@@ -84,6 +84,132 @@ describe('the permission matrix', () => {
   });
 });
 
+// The permission matrix of spec 0008, written out cell by cell. It pins the data to the spec's
+// table: any change to `HAT_PERMISSIONS` or `PERMISSIONS` must change this test in the same
+// commit, against the spec, so a matrix edit can never slip in unreviewed.
+describe('the permission matrix, cell by cell (spec 0008 table)', () => {
+  it('gives each hat exactly these permissions', () => {
+    expect(HAT_PERMISSIONS).toEqual({
+      support: [
+        'orders.view',
+        'orders.confirm',
+        'customers.view',
+        'customers.merge',
+        'exchanges.handle',
+        'stock.view',
+        'tasks.work',
+      ],
+      operations: [
+        'orders.view',
+        'orders.confirm',
+        'customers.view',
+        'customers.merge',
+        'exchanges.handle',
+        'refunds.approve',
+        'fulfillment.work',
+        'stock.view',
+        'stock.receive',
+        'catalog.edit',
+        'channels.map',
+        'settlement.work',
+        'settlement.close',
+        'exports.run',
+        'partners.manage',
+        'tasks.work',
+        'tasks.assign',
+        'reports.view',
+        'campaigns.view',
+      ],
+      warehouse: [
+        'orders.view',
+        'fulfillment.work',
+        'stock.view',
+        'stock.receive',
+        'catalog.edit',
+        'tasks.work',
+      ],
+      manager: [
+        'orders.view',
+        'orders.confirm',
+        'orders.gift',
+        'customers.view',
+        'customers.merge',
+        'exchanges.handle',
+        'refunds.approve',
+        'fulfillment.work',
+        'stock.view',
+        'stock.receive',
+        'stock.correct',
+        'catalog.edit',
+        'catalog.manage',
+        'channels.map',
+        'settlement.work',
+        'settlement.close',
+        'exports.run',
+        'partners.manage',
+        'tasks.work',
+        'tasks.assign',
+        'reports.view',
+        'campaigns.view',
+        'people.manage',
+        'settings.manage',
+        'audit.view',
+      ],
+      media_buyer: ['campaigns.view'],
+      partner: ['partner.view_own', 'partner.submit_sales'],
+    });
+  });
+
+  it('gives each permission exactly this audience and personal data flag (the P column)', () => {
+    const staffP = { audience: 'staff', personal: true };
+    const staffOnly = { audience: 'staff', personal: false };
+    const partnerOnly = { audience: 'partner', personal: false };
+
+    expect(PERMISSIONS).toEqual({
+      'orders.view': staffP,
+      'orders.confirm': staffP,
+      'orders.gift': staffOnly,
+      'customers.view': staffP,
+      'customers.merge': staffP,
+      'exchanges.handle': staffP,
+      'refunds.approve': staffP,
+      'fulfillment.work': staffP,
+      'stock.view': staffOnly,
+      'stock.receive': staffOnly,
+      'stock.correct': staffOnly,
+      'catalog.edit': staffOnly,
+      'catalog.manage': staffOnly,
+      'channels.map': staffOnly,
+      'settlement.work': staffP,
+      'settlement.close': staffOnly,
+      'exports.run': staffOnly,
+      'partners.manage': staffOnly,
+      'tasks.work': staffP,
+      'tasks.assign': staffOnly,
+      'reports.view': staffOnly,
+      'campaigns.view': staffOnly,
+      'people.manage': staffOnly,
+      'settings.manage': staffOnly,
+      'audit.view': staffP,
+      'partner.view_own': partnerOnly,
+      'partner.submit_sales': partnerOnly,
+      'cost.view': staffOnly,
+    });
+    expect(Object.keys(PERMISSIONS)).toEqual(Permission.options);
+  });
+
+  it('sends each hat to exactly this audience', () => {
+    expect(HAT_AUDIENCE).toEqual({
+      support: 'staff',
+      operations: 'staff',
+      warehouse: 'staff',
+      manager: 'staff',
+      media_buyer: 'staff',
+      partner: 'partner',
+    });
+  });
+});
+
 describe('permissionsFor', () => {
   it('is the sorted union of every hat and the grants (AC-1, AC-2)', () => {
     const effective = permissionsFor(['support', 'warehouse'], ['cost.view']);

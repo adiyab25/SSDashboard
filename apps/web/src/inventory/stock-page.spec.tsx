@@ -17,7 +17,14 @@ const me = vi.hoisted(
     current: {
       id: 'a',
       hats: ['manager'],
-      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+      permissions: [
+        'catalog.manage',
+        'catalog.edit',
+        'stock.receive',
+        'cost.view',
+        'people.manage',
+        'stock.correct',
+      ],
     },
   }),
 );
@@ -59,7 +66,14 @@ afterEach(() => {
   me.current = {
     id: 'a',
     hats: ['manager'],
-    permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    permissions: [
+      'catalog.manage',
+      'catalog.edit',
+      'stock.receive',
+      'cost.view',
+      'people.manage',
+      'stock.correct',
+    ],
   };
   shell.current = 'all';
   shell.ready = true;
@@ -85,7 +99,7 @@ describe('StockPage (AC-9, AC-16)', () => {
   });
 
   it('hides cost and value columns from staff', async () => {
-    me.current = { id: 's', hats: ['warehouse'], permissions: [] };
+    me.current = { id: 's', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] };
     api.listStock.mockResolvedValue(page([row(1)]));
     renderWithQuery(<StockPage />);
 

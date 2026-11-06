@@ -202,6 +202,67 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
     expect(voided.body).toEqual({ code: 'FORBIDDEN', message: 'You do not have access to this.' });
   });
 
+  it('replays a receipt only for the person who posted it, without cost; anyone else gets 409 whatever the costs (AC-6, security review M1 and L4)', async () => {
+    const location = await call('POST', '/locations', manager, {
+      body: { code: 'wh-replay', name: { en: 'Replay warehouse' }, kind: 'warehouse' },
+    });
+    expect(location.status).toBe(201);
+    const locationId = (location.body as { id: string }).id;
+    const created = await call('POST', '/products', warehouse, {
+      body: { name: { en: 'Replay tee' }, variants: [{ sku: 'HAT-REPLAY-1', price: '9.99' }] },
+    });
+    expect(created.status).toBe(201);
+    const sku = SkuDetail.parse(created.body);
+    const otherWarehouse = await signInAs(base, owner.pool, {
+      email: 'warehouse.two@example.com',
+      role: { hats: ['warehouse'] },
+    });
+
+    const key = randomUUID();
+    const body = {
+      locationId,
+      reference: 'DN-R1',
+      lines: [{ skuId: sku.id, quantity: 3, unitCost: '12.5' }],
+    };
+    const post = (cookie: string, payload: unknown = body) =>
+      call('POST', '/stock-receipts', cookie, {
+        body: payload,
+        headers: { 'idempotency-key': key },
+      });
+    expect((await post(warehouse)).status).toBe(201);
+
+    // The poster's own replay: 200, the same receipt, and no cost field without cost.view.
+    const replay = await post(warehouse);
+    expect(replay.status).toBe(200);
+    expect(StockReceiptDetail.parse(replay.body).id).toBe(key);
+    expect(costKeysIn(replay.body)).toEqual([]);
+
+    // Anyone else gets 409 with the right costs and with wrong ones alike, so the answer never
+    // confirms a guessed unit cost; holding cost.view changes nothing.
+    const wrongCost = { ...body, lines: [{ skuId: sku.id, quantity: 3, unitCost: '99' }] };
+    for (const cookie of [otherWarehouse, both, manager]) {
+      for (const payload of [body, wrongCost]) {
+        const reply = await post(cookie, payload);
+        expect(reply.status).toBe(409);
+        expect(reply.body).toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+      }
+    }
+
+    // The stock moved once.
+    const forSku = SkuStockResponse.parse(
+      (await call('GET', `/skus/${sku.id}/stock`, warehouse)).body,
+    );
+    expect(forSku.totalOnHand).toBe(3);
+
+    // A void answer to a manager without cost.view carries no cost field either.
+    const voided = await call('POST', `/stock-receipts/${key}/void`, managerWithoutCost, {
+      body: { reason: 'counted twice' },
+    });
+    expect(voided.status).toBe(200);
+    expect(StockReceiptDetail.parse(voided.body).status).toBe('voided');
+    expect(costKeysIn(voided.body)).toEqual([]);
+  });
+
   it('answers 403 FORBIDDEN on /api/staff to a warehouse person, before any body is read (AC-4)', async () => {
     for (const [method, path, body] of [
       ['GET', '/staff', undefined],
@@ -215,6 +276,39 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
   });
 
   it('lets a person with support and warehouse reach the routes of both hats, and nothing else (AC-2)', async () => {
+    // No route needs a permission that support holds and warehouse lacks yet (orders, customers
+    // and exchanges come later), so the union shows on a warehouse only write: the same POST is
+    // 201 with both hats and 403 with support alone.
+    const supportOnly = await signInAs(base, owner.pool, {
+      email: 'support.only@example.com',
+      role: { hats: ['support'] },
+    });
+    const location = await call('POST', '/locations', manager, {
+      body: { code: 'wh-union', name: { en: 'Union warehouse' }, kind: 'warehouse' },
+    });
+    expect(location.status).toBe(201);
+    const created = await call('POST', '/products', both, {
+      body: { name: { en: 'Union tee' }, variants: [{ sku: 'HAT-UNION-1', price: '5.00' }] },
+    });
+    expect(created.status).toBe(201);
+    const receiptBody = {
+      locationId: (location.body as { id: string }).id,
+      lines: [{ skuId: SkuDetail.parse(created.body).id, quantity: 1, unitCost: '2' }],
+    };
+    const received = await call('POST', '/stock-receipts', both, {
+      body: receiptBody,
+      headers: { 'idempotency-key': randomUUID() },
+    });
+    expect(received.status).toBe(201);
+    expect(costKeysIn(received.body)).toEqual([]);
+    const refused = await call('POST', '/stock-receipts', supportOnly, {
+      body: receiptBody,
+      headers: { 'idempotency-key': randomUUID() },
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toEqual({ code: 'FORBIDDEN', message: 'You do not have access to this.' });
+    expect((await call('GET', '/stock?limit=1', supportOnly)).status).toBe(200);
+
     expect((await call('GET', '/stock?limit=1', both)).status).toBe(200);
     expect((await call('GET', '/locations', both)).status).toBe(200);
     const archived = await call('GET', '/locations?status=archived', both);

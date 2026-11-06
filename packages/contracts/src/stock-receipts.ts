@@ -28,7 +28,10 @@ export type StockReceiptLineInput = z.input<typeof StockReceiptLineInput>;
 
 /**
  * `POST /api/stock-receipts`, with an `Idempotency-Key: <uuid>` header that becomes the receipt
- * id. `receiptDate` is sent only when the person changed the date field (spec 0006).
+ * id. `receiptDate` is sent only when the person changed the date field (spec 0006). Needs
+ * `stock.receive`. The same key and body from the person who posted it answers 200 with the
+ * receipt; the same key from anyone else, or with another body, answers 409
+ * `IDEMPOTENCY_CONFLICT` (spec 0008 AC-6).
  */
 export const CreateStockReceiptRequest = z
   .object({

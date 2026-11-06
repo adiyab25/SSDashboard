@@ -90,7 +90,10 @@ export class ReceiptsController {
   /** Takes the receipts service. */
   constructor(private readonly receipts: ReceiptsService) {}
 
-  /** 201 when created, 200 when the same key and body were posted before (AC-6). */
+  /**
+   * 201 when created, 200 when the same person posted the same key and body before (AC-6); the
+   * same key from anyone else, or with another body, is 409 `IDEMPOTENCY_CONFLICT`.
+   */
   @Permission('stock.receive')
   @Post()
   async create(

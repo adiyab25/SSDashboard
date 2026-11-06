@@ -160,22 +160,26 @@ export function StockPage() {
           <p className="text-sm text-muted-foreground">{t('inventory.stock.description')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setDialog('sku')}>
-            <TagIcon aria-hidden data-icon="inline-start" />
-            {t('inventory.stock.newSku')}
-          </Button>
+          {access.can('catalog.edit') && (
+            <Button variant="outline" onClick={() => setDialog('sku')}>
+              <TagIcon aria-hidden data-icon="inline-start" />
+              {t('inventory.stock.newSku')}
+            </Button>
+          )}
           {access.can('catalog.manage') && (
             <Button variant="outline" onClick={() => setDialog('location')}>
               <MapPinPlusIcon aria-hidden data-icon="inline-start" />
               {t('inventory.stock.newLocation')}
             </Button>
           )}
-          <Button asChild>
-            <Link href="/stock-receipts/new">
-              <PackagePlusIcon aria-hidden data-icon="inline-start" />
-              {t('inventory.stock.receive')}
-            </Link>
-          </Button>
+          {access.can('stock.receive') && (
+            <Button asChild>
+              <Link href="/stock-receipts/new">
+                <PackagePlusIcon aria-hidden data-icon="inline-start" />
+                {t('inventory.stock.receive')}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -279,7 +283,7 @@ export function StockPage() {
                                 : t('inventory.stock.filteredEmptyBody')}
                         </p>
                       </div>
-                      {!filtered && (
+                      {!filtered && access.can('stock.receive') && (
                         <Button asChild size="sm">
                           <Link href="/stock-receipts/new">{t('inventory.stock.receive')}</Link>
                         </Button>
