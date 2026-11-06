@@ -113,21 +113,37 @@ for (const sample of SAMPLES) {
 }
 
 test.describe('the "+2" chip opens the rest (spec 0003 design delta, AC-16)', () => {
-  // Bug: the sample's "+2" chip is a plain span (no `onClick` given to StatusChipOverflow), so the
-  // two hidden statuses are not reachable anywhere, which the component's own TSDoc forbids. This
-  // test fails until the sample wires it; `test.fail` keeps the suite green meanwhile and turns
-  // red once it is fixed (then delete the `test.fail` line).
-  test('is a button that reveals the hidden statuses', async ({ page }, info) => {
-    desktopOnly(info.project.name);
-    test.fail(true, 'known gap: the "+2" chip on /design is not interactive (QA report bug 2)');
-    await useBrowserState(page, { theme: 'light', language: 'en' });
-    await openShell(page, '/design');
+  // The component's own TSDoc says a hidden failed or owed status must stay reachable.
+  for (const sample of SAMPLES) {
+    test(`is a button that reveals the hidden statuses, ${sample.dir}`, async ({ page }, info) => {
+      desktopOnly(info.project.name);
+      await useBrowserState(page, { theme: 'light', language: 'en' });
+      await openShell(page, '/design');
 
-    const more = sampleRoot(page, 'ltr').locator('[data-slot="status-chip-overflow"]');
-    await expect(more).toHaveJSProperty('tagName', 'BUTTON');
-    await more.click();
-    await expect(page.getByRole('dialog').or(page.getByRole('tooltip'))).toBeVisible();
-  });
+      const more = sampleRoot(page, sample.dir).locator('[data-slot="status-chip-overflow"]');
+      const popover = page.locator('[data-slot="popover-content"]');
+      await expect(more).toHaveJSProperty('tagName', 'BUTTON');
+
+      for (const key of ['Enter', 'Space']) {
+        // The gallery remounts once after the shell loads; retry the whole step if it lands here.
+        await expect(async () => {
+          await more.scrollIntoViewIfNeeded({ timeout: 2_000 });
+          await more.focus();
+          await expect(more).toHaveAttribute('aria-expanded', 'false', { timeout: 2_000 });
+          await page.keyboard.press(key);
+          await expect(more).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 });
+          await expect(popover).toBeVisible({ timeout: 2_000 });
+          // The two hidden statuses are listed as chips.
+          await expect(popover.locator('[data-slot="status-chip"]')).toHaveCount(2);
+          await expect(popover.locator('[data-meaning="failed"]')).toHaveCount(1);
+          await page.keyboard.press('Escape');
+          await expect(popover).toHaveCount(0);
+          await expect(more).toHaveAttribute('aria-expanded', 'false');
+          await expect(more).toBeFocused();
+        }).toPass({ timeout: 15_000 });
+      }
+    });
+  }
 });
 
 test.describe('focus ring width (AC-4, AC-22)', () => {

@@ -94,7 +94,7 @@ for (const theme of ['light', 'dark'] satisfies Theme[]) {
       await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
 
       const pairs = page.locator('[data-testid^="contrast-"]');
-      await expect(pairs).toHaveCount(36);
+      await expect(pairs).toHaveCount(39);
       // No "…" placeholder is left once every pair has been measured.
       await expect(page.locator('[data-testid^="contrast-"]', { hasText: '…' })).toHaveCount(0);
       for (const pair of await pairs.all()) {
@@ -160,17 +160,14 @@ for (const theme of ['light', 'dark'] satisfies Theme[]) {
 }
 
 test.describe('/design lists the Daftar pairs the amendment names (AC-15)', () => {
-  // Bug: the amendment (spec 0003, 2026-11-06) says the live list covers `primary` on
-  // `background` and the `ring` on `background` and `card`. PAIRS in
-  // apps/web/src/design/design-gallery.tsx has no `primary` on `background` and no `ring` on
-  // `card`. This test fails until the two pairs are added; `test.fail` keeps the suite green
-  // meanwhile and turns red the day it is fixed (then delete the `test.fail` line).
-  test('has primary on background and ring on card', async ({ page }) => {
-    test.fail(true, 'known gap: the two pairs are not listed on /design (QA report bug 1)');
+  // The amendment (spec 0003, 2026-11-06) says the live list covers `primary` on `background`
+  // and `card` (text) and the `ring` on `background` and `card` (non text).
+  test('has primary on background and card, and ring on card', async ({ page }) => {
     await useBrowserState(page, { theme: 'light', language: 'en' });
     await openShell(page, '/design');
 
     await expect(page.getByTestId('contrast-primary-on-background')).toHaveText(/:1 meets$/);
+    await expect(page.getByTestId('contrast-primary-on-card')).toHaveText(/:1 meets$/);
     await expect(page.getByTestId('contrast-ring-on-card')).toHaveText(/:1 meets$/);
   });
 });
@@ -227,6 +224,18 @@ test.describe('Arabic type (AC-23)', () => {
     expect(arabic.lineHeight / arabic.size).toBeGreaterThanOrEqual(1.7);
     expect(arabic.headingRatio).toBeGreaterThanOrEqual(1.7);
     expect(arabic.family).toMatch(/Noto Sans Arabic/);
+  });
+
+  test('the Arabic specimen on /design shows the real 16px against 15px Latin', async ({
+    page,
+  }) => {
+    await useBrowserState(page, { theme: 'light', language: 'en' });
+    await openShell(page, '/design');
+    const specimen = page.locator('[lang="ar"] p', { hasText: 'Noto Sans Arabic' });
+    await expect(async () => {
+      const size = await specimen.evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+      expect(size).toBe(16);
+    }).toPass({ timeout: 15_000 });
   });
 
   test('a code inside Arabic text keeps its order and the monospace face', async ({ page }) => {
