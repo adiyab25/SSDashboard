@@ -25,7 +25,16 @@ function audit(event: string, targetId: string): void {
 }
 
 const env = loadEnv();
-const { db, pool } = createDatabase(env.DATABASE_URL, { max: 1 });
+// Review R22: the connection checks its session tenant before it serves any query, like the api and
+// worker pool, so a forged ssd.tenant_id never stamps the admin's rows. The message names tenant ids
+// only (no personal data).
+const { db, pool } = createDatabase(env.DATABASE_URL, {
+  max: 1,
+  onTenantMismatch: (error) => {
+    console.error(`create-admin failed: ${error.name}: ${error.message}`);
+    process.exit(1);
+  },
+});
 try {
   switch (command.kind) {
     case 'reset': {

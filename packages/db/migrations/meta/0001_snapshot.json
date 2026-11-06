@@ -1,5 +1,5 @@
 {
-  "id": "5b4aff5b-14ea-4e5a-8c69-be9f30bb47eb",
+  "id": "56a3f596-003a-4cc8-ac4d-36552afb6d17",
   "prevId": "2837603c-7d53-41aa-9dac-508ebc5f7646",
   "version": "7",
   "dialect": "postgresql",
@@ -3371,6 +3371,10 @@
         "customer_merges_two_customers": {
           "name": "customer_merges_two_customers",
           "value": "\"customer_merges\".\"survivor_id\" <> \"customer_merges\".\"merged_id\""
+        },
+        "customer_merges_reason_shape": {
+          "name": "customer_merges_reason_shape",
+          "value": "\"customer_merges\".\"reason\" IS NULL OR \"customer_merges\".\"reason\" ~ '^[a-z][a-z0-9_.]{0,63}$'"
         }
       },
       "isRLSEnabled": false
@@ -5210,6 +5214,10 @@
         "stock_movements_cost_sign": {
           "name": "stock_movements_cost_sign",
           "value": "\"stock_movements\".\"total_cost\" = 0 OR sign(\"stock_movements\".\"total_cost\") = sign(\"stock_movements\".\"quantity\")"
+        },
+        "stock_movements_reason_code_shape": {
+          "name": "stock_movements_reason_code_shape",
+          "value": "\"stock_movements\".\"reason_code\" IS NULL OR \"stock_movements\".\"reason_code\" ~ '^[a-z][a-z0-9_.]{0,63}$'"
         }
       },
       "isRLSEnabled": false
@@ -8050,6 +8058,10 @@
         "settlement_line_matches_rule_code_shape": {
           "name": "settlement_line_matches_rule_code_shape",
           "value": "\"settlement_line_matches\".\"rule_code\" IS NULL OR \"settlement_line_matches\".\"rule_code\" ~ '^[a-z][a-z0-9_.]{0,63}$'"
+        },
+        "settlement_line_matches_payment_reference_length": {
+          "name": "settlement_line_matches_payment_reference_length",
+          "value": "char_length(\"settlement_line_matches\".\"payment_reference\") <= 500"
         }
       },
       "isRLSEnabled": false
@@ -8309,12 +8321,13 @@
       "uniqueConstraints": {
         "settlement_lines_statement_ref_unique": {
           "name": "settlement_lines_statement_ref_unique",
-          "nullsNotDistinct": false,
+          "nullsNotDistinct": true,
           "columns": [
             "tenant_id",
             "account_id",
             "statement_id",
-            "external_line_ref"
+            "external_line_ref",
+            "fee_code"
           ]
         }
       },
@@ -8323,6 +8336,14 @@
         "settlement_lines_other_fee_has_code": {
           "name": "settlement_lines_other_fee_has_code",
           "value": "\"settlement_lines\".\"line_kind\" <> 'other_fee' OR \"settlement_lines\".\"fee_code\" IS NOT NULL"
+        },
+        "settlement_lines_fee_code_only_on_other_fee": {
+          "name": "settlement_lines_fee_code_only_on_other_fee",
+          "value": "\"settlement_lines\".\"line_kind\" = 'other_fee' OR \"settlement_lines\".\"fee_code\" IS NULL"
+        },
+        "settlement_lines_partner_text_length": {
+          "name": "settlement_lines_partner_text_length",
+          "value": "char_length(\"settlement_lines\".\"partner_text\") <= 500"
         }
       },
       "isRLSEnabled": false
@@ -8472,6 +8493,10 @@
         "settlement_period_events_person_has_actor": {
           "name": "settlement_period_events_person_has_actor",
           "value": "\"settlement_period_events\".\"actor_type\" <> 'person' OR \"settlement_period_events\".\"actor_id\" IS NOT NULL"
+        },
+        "settlement_period_events_reason_shape": {
+          "name": "settlement_period_events_reason_shape",
+          "value": "\"settlement_period_events\".\"reason\" IS NULL OR \"settlement_period_events\".\"reason\" ~ '^[a-z][a-z0-9_.]{0,63}$'"
         }
       },
       "isRLSEnabled": false

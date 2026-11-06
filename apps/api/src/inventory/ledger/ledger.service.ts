@@ -688,17 +688,14 @@ export class LedgerService {
     op: Operation,
     within?: WithinPosting,
   ): Promise<PostingOutcome> {
-    const { timezone, inventory_lock_date: lockDate } = await this.settings.read(
-      ['timezone', 'inventory_lock_date'],
-      tx,
-    );
+    const { inventory_lock_date: lockDate } = await this.settings.read(['inventory_lock_date'], tx);
     // Claim the idempotency key. A repeat finds the stored group; a concurrent first
     // request makes this wait, and if that one rolls back, this one proceeds as new.
     // Dates stay in SQL: the date checks run on the stored values, to the microsecond.
     let inserted;
     try {
       inserted = (
-        await tx.execute<{ id: string; future: boolean; local_date: string }>(sql`
+        await tx.execute<{ id: string; future: boolean; operating_day: string }>(sql`
           INSERT INTO movement_groups (idempotency_key, request_hash, source_type, source_id,
                                        reverses_group_id, effective_at, posted_by)
           VALUES (${op.idempotencyKey}, ${op.requestHash}, ${op.sourceType}, ${op.sourceId},
@@ -708,7 +705,7 @@ export class LedgerService {
           ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
           RETURNING id,
                     effective_at > recorded_at + ${`${FUTURE_TOLERANCE_MS} milliseconds`}::interval AS future,
-                    to_char(effective_at AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS local_date`)
+                    to_char(operating_day, 'YYYY-MM-DD') AS operating_day`)
       ).rows[0];
     } catch (error) {
       if (pgConstraint(error) === 'movement_groups_reverses_group_id_unique') {
@@ -721,10 +718,13 @@ export class LedgerService {
     }
     if (!inserted) return this.replay(tx, op);
 
-    // AC-6: never in the future, and dated after the lock date in the install's time zone.
+    // AC-6: never in the future, and on an operating day after the lock date. The lock date
+    // governs the operating day the trigger stamped on this row (Cairo day with the cutoff hour,
+    // ssd_operating_day), never the plain calendar date (review R5): with cutoff 3, a posting at
+    // 01:00 on the 1st belongs to the last day of the month before.
     if (inserted.future)
       throw new LedgerError('FutureDate', 'A posting cannot be dated in the future');
-    if (lockDate && inserted.local_date <= lockDate) {
+    if (lockDate && inserted.operating_day <= lockDate) {
       throw new LedgerError('PeriodLocked', `Inventory is locked up to ${lockDate}`, { lockDate });
     }
     const master = await this.loadMaster(tx, op.lines);
@@ -1328,46 +1328,13 @@ export class LedgerService {
     variantId?: string,
     locationId?: string,
   ): Promise<Availability[]> {
-    const scope = (alias: string) => {
-      const column = (name: string) => sql.raw(`${alias}.${name}`);
-      return pairs
-        ? sql`(${column('variant_id')}, ${column('location_id')}) IN (
-                SELECT * FROM unnest(${pgArray(pairs.map(([v]) => v))}::uuid[],
-                                     ${pgArray(pairs.map(([, l]) => l))}::uuid[]))`
-        : sql`${column('variant_id')} = ${variantId ?? null}::uuid
-              ${locationId ? sql`AND ${column('location_id')} = ${locationId}::uuid` : sql``}`;
-    };
     const { rows } = await executor.execute<{
       variant_id: string;
       location_id: string;
       lot_id: string | null;
       on_hand: number;
       reserved: number;
-    }>(sql`
-      WITH on_hand AS (
-        SELECT sl.variant_id, sl.location_id, sl.lot_id, sum(sl.on_hand)::int AS on_hand
-        FROM stock_levels sl
-        JOIN locations l ON l.id = sl.location_id
-        LEFT JOIN bins b ON b.id = sl.bin_id
-        WHERE ${scope('sl')} AND l.is_sellable AND (sl.bin_id IS NULL OR b.is_sellable)
-        GROUP BY 1, 2, 3
-      ), reserved AS (
-        SELECT r.variant_id, r.location_id, r.lot_id, sum(r.open_quantity)::int AS reserved
-        FROM reservations r
-        JOIN locations l ON l.id = r.location_id
-        WHERE ${scope('r')} AND r.status = 'active' AND l.is_sellable
-        GROUP BY 1, 2, 3
-      )
-      SELECT coalesce(o.variant_id, r.variant_id) AS variant_id,
-             coalesce(o.location_id, r.location_id) AS location_id,
-             coalesce(o.lot_id, r.lot_id) AS lot_id,
-             coalesce(o.on_hand, 0) AS on_hand,
-             coalesce(r.reserved, 0) AS reserved
-      FROM on_hand o
-      FULL JOIN reserved r
-        ON r.variant_id = o.variant_id AND r.location_id = o.location_id
-       AND r.lot_id IS NOT DISTINCT FROM o.lot_id
-      ORDER BY 1, 2, 3 NULLS FIRST`);
+    }>(buildAvailabilitySql(pairs, variantId, locationId));
     return rows.map((row) => ({
       variantId: row.variant_id,
       locationId: row.location_id,
@@ -1393,4 +1360,52 @@ export class LedgerService {
       status: row.status,
     };
   }
+}
+
+/**
+ * The statement behind `getAvailable`, `reserve`, and the posting's reservation check: on hand in
+ * sellable places minus active reservations, per SKU, location, and lot, for the given (SKU,
+ * location) pairs, or for one SKU (optionally at one location). Exported so the scale suite can
+ * EXPLAIN exactly what runs (review R3: the one SKU form reads `stock_levels_key_unique`). It only
+ * builds SQL; it never runs it and never reads another module's table.
+ */
+export function buildAvailabilitySql(
+  pairs: readonly [string, string][] | null,
+  variantId?: string,
+  locationId?: string,
+): SQL {
+  const scope = (alias: string) => {
+    const column = (name: string) => sql.raw(`${alias}.${name}`);
+    return pairs
+      ? sql`(${column('variant_id')}, ${column('location_id')}) IN (
+              SELECT * FROM unnest(${pgArray(pairs.map(([v]) => v))}::uuid[],
+                                   ${pgArray(pairs.map(([, l]) => l))}::uuid[]))`
+      : sql`${column('variant_id')} = ${variantId ?? null}::uuid
+            ${locationId ? sql`AND ${column('location_id')} = ${locationId}::uuid` : sql``}`;
+  };
+  return sql`
+    WITH on_hand AS (
+      SELECT sl.variant_id, sl.location_id, sl.lot_id, sum(sl.on_hand)::int AS on_hand
+      FROM stock_levels sl
+      JOIN locations l ON l.id = sl.location_id
+      LEFT JOIN bins b ON b.id = sl.bin_id
+      WHERE ${scope('sl')} AND l.is_sellable AND (sl.bin_id IS NULL OR b.is_sellable)
+      GROUP BY 1, 2, 3
+    ), reserved AS (
+      SELECT r.variant_id, r.location_id, r.lot_id, sum(r.open_quantity)::int AS reserved
+      FROM reservations r
+      JOIN locations l ON l.id = r.location_id
+      WHERE ${scope('r')} AND r.status = 'active' AND l.is_sellable
+      GROUP BY 1, 2, 3
+    )
+    SELECT coalesce(o.variant_id, r.variant_id) AS variant_id,
+           coalesce(o.location_id, r.location_id) AS location_id,
+           coalesce(o.lot_id, r.lot_id) AS lot_id,
+           coalesce(o.on_hand, 0) AS on_hand,
+           coalesce(r.reserved, 0) AS reserved
+    FROM on_hand o
+    FULL JOIN reserved r
+      ON r.variant_id = o.variant_id AND r.location_id = o.location_id
+     AND r.lot_id IS NOT DISTINCT FROM o.lot_id
+    ORDER BY 1, 2, 3 NULLS FIRST`;
 }

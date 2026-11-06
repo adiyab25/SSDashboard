@@ -15,7 +15,7 @@ Mail uses the core languages only, `en` and `ar`. A user whose saved language is
 
 ## Never touches
 
-- Business tables. It sends what it is given.
+- Business tables, except two recorded reads: `mail.worker.ts` reads `users` (name, email, language, banned) and `verifications` (identifier and expiry). Both are listed in `KNOWN_BREACHES` of [../module-boundary.spec.ts](../module-boundary.spec.ts) until the identity module has a service. It otherwise sends what it is given.
 - Business rules. It queues and sends; the callers decide what to send.
 - `process.env`. SMTP settings arrive through the `ENV` token.
 

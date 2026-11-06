@@ -17,7 +17,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { productVariants } from './catalog.js';
-import { createdAt, id, money, tenantId, unitCost } from './columns.js';
+import { createdAt, id, money, reasonCodeShape, tenantId, unitCost } from './columns.js';
 import { users } from './auth.js';
 import { bins, locations } from './locations.js';
 
@@ -171,7 +171,7 @@ export const stockMovements = pgTable(
     costVariance: money('cost_variance').notNull().default('0'),
     costUnknown: boolean('cost_unknown').notNull().default(false),
     sourceLineId: uuid('source_line_id'),
-    /** The caller's reason only. */
+    /** The caller's reason, a code (`reasonCodeShape`), never a typed note: the row is kept for ever. */
     reasonCode: text('reason_code'),
     effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(),
     /** The brand's Cairo day of `effectiveAt`, stamped by trigger `ssd_stamp_operating_day`; never passed by a writer. */
@@ -216,6 +216,8 @@ export const stockMovements = pgTable(
       'stock_movements_cost_sign',
       sql`${t.totalCost} = 0 OR sign(${t.totalCost}) = sign(${t.quantity})`,
     ),
+    // Review R7 (feature 4 close): a reason is a code, like every newer append only table.
+    check('stock_movements_reason_code_shape', reasonCodeShape(t.reasonCode)),
   ],
 );
 
