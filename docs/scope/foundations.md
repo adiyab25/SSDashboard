@@ -28,12 +28,12 @@ The core entities every slice builds on, shaped for Egyptian cash on delivery fr
 **Done when:** the model holds orders with a fulfillment state machine and a cash state machine (partial amounts allowed), store, channel, source, order type (sale, exchange replacement, gifted), and a derived outcome; append only ledgers for stock and customer credit, and settlement accounts with an owner type (carrier, consignment partner, gateway); one task primitive; customers with many phones and channel ids; locations with an owner type and a sellable online flag; products with style, season, and product group; cost by style and season with per order cost rules that can be "not set"; the Cairo operating day; a tenant id on every row; and it is tested at 50,000 SKUs. A `domain-reviewer` pass has no open blocker.
 Also from spec 0007: order number unique per (tenant, store), never per tenant; carrier accounts belong to the tenant with an optional store binding (one account for all stores, or one per store).
 - [x] Design it (spec): `/architect data model`
-- [ ] Build it: `/develop data model`
+- [x] Build it: `/develop data model`
   - [x] A new baseline with a tenant id on every row, end to end
   - [x] Operating day, styles and seasons with cost, locations with a fixed owner type, and the ledger changes
   - [x] Stores, channels, customers by phone, and orders with both state machines
   - [x] Customer credit, settlement, tasks, per order cost rules, and the module walls
-  - [ ] Scale at 50,000 SKUs, in its own CI job
+  - [x] Scale at 50,000 SKUs, in its own CI job
 - [ ] Verify it: `/check verify data model`
 - [ ] Test it: `/test data model`
 - [ ] Review it: `/check review data model`

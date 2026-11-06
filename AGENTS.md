@@ -24,7 +24,8 @@ pnpm build && pnpm typecheck                  # Build, type check
 pnpm lint                                     # ESLint per workspace + the repo checks (pnpm lint:repo runs those alone)
 pnpm format:check                             # Prettier
 pnpm test                                     # Unit tests (Vitest)
-pnpm test:e2e                                 # Database backed e2e + Playwright (needs Postgres)
+pnpm test:e2e                                 # Database backed e2e + Playwright (needs Postgres); excludes the api scale suite
+pnpm --filter @ssdashboard/api test:scale     # The api scale suite alone (needs Postgres, tens of minutes)
 pnpm db:generate                              # New SQL migration from the Drizzle schema
 ```
 
@@ -58,7 +59,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationa
 - Repo checks (`packages/config/scripts`, run by `pnpm lint` through the root task `//#lint:repo`): route groups, folder names, module READMEs, doc links (`docs/**`, READMEs, AGENTS.md), banned names, component export names, and the TSDoc fixture. The logical CSS check runs inside `lint` for `packages/ui` and `apps/web`.
 - Hooks (Husky): `pre-commit` runs lint-staged (args chunked with `--max-arg-length 4000` for Windows) then `pnpm typecheck`; `commit-msg` runs `check-commit-subject.mjs`.
 - Testing: Vitest and Testing Library beside the source, database backed e2e and Playwright for user flows (`test-preferences.json`).
-- CI (`.github/workflows/ci.yml`): `conventions` (branch name and every commit subject, PRs only), `images` (builds `app` and `web`, not pushed), `checks` (format, lint, typecheck, unit), `e2e` (Postgres 18 service, Playwright). Publishing images comes with feature 26 (deployment).
+- CI (`.github/workflows/ci.yml`): `conventions` (branch name and every commit subject, PRs only), `images` (builds `app` and `web`, not pushed), `checks` (format, lint, typecheck, unit), `e2e` (Postgres 18 service, Playwright), `scale` (Postgres 18 service, `pnpm --filter @ssdashboard/api test:scale`; nightly at 02:30 UTC, on pull requests labelled `scale`, or by hand). Publishing images comes with feature 26 (deployment).
 
 ## Git
 

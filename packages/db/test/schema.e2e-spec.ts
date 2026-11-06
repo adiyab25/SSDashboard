@@ -3,6 +3,60 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { APP_ROLE, runMigrations } from '../src/index.js';
 import { createScratchDatabase, dropScratchDatabase } from './database.js';
 
+/** One foreign key whose columns no index leads with. */
+type UnindexedKey = string;
+
+/**
+ * Foreign keys in schema public that no index serves (spec 0002 item 19, AC-36). PostgreSQL does not
+ * index the referencing side of a foreign key, so a delete or update of the parent scans the child.
+ * An index serves a key when it is valid, has the key's columns as its leading columns in order, and
+ * either has no predicate or has exactly `<column> IS NOT NULL` for one of the key's columns (a
+ * foreign key with a null column is not checked, and a parent lookup `col = $1` implies the column
+ * is not null, so that index serves every lookup that matters). Any other partial index does not
+ * serve every row and does not count. Printed as `table(columns) -> referenced`.
+ */
+async function unindexedForeignKeys(client: pg.Client): Promise<UnindexedKey[]> {
+  const keys = await client.query<{ table: string; ref: string; cols: string[] }>(
+    `SELECT c.relname AS "table", r.relname AS ref,
+            (SELECT array_agg(a.attname::text ORDER BY k.ord)
+               FROM unnest(con.conkey) WITH ORDINALITY k(attnum, ord)
+               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) AS cols
+       FROM pg_constraint con
+       JOIN pg_class c ON c.oid = con.conrelid
+       JOIN pg_class r ON r.oid = con.confrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE con.contype = 'f' AND n.nspname = 'public'
+      ORDER BY 1, 3`,
+  );
+  const indexes = await client.query<{
+    table: string;
+    cols: (string | null)[];
+    pred: string | null;
+  }>(
+    `SELECT c.relname AS "table", pg_get_expr(x.indpred, x.indrelid) AS pred,
+            (SELECT array_agg(a.attname::text ORDER BY k.ord)
+               FROM unnest(x.indkey::int2[]) WITH ORDINALITY k(attnum, ord)
+               LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+              WHERE k.ord <= x.indnkeyatts) AS cols
+       FROM pg_index x
+       JOIN pg_class c ON c.oid = x.indrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND x.indisvalid`,
+  );
+  return keys.rows
+    .filter((key) => {
+      const served = indexes.rows.some((index) => {
+        if (index.table !== key.table) return false;
+        if (!key.cols.every((col, position) => index.cols[position] === col)) return false;
+        if (index.pred === null) return true;
+        const predicate = index.pred.replace(/[()"]/g, '');
+        return key.cols.some((col) => predicate === `${col} IS NOT NULL`);
+      });
+      return !served;
+    })
+    .map((key) => `${key.table}(${key.cols.join(', ')}) -> ${key.ref}`);
+}
+
 // One migrated scratch database for the file; each test makes its own rows.
 describe('core data model schema (spec 0002)', () => {
   let name: string;
@@ -689,6 +743,78 @@ describe('core data model schema (spec 0002)', () => {
           locationId,
         ]),
       ).rejects.toThrow(/stock_levels_key_unique/);
+    });
+  });
+
+  // A bare Drizzle `.desc()` makes `DESC NULLS LAST`, which a plain `ORDER BY x DESC` cannot use.
+  it('has no index key column ordered DESC NULLS LAST', async () => {
+    const { rows } = await owner.query<{ indexdef: string }>(
+      "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexdef LIKE '%DESC NULLS LAST%' ORDER BY 1",
+    );
+    expect(rows.map((row) => row.indexdef)).toEqual([]);
+  });
+
+  it('catches a DESC NULLS LAST index, and accepts DESC NULLS FIRST', async () => {
+    await owner.query('BEGIN');
+    try {
+      await owner.query(
+        `CREATE TABLE planted_desc (id uuid PRIMARY KEY, at timestamptz);
+         CREATE INDEX planted_desc_first ON planted_desc (at DESC NULLS FIRST);
+         CREATE INDEX planted_desc_last ON planted_desc (at DESC NULLS LAST);`,
+      );
+      const { rows } = await owner.query<{ indexname: string }>(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexdef LIKE '%DESC NULLS LAST%'",
+      );
+      expect(rows.map((row) => row.indexname)).toEqual(['planted_desc_last']);
+    } finally {
+      await owner.query('ROLLBACK');
+    }
+  });
+
+  // AC-36 (spec 0002 item 19): every foreign key column has an index that leads with it.
+  describe('foreign key indexes (AC-36)', () => {
+    it('serves every foreign key with an index that leads with its columns', async () => {
+      expect(await unindexedForeignKeys(owner)).toEqual([]);
+    });
+
+    it('scans a real set of foreign keys, so an empty result is not an empty scan', async () => {
+      const { rows } = await owner.query<{ count: string }>(
+        "SELECT count(*) FROM pg_constraint WHERE contype = 'f'",
+      );
+      expect(Number(rows[0]?.count)).toBeGreaterThan(50);
+    });
+
+    // Planted failures, rolled back so the schema stays clean.
+    it('reports a foreign key without an index, a wrong order, and a partial composite index', async () => {
+      const planted = async () =>
+        (await unindexedForeignKeys(owner)).filter((key) => key.startsWith('planted_'));
+      await owner.query('BEGIN');
+      try {
+        await owner.query(
+          `CREATE TABLE planted_parent (a uuid, b uuid, PRIMARY KEY (a, b));
+           CREATE TABLE planted_child (
+             id uuid PRIMARY KEY, a uuid, b uuid, c uuid, d uuid, e uuid, f uuid,
+             CONSTRAINT planted_child_ab_fk FOREIGN KEY (a, b) REFERENCES planted_parent (a, b),
+             CONSTRAINT planted_child_cd_fk FOREIGN KEY (c, d) REFERENCES planted_parent (a, b),
+             CONSTRAINT planted_child_ef_fk FOREIGN KEY (e, f) REFERENCES planted_parent (a, b));
+           CREATE INDEX planted_child_b_a ON planted_child (b, a);
+           CREATE INDEX planted_child_c_d_partial ON planted_child (c, d) WHERE id IS NOT NULL;
+           CREATE INDEX planted_child_e_f_partial ON planted_child (e, f) WHERE e IS NOT NULL;`,
+        );
+
+        // (b, a) is the wrong order; a partial index on another column does not serve every row;
+        // a partial index on `e IS NOT NULL` does.
+        expect(await planted()).toEqual([
+          'planted_child(a, b) -> planted_parent',
+          'planted_child(c, d) -> planted_parent',
+        ]);
+
+        await owner.query('CREATE INDEX planted_child_a_b ON planted_child (a, b, id)');
+        await owner.query('CREATE INDEX planted_child_c_d ON planted_child (c, d)');
+        expect(await planted()).toEqual([]);
+      } finally {
+        await owner.query('ROLLBACK');
+      }
     });
   });
 });

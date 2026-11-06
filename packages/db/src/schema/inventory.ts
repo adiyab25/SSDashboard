@@ -42,6 +42,8 @@ export const lots = pgTable(
     unique('lots_variant_code_unique').on(t.tenantId, t.variantId, t.code),
     // Target of the (lot_id, variant_id) composite keys: a lot always belongs to the row's SKU.
     unique('lots_id_variant_unique').on(t.id, t.variantId),
+    // Foreign key index: variant_id (spec 0002 item 19).
+    index('lots_variant_idx').on(t.variantId),
   ],
 );
 
@@ -82,6 +84,18 @@ export const serials = pgTable(
       sql`(${t.status} = 'in_stock') = (${t.locationId} IS NOT NULL)`,
     ),
     check('serials_bin_needs_location', sql`${t.binId} IS NULL OR ${t.locationId} IS NOT NULL`),
+    // Foreign key index: the (bin_id, location_id) key; PostgreSQL does not index it (spec 0002 item 19).
+    index('serials_bin_idx')
+      .on(t.binId, t.locationId)
+      .where(sql`${t.binId} IS NOT NULL`),
+    // Foreign key index: the (lot_id, variant_id) key (spec 0002 item 19).
+    index('serials_lot_idx')
+      .on(t.lotId, t.variantId)
+      .where(sql`${t.lotId} IS NOT NULL`),
+    // Foreign key index: location_id (spec 0002 item 19).
+    index('serials_location_idx').on(t.locationId),
+    // Foreign key index: variant_id (spec 0002 item 19).
+    index('serials_variant_idx').on(t.variantId),
   ],
 );
 
@@ -128,6 +142,8 @@ export const movementGroups = pgTable(
     foreignKey({ columns: [t.reversesGroupId], foreignColumns: [t.id] }).onDelete('restrict'),
     index('movement_groups_source_idx').on(t.sourceType, t.sourceId),
     index('movement_groups_operating_day_idx').on(t.operatingDay),
+    // Foreign key index: posted_by (spec 0002 item 19).
+    index('movement_groups_posted_by_idx').on(t.postedBy),
   ],
 );
 
@@ -179,11 +195,22 @@ export const stockMovements = pgTable(
     index('stock_movements_group_idx').on(t.groupId),
     index('stock_movements_operating_day_idx').on(t.operatingDay),
     // SKU history, newest first (spec 0006).
-    index('stock_movements_variant_recorded_idx').on(t.variantId, t.recordedAt.desc(), t.id.desc()),
+    index('stock_movements_variant_recorded_idx').on(
+      t.variantId,
+      t.recordedAt.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
+    ),
     index('stock_movements_recorded_brin').using('brin', t.recordedAt),
+    // Foreign key index: the (lot_id, variant_id) key (spec 0002 item 19).
     index('stock_movements_lot_idx')
-      .on(t.lotId)
+      .on(t.lotId, t.variantId)
       .where(sql`${t.lotId} IS NOT NULL`),
+    // Foreign key index: the (bin_id, location_id) key; PostgreSQL does not index it (spec 0002 item 19).
+    index('stock_movements_bin_idx')
+      .on(t.binId, t.locationId)
+      .where(sql`${t.binId} IS NOT NULL`),
+    // Foreign key index: location_id (spec 0002 item 19).
+    index('stock_movements_location_idx').on(t.locationId),
     check('stock_movements_quantity_not_zero', sql`${t.quantity} <> 0`),
     check(
       'stock_movements_cost_sign',
@@ -243,8 +270,16 @@ export const stockLevels = pgTable(
       foreignColumns: [lots.id, lots.variantId],
     }).onDelete('restrict'),
     index('stock_levels_location_variant_idx').on(t.locationId, t.variantId),
+    // Foreign key index: the (bin_id, location_id) key; PostgreSQL does not index it (spec 0002 item 19).
+    index('stock_levels_bin_idx')
+      .on(t.binId, t.locationId)
+      .where(sql`${t.binId} IS NOT NULL`),
+    // Foreign key index: the (lot_id, variant_id) key (spec 0002 item 19).
+    index('stock_levels_lot_idx')
+      .on(t.lotId, t.variantId)
+      .where(sql`${t.lotId} IS NOT NULL`),
     // The Stock page order, most recent movement first (spec 0006).
-    index('stock_levels_updated_idx').on(t.updatedAt.desc(), t.id.desc()),
+    index('stock_levels_updated_idx').on(t.updatedAt.desc().nullsFirst(), t.id.desc().nullsFirst()),
     check(
       'stock_levels_value_sign',
       sql`(${t.onHand} = 0 AND ${t.totalValue} = 0) OR (${t.onHand} <> 0 AND (${t.totalValue} = 0 OR sign(${t.totalValue}) = sign(${t.onHand})))`,
@@ -289,6 +324,14 @@ export const reservations = pgTable(
     index('reservations_active_balance_idx')
       .on(t.variantId, t.locationId, t.lotId)
       .where(sql`${t.status} = 'active'`),
+    // Foreign key index: the (lot_id, variant_id) key (spec 0002 item 19).
+    index('reservations_lot_idx')
+      .on(t.lotId, t.variantId)
+      .where(sql`${t.lotId} IS NOT NULL`),
+    // Foreign key index: variant_id (spec 0002 item 19).
+    index('reservations_variant_idx').on(t.variantId),
+    // Foreign key index: location_id (spec 0002 item 19).
+    index('reservations_location_idx').on(t.locationId),
     check('reservations_quantity_positive', sql`${t.quantity} > 0`),
     check(
       'reservations_open_quantity_range',

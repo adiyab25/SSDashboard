@@ -431,7 +431,7 @@ export class LedgerService {
              to_char(sl.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at
       FROM stock_levels sl JOIN locations l ON l.id = sl.location_id
       WHERE ${sql.join(filters, sql` AND `)}
-      ORDER BY sl.updated_at DESC NULLS LAST, sl.id DESC NULLS LAST
+      ORDER BY sl.updated_at DESC, sl.id DESC
       LIMIT ${query.limit}`);
     return rows.map((row) => ({
       id: row.id,
@@ -560,7 +560,7 @@ export class LedgerService {
              g.source_type, g.source_id, g.reverses_group_id, g.posted_by
       FROM stock_movements m JOIN movement_groups g ON g.id = m.group_id
       WHERE ${sql.join(filters, sql` AND `)}
-      ORDER BY m.recorded_at DESC NULLS LAST, m.id DESC NULLS LAST
+      ORDER BY m.recorded_at DESC, m.id DESC
       LIMIT ${query.limit}`);
     return rows.map((row) => ({
       id: row.id,

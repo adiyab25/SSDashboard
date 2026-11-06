@@ -130,7 +130,13 @@ export const creditEntries = pgTable(
     index('credit_entries_customer_funding_idx').on(t.customerId, t.funding, t.recordedAt),
     index('credit_entries_posting_idx').on(t.postingId),
     index('credit_entries_order_idx').on(t.orderId),
-    index('credit_entries_order_line_idx').on(t.orderLineId),
+    // Foreign key indexes: the (order_line_id, order_id) and (reverses_entry_id, customer_id) keys.
+    index('credit_entries_order_line_idx')
+      .on(t.orderLineId, t.orderId)
+      .where(sql`${t.orderLineId} IS NOT NULL`),
+    index('credit_entries_reverses_entry_customer_idx')
+      .on(t.reversesEntryId, t.customerId)
+      .where(sql`${t.reversesEntryId} IS NOT NULL`),
     index('credit_entries_exchange_idx').on(t.exchangeId),
     index('credit_entries_refund_idx').on(t.refundId),
     index('credit_entries_actor_idx').on(t.actorId),

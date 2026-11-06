@@ -1139,10 +1139,14 @@ CREATE UNIQUE INDEX "users_staff_code_unique" ON "users" USING btree ("tenant_id
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier","expires_at");--> statement-breakpoint
 CREATE INDEX "barcodes_variant_idx" ON "barcodes" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "barcodes_uom_idx" ON "barcodes" USING btree ("uom_id");--> statement-breakpoint
-CREATE INDEX "cost_records_style_idx" ON "cost_records" USING btree ("product_id","effective_from" DESC NULLS LAST,"recorded_at" DESC NULLS LAST);--> statement-breakpoint
-CREATE INDEX "cost_records_variant_idx" ON "cost_records" USING btree ("variant_id","effective_from" DESC NULLS LAST,"recorded_at" DESC NULLS LAST) WHERE "cost_records"."variant_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "cost_records_style_idx" ON "cost_records" USING btree ("product_id","effective_from" DESC NULLS FIRST,"recorded_at" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "cost_records_variant_idx" ON "cost_records" USING btree ("variant_id","effective_from" DESC NULLS FIRST,"recorded_at" DESC NULLS FIRST) WHERE "cost_records"."variant_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "cost_records_season_idx" ON "cost_records" USING btree ("season_id");--> statement-breakpoint
+CREATE INDEX "cost_records_variant_product_idx" ON "cost_records" USING btree ("variant_id","product_id") WHERE "cost_records"."variant_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "cost_records_recorded_by_idx" ON "cost_records" USING btree ("recorded_by");--> statement-breakpoint
+CREATE INDEX "product_options_product_idx" ON "product_options" USING btree ("product_id");--> statement-breakpoint
 CREATE INDEX "product_variants_product_idx" ON "product_variants" USING btree ("product_id");--> statement-breakpoint
+CREATE INDEX "product_variants_base_uom_idx" ON "product_variants" USING btree ("base_uom_id");--> statement-breakpoint
 CREATE INDEX "product_variants_sku_c_idx" ON "product_variants" USING btree ("sku" COLLATE "C");--> statement-breakpoint
 CREATE INDEX "product_variants_sku_trgm_idx" ON "product_variants" USING gin ("sku" gin_trgm_ops);--> statement-breakpoint
 CREATE INDEX "products_product_group_idx" ON "products" USING btree ("product_group_id");--> statement-breakpoint
@@ -1160,7 +1164,8 @@ CREATE INDEX "outbound_commands_resolved_by_idx" ON "outbound_commands" USING bt
 CREATE INDEX "credit_entries_customer_funding_idx" ON "credit_entries" USING btree ("customer_id","funding","recorded_at");--> statement-breakpoint
 CREATE INDEX "credit_entries_posting_idx" ON "credit_entries" USING btree ("posting_id");--> statement-breakpoint
 CREATE INDEX "credit_entries_order_idx" ON "credit_entries" USING btree ("order_id");--> statement-breakpoint
-CREATE INDEX "credit_entries_order_line_idx" ON "credit_entries" USING btree ("order_line_id");--> statement-breakpoint
+CREATE INDEX "credit_entries_order_line_idx" ON "credit_entries" USING btree ("order_line_id","order_id") WHERE "credit_entries"."order_line_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "credit_entries_reverses_entry_customer_idx" ON "credit_entries" USING btree ("reverses_entry_id","customer_id") WHERE "credit_entries"."reverses_entry_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "credit_entries_exchange_idx" ON "credit_entries" USING btree ("exchange_id");--> statement-breakpoint
 CREATE INDEX "credit_entries_refund_idx" ON "credit_entries" USING btree ("refund_id");--> statement-breakpoint
 CREATE INDEX "credit_entries_actor_idx" ON "credit_entries" USING btree ("actor_id");--> statement-breakpoint
@@ -1174,22 +1179,37 @@ CREATE INDEX "customer_merges_actor_idx" ON "customer_merges" USING btree ("acto
 CREATE INDEX "customer_phones_customer_idx" ON "customer_phones" USING btree ("customer_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "customer_phones_one_primary_unique" ON "customer_phones" USING btree ("customer_id") WHERE "customer_phones"."is_primary";--> statement-breakpoint
 CREATE INDEX "customers_merged_into_idx" ON "customers" USING btree ("merged_into_id") WHERE "customers"."merged_into_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "lots_variant_idx" ON "lots" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "movement_groups_source_idx" ON "movement_groups" USING btree ("source_type","source_id");--> statement-breakpoint
 CREATE INDEX "movement_groups_operating_day_idx" ON "movement_groups" USING btree ("operating_day");--> statement-breakpoint
+CREATE INDEX "movement_groups_posted_by_idx" ON "movement_groups" USING btree ("posted_by");--> statement-breakpoint
 CREATE INDEX "movement_serials_serial_idx" ON "movement_serials" USING btree ("serial_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "reservations_active_source_line_unique" ON "reservations" USING btree ("tenant_id","source_type","source_line_id") WHERE "reservations"."status" = 'active';--> statement-breakpoint
 CREATE INDEX "reservations_active_balance_idx" ON "reservations" USING btree ("variant_id","location_id","lot_id") WHERE "reservations"."status" = 'active';--> statement-breakpoint
+CREATE INDEX "reservations_lot_idx" ON "reservations" USING btree ("lot_id","variant_id") WHERE "reservations"."lot_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "reservations_variant_idx" ON "reservations" USING btree ("variant_id");--> statement-breakpoint
+CREATE INDEX "reservations_location_idx" ON "reservations" USING btree ("location_id");--> statement-breakpoint
 CREATE INDEX "serials_place_idx" ON "serials" USING btree ("variant_id","location_id","bin_id") WHERE "serials"."status" = 'in_stock';--> statement-breakpoint
+CREATE INDEX "serials_bin_idx" ON "serials" USING btree ("bin_id","location_id") WHERE "serials"."bin_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "serials_lot_idx" ON "serials" USING btree ("lot_id","variant_id") WHERE "serials"."lot_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "serials_location_idx" ON "serials" USING btree ("location_id");--> statement-breakpoint
+CREATE INDEX "serials_variant_idx" ON "serials" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "stock_level_discrepancies_stock_level_idx" ON "stock_level_discrepancies" USING btree ("stock_level_id");--> statement-breakpoint
 CREATE INDEX "stock_levels_location_variant_idx" ON "stock_levels" USING btree ("location_id","variant_id");--> statement-breakpoint
-CREATE INDEX "stock_levels_updated_idx" ON "stock_levels" USING btree ("updated_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "stock_levels_bin_idx" ON "stock_levels" USING btree ("bin_id","location_id") WHERE "stock_levels"."bin_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "stock_levels_lot_idx" ON "stock_levels" USING btree ("lot_id","variant_id") WHERE "stock_levels"."lot_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "stock_levels_updated_idx" ON "stock_levels" USING btree ("updated_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "stock_movements_variant_location_effective_idx" ON "stock_movements" USING btree ("variant_id","location_id","effective_at");--> statement-breakpoint
 CREATE INDEX "stock_movements_group_idx" ON "stock_movements" USING btree ("group_id");--> statement-breakpoint
 CREATE INDEX "stock_movements_operating_day_idx" ON "stock_movements" USING btree ("operating_day");--> statement-breakpoint
-CREATE INDEX "stock_movements_variant_recorded_idx" ON "stock_movements" USING btree ("variant_id","recorded_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "stock_movements_variant_recorded_idx" ON "stock_movements" USING btree ("variant_id","recorded_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "stock_movements_recorded_brin" ON "stock_movements" USING brin ("recorded_at");--> statement-breakpoint
-CREATE INDEX "stock_movements_lot_idx" ON "stock_movements" USING btree ("lot_id") WHERE "stock_movements"."lot_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "stock_movements_lot_idx" ON "stock_movements" USING btree ("lot_id","variant_id") WHERE "stock_movements"."lot_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "stock_movements_bin_idx" ON "stock_movements" USING btree ("bin_id","location_id") WHERE "stock_movements"."bin_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "stock_movements_location_idx" ON "stock_movements" USING btree ("location_id");--> statement-breakpoint
 CREATE INDEX "bins_parent_idx" ON "bins" USING btree ("parent_id");--> statement-breakpoint
+CREATE INDEX "bins_location_idx" ON "bins" USING btree ("location_id");--> statement-breakpoint
+CREATE INDEX "location_owner_policies_updated_by_idx" ON "location_owner_policies" USING btree ("updated_by");--> statement-breakpoint
 CREATE INDEX "locations_party_idx" ON "locations" USING btree ("party_id");--> statement-breakpoint
 CREATE INDEX "order_events_order_recorded_idx" ON "order_events" USING btree ("order_id","recorded_at","id");--> statement-breakpoint
 CREATE INDEX "order_events_day_machine_state_idx" ON "order_events" USING btree ("operating_day","machine","to_state");--> statement-breakpoint
@@ -1198,7 +1218,7 @@ CREATE INDEX "order_events_actor_idx" ON "order_events" USING btree ("actor_id")
 CREATE INDEX "order_lines_order_idx" ON "order_lines" USING btree ("order_id");--> statement-breakpoint
 CREATE INDEX "order_lines_variant_idx" ON "order_lines" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "order_lines_split_from_idx" ON "order_lines" USING btree ("split_from_line_id");--> statement-breakpoint
-CREATE INDEX "orders_store_placed_idx" ON "orders" USING btree ("store_id","placed_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "orders_store_placed_idx" ON "orders" USING btree ("store_id","placed_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "orders_confirmation_queue_idx" ON "orders" USING btree ("placed_at","id") WHERE "orders"."fulfillment_state" = 'new';--> statement-breakpoint
 CREATE INDEX "orders_customer_idx" ON "orders" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX "orders_operating_day_store_idx" ON "orders" USING btree ("operating_day","store_id");--> statement-breakpoint
@@ -1210,32 +1230,37 @@ CREATE INDEX "orders_discount_code_idx" ON "orders" USING btree ("discount_code"
 CREATE INDEX "orders_channel_idx" ON "orders" USING btree ("channel_id");--> statement-breakpoint
 CREATE INDEX "orders_source_media_buyer_idx" ON "orders" USING btree ("source_media_buyer_id");--> statement-breakpoint
 CREATE INDEX "orders_confirmed_by_idx" ON "orders" USING btree ("confirmed_by");--> statement-breakpoint
-CREATE INDEX "order_cost_rules_kind_effective_idx" ON "order_cost_rules" USING btree ("kind","effective_from" DESC NULLS LAST,"recorded_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "order_cost_rules_kind_effective_idx" ON "order_cost_rules" USING btree ("kind","effective_from" DESC NULLS FIRST,"recorded_at" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "order_cost_rules_recorded_by_idx" ON "order_cost_rules" USING btree ("recorded_by");--> statement-breakpoint
 CREATE UNIQUE INDEX "settlement_accounts_live_connection_unique" ON "settlement_accounts" USING btree ("tenant_id","owner_connection_id") WHERE "settlement_accounts"."archived_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "settlement_accounts_live_party_unique" ON "settlement_accounts" USING btree ("tenant_id","owner_party_id") WHERE "settlement_accounts"."archived_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "settlement_accounts_connection_idx" ON "settlement_accounts" USING btree ("owner_connection_id");--> statement-breakpoint
 CREATE INDEX "settlement_accounts_party_idx" ON "settlement_accounts" USING btree ("owner_party_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "settlement_line_matches_one_first_row_unique" ON "settlement_line_matches" USING btree ("line_id") WHERE "settlement_line_matches"."supersedes_match_id" IS NULL;--> statement-breakpoint
-CREATE INDEX "settlement_line_matches_line_recorded_idx" ON "settlement_line_matches" USING btree ("line_id","recorded_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_line_recorded_idx" ON "settlement_line_matches" USING btree ("line_id","recorded_at" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "settlement_line_matches_order_idx" ON "settlement_line_matches" USING btree ("order_id");--> statement-breakpoint
-CREATE INDEX "settlement_line_matches_order_line_idx" ON "settlement_line_matches" USING btree ("order_line_id");--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_order_line_idx" ON "settlement_line_matches" USING btree ("order_line_id","order_id") WHERE "settlement_line_matches"."order_line_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "settlement_line_matches_supersedes_line_idx" ON "settlement_line_matches" USING btree ("supersedes_match_id","line_id") WHERE "settlement_line_matches"."supersedes_match_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "settlement_line_matches_variant_idx" ON "settlement_line_matches" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "settlement_line_matches_matched_by_idx" ON "settlement_line_matches" USING btree ("matched_by");--> statement-breakpoint
 CREATE INDEX "settlement_line_matches_refund_idx" ON "settlement_line_matches" USING btree ("refund_id");--> statement-breakpoint
 CREATE INDEX "settlement_lines_tracking_idx" ON "settlement_lines" USING btree ("tracking_number");--> statement-breakpoint
-CREATE INDEX "settlement_lines_statement_idx" ON "settlement_lines" USING btree ("statement_id");--> statement-breakpoint
+CREATE INDEX "settlement_lines_statement_idx" ON "settlement_lines" USING btree ("statement_id","account_id");--> statement-breakpoint
 CREATE INDEX "settlement_lines_account_occurred_idx" ON "settlement_lines" USING btree ("account_id","occurred_on");--> statement-breakpoint
 CREATE INDEX "settlement_lines_store_idx" ON "settlement_lines" USING btree ("store_id");--> statement-breakpoint
 CREATE INDEX "settlement_period_events_period_recorded_idx" ON "settlement_period_events" USING btree ("period_id","recorded_at");--> statement-breakpoint
 CREATE INDEX "settlement_period_events_actor_idx" ON "settlement_period_events" USING btree ("actor_id");--> statement-breakpoint
-CREATE INDEX "settlement_periods_account_starts_idx" ON "settlement_periods" USING btree ("account_id","starts_on" DESC NULLS LAST);--> statement-breakpoint
-CREATE INDEX "settlement_statements_account_received_idx" ON "settlement_statements" USING btree ("account_id","received_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "settlement_periods_account_starts_idx" ON "settlement_periods" USING btree ("account_id","starts_on" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "settlement_statements_account_received_idx" ON "settlement_statements" USING btree ("account_id","received_at" DESC NULLS FIRST);--> statement-breakpoint
 CREATE INDEX "settlement_statements_account_covers_idx" ON "settlement_statements" USING btree ("account_id","covers_from","covers_to");--> statement-breakpoint
 CREATE INDEX "settlement_statements_imported_by_idx" ON "settlement_statements" USING btree ("imported_by");--> statement-breakpoint
+CREATE INDEX "settlement_statements_supersedes_account_idx" ON "settlement_statements" USING btree ("supersedes_statement_id","account_id") WHERE "settlement_statements"."supersedes_statement_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "stock_receipt_lines_variant_idx" ON "stock_receipt_lines" USING btree ("variant_id");--> statement-breakpoint
-CREATE INDEX "stock_receipts_effective_idx" ON "stock_receipts" USING btree ("effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
-CREATE INDEX "stock_receipts_location_effective_idx" ON "stock_receipts" USING btree ("location_id","effective_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "stock_receipt_lines_uom_idx" ON "stock_receipt_lines" USING btree ("uom_id");--> statement-breakpoint
+CREATE INDEX "stock_receipts_effective_idx" ON "stock_receipts" USING btree ("effective_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "stock_receipts_posted_by_idx" ON "stock_receipts" USING btree ("posted_by");--> statement-breakpoint
+CREATE INDEX "stock_receipts_voided_by_idx" ON "stock_receipts" USING btree ("voided_by") WHERE "stock_receipts"."voided_by" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "stock_receipts_location_effective_idx" ON "stock_receipts" USING btree ("location_id","effective_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
 CREATE UNIQUE INDEX "tasks_open_dedupe_key_unique" ON "tasks" USING btree ("tenant_id","dedupe_key") WHERE "tasks"."status" = 'open';--> statement-breakpoint
 CREATE INDEX "tasks_open_owner_user_idx" ON "tasks" USING btree ("owner_user_id","due_at") WHERE "tasks"."status" = 'open';--> statement-breakpoint
 CREATE INDEX "tasks_open_owner_hat_idx" ON "tasks" USING btree ("owner_hat","due_at") WHERE "tasks"."status" = 'open' AND "tasks"."owner_user_id" IS NULL;--> statement-breakpoint

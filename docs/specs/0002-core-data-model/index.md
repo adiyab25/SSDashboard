@@ -454,10 +454,10 @@ The amendment only (Amendment 2026-11-05, with the fix pass of the same day). Tr
 **Done when** `pnpm test` passes including the credit arithmetic, settlement state, ownership map, and module boundary tests; `pnpm --filter @ssdashboard/db test:e2e` passes with an append only case for every table in A4; and `pnpm lint` passes.
 
 **Milestone 5: Scale at 50,000 SKUs, in its own CI job**
-19. [ ] `apps/api/test/scale-seed.ts` and `scale.e2e-spec.ts` reshaped to the catalog child's load (50,000 variants, 500,000 movements, 150,000 orders, and the related rows) with one p95 assertion per budget row; a foreign key index check in `schema.e2e-spec.ts`; the measured p95 values recorded in `verify.md` and the budgets reset from the first run where they were **Assumed**, satisfies **AC-36**
-20. [ ] A `scale` job in `.github/workflows/ci.yml` that runs the scale file on a nightly schedule and on pull requests labelled `scale`, and the default api `test:e2e` excluding `test/scale.e2e-spec.ts`; spec 0010's 5,000,000 audit entry check runs in the same file and job, satisfies **AC-36**
+19. [x] `apps/api/test/scale-seed.ts` and `scale.e2e-spec.ts` reshaped to the catalog child's load (50,000 variants, 500,000 movements, 150,000 orders, and the related rows) with one p95 assertion per budget row; a foreign key index check in `schema.e2e-spec.ts`; the measured p95 values recorded in `verify.md` and the budgets reset from the first run where they were **Assumed**, satisfies **AC-36**
+20. [x] A `scale` job in `.github/workflows/ci.yml` that runs the scale file on a nightly schedule and on pull requests labelled `scale`, and the default api `test:e2e` excluding `test/scale.e2e-spec.ts`; spec 0010's 5,000,000 audit entry check runs in the same file and job, satisfies **AC-36**
 
-**Done when** `pnpm build && pnpm --filter @ssdashboard/api test:e2e -- test/scale.e2e-spec.ts` passes with every p95 under its budget; `pnpm test:e2e` no longer runs the scale file; the `scale` job is green on a labelled pull request; and `pnpm --filter @ssdashboard/db test:e2e` passes including the foreign key index check.
+**Done when** `pnpm build && pnpm --filter @ssdashboard/api test:scale` passes with every p95 under its budget; `pnpm test:e2e` no longer runs the scale file; the `scale` job is green on a labelled pull request; and `pnpm --filter @ssdashboard/db test:e2e` passes including the foreign key index check.
 
 ## Consequences
 
@@ -524,7 +524,7 @@ Amendment 2026-11-05 (current feature numbers):
 - [ ] Domain review of this amendment (`domain-reviewer`), required by scope feature 4's done when, before the build starts.
 - [ ] Feature 16: build the platform `DomainEvents` service (A6) with the first projection on `orders`.
 - [x] Lost parcels have their own fulfillment state, `lost` (fix pass); feature 19 maps Bosta's lost states to it (below).
-- [ ] Feature 12: replace the trigram expression index on products with the Arabic normalization function.
+- [ ] Feature 12: replace the trigram expression index on products with the Arabic normalization function. The scale suite (milestone 5) found the SKU name branch of `buildSkuListSql` scanning `products` because its `ILIKE` on `name->>'en'` and `name->>'ar'` does not match the indexed expression; fast at 5,000 styles, so feature 12 makes the query and the index use one expression and asserts the trigram index in the scale plan.
 - [ ] Feature 26: set per client `APP_DB_ROLE` and `REVOKE CONNECT, TEMP ... FROM PUBLIC` in the host bootstrap; refuse an app role that already exists on a first run unless the host bootstrap made it; send the app role password pre hashed; prove a restore brings back `ssd.tenant_id` and `ssd.app_role` (`docs/reviews/security-data-model-m1-m2.md`, M2, N1, N3, N5).
 - [ ] Features 35 and 43: the full order to refund to settlement run per owner type (spec 0007 section 8), on top of this feature's three way policy test.
 - [x] ~~Feature 59: decide whether opening stock booked with `cost_unknown` is revalued when its cost arrives.~~ Void after the fix pass: opening stock always carries a cost (B5); the current feature 59 carry is in the fix pass block below.

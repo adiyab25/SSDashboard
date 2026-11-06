@@ -136,6 +136,8 @@ export const productOptions = pgTable(
   },
   (t) => [
     unique('product_options_product_position_unique').on(t.tenantId, t.productId, t.position),
+    // Foreign key index: product_id (spec 0002 item 19).
+    index('product_options_product_idx').on(t.productId),
   ],
 );
 
@@ -180,6 +182,8 @@ export const productVariants = pgTable(
     // Target of the (variant_id, product_id) composite key on cost records: an override always belongs to its style.
     unique('product_variants_id_product_unique').on(t.id, t.productId),
     index('product_variants_product_idx').on(t.productId),
+    // Foreign key index: base_uom_id (spec 0002 item 19).
+    index('product_variants_base_uom_idx').on(t.baseUomId),
     // SKU code prefix search: the unique index uses the default collation, which LIKE 'X%' cannot use.
     index('product_variants_sku_c_idx').on(sql`${t.sku} COLLATE "C"`),
     // SKU fragment search ("contains") at 50,000 variants.
@@ -272,11 +276,20 @@ export const costRecords = pgTable(
       columns: [t.variantId, t.productId],
       foreignColumns: [productVariants.id, productVariants.productId],
     }).onDelete('restrict'),
-    index('cost_records_style_idx').on(t.productId, t.effectiveFrom.desc(), t.recordedAt.desc()),
+    index('cost_records_style_idx').on(
+      t.productId,
+      t.effectiveFrom.desc().nullsFirst(),
+      t.recordedAt.desc().nullsFirst(),
+    ),
     index('cost_records_variant_idx')
-      .on(t.variantId, t.effectiveFrom.desc(), t.recordedAt.desc())
+      .on(t.variantId, t.effectiveFrom.desc().nullsFirst(), t.recordedAt.desc().nullsFirst())
       .where(sql`${t.variantId} IS NOT NULL`),
     index('cost_records_season_idx').on(t.seasonId),
+    // Foreign key indexes: the (variant_id, product_id) key and recorded_by (spec 0002 item 19).
+    index('cost_records_variant_product_idx')
+      .on(t.variantId, t.productId)
+      .where(sql`${t.variantId} IS NOT NULL`),
+    index('cost_records_recorded_by_idx').on(t.recordedBy),
     check('cost_records_unit_cost_not_negative', sql`${t.unitCost} >= 0`),
   ],
 );

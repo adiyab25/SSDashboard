@@ -262,7 +262,7 @@ export class ReceiptsService {
                AS line_count
       FROM stock_receipts r JOIN locations l ON l.id = r.location_id
       ${where}
-      ORDER BY r.effective_at DESC NULLS LAST, r.id DESC NULLS LAST
+      ORDER BY r.effective_at DESC, r.id DESC
       LIMIT ${query.limit + 1}`);
     const page = rows.slice(0, query.limit);
     const names = await this.staff.namesByIds(page.map((row) => row.posted_by));
