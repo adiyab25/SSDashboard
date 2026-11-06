@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
 import type { Auth } from './auth.tokens.js';
 import { Audience, type AudienceName } from '../../platform/audience/audience.decorator.js';
+import type { SessionAudience, SessionAudiences } from '../sessions/session-audiences.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { SessionGuard } from './session.guard.js';
 
@@ -34,6 +35,8 @@ function setup(options: {
   audience?: AudienceName;
   session?: { user: typeof USER; session: { id: string; token: string; createdAt: Date } } | null;
   setCookies?: string[];
+  /** What the fake `SessionAudiences` answers; `staff` when not given. */
+  audiences?: SessionAudience[];
 }) {
   const getSession = vi.fn(() =>
     Promise.resolve({
@@ -61,12 +64,26 @@ function setup(options: {
     getClass: () => Controller,
   } as unknown as ExecutionContext;
   const deleteSession = vi.fn(() => Promise.resolve());
+  const deleteUserSessions = vi.fn(() => Promise.resolve());
   const auth = {
     api: { getSession },
-    $context: Promise.resolve({ internalAdapter: { deleteSession } }),
+    $context: Promise.resolve({ internalAdapter: { deleteSession, deleteUserSessions } }),
   } as unknown as Auth;
-  const guard = new SessionGuard(reflector, auth, env);
-  return { guard, context, request, response, getSession, deleteSession };
+  const audiencesFor = vi.fn(() =>
+    Promise.resolve(new Set<SessionAudience>(options.audiences ?? ['staff'])),
+  );
+  const audiences = { audiencesFor } as unknown as SessionAudiences;
+  const guard = new SessionGuard(reflector, auth, env, audiences);
+  return {
+    guard,
+    context,
+    request,
+    response,
+    getSession,
+    deleteSession,
+    deleteUserSessions,
+    audiencesFor,
+  };
 }
 
 describe('SessionGuard', () => {
@@ -77,10 +94,23 @@ describe('SessionGuard', () => {
     expect(getSession).not.toHaveBeenCalled();
   });
 
-  it('still requires a session on a non public audience', async () => {
-    const { guard, context } = setup({ audience: 'portal' });
+  it('still requires a session on a staff audience', async () => {
+    const { guard, context } = setup({ audience: 'staff' });
 
-    await expect(guard.canActivate(context)).rejects.toThrow();
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'UNAUTHENTICATED' },
+    });
+  });
+
+  it('still requires a session on a partner audience', async () => {
+    const { guard, context } = setup({
+      audience: 'partner',
+      cookie: 'better-auth.session_token=x',
+    });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'SESSION_EXPIRED' },
+    });
   });
 
   it('lets a public route through without asking Better Auth', async () => {
@@ -149,6 +179,7 @@ describe('SessionGuard', () => {
       language: 'ar',
       twoFactorEnabled: false,
       mustChangePassword: false,
+      home: 'backoffice',
       sessionId: 's1',
     });
     expect(response.append).toHaveBeenCalledWith(
@@ -274,5 +305,187 @@ describe('SessionGuard', () => {
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
     });
+  });
+
+  describe('the audience of the route (AC-29)', () => {
+    const signedIn = (audience: AudienceName, audiences: SessionAudience[], method = 'GET') =>
+      setup({
+        audience,
+        audiences,
+        method,
+        origin: ORIGIN,
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession() },
+      });
+
+    it.each<AudienceName>(['portal', 'hook'])(
+      'never reads the cookie on a %s route, even a valid staff one, and puts no one on the request',
+      async (audience) => {
+        const { guard, context, request, getSession, audiencesFor } = signedIn(audience, ['staff']);
+
+        await expect(guard.canActivate(context)).resolves.toBe(true);
+        expect(getSession).not.toHaveBeenCalled();
+        expect(audiencesFor).not.toHaveBeenCalled();
+        expect(request.staff).toBeUndefined();
+        expect(request.partner).toBeUndefined();
+      },
+    );
+
+    it.each<AudienceName>(['portal', 'hook'])(
+      'leaves the Origin of a write on a %s route to that route',
+      async (audience) => {
+        const { guard, context } = setup({ audience, method: 'POST', origin: 'https://shop.test' });
+
+        await expect(guard.canActivate(context)).resolves.toBe(true);
+      },
+    );
+
+    it('answers 403 WRONG_AUDIENCE to a staff session on a partner route', async () => {
+      const { guard, context, request } = signedIn('partner', ['staff']);
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'WRONG_AUDIENCE' },
+      });
+      expect(request.staff).toBeUndefined();
+      expect(request.partner).toBeUndefined();
+    });
+
+    it('answers 403 WRONG_AUDIENCE to a partner session on a staff route', async () => {
+      const { guard, context, request } = signedIn('staff', ['partner']);
+
+      await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'WRONG_AUDIENCE' },
+      });
+      expect(request.staff).toBeUndefined();
+    });
+
+    it('holds a controller with no audience to the staff rule', async () => {
+      const { guard, context } = setup({
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession() },
+        audiences: ['partner'],
+      });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'WRONG_AUDIENCE' },
+      });
+    });
+
+    it('puts a partner user on request.partner, never on request.staff, with home partner', async () => {
+      const { guard, context, request } = signedIn('partner', ['partner']);
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(request.staff).toBeUndefined();
+      expect(request.partner).toMatchObject({ userId: USER.id, home: 'partner', sessionId: 's1' });
+    });
+
+    it('gives a partner user the partner shape: no staff role, staff code or staff id', async () => {
+      const { guard, context, request } = signedIn('partner', ['partner']);
+
+      await guard.canActivate(context);
+
+      expect(Object.keys(request.partner as object).sort()).toEqual([
+        'email',
+        'home',
+        'language',
+        'mustChangePassword',
+        'name',
+        'phone',
+        'sessionId',
+        'twoFactorEnabled',
+        'userId',
+      ]);
+    });
+
+    it('asks SessionAudiences on every request, with the person from the session', async () => {
+      const { guard, context, audiencesFor } = signedIn('staff', ['staff']);
+
+      await guard.canActivate(context);
+      await guard.canActivate(context);
+
+      expect(audiencesFor).toHaveBeenCalledTimes(2);
+      expect(audiencesFor).toHaveBeenCalledWith(USER.id);
+    });
+
+    it.each<AudienceName>(['staff', 'partner'])(
+      'ends every session of a person with no hat left, on a %s route',
+      async (audience) => {
+        const { guard, context, deleteUserSessions, request } = signedIn(audience, []);
+
+        await expect(guard.canActivate(context)).rejects.toMatchObject({
+          response: { code: 'SESSION_EXPIRED' },
+        });
+        expect(deleteUserSessions).toHaveBeenCalledWith(USER.id);
+        expect(request.staff).toBeUndefined();
+      },
+    );
+
+    it('checks the Origin of a write on a partner route', async () => {
+      const { guard, context, getSession } = setup({
+        audience: 'partner',
+        method: 'POST',
+        origin: 'https://evil.example',
+      });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'FORBIDDEN_ORIGIN' },
+      });
+      expect(getSession).not.toHaveBeenCalled();
+    });
+
+    it('treats a disabled partner user as signed out', async () => {
+      const { guard, context } = setup({
+        audience: 'partner',
+        audiences: ['partner'],
+        cookie: 'better-auth.session_token=abc',
+        session: { user: { ...USER, banned: true }, session: liveSession() },
+      });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'SESSION_EXPIRED' },
+      });
+    });
+
+    it('caps a partner session at 7 days', async () => {
+      const { guard, context, deleteSession } = setup({
+        audience: 'partner',
+        audiences: ['partner'],
+        cookie: 'better-auth.session_token=abc',
+        session: { user: USER, session: liveSession(new Date(Date.now() - 8 * 86_400_000)) },
+      });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'SESSION_EXPIRED' },
+      });
+      expect(deleteSession).toHaveBeenCalledWith('t1');
+    });
+
+    it.each([
+      ['GET', '/api/partner/me', true],
+      ['GET', '/api/me', false],
+      ['GET', '/api/partner/stock', false],
+      ['PATCH', '/api/partner/me', false],
+    ] as const)(
+      'lets a partner user with a temporary password %s %s: %s',
+      async (method, path, allowed) => {
+        const { guard, context } = setup({
+          audience: 'partner',
+          audiences: ['partner'],
+          method,
+          path,
+          origin: ORIGIN,
+          cookie: 'better-auth.session_token=abc',
+          session: { user: { ...USER, mustChangePassword: true }, session: liveSession() },
+        });
+
+        if (allowed) await expect(guard.canActivate(context)).resolves.toBe(true);
+        else {
+          await expect(guard.canActivate(context)).rejects.toMatchObject({
+            response: { code: 'PASSWORD_CHANGE_REQUIRED' },
+          });
+        }
+      },
+    );
   });
 });

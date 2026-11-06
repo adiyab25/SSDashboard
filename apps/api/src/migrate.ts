@@ -1,13 +1,11 @@
 import { runMigrations, setAppRoleLogin } from '@ssdashboard/db';
-import { loadEnv } from './config/env.js';
+import { loadMigrateEnv } from './config/env.js';
 
 // Entry point: `migrate`. Applies pending migrations as the owner role, then exits.
-// Compose starts the api only after this exits successfully.
-const env = loadEnv();
-if (!env.MIGRATION_DATABASE_URL) {
-  console.error('Invalid environment:\n✖ MIGRATION_DATABASE_URL is required to migrate');
-  process.exit(1);
-}
+// Compose starts the api only after this exits successfully. It validates only its own variables
+// (MIGRATION_DATABASE_URL required), never the api's auth and mail settings, which its
+// container does not receive (test/compose-env.spec.ts).
+const env = loadMigrateEnv();
 try {
   await runMigrations(env.MIGRATION_DATABASE_URL, {
     tenantId: env.TENANT_ID,

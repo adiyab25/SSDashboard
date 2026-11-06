@@ -9,8 +9,8 @@ import { LoaderCircleIcon } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authClient } from './auth-client';
+import { finishSignIn } from './finish-sign-in';
 import { PasswordRules } from './password-rules';
-import { safeReturnTo } from './return-to';
 
 /**
  * The forced password change (spec 0005, AC-8, AC-14): a person who signed in with a temporary
@@ -55,7 +55,7 @@ export function ChangePasswordForm() {
       if (!error) {
         // A full load, so the shell starts from the changed account with nothing from before.
         const returnTo = new URLSearchParams(window.location.search).get('returnTo');
-        window.location.assign(safeReturnTo(returnTo, window.location.origin));
+        window.location.assign(await finishSignIn(returnTo, window.location.origin));
         return;
       }
       if (error.status === 400) setFailure(t('auth.changePassword.wrong'));

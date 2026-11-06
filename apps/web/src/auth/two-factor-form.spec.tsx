@@ -9,8 +9,7 @@ vi.mock('./auth-client', () => ({
   authClient: () => ({ twoFactor: { verifyTotp, verifyBackupCode } }),
 }));
 
-const applySavedLanguage = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-vi.mock('./apply-saved-language', () => ({ applySavedLanguage }));
+const fetchMock = vi.fn();
 
 const assign = vi.fn();
 
@@ -24,11 +23,15 @@ async function verify(code = '123456') {
 }
 
 describe('TwoFactorForm (AC-20, AC-3)', () => {
-  beforeEach(() => atPage());
+  beforeEach(() => {
+    atPage();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValue(new Response('{}', { status: 500 }));
+  });
   afterEach(() => {
     verifyTotp.mockReset();
     verifyBackupCode.mockReset();
-    applySavedLanguage.mockClear();
+    fetchMock.mockReset();
     assign.mockReset();
     vi.unstubAllGlobals();
   });
@@ -64,21 +67,26 @@ describe('TwoFactorForm (AC-20, AC-3)', () => {
 
     expect(verifyTotp).toHaveBeenCalledWith({ code: '123456' });
     await waitFor(() => expect(assign).toHaveBeenCalledWith('/staff?q=sam'));
-    expect(applySavedLanguage).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith('/api/me', { cache: 'no-store' });
   });
 
-  it.each(['//evil.example', 'https://evil.example'])(
-    'ignores an unsafe returnTo (%s)',
-    async (returnTo) => {
-      atPage(`?returnTo=${encodeURIComponent(returnTo)}`);
-      verifyTotp.mockResolvedValue({ data: {}, error: null });
-      render(<TwoFactorForm />);
+  it.each([
+    '//evil.example',
+    'https://evil.example',
+    '/.//evil.example',
+    '/%2e//evil.example',
+    '/a/..//evil.example',
+    '/%2e%2e//evil.example',
+    '/stock/..//evil.example/x',
+  ])('ignores an unsafe returnTo (%s)', async (returnTo) => {
+    atPage(`?returnTo=${encodeURIComponent(returnTo)}`);
+    verifyTotp.mockResolvedValue({ data: {}, error: null });
+    render(<TwoFactorForm />);
 
-      await verify();
+    await verify();
 
-      await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
-    },
-  );
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/'));
+  });
 
   it('switches to a backup code and back, clearing what was typed', async () => {
     verifyBackupCode.mockResolvedValue({ data: {}, error: null });

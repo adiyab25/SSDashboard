@@ -12,7 +12,11 @@ export class MeController {
   /** Takes the profile service that saves the person's own details. */
   constructor(private readonly profile: ProfileService) {}
 
-  /** Who is signed in. The web shell calls this to check the session and fill the user menu. */
+  /**
+   * Who is signed in, with `home`, where the sign in page sends them (AC-28; `backoffice` for
+   * staff). The web shell calls this to check the session and fill the user menu. A partner user
+   * gets 403 `WRONG_AUDIENCE` here and reads `GET /api/partner/me` (spec 0008, AC-11).
+   */
   @Get()
   read(@Req() request: AuthenticatedRequest): MeResponse {
     const { sessionId: _sessionId, ...me } = request.staff;

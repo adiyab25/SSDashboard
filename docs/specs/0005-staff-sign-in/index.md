@@ -1,7 +1,7 @@
 # 0005. Staff sign in with Better Auth: email and password, admin managed accounts, optional two factor
 
 **Date**: 2026-11-03
-**Status**: Proposed (amendment of 2026-11-05 for scope feature 7; the original decision was accepted and built)
+**Status**: Accepted and built (the amendment of 2026-11-05 for scope feature 7 was built on 2026-11-06; the original decision was accepted and built before it)
 
 ## Summary
 
@@ -69,6 +69,7 @@ No new auth table besides `sign_in_slots` (review finding 8, folded from PR 11).
   > Amended 2026-11-05: `GET /api/me` (staff) and `GET /api/partner/me` (partner) both return `home` ([spec 0008](../0008-roles-as-hats/index.md) AC-11).
 - New error behavior: 403 `WRONG_AUDIENCE` also for a staff session on a partner route and the reverse. The code already exists for non staff audiences.
 - Exports of the `identity` module: the current user reader, `StaffDirectory`, `SessionAudiences` (port), and `revokeSessions(userId, tx)`.
+  > Amended 2026-11-06 at the build: identity has no Nest exports; its public surface is `IDENTITY_PUBLIC_FILES` in `apps/api/src/module-boundary.spec.ts` (AC-27 note). `SessionAudiences` and `revokeSessions` are built but identity internal until a caller outside identity needs them (milestone 3 note).
 - Environment: `STAFF_ORIGIN` (replaces `PUBLIC_URL` for auth when the rename lands), `STAFF_BASE_PATH` (optional). Both are added to `env.ts` and to only the services that read them (`api`, `worker` for mail links). `PORTAL_ORIGIN` is read by auth only to refuse `/api/auth/*` for the portal host.
 - No new route is added. No Better Auth route is opened or closed.
 
@@ -131,21 +132,23 @@ Tracer Bullet: milestone 1 moves the module and puts the cookie contract in plac
 **Done when:** `pnpm db:migrate && pnpm --filter @ssdashboard/db test:e2e && pnpm --filter @ssdashboard/api test:e2e` pass.
 
 **Milestone 3: Audience aware guard, partner users and hat sessions** (backend)
-1. [ ] Add the `SessionAudiences` port with the staff only implementation, make `SessionGuard` read the route's audience and answer 403 `WRONG_AUDIENCE` for a mismatch, and stop `portal`, `hook` and `public` routes from reading the cookie, satisfies **AC-29**
-2. [ ] Add `home` to `GET /api/me` and to the contract in `packages/contracts/src/auth.ts`, satisfies **AC-28**
+1. [x] Add the `SessionAudiences` port with the staff only implementation, make `SessionGuard` read the route's audience and answer 403 `WRONG_AUDIENCE` for a mismatch, and stop `portal`, `hook` and `public` routes from reading the cookie, satisfies **AC-29**
+2. [x] Add `home` to `GET /api/me` and to the contract in `packages/contracts/src/auth.ts`, satisfies **AC-28**
   > Amended 2026-11-05: also to `GET /api/partner/me`, built by spec 0008; the partner route is the one a partner user reads.
-3. [ ] Keep `/api/staff`, the last admin rule and `create-admin` staff only, with tests using a fake partner user, satisfies **AC-28**
-4. [ ] Export `revokeSessions(userId, tx)` and the log line shape for hat changes, and test the three rules of AC-33 (b) with fake hats, satisfies **AC-33**
-5. [ ] Write the requirement notes spec 0008 must meet (the port, the revoke call, `HatsChanged`, `LAST_ADMIN` under the lock) into `AGENTS.md` of the identity module, satisfies **AC-33**
+3. [x] Keep `/api/staff`, the last admin rule and `create-admin` staff only, with tests using a fake partner user, satisfies **AC-28**
+4. [x] Export `revokeSessions(userId, tx)` and the log line shape for hat changes, and test the three rules of AC-33 (b) with fake hats, satisfies **AC-33**
+5. [x] Write the requirement notes spec 0008 must meet (the port, the revoke call, `HatsChanged`, `LAST_ADMIN` under the lock) into `AGENTS.md` of the identity module, satisfies **AC-33**
+  > Built 2026-11-06: the port is `SessionAudiences` (`audiencesFor(userId)` and `staffCondition()`, the SQL condition that keeps staff only queries staff only) behind the `SESSION_AUDIENCES` token, in `apps/api/src/identity/sessions/` with `revokeSessions(userId, tx)` (the one writer of a session delete) and the hat change log line. They stay identity internal (not on `IDENTITY_PUBLIC_FILES`) because only spec 0008's `identity/hats/` calls them; they join the public list when a caller outside identity appears. `create-admin` passes the port explicitly and a test ties it to the class `IdentityModule` binds. Platform's `AudienceGuard` learned `request.partner` (one line, approved for this milestone). Reviews: [security](../../reviews/security-identity-m3.md), [code](../../reviews/review-identity-m3.md).
 
 **Done when:** `pnpm --filter @ssdashboard/api test -- src/identity src/platform/audience && pnpm --filter @ssdashboard/api test:e2e` pass, and the audience test fails when one `@Audience` annotation is removed.
 
 **Milestone 4: Pages for both audiences and the run book** (frontend, then docs)
-1. [ ] Make the sign in page follow `home` and follow `returnTo` only inside the person's audience, with unit tests for `/partner` and `/stock`, satisfies **AC-28**
-2. [ ] Reuse the account feature folder in the partner frame (shared component, partner route), satisfies **AC-28**
-3. [ ] Copy pass: no "staff" in strings a partner can reach, in the web catalogs and the mail templates; keep the Arabic keys complete, satisfies **AC-34**
-4. [ ] Update `docs/runbooks/staff-sign-in.md` for all eight points of AC-35 (the build owner or the docs writer; Igris routes it) and point the spec link to this amendment, satisfies **AC-35**
-5. [ ] Re run the Playwright accessibility and keyboard suite for the `(auth)` screens in both languages, satisfies **AC-34**
+1. [x] Make the sign in page follow `home` and follow `returnTo` only inside the person's audience, with unit tests for `/partner` and `/stock`, satisfies **AC-28**
+2. [x] Reuse the account feature folder in the partner frame (shared component, partner route), satisfies **AC-28**
+3. [x] Copy pass: no "staff" in strings a partner can reach, in the web catalogs and the mail templates; keep the Arabic keys complete, satisfies **AC-34**
+4. [x] Update `docs/runbooks/staff-sign-in.md` for all eight points of AC-35 (the build owner or the docs writer; Igris routes it) and point the spec link to this amendment, satisfies **AC-35**
+5. [x] Re run the Playwright accessibility and keyboard suite for the `(auth)` screens in both languages, satisfies **AC-34**
+  > Built 2026-11-06: `safeReturnTo` keeps every AC-7 rule and also requires the path to be in the person's audience (partner paths `/partner` and `/{en,ar}/partner/**`; staff refuse partner and portal paths); `finishSignIn` asks `/api/me`, then `/api/partner/me` on 403 `WRONG_AUDIENCE`; once `WRONG_AUDIENCE` was seen the landing is the partner home even if the second call fails, any other failure keeps the staff landing, and a person who must change their password goes to the change page first. `safeReturnTo` validates the normalized path it returns (no `//`, `/\`, backslash or control character after dot segments collapse: the open redirect found in the [milestone 4 review](../../reviews/review-identity-m4.md)). The partner account screen is `/{en,ar}/partner/account`, reading `/api/partner/me` once spec 0008 builds it. `packages/i18n/src/partner-copy.spec.ts` fails any `auth.`, `account.`, `partner.` or `mail.` string, or a shell key the auth screens and partner frame render, that says staff or employee in either language. The run book was rewritten for all eight AC-35 points.
 
 **Done when:** `pnpm lint && pnpm --filter @ssdashboard/web test && pnpm --filter @ssdashboard/web test:e2e -- auth` pass, and a person who has not seen the code follows the run book on a fresh stack to a signed in admin (recorded in `verify.md`).
 

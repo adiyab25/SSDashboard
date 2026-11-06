@@ -52,6 +52,8 @@ services:
     restart: unless-stopped
 
   # One off: applies migrations and exits. The api starts only after it succeeds.
+  # It validates only its own variables (loadMigrateEnv): never add the auth or mail settings here.
+  # apps/api/test/compose-env.spec.ts checks every app service's list against its entry point.
   migrate:
     <<: *app
     command: ["node", "dist/migrate.js"]

@@ -6,6 +6,7 @@ import {
   type AuthEvent,
   type AuthEventContext,
 } from '../../platform/events/auth-events.js';
+import type { HatChangeLogLine } from '../sessions/hat-change-log.js';
 
 /**
  * One structured log line and one domain event for every sign in outcome (spec 0005, AC-23).
@@ -44,6 +45,38 @@ export class AuthAudit {
       // A listener that queried the database may throw a failed query: its pg code only.
       this.logger.error(`A ${eventName(event)} listener failed: ${describeError(error)}`);
     }
+  }
+
+  /**
+   * Writes the log line of a hat change (spec 0005, AC-33 e), built by `hatChangeLogLine` so it
+   * holds ids, address, user agent, time, hat names and, when given, the `before` and `after`
+   * holdings and the reason (spec 0008, AC-13). It writes only those named fields, as `record`
+   * does, so an object wider than the line can never log more. It emits nothing: the
+   * `HatsChanged` event and its payload are spec 0008's, emitted after the commit by the hat
+   * service.
+   */
+  hatsChanged(line: HatChangeLogLine): void {
+    const holding = (value: HatChangeLogLine['before']) =>
+      value && {
+        hats: value.hats,
+        costView: value.costView,
+        partnerAccountId: value.partnerAccountId,
+      };
+    this.logger.log(
+      JSON.stringify({
+        event: line.event,
+        actorId: line.actorId,
+        targetId: line.targetId,
+        ip: line.ip,
+        userAgent: line.userAgent,
+        at: line.at,
+        hatsAdded: line.hatsAdded,
+        hatsRemoved: line.hatsRemoved,
+        ...(line.before && { before: holding(line.before) }),
+        ...(line.after && { after: holding(line.after) }),
+        ...(line.reason !== undefined && { reason: line.reason }),
+      }),
+    );
   }
 
   /**

@@ -70,16 +70,16 @@ Spec [0004](../specs/0004-localization/index.md) (amendment of 2026-11-05, Propo
 Staff accounts, sessions, and lockouts for the brand's team, with a break glass path for the first admin.
 **Done when:** staff can sign in and out in both languages, repeated failures lock out safely, sessions expire, and the first admin and recovery steps are written in a run book.
 - [x] Design it (spec): `/architect staff sign in`
-- [ ] Build it: `/develop staff sign in`
-  - [ ] One identity module and the staff cookie contract
-  - [ ] Tenant id on the auth tables
-  - [ ] Audience aware guard, partner users, and sessions on hat changes
-  - [ ] Sign in pages for both audiences and the run book
-- [ ] Verify it: `/check verify staff sign in`
-- [ ] Test it: `/test staff sign in`
-- [ ] Review it: `/check review staff sign in`
-- [ ] Document it: `/document staff sign in`
-Spec [0005](../specs/0005-staff-sign-in/index.md) (amendment of 2026-11-05, Proposed)
+- [x] Build it: `/develop staff sign in`
+  - [x] One identity module and the staff cookie contract
+  - [x] Tenant id on the auth tables
+  - [x] Audience aware guard, partner users, and sessions on hat changes
+  - [x] Sign in pages for both audiences and the run book
+- [x] Verify it: `/check verify staff sign in`
+- [x] Test it: `/test staff sign in`
+- [x] Review it: `/check review staff sign in`
+- [x] Document it: `/document staff sign in`
+Spec [0005](../specs/0005-staff-sign-in/index.md) (amendment of 2026-11-05, built 2026-11-06)
 
 ### 8. Roles as hats · GA
 Permissions as hats one person can wear several of: support, operations, warehouse, manager, plus external hats for the media buyer (campaign results only, no customer data) and partners (their own given, sold, owed). Cost and margin are a separate permission, off for support by default. Teams and routing are later settings on the same data.
