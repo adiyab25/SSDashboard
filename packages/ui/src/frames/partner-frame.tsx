@@ -4,6 +4,11 @@ import { BrandMark } from './brand-mark';
 
 /** One top navigation entry of the partner frame. */
 export type PartnerNavItem = {
+  /**
+   * A stable unique key for the entry. Optional: without it the key is the href plus the position,
+   * so two entries may share an href; pass an id when the list can reorder.
+   */
+  id?: string;
   /** The link text, already translated. */
   label: string;
   href: string;
@@ -61,8 +66,8 @@ export function PartnerFrame({
         </div>
         <nav aria-label={navLabel} className="mx-auto w-full max-w-5xl overflow-x-auto px-4">
           <ul className="flex w-max min-w-full gap-1">
-            {navItems.map((item) => (
-              <li key={item.href}>
+            {navItems.map((item, index) => (
+              <li key={item.id ?? `${item.href}-${index}`}>
                 <a
                   href={item.href}
                   aria-current={item.current ? 'page' : undefined}

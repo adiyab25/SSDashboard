@@ -192,6 +192,8 @@ Help text lives in the message catalogs under `help.<screen>.*`, typed, in Arabi
 
 The brand supplies an accent color and a logo in settings (the names and the public read endpoint belong to the portal spec; see Follow-up). `deriveBrandTokens(accent)` returns the fill, the foreground (white or near black, whichever has more contrast) and whether it is accepted (at least 4.5:1). A rejected accent is refused at save with the nearest accepted lightness suggested, and the portal falls back to the neutral primary. Worked examples with the same method: the real brand's green `#0A7C39` with white text is 5.31:1 (accepted); a yellow `#F2C230` with white text is 1.68:1 but with near black text 12.53:1 (accepted with a dark foreground). The accent colors the logo tile, the 6px top rule, and the main button only. Focus ring, links, status, and error colors stay the system's, so a green brand never makes "failed" look like "confirmed".
 
+> Amended 2026-11-06 (milestone 3 built): the near black foreground is the system's own `#211910` (Daftar light `--foreground`, `oklch(0.22 0.02 70)`), which `deriveBrandTokens` uses, not pure `#000000`. Measured with the WCAG 2 formula, `#F2C230` with `#211910` is 10.35:1 (12.53:1 holds only for pure black); white on it stays 1.68:1. It is still accepted with the dark foreground. The `#0A7C39` with white figure of 5.31:1 is unchanged.
+
 ## Requirements
 
 **User stories**:
@@ -424,9 +426,10 @@ Amendment work only. The shell, `packages/ui`, `/design`, and the axe matrix sta
    3. [x] A test that no chip renders without an icon and a word, and a Playwright check that on a coarse pointer the queue card's outcome buttons measure at least 48 by 48. Satisfies **AC-16**, **AC-22**.
    - **Done when**: `pnpm --filter @ssdashboard/ui test` and `pnpm test:e2e` pass, the latter including axe on `/design` in the four combinations with the new rows visible.
 3. **Three frames and per brand theming**
-   1. [ ] `PortalFrame` and `PartnerFrame` in `packages/ui` (text through props, one `h1` and one `main`, logical sides only, no `next/*` imports), and `AppShell` unchanged. Satisfies **AC-18**.
-   2. [ ] `deriveBrandTokens(accent)`: converts an accent to a fill and foreground, accepts at least 4.5:1, returns the rejection and the nearest accepted suggestion otherwise; unit tests for `#0A7C39` (accepted, white), `#F2C230` (accepted, dark foreground), and a pale yellow that fails both. Satisfies **AC-19**.
-   3. [ ] `/design` section "Frames" showing the three frames, the portal with a sample brand accent and logo, in left to right and right to left, and a Playwright check at 360 by 800 with touch that the portal and partner samples have no horizontal overflow and no violations in axe. Satisfies **AC-18**, **AC-19**, **AC-20**.
+   1. [x] `PortalFrame` and `PartnerFrame` in `packages/ui` (text through props, one `h1` and one `main`, logical sides only, no `next/*` imports), and `AppShell` unchanged. Satisfies **AC-18**.
+   2. [x] `deriveBrandTokens(accent)`: converts an accent to a fill and foreground, accepts at least 4.5:1, returns the rejection and the nearest accepted suggestion otherwise; unit tests for `#0A7C39` (accepted, white), `#F2C230` (accepted, dark foreground), and a pale yellow that fails both. Satisfies **AC-19**.
+      > Amended 2026-11-06 (milestone 3 built): "a pale yellow that fails both" cannot exist, because a pale yellow passes with the near black `#211910` (see the amendment in Design delta). A colour fails with both white and `#211910` only near mid luminance, so the tests use `#A9780B` (3.90:1 with white, 4.44:1 with `#211910`, suggestion `#AB7A0B` at 4.56:1) and `#808080` (3.95:1 and 4.39:1, suggestion `#828282` at 4.51:1).
+   3. [x] `/design` section "Frames" showing the three frames, the portal with a sample brand accent and logo, in left to right and right to left, and a Playwright check at 360 by 800 with touch that the portal and partner samples have no horizontal overflow and no violations in axe. Satisfies **AC-18**, **AC-19**, **AC-20**.
    - **Done when**: `pnpm --filter @ssdashboard/ui test`, `pnpm test:e2e`, and `pnpm lint` (the logical CSS check) pass.
 4. **Phone dashboard and in screen help patterns**
    1. [ ] `MetricCard`, `BottomTabs` (at most four tabs, 56px), the row to card collapse below 640px, and the "Needs you" list in `packages/ui`, with a sample phone dashboard on `/design` in the order the daily report uses. Satisfies **AC-20**.

@@ -47,7 +47,7 @@ Visual language, layout primitives, and base components, shaped with the Impecca
 - [ ] Build it: `/develop design system & UI foundation`
   - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
   - [x] Status chips, provisional values, the freshness strip, and the floor density scope
-  - [ ] Portal and partner frames with per brand theming
+  - [x] Portal and partner frames with per brand theming
   - [ ] Phone first dashboard pattern and in screen help
 - [ ] Verify it: `/check verify design system & UI foundation`
 - [ ] Test it: `/test design system & UI foundation`

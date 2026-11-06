@@ -22,17 +22,22 @@ test.describe('/design status samples (AC-16, AC-17, AC-22)', () => {
     const group = page
       .getByTestId('confirmation-queue-card')
       .getByRole('group', { name: 'Outcome' });
-    const buttons = await group.getByRole('button').all();
-    expect(buttons).toHaveLength(4);
-    for (const button of buttons) {
-      await button.scrollIntoViewIfNeeded();
-      const box = await button.boundingBox();
-      if (info.project.name === 'mobile') {
-        expect(box?.width).toBeGreaterThanOrEqual(48);
-        expect(box?.height).toBeGreaterThanOrEqual(48);
-      } else {
-        expect(box?.height).toBe(40);
+    // Locators, not element handles from `.all()`: the gallery remounts once after the shell
+    // finishes loading, which detaches handles taken before it ("Element is not attached").
+    await expect(group.getByRole('button')).toHaveCount(4);
+    // toPass retries the whole measurement if the remount lands mid action.
+    await expect(async () => {
+      for (let index = 0; index < 4; index += 1) {
+        const button = group.getByRole('button').nth(index);
+        await button.scrollIntoViewIfNeeded({ timeout: 2_000 });
+        const box = await button.boundingBox();
+        if (info.project.name === 'mobile') {
+          expect(box?.width).toBeGreaterThanOrEqual(48);
+          expect(box?.height).toBeGreaterThanOrEqual(48);
+        } else {
+          expect(box?.height).toBe(40);
+        }
       }
-    }
+    }).toPass({ timeout: 15_000 });
   });
 });

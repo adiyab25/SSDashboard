@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { deriveBrandTokens } from '../lib/brand-tokens';
 import { expectNoAxeViolations } from '../test/axe';
 import { PartnerFrame } from './partner-frame';
@@ -54,6 +54,31 @@ describe('PartnerFrame', () => {
     expect(screen.getByRole('link', { name: 'Settlement' }).hasAttribute('aria-current')).toBe(
       false,
     );
+  });
+
+  it('renders two entries that share an href without a key error', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    render(
+      <PartnerFrame
+        brand={{ name: 'Sample Brand' }}
+        partnerName="Showroom Zamalek"
+        title="Statements"
+        navLabel="Partner pages"
+        navItems={[
+          { label: 'Stock', href: '/stock' },
+          { label: 'Stock again', href: '/stock' },
+          { id: 'own', label: 'Settlement', href: '/stock' },
+        ]}
+      >
+        <p>Content</p>
+      </PartnerFrame>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Stock' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Stock again' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Settlement' })).toBeTruthy();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it('gives the logo its alt from the brand name', () => {

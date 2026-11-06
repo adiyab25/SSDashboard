@@ -24,9 +24,15 @@ describe('ReturnsPage', () => {
       inLanguage(code);
       const other = code === 'en' ? 'ar' : 'en';
 
-      expect(screen.getByRole('link')).toHaveAttribute('href', `/${other}/returns`);
-      expect(screen.getByRole('link')).toHaveAttribute('hreflang', other);
-      expect(screen.getByRole('link')).toHaveAttribute('lang', other);
+      expect(
+        screen.getByRole('link', { name: code === 'en' ? 'العربية' : 'English' }),
+      ).toHaveAttribute('href', `/${other}/returns`);
+      expect(
+        screen.getByRole('link', { name: code === 'en' ? 'العربية' : 'English' }),
+      ).toHaveAttribute('hreflang', other);
+      expect(
+        screen.getByRole('link', { name: code === 'en' ? 'العربية' : 'English' }),
+      ).toHaveAttribute('lang', other);
     },
   );
 
@@ -38,4 +44,16 @@ describe('ReturnsPage', () => {
       (code === 'en' ? enFlat : arFlat)['portal.returns.title'],
     );
   });
+
+  it.each([['en'], ['ar']] as const)(
+    'renders inside its frame with one main landmark in %s',
+    (code) => {
+      const { container } = inLanguage(code);
+
+      expect(screen.getAllByRole('main')).toHaveLength(1);
+      expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
+      expect(container.querySelector('[data-slot="portal-frame"]')).not.toBeNull();
+      expect(container.querySelector('style, [style*="--brand"]')).toBeNull();
+    },
+  );
 });

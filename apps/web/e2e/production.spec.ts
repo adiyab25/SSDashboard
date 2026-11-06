@@ -8,6 +8,17 @@ test.describe('production build', () => {
     expect(response?.status()).toBe(404);
   });
 
+  // Spec 0003 AC-18: the frame previews of /design are development only too.
+  test('the frame previews answer a real 404', async ({ request }) => {
+    for (const path of [
+      '/en/returns/preview/brand',
+      '/ar/returns/preview/rejected',
+      '/en/partner/preview',
+    ]) {
+      expect((await request.get(path, { maxRedirects: 0 })).status(), path).toBe(404);
+    }
+  });
+
   // Spec 0004 AC-17: with several root layouts, an unmatched path still answers a real 404.
   test('an unknown path answers a real 404', async ({ page }) => {
     const response = await page.goto('/no-such-page');

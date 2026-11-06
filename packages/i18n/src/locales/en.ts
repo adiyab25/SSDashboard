@@ -379,6 +379,8 @@ export const en = {
     },
   },
   partner: {
+    nav: { label: 'Partner sections', home: 'Home' },
+    frame: { partnerName: 'Partner account' },
     home: {
       title: 'Partner showroom',
       description: 'Your consignment stock and sales will appear here. This page is coming soon.',

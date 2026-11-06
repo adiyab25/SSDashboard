@@ -8,6 +8,7 @@ import { ButtonMatrix } from './button-matrix';
 import { ContrastPair, type ContrastPairSpec } from './contrast-pair';
 import { DesignSection } from './design-section';
 import { FieldStates } from './field-states';
+import { FramesSection } from './frames-section';
 import { OrderStatusSection } from './order-status-section';
 import { Overlays } from './overlays';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
@@ -95,7 +96,7 @@ export function DesignGallery() {
       </header>
 
       <DesignSection id="colors" title="Color roles and live contrast">
-        <ul className="grid gap-2 sm:grid-cols-2">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
           {PAIRS.map((pair) => (
             <ContrastPair key={`${pair.fg}-${pair.bg}`} {...pair} version={version} />
           ))}
@@ -180,6 +181,10 @@ export function DesignGallery() {
 
       <DesignSection id="orders" title="Order rows and confirmation queue">
         <OrderStatusSection />
+      </DesignSection>
+
+      <DesignSection id="frames" title="Frames">
+        <FramesSection />
       </DesignSection>
 
       <DesignSection id="rtl" title="Right to left">
