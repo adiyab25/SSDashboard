@@ -393,6 +393,10 @@ export const en = {
       checking: 'checking…',
       unreachable: 'unreachable',
       checkAgain: 'Check again',
+      ok: 'ok',
+      degraded: 'degraded',
+      up: 'up',
+      down: 'down',
     },
   },
   inventory: {
