@@ -1,6 +1,7 @@
 // One command for a working local setup: `pnpm bootstrap` (after `pnpm install`).
 // 1. Creates .env from .env.example if missing, and adds any variable it lacks. It never changes a
-//    value that is already set; secrets it generates are random per machine.
+//    value that is already set (except an S3 key that Garage has retired, see step 3); secrets it
+//    generates are random per machine.
 // 2. Starts PostgreSQL, Garage (S3), and Mailpit with Docker Compose and waits until healthy.
 // 3. Gives Garage its storage layout, the dev bucket, and the access key, then writes the key to .env.
 // 4. Stops, with the fix, if the database was migrated by the old migration history (ADR 0003).
@@ -64,6 +65,22 @@ function fillEnv(key, value) {
     : `${text.endsWith('\n') ? text : `${text}\n`}${key}=${value}\n`;
   writeFileSync(ENV_FILE, text, { mode: 0o600 });
   return true;
+}
+
+/**
+ * Sets a variable to a new value even when it already holds one, adding the line when absent.
+ * Only for secrets this script generated itself (a retired S3 key); `fillEnv` is the default and
+ * never overwrites a value the user set.
+ */
+function replaceEnv(key, value) {
+  const text = readEnv();
+  writeFileSync(
+    ENV_FILE,
+    lineFor(key).test(text)
+      ? text.replace(lineFor(key), () => `${key}=${value}`)
+      : `${text.endsWith('\n') ? text : `${text}\n`}${key}=${value}\n`,
+    { mode: 0o600 },
+  );
 }
 
 function prepareEnv() {
@@ -154,12 +171,25 @@ function prepareGarage() {
     fillEnv('S3_SECRET_ACCESS_KEY', hex(32));
     say('  generated an S3 access key in .env');
   }
-  const keyId = valueOf('S3_ACCESS_KEY_ID');
+  let keyId = valueOf('S3_ACCESS_KEY_ID');
   if (!garage('key', 'list').includes(keyId)) {
     // A key with our name but another id would block the import, so clear it first.
     if (garageOk('key', 'info', KEY_NAME)) garage('key', 'delete', '--yes', KEY_NAME);
-    garage('key', 'import', '--yes', '-n', KEY_NAME, keyId, valueOf('S3_SECRET_ACCESS_KEY'));
-    say(`  imported key ${keyId}`);
+    try {
+      garage('key', 'import', '--yes', '-n', KEY_NAME, keyId, valueOf('S3_SECRET_ACCESS_KEY'));
+      say(`  imported key ${keyId}`);
+    } catch (error) {
+      // Garage keeps a tombstone for every deleted key id and refuses to import it again, so a
+      // retired id in .env is replaced by a fresh pair. Any other failure stays fatal.
+      const detail = `${error?.stderr ?? ''}${error?.message ?? ''}`;
+      if (!detail.includes('KeyAlreadyExists')) throw error;
+      const retired = keyId;
+      keyId = `GK${hex(12)}`;
+      replaceEnv('S3_ACCESS_KEY_ID', keyId);
+      replaceEnv('S3_SECRET_ACCESS_KEY', hex(32));
+      garage('key', 'import', '--yes', '-n', KEY_NAME, keyId, valueOf('S3_SECRET_ACCESS_KEY'));
+      say(`  replaced retired key ${retired} with ${keyId} (written to .env)`);
+    }
   }
   garage('bucket', 'allow', '--read', '--write', '--owner', bucket, '--key', keyId);
 }
