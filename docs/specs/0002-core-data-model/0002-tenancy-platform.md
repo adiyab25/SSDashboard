@@ -72,7 +72,7 @@ For each table below the baseline revokes `UPDATE`, `DELETE`, and `TRUNCATE` fro
 |---|---|---|
 | platform | `install`, `settings`, `document_counters`, `custom_field_definitions`, `order_cost_rules`; `licenses`, `license_checks` | this feature; the license tables: feature 9 (spec 0009). Module toggles and executing step switches are `settings` rows, not a table (spec 0009) |
 | audit | `audit_entries` | feature 10 |
-| identity (today `auth` and `staff`) | `users`, `sessions`, `accounts`, `verifications`, `rate_limits`, `sign_in_attempts`, `two_factors`; `hat_assignments`, `permission_grants` | built (spec 0005); the hat tables: feature 8 (spec 0008) |
+| identity (`apps/api/src/identity/`, formerly `auth` and `staff`) | `users`, `sessions`, `accounts`, `verifications`, `rate_limits`, `sign_in_attempts`, `sign_in_slots`, `two_factors`; `hat_assignments`, `permission_grants` | built (spec 0005; `sign_in_slots` added 2026-11-06 with review finding 8); the hat tables: feature 8 (spec 0008) |
 | catalog | `uoms`, `products`, `product_options`, `product_variants`, `variant_uom_conversions`, `barcodes`, `seasons`, `product_groups`, `cost_records` | this feature |
 | inventory | `locations`, `bins`, `location_owner_policies`, `lots`, `serials`, `movement_groups`, `stock_movements`, `movement_serials`, `stock_levels`, `reservations`, `stock_level_discrepancies`, `stock_receipts`, `stock_receipt_lines` | this feature (amended) |
 | customers | `customers`, `customer_phones`, `customer_external_ids`, `customer_merges` | this feature |

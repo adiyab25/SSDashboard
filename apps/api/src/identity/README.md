@@ -6,14 +6,14 @@ Agent gotchas and the full file table: [AGENTS.md](AGENTS.md).
 
 ## Owns
 
-- The auth tables `users`, `sessions`, `accounts`, `verifications`, `two_factors`, `rate_limits`, `sign_in_attempts` (defined in [packages/db](../../../../packages/db/src/schema/auth.ts), owned by `identity` in [table-ownership.ts](../../../../packages/db/src/table-ownership.ts)). Only this module reads or writes them.
+- The auth tables `users`, `sessions`, `accounts`, `verifications`, `two_factors`, `rate_limits`, `sign_in_attempts`, `sign_in_slots` (defined in [packages/db](../../../../packages/db/src/schema/auth.ts), owned by `identity` in [table-ownership.ts](../../../../packages/db/src/table-ownership.ts)). Only this module reads or writes them.
 - Better Auth setup and mounting, the staff cookie contract (host only, `Path` from `STAFF_BASE_PATH`) and the portal host refusal: [sign-in/auth.factory.ts](sign-in/auth.factory.ts), [sign-in/mount-auth.ts](sign-in/mount-auth.ts), [sign-in/portal-host.ts](sign-in/portal-host.ts)
 - The session guard and the admin only guard: [sign-in/session.guard.ts](sign-in/session.guard.ts), [sign-in/roles.guard.ts](sign-in/roles.guard.ts)
 - Session length and lockout rules: [sign-in/session-policy.ts](sign-in/session-policy.ts), [sign-in/sign-in-lockout.ts](sign-in/sign-in-lockout.ts)
-- Sign in hooks (origin check, forced password change, lockout counting): [sign-in/auth-hooks.ts](sign-in/auth-hooks.ts)
+- Sign in hooks (origin check, forced password change, taking and giving back a sign in slot, lockout counting): [sign-in/auth-hooks.ts](sign-in/auth-hooks.ts)
 - The signed in person's profile route `GET` and `PATCH /api/me`: [sign-in/me.controller.ts](sign-in/me.controller.ts), [sign-in/profile.service.ts](sign-in/profile.service.ts)
 - The `create-admin` logic: [sign-in/first-admin.ts](sign-in/first-admin.ts), [sign-in/reset-admin.ts](sign-in/reset-admin.ts), [sign-in/create-admin-args.ts](sign-in/create-admin-args.ts)
-- The nightly cleanup of expired sessions, tokens and counters: [sign-in/auth-cleanup.job.ts](sign-in/auth-cleanup.job.ts)
+- The nightly cleanup of expired sessions, tokens, counters and stale sign in slots: [sign-in/auth-cleanup.job.ts](sign-in/auth-cleanup.job.ts)
 - Sign in and reset mail callbacks: [sign-in/auth-mail.service.ts](sign-in/auth-mail.service.ts)
 - Staff administration under `/api/staff`, staff audience: [staff/staff.controller.ts](staff/staff.controller.ts), [staff/staff.service.ts](staff/staff.service.ts)
 - What other modules may import, the public surface. `IDENTITY_PUBLIC_FILES` in [src/module-boundary.spec.ts](../module-boundary.spec.ts) holds this list, and its import wall fails any other import of a file inside `identity/` from another module (spec 0005, AC-27). `IdentityModule` has no Nest `exports`; the app entry points and `apps/api/test` sit outside the wall.
@@ -40,7 +40,7 @@ pnpm --filter @ssdashboard/api build
 pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/sign-in.e2e-spec.ts
 ```
 
-End to end specs in `apps/api/test` (all `*.e2e-spec.ts`, they need Postgres and a build): `sign-in`, `sign-in-policy`, `two-factor`, `password-reset`, `profile`, `staff`, `staff-cookie`, `create-admin-reset`, `create-admin-two-factor`, `auth-cleanup`, `auth-error-log`. The table wall and the identity import wall are `src/module-boundary.spec.ts`.
+End to end specs in `apps/api/test` (all `*.e2e-spec.ts`, they need Postgres and a build): `sign-in`, `sign-in-policy`, `two-factor`, `password-reset`, `profile`, `staff`, `staff-cookie`, `create-admin-reset`, `create-admin-two-factor`, `auth-cleanup`, `auth-error-log`, `auth-tenant`. The table wall and the identity import wall are `src/module-boundary.spec.ts`.
 
 ## Governing spec
 

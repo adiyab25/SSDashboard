@@ -61,6 +61,15 @@ describe('auth cleanup', { timeout: 60_000 }, () => {
         [key],
       );
     }
+    // A slot holds a place for 60 seconds: only "stale" is left over from a request that died.
+    for (const [key, age] of [
+      ['stale', "now() - interval '61 seconds'"],
+      ['held', "now() - interval '5 seconds'"],
+    ] as const) {
+      await run(`INSERT INTO sign_in_slots (email_key, ip, created_at) VALUES ($1, '*', ${age})`, [
+        key,
+      ]);
+    }
     const dayMs = 24 * 60 * 60 * 1000;
     for (const [key, age] of [
       ['old', dayMs + 60_000],
@@ -77,13 +86,20 @@ describe('auth cleanup', { timeout: 60_000 }, () => {
     await h?.close();
   });
 
-  it('deletes expired rows in all four tables and keeps live ones (covers: AC-22)', async () => {
+  it('deletes expired rows in all five tables and keeps live ones (covers: AC-22)', async () => {
     const counts = await job.cleanup();
 
-    expect(counts).toEqual({ sessions: 1, verifications: 1, signInAttempts: 2, rateLimits: 1 });
+    expect(counts).toEqual({
+      sessions: 1,
+      verifications: 1,
+      signInAttempts: 2,
+      signInSlots: 1,
+      rateLimits: 1,
+    });
     expect(await left('sessions', 'token')).toEqual(['live']);
     expect(await left('verifications', 'identifier')).toEqual(['live']);
     expect(await left('sign_in_attempts', 'email_key')).toEqual(['lock-running', 'window-running']);
+    expect(await left('sign_in_slots', 'email_key')).toEqual(['held']);
     expect(await left('rate_limits', 'key')).toEqual(['recent']);
   });
 
@@ -92,6 +108,7 @@ describe('auth cleanup', { timeout: 60_000 }, () => {
       sessions: 0,
       verifications: 0,
       signInAttempts: 0,
+      signInSlots: 0,
       rateLimits: 0,
     });
   });
