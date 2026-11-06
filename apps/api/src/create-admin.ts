@@ -1,6 +1,7 @@
 import { createDatabase } from '@ssdashboard/db';
 import { loadEnv } from './config/env.js';
 import { pgErrorCode } from './database/pg-error.js';
+import { StaffOnlySessionAudiences } from './identity/sessions/session-audiences.js';
 import { CREATE_ADMIN_USAGE, parseCreateAdminArgs } from './identity/sign-in/create-admin-args.js';
 import { createFirstAdmin } from './identity/sign-in/first-admin.js';
 import { breakGlassReset } from './identity/sign-in/reset-admin.js';
@@ -35,6 +36,11 @@ const { db, pool } = createDatabase(env.DATABASE_URL, {
     process.exit(1);
   },
 });
+// Who is staff, for "is there an admin" and "is this an admin" (spec 0005, AC-28). This command has
+// no Nest container, so it must name the same class `identity.module.ts` binds to
+// `SESSION_AUDIENCES`: spec 0008 passes its hat based one here when it rebinds the module.
+// `identity/sessions/create-admin-audiences.spec.ts` fails while the two differ.
+const audiences = new StaffOnlySessionAudiences();
 try {
   switch (command.kind) {
     case 'reset': {
@@ -42,6 +48,7 @@ try {
         db,
         { email: command.email },
         { password: command.password, twoFactor: command.twoFactor },
+        audiences,
       );
       if (!result.reset) {
         console.error(result.message);
@@ -66,7 +73,11 @@ try {
       break;
     }
     case 'create': {
-      const result = await createFirstAdmin(db, { email: command.email, name: command.name });
+      const result = await createFirstAdmin(
+        db,
+        { email: command.email, name: command.name },
+        audiences,
+      );
       if (!result.created) {
         console.error(result.message);
         process.exitCode = 1;

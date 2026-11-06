@@ -8,9 +8,8 @@ import { LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRef, useState, type FocusEvent, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { applySavedLanguage } from './apply-saved-language';
 import { authClient } from './auth-client';
-import { safeReturnTo } from './return-to';
+import { finishSignIn } from './finish-sign-in';
 
 type FieldName = 'email' | 'password';
 type FieldErrors = Partial<Record<FieldName, 'required' | 'invalid'>>;
@@ -88,9 +87,9 @@ export function SignInForm() {
         window.location.assign(`/two-factor${next}`);
         return;
       }
-      await applySavedLanguage();
+      const landing = await finishSignIn(returnTo, window.location.origin);
       // A full load, so the shell starts from the new session with no state from before.
-      window.location.assign(safeReturnTo(returnTo, window.location.origin));
+      window.location.assign(landing);
     } catch {
       setFailure(t('auth.signIn.failed'));
       setPending(false);

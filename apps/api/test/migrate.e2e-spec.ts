@@ -91,10 +91,12 @@ describe('migrate entry point (dist/migrate.js)', { timeout: 30_000 }, () => {
     }
   });
 
-  it('exits 1 and names DATABASE_URL when it is missing', async () => {
+  it('exits 1 and names MIGRATION_DATABASE_URL when nothing is set', async () => {
     const result = await run('migrate.js', {});
 
     expect(result.code).toBe(1);
-    expect(result.output).toMatch(/Invalid environment[\s\S]*DATABASE_URL/);
+    expect(result.output).toMatch(/Invalid environment[\s\S]*MIGRATION_DATABASE_URL/);
+    // migrate no longer reads the application role's address (loadMigrateEnv).
+    expect(result.output).not.toMatch(/(?<!MIGRATION_)DATABASE_URL/);
   });
 });

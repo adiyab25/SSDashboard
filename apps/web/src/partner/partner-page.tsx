@@ -20,7 +20,10 @@ export function PartnerPage({ language }: { language: CoreLanguage }) {
       partnerName={t('partner.frame.partnerName')}
       title={t('partner.home.title')}
       navLabel={t('partner.nav.label')}
-      navItems={[{ label: t('partner.nav.home'), href: `/${language}/partner`, current: true }]}
+      navItems={[
+        { label: t('partner.nav.home'), href: `/${language}/partner`, current: true },
+        { label: t('partner.home.account'), href: `/${language}/partner/account` },
+      ]}
       actions={<OtherLanguageLink language={language} path="/partner" />}
     >
       <p className="text-muted-foreground">{t('partner.home.description')}</p>

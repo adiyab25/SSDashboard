@@ -79,6 +79,18 @@ test.describe('auth screens', () => {
         await expectDirection(page, dir);
       });
 
+      test(`invite, form with an error: no axe violations in ${where}`, async ({ page }) => {
+        await useBrowserState(page, { theme, dir });
+        await openAuthPage(page, '/reset-password?token=made-up-token&invite=1');
+        await page.locator('#reset-password').fill('short');
+        await page.locator('form button[type=submit]').click();
+        await expect(page.locator('#reset-password')).toHaveAttribute('aria-invalid', 'true');
+        await expect(page.locator('#reset-password')).toBeFocused();
+
+        await expectNoAxeViolations(page);
+        await expectDirection(page, dir);
+      });
+
       test(`reset password, dead link: no axe violations in ${where}`, async ({ page }) => {
         await useBrowserState(page, { theme, dir });
         await openAuthPage(page, '/reset-password?error=INVALID_TOKEN');
@@ -167,6 +179,46 @@ test.describe('auth screens', () => {
         await expectDirection(page, dir);
       });
     }
+  }
+});
+
+test.describe('auth screens, keyboard', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  for (const dir of DIRECTIONS) {
+    test(`sign in page tabs through its controls in order in ${dir}`, async ({ page }) => {
+      await useBrowserState(page, { dir });
+      await openAuthPage(page, '/sign-in');
+      await expectDirection(page, dir);
+
+      // The skip link comes first; then the form runs top to bottom.
+      await page.keyboard.press('Tab');
+      await expect(page.locator('a[href="#main-content"]')).toBeFocused();
+      await page.locator('#sign-in-email').focus();
+      await page.keyboard.press('Tab');
+      await expect(page.locator('#sign-in-password')).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(page.locator('a[href="/forgot-password"]')).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(page.locator('form button[type=submit]')).toBeFocused();
+    });
+
+    test(`the other auth screens have a labelled, focusable first field in ${dir}`, async ({
+      page,
+    }) => {
+      await useBrowserState(page, { dir });
+      for (const [path, field] of [
+        ['/change-password', '#change-current'],
+        ['/two-factor', '#two-factor-code'],
+        ['/reset-password?token=made-up-token', '#reset-password'],
+      ] as const) {
+        await openAuthPage(page, path);
+        await expectDirection(page, dir);
+        await page.locator(field).focus();
+        await expect(page.locator(field)).toBeFocused();
+        await expect(page.locator(field)).toHaveAccessibleName(/.+/);
+      }
+    });
   }
 });
 

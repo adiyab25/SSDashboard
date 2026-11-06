@@ -12,8 +12,14 @@ import { fromNodeHeaders } from 'better-auth/node';
 import type { Request, Response } from 'express';
 import { ENV } from '../../config/config.module.js';
 import { staffOrigin, type Env } from '../../config/env.js';
-import type { CurrentStaff } from './current-staff.js';
 import { audienceOf } from '../../platform/audience/audience.decorator.js';
+import {
+  homeOf,
+  SESSION_AUDIENCES,
+  type SessionAudience,
+  type SessionAudiences,
+} from '../sessions/session-audiences.js';
+import type { CurrentPartner, CurrentStaff } from './current-staff.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { AUTH, type Auth } from './auth.tokens.js';
 import { pastAbsoluteCap } from './session-policy.js';
@@ -22,36 +28,61 @@ import { pastAbsoluteCap } from './session-policy.js';
 const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=/;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/** The one "who am I" route per audience: all a person with a temporary password may call. */
+const WHO_AM_I: Readonly<Record<SessionAudience, string>> = {
+  staff: '/api/me',
+  partner: '/api/partner/me',
+};
+
+type GuardedRequest = Request & { staff?: CurrentStaff; partner?: CurrentPartner };
+
 /**
- * The one guard on every `/api` route (spec 0005, AC-7). It rejects a write whose `Origin` is
- * not ours, lets `@Audience('public')` (and `@Public()`) routes through, and otherwise requires a
- * live session. The person is read from the database on every request, so a disabled account
- * fails on its next call.
+ * The one guard on every `/api` route (spec 0005, AC-7 and AC-29), audience aware. It reads the
+ * route's `@Audience(...)`:
+ *
+ * - `portal` and `hook` routes are not its to serve: it returns at once and never reads the
+ *   session cookie or the Origin, so a staff cookie can never act there. Their own proof (a
+ *   sealed token, a signature) comes with their features; until then `AudienceGuard` denies them.
+ * - `public` routes (and `@Public()`) pass after the Origin check, without reading the cookie.
+ * - `staff` and `partner` routes need a live session whose person may use that audience, as
+ *   `SessionAudiences` answers on every request; a live session that does not fit is 403
+ *   `WRONG_AUDIENCE`. A controller with no audience is held to the staff rule (`AudienceGuard`
+ *   then answers 500 `AUDIENCE_MISSING`).
+ *
+ * The Origin check, the disabled check, the 7 day cap and the forced password change apply to
+ * every audience it serves. The person, and what they may use, are read from the database on
+ * every request, so a disabled account or a hat change acts on the next call. It never caches an
+ * answer and never takes an audience or an account from the request.
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
   private readonly origin: string;
 
   /**
-   * Takes the reflector for route metadata, the Better Auth instance, and the env for the
-   * trusted origin.
+   * Takes the reflector for route metadata, the Better Auth instance, the env for the trusted
+   * origin, and the `SessionAudiences` port.
    */
   constructor(
     private readonly reflector: Reflector,
     @Inject(AUTH) private readonly auth: Auth,
     @Inject(ENV) env: Env,
+    @Inject(SESSION_AUDIENCES) private readonly audiences: SessionAudiences,
   ) {
     this.origin = staffOrigin(env);
   }
 
   /**
-   * Applies the origin check, the public route exemption and the session lookup. Throws 401 or
-   * 403 with a stable code, and puts the person on `request.staff` on success.
+   * Applies the audience rules above. Throws 401 or 403 with a stable code, and on success puts
+   * the person on `request.staff` (staff routes) or `request.partner` (partner routes).
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
-    const request = http.getRequest<Request & { staff?: CurrentStaff }>();
+    const request = http.getRequest<GuardedRequest>();
     const response = http.getResponse<Response>();
+    const audience = audienceOf(context.getClass());
+
+    // Never read the cookie here: not even a valid staff session may act on these (AC-29).
+    if (audience === 'portal' || audience === 'hook') return true;
 
     // Beyond SameSite=Lax: a write from another site must never carry our cookie's authority.
     if (!SAFE_METHODS.has(request.method) && request.headers.origin !== this.origin) {
@@ -63,7 +94,8 @@ export class SessionGuard implements CanActivate {
     ]);
     // Class level only, on purpose: a handler can never open itself up inside a guarded controller.
     // The audience is the source of truth; `@Public()` stays honoured and a spec keeps them equal.
-    if (isPublic || audienceOf(context.getClass()) === 'public') return true;
+    if (isPublic || audience === 'public') return true;
+    const needed: SessionAudience = audience === 'partner' ? 'partner' : 'staff';
 
     const result = await this.auth.api.getSession({
       headers: fromNodeHeaders(request.headers),
@@ -82,26 +114,52 @@ export class SessionGuard implements CanActivate {
       throw this.unauthenticated(true);
     }
 
+    const { user, session } = found;
+    // Read fresh on every request (AC-33 a). A person with no hat left has no session at all
+    // (spec 0008, AC-10): every one of theirs is deleted and the answer is an ended session.
+    const allowed = await this.audiences.audiencesFor(user.id);
+    if (allowed.size === 0) {
+      const { internalAdapter } = await this.auth.$context;
+      await internalAdapter.deleteUserSessions(user.id);
+      throw this.unauthenticated(true);
+    }
+
     // A used session renews its cookie (at most hourly); pass Better Auth's Set-Cookie on.
     for (const cookie of result.headers.getSetCookie()) response.append('set-cookie', cookie);
 
-    const { user, session } = found;
-    request.staff = {
-      id: user.id,
+    // A live session of the other audience. The answer never says which audience would fit.
+    if (!allowed.has(needed)) {
+      throw new ForbiddenException({ code: 'WRONG_AUDIENCE', message: 'Not allowed here.' });
+    }
+
+    const shared = {
       name: user.name,
       email: user.email,
-      role: StaffRole.catch('staff').parse(user.role),
       phone: user.phone ?? null,
-      staffCode: user.staffCode ?? null,
       language: user.language ?? null,
       twoFactorEnabled: user.twoFactorEnabled ?? false,
       mustChangePassword: user.mustChangePassword,
+      home: homeOf(allowed),
       sessionId: session.id,
     };
+    // A partner user gets the partner shape, which has no staff role to authorize on.
+    if (needed === 'partner') {
+      request.partner = { userId: user.id, ...shared } satisfies CurrentPartner;
+    } else {
+      request.staff = {
+        id: user.id,
+        role: StaffRole.catch('staff').parse(user.role),
+        staffCode: user.staffCode ?? null,
+        ...shared,
+      } satisfies CurrentStaff;
+    }
 
     // A temporary password must be changed first (AC-14): only "who am I" works until then. Change
     // password and sign out are Better Auth routes, which their own before hook lets through.
-    if (user.mustChangePassword && !(request.method === 'GET' && request.path === '/api/me')) {
+    if (
+      user.mustChangePassword &&
+      !(request.method === 'GET' && request.path === WHO_AM_I[needed])
+    ) {
       throw new ForbiddenException({
         code: 'PASSWORD_CHANGE_REQUIRED',
         message: 'Change your password to continue.',

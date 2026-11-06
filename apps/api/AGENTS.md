@@ -10,17 +10,17 @@ The NestJS backend that holds every business rule. One codebase, three entry poi
 |---|---|
 | `src/main.ts` | HTTP bootstrap: installs `RedactingLogger`, loads extensions |
 | `src/app.setup.ts` | HTTP wiring shared by every start: trust proxy, `/api` prefix, `QueryErrorFilter`, Better Auth mounted before the body parsers |
-| `src/migrate.ts` | The migrate entry point (the only place migrations run); sets the app role login from `APP_DB_PASSWORD`; `TENANT_ID` and `APP_DB_ROLE` are read here only: stored on a database's first run, then only checked on every run (a different value throws `TenantMismatch` or `AppRoleMismatch`), and a missing database setting is restored from the `install` row and the `pgboss` schema owner; the app role's password is set for the stored role |
+| `src/migrate.ts` | The migrate entry point (the only place migrations run); validates only its own variables with `loadMigrateEnv` (never `loadEnv`: its container gets no `PUBLIC_URL` or `BETTER_AUTH_SECRET`); sets the app role login from `APP_DB_PASSWORD`; `TENANT_ID` and `APP_DB_ROLE` are read here only: stored on a database's first run, then only checked on every run (a different value throws `TenantMismatch` or `AppRoleMismatch`), and a missing database setting is restored from the `install` row and the `pgboss` schema owner; the app role's password is set for the stored role |
 | `src/worker.ts`, `src/worker.module.ts` | The worker entry point: no HTTP, logs through `RedactingLogger`, runs pg-boss jobs (the nightly ledger reconciliation) |
 | `src/database/sql.ts` | `Transaction`/`Executor` types, `pgArray` (arrays as one bound literal), PostgreSQL error code helpers |
 | `src/platform/` | `SettingsService` (typed install settings, `localDate` in the install time zone), `NumberingService` (gap free document numbers), and `CostRulesService` (`ruleFor`: the per order cost rule in force on a day, read from `order_cost_rules`; `not_set` and never 0 when unset) |
 | `src/platform/audience/` | `@Audience(...)` (`staff`, `partner`, `portal`, `hook`, `public`) and the deny by default `AudienceGuard`; `audience.spec.ts` fails the build for a controller without exactly one |
 | `src/platform/logging/` | `RedactingLogger`: Nest's console logger with every argument passed through `redact` from `@ssdashboard/config/redaction` |
-| `src/identity/` | Staff sign in (`sign-in/`) and staff administration (`staff/`), one `IdentityModule`, see [its AGENTS.md](src/identity/AGENTS.md) |
+| `src/identity/` | Staff and partner sign in (`sign-in/`), audiences and hat driven sessions (`sessions/`), and staff administration (`staff/`), one `IdentityModule`, see [its AGENTS.md](src/identity/AGENTS.md) |
 | `src/inventory/` | The stock ledger, see [its AGENTS.md](src/inventory/AGENTS.md) |
 | `src/audit/` | The audit trail: `AuditService.record` (the only writer of `audit_entries`), `AuditQueryService`, and `GET /api/audit/entries`, see [its README](src/audit/README.md) |
 | `src/app.module.ts` | Root module, imports each business module |
-| `src/config/env.ts` | Zod env schema, validated at startup |
+| `src/config/env.ts` | Zod env schema, validated at startup: `loadEnv` for the api, worker, and `create-admin`, `loadMigrateEnv` (picked from the same fields) for `migrate`. `test/compose-env.spec.ts` fails when a `deploy/compose.yaml` service's env list stops satisfying its entry point's loader |
 | `src/database/database.module.ts` | Drizzle client provider; at start of the api and the worker, refuses a session tenant that is not the `install` row (`SessionTenantMismatch`, a database that cannot be reached is only logged), and every new pool connection checks it again before its first query, stopping the process on a mismatch (`stopOnTenantMismatch`) |
 | `src/extensions/load-extensions.ts` | Loads `extensions/<client>` packages listed in `EXTENSIONS` |
 

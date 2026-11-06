@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Password, unmetPasswordRules } from './auth.js';
+import { Home, MeResponse, Password, unmetPasswordRules } from './auth.js';
 
 describe('the password rule (AC-8)', () => {
   it.each(['Abcdefg1', 'Correct-Horse-1', `A1${'b'.repeat(126)}`])('accepts %s', (password) => {
@@ -37,5 +37,29 @@ describe('the password rule (AC-8)', () => {
     // Arabic letters have no case, so they cannot satisfy upper or lower on their own.
     expect(unmetPasswordRules('كلمةالسر12')).toEqual(['lowercase', 'uppercase']);
     expect(unmetPasswordRules('Éclair-12')).toEqual([]);
+  });
+});
+
+describe('MeResponse home (spec 0005, AC-28)', () => {
+  const me = {
+    id: '0190c0de-0000-7000-8000-000000000001',
+    name: 'Sam',
+    email: 'sam@example.com',
+    role: 'staff',
+    phone: null,
+    staffCode: null,
+    language: null,
+    twoFactorEnabled: false,
+    mustChangePassword: false,
+  };
+
+  it.each(['backoffice', 'partner'])('accepts home %s', (home) => {
+    expect(MeResponse.parse({ ...me, home }).home).toBe(home);
+  });
+
+  it('refuses an answer without home, or with a home that is not a landing page', () => {
+    expect(MeResponse.safeParse(me).success).toBe(false);
+    expect(MeResponse.safeParse({ ...me, home: 'portal' }).success).toBe(false);
+    expect(Home.options).toEqual(['backoffice', 'partner']);
   });
 });
