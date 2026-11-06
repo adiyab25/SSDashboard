@@ -66,8 +66,10 @@ export class AppRoleMismatch extends Error {
 
 /**
  * Thrown when the application role is one that must never serve the api: a superuser, a role that
- * can create roles or bypass row security, or the role `migrate` itself connects as. The check
- * runs before anything changes, on every run, because `migrate` sets this role's password.
+ * can create roles, bypass row security, or replicate, the role `migrate` itself connects as or a
+ * role holding its privileges, a member of any role, or a role whose own settings set `ssd.*` or
+ * `search_path`. The check runs before anything changes, on every run, because `migrate` sets
+ * this role's password. Its message names parameters and roles, never a setting's value.
  */
 export class UnsafeAppRole extends Error {
   /** The refused role name. */
@@ -119,9 +121,12 @@ async function runFormatted(client: pg.Client, template: string, values: string[
  * The tenant and the app role are stored once, as the `ssd.tenant_id` and `ssd.app_role` database
  * settings, and checked on every later run: a different `TENANT_ID` throws `TenantMismatch`, a
  * different `APP_DB_ROLE` throws `AppRoleMismatch`, and a privileged role throws `UnsafeAppRole`,
- * all before anything changes. Order: checks, set both settings (new databases) and in this
- * session, apply the migrations, write the `install` row if it is missing, then seed the per order
- * cost rules a new install starts with (`seedOrderCostRules`).
+ * all before anything changes; so does a database setting that names another tenant than the
+ * `install` row. Order: checks, set either setting where it is missing (a new database, or one whose
+ * setting was reset or lost in a restore: the tenant comes from the `install` row, the role from
+ * the `pgboss` schema owner) and both in this session, apply the migrations, write the `install`
+ * row if it is missing, then seed the per order cost rules a new install starts with
+ * (`seedOrderCostRules`).
  */
 export async function runMigrations(
   connectionString: string,
@@ -135,20 +140,30 @@ export async function runMigrations(
       const requestedTenant = options.tenantId?.trim().toLowerCase() || undefined;
       const requestedRole = options.appRole?.trim() || undefined;
       const installed = await readInstalledTenant(client);
+      const settingTenant = await tenantSetting(client);
+      // A database setting that names another tenant than the install row is never overwritten.
+      if (installed && settingTenant && settingTenant !== installed) {
+        throw new TenantMismatch(installed, settingTenant);
+      }
       // An interrupted first run (migrated, install row not written yet) left the tenant in the
       // database setting and stamped it on the seeded rows, so that setting counts as installed.
-      const storedTenant = installed ?? (await tenantSetting(client));
+      const storedTenant = installed ?? settingTenant;
       if (storedTenant && requestedTenant && requestedTenant !== storedTenant) {
         throw new TenantMismatch(storedTenant, requestedTenant);
       }
-      const storedRole = await roleSetting(client);
+      const settingRole = await roleSetting(client);
+      // With the setting cleared, the baseline still names the role: it owns the pgboss schema.
+      const storedRole = settingRole ?? (await baselineAppRole(client));
       if (storedRole && requestedRole && requestedRole !== storedRole) {
         throw new AppRoleMismatch(storedRole, requestedRole);
       }
       const appRole = storedRole ?? requestedRole ?? APP_ROLE;
       await assertSafeAppRole(client, appRole);
       const tenantId = storedTenant ?? requestedTenant ?? (await generatedTenant(client));
-      if (!storedTenant) {
+      // Both settings are (re)asserted on every run where they are missing: a first run stores
+      // them, and a later run restores a setting someone reset or a restore left out, from the
+      // install row and the role the baseline names. Each is written only when absent.
+      if (!settingTenant) {
         await runFormatted(
           client,
           "'ALTER DATABASE %I SET ssd.tenant_id = %L', current_database(), $1::text",
@@ -158,7 +173,7 @@ export async function runMigrations(
       // TODO(feature 26): refuse a role that already exists on a first run unless the host
       // bootstrap created it on purpose. Dev and test servers share ssdashboard_app across
       // databases today, so only the privileged roles are refused.
-      if (!storedRole) {
+      if (!settingRole) {
         await runFormatted(
           client,
           "'ALTER DATABASE %I SET ssd.app_role = %L', current_database(), $1::text",
@@ -255,6 +270,21 @@ async function roleSetting(client: pg.Client): Promise<string | undefined> {
   return databaseSetting(client, 'ssd.app_role');
 }
 
+/**
+ * The application role the baseline was applied for, read from the owner of the `pgboss` schema
+ * (`0002_baseline_rules.sql` creates it `AUTHORIZATION` the app role), once the baseline exists.
+ * Used only when the `ssd.app_role` setting is missing, so a cleared setting is restored to the
+ * role the grants name, never to the default. Undefined on a new database.
+ */
+async function baselineAppRole(client: pg.Client): Promise<string | undefined> {
+  if (!(await baselineApplied(client))) return undefined;
+  const { rows } = await client.query<{ role: string }>(
+    `SELECT r.rolname AS role FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner
+     WHERE n.nspname = 'pgboss'`,
+  );
+  return rows[0]?.role;
+}
+
 /** A new tenant id for a first run with no `TENANT_ID`. */
 async function generatedTenant(client: pg.Client): Promise<string> {
   const { rows } = await client.query<{ id: string }>('SELECT uuidv7()::text AS id');
@@ -264,19 +294,39 @@ async function generatedTenant(client: pg.Client): Promise<string> {
 }
 
 /**
- * Refuses an application role that is a superuser, can create roles, bypasses row security, or is
- * the role this connection runs as. A role that does not exist yet is fine: the baseline creates it.
+ * Refuses an application role that is a superuser, can create roles, bypasses row security, can
+ * replicate, is the role this connection runs as, holds the privileges of that role, or is a
+ * member of any role at all (a member of `pg_write_all_data` writes every table, so the revokes on
+ * the history tables would mean nothing). It also refuses a role whose own settings, for every
+ * database or this one, set `ssd.*` or `search_path` (security review S3): role settings beat the
+ * database settings `migrate` stores, so they could swap the tenant or hide a table. It refuses
+ * rather than resets, so an operator sees the change. Runs on every run and before the login is
+ * set. A role that does not exist yet is fine: the baseline creates it.
  */
 async function assertSafeAppRole(client: pg.Client, role: string): Promise<void> {
   const { rows } = await client.query<{
     super: boolean;
     createrole: boolean;
     bypassrls: boolean;
+    replication: boolean;
     self: boolean;
+    inheritsOwner: boolean;
+    memberOf: string | null;
+    settings: string | null;
   }>(
-    `SELECT rolsuper AS super, rolcreaterole AS createrole, rolbypassrls AS bypassrls,
-            rolname = current_user AS self
-     FROM pg_roles WHERE rolname = $1`,
+    `SELECT r.rolsuper AS super, r.rolcreaterole AS createrole, r.rolbypassrls AS bypassrls,
+            r.rolreplication AS replication, r.rolname = current_user AS self,
+            pg_has_role(r.oid, current_user, 'USAGE') AS "inheritsOwner",
+            (SELECT string_agg(g.rolname, ', ' ORDER BY g.rolname)
+               FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+              WHERE m.member = r.oid) AS "memberOf",
+            (SELECT string_agg(DISTINCT split_part(c, '=', 1), ', ')
+               FROM pg_db_role_setting s, unnest(s.setconfig) AS c
+              WHERE s.setrole = r.oid
+                AND s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database()))
+                AND (split_part(c, '=', 1) LIKE 'ssd.%' OR split_part(c, '=', 1) = 'search_path')
+            ) AS settings
+     FROM pg_roles r WHERE r.rolname = $1`,
     [role],
   );
   const found = rows[0];
@@ -285,6 +335,17 @@ async function assertSafeAppRole(client: pg.Client, role: string): Promise<void>
   if (found.super) throw new UnsafeAppRole(role, 'it is a superuser');
   if (found.createrole) throw new UnsafeAppRole(role, 'it can create roles');
   if (found.bypassrls) throw new UnsafeAppRole(role, 'it bypasses row security');
+  if (found.replication) throw new UnsafeAppRole(role, 'it can replicate');
+  if (found.inheritsOwner) {
+    throw new UnsafeAppRole(role, 'it holds the privileges of the role migrate connects as');
+  }
+  if (found.memberOf) throw new UnsafeAppRole(role, `it is a member of ${found.memberOf}`);
+  if (found.settings) {
+    throw new UnsafeAppRole(
+      role,
+      `its own role settings set ${found.settings}; remove them with ALTER ROLE ... RESET`,
+    );
+  }
 }
 
 /**

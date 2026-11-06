@@ -1,6 +1,7 @@
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildSkuListSql } from '../src/catalog/catalog.service.js';
+import { buildAvailabilitySql } from '../src/inventory/ledger/ledger.service.js';
 import { ledgerHarness, posting, type LedgerHarness } from './ledger.js';
 import { randomScaleKeys, seedScale, SPEC_SCALE, type SeedStep } from './scale-seed.js';
 
@@ -199,12 +200,18 @@ ${plan}`);
     expect(counts?.order_events).toBeLessThan(460_000);
   });
 
-  it('keeps every order total equal to its lines plus shipping', async () => {
-    const [bad] = await rows<{ bad: number }>(`
-      SELECT count(*)::int AS bad FROM orders o
-      WHERE o.lines_gross_amount <> (SELECT sum(gross_amount) FROM order_lines l WHERE l.order_id = o.id)`);
+  // Review R2: the orders child (`lines_gross_amount`) sums the lines that are not cancelled; a
+  // wholly cancelled order has 0. The database's own check ties the total to lines plus shipping.
+  it('keeps every order line total equal to the sum of its lines that are not cancelled', async () => {
+    const [bad] = await rows<{ bad: number; cancelled: number }>(`
+      SELECT count(*) FILTER (WHERE o.lines_gross_amount <> coalesce(
+               (SELECT sum(gross_amount) FROM order_lines l
+                 WHERE l.order_id = o.id AND l.line_state <> 'cancelled'), 0))::int AS bad,
+             count(*) FILTER (WHERE o.fulfillment_state = 'cancelled')::int AS cancelled
+      FROM orders o`);
 
     expect(bad?.bad).toBe(0);
+    expect(bad?.cancelled).toBeGreaterThan(0);
   });
 
   it(`searches SKUs by code prefix and name fragment (150 ms budget)`, async () => {
@@ -237,19 +244,24 @@ ${plan}`);
     ]);
   });
 
+  // Review R3: the plan of the exact statement getAvailable runs (buildAvailabilitySql) is checked
+  // too, so this budget cannot pass on a scan of a small cache.
   it('reads on hand and available for one SKU', async () => {
-    const run = (n: number) =>
-      h.ledger.getAvailable({ variantId: keys[n % keys.length]?.variantId ?? '' });
-    await timed(0, WARMUP, run);
-    const value = p95(await timed(WARMUP, INPUTS, run));
+    const variantOf = (n: number) => keys[n % keys.length]?.variantId ?? '';
 
-    results.push({
-      row: 'Stock on hand',
-      budgetMs: BUDGET_STOCK_ON_HAND_MS,
-      p95Ms: Number(value.toFixed(1)),
-      runs: RUNS,
-    });
-    expect(value).toBeLessThan(BUDGET_STOCK_ON_HAND_MS);
+    await checkRow('Stock on hand', BUDGET_STOCK_ON_HAND_MS, [
+      {
+        label: 'getAvailable',
+        indexes: ['stock_levels_key_unique'],
+        async explain(n) {
+          const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
+            sql`EXPLAIN (COSTS OFF) ${buildAvailabilitySql(null, variantOf(n))}`,
+          );
+          return plan.map((row) => row['QUERY PLAN']).join('\n');
+        },
+        run: (n) => h.ledger.getAvailable({ variantId: variantOf(n) }),
+      },
+    ]);
   });
 
   it('posts a single ledger line', async () => {
@@ -322,7 +334,8 @@ ${plan}`);
       sqlRead(
         h.app.pool,
         'canonical customer',
-        ['credit_entries_customer_funding_idx'],
+        // Review R3: both halves of the three id lookup, the merged customers and their entries.
+        ['credit_entries_customer_funding_idx', 'customers_merged_into_idx'],
         `SELECT funding, sum(amount) AS balance FROM credit_entries
          WHERE customer_id IN (SELECT $1::uuid UNION ALL SELECT id FROM customers WHERE merged_into_id = $1::uuid)
          GROUP BY funding`,

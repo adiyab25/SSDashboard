@@ -1,9 +1,12 @@
 import {
   CashState,
+  CostBasis,
   CreditActorType,
   CreditEntryKind,
   CreditFunding,
   FulfillmentState,
+  LedgerSourceType,
+  LocationOwnerType,
   OrderActorType,
   OrderCostRuleKind,
   OrderCostRuleStatus,
@@ -14,6 +17,7 @@ import {
   PayoutMethod,
   PhoneKind,
   RefusedReasonCode,
+  ReservationStatus,
   SettlementLineKind,
   SettlementMatchedByType,
   SettlementMatchResult,
@@ -22,6 +26,7 @@ import {
   SettlementPeriodActorType,
   SettlementPeriodState,
   SettlementStatementKind,
+  StockReceiptStatus,
   TaskCreatedByType,
   TaskLinkedType,
   TaskStatus,
@@ -34,7 +39,8 @@ import { createScratchDatabase, dropScratchDatabase } from './database.js';
 // Review m5 (data model milestone 3): a database enum and its Zod twin in @ssdashboard/contracts
 // must hold the same values in the same order, or a state the rules accept is refused by the
 // database (or the reverse). Run against the migrated baseline, never against the Drizzle source.
-describe('order, customer, credit, settlement, task, and cost rule enums match their contracts', () => {
+// Review R4 (feature 4 close) added the ledger, cost, location, reservation, and receipt twins.
+describe('every database enum with a Zod twin matches its contract', () => {
   let name: string;
   let owner: pg.Client;
 
@@ -77,6 +83,11 @@ describe('order, customer, credit, settlement, task, and cost rule enums match t
     ['task_created_by_type', TaskCreatedByType.options],
     ['order_cost_rule_kind', OrderCostRuleKind.options],
     ['order_cost_rule_status', OrderCostRuleStatus.options],
+    ['movement_source_type', LedgerSourceType.options],
+    ['cost_basis', CostBasis.options],
+    ['location_owner_type', LocationOwnerType.options],
+    ['reservation_status', ReservationStatus.options],
+    ['stock_receipt_status', StockReceiptStatus.options],
   ] as const)('%s has the values of its Zod enum', async (type, options) => {
     const { rows } = await owner.query<{ value: string }>(
       `SELECT unnest(enum_range(NULL::public.${type}))::text AS value`,

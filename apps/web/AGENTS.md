@@ -56,6 +56,7 @@ pnpm --filter @ssdashboard/web test:e2e    # Playwright: desktop, mobile, and pr
 ```
 
 - The production project runs `next start` on the last build (`E2E_PROD_PORT`, default 3100); build first. Point the suite at servers that are already running with `E2E_BASE_URL` and `E2E_PROD_BASE_URL`.
+- `E2E_WEB_PORT` (default 3000) and `E2E_API_PORT` (default 3001): the ports of the dev servers the config starts, for a checkout where those are taken; when either is set the config starts the api and `next dev` itself with `PORT`, `API_INTERNAL_URL`, and `PUBLIC_URL` matching them (the `next start` production server gets `API_INTERNAL_URL` too), otherwise it runs `pnpm dev`.
 - Open the dev server on `localhost`, not `127.0.0.1`: Next dev blocks its own scripts for other origins, so the page never hydrates.
 
 ## Conventions

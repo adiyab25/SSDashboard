@@ -34,10 +34,10 @@ Also from spec 0007: order number unique per (tenant, store), never per tenant; 
   - [x] Stores, channels, customers by phone, and orders with both state machines
   - [x] Customer credit, settlement, tasks, per order cost rules, and the module walls
   - [x] Scale at 50,000 SKUs, in its own CI job
-- [ ] Verify it: `/check verify data model`
-- [ ] Test it: `/test data model`
-- [ ] Review it: `/check review data model`
-- [ ] Document it: `/document data model`
+- [x] Verify it: `/check verify data model`
+- [x] Test it: `/test data model`
+- [x] Review it: `/check review data model`
+- [x] Document it: `/document data model`
 Spec [0002](../specs/0002-core-data-model/index.md) (amendment of 2026-11-05, Proposed; Fable gate review approves; domain review [domain-data-model](../reviews/domain-data-model.md): first pass 5 blockers, re-review 2026-11-05 approves with 0 open blockers)
 
 ### 5. Design system & UI foundation

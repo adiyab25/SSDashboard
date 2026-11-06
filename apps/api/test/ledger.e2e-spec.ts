@@ -402,6 +402,49 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
       }
     });
 
+    // Review R5, gate ruling: the lock date governs the stamped operating day, not the calendar
+    // date. With cutoff hour 3, 01:00 Cairo on 1 October is still 30 September's operating day.
+    it('applies the lock date to the operating day, with the cutoff hour (R5)', async () => {
+      const key = await sku();
+      const at = async (local: string): Promise<Date> => {
+        const { rows } = await h.owner.pool.query<{ at: Date }>(
+          `SELECT ($1::timestamp AT TIME ZONE 'Africa/Cairo') AS at`,
+          [local],
+        );
+        const value = rows[0]?.at;
+        if (!value) throw new Error('no date');
+        return new Date(value);
+      };
+      await h.owner.pool.query(
+        `UPDATE settings SET value = CASE key WHEN 'operating_day_cutoff_hour' THEN '3'::jsonb
+                                              ELSE '"2026-09-30"'::jsonb END
+          WHERE key IN ('operating_day_cutoff_hour', 'inventory_lock_date')`,
+      );
+      try {
+        const line = { ...key, quantity: 1, unitCost: '1.0000' };
+        const locked = await rejects(
+          h.ledger.post(posting([line], { effectiveAt: await at('2026-10-01 01:00') })),
+          'PeriodLocked',
+        );
+        expect(locked.details).toMatchObject({ lockDate: '2026-09-30' });
+
+        const accepted = await h.ledger.post(
+          posting([line], { effectiveAt: await at('2026-10-01 04:00') }),
+        );
+        const { rows } = await h.owner.pool.query<{ day: string }>(
+          "SELECT to_char(operating_day, 'YYYY-MM-DD') AS day FROM movement_groups WHERE id = $1",
+          [accepted.groupId],
+        );
+        expect(rows[0]?.day).toBe('2026-10-01');
+      } finally {
+        await h.owner.pool.query(
+          `UPDATE settings SET value = CASE key WHEN 'operating_day_cutoff_hour' THEN '0'::jsonb
+                                                ELSE 'null'::jsonb END
+            WHERE key IN ('operating_day_cutoff_hour', 'inventory_lock_date')`,
+        );
+      }
+    });
+
     it('accepts a date a little ahead of the clock, within 5 minutes', async () => {
       const key = await sku();
 
@@ -428,7 +471,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
         postedBy: null,
         groupId: receipt.groupId,
         idempotencyKey: randomUUID(),
-        reasonCode: 'wrong supplier',
+        reasonCode: 'wrong_supplier',
       });
 
       expect(reversal).toMatchObject({
@@ -440,7 +483,7 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
         quantity: -5,
         totalCost: '-48.75',
         costVariance: '-51.25',
-        reasonCode: 'wrong supplier',
+        reasonCode: 'wrong_supplier',
       });
       expect(await level(h.owner, key)).toMatchObject({ onHand: 3, totalValue: '29.25' });
     });

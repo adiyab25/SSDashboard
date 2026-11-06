@@ -87,7 +87,13 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
   const customers = whole('customers', seed.customers);
   const skuWidth = Math.max(6, String(variants).length);
   const sku = (n: string): string => `'SCALE-' || lpad((${n})::text, ${skuWidth}, '0')`;
+  // Security review S9: seeded phones sit in +20 0..., a range no person can own. In E.164 the
+  // national number after +20 never starts with 0 (0 is Egypt's trunk prefix, dropped in the
+  // international form), so these pass the database's E.164 shape check yet can never ring
+  // anyone, even when an EXPLAIN plan or a failure prints one to a CI log.
   const phone = (n: string, prefix: string): string => `'${prefix}' || lpad((${n})::text, 8, '0')`;
+  const PRIMARY_PHONE = '+20000';
+  const SECOND_PHONE = '+20001';
   const perStatement = Math.ceil(seed.settlementLines / seed.statements);
   const steps: SeedStep[] = [];
 
@@ -135,7 +141,9 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
        FROM generate_series(0, ${seed.movements - 1}) i
        JOIN grp ON grp.n = i / 10 + 1
        JOIN product_variants v ON v.sku = ${sku('i % ' + variants + ' + 1')}
-       JOIN locations l ON l.code = 'SCALE-' || ((i / ${variants}) % ${seed.locations} + 1)`,
+       -- Review R15: every SKU gets movements at distinct locations, and the SKUs alternate
+       -- between the two halves of the location list, so all of them hold stock.
+       JOIN locations l ON l.code = 'SCALE-' || (((i / ${variants}) + (i % ${variants}) % 2 * ${Math.ceil(seed.locations / 2)}) % ${seed.locations} + 1)`,
     );
     await step(
       'stock levels',
@@ -169,9 +177,9 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
       'customer phones',
       `WITH c AS (SELECT id, substr(name, 16)::int AS n FROM customers WHERE name LIKE 'Scale customer %')
        INSERT INTO customer_phones (customer_id, phone_e164, kind, is_primary)
-       SELECT id, ${phone('n', '+2010')}, 'mobile'::customer_phone_kind, true FROM c
+       SELECT id, ${phone('n', PRIMARY_PHONE)}, 'mobile'::customer_phone_kind, true FROM c
        UNION ALL
-       SELECT id, ${phone('n', '+2011')}, 'mobile'::customer_phone_kind, false FROM c WHERE n <= ${whole('phones', seed.phones) - customers}`,
+       SELECT id, ${phone('n', SECOND_PHONE)}, 'mobile'::customer_phone_kind, false FROM c WHERE n <= ${whole('phones', seed.phones) - customers}`,
     );
     await step(
       'orders',
@@ -179,16 +187,25 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
             ch AS (SELECT array_agg(id ORDER BY code) AS a FROM channels WHERE code LIKE 'scale-c%'),
             u AS (SELECT array_agg(id ORDER BY email) AS a FROM users WHERE email LIKE 'scale-user-%'),
             cu AS (SELECT substr(name, 16)::int AS n, id FROM customers WHERE name LIKE 'Scale customer %'),
-            o AS (
+            o0 AS (
               SELECT n, n % ${STORES} AS si, n / ${STORES} AS k,
                      ${days - 1} - ((n / ${STORES}) * ${days} / ${perStore}) AS off,
                      1 + (n * 7) % ${customers} AS cn,
-                     (${lineGross('n', 1)} + CASE WHEN n % 5 < 2 THEN ${lineGross('n', 2)} ELSE 0 END)::numeric(14,2) AS gross,
-                     CASE WHEN n % 7 = 0 THEN 50 ELSE 0 END AS prepaid,
+                     (${lineGross('n', 1)} + CASE WHEN n % 5 < 2 THEN ${lineGross('n', 2)} ELSE 0 END)::numeric(14,2) AS all_lines,
                      CASE WHEN ${days - 1} - ((n / ${STORES}) * ${days} / ${perStore}) < 7 THEN 'new'
                           ELSE (ARRAY['delivered','delivered','delivered','delivered','delivered','delivered','delivered',
                                       'returned_to_origin','cancelled','refused'])[1 + n % 10] END AS state
               FROM generate_series(1, ${orders}) n
+            ),
+            -- Review R2: a wholly cancelled order's lines are all cancelled, so its line total is 0
+            -- (the orders child sums lines that are not cancelled); it charges no shipping and
+            -- holds no prepayment, so its total, COD expected, and COD due are 0 too.
+            o AS (
+              SELECT o0.*,
+                     CASE WHEN state = 'cancelled' THEN 0 ELSE all_lines END AS gross,
+                     CASE WHEN state = 'cancelled' THEN 0 ELSE 60 END AS ship,
+                     CASE WHEN n % 7 = 0 AND state <> 'cancelled' THEN 50 ELSE 0 END AS prepaid
+              FROM o0
             )
        INSERT INTO orders (store_id, channel_id, order_number, customer_id, placed_at, fulfillment_state,
                            cash_state, outcome, lines_gross_amount, shipping_charged_amount, total_amount,
@@ -204,12 +221,13 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
                     ELSE 'nothing_to_collect' END)::order_cash_state,
               (CASE o.state WHEN 'new' THEN 'open' WHEN 'delivered' THEN 'kept'
                             WHEN 'cancelled' THEN 'cancelled_before_shipping' ELSE 'failed_delivery' END)::order_outcome,
-              o.gross, 60, o.gross + 60, o.prepaid, o.gross + 60 - o.prepaid, o.gross + 60 - o.prepaid,
+              o.gross, o.ship, o.gross + o.ship, o.prepaid, o.gross + o.ship - o.prepaid,
+              o.gross + o.ship - o.prepaid,
               CASE WHEN o.state = 'delivered' AND o.prepaid = 0 THEN o.gross + 60 ELSE 0 END,
               CASE WHEN o.state = 'delivered' THEN o.gross + 60 ELSE 0 END,
               (CASE WHEN o.prepaid > 0 THEN 'instapay' ELSE 'cod' END)::order_payment_method,
               CASE WHEN o.prepaid > 0 THEN 'instapay'::order_payment_method END,
-              'Scale customer ' || o.cn, ${phone('o.cn', '+2010')},
+              'Scale customer ' || o.cn, ${phone('o.cn', PRIMARY_PHONE)},
               CASE WHEN o.state <> 'new' THEN now() - o.off * interval '1 day' END,
               CASE WHEN o.state <> 'new' THEN u.a[1 + o.n % ${USERS}] END,
               CASE WHEN o.state = 'cancelled' THEN now() - o.off * interval '1 day' END,
@@ -241,9 +259,14 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
               CASE WHEN l.state = 'cancelled' THEN 'customer_cancelled' END
        FROM l JOIN product_variants v ON v.sku = ${sku(`1 + (l.n * 31 + l.j * 17) % ${variants}`)}`,
     );
-    await step(
-      'order events',
-      `WITH u AS (SELECT array_agg(id ORDER BY email) AS a FROM users WHERE email LIKE 'scale-user-%')
+    // Security review S1: recorded_at on order events belongs to the database, which stamps the
+    // moment of the insert. The seed plants a history spread over three years, so it turns the
+    // stamp off as the owner for this one insert and always turns it back on.
+    await client.query('ALTER TABLE order_events DISABLE TRIGGER order_events_0_stamp_recorded_at');
+    try {
+      await step(
+        'order events',
+        `WITH u AS (SELECT array_agg(id ORDER BY email) AS a FROM users WHERE email LIKE 'scale-user-%')
        INSERT INTO order_events (order_id, machine, from_state, to_state, actor_type, actor_id,
                                  occurred_at, recorded_at)
        SELECT o.id, 'fulfillment', e.from_state, e.to_state, e.actor::order_actor_type,
@@ -257,7 +280,12 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
              CASE WHEN o.fulfillment_state = 'cancelled' THEN 'person' ELSE 'carrier' END, interval '2 days')
        ) AS e(step, from_state, to_state, actor, after)
        WHERE e.step = 1 OR o.fulfillment_state <> 'new'`,
-    );
+      );
+    } finally {
+      await client.query(
+        'ALTER TABLE order_events ENABLE TRIGGER order_events_0_stamp_recorded_at',
+      );
+    }
     await step(
       'credit entries',
       `WITH c AS (SELECT substr(name, 16)::int AS n, id FROM customers WHERE name LIKE 'Scale customer %'),
@@ -363,7 +391,8 @@ export async function randomScaleKeys(
   count: number,
 ): Promise<{ variantId: string; locationId: string }[]> {
   const { rows } = await owner.pool.query<{ variant_id: string; location_id: string }>(
-    `SELECT variant_id, location_id FROM stock_levels TABLESAMPLE SYSTEM (5) LIMIT $1`,
+    // Review R15: a uniform sample of balances, not the adjacent pages TABLESAMPLE SYSTEM reads.
+    `SELECT variant_id, location_id FROM stock_levels ORDER BY random() LIMIT $1`,
     [count],
   );
   return rows.map((row) => ({ variantId: row.variant_id, locationId: row.location_id }));

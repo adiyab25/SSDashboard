@@ -76,6 +76,41 @@ CREATE TRIGGER "settlement_period_events_no_truncate" BEFORE TRUNCATE ON "settle
 CREATE TRIGGER "order_cost_rules_append_only" BEFORE UPDATE OR DELETE ON "order_cost_rules" FOR EACH ROW EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
 CREATE TRIGGER "order_cost_rules_no_truncate" BEFORE TRUNCATE ON "order_cost_rules" FOR EACH STATEMENT EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
 
+-- `recorded_at` on an append only table belongs to the database (security review S1): a writer's
+-- value is always overwritten, because a wrong one could never be corrected and would win "latest"
+-- or replay order for ever. Historical time goes in `effective_at` or `effective_from`. The
+-- argument picks the clock:
+--   'transaction': now(), the transaction start. The stock ledger and credit entries, where every
+--     row of one posting carries the same instant (movements copy their group's, the ledger's
+--     FutureDate check compares effective_at with it, and nothing picks a "latest" row by it).
+--   'statement': clock_timestamp(), the moment of the insert. Tables whose latest row or replay
+--     order is read by recorded_at (cost records, cost rules, order events, period events, match
+--     rows, merges): rows of one transaction keep their insert order, and a row inserted after
+--     another committed one is never dated before it, as with the audit trail.
+-- Each trigger's name puts `0_` after the table, so it fires before every other insert trigger of
+-- its table (triggers of one event fire in name order) and they all see the final value.
+CREATE FUNCTION "ssd_stamp_recorded_at"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF TG_ARGV[0] = 'transaction' THEN
+    NEW.recorded_at := now();
+  ELSIF TG_ARGV[0] = 'statement' THEN
+    NEW.recorded_at := clock_timestamp();
+  ELSE
+    RAISE EXCEPTION 'ssd_stamp_recorded_at: unknown clock % on %', TG_ARGV[0], TG_TABLE_NAME;
+  END IF;
+  RETURN NEW;
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER "movement_groups_0_stamp_recorded_at" BEFORE INSERT ON "movement_groups" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('transaction');--> statement-breakpoint
+CREATE TRIGGER "stock_movements_0_stamp_recorded_at" BEFORE INSERT ON "stock_movements" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('transaction');--> statement-breakpoint
+CREATE TRIGGER "credit_entries_0_stamp_recorded_at" BEFORE INSERT ON "credit_entries" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('transaction');--> statement-breakpoint
+CREATE TRIGGER "cost_records_0_stamp_recorded_at" BEFORE INSERT ON "cost_records" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+CREATE TRIGGER "order_cost_rules_0_stamp_recorded_at" BEFORE INSERT ON "order_cost_rules" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+CREATE TRIGGER "order_events_0_stamp_recorded_at" BEFORE INSERT ON "order_events" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+CREATE TRIGGER "customer_merges_0_stamp_recorded_at" BEFORE INSERT ON "customer_merges" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+CREATE TRIGGER "settlement_line_matches_0_stamp_recorded_at" BEFORE INSERT ON "settlement_line_matches" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+CREATE TRIGGER "settlement_period_events_0_stamp_recorded_at" BEFORE INSERT ON "settlement_period_events" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+
 -- The operating day (spec 0002, A3): the brand's local calendar day of an instant, with an
 -- optional cutoff hour (an order at 01:30 with cutoff 2 belongs to the previous day). It reads the
 -- settings `timezone` and `operating_day_cutoff_hour`, so it is STABLE, not IMMUTABLE, and cannot
@@ -136,12 +171,23 @@ END;
 $$;--> statement-breakpoint
 CREATE TRIGGER "locations_owner_fixed" BEFORE UPDATE ON "locations" FOR EACH ROW WHEN (OLD."owner_type" IS DISTINCT FROM NEW."owner_type" OR OLD."party_id" IS DISTINCT FROM NEW."party_id") EXECUTE FUNCTION "locations_reject_owner_change"();--> statement-breakpoint
 
--- A reversal group can never itself be reversed.
+-- A reversal group can never itself be reversed. The original is read here and one this statement
+-- cannot see is refused (security review S6): left to the foreign key, which runs later on a newer
+-- snapshot, an original that commits in between would skip this check. FOR KEY SHARE is not used:
+-- it needs UPDATE on the table, which the app role never holds on append only history.
 CREATE FUNCTION "movement_groups_reject_reversal_of_reversal"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  original_reverses uuid;
 BEGIN
-  IF NEW.reverses_group_id IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.movement_groups WHERE id = NEW.reverses_group_id AND reverses_group_id IS NOT NULL
-  ) THEN
+  IF NEW.reverses_group_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  SELECT reverses_group_id INTO original_reverses FROM public.movement_groups WHERE id = NEW.reverses_group_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'movement_groups_reverses_existing_group: movement group % does not exist or is not committed yet, so it cannot be reversed', NEW.reverses_group_id
+      USING ERRCODE = 'foreign_key_violation', CONSTRAINT = 'movement_groups_reverses_existing_group';
+  END IF;
+  IF original_reverses IS NOT NULL THEN
     RAISE EXCEPTION 'movement group % is a reversal and cannot be reversed', NEW.reverses_group_id
       USING ERRCODE = 'restrict_violation';
   END IF;
@@ -169,8 +215,18 @@ $$;--> statement-breakpoint
 CREATE TRIGGER "customer_merges_undo_matches" BEFORE INSERT ON "customer_merges" FOR EACH ROW EXECUTE FUNCTION "customer_merges_reject_mismatched_undo"();--> statement-breakpoint
 
 -- A credit reversal can never itself be reversed (spec 0002, customers child), like movement groups.
+-- An original this statement cannot see is refused here, not left to the foreign key (S6, above).
+-- This trigger runs before credit_entries_reversal_mirrors_original (name order), so the mirror
+-- check always finds its original.
 CREATE FUNCTION "credit_entries_reject_reversal_of_reversal"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
+  -- An entry that names itself is left to the check credit_entries_not_reversing_self.
+  IF NEW.reverses_entry_id IS NOT NULL AND NEW.reverses_entry_id <> NEW.id AND NOT EXISTS (
+    SELECT 1 FROM public.credit_entries WHERE id = NEW.reverses_entry_id
+  ) THEN
+    RAISE EXCEPTION 'credit_entries_reverses_existing_entry: credit entry % does not exist or is not committed yet, so it cannot be reversed', NEW.reverses_entry_id
+      USING ERRCODE = 'foreign_key_violation', CONSTRAINT = 'credit_entries_reverses_existing_entry';
+  END IF;
   IF NEW.reverses_entry_id IS NOT NULL AND EXISTS (
     SELECT 1 FROM public.credit_entries WHERE id = NEW.reverses_entry_id AND reverses_entry_id IS NOT NULL
   ) THEN
@@ -209,21 +265,14 @@ $$;--> statement-breakpoint
 CREATE TRIGGER "credit_entries_reversal_mirrors_original" BEFORE INSERT ON "credit_entries" FOR EACH ROW EXECUTE FUNCTION "credit_entries_reject_mismatched_reversal"();--> statement-breakpoint
 -- The entries of one posting share their idempotency key, posting id, customer, and request hash
 -- (security review m2), so a replay for another customer, or with other content, can never add
--- entries to an existing posting.
-CREATE FUNCTION "credit_entries_reject_split_posting"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM public.credit_entries e
-     WHERE e.tenant_id = NEW.tenant_id AND e.idempotency_key = NEW.idempotency_key
-       AND (e.posting_id <> NEW.posting_id OR e.customer_id <> NEW.customer_id OR e.request_hash <> NEW.request_hash)
-  ) THEN
-    RAISE EXCEPTION 'credit_entries_posting_holds_together: entries with idempotency key % must share one posting, customer, and request hash', NEW.idempotency_key
-      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'credit_entries_posting_holds_together';
-  END IF;
-  RETURN NEW;
-END;
-$$;--> statement-breakpoint
-CREATE TRIGGER "credit_entries_posting_holds_together" BEFORE INSERT ON "credit_entries" FOR EACH ROW EXECUTE FUNCTION "credit_entries_reject_split_posting"();--> statement-breakpoint
+-- entries to an existing posting. An exclusion constraint, not a trigger check (review R16): two
+-- entries with one tenant and key conflict unless customer, posting, and hash are all equal. Like a
+-- unique key it waits for an uncommitted conflicting entry and then refuses, under every isolation
+-- level (security review S6 and S12, review R6), and it takes no lock per entry, so a posting of
+-- thousands of entries never fills the lock table (an advisory lock per entry did, R16). The three
+-- columns are compared as one text: both uuids are 36 characters, so the text differs exactly when
+-- one of them does, and one GiST index serves the check (btree_gist, 0000, gives text `=` and `<>`).
+ALTER TABLE "credit_entries" ADD CONSTRAINT "credit_entries_posting_holds_together" EXCLUDE USING gist ("tenant_id" WITH =, "idempotency_key" WITH =, (("customer_id"::text || "posting_id"::text) || "request_hash") WITH <>);--> statement-breakpoint
 
 -- Periods of one account never overlap (spec 0002, settlement child), so the period a line's
 -- occurred_on falls in is unique. Drizzle cannot express an exclusion constraint; btree_gist
@@ -297,8 +346,11 @@ $$;--> statement-breakpoint
 CREATE TRIGGER "settlement_accounts_owner_fixed" BEFORE UPDATE ON "settlement_accounts" FOR EACH ROW WHEN (OLD."owner_type" IS DISTINCT FROM NEW."owner_type" OR OLD."owner_connection_id" IS DISTINCT FROM NEW."owner_connection_id" OR OLD."owner_party_id" IS DISTINCT FROM NEW."owner_party_id") EXECUTE FUNCTION "settlement_accounts_reject_owner_change"();--> statement-breakpoint
 -- A line's match rows are one chain (security review m4, n2): the first row supersedes nothing,
 -- every later row supersedes the current head (the row no other row supersedes), and an
--- `accounted` row is terminal. The composite key (supersedes_match_id, line_id) keeps the chain on
--- its line, and the unique supersedes_match_id serializes two matchers racing for one head.
+-- `accounted` row is terminal, with one exception (domain review D1, gate ruling): a `cleared` row
+-- with the reason `superseded`, once a statement supersedes the line's statement. A `cleared` row
+-- is terminal without exception (review R17). The composite key
+-- (supersedes_match_id, line_id) keeps the chain on its line, and the unique supersedes_match_id
+-- serializes two matchers racing for one head.
 CREATE FUNCTION "settlement_line_matches_reject_off_chain"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   target_result text;
@@ -321,9 +373,19 @@ BEGIN
     RAISE EXCEPTION 'settlement_line_matches_extends_chain: match row % is already superseded; supersede the current head of line %', NEW.supersedes_match_id, NEW.line_id
       USING ERRCODE = 'restrict_violation', CONSTRAINT = 'settlement_line_matches_extends_chain';
   END IF;
-  IF target_result = 'accounted' THEN
-    RAISE EXCEPTION 'settlement_line_matches_accounted_terminal: match row % accounted line %, which is final', NEW.supersedes_match_id, NEW.line_id
+  IF target_result = 'accounted' AND NOT (
+    NEW.result = 'cleared' AND NEW.reason_code = 'superseded' AND EXISTS (
+      SELECT 1 FROM public.settlement_lines l
+        JOIN public.settlement_statements s ON s.supersedes_statement_id = l.statement_id
+       WHERE l.id = NEW.line_id)
+  ) THEN
+    RAISE EXCEPTION 'settlement_line_matches_accounted_terminal: match row % accounted line %, which is final; only a cleared row with the reason superseded may follow, once its statement is superseded', NEW.supersedes_match_id, NEW.line_id
       USING ERRCODE = 'restrict_violation', CONSTRAINT = 'settlement_line_matches_accounted_terminal';
+  END IF;
+  -- A cleared line belongs to a superseded statement, so nothing follows a cleared row (review R17).
+  IF target_result = 'cleared' THEN
+    RAISE EXCEPTION 'settlement_line_matches_cleared_terminal: match row % cleared line %, which is final', NEW.supersedes_match_id, NEW.line_id
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'settlement_line_matches_cleared_terminal';
   END IF;
   RETURN NEW;
 END;

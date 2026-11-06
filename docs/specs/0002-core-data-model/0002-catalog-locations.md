@@ -75,7 +75,7 @@ The existing `apps/api/test/scale.e2e-spec.ts` and `scale-seed.ts` change to spe
 
 **It runs as its own CI job, never in the default e2e job** (gate review fix 6): seeding this load would push the e2e job well past its current length, so `.github/workflows/ci.yml` gets a `scale` job that runs on a nightly schedule and on pull requests carrying a `scale` label, and the default `test:e2e` excludes `test/scale.e2e-spec.ts`. The audit trail's 5,000,000 entry check (spec 0010 AC-17) lives in the same file and runs in the same job.
 
-Budgets, p95 over at least 50 runs on the dev Postgres, **Assumed** and reset from the first measured run (spec 0007 section 11). *Measured 2026-11-06 ([verify](verify.md)): every read is far under its budget, so the budgets are kept as written; each read's plan is asserted to use the index named here.*
+Budgets, p95 over at least 50 runs on the dev Postgres, **Assumed** and reset from the first measured run (spec 0007 section 11). *Measured 2026-11-06 ([verify](verify.md)): every read is far under its budget, so the budgets are kept as written; each read's plan is asserted to use the index named here, except the SKU name branch (no index yet, carried to feature 12).*
 
 | Read or write | Budget | Index it relies on |
 |---|---|---|

@@ -14,8 +14,12 @@ on:
 # The nightly run, each manual dispatch, and a label event get their own groups, so they never cancel a push or pull
 # request run (and a new push never cancels a scale run started by a label).
 concurrency:
-  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}${{ github.event.action == 'labeled' && format('-label-{0}', github.event.label.name) || '' }}
   cancel-in-progress: true
+
+# Every job only reads the repository; nothing here writes to it, comments, or publishes.
+permissions:
+  contents: read
 
 env:
   TURBO_TELEMETRY_DISABLED: 1

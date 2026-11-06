@@ -13,7 +13,10 @@ const SettingShapes = {
   currency: z.string().regex(/^[A-Z]{3}$/),
   timezone: z.string().refine(isValidTimeZone, 'Not a time zone name'),
   prices_include_vat: z.boolean(),
-  /** `YYYY-MM-DD`; postings must be dated after it in `timezone`. */
+  /**
+   * `YYYY-MM-DD`; a posting's operating day (its `timezone` date with `operating_day_cutoff_hour`,
+   * stamped by the database) must be after it (review R5).
+   */
   inventory_lock_date: z.iso.date().nullable(),
   document_prefixes: z.record(z.string(), z.string()),
   /** Enabled language codes in switcher order; at least one, no repeats. */

@@ -1,8 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { HealthResponse } from '@ssdashboard/contracts';
+import { runMigrations } from '@ssdashboard/db';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  createScratchDatabase,
   devDatabaseUrl,
+  dropScratchDatabase,
   freePort,
   run,
   start,
@@ -85,6 +88,78 @@ describe('api entry point (dist/main.js)', { timeout: 30_000 }, () => {
     expect(api?.child.exitCode).toBeNull();
     const body: unknown = await (await fetch(`${base}/api/health`)).json();
     expect(body).toMatchObject({ status: 'ok', database: 'up' });
+  });
+
+  // Security review S3 (a): a role setting beats the database's ssd.tenant_id, so a forged one would
+  // stamp every new row with another tenant. The api stops before it listens.
+  it('refuses to start when its sessions would stamp another tenant than the install row', async () => {
+    const scratch = await createScratchDatabase();
+    try {
+      await runMigrations(scratch.url);
+      const appUrl = new URL(devDatabaseUrl());
+      appUrl.pathname = `/${scratch.name}`;
+      await withAdmin((admin) =>
+        admin.query(
+          `ALTER ROLE "${decodeURIComponent(appUrl.username)}" IN DATABASE ${scratch.name}
+             SET ssd.tenant_id = '01a1b120-0000-7000-8000-00000000beef'`,
+        ),
+      );
+
+      const result = await run('main.js', {
+        DATABASE_URL: appUrl.toString(),
+        PORT: String(await freePort()),
+      });
+
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain('SessionTenantMismatch');
+
+      // The worker imports the same DatabaseModule and stops the same way.
+      const worker = await run('worker.js', { DATABASE_URL: appUrl.toString() });
+      expect(worker.code).not.toBe(0);
+      expect(worker.output).toContain('SessionTenantMismatch');
+      expect(worker.output).not.toContain('Worker started.');
+    } finally {
+      // Dropping the database also drops the role setting scoped to it.
+      await dropScratchDatabase(scratch.name);
+    }
+  });
+
+  // Security review S10: the start check runs once. A mismatch that appears later (or a database
+  // that was unreachable at start) is caught by the pool, which checks every new connection before
+  // it serves a query, and the api stops.
+  it('stops when a connection opened after start would stamp another tenant', async () => {
+    const scratch = await createScratchDatabase();
+    try {
+      await runMigrations(scratch.url);
+      const appUrl = new URL(devDatabaseUrl());
+      appUrl.pathname = `/${scratch.name}`;
+      const base = await startApi({ DATABASE_URL: appUrl.toString() });
+      const healthy: unknown = await (await fetch(`${base}/api/health`)).json();
+      expect(healthy).toMatchObject({ status: 'ok', database: 'up' });
+
+      await withAdmin(async (admin) => {
+        await admin.query(
+          `ALTER ROLE "${decodeURIComponent(appUrl.username)}" IN DATABASE ${scratch.name}
+             SET ssd.tenant_id = '01a1b120-0000-7000-8000-00000000beef'`,
+        );
+        await admin.query(
+          'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1',
+          [scratch.name],
+        );
+      });
+      // The probe needs a new connection; the pool checks it and the api stops before answering
+      // from the database. A probe that still meets a dropped idle connection answers degraded,
+      // so it asks again until the process is gone.
+      for (let attempt = 0; attempt < 20 && api?.child.exitCode === null; attempt += 1) {
+        await fetch(`${base}/api/health`).catch(() => undefined);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      expect(await api?.exited).toBe(1);
+      expect(api?.output()).toContain('SessionTenantMismatch');
+    } finally {
+      await dropScratchDatabase(scratch.name);
+    }
   });
 
   it('refuses to start without DATABASE_URL and names it', async () => {
