@@ -33,7 +33,14 @@ describe('proxy', () => {
   describe('in production', () => {
     afterEach(() => vi.unstubAllEnvs());
 
-    it.each(['/design', '/design/'])('answers a real 404 for the development only %s', (path) => {
+    it.each([
+      '/design',
+      '/design/',
+      '/en/returns/preview/brand',
+      '/ar/returns/preview/rejected',
+      '/ar/partner/preview',
+      '/returns/preview/brand',
+    ])('answers a real 404 for the development only %s', (path) => {
       vi.stubEnv('NODE_ENV', 'production');
 
       const response = proxy(new NextRequest(`http://localhost:3000${path}`));
@@ -64,6 +71,16 @@ describe('proxy', () => {
 
         expect(response.status).toBe(307);
         expect(location(response)).toBe(`http://localhost:3000/ar${path}`);
+      },
+    );
+
+    it.each(['/ar/returns/preview/brand', '/ar/partner/preview'])(
+      'does not write the language cookie for the development only preview %s',
+      (path) => {
+        const response = open(path);
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('set-cookie')).toBeNull();
       },
     );
 

@@ -53,7 +53,7 @@ export function LocationSwitcher() {
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className="coarse:min-h-touch max-w-56 justify-between gap-2"
+          className="coarse:min-h-touch max-w-56 justify-between gap-2 max-sm:max-w-28"
           disabled={status === 'empty'}
         >
           {status === 'error' ? (

@@ -9,7 +9,14 @@ const STATES = ['default', 'hover', 'focus', 'active', 'disabled', 'loading'] as
 /** Every button variant in every state, for checking the focus ring and disabled look. */
 export function ButtonMatrix() {
   return (
-    <div className="overflow-x-auto">
+    // The table scrolls inside itself on a phone, so it is a named, focusable region (WCAG 2.1.1).
+    <div
+      role="region"
+      aria-label="Button variants by state"
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+      tabIndex={0}
+      className="overflow-x-auto outline-none focus-ring-inset"
+    >
       <table className="w-full border-collapse text-start">
         <caption className="sr-only">Button variants by state</caption>
         <thead>

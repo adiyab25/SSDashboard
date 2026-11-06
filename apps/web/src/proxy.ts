@@ -3,8 +3,11 @@ import { choosePublicLanguage } from '@/i18n/choose-public-language';
 import { LANGUAGE_COOKIE, LANGUAGE_COOKIE_MAX_AGE } from '@/i18n/language-config';
 import { matchPublicLanguage } from '@/i18n/public-language';
 
-/** Pages that exist only in development: the design system gallery (spec 0003, AC-13). */
-const DEV_ONLY_PATHS = /^\/design(\/|$)/;
+/**
+ * Pages that exist only in development: the design system gallery and the frame previews it shows
+ * in iframes (`/en/returns/preview/...`, `/ar/partner/preview`; spec 0003, AC-13, AC-18).
+ */
+const DEV_ONLY_PATHS = /^(\/design(\/|$)|\/([^/]+\/)?(returns|partner)\/preview(\/|$))/;
 
 /** A portal or partner path with no language in front of it, such as `/returns`. */
 const UNPREFIXED_PUBLIC = /^\/(returns|partner)(\/|$)/;
@@ -41,11 +44,15 @@ function notFoundResponse(request: NextRequest) {
  * - a portal or partner path with a valid language refreshes the `ss_lang` cookie, only when it is
  *   absent or already `en` or `ar` (a client language such as `fr` is kept).
  *
+ * A development only preview in development never writes `ss_lang`, so the gallery's iframes do not
+ * switch the staff language.
+ *
  * The back office and sign in paths are never redirected. It is not an authorization layer.
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (process.env.NODE_ENV === 'production' && DEV_ONLY_PATHS.test(pathname)) {
+  const devOnly = DEV_ONLY_PATHS.test(pathname);
+  if (process.env.NODE_ENV === 'production' && devOnly) {
     return notFoundResponse(request);
   }
 
@@ -79,7 +86,8 @@ export function proxy(request: NextRequest) {
   const language = matchPublicLanguage(segment);
   // A client language the visitor chose elsewhere (`fr`) is never overwritten by a visit here.
   const saved = request.cookies.get(LANGUAGE_COOKIE)?.value;
-  if (language && (saved === undefined || matchPublicLanguage(saved))) {
+  // A development only preview (an iframe on /design) never changes the saved language.
+  if (!devOnly && language && (saved === undefined || matchPublicLanguage(saved))) {
     const secure =
       request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
     // Same attributes as the browser's own write (language-cookie.ts); readable by scripts.

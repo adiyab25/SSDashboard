@@ -41,11 +41,11 @@ describe('PublicRootFrame', () => {
     expect(html).not.toContain('data-i18n');
   });
 
-  it('has exactly one main landmark with the skip link target, and no staff shell', () => {
+  it('renders no main landmark: the page frame owns it, and the skip link has its target there', () => {
     const html = render('en');
 
-    expect(html.match(/<main /g)).toHaveLength(1);
-    expect(html).toContain('<main id="main-content"');
+    expect(html).not.toContain('<main');
+    expect(html).toContain('href="#main-content"');
     expect(html).not.toContain('<nav');
     expect(html).not.toContain('<header');
   });
