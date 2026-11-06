@@ -12,10 +12,8 @@ vi.mock('next/navigation', () => ({
   },
 }));
 
-vi.mock('next/font/google', () => ({
-  Inter: () => ({ variable: 'font-inter' }),
-  Noto_Sans_Arabic: () => ({ variable: 'font-noto-arabic' }),
-  JetBrains_Mono: () => ({ variable: 'font-jetbrains-mono' }),
+vi.mock('next/font/local', () => ({
+  default: (options: { variable: string }) => ({ variable: options.variable.slice(2) }),
 }));
 
 const render = (segment: string | undefined) =>
