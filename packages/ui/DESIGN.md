@@ -228,6 +228,37 @@ About 20 table rows fit a 1080p screen at 40px.
 - **Loading**: skeletons in the shape of the content for lists and cards; a spinner only inside buttons. Announce long loads in a polite live region.
 - **Error**: an inline `Alert` with the `destructive` role tokens, what failed in plain words, and a retry. Keep the rest of the page usable.
 
+## Phone first dashboard (AC-20)
+
+The owner's first screen is a phone screen. Design it at 360 by 800, make it work from 320, and never let it scroll sideways from 320 to 430px.
+
+- **One column, numbers first.** Top to bottom, in the same order as the pushed daily report so the owner reads one story in Telegram and in the app: header (brand name, date) and a `FreshnessStrip`; the full width "Cash owed to you" `MetricCard` (`size="lg"`, `emphasis="owed"`, split by Bosta and partners); two half cards in a two column grid (confirmed yesterday, failed delivery rate); the dashed "Today so far" card (`provisional`, its value is a `ProvisionalValue`, so the `≈` shows); the `NeedsYouList`; the `BottomTabs`. The four numbers are owner answer 2.
+- **Every card is one link** to its drill down (`MetricCard` renders an `<a>`, `href` required). Nothing inside a card is a second target, and nothing is revealed by hover.
+- **Targets**: at least 44 by 44px (`min-h-touch` on cards, 48px rows in the list, 56px tabs). Chips and values inside a card are not targets.
+- **Provisional is dashed**, never solid, like every provisional boundary (AC-17). The owed card's start edge (`rowStripeClassName('owed')`, 4px) is decorative; the label and the chip repeat the meaning.
+- **Tables collapse to cards below 640px (`sm`).** `CollapsingTable` takes its columns once and draws a table from `sm` up and a card list below: the title column on top, then label and value pairs with the same `StatusChip`s. The other view is `display: none`, so no control is reachable twice and the tab order is one list.
+- **The tab bar** (`BottomTabs`): at most four tabs (Today, Orders, Cash, More), 56px (`h-14`), an icon plus a label that is always visible, `aria-current="page"` and the primary fill on the current tab, sticky at the bottom with the safe area inset. A fifth tab is dropped (tested), not squeezed in; extra pages live under "More". Hide it from 768px up where the sidebar takes over.
+- **Needs you** (`NeedsYouList`): at most five rows, most urgent first, each a full width link of at least 48px with a `StatusChip`, a sentence, and a chevron that mirrors in right to left. With more rows, one "N more" link (the app passes `total`, `moreHref`, and `moreLabel(hidden)`).
+- **Freshness strip** under the header, composed by the app ("Confirmed through 4 Nov, today is provisional").
+- The parts take all text as props and all numbers already formatted, and never import `next/*`. They live at `@ssdashboard/ui/dashboard/metric-card`, `.../bottom-tabs`, `.../needs-you-list`, and `.../collapsing-table`.
+- jsdom checks classes and axe; the 320 to 430px overflow check and measured target sizes belong to the Playwright pass at 360 by 800 with touch, in both languages.
+
+## In screen help (AC-21)
+
+Staff turn over, so help is part of the screen, in three layers that all work from the keyboard and by tap:
+
+1. **`HelpHint`** (`@ssdashboard/ui/help/help-hint`): a question mark button beside a field, column header, or outcome that opens a popover of one or two sentences. 24 by 24px, 44 by 44px on touch. The `label` prop is the accessible name and must say what is explained ("Help: callback delay"), never a bare "Help". It opens by tap, Enter, and Space; Esc closes it and focus returns to the button.
+2. **`HelpPanel`** (`.../help/help-panel`): a sheet from the start edge, controlled (`open`, `onOpenChange`), titled by prop. Sections, each drawn only when it has content: numbered steps; an outcome glossary where each outcome shows its real `StatusChip`; the live settings that change the behaviour (passed in already formatted from settings); and the training clip slot (`trainingClip`, a `ReactNode`, empty until a brand records one, captioned in both languages; owner answer 7: text first, Arabic first). A `footer` slot holds the app's "show the checklist again" button. A top bar button opens it (pass it as `trigger`, so focus returns to it), and `useHelpShortcut` (`@ssdashboard/ui/hooks/use-help-shortcut`) opens it on `?`.
+3. **`FirstRunChecklist`** (`.../help/first-run-checklist`): per hat, a title, items `{ label, done, href? }`, a progress text ("2 of 4"), and a dismiss button. Controlled: the app derives `done` from real events, stores the dismissal per user and hat, and brings the checklist back from the panel's `footer` button. The component has no memory.
+
+Rules:
+
+- **The `?` rule.** `?` opens the panel only when focus is not in an `input` of a text kind, a `textarea`, a `select`, an editable element, or an element with the role `textbox`, `combobox`, `searchbox`, or `spinbutton`. Ctrl, Cmd, and Alt combinations are ignored; Shift is allowed because `?` needs it. It is never the only way in: the top bar button is always there. With no `trigger`, `HelpPanel` remembers the focused element and returns focus to it on close (Radix only does that for a trigger).
+- **Keys.** Help text lives in the message catalogs in `packages/i18n` under `help.<screen>.*` (for example `help.confirmationQueue.steps.1`), in Arabic and English, typed, so a missing Arabic key fails a test. Components never hold help text.
+- **Policy values come from settings.** Help that quotes a number (retry count, callback delay) takes it as a message parameter from the live setting and passes it to the panel's `settings`, so it can never be wrong for a brand.
+- **Help never holds the only copy of an instruction.** Whatever a user must do is on the screen itself (labels, empty states, errors); help explains and repeats, in the same words as the empty states.
+- No hover anywhere; `Popover` and `Sheet` handle Esc, the focus trap (sheet), and focus return.
+
 ## Frames
 
 Three frames, one system (AC-18). A frame is a layout plus a few props, not a second set of tokens or components.
