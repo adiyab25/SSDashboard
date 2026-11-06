@@ -1,6 +1,7 @@
 import { schema, sql, type Database } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
+import { StaffOnlySessionAudiences, type SessionAudiences } from '../sessions/session-audiences.js';
 import { ADMIN_RULE_LOCK } from './locks.js';
 import { generateTemporaryPassword } from './temporary-password.js';
 
@@ -19,12 +20,15 @@ export type FirstAdminResult =
 
 /**
  * Creates the very first admin (spec 0005, AC-21): a temporary password the person must
- * change at first sign in. It refuses when an active admin already exists or the email
- * already belongs to any account, under the same lock the staff service takes.
+ * change at first sign in. It refuses when an active staff admin already exists or the email
+ * already belongs to any account, under the same lock the staff service takes. It creates staff
+ * only, and a partner user never counts as an existing admin (AC-28): `audiences` says who is
+ * staff, the staff only answer until spec 0008 passes the hat based one.
  */
 export async function createFirstAdmin(
   db: Database,
   input: { email: string; name: string },
+  audiences: Pick<SessionAudiences, 'staffCondition'> = new StaffOnlySessionAudiences(),
 ): Promise<FirstAdminResult> {
   const parsed = FirstAdminInput.safeParse(input);
   if (!parsed.success) {
@@ -40,7 +44,8 @@ export async function createFirstAdmin(
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${ADMIN_RULE_LOCK})`);
 
     const admins = await tx.execute(
-      sql`SELECT 1 FROM users WHERE role = 'admin' AND NOT banned LIMIT 1`,
+      sql`SELECT 1 FROM users
+          WHERE role = 'admin' AND NOT banned AND (${audiences.staffCondition()}) LIMIT 1`,
     );
     if (admins.rows.length > 0) {
       return {

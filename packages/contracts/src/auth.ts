@@ -5,6 +5,15 @@ export const StaffRole = z.enum(['admin', 'staff']);
 /** The validated shape of `StaffRole`, as the api and web see it after parsing. */
 export type StaffRole = z.infer<typeof StaffRole>;
 
+/**
+ * Where a signed in person lands when the sign in page has no valid `returnTo` (spec 0005,
+ * AC-28): the back office for staff, the partner pages for a partner user. The api derives it
+ * from the audience the person may use; the web never works it out on its own.
+ */
+export const Home = z.enum(['backoffice', 'partner']);
+/** The validated shape of `Home`, as the api and web see it after parsing. */
+export type Home = z.infer<typeof Home>;
+
 /** Response of `GET /api/me`: the signed in person, read fresh from the database. */
 export const MeResponse = z.object({
   id: z.uuid(),
@@ -16,6 +25,7 @@ export const MeResponse = z.object({
   language: z.string().nullable(),
   twoFactorEnabled: z.boolean(),
   mustChangePassword: z.boolean(),
+  home: Home,
 });
 
 /** The validated shape of `MeResponse`, as the api and web see it after parsing. */

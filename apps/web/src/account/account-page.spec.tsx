@@ -20,6 +20,7 @@ const ME: MeResponse = {
   language: 'ar',
   twoFactorEnabled: false,
   mustChangePassword: false,
+  home: 'backoffice',
 };
 
 const me = vi.hoisted((): { current: unknown } => ({ current: null }));

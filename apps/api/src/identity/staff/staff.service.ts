@@ -25,6 +25,7 @@ import {
   issueToken,
   type Executor,
 } from '../sign-in/reset-tokens.js';
+import { SESSION_AUDIENCES, type SessionAudiences } from '../sessions/session-audiences.js';
 import { SignInLockout } from '../sign-in/sign-in-lockout.js';
 import { generateTemporaryPassword } from '../sign-in/temporary-password.js';
 import { ENV } from '../../config/config.module.js';
@@ -158,14 +159,18 @@ const refuseSelf = (id: string, actor: Actor, action: string): void => {
  * Staff administration (spec 0005, AC-12 to AC-18). Every change that could remove the last
  * active admin runs in one transaction under `ADMIN_RULE_LOCK`, the lock `create-admin` takes
  * too. Better Auth still owns password hashing and the sign in ban check; the rest is our SQL.
+ *
+ * Staff only (AC-28): every read of a person goes through `SessionAudiences.staffCondition()`,
+ * so a partner user is never listed, found (404 for every action), counted as an admin, or made
+ * one. Never read `users` here without that condition.
  */
 @Injectable()
 export class StaffService {
   private readonly db: Database;
 
   /**
-   * Takes the env, the app database connection, and the mail producer, lockout and audit
-   * services.
+   * Takes the env, the app database connection, the mail producer, lockout and audit services,
+   * and the `SessionAudiences` port that says who is staff.
    */
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -174,8 +179,14 @@ export class StaffService {
     private readonly producer: MailProducer,
     private readonly lockout: SignInLockout,
     private readonly audit: AuthAudit,
+    @Inject(SESSION_AUDIENCES) private readonly audiences: SessionAudiences,
   ) {
     this.db = connection.db;
+  }
+
+  /** The condition that keeps every query to staff people (AC-28). */
+  private get staffOnly(): SQL {
+    return sql`(${this.audiences.staffCondition()})`;
   }
 
   private get mailOn(): boolean {
@@ -186,7 +197,7 @@ export class StaffService {
    * One keyset page of staff ordered by name, with the optional search and filters of the query.
    */
   async list(query: StaffListQuery): Promise<StaffListResponse> {
-    const filters = [sql`TRUE`];
+    const filters = [this.staffOnly];
     if (query.q) {
       const like = `%${escapeLike(query.q)}%`;
       filters.push(
@@ -486,8 +497,8 @@ export class StaffService {
       return undefined;
     const result = await executor.execute<UserRow>(
       forUpdate
-        ? sql`SELECT ${COLUMNS} FROM users WHERE id = ${id}::uuid FOR UPDATE`
-        : sql`SELECT ${COLUMNS} FROM users WHERE id = ${id}::uuid`,
+        ? sql`SELECT ${COLUMNS} FROM users WHERE id = ${id}::uuid AND ${this.staffOnly} FOR UPDATE`
+        : sql`SELECT ${COLUMNS} FROM users WHERE id = ${id}::uuid AND ${this.staffOnly}`,
     );
     return result.rows[0];
   }
@@ -497,10 +508,15 @@ export class StaffService {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${ADMIN_RULE_LOCK})`);
   }
 
-  /** An active admin is an admin who is not disabled; one who has not signed in yet still counts. */
+  /**
+   * An active admin is a staff admin who is not disabled; one who has not signed in yet still
+   * counts. A partner user never counts, whatever their row says (AC-28).
+   */
   private async assertAnotherAdmin(tx: Tx, exceptId: string): Promise<void> {
     const others = await tx.execute(
-      sql`SELECT 1 FROM users WHERE role = 'admin' AND NOT banned AND id <> ${exceptId}::uuid LIMIT 1`,
+      sql`SELECT 1 FROM users
+          WHERE role = 'admin' AND NOT banned AND id <> ${exceptId}::uuid AND ${this.staffOnly}
+          LIMIT 1`,
     );
     if (others.rows.length === 0) {
       throw conflict('LAST_ADMIN', 'There must always be at least one active administrator');

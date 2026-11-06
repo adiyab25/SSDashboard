@@ -6,6 +6,7 @@ import {
   type AuthEvent,
   type AuthEventContext,
 } from '../../platform/events/auth-events.js';
+import type { HatChangeLogLine } from '../sessions/hat-change-log.js';
 
 /**
  * One structured log line and one domain event for every sign in outcome (spec 0005, AC-23).
@@ -44,6 +45,15 @@ export class AuthAudit {
       // A listener that queried the database may throw a failed query: its pg code only.
       this.logger.error(`A ${eventName(event)} listener failed: ${describeError(error)}`);
     }
+  }
+
+  /**
+   * Writes the log line of a hat change (spec 0005, AC-33 e), built by `hatChangeLogLine` so it
+   * holds ids, address, user agent, time and hat names only. It emits nothing: the `HatsChanged`
+   * event and its payload are spec 0008's, emitted after the commit by the hat service.
+   */
+  hatsChanged(line: HatChangeLogLine): void {
+    this.logger.log(JSON.stringify(line));
   }
 
   /**
