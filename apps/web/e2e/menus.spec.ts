@@ -73,10 +73,14 @@ test('a row menu opens on tap and closes on Escape, on an outside tap, and on ch
 test('opening menu B while menu A is open leaves exactly one menu open', async ({ page }) => {
   const { first, second, menus } = await openTwoRows(page);
 
-  // A menu opens below its row and would cover the row under it, so open the lower row's menu
-  // first and then tap the trigger of the row above it.
+  // A menu opens below its row only when there is room below it; otherwise Radix flips it above
+  // the row, where it covers the row over it. The row heights and type size set how much room a
+  // 740px screen leaves, so give this test a tall screen (same 375px width, still touch) and
+  // check that the lower row's menu really opened downward. Then the upper trigger stays free.
+  await page.setViewportSize({ width: 375, height: 1200 });
   await second.tap();
   await expect(second).toHaveAttribute('aria-expanded', 'true');
+  await expect(menus).toHaveAttribute('data-side', 'bottom');
   await first.tap();
 
   await expect(first).toHaveAttribute('aria-expanded', 'true');

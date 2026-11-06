@@ -18,6 +18,8 @@ Local setup: `docker compose -f deploy/compose.dev.yaml up -d`, `pnpm db:migrate
 - [x] User menu → Theme → Dark, then reload → no light flash and `html.dark` stays. Clear localStorage `theme` and emulate a dark OS → the first visit is dark → AC-6
 - [x] Emulate a coarse pointer (touch) → the menu button, location switcher, search button, user menu trigger, and sheet items each measure at least 44 by 44 → AC-14
 - [x] Open `/design` in development → every contrast pair shows a ratio that meets its minimum, the button matrix shows default, hover, focus, active, disabled, and loading, the right to left row is mirrored, and the Arabic specimen renders in IBM Plex Sans Arabic → AC-1, AC-2, AC-11, AC-13
+
+> Amended 2026-11-06 (Daftar built): the Arabic specimen now renders in Noto Sans Arabic (AC-13 as amended), and the contrast list also covers the Daftar pairs: `primary` on `background`, `primary-foreground` on `primary`, the `ring` on `background` and `card`, and each meaning role (`confirmed`, `failed`, `owed`, `provisional`, `info`) as text on `background` and on its `-surface` chip. This ticked step was run against the earlier look; QA re-runs it on Daftar.
 - [x] On `/design`, switch Light and Dark → the live contrast ratios update to the new theme → AC-2, AC-11
 
 ## Value sourcing

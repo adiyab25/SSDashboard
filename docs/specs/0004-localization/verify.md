@@ -99,6 +99,8 @@ Verdict: PASS on all 13 acceptance criteria. One item stays open for a person: t
 | AC-12 axe and 375px Arabic | PASS | `shell.spec.ts` axe loop over theme and direction (passed); `localization.spec.ts` › "at 375px in Arabic nothing in the shell is clipped or overlapping" (mobile) and "Arabic text uses IBM Plex Sans Arabic" passed |
 | AC-13 Load failure and overlapping choices | PASS | `localization.spec.ts` › "a blocked Arabic chunk keeps English, leaves the cookie, and shows an inline error" and "the last of two overlapping choices wins" passed |
 
+> Amended 2026-11-06 (Daftar built): the AC-12 row above names IBM Plex Sans Arabic as it was run; Arabic text is now Noto Sans Arabic and the `localization.spec.ts` test is renamed "Arabic text uses Noto Sans Arabic (AC-12)"; QA re-runs it.
+
 Commands run (key lines):
 - `pnpm build` → `Tasks: 4 successful`
 - `pnpm typecheck` → `Tasks: 7 successful, 7 total`

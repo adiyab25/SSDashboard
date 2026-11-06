@@ -13,3 +13,4 @@ Thumbs.db
 docs/.agent-cache/
 *.tsbuildinfo
 next-env.d.ts
+.impeccable/hook.cache.json
