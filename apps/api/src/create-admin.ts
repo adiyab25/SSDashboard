@@ -1,12 +1,13 @@
 import { createDatabase } from '@ssdashboard/db';
 import { loadEnv } from './config/env.js';
 import { pgErrorCode } from './database/pg-error.js';
-import { StaffOnlySessionAudiences } from './identity/sessions/session-audiences.js';
+import { HatSessionAudiences } from './identity/sessions/session-audiences.js';
 import { CREATE_ADMIN_USAGE, parseCreateAdminArgs } from './identity/sign-in/create-admin-args.js';
 import { createFirstAdmin } from './identity/sign-in/first-admin.js';
 import { breakGlassReset } from './identity/sign-in/reset-admin.js';
 
-// Entry point: `create-admin`. Makes the first admin, prints a temporary password once, and exits.
+// Entry point: `create-admin`. Makes the first admin (the `manager` hat and the `cost.view` grant),
+// prints a temporary password once, and exits.
 //   node dist/create-admin.js --email <email> --name <name>
 // Break glass (mail off, every admin locked out): a new temporary password for an existing admin.
 //   node dist/create-admin.js --reset-password --email <email>
@@ -29,18 +30,19 @@ const env = loadEnv();
 // Review R22: the connection checks its session tenant before it serves any query, like the api and
 // worker pool, so a forged ssd.tenant_id never stamps the admin's rows. The message names tenant ids
 // only (no personal data).
-const { db, pool } = createDatabase(env.DATABASE_URL, {
+const connection = createDatabase(env.DATABASE_URL, {
   max: 1,
   onTenantMismatch: (error) => {
     console.error(`create-admin failed: ${error.name}: ${error.message}`);
     process.exit(1);
   },
 });
-// Who is staff, for "is there an admin" and "is this an admin" (spec 0005, AC-28). This command has
-// no Nest container, so it must name the same class `identity.module.ts` binds to
-// `SESSION_AUDIENCES`: spec 0008 passes its hat based one here when it rebinds the module.
-// `identity/sessions/create-admin-audiences.spec.ts` fails while the two differ.
-const audiences = new StaffOnlySessionAudiences();
+const { db, pool } = connection;
+// Who is staff, for "is there a manager" and "is this a manager" (spec 0005 AC-28, spec 0008
+// AC-14). This command has no Nest container, so it must name the same class `identity.module.ts`
+// binds to `SESSION_AUDIENCES`; `identity/sessions/create-admin-audiences.spec.ts` fails while the
+// two differ.
+const audiences = new HatSessionAudiences(connection);
 try {
   switch (command.kind) {
     case 'reset': {

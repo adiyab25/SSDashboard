@@ -4,7 +4,6 @@ import {
   ConflictException,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -13,7 +12,6 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   Res,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -26,8 +24,10 @@ import {
 } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import type { z } from 'zod';
-import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
-import { Roles } from '../../identity/sign-in/roles.decorator.js';
+import type { Access } from '../../platform/access/access.js';
+import { CurrentAccess } from '../../platform/access/current-access.decorator.js';
+import { Permission } from '../../platform/access/permission.decorator.js';
+import { forbidden } from '../../platform/access/permission.guard.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
@@ -82,7 +82,8 @@ const locationId = () =>
   });
 
 /**
- * The shell's location switcher list, and location management for admins (spec 0006, AC-4).
+ * The shell's location switcher list (`stock.view`), and location management (`catalog.manage`;
+ * spec 0006 AC-4, spec 0008 route mapping).
  * Behind the session guard like every `/api` route except config, health, and auth. The seeded
  * transit and virtual locations never appear and answer 404 here.
  */
@@ -92,15 +93,17 @@ export class LocationsController {
   /** Takes the locations service. */
   constructor(private readonly locations: LocationsService) {}
 
-  /** Active locations for anyone signed in; `status=archived` is admin only. */
+  /**
+   * Active locations with `stock.view`; `status=archived` also needs `catalog.manage`, checked
+   * here through the caller's `Access` (403 `FORBIDDEN` without it).
+   */
+  @Permission('stock.view')
   @Get()
   async list(
     @Query(new ZodQueryPipe(LocationListQuery)) query: LocationListQuery,
-    @Req() request: AuthenticatedRequest,
+    @CurrentAccess() access: Access,
   ): Promise<LocationListResponse> {
-    if (query.status === 'archived' && request.staff.role !== 'admin') {
-      throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Administrators only' });
-    }
+    if (query.status === 'archived' && !access.has('catalog.manage')) throw forbidden();
     try {
       return await this.locations.listWorkLocations(query);
     } catch (error) {
@@ -109,10 +112,10 @@ export class LocationsController {
   }
 
   /**
-   * Admin only: adds a warehouse or shop. A code already in use is refused through
+   * Needs `catalog.manage`: adds a warehouse or shop. A code already in use is refused through
    * `locationHttpError`; a lock wait that times out answers 503 `BUSY` with `Retry-After`.
    */
-  @Roles('admin')
+  @Permission('catalog.manage')
   @Post()
   async create(
     @Body(new ZodBodyPipe(CreateLocationRequest, INVALID_INPUT))
@@ -127,10 +130,10 @@ export class LocationsController {
   }
 
   /**
-   * Admin only: edits a location's name or code, with the stale check so two admins cannot
-   * overwrite each other.
+   * Needs `catalog.manage`: edits a location's name or code, with the stale check so two people
+   * cannot overwrite each other.
    */
-  @Roles('admin')
+  @Permission('catalog.manage')
   @Patch(':id')
   async update(
     @Param('id', locationId()) id: string,
@@ -145,8 +148,8 @@ export class LocationsController {
     }
   }
 
-  /** Admin only: archives a location, refused while stock is on hand or reserved there. */
-  @Roles('admin')
+  /** Needs `catalog.manage`: archives a location, refused while stock is on hand or reserved there. */
+  @Permission('catalog.manage')
   @Post(':id/archive')
   @HttpCode(200)
   async archive(
@@ -160,8 +163,8 @@ export class LocationsController {
     }
   }
 
-  /** Admin only: brings an archived location back into the switcher. */
-  @Roles('admin')
+  /** Needs `catalog.manage`: brings an archived location back into the switcher. */
+  @Permission('catalog.manage')
   @Post(':id/unarchive')
   @HttpCode(200)
   async unarchive(
@@ -176,10 +179,10 @@ export class LocationsController {
   }
 
   /**
-   * Admin only: deletes a location nothing references yet; otherwise it must be archived
+   * Needs `catalog.manage`: deletes a location nothing references yet; otherwise it must be archived
    * instead.
    */
-  @Roles('admin')
+  @Permission('catalog.manage')
   @Delete(':id')
   @HttpCode(204)
   async remove(@Param('id', locationId()) id: string): Promise<void> {

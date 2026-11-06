@@ -13,7 +13,7 @@ import { LocationsView } from './locations-view';
 export function LocationsPage() {
   const { t } = useTranslation();
   const me = useMe();
-  const isAdmin = me?.role === 'admin';
+  const isAdmin = me?.permissions.includes('catalog.manage') ?? false;
 
   if (me && !isAdmin) {
     return (

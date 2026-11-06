@@ -10,7 +10,9 @@ vi.mock('./inventory-api', async (original) => ({
   ...api,
 }));
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: 'r1' }) }));
-vi.mock('@/auth/use-me', () => ({ useMe: () => ({ id: 'a', role: 'staff' }) }));
+vi.mock('@/auth/use-me', () => ({
+  useMe: () => ({ id: 'a', hats: ['warehouse'], permissions: [] }),
+}));
 
 afterEach(() => api.getReceipt.mockReset());
 

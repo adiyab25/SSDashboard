@@ -13,7 +13,7 @@ import { visibleNavItems } from './nav';
 export function AppSidebar() {
   const { t } = useTranslation();
   const me = useMe();
-  const items = visibleNavItems(me?.role);
+  const items = visibleNavItems(me?.hats);
 
   // The close leaf sits outside the sidebar: on phones the sheet's content mounts only while
   // it is open, and an effect mounting with it would close it straight away.

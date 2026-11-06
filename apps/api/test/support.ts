@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import type { StaffAccessPreset } from '@ssdashboard/contracts';
 import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 
@@ -169,21 +170,64 @@ export async function stop(proc: RunningProcess | undefined): Promise<void> {
 }
 
 /**
- * Adds a staff account straight to the database and signs it in through the running api, so a
- * suite can call guarded routes. `base` must be the api's `PUBLIC_URL`. Returns the cookie header.
+ * The hats and cost grant of the two presets before hats (spec 0008, AC-16): `admin` is `manager`
+ * plus `cost.view`, `staff` is `support`, `operations` and `warehouse` without cost.
+ */
+export const PRESET_ACCESS: Readonly<
+  Record<StaffAccessPreset, { hats: readonly string[]; costView: boolean }>
+> = {
+  admin: { hats: ['manager'], costView: true },
+  staff: { hats: ['support', 'operations', 'warehouse'], costView: false },
+};
+
+/** What a test person wears: a preset, or exact hats with or without the cost grant. */
+export type TestAccess = StaffAccessPreset | { hats: readonly string[]; costView?: boolean };
+
+/**
+ * Replaces a person's hats and cost grant straight in the database, as the owner, so a suite can
+ * plant any holding (a partner account id is needed for the `partner` hat only).
+ */
+export async function giveHats(
+  owner: DatabaseConnection['pool'],
+  userId: string,
+  access: TestAccess,
+  partnerAccountId: string | null = null,
+): Promise<void> {
+  const { hats, costView = false } = typeof access === 'string' ? PRESET_ACCESS[access] : access;
+  await owner.query('DELETE FROM hat_assignments WHERE user_id = $1::uuid', [userId]);
+  await owner.query('DELETE FROM permission_grants WHERE user_id = $1::uuid', [userId]);
+  for (const hat of hats) {
+    await owner.query(
+      'INSERT INTO hat_assignments (user_id, hat, partner_account_id) VALUES ($1::uuid, $2, $3)',
+      [userId, hat, hat === 'partner' ? partnerAccountId : null],
+    );
+  }
+  if (costView) {
+    await owner.query(
+      "INSERT INTO permission_grants (user_id, permission) VALUES ($1::uuid, 'cost.view')",
+      [userId],
+    );
+  }
+}
+
+/**
+ * Adds a staff account straight to the database with its hats (`staff` preset by default) and
+ * signs it in through the running api, so a suite can call guarded routes. `base` must be the
+ * api's `PUBLIC_URL`. Returns the cookie header.
  */
 export async function signInAs(
   base: string,
   owner: DatabaseConnection['pool'],
-  options: { email?: string; role?: 'admin' | 'staff' } = {},
+  options: { email?: string; role?: TestAccess } = {},
 ): Promise<string> {
   const email = options.email ?? 'tester@example.com';
   const password = 'Test-Password-1';
   const { rows } = await owner.query<{ id: string }>(
-    `INSERT INTO users (name, email, role) VALUES ('Test Person', $1, $2) RETURNING id`,
-    [email, options.role ?? 'staff'],
+    `INSERT INTO users (name, email) VALUES ('Test Person', $1) RETURNING id`,
+    [email],
   );
   const userId = rows[0]?.id as string;
+  await giveHats(owner, userId, options.role ?? 'staff');
   await owner.query(
     `INSERT INTO accounts (user_id, provider_id, account_id, password)
      VALUES ($1::uuid, 'credential', $1::text, $2)`,

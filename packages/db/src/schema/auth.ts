@@ -30,8 +30,12 @@ export const users = pgTable(
     emailVerified: boolean('email_verified').notNull().default(false),
     /** Unused. Better Auth models an avatar and checks that the column exists. */
     image: text('image'),
-    /** `admin` or `staff`. Feature 13 replaces this check with real roles. */
-    role: text('role').notNull().default('staff'),
+    /**
+     * Owned by Better Auth's admin plugin, which writes its `defaultRole` (`user`) on every new
+     * person; the plugin stays for the ban check (spec 0005). Always `user`, and nothing of ours
+     * reads it: what a person may do comes from their hats (spec 0008, AC-16).
+     */
+    role: text('role').notNull().default('user'),
     banned: boolean('banned').notNull().default(false),
     banReason: text('ban_reason'),
     /** Unused: bans are permanent. */
@@ -50,7 +54,7 @@ export const users = pgTable(
     uniqueIndex('users_staff_code_unique')
       .on(t.tenantId, t.staffCode)
       .where(sql`${t.staffCode} is not null`),
-    check('users_role_check', sql`${t.role} in ('admin', 'staff')`),
+    check('users_role_check', sql`${t.role} = 'user'`),
   ],
 );
 

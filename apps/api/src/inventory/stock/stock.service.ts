@@ -6,12 +6,12 @@ import {
   type SkuMovementsQuery,
   type SkuMovementsResponse,
   type SkuStockResponse,
-  type StaffRole,
   type StockListQuery,
   type StockListResponse,
   type StockRow,
 } from '@ssdashboard/contracts';
 import { CatalogService } from '../../catalog/catalog.service.js';
+import type { Access } from '../../platform/access/access.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { StaffDirectory } from '../../identity/staff/staff-directory.js';
 import { LedgerService } from '../ledger/ledger.service.js';
@@ -23,16 +23,19 @@ export function averageCost(onHand: number, totalValue: string): string | null {
   return onHand > 0 ? UnitCost.perUnit(Money.of(totalValue), onHand).toString() : null;
 }
 
-/** Removes cost and value for anyone but an admin (AC-11). */
-export function serializeStockRow(row: StockRow, role: StaffRole): StockRow {
-  if (role === 'admin') return row;
+/** What the cost serializers ask of the caller's `Access`. */
+type CostReader = Pick<Access, 'has'>;
+
+/** Removes cost and value for a caller without `cost.view` (AC-11, spec 0008 AC-6). */
+export function serializeStockRow(row: StockRow, access: CostReader): StockRow {
+  if (access.has('cost.view')) return row;
   const { avgUnitCost: _avg, totalValue: _value, ...rest } = row;
   return rest;
 }
 
-/** Removes cost and value for anyone but an admin (AC-11). */
-export function serializeSkuStock(stock: SkuStockResponse, role: StaffRole): SkuStockResponse {
-  if (role === 'admin') return stock;
+/** Removes cost and value for a caller without `cost.view` (AC-11, spec 0008 AC-6). */
+export function serializeSkuStock(stock: SkuStockResponse, access: CostReader): SkuStockResponse {
+  if (access.has('cost.view')) return stock;
   const { totalValue: _value, ...rest } = stock;
   return {
     ...rest,
@@ -42,9 +45,9 @@ export function serializeSkuStock(stock: SkuStockResponse, role: StaffRole): Sku
   };
 }
 
-/** Removes unit cost and line value for anyone but an admin (AC-11). */
-export function serializeMovement(movement: SkuMovement, role: StaffRole): SkuMovement {
-  if (role === 'admin') return movement;
+/** Removes unit cost and line value for a caller without `cost.view` (AC-11, spec 0008 AC-6). */
+export function serializeMovement(movement: SkuMovement, access: CostReader): SkuMovement {
+  if (access.has('cost.view')) return movement;
   const { unitCost: _cost, totalCost: _total, ...rest } = movement;
   return rest;
 }
@@ -68,7 +71,7 @@ export class StockService {
   ) {}
 
   /** The Stock page: one row per balance, most recent movement first, 50 a page. */
-  async list(query: StockListQuery, role: StaffRole): Promise<StockListResponse> {
+  async list(query: StockListQuery, access: CostReader): Promise<StockListResponse> {
     const after = query.cursor ? decodeTimeIdKeyset(query.cursor) : undefined;
     const rows = await this.ledger.listStock({
       locationId: query.locationId,
@@ -94,7 +97,7 @@ export class StockService {
             totalValue: row.totalValue,
             lastMovedAt: row.updatedAt,
           },
-          role,
+          access,
         );
       }),
       nextCursor:
@@ -103,7 +106,7 @@ export class StockService {
   }
 
   /** Non zero on hand per location for one SKU, and the totals. Throws catalog `NotFound`. */
-  async forSku(variantId: string, role: StaffRole): Promise<SkuStockResponse> {
+  async forSku(variantId: string, access: CostReader): Promise<SkuStockResponse> {
     await this.catalog.getSku(variantId);
     const perLocation = new Map<string, { onHand: number; value: Money }>();
     let cursor: string | undefined;
@@ -136,7 +139,7 @@ export class StockService {
           .reduce((total, row) => total.plus(Money.of(row.totalValue)), Money.zero)
           .toString(),
       },
-      role,
+      access,
     );
   }
 
@@ -148,7 +151,7 @@ export class StockService {
   async movements(
     variantId: string,
     query: SkuMovementsQuery,
-    role: StaffRole,
+    access: CostReader,
   ): Promise<SkuMovementsResponse> {
     const after = query.cursor ? decodeTimeIdKeyset(query.cursor) : undefined;
     await this.catalog.getSku(variantId);
@@ -185,7 +188,7 @@ export class StockService {
             unitCost: row.unitCost,
             totalCost: row.totalCost,
           },
-          role,
+          access,
         );
       }),
       nextCursor:

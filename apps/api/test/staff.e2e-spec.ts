@@ -7,6 +7,7 @@ import {
   dropScratchDatabase,
   eventually,
   freePort,
+  giveHats,
   start,
   startSmtpCapture,
   stop,
@@ -93,17 +94,17 @@ describe('staff administration', { timeout: 300_000 }, () => {
     counter += 1;
     const email = `person${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, banned, last_sign_in_at)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      `INSERT INTO users (name, email, banned, last_sign_in_at)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
       [
         `Person ${counter}`,
         email,
-        options.role ?? 'staff',
         options.banned ?? false,
         options.signedIn === false ? null : new Date(),
       ],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, options.role ?? 'staff');
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
@@ -220,6 +221,18 @@ describe('staff administration', { timeout: 300_000 }, () => {
         status: 'invited',
         role: 'staff',
       });
+      // The preset becomes hats (spec 0008 milestone 1, the AC-16 mapping), given by the admin.
+      const held = await owner.pool.query<{ hat: string; granted_by: string }>(
+        'SELECT hat, granted_by FROM hat_assignments WHERE user_id = $1::uuid ORDER BY hat',
+        [staff(made).id],
+      );
+      expect(held.rows.map((row) => row.hat)).toEqual(['operations', 'support', 'warehouse']);
+      expect(new Set(held.rows.map((row) => row.granted_by))).toEqual(new Set([admin.id]));
+      const grants = await owner.pool.query(
+        'SELECT 1 FROM permission_grants WHERE user_id = $1::uuid',
+        [staff(made).id],
+      );
+      expect(grants.rows).toEqual([]);
       const stored = await owner.pool.query<{ password: string; must_change_password: boolean }>(
         `SELECT a.password, u.must_change_password FROM users u JOIN accounts a ON a.user_id = u.id
           WHERE u.id = $1::uuid`,
@@ -474,6 +487,17 @@ describe('staff administration', { timeout: 300_000 }, () => {
         language: 'ar',
         role: 'admin',
       });
+      // The admin preset is the manager hat plus the cost grant, and nothing else stays.
+      const held = await owner.pool.query<{ hat: string }>(
+        'SELECT hat FROM hat_assignments WHERE user_id = $1::uuid',
+        [id],
+      );
+      expect(held.rows.map((row) => row.hat)).toEqual(['manager']);
+      const grants = await owner.pool.query<{ permission: string }>(
+        'SELECT permission FROM permission_grants WHERE user_id = $1::uuid',
+        [id],
+      );
+      expect(grants.rows.map((row) => row.permission)).toEqual(['cost.view']);
     });
 
     it('lets the email change only while the account is invited', async () => {
@@ -589,7 +613,9 @@ describe('staff administration', { timeout: 300_000 }, () => {
 
     it('refuses to demote the last active admin, and counts an invited admin as active', async () => {
       // A database of its own would be cleaner; here every other admin is disabled first.
-      await owner.pool.query(`UPDATE users SET banned = true WHERE role = 'admin'`);
+      await owner.pool.query(
+        `UPDATE users SET banned = true WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')`,
+      );
       const sole = await adminCookieUnbanned();
 
       const refused = await call(base, sole.cookie, 'PATCH', `/api/staff/${sole.id}`, {
@@ -603,7 +629,7 @@ describe('staff administration', { timeout: 300_000 }, () => {
         role: 'staff',
       });
       expect(allowed.status).toBe(200);
-      await owner.pool.query(`UPDATE users SET role = 'admin' WHERE id = $1::uuid`, [sole.id]);
+      await giveHats(owner.pool, sole.id, 'admin');
     });
   });
 
@@ -615,7 +641,9 @@ describe('staff administration', { timeout: 300_000 }, () => {
 
   describe('disabling and enabling (AC-16, AC-17)', () => {
     it('disables in one step: no sessions, no live links, rows kept, sign in refused', async () => {
-      await owner.pool.query(`UPDATE users SET banned = false WHERE role = 'admin'`);
+      await owner.pool.query(
+        `UPDATE users SET banned = false WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')`,
+      );
       const admin = await adminCookie();
       const person = await addPerson();
       const cookie = cookieOf(await login(base, person.email));
@@ -680,7 +708,8 @@ describe('staff administration', { timeout: 300_000 }, () => {
       const a = await adminCookie();
       const b = await adminCookie();
       await owner.pool.query(
-        `UPDATE users SET banned = true WHERE role = 'admin' AND id NOT IN ($1::uuid, $2::uuid)`,
+        `UPDATE users SET banned = true
+          WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager') AND id NOT IN ($1::uuid, $2::uuid)`,
         [a.id, b.id],
       );
 
@@ -695,10 +724,12 @@ describe('staff administration', { timeout: 300_000 }, () => {
       expect(statuses[0]).toBe(200);
       expect([401, 409]).toContain(statuses[1]);
       const left = await owner.pool.query<{ n: string }>(
-        `SELECT count(*) AS n FROM users WHERE role = 'admin' AND NOT banned`,
+        `SELECT count(*) AS n FROM users WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager') AND NOT banned`,
       );
       expect(Number(left.rows[0]?.n)).toBe(1);
-      await owner.pool.query(`UPDATE users SET banned = false WHERE role = 'admin'`);
+      await owner.pool.query(
+        `UPDATE users SET banned = false WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')`,
+      );
     });
   });
 

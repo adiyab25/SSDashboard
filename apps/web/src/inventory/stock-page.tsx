@@ -57,7 +57,7 @@ export function StockPage() {
   const format = useFormat();
   const text = useLocalizedText();
   const me = useMe();
-  const isAdmin = me?.role === 'admin';
+  const isAdmin = me?.permissions.includes('cost.view') ?? false;
   const current = useCurrentLocation();
   const { locations, ready } = useLocationSwitcher();
   const { language, config } = useLanguage();
@@ -162,7 +162,7 @@ export function StockPage() {
             <TagIcon aria-hidden data-icon="inline-start" />
             {t('inventory.stock.newSku')}
           </Button>
-          {isAdmin && (
+          {me?.permissions.includes('catalog.manage') && (
             <Button variant="outline" onClick={() => setDialog('location')}>
               <MapPinPlusIcon aria-hidden data-icon="inline-start" />
               {t('inventory.stock.newLocation')}

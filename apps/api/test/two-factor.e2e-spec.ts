@@ -6,6 +6,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
   secretFromUri,
   start,
   stop,
@@ -67,10 +68,11 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
     counter += 1;
     const email = `factor${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, must_change_password) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [`Person ${counter}`, email, options.role ?? 'staff', options.mustChange ?? false],
+      `INSERT INTO users (name, email, must_change_password) VALUES ($1, $2, $3) RETURNING id`,
+      [`Person ${counter}`, email, options.mustChange ?? false],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, options.role ?? 'staff');
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

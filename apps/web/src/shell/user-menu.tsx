@@ -83,7 +83,7 @@ export function UserMenu() {
             <>
               <LtrText className="block truncate text-xs text-muted-foreground">{me.email}</LtrText>
               <span className="text-xs text-muted-foreground">
-                {t(`shell.user.roles.${me.role}`)}
+                {t(`shell.user.roles.${me.hats.includes('manager') ? 'admin' : 'staff'}`)}
               </span>
             </>
           )}

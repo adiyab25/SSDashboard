@@ -1,8 +1,11 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import type { BrowserContext, Page } from '@playwright/test';
-import { createDatabase } from '@ssdashboard/db';
+import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { ownerDatabaseUrl } from './auth';
+
+/** The owner pool the seeds write with. */
+type Pool = DatabaseConnection['pool'];
 
 export const SEEDED_PASSWORD = 'Seeded-Pass-1';
 
@@ -12,6 +15,41 @@ export interface SeededAccount {
   email: string;
   password: string;
   remove(): Promise<void>;
+}
+
+/**
+ * The hats and cost grant of the two presets before hats (spec 0008, AC-16): `admin` is `manager`
+ * plus `cost.view`, `staff` is `support`, `operations` and `warehouse` without cost. Replaces what
+ * the person held.
+ */
+export async function giveHats(
+  pool: Pool,
+  userId: string,
+  preset: 'admin' | 'staff',
+): Promise<void> {
+  const hats = preset === 'admin' ? ['manager'] : ['support', 'operations', 'warehouse'];
+  await pool.query(`DELETE FROM hat_assignments WHERE user_id = $1::uuid`, [userId]);
+  await pool.query(`DELETE FROM permission_grants WHERE user_id = $1::uuid`, [userId]);
+  for (const hat of hats) {
+    await pool.query(`INSERT INTO hat_assignments (user_id, hat) VALUES ($1::uuid, $2)`, [
+      userId,
+      hat,
+    ]);
+  }
+  if (preset === 'admin') {
+    await pool.query(
+      `INSERT INTO permission_grants (user_id, permission) VALUES ($1::uuid, 'cost.view')`,
+      [userId],
+    );
+  }
+}
+
+/** Deletes a person by email, their hats and grants first (they keep a RESTRICT reference). */
+async function deleteByEmail(pool: Pool, email: string): Promise<void> {
+  const owned = `(SELECT id FROM users WHERE lower(email) = $1)`;
+  await pool.query(`DELETE FROM hat_assignments WHERE user_id IN ${owned}`, [email]);
+  await pool.query(`DELETE FROM permission_grants WHERE user_id IN ${owned}`, [email]);
+  await pool.query(`DELETE FROM users WHERE lower(email) = $1`, [email]);
 }
 
 /**
@@ -34,18 +72,13 @@ export async function seedAccount(
   let id: string | undefined;
   try {
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, email_verified, must_change_password, language)
-       VALUES ($1, $2, $3, true, $4, $5) RETURNING id`,
-      [
-        name,
-        email,
-        options.role ?? 'staff',
-        options.mustChangePassword ?? false,
-        options.language ?? null,
-      ],
+      `INSERT INTO users (name, email, email_verified, must_change_password, language)
+       VALUES ($1, $2, true, $3, $4) RETURNING id`,
+      [name, email, options.mustChangePassword ?? false, options.language ?? null],
     );
     id = rows[0]?.id;
     if (!id) throw new Error('Could not seed the e2e account');
+    await giveHats(pool, id, options.role ?? 'staff');
     await pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
@@ -54,7 +87,7 @@ export async function seedAccount(
   } catch (error) {
     // Do not leave a half seeded person or an open pool behind; the original error wins.
     try {
-      await pool.query(`DELETE FROM users WHERE lower(email) = $1`, [email]);
+      await deleteByEmail(pool, email);
     } catch {
       // ignore: the seed error below is the useful one
     }
@@ -70,6 +103,9 @@ export async function seedAccount(
     async remove() {
       try {
         // Sessions, accounts and two factor rows go with the user (on delete cascade).
+        // Hats and grants keep a RESTRICT reference to the person (spec 0008): they go first.
+        await pool.query(`DELETE FROM hat_assignments WHERE user_id = $1::uuid`, [userId]);
+        await pool.query(`DELETE FROM permission_grants WHERE user_id = $1::uuid`, [userId]);
         await pool.query(`DELETE FROM users WHERE id = $1::uuid OR lower(email) = $2`, [
           userId,
           email,
@@ -85,7 +121,7 @@ export async function seedAccount(
 export async function removeAccountByEmail(email: string): Promise<void> {
   const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
   try {
-    await pool.query(`DELETE FROM users WHERE lower(email) = $1`, [email.toLowerCase()]);
+    await deleteByEmail(pool, email.toLowerCase());
   } finally {
     await pool.end();
   }

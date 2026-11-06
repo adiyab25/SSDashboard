@@ -6,6 +6,7 @@ export type { LocalizedText } from './columns.js';
 export * from './connectors.js';
 export * from './credit.js';
 export * from './customers.js';
+export * from './identity.js';
 export * from './inventory.js';
 export * from './locations.js';
 export * from './orders.js';

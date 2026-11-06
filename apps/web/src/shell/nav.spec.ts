@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { visibleNavItems } from './nav';
 
 describe('visibleNavItems (AC-25)', () => {
-  const ids = (role?: 'admin' | 'staff') => visibleNavItems(role).map((item) => item.id);
+  const ids = (role?: 'admin' | 'staff') =>
+    visibleNavItems(
+      role === undefined ? undefined : role === 'admin' ? ['manager'] : ['warehouse'],
+    ).map((item) => item.id);
 
   it('shows the Staff page only to an administrator', () => {
     expect(ids('admin')).toContain('staff');

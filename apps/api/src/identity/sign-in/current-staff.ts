@@ -1,15 +1,22 @@
 import type { Request } from 'express';
 import type { Home, MeResponse } from '@ssdashboard/contracts';
 
-/** The signed in person and their session, read fresh from the database by the guard. */
-export interface CurrentStaff extends MeResponse {
+/**
+ * The signed in person and their session, read fresh from the database by the guard. It holds no
+ * hats or permissions and nothing to authorize on (spec 0008, AC-5): what the person may do is the
+ * `Access` on `request.access` (`@CurrentAccess()` from `src/platform/access/`).
+ */
+export interface CurrentStaff extends Omit<
+  MeResponse,
+  'hats' | 'permissions' | 'partnerAccountId'
+> {
   sessionId: string;
 }
 
 /**
  * The signed in partner user on a `partner` route (spec 0005, AC-29), read fresh from the
  * database by the guard on every request. Its own shape, not the staff one: it carries no staff
- * `role` and no staff code, so a partner handler can never authorize on a staff role. It holds
+ * code and nothing to authorize on (permissions are on `request.access`). It holds
  * the person's id and what the partner "who am I" answer (`GET /api/partner/me`, spec 0008
  * AC-11) needs about the person.
  *

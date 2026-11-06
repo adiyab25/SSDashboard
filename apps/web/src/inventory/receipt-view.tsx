@@ -28,7 +28,8 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
   const format = useFormat();
   const text = useLocalizedText();
   const me = useMe();
-  const isAdmin = me?.role === 'admin' && receipt.referenceValue !== undefined;
+  const isAdmin =
+    (me?.permissions.includes('cost.view') ?? false) && receipt.referenceValue !== undefined;
   const [voiding, setVoiding] = useState(false);
 
   return (
@@ -48,7 +49,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
           <Button asChild variant="outline">
             <Link href="/stock-receipts">{t('inventory.receiptDetail.allReceipts')}</Link>
           </Button>
-          {me?.role === 'admin' && receipt.status === 'posted' && (
+          {me?.permissions.includes('stock.correct') && receipt.status === 'posted' && (
             <Button variant="outline" onClick={() => setVoiding(true)}>
               <Undo2Icon aria-hidden data-icon="inline-start" className="rtl:-scale-x-100" />
               {t('inventory.void.open')}

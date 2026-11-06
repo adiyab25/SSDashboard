@@ -427,8 +427,30 @@ BEGIN
   EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON "install" FROM %I', app_role);
   -- A sign in slot is taken and given back, never changed (spec 0005, AC-3).
   EXECUTE format('REVOKE UPDATE ON "sign_in_slots" FROM %I', app_role);
+  -- Hats and extra grants are current state: a change inserts or deletes a row, never updates one
+  -- (spec 0008, data model). The audit trail holds their history.
+  EXECUTE format('REVOKE UPDATE, TRUNCATE ON "hat_assignments", "permission_grants" FROM %I', app_role);
 END;
 $$;--> statement-breakpoint
+
+-- AC-16 role mapping: begin
+-- Spec 0008, AC-16: the two roles before hats become hats. `admin` is `manager` plus the
+-- `cost.view` grant; `staff` is `support`, `operations` and `warehouse`, still without cost. Then
+-- every role is `user`, the only value the `users_role_check` allows. On a fresh database there is
+-- no person yet, so all three statements change nothing; `granted_by` stays null (the migration
+-- gave them). `packages/db/test/hats.e2e-spec.ts` runs this block on planted people.
+INSERT INTO "hat_assignments" ("user_id", "hat")
+  SELECT "id", 'manager' FROM "users" WHERE "role" = 'admin'
+  UNION ALL
+  SELECT u."id", h."hat" FROM "users" u
+    CROSS JOIN (VALUES ('support'), ('operations'), ('warehouse')) AS h ("hat")
+    WHERE u."role" = 'staff'
+ON CONFLICT ("tenant_id", "user_id", "hat") DO NOTHING;--> statement-breakpoint
+INSERT INTO "permission_grants" ("user_id", "permission")
+  SELECT "id", 'cost.view' FROM "users" WHERE "role" = 'admin'
+ON CONFLICT ("tenant_id", "user_id", "permission") DO NOTHING;--> statement-breakpoint
+UPDATE "users" SET "role" = 'user' WHERE "role" <> 'user';--> statement-breakpoint
+-- AC-16 role mapping: end
 
 -- Seeds. The tenant_id column default stamps each row with this install's tenant.
 INSERT INTO "settings" ("key", "value") VALUES

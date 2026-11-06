@@ -106,7 +106,7 @@ export function ReceiptFormPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const me = useMe();
-  const isAdmin = me?.role === 'admin';
+  const isAdmin = me?.permissions.includes('cost.view') ?? false;
   const current = useCurrentLocation();
   const { locations, status: locationsStatus } = useLocationSwitcher();
   const { language, config } = useLanguage();

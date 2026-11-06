@@ -10,9 +10,10 @@ import type {
   StaffRow,
   StaffSetup,
   StaffStatus,
+  StaffAccessPreset,
+  InternalHat,
   UpdateStaffRequest,
 } from '@ssdashboard/contracts';
-import { StaffRole } from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { randomBytes } from 'node:crypto';
@@ -26,12 +27,17 @@ import {
   type Executor,
 } from '../sign-in/reset-tokens.js';
 import { revokeSessions } from '../sessions/revoke-sessions.js';
-import { SESSION_AUDIENCES, type SessionAudiences } from '../sessions/session-audiences.js';
+import {
+  holdsHat,
+  SESSION_AUDIENCES,
+  type SessionAudiences,
+} from '../sessions/session-audiences.js';
 import { SignInLockout } from '../sign-in/sign-in-lockout.js';
 import { generateTemporaryPassword } from '../sign-in/temporary-password.js';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
 import { DATABASE } from '../../database/database.module.js';
+import { pgArray } from '../../database/sql.js';
 import { MailProducer } from '../../mail/mail-queue.js';
 import type { MailKind } from '../../mail/mail-templates.js';
 import {
@@ -62,7 +68,8 @@ interface UserRow extends Record<string, unknown> {
   id: string;
   name: string;
   email: string;
-  role: string;
+  /** Whether the person wears the `manager` hat, read with the row. */
+  manager: boolean;
   banned: boolean;
   ban_reason: string | null;
   phone: string | null;
@@ -76,9 +83,23 @@ interface UserRow extends Record<string, unknown> {
   name_key: string;
 }
 
-const COLUMNS = sql.raw(
-  'id, name, email, role, banned, ban_reason, phone, staff_code, language, two_factor_enabled, last_sign_in_at, created_at, lower(name) AS name_key',
-);
+const COLUMNS = sql`id, name, email, ${holdsHat('manager')} AS manager, banned, ban_reason, phone,
+  staff_code, language, two_factor_enabled, last_sign_in_at, created_at, lower(name) AS name_key`;
+
+/**
+ * The hats and cost grant each staff screen preset stands for until spec 0008 milestone 2 gives
+ * the screen and `/api/staff` real hats: the AC-16 mapping, the same one the migration ran.
+ */
+const PRESET_ACCESS: Readonly<
+  Record<StaffAccessPreset, { hats: readonly InternalHat[]; costView: boolean }>
+> = {
+  admin: { hats: ['manager'], costView: true },
+  staff: { hats: ['support', 'operations', 'warehouse'], costView: false },
+};
+
+/** The preset a person shows as: `admin` while they wear `manager`, else `staff`. */
+const presetOf = (row: { manager: boolean }): StaffAccessPreset =>
+  row.manager ? 'admin' : 'staff';
 
 /** The cursor does not decode to a page position this endpoint issued. */
 export class InvalidStaffCursorError extends Error {
@@ -254,13 +275,14 @@ export class StaffService {
     try {
       created = await this.db.transaction(async (tx) => {
         const inserted = await tx.execute<{ id: string }>(
-          sql`INSERT INTO users (name, email, role, phone, staff_code, language, must_change_password)
-              VALUES (${input.name}, ${input.email}, ${input.role}, ${input.phone ?? null},
+          sql`INSERT INTO users (name, email, phone, staff_code, language, must_change_password)
+              VALUES (${input.name}, ${input.email}, ${input.phone ?? null},
                       ${input.staffCode ?? null}, ${input.language ?? null}, ${!this.mailOn})
               RETURNING id`,
         );
         const id = inserted.rows[0]?.id;
         if (id === undefined) throw new Error('Could not create the staff account');
+        await this.replaceAccess(tx, id, input.role, actor.id);
         // Better Auth's own layout: one `credential` account whose id is the user id.
         await tx.execute(
           sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
@@ -284,8 +306,9 @@ export class StaffService {
   }
 
   /**
-   * Changes name, contact details, language or role. Refuses a change that would remove the last
-   * active admin, and emits a role changed event when the role moved.
+   * Changes name, contact details, language or the access preset (its hats and cost grant).
+   * Refuses a change that would take `manager` from the last active manager, and emits a role
+   * changed event when the preset moved.
    */
   async update(id: string, input: UpdateStaffRequest, actor: Actor): Promise<StaffDetail> {
     if (input.language) await this.assertLanguage(input.language);
@@ -319,9 +342,9 @@ export class StaffService {
           otherChanged = true;
           emailChanged = true;
         }
-        if (input.role !== undefined && input.role !== target.role) {
-          if (target.role === 'admin' && !target.banned) await this.assertAnotherAdmin(tx, id);
-          sets.push(sql`role = ${input.role}`);
+        if (input.role !== undefined && input.role !== presetOf(target)) {
+          if (target.manager && !target.banned) await this.assertAnotherAdmin(tx, id);
+          await this.replaceAccess(tx, id, input.role, actor.id);
           roleChanged = true;
         }
         const plain: Array<[string, string | null | undefined, string | null]> = [
@@ -377,7 +400,7 @@ export class StaffService {
       const target = await this.find(tx, id, true);
       if (!target) throw notFound();
       if (id === actor.id) throw conflict('SELF_DISABLE', 'You cannot disable your own account');
-      if (target.role === 'admin' && !target.banned) await this.assertAnotherAdmin(tx, id);
+      if (target.manager && !target.banned) await this.assertAnotherAdmin(tx, id);
 
       await tx.execute(
         sql`UPDATE users SET banned = true, ban_reason = ${reason ?? null}, updated_at = now()
@@ -525,18 +548,49 @@ export class StaffService {
   }
 
   /**
-   * An active admin is a staff admin who is not disabled; one who has not signed in yet still
-   * counts. A partner user never counts, whatever their row says (AC-28).
+   * An active manager (spec 0008, AC-14) is a staff person wearing `manager` who is not disabled;
+   * one who has not signed in yet still counts. A partner user never counts, whatever their rows
+   * say (AC-28). Runs under `ADMIN_RULE_LOCK`, taken by the caller.
    */
   private async assertAnotherAdmin(tx: Tx, exceptId: string): Promise<void> {
     const others = await tx.execute(
       sql`SELECT 1 FROM users
-          WHERE role = 'admin' AND NOT banned AND id <> ${exceptId}::uuid AND ${this.staffOnly}
+          WHERE ${holdsHat('manager')} AND NOT banned AND id <> ${exceptId}::uuid
+            AND ${this.staffOnly}
           LIMIT 1`,
     );
     if (others.rows.length === 0) {
       throw conflict('LAST_ADMIN', 'There must always be at least one active administrator');
     }
+  }
+
+  /**
+   * Replaces the person's hats and cost grant with those of a preset, inside the caller's
+   * transaction, and marks the person changed. Transitional (spec 0008 milestone 1): milestone 2's
+   * `HatService` becomes the only writer of hats and grants and replaces this. Moving between the
+   * presets keeps the person in the staff audience, so their sessions stay (AC-33 b).
+   */
+  private async replaceAccess(
+    tx: Tx,
+    id: string,
+    preset: StaffAccessPreset,
+    grantedBy: string,
+  ): Promise<void> {
+    const access = PRESET_ACCESS[preset];
+    await tx.execute(sql`DELETE FROM hat_assignments WHERE user_id = ${id}::uuid`);
+    await tx.execute(sql`DELETE FROM permission_grants WHERE user_id = ${id}::uuid`);
+    await tx.execute(
+      sql`INSERT INTO hat_assignments (user_id, hat, granted_by)
+          SELECT ${id}::uuid, hat, ${grantedBy}::uuid
+            FROM unnest(${pgArray(access.hats)}::text[]) AS hat`,
+    );
+    if (access.costView) {
+      await tx.execute(
+        sql`INSERT INTO permission_grants (user_id, permission, granted_by)
+            VALUES (${id}::uuid, 'cost.view', ${grantedBy}::uuid)`,
+      );
+    }
+    await tx.execute(sql`UPDATE users SET updated_at = now() WHERE id = ${id}::uuid`);
   }
 
   private assertLanguage(language: string | undefined): Promise<void> {
@@ -597,7 +651,7 @@ export class StaffService {
       id: row.id,
       name: row.name,
       email: row.email,
-      role: StaffRole.catch('staff').parse(row.role),
+      role: presetOf(row),
       status: statusOf(row),
       lastSignInAt: row.last_sign_in_at ? iso(row.last_sign_in_at) : null,
       twoFactorEnabled: row.two_factor_enabled,

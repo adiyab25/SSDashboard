@@ -2,6 +2,7 @@ import { ForbiddenException, UnauthorizedException, type ExecutionContext } from
 import { Reflector } from '@nestjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
+import { Access } from '../../platform/access/access.js';
 import type { Auth } from './auth.tokens.js';
 import { Audience, type AudienceName } from '../../platform/audience/audience.decorator.js';
 import type { SessionAudience, SessionAudiences } from '../sessions/session-audiences.js';
@@ -17,7 +18,8 @@ const USER = {
   id: '0190c0de-0000-7000-8000-000000000001',
   name: 'Sam',
   email: 'sam@example.com',
-  role: 'admin',
+  // Better Auth's admin plugin column: always `user`, and the guard never reads it (spec 0008).
+  role: 'user',
   banned: false,
   mustChangePassword: false,
   twoFactorEnabled: false,
@@ -73,7 +75,12 @@ function setup(options: {
     Promise.resolve(new Set<SessionAudience>(options.audiences ?? ['staff'])),
   );
   const audiences = { audiencesFor } as unknown as SessionAudiences;
-  const guard = new SessionGuard(reflector, auth, env, audiences);
+  const load = vi.fn((userId: string) =>
+    Promise.resolve(
+      new Access({ userId, hats: ['manager'], grants: ['cost.view'], partnerAccountId: null }),
+    ),
+  );
+  const guard = new SessionGuard(reflector, auth, env, audiences, { load });
   return {
     guard,
     context,
@@ -83,6 +90,7 @@ function setup(options: {
     deleteSession,
     deleteUserSessions,
     audiencesFor,
+    load,
   };
 }
 
@@ -173,7 +181,6 @@ describe('SessionGuard', () => {
       id: USER.id,
       name: 'Sam',
       email: 'sam@example.com',
-      role: 'admin',
       phone: null,
       staffCode: null,
       language: 'ar',
@@ -268,15 +275,34 @@ describe('SessionGuard', () => {
     expect(request.staff).toMatchObject({ twoFactorEnabled: true });
   });
 
-  it('falls back to the staff role for a role it does not know', async () => {
-    const { guard, context, request } = setup({
+  it('puts the Access read for this request on request.access, and no role on the person (spec 0008)', async () => {
+    const { guard, context, request, load } = setup({
       cookie: 'better-auth.session_token=abc',
-      session: { user: { ...USER, role: 'owner' }, session: liveSession() },
+      session: { user: { ...USER, role: 'admin' }, session: liveSession() },
     });
 
     await guard.canActivate(context);
+    await guard.canActivate(context);
 
-    expect(request.staff).toMatchObject({ role: 'staff' });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledWith(USER.id);
+    expect(request.access).toBeInstanceOf(Access);
+    expect((request.access as Access).hats).toEqual(['manager']);
+    expect(request.staff).not.toHaveProperty('role');
+    expect(request.staff).not.toHaveProperty('permissions');
+  });
+
+  it('reads no Access for a person with no hat, whose sessions it ends', async () => {
+    const { guard, context, load } = setup({
+      cookie: 'better-auth.session_token=abc',
+      session: { user: USER, session: liveSession() },
+      audiences: [],
+    });
+
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      response: { code: 'SESSION_EXPIRED' },
+    });
+    expect(load).not.toHaveBeenCalled();
   });
 
   describe('the Origin check on writes', () => {

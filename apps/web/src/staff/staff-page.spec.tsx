@@ -18,9 +18,15 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('./staff-api', () => api);
 
-const me = vi.hoisted((): { current: { id: string; role: string } | null } => ({
-  current: { id: 'me-id', role: 'admin' },
-}));
+const me = vi.hoisted(
+  (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
+    current: {
+      id: 'me-id',
+      hats: ['manager'],
+      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    },
+  }),
+);
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
 
 const loadConfig = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
@@ -52,7 +58,11 @@ async function openMenu(name: string) {
 
 describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
   beforeEach(() => {
-    me.current = { id: 'me-id', role: 'admin' };
+    me.current = {
+      id: 'me-id',
+      hats: ['manager'],
+      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    };
     loadConfig.mockResolvedValue({ mailEnabled: true, languages: ['en', 'ar'] });
     api.listStaff.mockImplementation(() => page(ROWS));
   });
@@ -80,7 +90,7 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
   });
 
   it('says only administrators can manage staff, and asks the api for nothing, to a staff role', async () => {
-    me.current = { id: 'x', role: 'staff' };
+    me.current = { id: 'x', hats: ['warehouse'], permissions: [] };
     render(<StaffPage />);
 
     expect(await screen.findByText('Only administrators can manage staff.')).toBeVisible();

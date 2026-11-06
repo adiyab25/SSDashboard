@@ -6,6 +6,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
   secretFromUri,
   start,
   stop,
@@ -112,10 +113,11 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
     counter += 1;
     const email = `cookie${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role) VALUES ($1, $2, 'staff') RETURNING id`,
+      `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`,
       [`Person ${counter}`, email],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, 'staff');
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

@@ -6,7 +6,6 @@ import {
   mulDivRound,
   UnitCost,
   type LocalizedText,
-  type StaffRole,
   type StockReceiptDetail,
   type StockReceiptLineError,
   type StockReceiptListQuery,
@@ -17,6 +16,7 @@ import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { CatalogService, escapeLike } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.module.js';
+import type { Access } from '../../platform/access/access.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { NumberingService } from '../../platform/numbering.service.js';
@@ -64,13 +64,13 @@ export class ReceiptError extends Error {
   }
 }
 
-/** Who is asking: the posting user, and whether cost fields are theirs to see (AC-11). */
+/** Who is asking: the posting user, and what they may see (cost fields need `cost.view`, AC-11). */
 export interface ReceiptCaller {
   id: string;
-  role: StaffRole;
+  access: Pick<Access, 'has'>;
 }
 
-/** A stored receipt with every field, before the role serializer. */
+/** A stored receipt with every field, before the cost serializer. */
 interface StoredReceipt {
   id: string;
   requestHash: string;
@@ -92,9 +92,15 @@ export function receiptRequestHash(input: CreateInput): string {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-/** Removes the cost fields for anyone but an admin (AC-11). One serializer for every answer. */
-export function serializeReceipt(detail: StockReceiptDetail, role: StaffRole): StockReceiptDetail {
-  if (role === 'admin') return detail;
+/**
+ * Removes the cost fields (`COST_FIELD_KEYS`) for a caller without `cost.view` (AC-11, spec 0008
+ * AC-6). One serializer for every receipt answer, replays included.
+ */
+export function serializeReceipt(
+  detail: StockReceiptDetail,
+  access: Pick<Access, 'has'>,
+): StockReceiptDetail {
+  if (access.has('cost.view')) return detail;
   const { referenceValue: _value, ...rest } = detail;
   return {
     ...rest,
@@ -216,14 +222,14 @@ export class ReceiptsService {
       lineCount: lines.length,
       userId: caller.id,
     });
-    return { receipt: serializeReceipt(stored.detail, caller.role), created: true };
+    return { receipt: serializeReceipt(stored.detail, caller.access), created: true };
   }
 
   /** One receipt through the caller's serializer, or `NotFound`. */
   async get(id: string, caller: ReceiptCaller): Promise<StockReceiptDetail> {
     const stored = await this.find(this.connection.db, id);
     if (!stored) throw new ReceiptError('NotFound', 'Stock receipt not found');
-    return serializeReceipt(stored.detail, caller.role);
+    return serializeReceipt(stored.detail, caller.access);
   }
 
   /**
@@ -385,7 +391,7 @@ export class ReceiptsService {
         'This idempotency key was already used for a different receipt',
       );
     }
-    return serializeReceipt(stored.detail, caller.role);
+    return serializeReceipt(stored.detail, caller.access);
   }
 
   /** One active warehouse or shop; the ledger alone would accept transit and scrap. */

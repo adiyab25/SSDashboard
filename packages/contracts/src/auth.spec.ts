@@ -45,7 +45,9 @@ describe('MeResponse home (spec 0005, AC-28)', () => {
     id: '0190c0de-0000-7000-8000-000000000001',
     name: 'Sam',
     email: 'sam@example.com',
-    role: 'staff',
+    hats: ['warehouse'],
+    permissions: ['stock.view'],
+    partnerAccountId: null,
     phone: null,
     staffCode: null,
     language: null,
@@ -61,5 +63,34 @@ describe('MeResponse home (spec 0005, AC-28)', () => {
     expect(MeResponse.safeParse(me).success).toBe(false);
     expect(MeResponse.safeParse({ ...me, home: 'portal' }).success).toBe(false);
     expect(Home.options).toEqual(['backoffice', 'partner']);
+  });
+});
+
+describe('MeResponse access (spec 0008, AC-5 and AC-11)', () => {
+  const me = {
+    id: '0190c0de-0000-7000-8000-000000000001',
+    name: 'Sam',
+    email: 'sam@example.com',
+    hats: ['warehouse'],
+    permissions: ['stock.view'],
+    partnerAccountId: null,
+    phone: null,
+    staffCode: null,
+    language: null,
+    twoFactorEnabled: false,
+    mustChangePassword: false,
+    home: 'backoffice',
+  };
+
+  it('carries hats, permissions and the partner account, and no role', () => {
+    const parsed = MeResponse.parse({ ...me, role: 'admin' });
+
+    expect(parsed).toEqual(me);
+    expect('role' in parsed).toBe(false);
+  });
+
+  it('refuses an unknown hat or permission', () => {
+    expect(MeResponse.safeParse({ ...me, hats: ['owner'] }).success).toBe(false);
+    expect(MeResponse.safeParse({ ...me, permissions: ['everything'] }).success).toBe(false);
   });
 });

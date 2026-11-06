@@ -6,6 +6,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
   requireBuild,
   start,
   stop,
@@ -90,8 +91,9 @@ describe('create-admin --reset-password', { timeout: 120_000 }, () => {
     await owner.pool.query(`UPDATE users SET must_change_password = false`);
     // Pending two factor challenges: the admin's (plus its attempts row) and another user's.
     const other = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role) VALUES ('Other', 'other@example.com', 'staff') RETURNING id`,
+      `INSERT INTO users (name, email) VALUES ('Other', 'other@example.com') RETURNING id`,
     );
+    await giveHats(owner.pool, other.rows[0]?.id as string, 'staff');
     const adminId = (
       await owner.pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [EMAIL])
     ).rows[0]?.id as string;
@@ -175,9 +177,14 @@ describe('create-admin --reset-password', { timeout: 120_000 }, () => {
   });
 
   it('refuses an unknown email, a non-admin, and a disabled admin, and changes nothing', async () => {
-    await owner.pool.query(
-      `INSERT INTO users (name, email, role) VALUES ('Clerk', 'clerk@example.com', 'staff')`,
+    const clerk = await owner.pool.query<{ id: string }>(
+      `INSERT INTO users (name, email) VALUES ('Clerk', 'clerk@example.com') RETURNING id`,
     );
+    // Every staff hat but manager: still not an admin for the break glass (spec 0008, AC-14).
+    await giveHats(owner.pool, clerk.rows[0]?.id as string, {
+      hats: ['support', 'operations', 'warehouse', 'media_buyer'],
+      costView: true,
+    });
     const before = await owner.pool.query(`SELECT id, password FROM accounts ORDER BY id`);
 
     const unknown = createAdmin(['--reset-password', '--email', 'nobody@example.com']);

@@ -68,7 +68,7 @@ export function SkuEditBody({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const me = useMe();
-  const isAdmin = me?.role === 'admin';
+  const isAdmin = me?.permissions.includes('catalog.manage') ?? false;
   // The version this dialog edits against. It is set on open, then by the first fresh fetch while
   // the form is untouched, then only by this dialog's own saves and Reload, never by the shared
   // query: a refetch from the detail page mid edit must not

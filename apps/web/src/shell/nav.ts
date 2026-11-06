@@ -1,4 +1,4 @@
-import type { StaffRole } from '@ssdashboard/contracts';
+import type { Hat } from '@ssdashboard/contracts';
 import {
   BoxesIcon,
   HomeIcon,
@@ -84,13 +84,15 @@ export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
 ];
 
 /**
- * The entries this build shows to this role: development only pages are dropped in production,
- * and admin only pages are shown only to an administrator (none while the role is unknown).
+ * The entries this build shows to a person with these hats: development only pages are dropped in
+ * production, and admin only pages are shown only to a manager (none while the hats are unknown).
+ * Spec 0008 replaces `adminOnly` with a permission per item.
  */
-export function visibleNavItems(role?: StaffRole): NavItem[] {
+export function visibleNavItems(hats?: readonly Hat[]): NavItem[] {
   const production = process.env.NODE_ENV === 'production';
   return navItems.filter(
-    (item) => !(item.devOnly && production) && !(item.adminOnly && role !== 'admin'),
+    (item) =>
+      !(item.devOnly && production) && !(item.adminOnly && !(hats ?? []).includes('manager')),
   );
 }
 

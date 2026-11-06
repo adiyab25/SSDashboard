@@ -23,7 +23,7 @@ import {
 } from '@ssdashboard/contracts';
 import type { AuthenticatedRequest } from '../sign-in/current-staff.js';
 import { clientIp, userAgent } from '../sign-in/client-info.js';
-import { Roles } from '../sign-in/roles.decorator.js';
+import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
@@ -39,11 +39,12 @@ function actorOf(request: AuthenticatedRequest): Actor {
 }
 
 /**
- * Staff administration (spec 0005, AC-12 to AC-18). Admins only. The browser never talks to
+ * Staff administration (spec 0005, AC-12 to AC-18). Every route needs `people.manage` (spec 0008
+ * route mapping). The browser never talks to
  * Better Auth's admin routes: those answer 404, and these endpoints are the whole surface.
  */
 @Audience('staff')
-@Roles('admin')
+@Permission('people.manage')
 @Controller('staff')
 export class StaffController {
   /** Takes the staff service. */

@@ -21,7 +21,7 @@ import {
   type SkuListResponse,
 } from '@ssdashboard/contracts';
 import type { z } from 'zod';
-import { Roles } from '../identity/sign-in/roles.decorator.js';
+import { Permission } from '../platform/access/permission.decorator.js';
 import { Audience } from '../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';
@@ -57,8 +57,9 @@ export const notFoundId = () =>
   });
 
 /**
- * Products in, SKUs out (spec 0006). Any signed in person creates, reads, and edits name and
- * price; delete is admin only. Stock dependent SKU actions live in inventory's `sku-lifecycle/`.
+ * Products in, SKUs out (spec 0006). Creating and editing name and price need `catalog.edit`,
+ * reading needs `stock.view`, and delete needs `catalog.manage` (spec 0008 route mapping). Stock
+ * dependent SKU actions live in inventory's `sku-lifecycle/`.
  */
 @Audience('staff')
 @Controller()
@@ -70,6 +71,7 @@ export class CatalogController {
    * Creates one active product with one stocked SKU and returns that SKU. A taken SKU code is
    * mapped to an HTTP error by `catalogHttpError`.
    */
+  @Permission('catalog.edit')
   @Post('products')
   async create(
     @Body(new ZodBodyPipe(CreateProductRequest, INVALID_INPUT))
@@ -83,6 +85,7 @@ export class CatalogController {
   }
 
   /** One keyset page of SKUs for the catalog list, filtered by the validated query. */
+  @Permission('stock.view')
   @Get('skus')
   async list(@Query(new ZodQueryPipe(SkuListQuery)) query: SkuListQuery): Promise<SkuListResponse> {
     try {
@@ -93,6 +96,7 @@ export class CatalogController {
   }
 
   /** One SKU's detail; an unknown or malformed id answers 404. */
+  @Permission('stock.view')
   @Get('skus/:id')
   async get(@Param('id', notFoundId()) id: string): Promise<SkuDetail> {
     try {
@@ -103,6 +107,7 @@ export class CatalogController {
   }
 
   /** Name and price, with the stale check (AC-2). The code changes through inventory. */
+  @Permission('catalog.edit')
   @Patch('skus/:id')
   async update(
     @Param('id', notFoundId()) id: string,
@@ -116,8 +121,8 @@ export class CatalogController {
     }
   }
 
-  /** Admin only, and only while nothing references the SKU (AC-3): 409 `IN_USE` otherwise. */
-  @Roles('admin')
+  /** Needs `catalog.manage`, and only while nothing references the SKU (AC-3): 409 `IN_USE` otherwise. */
+  @Permission('catalog.manage')
   @Delete('skus/:id')
   @HttpCode(204)
   async remove(@Param('id', notFoundId()) id: string): Promise<void> {

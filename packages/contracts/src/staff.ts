@@ -1,6 +1,16 @@
 import { z } from 'zod';
-import { StaffRole } from './auth.js';
 import { westernDigits } from './digit-input.js';
+
+/**
+ * The two access presets the staff screen offers until spec 0008 milestone 2 replaces them with
+ * `hats` and `costView` on these contracts (and `PUT /api/staff/:id/access`). It is not stored:
+ * the api turns it into hats with the AC-16 mapping (`admin` is `manager` plus the `cost.view`
+ * grant, `staff` is `support`, `operations` and `warehouse`), and shows it back as `admin` for a
+ * person holding `manager`, else `staff`. Never authorize on it: routes check permissions only.
+ */
+export const StaffAccessPreset = z.enum(['admin', 'staff']);
+/** The validated shape of `StaffAccessPreset`, as the api and web see it after parsing. */
+export type StaffAccessPreset = z.infer<typeof StaffAccessPreset>;
 
 /** Derived, never stored: `disabled` when banned, else `invited` until the first sign in. */
 export const StaffStatus = z.enum(['invited', 'active', 'disabled']);
@@ -28,7 +38,7 @@ export const StaffRow = z.object({
   id: z.uuid(),
   name: z.string(),
   email: z.string(),
-  role: StaffRole,
+  role: StaffAccessPreset,
   status: StaffStatus,
   lastSignInAt: z.string().nullable(),
   twoFactorEnabled: z.boolean(),
@@ -69,7 +79,7 @@ export type StaffListResponse = z.infer<typeof StaffListResponse>;
 export const CreateStaffRequest = z.object({
   name: StaffName,
   email: StaffEmail,
-  role: StaffRole,
+  role: StaffAccessPreset,
   phone: StaffPhone.optional(),
   staffCode: StaffCode.optional(),
   language: StaffLanguage.optional(),
@@ -82,7 +92,7 @@ export const UpdateStaffRequest = z
   .object({
     name: StaffName,
     email: StaffEmail,
-    role: StaffRole,
+    role: StaffAccessPreset,
     phone: StaffPhone.or(z.literal('')).transform((value) => value || null),
     staffCode: StaffCode.or(z.literal('')).transform((value) => value || null),
     language: StaffLanguage.or(z.literal('')).transform((value) => value || null),

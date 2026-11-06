@@ -12,9 +12,15 @@ vi.mock('./inventory-api', async (original) => ({
   ...api,
 }));
 
-const me = vi.hoisted((): { current: { id: string; role: string } | null } => ({
-  current: { id: 'a', role: 'admin' },
-}));
+const me = vi.hoisted(
+  (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
+    current: {
+      id: 'a',
+      hats: ['manager'],
+      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    },
+  }),
+);
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
 
 const WH = '50000000-0000-4000-8000-000000000001';
@@ -50,7 +56,11 @@ const called = (location: string, skuIdValue: string | null, includeZero: boolea
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
-  me.current = { id: 'a', role: 'admin' };
+  me.current = {
+    id: 'a',
+    hats: ['manager'],
+    permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+  };
   shell.current = 'all';
   shell.ready = true;
 });
@@ -75,7 +85,7 @@ describe('StockPage (AC-9, AC-16)', () => {
   });
 
   it('hides cost and value columns from staff', async () => {
-    me.current = { id: 's', role: 'staff' };
+    me.current = { id: 's', hats: ['warehouse'], permissions: [] };
     api.listStock.mockResolvedValue(page([row(1)]));
     renderWithQuery(<StockPage />);
 

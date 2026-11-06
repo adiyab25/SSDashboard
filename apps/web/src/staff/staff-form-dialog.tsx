@@ -4,7 +4,7 @@ import {
   CreateStaffRequest,
   type CreateStaffResponse,
   type StaffDetail,
-  type StaffRole,
+  type StaffAccessPreset,
 } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
@@ -36,7 +36,7 @@ type FieldName = 'name' | 'email' | 'phone' | 'staffCode';
 interface Values {
   name: string;
   email: string;
-  role: StaffRole;
+  role: StaffAccessPreset;
   phone: string;
   staffCode: string;
   language: string;

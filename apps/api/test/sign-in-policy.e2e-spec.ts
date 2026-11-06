@@ -9,6 +9,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
   start,
   stop,
   waitForHttp,
@@ -71,6 +72,7 @@ describe('staff sign in policy', { timeout: 180_000 }, () => {
       [email, options.banned ?? false],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, 'staff');
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

@@ -36,7 +36,7 @@ export function CommandPalette() {
   // "Ctrl K" on the server and first paint, "⌘ K" after mount on Apple platforms.
   const apple = useSyncExternalStore(noSubscribe, isApplePlatform, () => false);
   const me = useMe();
-  const items = visibleNavItems(me?.role);
+  const items = visibleNavItems(me?.hats);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

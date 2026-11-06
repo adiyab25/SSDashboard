@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import type { FullConfig } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
+import { giveHats } from './accounts';
 import { E2E_ADMIN, STORAGE_STATE, ownerDatabaseUrl } from './auth';
 
 /**
@@ -24,9 +25,9 @@ export default async function globalSetup(config: FullConfig) {
     // A clean account each run. It is reset in place, never deleted: once it has posted stock,
     // the ledger's history keeps a RESTRICT reference to it (spec 0005, AC-22; spec 0006).
     const { rows } = await pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, email_verified) VALUES ($1, $2, 'admin', true)
+      `INSERT INTO users (name, email, email_verified) VALUES ($1, $2, true)
        ON CONFLICT (tenant_id, (lower(email))) DO UPDATE
-         SET name = EXCLUDED.name, role = 'admin', email_verified = true, banned = false,
+         SET name = EXCLUDED.name, email_verified = true, banned = false,
              ban_reason = NULL, ban_expires = NULL, two_factor_enabled = false, phone = NULL,
              staff_code = NULL, language = NULL, must_change_password = false,
              last_sign_in_at = NULL, updated_at = now()
@@ -35,6 +36,8 @@ export default async function globalSetup(config: FullConfig) {
     );
     const userId = rows[0]?.id;
     if (!userId) throw new Error('Could not seed the e2e admin');
+    // The admin is a manager with the cost grant (spec 0008, AC-14).
+    await giveHats(pool, userId, 'admin');
     for (const table of ['sessions', 'accounts', 'two_factors']) {
       await pool.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
     }

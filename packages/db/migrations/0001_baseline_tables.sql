@@ -130,7 +130,7 @@ CREATE TABLE "users" (
 	"email" text NOT NULL,
 	"email_verified" boolean DEFAULT false NOT NULL,
 	"image" text,
-	"role" text DEFAULT 'staff' NOT NULL,
+	"role" text DEFAULT 'user' NOT NULL,
 	"banned" boolean DEFAULT false NOT NULL,
 	"ban_reason" text,
 	"ban_expires" timestamp with time zone,
@@ -142,7 +142,7 @@ CREATE TABLE "users" (
 	"last_sign_in_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "users_role_check" CHECK ("users"."role" in ('admin', 'staff'))
+	CONSTRAINT "users_role_check" CHECK ("users"."role" = 'user')
 );
 --> statement-breakpoint
 CREATE TABLE "verifications" (
@@ -435,6 +435,30 @@ CREATE TABLE "customers" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "customers_not_merged_into_self" CHECK ("customers"."merged_into_id" <> "customers"."id"),
 	CONSTRAINT "customers_risk_flag_has_source" CHECK (("customers"."risk_flag" IS NULL) = ("customers"."risk_flag_source" IS NULL))
+);
+--> statement-breakpoint
+CREATE TABLE "hat_assignments" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"hat" text NOT NULL,
+	"partner_account_id" uuid,
+	"granted_by" uuid,
+	"granted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "hat_assignments_user_hat_unique" UNIQUE("tenant_id","user_id","hat"),
+	CONSTRAINT "hat_assignments_hat_known" CHECK ("hat_assignments"."hat" IN ('support', 'operations', 'warehouse', 'manager', 'media_buyer', 'partner')),
+	CONSTRAINT "hat_assignments_partner_names_account" CHECK (("hat_assignments"."hat" = 'partner') = ("hat_assignments"."partner_account_id" IS NOT NULL))
+);
+--> statement-breakpoint
+CREATE TABLE "permission_grants" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"permission" text NOT NULL,
+	"granted_by" uuid,
+	"granted_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "permission_grants_user_permission_unique" UNIQUE("tenant_id","user_id","permission"),
+	CONSTRAINT "permission_grants_permission_grantable" CHECK ("permission_grants"."permission" IN ('cost.view'))
 );
 --> statement-breakpoint
 CREATE TABLE "lots" (
@@ -1075,6 +1099,11 @@ ALTER TABLE "customer_merges" ADD CONSTRAINT "customer_merges_actor_id_users_id_
 ALTER TABLE "customer_merges" ADD CONSTRAINT "customer_merges_undoes_merge_id_customer_merges_id_fk" FOREIGN KEY ("undoes_merge_id") REFERENCES "public"."customer_merges"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_phones" ADD CONSTRAINT "customer_phones_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customers" ADD CONSTRAINT "customers_merged_into_id_customers_id_fk" FOREIGN KEY ("merged_into_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "hat_assignments" ADD CONSTRAINT "hat_assignments_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "hat_assignments" ADD CONSTRAINT "hat_assignments_partner_account_id_parties_id_fk" FOREIGN KEY ("partner_account_id") REFERENCES "public"."parties"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "hat_assignments" ADD CONSTRAINT "hat_assignments_granted_by_users_id_fk" FOREIGN KEY ("granted_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "permission_grants" ADD CONSTRAINT "permission_grants_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "permission_grants" ADD CONSTRAINT "permission_grants_granted_by_users_id_fk" FOREIGN KEY ("granted_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "lots" ADD CONSTRAINT "lots_variant_id_product_variants_id_fk" FOREIGN KEY ("variant_id") REFERENCES "public"."product_variants"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "movement_groups" ADD CONSTRAINT "movement_groups_posted_by_users_id_fk" FOREIGN KEY ("posted_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "movement_groups" ADD CONSTRAINT "movement_groups_reverses_group_id_movement_groups_id_fk" FOREIGN KEY ("reverses_group_id") REFERENCES "public"."movement_groups"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1194,6 +1223,12 @@ CREATE INDEX "customer_merges_actor_idx" ON "customer_merges" USING btree ("acto
 CREATE INDEX "customer_phones_customer_idx" ON "customer_phones" USING btree ("customer_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "customer_phones_one_primary_unique" ON "customer_phones" USING btree ("customer_id") WHERE "customer_phones"."is_primary";--> statement-breakpoint
 CREATE INDEX "customers_merged_into_idx" ON "customers" USING btree ("merged_into_id") WHERE "customers"."merged_into_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "hat_assignments_hat_user_idx" ON "hat_assignments" USING btree ("hat","user_id");--> statement-breakpoint
+CREATE INDEX "hat_assignments_user_idx" ON "hat_assignments" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "hat_assignments_partner_account_idx" ON "hat_assignments" USING btree ("partner_account_id") WHERE "hat_assignments"."partner_account_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "hat_assignments_granted_by_idx" ON "hat_assignments" USING btree ("granted_by") WHERE "hat_assignments"."granted_by" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "permission_grants_user_idx" ON "permission_grants" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX "permission_grants_granted_by_idx" ON "permission_grants" USING btree ("granted_by") WHERE "permission_grants"."granted_by" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "lots_variant_idx" ON "lots" USING btree ("variant_id");--> statement-breakpoint
 CREATE INDEX "movement_groups_source_idx" ON "movement_groups" USING btree ("source_type","source_id");--> statement-breakpoint
 CREATE INDEX "movement_groups_operating_day_idx" ON "movement_groups" USING btree ("operating_day");--> statement-breakpoint

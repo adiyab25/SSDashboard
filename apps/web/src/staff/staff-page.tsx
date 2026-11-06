@@ -74,7 +74,7 @@ export function StaffPage() {
 
   const key = JSON.stringify([filter, reload]);
   const loading = page === null || page.key !== key;
-  const isAdmin = me?.role === 'admin';
+  const isAdmin = me?.permissions.includes('people.manage') ?? false;
 
   useEffect(() => {
     let active = true;

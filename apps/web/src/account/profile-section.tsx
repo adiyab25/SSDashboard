@@ -76,7 +76,11 @@ export function ProfileSection({ me, languages, audience }: Props) {
     [t('account.profile.email'), me.email, true],
     ...(audience === 'backoffice'
       ? ([
-          [t('account.profile.role'), t(`shell.user.roles.${me.role}`), false],
+          [
+            t('account.profile.role'),
+            t(`shell.user.roles.${me.hats.includes('manager') ? 'admin' : 'staff'}`),
+            false,
+          ],
           [
             t('account.profile.staffCode'),
             me.staffCode ?? t('account.profile.none'),

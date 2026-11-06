@@ -111,7 +111,7 @@ export const UpdateSkuRequest = z
 /** What a caller passes for `UpdateSkuRequest`, before defaults and transforms are applied. */
 export type UpdateSkuRequest = z.input<typeof UpdateSkuRequest>;
 
-/** `PATCH /api/skus/:id/code` (admin). 409 `CODE_LOCKED` once the SKU has a stock balance. */
+/** `PATCH /api/skus/:id/code` (`catalog.manage`). 409 `CODE_LOCKED` once the SKU has a stock balance. */
 export const ChangeSkuCodeRequest = z.object({ updatedAt: UpdatedAt, sku: SkuCode }).strict();
 /** What a caller passes for `ChangeSkuCodeRequest`, before defaults and transforms are applied. */
 export type ChangeSkuCodeRequest = z.input<typeof ChangeSkuCodeRequest>;
