@@ -57,11 +57,11 @@ Spec [0003](../specs/0003-design-system-ui-foundation/index.md) (amendment of 20
 Arabic first, English always, everywhere: screens, errors, receipts, exports, and templates.
 **Done when:** every string comes from the message catalogs in both languages, layout flips right to left correctly, Arabic and Latin digits both parse, money shows in EGP, and dates show in Cairo time.
 - [x] Design it (spec): `/architect localization`
-- [ ] Build it: `/develop localization`
+- [x] Build it: `/develop localization`
   - [x] The shared catalog package, end to end (web, api mail, worker)
   - [x] Formatting and digits at every input edge
   - [x] Server rendered portal and partner pages
-  - [ ] Operating day test on the real Cairo transition dates and the time zone release step
+  - [x] Operating day test on the real Cairo transition dates and the time zone release step
 - [ ] Verify it: `/check verify localization`
 - [ ] Test it: `/test localization`
 Spec [0004](../specs/0004-localization/index.md) (amendment of 2026-11-05, Proposed)

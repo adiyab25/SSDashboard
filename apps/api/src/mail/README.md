@@ -11,6 +11,8 @@ Outgoing email for sign in and invites. Messages are queued as pg-boss jobs and 
 - Links placed in messages: [mail-links.ts](mail-links.ts)
 - Wiring: [mail.module.ts](mail.module.ts), [mail.tokens.ts](mail.tokens.ts)
 
+Mail uses the core languages only, `en` and `ar`. A user whose saved language is a client language (an extension locale file) gets English mail until a server side loader exists (spec 0004, AC-23).
+
 ## Never touches
 
 - Business tables. It sends what it is given.
