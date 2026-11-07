@@ -6,6 +6,7 @@ import {
   totp,
   type SeededAccount,
   ownAddress,
+  WORKING_HATS,
 } from './accounts';
 import { stubConfig, useBrowserState, waitForFormHydration } from './support';
 
@@ -170,7 +171,7 @@ test.describe('forced password change', () => {
   let toRemove: SeededAccount | undefined;
 
   test.beforeEach(async ({ context, baseURL }) => {
-    person = await seedAccount({ role: 'staff', mustChangePassword: true });
+    person = await seedAccount({ hats: WORKING_HATS, mustChangePassword: true });
     toRemove = person;
     await signInThroughApi(context, person, baseURL ?? '');
   });
@@ -285,7 +286,7 @@ test.describe('two factor sign in', () => {
   let toRemove: SeededAccount | undefined;
 
   test.beforeEach(async () => {
-    person = await seedAccount({ role: 'staff' });
+    person = await seedAccount({ hats: WORKING_HATS });
     toRemove = person;
   });
   test.afterEach(async () => {

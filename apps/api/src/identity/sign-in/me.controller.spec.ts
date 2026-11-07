@@ -2,6 +2,7 @@ import { UnprocessableEntityException } from '@nestjs/common';
 import { MeResponse } from '@ssdashboard/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { assertLanguageEnabled } from '../../platform/languages.js';
+import { Access } from '../../platform/access/access.js';
 import type { SettingsService } from '../../platform/settings.service.js';
 import type { AuthenticatedRequest } from './current-staff.js';
 import { MeController } from './me.controller.js';
@@ -11,7 +12,6 @@ const STAFF = {
   id: '0190c0de-0000-7000-8000-000000000001',
   name: 'Sam',
   email: 'sam@example.com',
-  role: 'staff',
   phone: null,
   staffCode: 'S1',
   language: null,
@@ -22,6 +22,12 @@ const STAFF = {
 } as const;
 
 const request = { staff: STAFF } as unknown as AuthenticatedRequest;
+const access = new Access({
+  userId: STAFF.id,
+  hats: ['warehouse', 'support'],
+  grants: [],
+  partnerAccountId: null,
+});
 
 function setup() {
   const update = vi.fn(() => Promise.resolve());
@@ -33,11 +39,24 @@ describe('MeController (AC-19, AC-25)', () => {
   it('reads the signed in person without the session id', () => {
     const { controller } = setup();
 
-    const me = controller.read(request);
+    const me = controller.read(request, access);
 
-    expect(me).toMatchObject({ name: 'Sam', email: 'sam@example.com', role: 'staff' });
+    expect(me).toMatchObject({ name: 'Sam', email: 'sam@example.com', partnerAccountId: null });
     expect(me).not.toHaveProperty('sessionId');
+    expect(me).not.toHaveProperty('role');
     expect(MeResponse.parse(me).home).toBe('backoffice');
+  });
+
+  it('answers the hats and the sorted effective permissions of the Access (spec 0008, AC-11)', () => {
+    const { controller } = setup();
+
+    const me = controller.read(request, access);
+
+    expect(me.hats).toEqual(['support', 'warehouse']);
+    expect(me.permissions).toEqual([...access.permissions]);
+    expect(me.permissions).toEqual([...me.permissions].sort());
+    expect(me.permissions).toContain('stock.receive');
+    expect(me.permissions).not.toContain('cost.view');
   });
 
   it('saves the change for the signed in person only, and answers with the new profile', async () => {
@@ -46,6 +65,7 @@ describe('MeController (AC-19, AC-25)', () => {
     const me = await controller.update(
       { name: 'Samira', phone: '+20 100 123 4567', language: 'ar' },
       request,
+      access,
     );
 
     expect(update).toHaveBeenCalledWith(STAFF.id, {
@@ -58,7 +78,7 @@ describe('MeController (AC-19, AC-25)', () => {
       phone: '+20 100 123 4567',
       language: 'ar',
       email: 'sam@example.com',
-      role: 'staff',
+      hats: ['support', 'warehouse'],
       staffCode: 'S1',
     });
   });
@@ -66,9 +86,13 @@ describe('MeController (AC-19, AC-25)', () => {
   it('keeps what was not sent, and shows a cleared field as null', async () => {
     const { controller } = setup();
 
-    const me = await controller.update({ phone: null }, {
-      staff: { ...STAFF, phone: '+20 100 000 0000', language: 'ar' },
-    } as unknown as AuthenticatedRequest);
+    const me = await controller.update(
+      { phone: null },
+      {
+        staff: { ...STAFF, phone: '+20 100 000 0000', language: 'ar' },
+      } as unknown as AuthenticatedRequest,
+      access,
+    );
 
     expect(me).toMatchObject({ phone: null, language: 'ar', name: 'Sam' });
   });

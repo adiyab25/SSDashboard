@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { seedAccount, signInThroughApi } from './accounts';
+import { seedAccount, signInThroughApi, WORKING_HATS } from './accounts';
 import { E2E_ADMIN } from './auth';
 import {
   expectNoAxeViolations,
@@ -302,12 +302,12 @@ test.describe('staff page', () => {
 
     for (const theme of THEMES) {
       for (const dir of DIRECTIONS) {
-        test(`staff forbidden message: no axe violations in ${theme}, ${dir}`, async ({
+        test(`staff no access state: no axe violations in ${theme}, ${dir}`, async ({
           page,
           context,
           baseURL,
         }) => {
-          const person = await seedAccount({ role: 'staff' });
+          const person = await seedAccount({ hats: WORKING_HATS });
           try {
             await signInThroughApi(context, person, baseURL ?? '');
             await useBrowserState(page, { theme, dir });

@@ -15,7 +15,8 @@ const DETAIL: StaffDetail = {
   id: 'sam-id',
   name: 'Sam Carter',
   email: 'sam@example.com',
-  role: 'staff',
+  hats: ['warehouse'],
+  costView: false,
   status: 'active',
   lastSignInAt: '2026-11-02T09:30:00.000Z',
   twoFactorEnabled: false,
@@ -24,18 +25,20 @@ const DETAIL: StaffDetail = {
   language: 'ar',
   disableReason: null,
   createdAt: '2026-10-01T00:00:00.000Z',
+  updatedAt: '2026-11-05T10:00:00.123456Z',
 };
 
 const ok = <T,>(data: T) => Promise.resolve({ ok: true as const, data });
 const fail = (code: string) => Promise.resolve({ ok: false as const, status: 409, code });
 
-function show(editId: string | null = null) {
+function show(editId: string | null = null, canChangeCost = true) {
   const onSaved = vi.fn();
   const onClose = vi.fn();
   render(
     <StaffFormDialog
       editId={editId}
       languages={['en', 'ar']}
+      canChangeCost={canChangeCost}
       onSaved={onSaved}
       onClose={onClose}
     />,
@@ -44,6 +47,14 @@ function show(editId: string | null = null) {
 }
 
 const save = () => userEvent.click(screen.getByRole('button', { name: 'Save' }));
+const hat = (name: string) => screen.getByRole('checkbox', { name });
+const costSwitch = () => screen.getByRole('switch', { name: 'Sees cost' });
+
+/** Fills the two required text fields with valid values. */
+async function fillDetails() {
+  await userEvent.type(await screen.findByLabelText(/^Name/), 'Sam');
+  await userEvent.type(screen.getByLabelText(/^Email/), 'sam@example.com');
+}
 
 describe('StaffFormDialog (AC-12, AC-15)', () => {
   afterEach(() => {
@@ -56,7 +67,9 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
 
       expect(await screen.findByLabelText('Name(Required)')).toBeRequired();
       expect(screen.getByLabelText('Email(Required)')).toBeRequired();
-      expect(screen.getByLabelText('Role')).toHaveValue('staff');
+      expect(screen.queryByLabelText('Role')).not.toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Hats(Required)' })).toBeVisible();
+      expect(costSwitch()).not.toBeChecked();
       expect(screen.getByLabelText('Language')).toHaveValue('');
       expect(screen.getByLabelText('Phone')).toBeInTheDocument();
       expect(screen.getByLabelText('Staff code')).toBeInTheDocument();
@@ -75,6 +88,76 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       );
       expect(name).toHaveFocus();
       expect(api.createStaff).not.toHaveBeenCalled();
+    });
+
+    it('offers a checkbox with its description for every staff hat, never partner (spec 0008, AC-18)', async () => {
+      show();
+      await screen.findByLabelText(/^Name/);
+
+      const names = ['Support', 'Operations', 'Warehouse', 'Manager', 'Media buyer'];
+      for (const name of names) expect(hat(name)).not.toBeChecked();
+      expect(screen.getAllByRole('checkbox')).toHaveLength(names.length);
+      expect(screen.queryByRole('checkbox', { name: 'Partner' })).not.toBeInTheDocument();
+      expect(hat('Warehouse')).toHaveAccessibleDescription(
+        'Picks, packs, ships, and receives stock; edits SKU names and prices.',
+      );
+    });
+
+    it('needs at least one hat, and focuses the hats when they are the first problem (spec 0008, AC-14)', async () => {
+      show();
+      await fillDetails();
+
+      await save();
+
+      expect(hat('Support')).toHaveFocus();
+      expect(screen.getByRole('group', { name: 'Hats(Required)' })).toHaveAccessibleDescription(
+        /Pick at least one hat\./,
+      );
+      expect(api.createStaff).not.toHaveBeenCalled();
+    });
+
+    it('turns the cost switch on when manager or operations is ticked, off again when untouched (spec 0008, AC-7)', async () => {
+      show();
+      await screen.findByLabelText(/^Name/);
+
+      await userEvent.click(hat('Warehouse'));
+      expect(costSwitch()).not.toBeChecked();
+      await userEvent.click(hat('Operations'));
+      expect(costSwitch()).toBeChecked();
+      await userEvent.click(hat('Operations'));
+      expect(costSwitch()).not.toBeChecked();
+      await userEvent.click(hat('Manager'));
+      expect(costSwitch()).toBeChecked();
+    });
+
+    it('keeps the cost switch where the manager put it by hand', async () => {
+      const { onSaved } = show();
+      api.createStaff.mockImplementation(() => ok({ staff: DETAIL, setup: { mode: 'email' } }));
+      await fillDetails();
+      await userEvent.click(hat('Operations'));
+      await userEvent.click(costSwitch());
+      await userEvent.click(hat('Support'));
+      expect(costSwitch()).not.toBeChecked();
+
+      await save();
+
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(api.createStaff).toHaveBeenCalledWith(
+        expect.objectContaining({ hats: ['support', 'operations'], costView: false }),
+      );
+    });
+
+    it('disables the cost switch, says why, and never prefills it without cost.view (AC-7 amendment)', async () => {
+      show(null, false);
+      await screen.findByLabelText(/^Name/);
+
+      await userEvent.click(hat('Manager'));
+
+      expect(costSwitch()).toBeDisabled();
+      expect(costSwitch()).not.toBeChecked();
+      expect(costSwitch()).toHaveAccessibleDescription(
+        /Only a person who sees cost can turn this on or off\./,
+      );
     });
 
     it('checks the email, phone and staff code', async () => {
@@ -102,7 +185,8 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       api.createStaff.mockImplementation(() => ok({ staff: DETAIL, setup: { mode: 'email' } }));
       await userEvent.type(await screen.findByLabelText(/^Name/), ' Sam Carter ');
       await userEvent.type(screen.getByLabelText(/^Email/), 'Sam@Example.com');
-      await userEvent.selectOptions(screen.getByLabelText('Role'), 'admin');
+      await userEvent.click(hat('Manager'));
+      await userEvent.click(hat('Warehouse'));
 
       await save();
 
@@ -110,7 +194,8 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       expect(api.createStaff).toHaveBeenCalledWith({
         name: ' Sam Carter ',
         email: 'Sam@Example.com',
-        role: 'admin',
+        hats: ['warehouse', 'manager'],
+        costView: true,
       });
       expect(onSaved).toHaveBeenCalledWith({ staff: DETAIL, created: { mode: 'email' } });
     });
@@ -120,8 +205,8 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       api.createStaff
         .mockImplementationOnce(() => fail('EMAIL_TAKEN'))
         .mockImplementationOnce(() => fail('STAFF_CODE_TAKEN'));
-      await userEvent.type(await screen.findByLabelText(/^Name/), 'Sam');
-      await userEvent.type(screen.getByLabelText(/^Email/), 'sam@example.com');
+      await fillDetails();
+      await userEvent.click(hat('Support'));
 
       await save();
       expect(await screen.findByLabelText(/^Email/)).toHaveAccessibleDescription(
@@ -140,8 +225,8 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
     it('shows other refusals at the top and keeps what was typed', async () => {
       show();
       api.createStaff.mockImplementation(() => fail('INVALID_LANGUAGE'));
-      await userEvent.type(await screen.findByLabelText(/^Name/), 'Sam');
-      await userEvent.type(screen.getByLabelText(/^Email/), 'sam@example.com');
+      await fillDetails();
+      await userEvent.click(hat('Support'));
 
       await save();
 
@@ -149,6 +234,19 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
         await screen.findByText('That language is not enabled on this install.'),
       ).toBeVisible();
       expect(screen.getByLabelText(/^Name/)).toHaveValue('Sam');
+    });
+
+    it('says a cost refusal in plain words (403 FORBIDDEN)', async () => {
+      show();
+      api.createStaff.mockImplementation(() => fail('FORBIDDEN'));
+      await fillDetails();
+      await userEvent.click(hat('Support'));
+
+      await save();
+
+      expect(
+        await screen.findByText('Only a person who sees cost can turn cost on or off for someone.'),
+      ).toBeVisible();
     });
 
     it('closes on Cancel without saving', async () => {
@@ -175,6 +273,9 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       expect(screen.getByLabelText('Phone')).toHaveValue('+20 100 123 4567');
       expect(screen.getByLabelText('Staff code')).toHaveValue('SC1');
       expect(screen.getByLabelText('Language')).toHaveValue('ar');
+      // Hats change in their own dialog, never here.
+      expect(screen.queryByRole('group', { name: /^Hats/ })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Role')).not.toBeInTheDocument();
     });
 
     it('leaves the email editable while the account is invited', async () => {
@@ -199,7 +300,6 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ staff: DETAIL }));
       expect(api.updateStaff).toHaveBeenCalledWith('sam-id', {
         name: 'Sam Carter',
-        role: 'staff',
         phone: '',
         staffCode: 'SC1',
         language: 'ar',

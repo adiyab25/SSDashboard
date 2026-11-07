@@ -12,7 +12,9 @@ const PARTNER: MeResponse = {
   id: '0190c0de-0000-7000-8000-000000000002',
   name: 'Mona Partner',
   email: 'mona@showroom.example',
-  role: 'staff',
+  hats: ['support', 'operations', 'warehouse'],
+  permissions: ['stock.view'],
+  partnerAccountId: null,
   phone: null,
   staffCode: null,
   language: null,
@@ -55,6 +57,7 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByText('mona@showroom.example')).toBeVisible();
     expect(screen.queryByText('Role')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hats')).not.toBeInTheDocument();
     expect(screen.queryByText(/staff/i)).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/staff|employee/i);
     expect(screen.getByText('An administrator changes your email.')).toBeVisible();

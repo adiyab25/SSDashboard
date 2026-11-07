@@ -6,6 +6,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
   requireBuild,
   start,
   stop,
@@ -58,16 +59,18 @@ describe('create-admin --reset-two-factor', { timeout: 120_000 }, () => {
     adminId = await idOf(EMAIL);
     clerkId = (
       await owner.pool.query<{ id: string }>(
-        `INSERT INTO users (name, email, role) VALUES ('Clerk', $1, 'staff') RETURNING id`,
+        `INSERT INTO users (name, email) VALUES ('Clerk', $1) RETURNING id`,
         [CLERK],
       )
     ).rows[0]?.id as string;
+    await giveHats(owner.pool, clerkId, { hats: ['support', 'operations', 'warehouse'] });
     otherId = (
       await owner.pool.query<{ id: string }>(
-        `INSERT INTO users (name, email, role) VALUES ('Other', $1, 'admin') RETURNING id`,
+        `INSERT INTO users (name, email) VALUES ('Other', $1) RETURNING id`,
         [OTHER],
       )
     ).rows[0]?.id as string;
+    await giveHats(owner.pool, otherId, { hats: ['manager'], costView: true });
     // The admin changed the temporary password long ago; the flag stays off through this reset.
     await owner.pool.query(`UPDATE users SET must_change_password = false WHERE id = $1::uuid`, [
       adminId,
@@ -154,6 +157,8 @@ describe('create-admin --reset-two-factor', { timeout: 120_000 }, () => {
         `SELECT id, role, banned, two_factor_enabled, must_change_password, updated_at
            FROM users ORDER BY id`,
       ),
+      hats: await q(`SELECT user_id, hat FROM hat_assignments ORDER BY user_id, hat`),
+      grants: await q(`SELECT user_id, permission FROM permission_grants ORDER BY user_id`),
       accounts: await q(`SELECT id, user_id, password, updated_at FROM accounts ORDER BY id`),
       twoFactors: await q(`SELECT id, user_id, secret, backup_codes FROM two_factors ORDER BY id`),
       sessions: await q(`SELECT id, user_id FROM sessions ORDER BY id`),

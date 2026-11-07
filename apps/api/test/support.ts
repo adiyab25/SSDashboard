@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
+import type { Hat } from '@ssdashboard/contracts';
 import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 
@@ -90,12 +91,21 @@ export async function freePort(): Promise<number> {
   throw new Error(`No free port found in ${blockStart} to ${blockStart + 999}`);
 }
 
-/** Probes the same address the api binds (all interfaces), so a port taken on any of them fails. */
-function canListen(port: number): Promise<boolean> {
+/**
+ * Probes the address the api binds (all interfaces) and the address the suites call (loopback).
+ * Windows lets a socket bind 0.0.0.0 while another program holds only 127.0.0.1 on that port,
+ * and then sends every loopback request to that program (Docker Desktop listens on
+ * 127.0.0.1:12434 and answers a sign in with 403 `Origin not allowed`).
+ */
+async function canListen(port: number): Promise<boolean> {
+  return (await canListenOn(port, '0.0.0.0')) && (await canListenOn(port, '127.0.0.1'));
+}
+
+function canListenOn(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const server = createServer();
     server.once('error', () => resolve(false));
-    server.listen(port, '0.0.0.0', () => server.close(() => resolve(true)));
+    server.listen(port, host, () => server.close(() => resolve(true)));
   });
 }
 
@@ -168,22 +178,64 @@ export async function stop(proc: RunningProcess | undefined): Promise<void> {
   await proc.exited;
 }
 
+/** What a test person wears: exact hats, with or without the `cost.view` grant (spec 0008). */
+export interface TestAccess {
+  hats: readonly Hat[];
+  costView?: boolean;
+}
+
 /**
- * Adds a staff account straight to the database and signs it in through the running api, so a
- * suite can call guarded routes. `base` must be the api's `PUBLIC_URL`. Returns the cookie header.
+ * The hats a suite's everyday person wears when the suite does not say: the three working hats,
+ * no `manager` and no cost. Named for what it is, not a role: pass exact hats when a test is about
+ * one of them.
+ */
+export const WORKING_HATS: TestAccess = { hats: ['support', 'operations', 'warehouse'] };
+
+/**
+ * Replaces a person's hats and cost grant straight in the database, as the owner, so a suite can
+ * plant any holding (a partner account id is needed for the `partner` hat only).
+ */
+export async function giveHats(
+  owner: DatabaseConnection['pool'],
+  userId: string,
+  access: TestAccess,
+  partnerAccountId: string | null = null,
+): Promise<void> {
+  const { hats, costView = false } = access;
+  await owner.query('DELETE FROM hat_assignments WHERE user_id = $1::uuid', [userId]);
+  await owner.query('DELETE FROM permission_grants WHERE user_id = $1::uuid', [userId]);
+  for (const hat of hats) {
+    await owner.query(
+      'INSERT INTO hat_assignments (user_id, hat, partner_account_id) VALUES ($1::uuid, $2, $3)',
+      [userId, hat, hat === 'partner' ? partnerAccountId : null],
+    );
+  }
+  if (costView) {
+    await owner.query(
+      "INSERT INTO permission_grants (user_id, permission) VALUES ($1::uuid, 'cost.view')",
+      [userId],
+    );
+  }
+}
+
+/**
+ * Adds a staff account straight to the database with its hats ({@link WORKING_HATS} by default)
+ * and signs it in through the running api, so a suite can call guarded routes. `base` must be the
+ * api's `PUBLIC_URL`. Returns the cookie header.
  */
 export async function signInAs(
   base: string,
   owner: DatabaseConnection['pool'],
-  options: { email?: string; role?: 'admin' | 'staff' } = {},
+  options: { email?: string; access?: TestAccess } = {},
 ): Promise<string> {
   const email = options.email ?? 'tester@example.com';
   const password = 'Test-Password-1';
   const { rows } = await owner.query<{ id: string }>(
-    `INSERT INTO users (name, email, role) VALUES ('Test Person', $1, $2) RETURNING id`,
-    [email, options.role ?? 'staff'],
+    `INSERT INTO users (name, email) VALUES ('Test Person', $1) RETURNING id`,
+    [email],
   );
   const userId = rows[0]?.id as string;
+  await giveHats(owner, userId, options.access ?? WORKING_HATS);
   await owner.query(
     `INSERT INTO accounts (user_id, provider_id, account_id, password)
      VALUES ($1::uuid, 'credential', $1::text, $2)`,

@@ -1,9 +1,5 @@
 import { z } from 'zod';
-
-/** Roles until feature 13 replaces them with permissions. */
-export const StaffRole = z.enum(['admin', 'staff']);
-/** The validated shape of `StaffRole`, as the api and web see it after parsing. */
-export type StaffRole = z.infer<typeof StaffRole>;
+import { Hat, Permission } from './access.js';
 
 /**
  * Where a signed in person lands when the sign in page has no valid `returnTo` (spec 0005,
@@ -14,12 +10,20 @@ export const Home = z.enum(['backoffice', 'partner']);
 /** The validated shape of `Home`, as the api and web see it after parsing. */
 export type Home = z.infer<typeof Home>;
 
-/** Response of `GET /api/me`: the signed in person, read fresh from the database. */
+/**
+ * Response of `GET /api/me` (and, with spec 0008 milestone 3, `GET /api/partner/me`): the signed
+ * in person, read fresh from the database on every request. `hats` and `permissions` (the
+ * effective list, sorted) tell the web what to show; the api still decides every route on its own
+ * (spec 0008, AC-11). `partnerAccountId` is null for staff. There is no role: what a person may do
+ * comes only from their hats and grants.
+ */
 export const MeResponse = z.object({
   id: z.uuid(),
   name: z.string(),
   email: z.string(),
-  role: StaffRole,
+  hats: z.array(Hat),
+  permissions: z.array(Permission),
+  partnerAccountId: z.uuid().nullable(),
   phone: z.string().nullable(),
   staffCode: z.string().nullable(),
   language: z.string().nullable(),

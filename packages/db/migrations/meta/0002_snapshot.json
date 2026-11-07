@@ -1,6 +1,6 @@
 {
-  "id": "e07f475f-af30-415a-8532-15b40087dc75",
-  "prevId": "56a3f596-003a-4cc8-ac4d-36552afb6d17",
+  "id": "c034c680-a18c-44ba-8d6b-c0af8d97ec49",
+  "prevId": "651b4452-3cf2-4777-a51b-7446a3d507b8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -830,9 +830,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -985,7 +985,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'staff'"
+          "default": "'user'"
         },
         "banned": {
           "name": "banned",
@@ -1111,7 +1111,7 @@
       "checkConstraints": {
         "users_role_check": {
           "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'staff')"
+          "value": "\"users\".\"role\" = 'user'"
         }
       },
       "isRLSEnabled": false
@@ -4038,6 +4038,318 @@
         "customers_risk_flag_has_source": {
           "name": "customers_risk_flag_has_source",
           "value": "(\"customers\".\"risk_flag\" IS NULL) = (\"customers\".\"risk_flag_source\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.hat_assignments": {
+      "name": "hat_assignments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hat": {
+          "name": "hat",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "partner_account_id": {
+          "name": "partner_account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hat_assignments_hat_user_idx": {
+          "name": "hat_assignments_hat_user_idx",
+          "columns": [
+            {
+              "expression": "hat",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "hat_assignments_user_idx": {
+          "name": "hat_assignments_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "hat_assignments_partner_account_idx": {
+          "name": "hat_assignments_partner_account_idx",
+          "columns": [
+            {
+              "expression": "partner_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"hat_assignments\".\"partner_account_id\" IS NOT NULL",
+          "concurrently": false
+        },
+        "hat_assignments_granted_by_idx": {
+          "name": "hat_assignments_granted_by_idx",
+          "columns": [
+            {
+              "expression": "granted_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"hat_assignments\".\"granted_by\" IS NOT NULL",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "hat_assignments_user_id_users_id_fk": {
+          "name": "hat_assignments_user_id_users_id_fk",
+          "tableFrom": "hat_assignments",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "hat_assignments_partner_account_id_parties_id_fk": {
+          "name": "hat_assignments_partner_account_id_parties_id_fk",
+          "tableFrom": "hat_assignments",
+          "columnsFrom": [
+            "partner_account_id"
+          ],
+          "tableTo": "parties",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "hat_assignments_granted_by_users_id_fk": {
+          "name": "hat_assignments_granted_by_users_id_fk",
+          "tableFrom": "hat_assignments",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "hat_assignments_user_hat_unique": {
+          "name": "hat_assignments_user_hat_unique",
+          "columns": [
+            "tenant_id",
+            "user_id",
+            "hat"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "hat_assignments_hat_known": {
+          "name": "hat_assignments_hat_known",
+          "value": "\"hat_assignments\".\"hat\" IN ('support', 'operations', 'warehouse', 'manager', 'media_buyer', 'partner')"
+        },
+        "hat_assignments_partner_names_account": {
+          "name": "hat_assignments_partner_names_account",
+          "value": "(\"hat_assignments\".\"hat\" = 'partner') = (\"hat_assignments\".\"partner_account_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.permission_grants": {
+      "name": "permission_grants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuidv7()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "current_setting('ssd.tenant_id')::uuid"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "permission_grants_user_idx": {
+          "name": "permission_grants_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "permission_grants_granted_by_idx": {
+          "name": "permission_grants_granted_by_idx",
+          "columns": [
+            {
+              "expression": "granted_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"permission_grants\".\"granted_by\" IS NOT NULL",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "permission_grants_user_id_users_id_fk": {
+          "name": "permission_grants_user_id_users_id_fk",
+          "tableFrom": "permission_grants",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "permission_grants_granted_by_users_id_fk": {
+          "name": "permission_grants_granted_by_users_id_fk",
+          "tableFrom": "permission_grants",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "tableTo": "users",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "permission_grants_user_permission_unique": {
+          "name": "permission_grants_user_permission_unique",
+          "columns": [
+            "tenant_id",
+            "user_id",
+            "permission"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "permission_grants_permission_grantable": {
+          "name": "permission_grants_permission_grantable",
+          "value": "\"permission_grants\".\"permission\" IN ('cost.view')"
         }
       },
       "isRLSEnabled": false

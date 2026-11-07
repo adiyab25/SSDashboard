@@ -258,8 +258,6 @@ const IDENTITY_PUBLIC_FILES: Readonly<Record<string, string>> = {
     'the AuthenticatedRequest type: handlers read the signed in person, ledger routes postedBy',
   'apps/api/src/identity/sign-in/public.decorator.ts':
     '@Public(): open routes (health, config) mark themselves for the global session guard',
-  'apps/api/src/identity/sign-in/roles.decorator.ts':
-    '@Roles(...): admin only routes in other modules declare the role the roles guard checks',
   'apps/api/src/identity/staff/staff-directory.ts':
     'StaffDirectoryModule: read only display names for "posted by", no auth dependency',
   'apps/api/src/identity/sign-in/mail-recipients.ts':

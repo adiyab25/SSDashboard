@@ -28,7 +28,10 @@ export type StockReceiptLineInput = z.input<typeof StockReceiptLineInput>;
 
 /**
  * `POST /api/stock-receipts`, with an `Idempotency-Key: <uuid>` header that becomes the receipt
- * id. `receiptDate` is sent only when the person changed the date field (spec 0006).
+ * id. `receiptDate` is sent only when the person changed the date field (spec 0006). Needs
+ * `stock.receive`. The same key and body from the person who posted it answers 200 with the
+ * receipt; the same key from anyone else, or with another body, answers 409
+ * `IDEMPOTENCY_CONFLICT` (spec 0008 AC-6).
  */
 export const CreateStockReceiptRequest = z
   .object({
@@ -72,7 +75,7 @@ const LocationRef = z.object({ id: z.uuid(), code: z.string(), name: LocalizedTe
 
 const SkuRef = z.object({ id: z.uuid(), code: z.string(), name: LocalizedText });
 
-/** Cost fields (`unitCost`, `lineTotal`, `referenceValue`) are present for admins only (AC-11). */
+/** Cost fields (`unitCost`, `lineTotal`, `referenceValue`) are present only for a caller with `cost.view` (AC-11, spec 0008 AC-6). */
 export const StockReceiptLine = z.object({
   id: z.uuid(),
   position: z.number().int(),
@@ -84,7 +87,7 @@ export const StockReceiptLine = z.object({
 /** The validated shape of `StockReceiptLine`, as the api and web see it after parsing. */
 export type StockReceiptLine = z.infer<typeof StockReceiptLine>;
 
-/** A receipt with its lines. Cost fields are only present for admins. */
+/** A receipt with its lines. Cost fields are only present for a caller with `cost.view`. */
 export const StockReceiptDetail = z.object({
   id: z.uuid(),
   number: z.string(),
@@ -135,7 +138,7 @@ export const StockReceiptListResponse = z.object({
 /** The validated shape of `StockReceiptListResponse`, as the api and web see it after parsing. */
 export type StockReceiptListResponse = z.infer<typeof StockReceiptListResponse>;
 
-/** `POST /api/stock-receipts/:id/void` (admin, AC-8). */
+/** `POST /api/stock-receipts/:id/void` (`stock.correct`, AC-8). */
 export const VoidStockReceiptRequest = z
   .object({ reason: z.string().trim().min(1).max(500) })
   .strict();

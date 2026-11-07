@@ -18,7 +18,7 @@ const entry = (n: number, overrides: Partial<AuditEntryView> = {}): AuditEntryVi
   recordedAt: '2026-11-03T10:00:00.123456Z',
   operatingDay: '2026-11-03',
   correlationId: uuid(900 + n),
-  actor: { kind: 'person', userId: uuid(500), ref: null, hat: 'admin', jobId: null },
+  actor: { kind: 'person', userId: uuid(500), ref: null, hat: 'manager', jobId: null },
   actorName: 'Nour Admin',
   action: 'stock_receipt.voided',
   record: { type: 'stock_receipt', id: uuid(700 + n), label: `SR-2026-00000${n}` },
@@ -103,11 +103,11 @@ describe('AuditPage (AC-12, AC-18)', () => {
     expect(await screen.findByText('Nour Admin')).toBeVisible();
   });
 
-  it('shows the administrators only message on a 403, with no table', async () => {
+  it('shows the no audit access message on a 403, with no table', async () => {
     api.listAuditEntries.mockRejectedValue(new ApiError(403, { code: 'FORBIDDEN' }));
     renderWithQuery(<AuditPage />);
 
-    expect(await screen.findByText('Only administrators can read the audit trail.')).toBeVisible();
+    expect(await screen.findByText('You do not have access to this page')).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(api.listAuditEntries).toHaveBeenCalledTimes(1);

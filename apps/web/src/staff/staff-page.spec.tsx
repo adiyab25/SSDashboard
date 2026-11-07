@@ -15,12 +15,19 @@ const api = vi.hoisted(() => ({
   resendInvite: vi.fn(),
   revokeStaffSessions: vi.fn(),
   resetStaffTwoFactor: vi.fn(),
+  replaceStaffAccess: vi.fn(),
 }));
 vi.mock('./staff-api', () => api);
 
-const me = vi.hoisted((): { current: { id: string; role: string } | null } => ({
-  current: { id: 'me-id', role: 'admin' },
-}));
+const me = vi.hoisted(
+  (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
+    current: {
+      id: 'me-id',
+      hats: ['manager'],
+      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    },
+  }),
+);
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
 
 const loadConfig = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
@@ -28,7 +35,8 @@ vi.mock('@/shell/client-config', () => ({ loadConfig: () => loadConfig() }));
 
 const row = (overrides: Partial<StaffRow> & { id: string; name: string }): StaffRow => ({
   email: `${overrides.id}@example.com`,
-  role: 'staff',
+  hats: ['support', 'operations', 'warehouse'],
+  costView: false,
   status: 'active',
   lastSignInAt: '2026-11-02T09:30:00.000Z',
   twoFactorEnabled: false,
@@ -36,7 +44,7 @@ const row = (overrides: Partial<StaffRow> & { id: string; name: string }): Staff
 });
 
 const ROWS = [
-  row({ id: 'me-id', name: 'Amira Admin', role: 'admin' }),
+  row({ id: 'me-id', name: 'Amira Admin', hats: ['manager'], costView: true }),
   row({ id: 'sam-id', name: 'Sam Carter' }),
   row({ id: 'new-id', name: 'Nour Newhire', status: 'invited', lastSignInAt: null }),
   row({ id: 'gone-id', name: 'Gil Gone', status: 'disabled', twoFactorEnabled: true }),
@@ -52,7 +60,11 @@ async function openMenu(name: string) {
 
 describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
   beforeEach(() => {
-    me.current = { id: 'me-id', role: 'admin' };
+    me.current = {
+      id: 'me-id',
+      hats: ['manager'],
+      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    };
     loadConfig.mockResolvedValue({ mailEnabled: true, languages: ['en', 'ar'] });
     api.listStaff.mockImplementation(() => page(ROWS));
   });
@@ -61,29 +73,36 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
     loadConfig.mockReset();
   });
 
-  it('lists staff with their role, derived status, last sign in and two factor', async () => {
+  it('lists staff with their hats, whether they see cost, derived status, last sign in and two factor', async () => {
     render(<StaffPage />);
 
     const table = await screen.findByRole('table');
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(table).getByRole('columnheader', { name: 'Hats' })).toBeVisible();
+    expect(within(table).getByRole('columnheader', { name: 'Sees cost' })).toBeVisible();
+    expect(within(table).queryByRole('columnheader', { name: 'Role' })).not.toBeInTheDocument();
     const sam = within(table).getByRole('row', { name: /Sam Carter/ });
     expect(sam).toHaveTextContent('sam-id@example.com');
-    expect(sam).toHaveTextContent('Staff');
+    expect(sam).toHaveTextContent('Support, Operations, Warehouse');
+    expect(within(sam).getAllByRole('cell')[3]).toHaveTextContent('No');
     expect(sam).toHaveTextContent('Active');
     expect(within(table).getByRole('row', { name: /Nour Newhire/ })).toHaveTextContent('Invited');
     expect(within(table).getByRole('row', { name: /Nour Newhire/ })).toHaveTextContent('Never');
     expect(within(table).getByRole('row', { name: /Gil Gone/ })).toHaveTextContent('Disabled');
     expect(within(table).getByRole('row', { name: /Gil Gone/ })).toHaveTextContent('On');
-    expect(within(table).getByRole('row', { name: /Amira Admin/ })).toHaveTextContent(
-      'Administrator',
-    );
+    const amira = within(table).getByRole('row', { name: /Amira Admin/ });
+    expect(within(amira).getAllByRole('cell')[2]).toHaveTextContent('Manager');
+    expect(within(amira).getAllByRole('cell')[3]).toHaveTextContent('Yes');
   });
 
-  it('says only administrators can manage staff, and asks the api for nothing, to a staff role', async () => {
-    me.current = { id: 'x', role: 'staff' };
+  it('shows the no access state, and asks the api for no staff, without people.manage (spec 0008, AC-11)', async () => {
+    me.current = { id: 'x', hats: ['warehouse'], permissions: ['stock.view'] };
     render(<StaffPage />);
 
-    expect(await screen.findByText('Only administrators can manage staff.')).toBeVisible();
+    expect(await screen.findByText('You do not have access to this page')).toBeVisible();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Staff');
+    expect(screen.queryByRole('button', { name: 'Add staff' })).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(api.listStaff).not.toHaveBeenCalled();
   });
@@ -106,12 +125,23 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
     await screen.findByRole('table');
 
     await userEvent.type(screen.getByLabelText('Search staff'), 'sam');
-    await waitFor(() => expect(api.listStaff).toHaveBeenLastCalledWith({ q: 'sam', status: '' }));
-    expect(api.listStaff).not.toHaveBeenCalledWith({ q: 's', status: '' });
+    await waitFor(() =>
+      expect(api.listStaff).toHaveBeenLastCalledWith({ q: 'sam', status: '', hat: '' }),
+    );
+    expect(api.listStaff).not.toHaveBeenCalledWith({ q: 's', status: '', hat: '' });
 
     await userEvent.selectOptions(screen.getByLabelText('Status'), 'invited');
     await waitFor(() =>
-      expect(api.listStaff).toHaveBeenLastCalledWith({ q: 'sam', status: 'invited' }),
+      expect(api.listStaff).toHaveBeenLastCalledWith({ q: 'sam', status: 'invited', hat: '' }),
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText('Hat'), 'Media buyer');
+    await waitFor(() =>
+      expect(api.listStaff).toHaveBeenLastCalledWith({
+        q: 'sam',
+        status: 'invited',
+        hat: 'media_buyer',
+      }),
     );
   });
 
@@ -123,7 +153,7 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
 
-    expect(api.listStaff).toHaveBeenLastCalledWith({ q: '', status: '' }, 'cursor-1');
+    expect(api.listStaff).toHaveBeenLastCalledWith({ q: '', status: '', hat: '' }, 'cursor-1');
     expect(await screen.findByRole('row', { name: /Sam Carter/ })).toBeVisible();
     expect(screen.getByRole('row', { name: /Amira Admin/ })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
@@ -154,10 +184,70 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
       expect(screen.queryByRole('menuitem', { name: 'Disable' })).not.toBeInTheDocument();
     });
 
+    it('offers Edit hats on everyone but the signed in person (spec 0008, AC-12)', async () => {
+      render(<StaffPage />);
+
+      await openMenu('Sam Carter');
+      expect(screen.getByRole('menuitem', { name: 'Edit hats' })).toBeVisible();
+      await userEvent.keyboard('{Escape}');
+
+      await openMenu('Amira Admin');
+      expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+      expect(screen.queryByRole('menuitem', { name: 'Edit hats' })).not.toBeInTheDocument();
+    });
+
+    it('edits hats in a dialog, then says so and reloads the list (spec 0008, AC-18)', async () => {
+      const held = { ...ROWS[1], phone: null, staffCode: null, language: null } as const;
+      api.getStaff.mockImplementation(() =>
+        ok({
+          ...held,
+          hats: ['warehouse'],
+          disableReason: null,
+          createdAt: '2026-10-01T00:00:00.000Z',
+          updatedAt: '2026-11-05T10:00:00.123456Z',
+        }),
+      );
+      api.replaceStaffAccess.mockImplementation(() => ok({}));
+      render(<StaffPage />);
+
+      await openMenu('Sam Carter');
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Edit hats' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Edit hats for Sam Carter' });
+      await userEvent.click(await within(dialog).findByRole('checkbox', { name: 'Support' }));
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save hats' }));
+
+      expect(await screen.findByText('Hats saved.')).toBeVisible();
+      expect(api.replaceStaffAccess).toHaveBeenCalledWith('sam-id', {
+        hats: ['support', 'warehouse'],
+        costView: false,
+        updatedAt: '2026-11-05T10:00:00.123456Z',
+      });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(api.listStaff).toHaveBeenCalledTimes(2);
+    });
+
+    it('disables the cost switch for a manager without cost.view (AC-7 amendment)', async () => {
+      me.current = { id: 'me-id', hats: ['manager'], permissions: ['people.manage'] };
+      render(<StaffPage />);
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Add staff' }));
+      const form = await screen.findByRole('dialog', { name: 'Add staff' });
+      await userEvent.click(within(form).getByRole('checkbox', { name: 'Manager' }));
+
+      expect(within(form).getByRole('switch', { name: 'Sees cost' })).toBeDisabled();
+      expect(within(form).getByRole('switch', { name: 'Sees cost' })).not.toBeChecked();
+    });
+
     it('hides reset password, reset two factor and sign out everywhere on the admin own row only', async () => {
       api.listStaff.mockImplementation(() =>
         page([
-          row({ id: 'me-id', name: 'Amira Admin', role: 'admin', twoFactorEnabled: true }),
+          row({
+            id: 'me-id',
+            name: 'Amira Admin',
+            hats: ['manager'],
+            costView: true,
+            twoFactorEnabled: true,
+          }),
           row({ id: 'sam-id', name: 'Sam Carter', twoFactorEnabled: true }),
         ]),
       );
@@ -329,6 +419,7 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
     const form = await screen.findByRole('dialog', { name: 'Add staff' });
     await userEvent.type(within(form).getByLabelText(/^Name/), 'Sam Carter');
     await userEvent.type(within(form).getByLabelText(/^Email/), 'sam@example.com');
+    await userEvent.click(within(form).getByRole('checkbox', { name: 'Support' }));
     await userEvent.click(within(form).getByRole('button', { name: 'Save' }));
 
     expect(

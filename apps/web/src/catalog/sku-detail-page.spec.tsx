@@ -19,7 +19,9 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ id: SKU_ID }),
   useRouter: () => ({ replace: vi.fn() }),
 }));
-vi.mock('@/auth/use-me', () => ({ useMe: () => ({ id: 'me', role: 'staff' }) }));
+vi.mock('@/auth/use-me', () => ({
+  useMe: () => ({ id: 'me', hats: ['warehouse'], permissions: [] }),
+}));
 
 const SKU_ID = '00000000-0000-4000-8000-000000000001';
 const RECEIPT_ID = '20000000-0000-4000-8000-000000000001';

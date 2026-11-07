@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { EventEmitter2 } from '@nestjs/event-emitter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { HatsChanged } from '../../platform/events/auth-events.js';
 import { AuthAudit } from '../sign-in/auth-audit.service.js';
 import { hatChangeLogLine } from './hat-change-log.js';
 
@@ -82,7 +83,7 @@ describe('hatChangeLogLine (spec 0005, AC-33 e)', () => {
 describe('AuthAudit.hatsChanged', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('writes the line as one JSON log entry and emits no event', () => {
+  it('writes the line as one JSON log entry and emits no event when none is given', () => {
     const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     const emit = vi.fn();
     const audit = new AuthAudit({ emit } as unknown as EventEmitter2);
@@ -112,5 +113,36 @@ describe('AuthAudit.hatsChanged', () => {
     audit.hatsChanged(wider);
 
     expect(JSON.parse(log.mock.calls[0]?.[0] as string)).toEqual(line);
+  });
+
+  it('emits the HatsChanged event it is given, once, after the line', () => {
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const emit = vi.fn();
+    const audit = new AuthAudit({ emit } as unknown as EventEmitter2);
+    const holding = { hats: ['support' as const], costView: false, partnerAccountId: null };
+    const event = new HatsChanged(context, { ...holding, hats: ['warehouse'] }, holding, null);
+
+    audit.hatsChanged(hatChangeLogLine(context, ['warehouse'], ['support']), event);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledExactlyOnceWith('HatsChanged', event);
+  });
+
+  it('never throws when a HatsChanged listener does: the change has already committed', () => {
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const emit = vi.fn(() => {
+      throw new Error('listener broke');
+    });
+    const audit = new AuthAudit({ emit } as unknown as EventEmitter2);
+    const holding = { hats: ['support' as const], costView: false, partnerAccountId: null };
+
+    expect(() =>
+      audit.hatsChanged(
+        hatChangeLogLine(context, ['support'], ['support']),
+        new HatsChanged(context, holding, { ...holding, costView: true }, null),
+      ),
+    ).not.toThrow();
+    expect(error).toHaveBeenCalledTimes(1);
   });
 });

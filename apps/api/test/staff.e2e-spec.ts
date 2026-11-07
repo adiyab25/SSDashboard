@@ -7,6 +7,9 @@ import {
   dropScratchDatabase,
   eventually,
   freePort,
+  giveHats,
+  WORKING_HATS,
+  type TestAccess,
   start,
   startSmtpCapture,
   stop,
@@ -88,22 +91,22 @@ describe('staff administration', { timeout: 300_000 }, () => {
   };
 
   async function addPerson(
-    options: { role?: 'admin' | 'staff'; banned?: boolean; signedIn?: boolean } = {},
+    options: { access?: TestAccess; banned?: boolean; signedIn?: boolean } = {},
   ): Promise<{ id: string; email: string }> {
     counter += 1;
     const email = `person${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, banned, last_sign_in_at)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      `INSERT INTO users (name, email, banned, last_sign_in_at)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
       [
         `Person ${counter}`,
         email,
-        options.role ?? 'staff',
         options.banned ?? false,
         options.signedIn === false ? null : new Date(),
       ],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, options.access ?? WORKING_HATS);
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
@@ -150,7 +153,7 @@ describe('staff administration', { timeout: 300_000 }, () => {
   async function adminCookie(
     origin = base,
   ): Promise<{ cookie: string; id: string; email: string }> {
-    const admin = await addPerson({ role: 'admin' });
+    const admin = await addPerson({ access: { hats: ['manager'], costView: true } });
     return { ...admin, cookie: cookieOf(await login(origin, admin.email)) };
   }
 
@@ -158,7 +161,8 @@ describe('staff administration', { timeout: 300_000 }, () => {
     call(origin, cookie, 'POST', '/api/staff', {
       name: 'New Person',
       email: `new${(counter += 1)}@example.com`,
-      role: 'staff',
+      hats: ['support', 'operations', 'warehouse'],
+      costView: false,
       ...body,
     });
 
@@ -218,8 +222,21 @@ describe('staff administration', { timeout: 300_000 }, () => {
         email: 'sam.ali@example.com',
         staffCode: 'SA1',
         status: 'invited',
-        role: 'staff',
+        hats: ['support', 'operations', 'warehouse'],
+        costView: false,
       });
+      // The hats sent are the hats given (spec 0008 AC-14), each granted by the acting manager.
+      const held = await owner.pool.query<{ hat: string; granted_by: string }>(
+        'SELECT hat, granted_by FROM hat_assignments WHERE user_id = $1::uuid ORDER BY hat',
+        [staff(made).id],
+      );
+      expect(held.rows.map((row) => row.hat)).toEqual(['operations', 'support', 'warehouse']);
+      expect(new Set(held.rows.map((row) => row.granted_by))).toEqual(new Set([admin.id]));
+      const grants = await owner.pool.query(
+        'SELECT 1 FROM permission_grants WHERE user_id = $1::uuid',
+        [staff(made).id],
+      );
+      expect(grants.rows).toEqual([]);
       const stored = await owner.pool.query<{ password: string; must_change_password: boolean }>(
         `SELECT a.password, u.must_change_password FROM users u JOIN accounts a ON a.user_id = u.id
           WHERE u.id = $1::uuid`,
@@ -345,7 +362,13 @@ describe('staff administration', { timeout: 300_000 }, () => {
       expect(sameCode.status).toBe(409);
       expect(sameCode.body).toMatchObject({ code: 'STAFF_CODE_TAKEN' });
 
-      for (const change of [{ name: ' ' }, { email: 'nope' }, { role: 'owner' }, { phone: '12' }]) {
+      for (const change of [
+        { name: ' ' },
+        { email: 'nope' },
+        { hats: ['owner'] },
+        { costView: 'yes' },
+        { phone: '12' },
+      ]) {
         const bad = await create(admin.cookie, change);
         expect(bad.status, JSON.stringify(change)).toBe(422);
         expect(bad.body).toMatchObject({ code: 'VALIDATION_FAILED' });
@@ -453,7 +476,7 @@ describe('staff administration', { timeout: 300_000 }, () => {
   });
 
   describe('editing (AC-15, AC-17)', () => {
-    it('changes details and role, and clears a field with empty text', async () => {
+    it('changes details, never hats, and clears a field with empty text', async () => {
       const admin = await adminCookie();
       const made = await create(admin.cookie, { phone: '+20 100 000 0000' });
       const id = staff(made).id as string;
@@ -463,7 +486,6 @@ describe('staff administration', { timeout: 300_000 }, () => {
         phone: '',
         staffCode: 'new9',
         language: 'ar',
-        role: 'admin',
       });
 
       expect(edited.status).toBe(200);
@@ -472,8 +494,19 @@ describe('staff administration', { timeout: 300_000 }, () => {
         phone: null,
         staffCode: 'NEW9',
         language: 'ar',
-        role: 'admin',
+        hats: ['support', 'operations', 'warehouse'],
+        costView: false,
       });
+      // Hats change only through PUT /access: a role or hats on PATCH is refused, not ignored.
+      for (const sneaked of [{ role: 'admin' }, { hats: ['manager'] }, { costView: true }]) {
+        const refused = await call(base, admin.cookie, 'PATCH', `/api/staff/${id}`, sneaked);
+        expect(refused.status, JSON.stringify(sneaked)).toBe(422);
+      }
+      const held = await owner.pool.query<{ hat: string }>(
+        'SELECT hat FROM hat_assignments WHERE user_id = $1::uuid ORDER BY hat',
+        [id],
+      );
+      expect(held.rows.map((row) => row.hat)).toEqual(['operations', 'support', 'warehouse']);
     });
 
     it('lets the email change only while the account is invited', async () => {
@@ -586,36 +619,13 @@ describe('staff administration', { timeout: 300_000 }, () => {
       expect(edited.status).toBe(200);
       expect((await login(base, invited.email)).status).toBe(200);
     });
-
-    it('refuses to demote the last active admin, and counts an invited admin as active', async () => {
-      // A database of its own would be cleaner; here every other admin is disabled first.
-      await owner.pool.query(`UPDATE users SET banned = true WHERE role = 'admin'`);
-      const sole = await adminCookieUnbanned();
-
-      const refused = await call(base, sole.cookie, 'PATCH', `/api/staff/${sole.id}`, {
-        role: 'staff',
-      });
-      expect(refused.status).toBe(409);
-      expect(refused.body).toMatchObject({ code: 'LAST_ADMIN' });
-
-      await addPerson({ role: 'admin', signedIn: false });
-      const allowed = await call(base, sole.cookie, 'PATCH', `/api/staff/${sole.id}`, {
-        role: 'staff',
-      });
-      expect(allowed.status).toBe(200);
-      await owner.pool.query(`UPDATE users SET role = 'admin' WHERE id = $1::uuid`, [sole.id]);
-    });
   });
-
-  /** An admin made after every other admin was disabled, so it is the only active one. */
-  async function adminCookieUnbanned() {
-    const admin = await addPerson({ role: 'admin' });
-    return { ...admin, cookie: cookieOf(await login(base, admin.email)) };
-  }
 
   describe('disabling and enabling (AC-16, AC-17)', () => {
     it('disables in one step: no sessions, no live links, rows kept, sign in refused', async () => {
-      await owner.pool.query(`UPDATE users SET banned = false WHERE role = 'admin'`);
+      await owner.pool.query(
+        `UPDATE users SET banned = false WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')`,
+      );
       const admin = await adminCookie();
       const person = await addPerson();
       const cookie = cookieOf(await login(base, person.email));
@@ -680,7 +690,8 @@ describe('staff administration', { timeout: 300_000 }, () => {
       const a = await adminCookie();
       const b = await adminCookie();
       await owner.pool.query(
-        `UPDATE users SET banned = true WHERE role = 'admin' AND id NOT IN ($1::uuid, $2::uuid)`,
+        `UPDATE users SET banned = true
+          WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager') AND id NOT IN ($1::uuid, $2::uuid)`,
         [a.id, b.id],
       );
 
@@ -695,10 +706,12 @@ describe('staff administration', { timeout: 300_000 }, () => {
       expect(statuses[0]).toBe(200);
       expect([401, 409]).toContain(statuses[1]);
       const left = await owner.pool.query<{ n: string }>(
-        `SELECT count(*) AS n FROM users WHERE role = 'admin' AND NOT banned`,
+        `SELECT count(*) AS n FROM users WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager') AND NOT banned`,
       );
       expect(Number(left.rows[0]?.n)).toBe(1);
-      await owner.pool.query(`UPDATE users SET banned = false WHERE role = 'admin'`);
+      await owner.pool.query(
+        `UPDATE users SET banned = false WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')`,
+      );
     });
   });
 
@@ -962,7 +975,6 @@ describe('staff administration', { timeout: 300_000 }, () => {
       const made = await create(admin.cookie, {});
       const id = staff(made).id as string;
       await call(base, admin.cookie, 'PATCH', `/api/staff/${id}`, { name: 'Changed' });
-      await call(base, admin.cookie, 'PATCH', `/api/staff/${id}`, { role: 'admin' });
       await call(base, admin.cookie, 'POST', `/api/staff/${id}/reset-password`);
       await call(base, admin.cookie, 'POST', `/api/staff/${id}/revoke-sessions`);
       await call(base, admin.cookie, 'POST', `/api/staff/${id}/disable`, { reason: 'Test' });
@@ -973,7 +985,6 @@ describe('staff administration', { timeout: 300_000 }, () => {
       for (const event of [
         'StaffCreated',
         'StaffUpdated',
-        'StaffRoleChanged',
         'StaffPasswordReset',
         'StaffSessionsRevoked',
         'StaffDisabled',
@@ -984,6 +995,10 @@ describe('staff administration', { timeout: 300_000 }, () => {
         expect(line, event).toContain('"ip":');
       }
       expect(lines.find((l) => l.includes('"event":"StaffDisabled"'))).toContain('"reason":"Test"');
+      // The created line names the access given (spec 0008 AC-14), hat names only.
+      expect(lines.find((l) => l.includes('"event":"StaffCreated"'))).toContain(
+        '"hats":["support","operations","warehouse"],"costView":false',
+      );
       expect(log).not.toContain(setup(made).temporaryPassword as string);
     });
   });

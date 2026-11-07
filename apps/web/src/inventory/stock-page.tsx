@@ -27,7 +27,7 @@ import {
 import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMe } from '@/auth/use-me';
+import { useAccess } from '@/access/use-access';
 import { NewSkuDialog } from '@/catalog/new-sku-dialog';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
@@ -56,8 +56,8 @@ export function StockPage() {
   const { t } = useTranslation();
   const format = useFormat();
   const text = useLocalizedText();
-  const me = useMe();
-  const isAdmin = me?.role === 'admin';
+  const access = useAccess();
+  const seesCost = access.can('cost.view');
   const current = useCurrentLocation();
   const { locations, ready } = useLocationSwitcher();
   const { language, config } = useLanguage();
@@ -136,8 +136,10 @@ export function StockPage() {
         cell: ({ row }) => format.dateTime(row.original.lastMovedAt),
       },
     ];
-    return isAdmin ? all : all.filter((column) => column.id !== 'avgCost' && column.id !== 'value');
-  }, [t, text, format, isAdmin]);
+    return seesCost
+      ? all
+      : all.filter((column) => column.id !== 'avgCost' && column.id !== 'value');
+  }, [t, text, format, seesCost]);
 
   const table = useTable({
     features,
@@ -158,22 +160,26 @@ export function StockPage() {
           <p className="text-sm text-muted-foreground">{t('inventory.stock.description')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setDialog('sku')}>
-            <TagIcon aria-hidden data-icon="inline-start" />
-            {t('inventory.stock.newSku')}
-          </Button>
-          {isAdmin && (
+          {access.can('catalog.edit') && (
+            <Button variant="outline" onClick={() => setDialog('sku')}>
+              <TagIcon aria-hidden data-icon="inline-start" />
+              {t('inventory.stock.newSku')}
+            </Button>
+          )}
+          {access.can('catalog.manage') && (
             <Button variant="outline" onClick={() => setDialog('location')}>
               <MapPinPlusIcon aria-hidden data-icon="inline-start" />
               {t('inventory.stock.newLocation')}
             </Button>
           )}
-          <Button asChild>
-            <Link href="/stock-receipts/new">
-              <PackagePlusIcon aria-hidden data-icon="inline-start" />
-              {t('inventory.stock.receive')}
-            </Link>
-          </Button>
+          {access.can('stock.receive') && (
+            <Button asChild>
+              <Link href="/stock-receipts/new">
+                <PackagePlusIcon aria-hidden data-icon="inline-start" />
+                {t('inventory.stock.receive')}
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -277,7 +283,7 @@ export function StockPage() {
                                 : t('inventory.stock.filteredEmptyBody')}
                         </p>
                       </div>
-                      {!filtered && (
+                      {!filtered && access.can('stock.receive') && (
                         <Button asChild size="sm">
                           <Link href="/stock-receipts/new">{t('inventory.stock.receive')}</Link>
                         </Button>

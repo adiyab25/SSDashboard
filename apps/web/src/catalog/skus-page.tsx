@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { inventoryKeys, listSkus } from '@/inventory/inventory-api';
+import { useAccess } from '@/access/use-access';
 import { NewSkuDialog } from './new-sku-dialog';
 import { SkuEditDialog } from './sku-edit-dialog';
 
@@ -38,6 +39,7 @@ const STATUSES: readonly SkuStatus[] = ['active', 'archived'];
  */
 export function SkusPage() {
   const { t } = useTranslation();
+  const canEdit = useAccess().can('catalog.edit');
   const format = useFormat();
   const text = useLocalizedText();
   const [search, setSearch] = useState('');
@@ -67,10 +69,12 @@ export function SkusPage() {
           <h1 className="text-xl font-semibold">{t('inventory.skus.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('inventory.skus.description')}</p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <TagIcon aria-hidden data-icon="inline-start" />
-          {t('inventory.skus.newSku')}
-        </Button>
+        {canEdit && (
+          <Button onClick={() => setCreating(true)}>
+            <TagIcon aria-hidden data-icon="inline-start" />
+            {t('inventory.skus.newSku')}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -176,16 +180,18 @@ export function SkusPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="px-3">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={t('inventory.skus.editLabel', { code: row.code })}
-                        onClick={() => setEditing(row.id)}
-                      >
-                        <PencilIcon aria-hidden data-icon="inline-start" />
-                        {t('inventory.skus.edit')}
-                      </Button>
+                      {canEdit && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-label={t('inventory.skus.editLabel', { code: row.code })}
+                          onClick={() => setEditing(row.id)}
+                        >
+                          <PencilIcon aria-hidden data-icon="inline-start" />
+                          {t('inventory.skus.edit')}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

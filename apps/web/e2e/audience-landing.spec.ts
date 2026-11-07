@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { ownAddress, seedAccount, signInThroughPage, type SeededAccount } from './accounts';
+import {
+  ownAddress,
+  seedAccount,
+  signInThroughPage,
+  type SeededAccount,
+  WORKING_HATS,
+} from './accounts';
 
 // Spec 0005 AC-28: after a full sign in the person lands on their own audience's pages. The api
 // answers every person as staff until spec 0008, so the partner case stubs `/api/me` with the
@@ -10,7 +16,9 @@ const PARTNER = {
   id: '0190c0de-0000-7000-8000-0000000000aa',
   name: 'Mona Showroom',
   email: 'mona@showroom.example',
-  role: 'staff',
+  hats: ['partner'],
+  permissions: ['partner.view_own', 'partner.submit_sales'],
+  partnerAccountId: '0190c0de-0000-7000-8000-0000000000bb',
   phone: null,
   staffCode: null,
   language: 'en',
@@ -23,7 +31,7 @@ let person: SeededAccount;
 
 test.beforeEach(async ({ context }) => {
   await context.setExtraHTTPHeaders(ownAddress());
-  person = await seedAccount({ role: 'staff' });
+  person = await seedAccount({ hats: WORKING_HATS });
 });
 test.afterEach(async () => {
   await person.remove();
@@ -108,7 +116,7 @@ test.describe('as a staff person', () => {
   test('goes straight to change password when the password is temporary, carrying returnTo', async ({
     page,
   }) => {
-    const temporary = await seedAccount({ role: 'staff', mustChangePassword: true });
+    const temporary = await seedAccount({ hats: WORKING_HATS, mustChangePassword: true });
     try {
       await signInThroughPage(page, temporary, '/sign-in?returnTo=%2Fstock');
 

@@ -7,10 +7,12 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
 import {
+  AccessRequest,
   CreateStaffRequest,
   DisableStaffRequest,
   StaffListQuery,
@@ -22,32 +24,28 @@ import {
   type StaffListResponse,
 } from '@ssdashboard/contracts';
 import type { AuthenticatedRequest } from '../sign-in/current-staff.js';
-import { clientIp, userAgent } from '../sign-in/client-info.js';
-import { Roles } from '../sign-in/roles.decorator.js';
+import { actorOf } from '../access/actor.js';
+import { HatService } from '../hats/hat.service.js';
+import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
-import { InvalidStaffCursorError, StaffService, type Actor } from './staff.service.js';
-
-/** The headers of an Express request as a `Headers`, so the same address and agent readers apply. */
-function actorOf(request: AuthenticatedRequest): Actor {
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(request.headers)) {
-    if (typeof value === 'string') headers.set(name, value);
-  }
-  return { id: request.staff.id, ip: clientIp(headers), userAgent: userAgent(headers) };
-}
+import { InvalidStaffCursorError, StaffService } from './staff.service.js';
 
 /**
- * Staff administration (spec 0005, AC-12 to AC-18). Admins only. The browser never talks to
+ * Staff administration (spec 0005, AC-12 to AC-18). Every route needs `people.manage` (spec 0008
+ * route mapping). The browser never talks to
  * Better Auth's admin routes: those answer 404, and these endpoints are the whole surface.
  */
 @Audience('staff')
-@Roles('admin')
+@Permission('people.manage')
 @Controller('staff')
 export class StaffController {
-  /** Takes the staff service. */
-  constructor(private readonly staff: StaffService) {}
+  /** Takes the staff service and the hat service, the one writer of hats and the cost grant. */
+  constructor(
+    private readonly staff: StaffService,
+    private readonly hats: HatService,
+  ) {}
 
   /**
    * One keyset page of staff, filtered by the validated query. A cursor this endpoint did not
@@ -68,8 +66,8 @@ export class StaffController {
   }
 
   /**
-   * Creates an account and returns it with how the person gets in: an emailed invite or a
-   * temporary password to hand over.
+   * Creates an account with its hats and cost switch (spec 0008, AC-14) and returns it with how
+   * the person gets in: an emailed invite or a temporary password to hand over.
    */
   @Post()
   create(
@@ -85,10 +83,7 @@ export class StaffController {
     return this.staff.get(id);
   }
 
-  /**
-   * Changes a person's details or role. The service refuses a change that would leave no active
-   * admin.
-   */
+  /** Changes a person's details (never their hats or cost: `PUT :id/access`). */
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -96,6 +91,23 @@ export class StaffController {
     @Req() request: AuthenticatedRequest,
   ): Promise<StaffDetail> {
     return this.staff.update(id, body, actorOf(request));
+  }
+
+  /**
+   * Replaces a person's whole access set, hats and cost grant (spec 0008, AC-12), and returns
+   * their detail with the new `updatedAt`. `HatService` decides every refusal: 409
+   * `STALE_RECORD`, `SELF_HAT_CHANGE`, `LAST_ADMIN`; 422 `NO_HAT`, `HAT_CONFLICT`,
+   * `GRANT_NOT_ALLOWED`, `REASON_REQUIRED`; 403 `FORBIDDEN` for a cost change by an actor without
+   * `cost.view`; 404 for anyone who is not staff.
+   */
+  @Put(':id/access')
+  async replaceAccess(
+    @Param('id') id: string,
+    @Body(new ZodBodyPipe(AccessRequest)) body: AccessRequest,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<StaffDetail> {
+    await this.hats.replaceStaffAccess(id, body, actorOf(request));
+    return this.staff.get(id);
   }
 
   /** Disables an account with an optional reason; ends its sessions and invalidates its links. */

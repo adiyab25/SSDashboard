@@ -47,8 +47,11 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
       PUBLIC_URL: base,
     });
     await waitForHttp(`${base}/api/health`, api);
-    staff = await signInAs(base, owner.pool, { email: 'staff@example.com', role: 'staff' });
-    admin = await signInAs(base, owner.pool, { email: 'admin@example.com', role: 'admin' });
+    staff = await signInAs(base, owner.pool, { email: 'staff@example.com' });
+    admin = await signInAs(base, owner.pool, {
+      email: 'admin@example.com',
+      access: { hats: ['manager'], costView: true },
+    });
     const { rows } = await owner.pool.query<{ id: string }>(
       "SELECT id FROM users WHERE email = 'admin@example.com'",
     );
@@ -172,7 +175,7 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       action: 'stock_receipt.voided',
-      actor: { kind: 'person', userId: adminId, hat: 'admin', ref: null, jobId: null },
+      actor: { kind: 'person', userId: adminId, hat: 'manager', ref: null, jobId: null },
       actorName: 'Test Person',
       record: { type: 'stock_receipt', id: receipt.id, label: receipt.number },
       before: { status: 'posted' },
@@ -282,6 +285,39 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
     expect(asStaff.status).toBe(403);
     expect(asStaff.body).toMatchObject({ code: 'FORBIDDEN' });
     expect((await call('GET', '/audit/entries')).status).toBe(401);
+  });
+
+  // Spec 0008 AC-6 and the spec 0010 security model: a diff can carry costs, which reach only a
+  // reader with `cost.view`, even one who holds `audit.read`.
+  it('leaves cost fields out of the diffs for a manager without cost.view', async () => {
+    await owner.pool.query(
+      `INSERT INTO audit_entries (correlation_id, actor_kind, actor_ref, action, record_type,
+                                  record_id, before, after)
+       VALUES (gen_random_uuid(), 'carrier', 'bosta', 'planted.costed', 'stock_receipt',
+               gen_random_uuid(), '{"status":"posted","referenceValue":"10.00"}'::jsonb,
+               '{"status":"voided","lines":[{"unitCost":"2.00","quantity":5}]}'::jsonb)`,
+    );
+    const noCost = await signInAs(base, owner.pool, {
+      email: 'manager.nocost@example.com',
+      access: { hats: ['manager'] },
+    });
+
+    const hidden = AuditEntryListResponse.parse(
+      (await listEntries('?action=planted.costed', noCost)).body,
+    ).items;
+    const shown = AuditEntryListResponse.parse(
+      (await listEntries('?action=planted.costed')).body,
+    ).items;
+
+    expect(hidden[0]).toMatchObject({
+      before: { status: 'posted' },
+      after: { status: 'voided', lines: [{ quantity: 5 }] },
+    });
+    expect(JSON.stringify(hidden)).not.toMatch(/referenceValue|unitCost/);
+    expect(shown[0]).toMatchObject({
+      before: { status: 'posted', referenceValue: '10.00' },
+      after: { lines: [{ unitCost: '2.00', quantity: 5 }] },
+    });
   });
 
   it.each([

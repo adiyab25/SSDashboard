@@ -12,8 +12,8 @@ import {
 import { ChangeSkuCodeRequest, type SkuDetail, type SkuUsage } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import type { z } from 'zod';
-import { Roles } from '../../identity/sign-in/roles.decorator.js';
 import { catalogHttpError, notFoundId } from '../../catalog/catalog.controller.js';
+import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
@@ -42,6 +42,7 @@ export class SkuLifecycleController {
    * Tells the screen whether a SKU has stock history, so it can offer delete, archive or
    * neither.
    */
+  @Permission('stock.view')
   @Get(':id/usage')
   async usage(@Param('id', notFoundId()) id: string): Promise<SkuUsage> {
     try {
@@ -52,10 +53,10 @@ export class SkuLifecycleController {
   }
 
   /**
-   * Admin only: changes a SKU's code, which the lifecycle service refuses once stock has been
+   * Needs `catalog.manage`: changes a SKU's code, which the lifecycle service refuses once stock has been
    * posted for it.
    */
-  @Roles('admin')
+  @Permission('catalog.manage')
   @Patch(':id/code')
   async changeCode(
     @Param('id', notFoundId()) id: string,
@@ -70,8 +71,8 @@ export class SkuLifecycleController {
     }
   }
 
-  /** Admin only: archives a SKU, refused while stock is on hand or reserved. */
-  @Roles('admin')
+  /** Needs `catalog.manage`: archives a SKU, refused while stock is on hand or reserved. */
+  @Permission('catalog.manage')
   @Post(':id/archive')
   @HttpCode(200)
   async archive(
@@ -85,8 +86,8 @@ export class SkuLifecycleController {
     }
   }
 
-  /** Admin only: makes an archived SKU usable again. */
-  @Roles('admin')
+  /** Needs `catalog.manage`: makes an archived SKU usable again. */
+  @Permission('catalog.manage')
   @Post(':id/unarchive')
   @HttpCode(200)
   async unarchive(

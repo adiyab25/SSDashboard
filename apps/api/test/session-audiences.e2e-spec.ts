@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
-import { MeResponse } from '@ssdashboard/contracts';
+import { MeResponse, type Hat } from '@ssdashboard/contracts';
 import {
   APP_ROLE,
   createDatabase,
@@ -14,15 +14,19 @@ import { hashPassword } from 'better-auth/crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
-import { pgArray } from '../src/database/sql.js';
+import { DATABASE } from '../src/database/database.module.js';
+import { AccessLoader } from '../src/identity/access/access-loader.js';
+import { HatService } from '../src/identity/hats/hat.service.js';
+import { Access } from '../src/platform/access/access.js';
 import {
   hatChangeEndsSessions,
   revokeSessions,
   type HatStanding,
 } from '../src/identity/sessions/revoke-sessions.js';
 import {
+  audiencesOfHats,
+  HatSessionAudiences,
   SESSION_AUDIENCES,
-  StaffOnlySessionAudiences,
   type SessionAudience,
   type SessionAudiences,
 } from '../src/identity/sessions/session-audiences.js';
@@ -32,53 +36,44 @@ import { createScratchDatabase, dropScratchDatabase, freePort } from './support.
 
 const PASSWORD = 'Correct-Horse-1';
 
-/** What a person holds in the fake hat model: hat names, and a partner account for the partner hat. */
+/** What a person holds: hat names, and the partner account (by its code) for the partner hat. */
 interface Holding {
-  hats: string[];
+  hats: Hat[];
   partnerAccountId: string | null;
 }
 
-/** The audiences a set of fake hats allows: `partner` for the partner hat, `staff` for any other. */
-function audiencesOf(holding: Holding): Set<SessionAudience> {
-  return new Set(
-    holding.hats.map((hat): SessionAudience => (hat === 'partner' ? 'partner' : 'staff')),
-  );
-}
-
 /**
- * A stand in for spec 0008's hats behind the `SessionAudiences` port. Someone it was never told
- * about is staff, as before hats. It counts every question, so a test can see the guard asking on
- * every request.
+ * The real `HatSessionAudiences` that `identity.module.ts` binds, wrapped only to count every
+ * question, so a test can see the guard asking on every request. It answers nothing itself.
  */
-class FakeHats implements SessionAudiences {
+class CountingHats implements SessionAudiences {
   readonly asked: string[] = [];
-  private readonly holdings = new Map<string, Holding>();
 
-  hold(userId: string, holding: Holding): void {
-    this.holdings.set(userId, holding);
-  }
-
-  holdingOf(userId: string): Holding {
-    return this.holdings.get(userId) ?? { hats: ['warehouse'], partnerAccountId: null };
-  }
-
-  standingOf(userId: string): HatStanding {
-    const holding = this.holdingOf(userId);
-    return { audiences: audiencesOf(holding), partnerAccountId: holding.partnerAccountId };
-  }
+  constructor(private readonly real: SessionAudiences) {}
 
   audiencesFor(userId: string): Promise<ReadonlySet<SessionAudience>> {
     this.asked.push(userId);
-    return Promise.resolve(audiencesOf(this.holdingOf(userId)));
+    return this.real.audiencesFor(userId);
   }
 
   staffCondition(): SQL {
-    const notStaff = [...this.holdings.keys()].filter(
-      (id) => !audiencesOf(this.holdingOf(id)).has('staff'),
-    );
-    return notStaff.length === 0
-      ? sql`TRUE`
-      : sql`NOT (users.id = ANY(${pgArray(notStaff)}::uuid[]))`;
+    return this.real.staffCondition();
+  }
+}
+
+/**
+ * The real `AccessLoader` the session guard reads a person through, wrapped only to count every
+ * read, so a test can see the guard reading the hats on every request (spec 0008 milestone 2 folds
+ * the audience question into this one read).
+ */
+class CountingAccess {
+  readonly asked: string[] = [];
+
+  constructor(private readonly real: AccessLoader) {}
+
+  load(userId: string): Promise<Access> {
+    this.asked.push(userId);
+    return this.real.load(userId);
   }
 }
 
@@ -89,11 +84,15 @@ interface Reply {
 }
 
 // Spec 0005 milestone 3: the audience aware guard (AC-29), partner users kept out of the staff
-// administration (AC-28), and sessions that follow hat changes (AC-33), with spec 0008's hats
-// played by a fake behind the `SessionAudiences` port. The api runs in this process so the port
-// can be swapped; everything else is the real AppModule on a scratch database.
+// administration (AC-28), and sessions that follow hat changes (AC-33), now with spec 0008's real
+// hats in `hat_assignments` behind the real `HatSessionAudiences`, counted by a thin wrapper. The
+// api runs in this process so the port can be wrapped; everything else is the real AppModule on a
+// scratch database.
 describe('sessions and audiences', { timeout: 300_000 }, () => {
-  const hats = new FakeHats();
+  let hats: CountingHats;
+  let loads: CountingAccess;
+  /** Partner account ids by code (`p1`, `p2`): `parties` rows that are consignment partners. */
+  const accounts = new Map<string, string>();
   let scratch: { name: string; url: string };
   let owner: DatabaseConnection;
   let appDb: DatabaseConnection;
@@ -122,9 +121,26 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       MAIL_DRIVER: 'none',
       PORT: String(port),
     });
+    for (const code of ['p1', 'p2']) {
+      const { rows } = await owner.pool.query<{ id: string }>(
+        `INSERT INTO parties (code, name, is_consignment_partner) VALUES ($1, $1, true) RETURNING id`,
+        [code],
+      );
+      accounts.set(code, rows[0]?.id as string);
+    }
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(SESSION_AUDIENCES)
-      .useValue(hats)
+      .useFactory({
+        inject: [DATABASE],
+        factory: (connection: DatabaseConnection) =>
+          (hats = new CountingHats(new HatSessionAudiences(connection))),
+      })
+      .overrideProvider(AccessLoader)
+      .useFactory({
+        inject: [DATABASE],
+        factory: (connection: DatabaseConnection) =>
+          (loads = new CountingAccess(new AccessLoader(connection))),
+      })
       .compile();
     app = moduleRef.createNestApplication<NestExpressApplication>({
       bodyParser: false,
@@ -167,15 +183,49 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
     } satisfies Reply;
   }
 
-  /** Adds a person straight to the database and, unless told otherwise, gives them fake hats. */
+  /**
+   * Replaces a person's hat rows with a holding, inside the given executor (the owner, or the app
+   * role's transaction of a hat change). A partner account is named by its code.
+   */
+  async function writeHolding(
+    executor: Pick<DatabaseConnection['db'], 'execute'>,
+    userId: string,
+    holding: Holding,
+  ): Promise<void> {
+    await executor.execute(sql`DELETE FROM hat_assignments WHERE user_id = ${userId}::uuid`);
+    for (const hat of holding.hats) {
+      const account =
+        hat === 'partner' ? (accounts.get(holding.partnerAccountId ?? '') ?? null) : null;
+      await executor.execute(
+        sql`INSERT INTO hat_assignments (user_id, hat, partner_account_id)
+            VALUES (${userId}::uuid, ${hat}, ${account}::uuid)`,
+      );
+    }
+  }
+
+  /** Sets a person's hats straight in the database, as the owner. */
+  const hold = (userId: string, holding: Holding) => writeHolding(owner.db, userId, holding);
+
+  /** What the person holds now, read from their rows: audiences and partner account (by code). */
+  async function standingOf(userId: string): Promise<HatStanding> {
+    const { rows } = await owner.pool.query<{ hat: Hat; partner_account_id: string | null }>(
+      'SELECT hat, partner_account_id FROM hat_assignments WHERE user_id = $1::uuid',
+      [userId],
+    );
+    const accountId = rows.find((row) => row.hat === 'partner')?.partner_account_id ?? null;
+    const code = [...accounts].find(([, id]) => id === accountId)?.[0] ?? null;
+    return { audiences: audiencesOfHats(rows.map((row) => row.hat)), partnerAccountId: code };
+  }
+
+  /** Adds a person straight to the database with a holding, the `warehouse` hat by default. */
   async function addPerson(
-    options: { role?: 'admin' | 'staff'; holding?: Holding } = {},
+    options: { holding?: Holding } = {},
   ): Promise<{ id: string; email: string }> {
     counter += 1;
     const email = `person${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, last_sign_in_at) VALUES ($1, $2, $3, now()) RETURNING id`,
-      [`Person ${counter}`, email, options.role ?? 'staff'],
+      `INSERT INTO users (name, email, last_sign_in_at) VALUES ($1, $2, now()) RETURNING id`,
+      [`Person ${counter}`, email],
     );
     const id = rows[0]?.id as string;
     await owner.pool.query(
@@ -183,7 +233,7 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
       [id, hash],
     );
-    if (options.holding) hats.hold(id, options.holding);
+    await hold(id, options.holding ?? staffHolding('warehouse'));
     return { id, email };
   }
 
@@ -208,29 +258,32 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
 
   /**
    * Spec 0008's hat service in miniature: judges the change by AC-33 (b) and, when it must,
-   * revokes the sessions inside the same transaction as the change. `failAfterRevoke` makes the
-   * change fail after the revoke, to prove the two commit or roll back together.
+   * revokes the sessions inside the same transaction as the change of the hat rows, as the app
+   * role. `failAfterRevoke` makes the change fail after the revoke, to prove the two commit or
+   * roll back together.
    */
   async function changeHats(
     userId: string,
     next: Holding,
     options: { failAfterRevoke?: boolean } = {},
   ): Promise<boolean> {
-    const before = hats.standingOf(userId);
+    const before = await standingOf(userId);
     const after: HatStanding = {
-      audiences: audiencesOf(next),
+      audiences: audiencesOfHats(next.hats),
       partnerAccountId: next.partnerAccountId,
     };
     const ends = hatChangeEndsSessions(before, after);
     await appDb.db.transaction(async (tx) => {
       if (ends) await revokeSessions(userId, tx);
       if (options.failAfterRevoke) throw new Error('the change failed');
-      hats.hold(userId, next);
+      await writeHolding(tx, userId, next);
     });
     return ends;
   }
 
-  const staffHolding = (...names: string[]): Holding => ({ hats: names, partnerAccountId: null });
+  function staffHolding(...names: Hat[]): Holding {
+    return { hats: names, partnerAccountId: null };
+  }
   const partnerHolding = (account: string): Holding => ({
     hats: ['partner'],
     partnerAccountId: account,
@@ -274,21 +327,23 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
   });
 
   describe('sessions follow hats (AC-33)', () => {
-    it('asks on every request, so a change acts on the next request with the same cookie (a)', async () => {
+    it('reads the hats on every request, so a change acts on the next request with the same cookie (a)', async () => {
       const person = await addPerson({ holding: staffHolding('warehouse') });
       const cookie = await signIn(person.email);
-      const askedBefore = hats.asked.filter((id) => id === person.id).length;
+      const askedBefore = loads.asked.filter((id) => id === person.id).length;
 
       expect((await call(cookie, 'GET', '/api/me')).status).toBe(200);
       // The model moves the person away from staff without ending the session.
-      hats.hold(person.id, partnerHolding('p1'));
+      await hold(person.id, partnerHolding('p1'));
       expect((await call(cookie, 'GET', '/api/me')).body).toMatchObject({
         code: 'WRONG_AUDIENCE',
       });
-      hats.hold(person.id, staffHolding('warehouse'));
+      await hold(person.id, staffHolding('warehouse'));
       expect((await call(cookie, 'GET', '/api/me')).status).toBe(200);
 
-      expect(hats.asked.filter((id) => id === person.id).length - askedBefore).toBe(3);
+      // One read per request: the audience and the permissions come from the same hats.
+      expect(loads.asked.filter((id) => id === person.id).length - askedBefore).toBe(3);
+      expect(hats.asked.filter((id) => id === person.id)).toEqual([]);
     });
 
     it('ends every session when the last hat goes, in the same transaction, and no one else’s (b)', async () => {
@@ -363,7 +418,7 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
     it('treats a live session of a person with no hat as ended, and deletes it', async () => {
       const person = await addPerson({ holding: staffHolding('warehouse') });
       const cookie = await signIn(person.email);
-      hats.hold(person.id, staffHolding());
+      await hold(person.id, staffHolding());
 
       const reply = await call(cookie, 'GET', '/api/me');
 
@@ -473,9 +528,11 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
     let cookie: string;
 
     beforeAll(async () => {
-      admin = await addPerson({ role: 'admin', holding: staffHolding('manager') });
-      // A partner user whose row says admin: the row must never make them one.
-      partner = await addPerson({ role: 'admin', holding: partnerHolding('p1') });
+      admin = await addPerson({ holding: staffHolding('manager') });
+      // A partner user whose rows also hold manager: the row must never make them one.
+      partner = await addPerson({
+        holding: { hats: ['partner', 'manager'], partnerAccountId: 'p1' },
+      });
       cookie = await signIn(admin.email);
     });
 
@@ -497,7 +554,7 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       ['POST', '/revoke-sessions'],
       ['POST', '/reset-two-factor'],
     ])('answers 404 to %s /api/staff/:id%s for a partner user', async (method, suffix) => {
-      const body = method === 'PATCH' ? { role: 'admin' } : method === 'POST' ? {} : undefined;
+      const body = method === 'PATCH' ? { name: 'Renamed' } : method === 'POST' ? {} : undefined;
 
       const reply = await call(cookie, method, `/api/staff/${partner.id}${suffix}`, body);
 
@@ -505,29 +562,56 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       expect(reply.body).toMatchObject({ code: 'NOT_FOUND' });
     });
 
-    it('never counts a partner user as the other active admin', async () => {
+    it('answers 404 to PUT /api/staff/:id/access for a partner user', async () => {
+      const reply = await call(cookie, 'PUT', `/api/staff/${partner.id}/access`, {
+        hats: ['support'],
+        costView: false,
+        updatedAt: new Date().toISOString(),
+      });
+
+      expect(reply.status).toBe(404);
+      expect(reply.body).toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('never counts a partner user as the other active manager', async () => {
       await owner.pool.query(
-        `UPDATE users SET banned = true WHERE role = 'admin' AND id NOT IN ($1::uuid, $2::uuid)`,
+        `UPDATE users SET banned = true
+          WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')
+            AND id NOT IN ($1::uuid, $2::uuid)`,
         [admin.id, partner.id],
       );
+      // Over HTTP the acting manager is always another active one, so the hat service is called
+      // in process by a person who is not counted (a warehouse person acting as a manager).
+      const actor = await addPerson({ holding: staffHolding('warehouse') });
+      const { rows } = await owner.pool.query<{ at: string }>(
+        `SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at
+           FROM users WHERE id = $1::uuid`,
+        [admin.id],
+      );
 
-      const reply = await call(cookie, 'PATCH', `/api/staff/${admin.id}`, { role: 'staff' });
+      const change = app?.get(HatService).replaceStaffAccess(
+        admin.id,
+        { hats: ['support'], costView: true, updatedAt: rows[0]?.at as string, reason: 'Test' },
+        {
+          id: actor.id,
+          ip: '198.51.100.1',
+          userAgent: null,
+          access: new Access({
+            userId: actor.id,
+            hats: ['manager'],
+            grants: ['cost.view'],
+            partnerAccountId: null,
+          }),
+        },
+      );
 
-      expect(reply.status).toBe(409);
-      expect(reply.body).toMatchObject({ code: 'LAST_ADMIN' });
+      await expect(change).rejects.toMatchObject({ response: { code: 'LAST_ADMIN' } });
     });
 
     it('lets create-admin make a staff admin when the only active admin is a partner user', async () => {
       await owner.pool.query(`UPDATE users SET banned = true WHERE id = $1::uuid`, [admin.id]);
 
-      // The staff only port counts every row, the planted partner admin too.
-      const staffOnly = await createFirstAdmin(
-        appDb.db,
-        { email: 'first@example.com', name: 'First' },
-        new StaffOnlySessionAudiences(),
-      );
-      expect(staffOnly).toMatchObject({ created: false, reason: 'admin_exists' });
-
+      // The only unbanned manager row belongs to a partner user, who never counts.
       const made = await createFirstAdmin(
         appDb.db,
         { email: 'first@example.com', name: 'First' },

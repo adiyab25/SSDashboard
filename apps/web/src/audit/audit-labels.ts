@@ -17,6 +17,7 @@ export const ACTOR_KIND_KEYS = {
  */
 const RECORD_TYPE_KEYS: Readonly<Record<string, MessageKey>> = {
   stock_receipt: 'audit.recordTypes.stockReceipt',
+  user: 'audit.recordTypes.user',
 };
 
 /** The label key of an action code from the registry, or undefined for a code it does not know. */

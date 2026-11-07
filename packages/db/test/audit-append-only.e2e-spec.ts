@@ -33,7 +33,7 @@ describe('audit entries are append only (spec 0010)', () => {
   /** A staff user for the person actor's foreign key. */
   async function makeUser(email: string): Promise<string> {
     const { rows } = await owner.query<{ id: string }>(
-      "INSERT INTO users (name, email, role) VALUES ('Auditor', $1, 'admin') RETURNING id",
+      "INSERT INTO users (name, email) VALUES ('Auditor', $1) RETURNING id",
       [email],
     );
     const id = rows[0]?.id;
@@ -46,7 +46,7 @@ describe('audit entries are append only (spec 0010)', () => {
     const { rows } = await app.query<{ id: string }>(
       `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_hat, action,
                                   record_type, record_id, record_label, before, after, reason)
-       VALUES (gen_random_uuid(), 'person', $1, 'admin', 'stock_receipt.voided', 'stock_receipt',
+       VALUES (gen_random_uuid(), 'person', $1, 'manager', 'stock_receipt.voided', 'stock_receipt',
                gen_random_uuid(), 'SR-2026-000001', '{"status":"posted"}', '{"status":"voided"}',
                'Entered twice')
        RETURNING id`,

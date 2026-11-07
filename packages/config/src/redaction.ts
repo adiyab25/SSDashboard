@@ -181,7 +181,9 @@ export interface RowMarkerRule {
 /**
  * The owner aware rows (security-data-model-m3 MJ1): `customers` (`name`), `customer_merges`
  * (`reason`), `settlement_period_events` (`reason`), and `outbound_commands` (`payload`, `failure_reason`). Matching works for snake or
- * camel case, bare, nested under any key, and inside arrays.
+ * camel case, bare, nested under any key, and inside arrays. Also the hat change log line of
+ * identity (`HatsChanged`, spec 0008 AC-13): its `reason` is free text a manager types about a
+ * person, so it never reaches a log; the audit trail (spec 0010) is where it is kept.
  */
 export const ROW_MARKER_RULES: readonly RowMarkerRule[] = [
   {
@@ -200,6 +202,12 @@ export const ROW_MARKER_RULES: readonly RowMarkerRule[] = [
   {
     identifiedBy: [['idempotencykey', 'linkedtype'], ['syncstate']],
     redact: ['payload', 'failurereason'],
+  },
+  {
+    // The hat change log line (`hatChangeLogLine` in apps/api/src/identity/sessions/): only it
+    // carries both lists. Sign in reason codes (`bad_credentials`, `locked`) stay readable.
+    identifiedBy: [['hatsadded', 'hatsremoved']],
+    redact: ['reason'],
   },
 ];
 

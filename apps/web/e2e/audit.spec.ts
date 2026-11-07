@@ -4,9 +4,9 @@ import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { createLocation, createSku, findRow, receive, voidReceipt } from './master-data-api';
 import { expectNoAxeViolations, textFor, useBrowserState, type TextDirection } from './support';
 
-// Spec 0010 milestone 1: the /audit page (AC-12, AC-18). An administrator voids a stock receipt
-// with a reason and finds the entry on the page, in English and Arabic; a person who is not an
-// administrator gets the 403 message; the page passes axe (WCAG 2.2 AA).
+// Spec 0010 milestone 1: the /audit page (AC-12, AC-18). A manager voids a stock receipt with a
+// reason and finds the entry on the page, in English and Arabic; a person without `audit.read`
+// (spec 0008) gets the no access state; the page passes axe (WCAG 2.2 AA).
 const LANGUAGES = [
   { dir: 'ltr', name: 'English' },
   { dir: 'rtl', name: 'Arabic' },
@@ -20,7 +20,7 @@ async function openAudit(page: Page, dir: TextDirection) {
   ).toBeVisible();
 }
 
-test.describe('as an administrator', () => {
+test.describe('as a manager', () => {
   for (const { dir, name } of LANGUAGES) {
     test(`shows a voided receipt with its reason in ${name} (AC-12, AC-18)`, async ({
       page,
@@ -70,12 +70,12 @@ test.describe('as an administrator', () => {
   });
 });
 
-test.describe('as a person who is not an administrator', () => {
+test.describe('as a person without audit.read', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
   let person: SeededAccount | undefined;
 
   test.beforeEach(async ({ context, baseURL }) => {
-    person = await seedAccount({ role: 'staff' });
+    person = await seedAccount();
     await signInThroughApi(context, person, baseURL ?? '');
   });
   test.afterEach(async () => {
@@ -85,13 +85,13 @@ test.describe('as a person who is not an administrator', () => {
   });
 
   for (const { dir, name } of LANGUAGES) {
-    test(`sees the administrators only message in ${name}, and axe is clean`, async ({
+    test(`sees the no audit access message in ${name}, and axe is clean`, async ({
       page,
       viewport,
     }) => {
       await useBrowserState(page, { dir });
       await page.goto('/audit');
-      await expect(page.getByText(textFor(dir, 'audit.forbidden'))).toBeVisible();
+      await expect(page.getByText(textFor(dir, 'access.noAccess.title'))).toBeVisible();
       await expect(page.getByRole('table')).toHaveCount(0);
       await expect(page.locator('h1')).toHaveCount(1);
       if ((viewport?.width ?? 0) >= 1000) await expectNoAxeViolations(page);

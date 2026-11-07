@@ -182,11 +182,10 @@ export const en = {
       language: 'Language',
       languageDefault: 'Install default',
       email: 'Email',
-      role: 'Role',
       staffCode: 'Staff code',
       none: 'None',
       readOnly: 'An administrator changes your email.',
-      readOnlyStaff: 'An administrator changes your email, role and staff code.',
+      readOnlyStaff: 'A manager changes your email, hats and staff code.',
       save: 'Save details',
       saved: 'Your details are saved.',
       nameRequired: 'Enter your name.',
@@ -268,6 +267,8 @@ export const en = {
       name: 'Name',
       email: 'Email',
       role: 'Role',
+      hats: 'Hats',
+      cost: 'Sees cost',
       status: 'Status',
       lastSignIn: 'Last sign in',
       twoFactor: 'Two factor',
@@ -281,7 +282,6 @@ export const en = {
     loadError: 'The staff list could not be loaded.',
     retry: 'Try again',
     loadMore: 'Load more',
-    forbidden: 'Only administrators can manage staff.',
     form: {
       createTitle: 'Add staff',
       editTitle: 'Edit staff',
@@ -357,6 +357,43 @@ export const en = {
         'Email changed. Use Reset password to give this person a new temporary password.',
       sessionsEnded: 'Signed out everywhere.',
       twoFactorReset: 'Two factor reset.',
+    },
+    hats: {
+      filter: 'Hat',
+      filterAll: 'All hats',
+      legend: 'Hats',
+      hint: 'Pick at least one. A person can wear several.',
+      costLabel: 'Sees cost',
+      costHelp: 'Unit cost, stock value, cost of goods, and margin.',
+      costLocked: 'Only a person who sees cost can turn this on or off.',
+      costYes: 'Yes',
+      costNo: 'No',
+      edit: 'Edit hats',
+      title: 'Edit hats for {{name}}',
+      description: 'The change applies on their next action. They stay signed in.',
+      reasonOptional: 'Reason (optional)',
+      reasonRequired: 'Reason (required when you take Manager away)',
+      reasonHint: 'Up to 500 characters. Kept in the record of this change.',
+      save: 'Save hats',
+      cancel: 'Cancel',
+      reload: 'Reload',
+      saved: 'Hats saved.',
+      loadError: 'This person could not be loaded.',
+      errors: {
+        NO_HAT: 'Pick at least one hat.',
+        REASON_REQUIRED: 'Say why you are taking Manager away.',
+        REASON_TOO_LONG: 'Use 500 characters or fewer.',
+        STALE_RECORD:
+          'Someone else changed this person while you were editing. Reload to see what they hold now.',
+        SELF_HAT_CHANGE: 'You cannot change your own hats or cost. Ask another manager.',
+        LAST_ADMIN:
+          'There must always be at least one active manager. Give Manager to someone else first.',
+        FORBIDDEN: 'Only a person who sees cost can turn cost on or off for someone.',
+        HAT_CONFLICT: 'These hats cannot be worn together.',
+        GRANT_NOT_ALLOWED: 'This person cannot be given cost.',
+        NOT_FOUND: 'That account no longer exists.',
+        generic: 'Something went wrong. Check your connection and try again.',
+      },
     },
     errors: {
       EMAIL_TAKEN: 'Another account already uses this email.',
@@ -517,7 +554,7 @@ export const en = {
       saved: 'SKU {{code}} saved.',
       close: 'Close',
       reload: 'Reload',
-      adminTitle: 'Administrator actions',
+      adminTitle: 'Catalog management',
       codeTitle: 'SKU code',
       codeChange: 'Change code',
       codeSaved: 'SKU code changed to {{code}}.',
@@ -608,7 +645,6 @@ export const en = {
     locations: {
       title: 'Locations',
       description: 'The warehouses and shops that hold stock.',
-      adminOnly: 'Only administrators can manage locations.',
       newLocation: 'New location',
       filterLabel: 'Show',
       active: 'Active',
@@ -780,6 +816,115 @@ export const en = {
       allReceipts: 'All receipts',
     },
   },
+  access: {
+    noAccess: {
+      title: 'You do not have access to this page',
+      description:
+        'Your hats do not include it. Ask a manager to add the hat or permission you need.',
+      home: 'Go to the overview',
+    },
+    hats: {
+      label: 'Hats',
+      separator: ', ',
+      none: 'No hats yet',
+      support: {
+        name: 'Support',
+        description: 'Answers customers: confirms orders, handles exchanges, sees stock.',
+      },
+      operations: {
+        name: 'Operations',
+        description:
+          'Runs the day: orders, refunds, fulfillment, stock, settlement, partners, and reports.',
+      },
+      warehouse: {
+        name: 'Warehouse',
+        description: 'Picks, packs, ships, and receives stock; edits SKU names and prices.',
+      },
+      manager: {
+        name: 'Manager',
+        description:
+          'Everything staff can do, plus people, settings, corrections, and the audit trail.',
+      },
+      media_buyer: {
+        name: 'Media buyer',
+        description: 'Sees campaign results only, never customers.',
+      },
+      partner: {
+        name: 'Partner',
+        description: 'A consignment partner: sees their own account and uploads sales statements.',
+      },
+    },
+    permissions: {
+      orders: {
+        view: 'See orders, their lines, both states, the outcome, and the customer and ship to on them',
+        confirm: 'Work the confirmation queue: record outcomes, fix address and lines, cancel',
+        gift: 'Create a gifted order',
+      },
+      customers: {
+        view: 'See customer profiles, phones, and history',
+        merge: 'Merge customers and undo a merge',
+      },
+      exchanges: {
+        handle: 'Open exchanges and returns for a customer, work the review desk',
+      },
+      refunds: {
+        approve: 'Approve refunds and post credit by hand',
+      },
+      fulfillment: {
+        work: 'Pick, pack, ship, scan returns, restock',
+      },
+      stock: {
+        view: 'See stock on hand, movements, receipts, and locations (no cost)',
+        receive: 'Post receipts, transfers, and counts',
+        correct: 'Void a receipt and post corrections',
+      },
+      catalog: {
+        edit: 'Create SKUs and products, edit names and prices',
+        manage: 'Change SKU codes, archive and delete SKUs, manage locations',
+      },
+      channels: {
+        map: 'Map partner and channel codes to variants',
+      },
+      settlement: {
+        work: "Import carrier and partner statements, match lines, enter a partner's statement for them",
+        close: 'Close a settlement period and revoke a close',
+      },
+      exports: {
+        run: "Run accounting exports and mark them imported on the accountant's word",
+      },
+      partners: {
+        manage: 'Manage partner accounts and handovers',
+      },
+      tasks: {
+        work: 'See and work your own tasks and the queues of your hats',
+        assign: 'Reassign any task',
+      },
+      reports: {
+        view: 'See the business dashboard (counts and cash, no customers)',
+      },
+      campaigns: {
+        view: 'See campaign results (spend, orders, kept revenue, return rate, campaign profit)',
+      },
+      people: {
+        manage: 'Manage staff and partner logins, hats, cost grants, sessions, two factor resets',
+      },
+      settings: {
+        manage: 'Change settings, module toggles, connections, and per order cost rules',
+      },
+      audit: {
+        read: 'Read the audit trail',
+        undo: 'Undo an action from the audit trail',
+        export: 'Export the audit trail',
+      },
+      partner: {
+        view_own: 'See what was given, sold, and owed for your own partner account',
+        submit_sales: 'Upload a sales statement or declare a no sales day',
+      },
+      cost: {
+        view: 'See unit cost, stock value, cost of goods, and margin',
+      },
+    },
+  },
   audit: {
     title: 'Audit trail',
     description: 'Who changed what, newest first. Entries cannot be edited or removed.',
@@ -792,7 +937,7 @@ export const en = {
     loadMore: 'Load more',
     endOfList: 'End of the audit trail',
     loadMoreError: 'The next entries could not be loaded.',
-    forbidden: 'Only administrators can read the audit trail.',
+    forbidden: 'Your hats do not include the audit trail. Ask a manager if you need it.',
     unknownPerson: 'Unknown person',
     actorKinds: {
       person: 'Person',
@@ -802,10 +947,16 @@ export const en = {
       import: 'Import',
       portalCustomer: 'Customer',
     },
-    recordTypes: { stockReceipt: 'Stock receipt' },
+    recordTypes: { stockReceipt: 'Stock receipt', user: 'Person' },
     // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
     actions: {
       stockReceiptVoided: 'Stock receipt voided',
+      hatGranted: 'Hats or cost access given',
+      hatRevoked: 'Hats or cost access taken away',
+      staffUserCreated: 'Staff account created',
+      staffUserDisabled: 'Staff account disabled',
+      staffUserEnabled: 'Staff account enabled',
+      staffUserPasswordReset: 'Staff password reset',
     },
   },
   mail: {

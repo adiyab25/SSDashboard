@@ -96,7 +96,7 @@ export type SkuListResponse = z.infer<typeof SkuListResponse>;
 export const UpdatedAt = z.string().min(1).max(40);
 
 /**
- * `PATCH /api/skus/:id`: name and price, any signed in person. `name`, when sent, replaces
+ * `PATCH /api/skus/:id`: name and price (`catalog.edit`). `name`, when sent, replaces
  * both languages (a language left out of it is cleared, not kept). `price: null` clears it; an
  * absent field is left as is. A stored `updatedAt` other than the one sent answers 409
  * `STALE_RECORD` (AC-2).
@@ -111,7 +111,7 @@ export const UpdateSkuRequest = z
 /** What a caller passes for `UpdateSkuRequest`, before defaults and transforms are applied. */
 export type UpdateSkuRequest = z.input<typeof UpdateSkuRequest>;
 
-/** `PATCH /api/skus/:id/code` (admin). 409 `CODE_LOCKED` once the SKU has a stock balance. */
+/** `PATCH /api/skus/:id/code` (`catalog.manage`). 409 `CODE_LOCKED` once the SKU has a stock balance. */
 export const ChangeSkuCodeRequest = z.object({ updatedAt: UpdatedAt, sku: SkuCode }).strict();
 /** What a caller passes for `ChangeSkuCodeRequest`, before defaults and transforms are applied. */
 export type ChangeSkuCodeRequest = z.input<typeof ChangeSkuCodeRequest>;

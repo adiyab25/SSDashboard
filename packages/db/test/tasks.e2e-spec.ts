@@ -99,9 +99,12 @@ describe('tasks (AC-26)', () => {
     await expect(app.query('TRUNCATE tasks')).rejects.toThrow(/permission denied/);
   });
 
-  it("refuses an external hat as the owner ('partner')", async () => {
-    await expect(open({ owner_hat: 'partner' })).rejects.toThrow(/tasks_owner_hat_internal/);
-  });
+  it.each(['partner', 'media_buyer'])(
+    'refuses an external hat as the owner (%s, spec 0008 AC-17)',
+    async (hat) => {
+      await expect(open({ owner_hat: hat })).rejects.toThrow(/tasks_owner_hat_internal/);
+    },
+  );
 
   it('refuses closing without an outcome, and an outcome on an open task', async () => {
     const id = await open();

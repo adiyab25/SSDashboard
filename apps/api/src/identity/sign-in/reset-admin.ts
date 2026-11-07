@@ -3,7 +3,7 @@ import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
 import { emailKey } from './client-info.js';
 import { revokeSessions } from '../sessions/revoke-sessions.js';
-import type { SessionAudiences } from '../sessions/session-audiences.js';
+import { holdsHat, type SessionAudiences } from '../sessions/session-audiences.js';
 import { ADMIN_RULE_LOCK } from './locks.js';
 import { deleteTokens, deleteTwoFactorChallenges } from './reset-tokens.js';
 import { generateTemporaryPassword } from './temporary-password.js';
@@ -39,7 +39,8 @@ export type BreakGlassResult =
  * change flag and reset links. Either way sessions, pending challenges and the lockout end.
  * Takes the same lock as the staff service and first admin, then locks the user row. A new
  * password is hashed before the transaction opens: hashing is slow and must not hold the lock.
- * Staff admins only (AC-28): a partner user is refused as not an admin, whatever their row says;
+ * Managers only (spec 0008, AC-14): a person without the `manager` hat is refused as not an
+ * admin, and so is a partner user, whatever their rows say (AC-28);
  * `audiences` says who is staff. It is required on purpose: the caller (`src/create-admin.ts`) must
  * pass the class `identity.module.ts` binds to `SESSION_AUDIENCES`, which a spec checks.
  */
@@ -62,8 +63,13 @@ export async function breakGlassReset(
   return db.transaction(async (tx): Promise<BreakGlassResult> => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${ADMIN_RULE_LOCK})`);
 
-    const found = await tx.execute<{ id: string; role: string; banned: boolean; staff: boolean }>(
-      sql`SELECT id, role, banned, (${audiences.staffCondition()}) AS staff
+    const found = await tx.execute<{
+      id: string;
+      manager: boolean;
+      banned: boolean;
+      staff: boolean;
+    }>(
+      sql`SELECT id, ${holdsHat('manager')} AS manager, banned, (${audiences.staffCondition()}) AS staff
             FROM users WHERE lower(email) = ${email} FOR UPDATE`,
     );
     const user = found.rows[0];
@@ -101,7 +107,7 @@ export async function breakGlassReset(
 
 /** The refusals for an account that exists; `undefined` means go ahead. */
 function refuse(
-  user: { role: string; banned: boolean; staff: boolean },
+  user: { manager: boolean; banned: boolean; staff: boolean },
   email: string,
   modes: BreakGlassModes,
 ): ResetRefusal | undefined {
@@ -111,7 +117,7 @@ function refuse(
       : modes.password
         ? 'password'
         : 'two factor';
-  if (user.role !== 'admin' || !user.staff) {
+  if (!user.manager || !user.staff) {
     return {
       reset: false,
       reason: 'not_admin',

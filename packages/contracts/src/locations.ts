@@ -8,7 +8,7 @@ export type LocationStatus = z.infer<typeof LocationStatus>;
 
 /**
  * Query of `GET /api/locations`. `cursor` is the previous page's `nextCursor`. `status=archived`
- * is admin only (403 `FORBIDDEN` for staff).
+ * needs `catalog.manage` too (403 `FORBIDDEN` without it).
  */
 export const LocationListQuery = z.object({
   status: LocationStatus.default('active'),
@@ -67,7 +67,7 @@ export const LocationName = z
   });
 
 /**
- * `POST /api/locations` (admin). `ownerType` defaults to `own`; a partner or wholesale owner
+ * `POST /api/locations` (`catalog.manage`). `ownerType` defaults to `own`; a partner or wholesale owner
  * needs the `partyId` of a party with the matching role (422 `PARTY_ROLE_MISMATCH`), and an own
  * location takes none. `sellableOnline` defaults to false and is refused where the owner type's
  * policy forbids it (422 `NOT_SELLABLE_ONLINE`).
@@ -106,7 +106,7 @@ export const LocationListResponse = z.object({
 export type LocationListResponse = z.infer<typeof LocationListResponse>;
 
 /**
- * `PATCH /api/locations/:id` (admin). Absent fields are left as is. A code change answers 409
+ * `PATCH /api/locations/:id` (`catalog.manage`). Absent fields are left as is. A code change answers 409
  * `CODE_LOCKED` once `codeLocked` is true; a stale `updatedAt` answers 409 `STALE_RECORD`.
  */
 export const UpdateLocationRequest = z

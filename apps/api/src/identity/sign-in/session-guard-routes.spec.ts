@@ -8,15 +8,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { AudienceGuard } from '../../platform/audience/audience.guard.js';
-import type { SessionAudience, SessionAudiences } from '../sessions/session-audiences.js';
+import { Access } from '../../platform/access/access.js';
+import { AnyHat, Permission } from '../../platform/access/permission.decorator.js';
+import { PermissionGuard } from '../../platform/access/permission.guard.js';
+import type { SessionAudience } from '../sessions/session-audiences.js';
 import type { Auth } from './auth.tokens.js';
 import type { CurrentPartner, CurrentStaff } from './current-staff.js';
 import { Public } from './public.decorator.js';
-import { RolesGuard } from './roles.guard.js';
 import { SessionGuard } from './session.guard.js';
 
-// Spec 0005, AC-29, through real HTTP and Nest's guard pipeline. The guards are built by hand
-// here, in the order `identity.module.ts` registers them; this file does not load IdentityModule.
+// Spec 0005, AC-29, and the spec 0008 guard order (session, audience, permission), through real
+// HTTP and Nest's guard pipeline. The guards are built by hand here, in the order
+// `identity.module.ts` registers them; this file does not load IdentityModule.
 // These controllers live only in this test module: never add them to AppModule (`audience.spec.ts`
 // walks it).
 
@@ -29,8 +32,20 @@ const who = (req: Seen) => ({
 @Audience('staff')
 @Controller('things')
 class StaffProbe {
+  @AnyHat()
   @Get()
   read(@Req() req: Seen) {
+    return who(req);
+  }
+
+  @Permission('people.manage')
+  @Get('managed')
+  managed(@Req() req: Seen) {
+    return who(req);
+  }
+
+  @Get('undeclared')
+  undeclared(@Req() req: Seen) {
     return who(req);
   }
 }
@@ -38,6 +53,7 @@ class StaffProbe {
 @Audience('partner')
 @Controller('partner/things')
 class PartnerProbe {
+  @Permission('partner.view_own')
   @Get()
   read(@Req() req: Seen) {
     return who(req);
@@ -91,7 +107,7 @@ function fakeAuth() {
               id: USER_ID,
               name: 'Sam',
               email: 'sam@example.com',
-              role: 'admin',
+              role: 'user',
               banned: false,
               mustChangePassword: false,
               twoFactorEnabled: false,
@@ -110,30 +126,37 @@ function fakeAuth() {
   return { auth, getSession };
 }
 
-async function createApp(options: { fullChain: boolean; audiences: SessionAudience[] }) {
+async function createApp(options: {
+  fullChain: boolean;
+  audiences: SessionAudience[];
+  /** The hats the fake loader answers; by default one hat of each audience given. */
+  hats?: string[];
+}) {
   const { auth, getSession } = fakeAuth();
-  const audiencesFor = vi.fn(() => Promise.resolve(new Set(options.audiences)));
-  const audiences: SessionAudiences = {
-    audiencesFor,
-    staffCondition: () => {
-      throw new Error('not used by the guard');
-    },
-  };
+  const hats =
+    options.hats ??
+    options.audiences.map((audience) => (audience === 'partner' ? 'partner' : 'warehouse'));
+  const load = vi.fn((userId: string) =>
+    Promise.resolve(
+      new Access({
+        userId,
+        hats,
+        grants: [],
+        partnerAccountId: hats.includes('partner') ? '0190c0de-0000-7000-8000-0000000000aa' : null,
+      }),
+    ),
+  );
   const env = { PUBLIC_URL: ORIGIN } as Env;
   const guards = [
     {
       provide: APP_GUARD,
       inject: [Reflector],
-      useFactory: (reflector: Reflector) => new SessionGuard(reflector, auth, env, audiences),
+      useFactory: (reflector: Reflector) => new SessionGuard(reflector, auth, env, { load }),
     },
     ...(options.fullChain
       ? [
-          {
-            provide: APP_GUARD,
-            inject: [Reflector],
-            useFactory: (reflector: Reflector) => new RolesGuard(reflector),
-          },
           { provide: APP_GUARD, useFactory: () => new AudienceGuard() },
+          { provide: APP_GUARD, useFactory: () => new PermissionGuard() },
         ]
       : []),
   ];
@@ -143,7 +166,7 @@ async function createApp(options: { fullChain: boolean; audiences: SessionAudien
   }).compile();
   const app = moduleRef.createNestApplication<INestApplication<Server>>({ logger: false });
   await app.init();
-  return { app, getSession, audiencesFor };
+  return { app, getSession, load };
 }
 
 describe('the session guard over HTTP (AC-29)', () => {
@@ -173,7 +196,7 @@ describe('the session guard over HTTP (AC-29)', () => {
         expect(response.status).toBeLessThan(300);
         expect(response.body).toEqual({ staff: null, partner: null });
         expect(made.getSession).not.toHaveBeenCalled();
-        expect(made.audiencesFor).not.toHaveBeenCalled();
+        expect(made.load).not.toHaveBeenCalled();
       },
     );
 
@@ -229,7 +252,45 @@ describe('the session guard over HTTP (AC-29)', () => {
     );
   });
 
-  describe('the session, roles and audience guards in that order, built by hand', () => {
+  describe('the session, audience and permission guards in that order, built by hand', () => {
+    it('answers 403 FORBIDDEN, naming no permission, to a staff person without it (spec 0008)', async () => {
+      const made = await createApp({ fullChain: true, audiences: ['staff'] });
+      app = made.app;
+
+      const response = await request(app.getHttpServer())
+        .get('/things/managed')
+        .set('cookie', COOKIE);
+
+      expect(response.status).toBe(403);
+      expect(response.body).toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'You do not have access to this.',
+      });
+    });
+
+    it('lets a person whose hat holds the permission through (spec 0008)', async () => {
+      const made = await createApp({ fullChain: true, audiences: ['staff'], hats: ['manager'] });
+      app = made.app;
+
+      const response = await request(app.getHttpServer())
+        .get('/things/managed')
+        .set('cookie', COOKIE);
+
+      expect(response.status).toBe(200);
+    });
+
+    it('answers 500 PERMISSION_MISSING for a staff handler with no declaration (spec 0008)', async () => {
+      const made = await createApp({ fullChain: true, audiences: ['staff'], hats: ['manager'] });
+      app = made.app;
+
+      const response = await request(app.getHttpServer())
+        .get('/things/undeclared')
+        .set('cookie', COOKIE);
+
+      expect(response.status).toBe(500);
+      expect(response.body).toMatchObject({ code: 'PERMISSION_MISSING' });
+    });
+
     it('lets a staff session use a staff route', async () => {
       const made = await createApp({ fullChain: true, audiences: ['staff'] });
       app = made.app;

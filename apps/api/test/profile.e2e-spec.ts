@@ -6,6 +6,9 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
+  WORKING_HATS,
+  type TestAccess,
   start,
   stop,
   waitForHttp,
@@ -55,22 +58,17 @@ describe('own profile and password', { timeout: 180_000 }, () => {
   });
 
   async function addPerson(
-    options: { role?: 'admin' | 'staff'; mustChange?: boolean } = {},
+    options: { access?: TestAccess; mustChange?: boolean } = {},
   ): Promise<{ id: string; email: string }> {
     counter += 1;
     const email = `profile${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, staff_code, must_change_password, last_sign_in_at)
-       VALUES ($1, $2, $3, $4, $5, now()) RETURNING id`,
-      [
-        `Person ${counter}`,
-        email,
-        options.role ?? 'staff',
-        `SC${counter}`,
-        options.mustChange ?? false,
-      ],
+      `INSERT INTO users (name, email, staff_code, must_change_password, last_sign_in_at)
+       VALUES ($1, $2, $3, $4, now()) RETURNING id`,
+      [`Person ${counter}`, email, `SC${counter}`, options.mustChange ?? false],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, options.access ?? WORKING_HATS);
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
@@ -128,7 +126,7 @@ describe('own profile and password', { timeout: 180_000 }, () => {
         phone: '+20 100 123 4567',
         language: 'ar',
         email: person.email,
-        role: 'staff',
+        hats: ['support', 'operations', 'warehouse'],
       });
       expect((await call(cookie, 'GET', '/api/me')).body).toMatchObject({
         name: 'Samira Ali',
@@ -169,13 +167,15 @@ describe('own profile and password', { timeout: 180_000 }, () => {
       }
     });
 
-    it('cannot change its own email, role or staff code, or become an admin', async () => {
+    it('cannot change its own email, role, hats or staff code, or become an admin', async () => {
       const person = await addPerson();
       const cookie = await signIn(person.email);
 
       for (const field of [
         { email: 'someone.else@example.com' },
         { role: 'admin' },
+        { hats: ['manager'] },
+        { permissions: ['cost.view'] },
         { staffCode: 'HACK' },
         { banned: false },
         { mustChangePassword: false },
@@ -190,7 +190,12 @@ describe('own profile and password', { timeout: 180_000 }, () => {
         role: string;
         staff_code: string;
       }>(`SELECT name, email, role, staff_code FROM users WHERE id = $1::uuid`, [person.id]);
-      expect(rows[0]).toMatchObject({ email: person.email, role: 'staff' });
+      expect(rows[0]).toMatchObject({ email: person.email, role: 'user' });
+      const hats = await owner.pool.query<{ hat: string }>(
+        'SELECT hat FROM hat_assignments WHERE user_id = $1::uuid ORDER BY hat',
+        [person.id],
+      );
+      expect(hats.rows.map((row) => row.hat)).toEqual(['operations', 'support', 'warehouse']);
       expect(rows[0]?.name).not.toBe('Sneaky');
       expect(rows[0]?.staff_code).toMatch(/^SC/);
     });
@@ -220,7 +225,7 @@ describe('own profile and password', { timeout: 180_000 }, () => {
     });
 
     it('shows an admin the new name in the staff list', async () => {
-      const admin = await addPerson({ role: 'admin' });
+      const admin = await addPerson({ access: { hats: ['manager'], costView: true } });
       const person = await addPerson();
       await call(await signIn(person.email), 'PATCH', '/api/me', { name: 'Zora Visible' });
 

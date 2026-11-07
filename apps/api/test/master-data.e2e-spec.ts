@@ -64,8 +64,14 @@ describe('master data api', { timeout: 90_000 }, () => {
       PUBLIC_URL: base,
     });
     await waitForHttp(`${base}/api/health`, api);
-    staff = await signInAs(base, owner.pool, { email: 'staff@example.com', role: 'staff' });
-    admin = await signInAs(base, owner.pool, { email: 'admin@example.com', role: 'admin' });
+    staff = await signInAs(base, owner.pool, {
+      email: 'staff@example.com',
+      access: { hats: ['support', 'operations', 'warehouse'] },
+    });
+    admin = await signInAs(base, owner.pool, {
+      email: 'admin@example.com',
+      access: { hats: ['manager'], costView: true },
+    });
   });
 
   afterAll(async () => {

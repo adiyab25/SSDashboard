@@ -1,7 +1,7 @@
 import { schema, sql, type Database } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { z } from 'zod';
-import type { SessionAudiences } from '../sessions/session-audiences.js';
+import { holdsHat, type SessionAudiences } from '../sessions/session-audiences.js';
 import { ADMIN_RULE_LOCK } from './locks.js';
 import { generateTemporaryPassword } from './temporary-password.js';
 
@@ -19,12 +19,13 @@ export type FirstAdminResult =
   | { created: false; reason: 'invalid_input' | 'admin_exists' | 'email_taken'; message: string };
 
 /**
- * Creates the very first admin (spec 0005, AC-21): a temporary password the person must
- * change at first sign in. It refuses when an active staff admin already exists or the email
- * already belongs to any account, under the same lock the staff service takes. It creates staff
- * only, and a partner user never counts as an existing admin (AC-28): `audiences` says who is
- * staff. It is required on purpose: the caller (`src/create-admin.ts`) must pass the class
- * `identity.module.ts` binds to `SESSION_AUDIENCES`, which a spec checks.
+ * Creates the very first admin (spec 0005, AC-21): a person wearing the `manager` hat with the
+ * `cost.view` grant (spec 0008, AC-14; `granted_by` null, no person gave them), and a temporary
+ * password they must change at first sign in. It refuses when an active manager already exists
+ * or the email already belongs to any account, under the same lock the staff service takes. It
+ * creates staff only, and a partner user never counts as an existing manager (AC-28): `audiences`
+ * says who is staff. It is required on purpose: the caller (`src/create-admin.ts`) must pass the
+ * class `identity.module.ts` binds to `SESSION_AUDIENCES`, which a spec checks.
  */
 export async function createFirstAdmin(
   db: Database,
@@ -44,11 +45,11 @@ export async function createFirstAdmin(
   return db.transaction(async (tx): Promise<FirstAdminResult> => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${ADMIN_RULE_LOCK})`);
 
-    const admins = await tx.execute(
+    const managers = await tx.execute(
       sql`SELECT 1 FROM users
-          WHERE role = 'admin' AND NOT banned AND (${audiences.staffCondition()}) LIMIT 1`,
+          WHERE ${holdsHat('manager')} AND NOT banned AND (${audiences.staffCondition()}) LIMIT 1`,
     );
-    if (admins.rows.length > 0) {
+    if (managers.rows.length > 0) {
       return {
         created: false,
         reason: 'admin_exists',
@@ -66,7 +67,7 @@ export async function createFirstAdmin(
 
     const [user] = await tx
       .insert(schema.users)
-      .values({ name, email, role: 'admin', mustChangePassword: true })
+      .values({ name, email, mustChangePassword: true })
       .returning({ id: schema.users.id });
     if (!user) throw new Error('Could not create the admin account');
     // Better Auth's own layout: one `credential` account whose id is the user id.
@@ -76,6 +77,8 @@ export async function createFirstAdmin(
       accountId: user.id,
       password: passwordHash,
     });
+    await tx.insert(schema.hatAssignments).values({ userId: user.id, hat: 'manager' });
+    await tx.insert(schema.permissionGrants).values({ userId: user.id, permission: 'cost.view' });
     return { created: true, userId: user.id, temporaryPassword };
   });
 }

@@ -13,7 +13,9 @@ const ME = {
   id: '0190c0de-0000-7000-8000-000000000001',
   name: 'Sam Carter',
   email: 'sam@example.com',
-  role: 'admin',
+  hats: ['manager'],
+  permissions: ['people.manage'],
+  partnerAccountId: null,
   phone: null,
   staffCode: null,
   language: null,
@@ -45,7 +47,7 @@ describe('UserMenu identity and sign out (AC-25)', () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the person's name, email, and role from GET /api/me", async () => {
+  it("shows the person's name, email, and hats from GET /api/me (spec 0008, AC-11)", async () => {
     render(<UserMenu />);
 
     const trigger = await screen.findByRole('button', { name: /Sam Carter/ });
@@ -54,7 +56,25 @@ describe('UserMenu identity and sign out (AC-25)', () => {
     await userEvent.click(trigger);
 
     expect(screen.getByText('sam@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Administrator')).toBeInTheDocument();
+    expect(screen.getByText('Manager')).toBeInTheDocument();
+    expect(screen.queryByText('Administrator')).not.toBeInTheDocument();
+  });
+
+  it('names every hat the person wears, in plain words, on one line', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ...ME, hats: ['support', 'warehouse'] }), { status: 200 }),
+        ),
+      ),
+    );
+    render(<UserMenu />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Sam Carter/ }));
+
+    expect(screen.getByText('Support, Warehouse')).toBeInTheDocument();
+    expect(screen.queryByText(/warehouse$/)).not.toBeInTheDocument();
   });
 
   it('keeps the email in a left to right run, so it reads right inside Arabic text', async () => {

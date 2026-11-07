@@ -7,6 +7,7 @@ import {
   dropScratchDatabase,
   eventually,
   freePort,
+  giveHats,
   start,
   stop,
   waitForHttp,
@@ -29,9 +30,12 @@ describe('Better Auth failures in the log', { timeout: 120_000 }, () => {
     await runMigrations(scratch.url);
     owner = createDatabase(scratch.url, { max: 2 });
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role) VALUES ('Leak Check', $1, 'staff') RETURNING id`,
+      `INSERT INTO users (name, email) VALUES ('Leak Check', $1) RETURNING id`,
       [EMAIL],
     );
+    await giveHats(owner.pool, rows[0]?.id as string, {
+      hats: ['support', 'operations', 'warehouse'],
+    });
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

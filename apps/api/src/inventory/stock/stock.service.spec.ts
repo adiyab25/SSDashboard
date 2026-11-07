@@ -1,6 +1,15 @@
 import type { SkuMovement } from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
+import { Access } from '../../platform/access/access.js';
 import { serializeMovement } from './stock.service.js';
+
+const accessOf = (hats: string[], grants: string[]) =>
+  new Access({
+    userId: '00000000-0000-7000-8000-000000000009',
+    hats,
+    grants,
+    partnerAccountId: null,
+  });
 
 const movement: SkuMovement = {
   id: '00000000-0000-7000-8000-000000000001',
@@ -16,13 +25,14 @@ const movement: SkuMovement = {
   totalCost: '50.00',
 };
 
-describe('serializeMovement (AC-11)', () => {
-  it('keeps unit cost and value for admins', () => {
-    expect(serializeMovement(movement, 'admin')).toEqual(movement);
+describe('serializeMovement (AC-11, spec 0008 AC-6)', () => {
+  it('keeps unit cost and value for a caller with cost.view, whatever the hat', () => {
+    expect(serializeMovement(movement, accessOf(['warehouse'], ['cost.view']))).toEqual(movement);
   });
 
-  it('leaves both fields out for staff', () => {
-    const forStaff = serializeMovement(movement, 'staff');
+  it('leaves both fields out without cost.view, even for a manager', () => {
+    expect(serializeMovement(movement, accessOf(['manager'], []))).not.toHaveProperty('unitCost');
+    const forStaff = serializeMovement(movement, accessOf(['warehouse'], []));
     expect(forStaff).not.toHaveProperty('unitCost');
     expect(forStaff).not.toHaveProperty('totalCost');
     expect(forStaff).toMatchObject({ quantity: 10, source: { number: 'SR-2026-000001' } });

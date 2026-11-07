@@ -120,7 +120,10 @@ export function createAuth(
       audit: parts.audit,
     }),
     plugins: [
-      admin({ defaultRole: 'staff', adminRoles: ['admin'] }),
+      // Kept for the ban check (spec 0005). Every person's `role` is `user`, the plugin's own
+      // default, and nothing reads it: access comes from hats (spec 0008, AC-16). Nobody holds
+      // `admin`, and the plugin's own admin routes stay closed by `ALLOWED_ROUTES` (`mount-auth.ts`).
+      admin({ defaultRole: 'user', adminRoles: ['admin'] }),
       // Authenticator app codes and backup codes only (spec 0005, AC-20). There is no email code
       // (`otpOptions` is left out, so its routes stay closed), and a trusted device is never
       // honored: the before hook refuses a request that asks for one.

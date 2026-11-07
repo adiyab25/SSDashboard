@@ -7,7 +7,7 @@ import {
 import { LocationListQuery } from '@ssdashboard/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
-import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
+import { Access } from '../../platform/access/access.js';
 import { LocationsController, locationHttpError } from './locations.controller.js';
 import {
   decodeCursor,
@@ -20,7 +20,13 @@ import {
 
 const pipe = new ZodQueryPipe(LocationListQuery);
 
-const as = (role: 'admin' | 'staff') => ({ staff: { role } }) as unknown as AuthenticatedRequest;
+const as = (hat: 'manager' | 'warehouse') =>
+  new Access({
+    userId: '00000000-0000-7000-8000-000000000001',
+    hats: [hat],
+    grants: [],
+    partnerAccountId: null,
+  });
 
 function errorCode(run: () => unknown): unknown {
   try {
@@ -62,7 +68,7 @@ describe('LocationsController', () => {
     const controller = new LocationsController(service);
 
     const error: unknown = await controller
-      .list({ status: 'active', cursor: 'x', limit: 200 }, as('staff'))
+      .list({ status: 'active', cursor: 'x', limit: 200 }, as('warehouse'))
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(BadRequestException);
@@ -71,21 +77,21 @@ describe('LocationsController', () => {
 });
 
 describe('the archived location list', () => {
-  it('is admin only (AC-15)', async () => {
+  it('needs catalog.manage (AC-15, spec 0008 route mapping)', async () => {
     const listWorkLocations = vi.fn(() => Promise.resolve({ items: [], nextCursor: null }));
     const controller = new LocationsController({
       listWorkLocations,
     } as unknown as LocationsService);
 
     const error: unknown = await controller
-      .list({ status: 'archived', limit: 200 }, as('staff'))
+      .list({ status: 'archived', limit: 200 }, as('warehouse'))
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ForbiddenException);
     expect(listWorkLocations).not.toHaveBeenCalled();
 
-    await expect(controller.list({ status: 'archived', limit: 200 }, as('admin'))).resolves.toEqual(
-      { items: [], nextCursor: null },
-    );
+    await expect(
+      controller.list({ status: 'archived', limit: 200 }, as('manager')),
+    ).resolves.toEqual({ items: [], nextCursor: null });
   });
 });
 

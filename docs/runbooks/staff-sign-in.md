@@ -13,7 +13,7 @@ Run every command from the `deploy/` folder, with the install's `.env` in place.
 | Part | Today | Arrives with |
 |---|---|---|
 | Staff sign in and sign out, the first admin, break glass recovery | Works | |
-| Staff roles: `admin` and `staff` | Works | Hats, feature 8 (spec 0008) |
+| Access by hats (support, operations, warehouse, manager) and the cost grant | Built in spec 0008 milestone 1; the staff page still offers "Administrator" (manager plus cost) or "Staff" (support, operations, warehouse) until its hats dialog | Hats dialog and partner logins, feature 8 (spec 0008) |
 | Partner users and the partners screen | Not built. Every person is staff | Feature 8 (spec 0008) |
 | Hat changes and what they do to sessions | Not built | Feature 8 (spec 0008) |
 | `STAFF_ORIGIN`, the new name of `PUBLIC_URL` | Not in the code. Use `PUBLIC_URL` | The spec 0007 rename, features 3 and 26 |

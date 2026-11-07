@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { StaffRole } from './auth.js';
+import { RequestedHats, StaffHat } from './access.js';
 import { westernDigits } from './digit-input.js';
 
 /** Derived, never stored: `disabled` when banned, else `invited` until the first sign in. */
@@ -23,12 +23,16 @@ export const StaffCode = trimmed(1, 20).transform((value) => value.toUpperCase()
 /** A language code such as `en` or `ar`, 2 to 16 characters. */
 export const StaffLanguage = trimmed(2, 16);
 
-/** A row of `GET /api/staff`. */
+/**
+ * A row of `GET /api/staff`: the person's hats (sorted in catalog order) and whether they hold the
+ * `cost.view` grant (spec 0008, AC-18). There is no role.
+ */
 export const StaffRow = z.object({
   id: z.uuid(),
   name: z.string(),
   email: z.string(),
-  role: StaffRole,
+  hats: z.array(StaffHat),
+  costView: z.boolean(),
   status: StaffStatus,
   lastSignInAt: z.string().nullable(),
   twoFactorEnabled: z.boolean(),
@@ -36,21 +40,30 @@ export const StaffRow = z.object({
 /** The validated shape of `StaffRow`, as the api and web see it after parsing. */
 export type StaffRow = z.infer<typeof StaffRow>;
 
-/** `GET /api/staff/:id`: the row plus what the edit form needs. */
+/**
+ * `GET /api/staff/:id`: the row plus what the edit form needs. `updatedAt` is `users.updated_at` to
+ * the microsecond, sent back unchanged as the `updatedAt` of `PUT /api/staff/:id/access` (409
+ * `STALE_RECORD` when the person changed in between).
+ */
 export const StaffDetail = StaffRow.extend({
   phone: z.string().nullable(),
   staffCode: z.string().nullable(),
   language: z.string().nullable(),
   disableReason: z.string().nullable(),
   createdAt: z.string(),
+  updatedAt: z.string(),
 });
 /** The validated shape of `StaffDetail`, as the api and web see it after parsing. */
 export type StaffDetail = z.infer<typeof StaffDetail>;
 
-/** Query of `GET /api/staff`. `cursor` is the previous page's `nextCursor`. */
+/**
+ * Query of `GET /api/staff`. `cursor` is the previous page's `nextCursor`; `hat` keeps the people
+ * wearing that hat.
+ */
 export const StaffListQuery = z.object({
   q: z.string().trim().max(100).optional(),
   status: StaffStatus.optional(),
+  hat: StaffHat.optional(),
   cursor: z.string().min(1).max(500).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -65,11 +78,17 @@ export const StaffListResponse = z.object({
 /** The validated shape of `StaffListResponse`, as the api and web see it after parsing. */
 export type StaffListResponse = z.infer<typeof StaffListResponse>;
 
-/** `POST /api/staff`. */
+/**
+ * `POST /api/staff` (spec 0008, AC-14): the person's details, their hats (one or more internal
+ * hats or `media_buyer`) and whether they see cost. The cost switch's starting position is the
+ * web's job (`COST_VIEW_DEFAULT`); the api takes exactly what is sent, and `costView` true needs
+ * the actor to hold `cost.view` (403 `FORBIDDEN`).
+ */
 export const CreateStaffRequest = z.object({
   name: StaffName,
   email: StaffEmail,
-  role: StaffRole,
+  hats: RequestedHats,
+  costView: z.boolean(),
   phone: StaffPhone.optional(),
   staffCode: StaffCode.optional(),
   language: StaffLanguage.optional(),
@@ -77,17 +96,21 @@ export const CreateStaffRequest = z.object({
 /** The validated shape of `CreateStaffRequest`, as the api and web see it after parsing. */
 export type CreateStaffRequest = z.infer<typeof CreateStaffRequest>;
 
-/** `PATCH /api/staff/:id`. Empty text for phone, staff code or language clears it. */
+/**
+ * `PATCH /api/staff/:id`: details only. Empty text for phone, staff code or language clears it.
+ * Hats and cost change only through `PUT /api/staff/:id/access`; any other field (a `role` sent
+ * by an old screen) is refused rather than ignored.
+ */
 export const UpdateStaffRequest = z
   .object({
     name: StaffName,
     email: StaffEmail,
-    role: StaffRole,
     phone: StaffPhone.or(z.literal('')).transform((value) => value || null),
     staffCode: StaffCode.or(z.literal('')).transform((value) => value || null),
     language: StaffLanguage.or(z.literal('')).transform((value) => value || null),
   })
-  .partial();
+  .partial()
+  .strict();
 /** The validated shape of `UpdateStaffRequest`, as the api and web see it after parsing. */
 export type UpdateStaffRequest = z.infer<typeof UpdateStaffRequest>;
 
@@ -132,6 +155,9 @@ export const StaffErrorCode = z.enum([
   'MAIL_DISABLED',
   'INVALID_LANGUAGE',
   'NOT_FOUND',
+  'HAT_CONFLICT',
+  'GRANT_NOT_ALLOWED',
+  'NO_HAT',
 ]);
 /** The validated shape of `StaffErrorCode`, as the api and web see it after parsing. */
 export type StaffErrorCode = z.infer<typeof StaffErrorCode>;

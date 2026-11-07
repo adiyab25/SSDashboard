@@ -5,6 +5,7 @@ import {
   signInThroughPage,
   type SeededAccount,
   ownAddress,
+  WORKING_HATS,
 } from './accounts';
 import { languageCookie } from './support';
 
@@ -22,7 +23,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 test.beforeEach(async ({ context, baseURL }) => {
-  person = await seedAccount({ role: 'staff' });
+  person = await seedAccount({ hats: WORKING_HATS });
   toRemove = person;
   await signInThroughApi(context, person, baseURL ?? '');
 });
@@ -38,16 +39,17 @@ async function openAccount(page: Page) {
   await expect(page.getByLabel(/^Name/)).toBeVisible();
 }
 
-test('shows the person, with email, role and staff code read only (AC-19)', async ({ page }) => {
+test('shows the person, with email, hats and staff code read only (AC-19)', async ({ page }) => {
   await openAccount(page);
 
   await expect(page.getByRole('heading', { level: 1, name: 'Account' })).toBeVisible();
   await expect(page.getByLabel(/^Name/)).toHaveValue(person.name);
   await expect(page.getByRole('term').filter({ hasText: 'Email' })).toBeVisible();
   await expect(page.getByText(person.email)).toBeVisible();
-  // Email, role and staff code are not inputs: an administrator owns them.
+  // Email, hats and staff code are not inputs: a manager owns them.
   await expect(page.getByRole('textbox', { name: /^Email/ })).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: /^Role/ })).toHaveCount(0);
+  await expect(page.getByRole('term').filter({ hasText: 'Hats' })).toBeVisible();
+  await expect(page.getByText('Support, Operations, Warehouse')).toBeVisible();
   await expect(page.getByRole('textbox', { name: /^Staff code/ })).toHaveCount(0);
 });
 

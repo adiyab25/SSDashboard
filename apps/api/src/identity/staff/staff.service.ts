@@ -1,24 +1,32 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  CreateStaffRequest,
-  CreateStaffResponse,
-  ResetStaffPasswordResponse,
-  RevokeSessionsResponse,
-  StaffDetail,
-  StaffListQuery,
-  StaffListResponse,
-  StaffRow,
-  StaffSetup,
-  StaffStatus,
-  UpdateStaffRequest,
+import {
+  StaffHat,
+  type CreateStaffRequest,
+  type CreateStaffResponse,
+  type ResetStaffPasswordResponse,
+  type RevokeSessionsResponse,
+  type StaffDetail,
+  type StaffListQuery,
+  type StaffListResponse,
+  type StaffRow,
+  type StaffSetup,
+  type StaffStatus,
+  type UpdateStaffRequest,
 } from '@ssdashboard/contracts';
-import { StaffRole } from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { randomBytes } from 'node:crypto';
+import { auditActorOf, type Actor } from '../access/actor.js';
+import {
+  IDENTITY_AUDIT,
+  type IdentityAudit,
+  type IdentityAuditEntry,
+} from '../audit-port/identity-audit.js';
+import { judgeStaffSet, refuseCostChangeWithoutCost } from '../hats/access-rules.js';
+import { HatService } from '../hats/hat.service.js';
+import { assertAnotherManager, lockAdminRule } from '../hats/last-manager.js';
 import { AuthAudit } from '../sign-in/auth-audit.service.js';
 import { emailKey } from '../sign-in/client-info.js';
-import { ADMIN_RULE_LOCK } from '../sign-in/locks.js';
 import {
   deleteTokens,
   deleteTwoFactorChallenges,
@@ -26,12 +34,17 @@ import {
   type Executor,
 } from '../sign-in/reset-tokens.js';
 import { revokeSessions } from '../sessions/revoke-sessions.js';
-import { SESSION_AUDIENCES, type SessionAudiences } from '../sessions/session-audiences.js';
+import {
+  holdsHat,
+  SESSION_AUDIENCES,
+  type SessionAudiences,
+} from '../sessions/session-audiences.js';
 import { SignInLockout } from '../sign-in/sign-in-lockout.js';
 import { generateTemporaryPassword } from '../sign-in/temporary-password.js';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
 import { DATABASE } from '../../database/database.module.js';
+import type { Transaction } from '../../database/sql.js';
 import { MailProducer } from '../../mail/mail-queue.js';
 import type { MailKind } from '../../mail/mail-templates.js';
 import {
@@ -39,7 +52,6 @@ import {
   StaffDisabled,
   StaffEnabled,
   StaffPasswordReset,
-  StaffRoleChanged,
   StaffSessionsRevoked,
   StaffTwoFactorReset,
   StaffUpdated,
@@ -49,20 +61,20 @@ import {
 import { assertLanguageEnabled } from '../../platform/languages.js';
 import { SettingsService } from '../../platform/settings.service.js';
 
-type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
-
-/** Who is making the change, and from where. The controller reads it from the request. */
-export interface Actor {
-  id: string;
-  ip: string;
-  userAgent: string | null;
-}
+type Tx = Transaction;
 
 interface UserRow extends Record<string, unknown> {
   id: string;
   name: string;
   email: string;
-  role: string;
+  /** Whether the person wears the `manager` hat, read with the row. */
+  manager: boolean;
+  /** The person's hats, read with the row. */
+  hats: string[];
+  /** Whether the person holds the `cost.view` grant, read with the row. */
+  cost_view: boolean;
+  /** `users.updated_at` as text to the microsecond, the `updatedAt` of the access change. */
+  updated_at_text: string;
   banned: boolean;
   ban_reason: string | null;
   phone: string | null;
@@ -76,9 +88,18 @@ interface UserRow extends Record<string, unknown> {
   name_key: string;
 }
 
-const COLUMNS = sql.raw(
-  'id, name, email, role, banned, ban_reason, phone, staff_code, language, two_factor_enabled, last_sign_in_at, created_at, lower(name) AS name_key',
-);
+const COLUMNS = sql`id, name, email, ${holdsHat('manager')} AS manager, banned, ban_reason, phone,
+  staff_code, language, two_factor_enabled, last_sign_in_at, created_at, lower(name) AS name_key,
+  coalesce((SELECT array_agg(h.hat) FROM hat_assignments h WHERE h.user_id = users.id), '{}') AS hats,
+  EXISTS (SELECT 1 FROM permission_grants g
+           WHERE g.user_id = users.id AND g.permission = 'cost.view') AS cost_view,
+  to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_text`;
+
+/** The person's staff hats in catalog order (a staff row never holds `partner`). */
+const staffHatsOf = (row: { hats: readonly string[] }): StaffHat[] => {
+  const held = new Set(row.hats);
+  return StaffHat.options.filter((hat) => held.has(hat));
+};
 
 /** The cursor does not decode to a page position this endpoint issued. */
 export class InvalidStaffCursorError extends Error {
@@ -158,8 +179,12 @@ const refuseSelf = (id: string, actor: Actor, action: string): void => {
 
 /**
  * Staff administration (spec 0005, AC-12 to AC-18). Every change that could remove the last
- * active admin runs in one transaction under `ADMIN_RULE_LOCK`, the lock `create-admin` takes
+ * active manager runs in one transaction under `ADMIN_RULE_LOCK`, the lock `create-admin` takes
  * too. Better Auth still owns password hashing and the sign in ban check; the rest is our SQL.
+ * Hats and the cost grant are written only by `HatService` (spec 0008): a new person's first set
+ * inside `create`'s transaction, every later change through `PUT /api/staff/:id/access`. Creating,
+ * disabling, enabling and resetting a password each write one audit entry through the identity
+ * audit port in their own transaction (spec 0010 task 10).
  *
  * Staff only (AC-28): every read of a person goes through `SessionAudiences.staffCondition()`,
  * so a partner user is never listed, found (404 for every action), counted as an admin, or made
@@ -171,7 +196,8 @@ export class StaffService {
 
   /**
    * Takes the env, the app database connection, the mail producer, lockout and audit services,
-   * and the `SessionAudiences` port that says who is staff.
+   * the `SessionAudiences` port that says who is staff, the hat service that writes a new
+   * person's first hats, and the identity audit port.
    */
   constructor(
     @Inject(ENV) private readonly env: Env,
@@ -181,6 +207,8 @@ export class StaffService {
     private readonly lockout: SignInLockout,
     private readonly audit: AuthAudit,
     @Inject(SESSION_AUDIENCES) private readonly audiences: SessionAudiences,
+    private readonly hats: HatService,
+    @Inject(IDENTITY_AUDIT) private readonly trail: IdentityAudit,
   ) {
     this.db = connection.db;
   }
@@ -206,6 +234,7 @@ export class StaffService {
              OR staff_code LIKE upper(${like}) ESCAPE '\\')`,
       );
     }
+    if (query.hat !== undefined) filters.push(holdsHat(query.hat));
     if (query.status === 'disabled') filters.push(sql`banned`);
     else if (query.status === 'invited') filters.push(sql`NOT banned AND last_sign_in_at IS NULL`);
     else if (query.status === 'active')
@@ -243,6 +272,9 @@ export class StaffService {
    * password to hand over otherwise.
    */
   async create(input: CreateStaffRequest, actor: Actor): Promise<CreateStaffResponse> {
+    // The access rules first: nothing slow runs for a set that is refused anyway.
+    judgeStaffSet(input.hats, input.costView);
+    if (input.costView) refuseCostChangeWithoutCost(actor);
     await this.assertLanguage(input.language);
     // Hashing is slow and must not hold any lock.
     const temporaryPassword = this.mailOn ? undefined : generateTemporaryPassword();
@@ -254,19 +286,21 @@ export class StaffService {
     try {
       created = await this.db.transaction(async (tx) => {
         const inserted = await tx.execute<{ id: string }>(
-          sql`INSERT INTO users (name, email, role, phone, staff_code, language, must_change_password)
-              VALUES (${input.name}, ${input.email}, ${input.role}, ${input.phone ?? null},
+          sql`INSERT INTO users (name, email, phone, staff_code, language, must_change_password)
+              VALUES (${input.name}, ${input.email}, ${input.phone ?? null},
                       ${input.staffCode ?? null}, ${input.language ?? null}, ${!this.mailOn})
               RETURNING id`,
         );
         const id = inserted.rows[0]?.id;
         if (id === undefined) throw new Error('Could not create the staff account');
+        const holding = await this.hats.giveFirstAccess(tx, id, input.hats, input.costView, actor);
         // Better Auth's own layout: one `credential` account whose id is the user id.
         await tx.execute(
           sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
               VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})`,
         );
         const tokenId = await this.replaceInvite(tx, id);
+        await this.record(tx, actor, id, 'staff_user.created', { after: { ...holding } });
         return { id, ...(tokenId && { tokenId }) };
       });
     } catch (error) {
@@ -275,8 +309,8 @@ export class StaffService {
     }
 
     if (created.tokenId) await this.queue(created.id, 'invite', created.tokenId);
-    this.emit(new StaffCreated(this.context(actor, created.id)));
     const staff = await this.get(created.id);
+    this.emit(new StaffCreated(this.context(actor, created.id), staff.hats, staff.costView));
     const setup: StaffSetup = temporaryPassword
       ? { mode: 'temporary_password', temporaryPassword }
       : { mode: 'email' };
@@ -284,8 +318,9 @@ export class StaffService {
   }
 
   /**
-   * Changes name, contact details, language or role. Refuses a change that would remove the last
-   * active admin, and emits a role changed event when the role moved.
+   * Changes name, contact details or language, and the email while the person is still invited.
+   * Hats and the cost grant are not here: they change only through `HatService`
+   * (`PUT /api/staff/:id/access`).
    */
   async update(id: string, input: UpdateStaffRequest, actor: Actor): Promise<StaffDetail> {
     if (input.language) await this.assertLanguage(input.language);
@@ -296,13 +331,11 @@ export class StaffService {
       current && input.email !== current.email.toLowerCase()
         ? await hashPassword(randomBytes(32).toString('base64url'))
         : undefined;
-    let roleChanged = false;
     let otherChanged = false;
     let inviteTokenId: string | undefined;
 
     try {
       await this.db.transaction(async (tx) => {
-        await this.lock(tx);
         const target = await this.find(tx, id, true);
         if (!target) throw notFound();
 
@@ -318,11 +351,6 @@ export class StaffService {
           sets.push(sql`email = ${input.email}`, sql`must_change_password = true`);
           otherChanged = true;
           emailChanged = true;
-        }
-        if (input.role !== undefined && input.role !== target.role) {
-          if (target.role === 'admin' && !target.banned) await this.assertAnotherAdmin(tx, id);
-          sets.push(sql`role = ${input.role}`);
-          roleChanged = true;
         }
         const plain: Array<[string, string | null | undefined, string | null]> = [
           ['name', input.name, target.name],
@@ -359,10 +387,6 @@ export class StaffService {
     }
 
     if (inviteTokenId) await this.queue(id, 'invite', inviteTokenId);
-    if (roleChanged) {
-      const detail = await this.get(id);
-      this.emit(new StaffRoleChanged(this.context(actor, id), detail.role));
-    }
     if (otherChanged) this.emit(new StaffUpdated(this.context(actor, id)));
     return this.get(id);
   }
@@ -373,11 +397,13 @@ export class StaffService {
    */
   async disable(id: string, reason: string | undefined, actor: Actor): Promise<StaffDetail> {
     await this.db.transaction(async (tx) => {
-      await this.lock(tx);
+      await lockAdminRule(tx);
       const target = await this.find(tx, id, true);
       if (!target) throw notFound();
       if (id === actor.id) throw conflict('SELF_DISABLE', 'You cannot disable your own account');
-      if (target.role === 'admin' && !target.banned) await this.assertAnotherAdmin(tx, id);
+      if (target.manager && !target.banned) {
+        await assertAnotherManager(tx, id, this.staffOnly);
+      }
 
       await tx.execute(
         sql`UPDATE users SET banned = true, ban_reason = ${reason ?? null}, updated_at = now()
@@ -386,6 +412,11 @@ export class StaffService {
       // The same transaction: a disabled person has no live session, and no link that could log them in.
       await revokeSessions(id, tx);
       await deleteTokens(tx, id);
+      await this.record(tx, actor, id, 'staff_user.disabled', {
+        before: { banned: target.banned },
+        after: { banned: true },
+        ...(reason !== undefined && { reason }),
+      });
     });
     this.emit(new StaffDisabled(this.context(actor, id), reason ?? null));
     return this.get(id);
@@ -398,11 +429,16 @@ export class StaffService {
    */
   async enable(id: string, actor: Actor): Promise<StaffDetail> {
     await this.db.transaction(async (tx) => {
-      if (!(await this.find(tx, id, true))) throw notFound();
+      const target = await this.find(tx, id, true);
+      if (!target) throw notFound();
       await tx.execute(
         sql`UPDATE users SET banned = false, ban_reason = NULL, ban_expires = NULL, updated_at = now()
              WHERE id = ${id}::uuid`,
       );
+      await this.record(tx, actor, id, 'staff_user.enabled', {
+        before: { banned: target.banned },
+        after: { banned: false },
+      });
     });
     this.emit(new StaffEnabled(this.context(actor, id)));
     return this.get(id);
@@ -432,6 +468,9 @@ export class StaffService {
       let tokenId: string | undefined;
       if (this.mailOn) tokenId = (await issueToken(tx, id, 'reset')).tokenId;
       else await deleteTokens(tx, id);
+      await this.record(tx, actor, id, 'staff_user.password_reset', {
+        after: { mustChangePassword: true, mode: this.mailOn ? 'email' : 'temporary_password' },
+      });
       return { email: target.email, tokenId };
     });
 
@@ -519,24 +558,25 @@ export class StaffService {
     return result.rows[0];
   }
 
-  /** Every change that could leave no active admin takes this lock first (AC-17). */
-  private async lock(tx: Tx): Promise<void> {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${ADMIN_RULE_LOCK})`);
-  }
-
   /**
-   * An active admin is a staff admin who is not disabled; one who has not signed in yet still
-   * counts. A partner user never counts, whatever their row says (AC-28).
+   * Writes one audit entry for a staff account action through the identity audit port, inside
+   * the action's own transaction (spec 0010 task 10). `detail` holds ids, flags and the reason
+   * only: never an email, a name or a phone.
    */
-  private async assertAnotherAdmin(tx: Tx, exceptId: string): Promise<void> {
-    const others = await tx.execute(
-      sql`SELECT 1 FROM users
-          WHERE role = 'admin' AND NOT banned AND id <> ${exceptId}::uuid AND ${this.staffOnly}
-          LIMIT 1`,
-    );
-    if (others.rows.length === 0) {
-      throw conflict('LAST_ADMIN', 'There must always be at least one active administrator');
-    }
+  private record(
+    tx: Tx,
+    actor: Actor,
+    id: string,
+    action: IdentityAuditEntry['action'],
+    detail: Pick<IdentityAuditEntry, 'before' | 'after' | 'reason'>,
+  ): Promise<void> {
+    return this.trail.record(tx, {
+      actor: auditActorOf(actor, 'people.manage'),
+      action,
+      record: { type: 'user', id },
+      ...detail,
+      correlationId: this.trail.newCorrelationId(),
+    });
   }
 
   private assertLanguage(language: string | undefined): Promise<void> {
@@ -597,7 +637,8 @@ export class StaffService {
       id: row.id,
       name: row.name,
       email: row.email,
-      role: StaffRole.catch('staff').parse(row.role),
+      hats: staffHatsOf(row),
+      costView: row.cost_view,
       status: statusOf(row),
       lastSignInAt: row.last_sign_in_at ? iso(row.last_sign_in_at) : null,
       twoFactorEnabled: row.two_factor_enabled,
@@ -612,6 +653,7 @@ export class StaffService {
       language: row.language,
       disableReason: row.banned ? row.ban_reason : null,
       createdAt: iso(row.created_at),
+      updatedAt: row.updated_at_text,
     };
   }
 }

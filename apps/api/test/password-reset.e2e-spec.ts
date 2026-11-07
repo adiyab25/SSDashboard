@@ -7,6 +7,7 @@ import {
   dropScratchDatabase,
   eventually,
   freePort,
+  giveHats,
   start,
   startSmtpCapture,
   stop,
@@ -91,6 +92,7 @@ describe('password reset by mail', { timeout: 240_000 }, () => {
       [email, options.banned ?? false, options.language ?? null, options.mustChange ?? false],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, { hats: ['support', 'operations', 'warehouse'] });
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

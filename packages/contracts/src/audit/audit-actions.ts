@@ -43,6 +43,62 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.stockReceiptVoided',
     proof: 'apps/api/test/audit.e2e-spec.ts',
   },
+  'hat.granted': {
+    module: 'identity',
+    recordType: 'user',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.hatGranted',
+    proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
+  'hat.revoked': {
+    module: 'identity',
+    recordType: 'user',
+    // Optional per action; taking the manager hat away needs one (spec 0010 actions table): the
+    // hat service passes `reasonRequired: true` for that change and answers 422 REASON_REQUIRED.
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.hatRevoked',
+    proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
+  'staff_user.created': {
+    module: 'identity',
+    recordType: 'user',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.staffUserCreated',
+    proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
+  'staff_user.disabled': {
+    module: 'identity',
+    recordType: 'user',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.staffUserDisabled',
+    proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
+  'staff_user.enabled': {
+    module: 'identity',
+    recordType: 'user',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.staffUserEnabled',
+    proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
+  'staff_user.password_reset': {
+    module: 'identity',
+    recordType: 'user',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.staffUserPasswordReset',
+    proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */

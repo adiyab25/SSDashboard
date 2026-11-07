@@ -1,6 +1,6 @@
 # Audit screens
 
-The back office page at `/audit`: who changed what, newest first, for administrators.
+The back office page at `/audit`: who changed what, newest first, for people with `audit.read` (the manager hat, spec 0008).
 
 ## Owns
 

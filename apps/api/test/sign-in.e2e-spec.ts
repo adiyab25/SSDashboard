@@ -83,7 +83,7 @@ describe('staff sign in (thin thread)', { timeout: 90_000 }, () => {
       expect(result.output).toContain('Usage');
     });
 
-    it('creates the first admin, prints a temporary password once, and sets the must change flag', async () => {
+    it('creates the first admin as a manager with cost.view, prints a temporary password once, and sets the must change flag', async () => {
       const created = runWithArgs(['--email', 'Owner@Example.com', '--name', ' Owner One ']);
       expect(created.code).toBe(0);
       const match = PASSWORD_LINE.exec(created.output);
@@ -108,10 +108,21 @@ describe('staff sign in (thin thread)', { timeout: 90_000 }, () => {
       expect(row).toMatchObject({
         email: 'owner@example.com',
         name: 'Owner One',
-        role: 'admin',
+        role: 'user',
         must_change_password: true,
       });
       expect(row?.account_id).toBe(row?.id);
+      // Spec 0008, AC-14 and AC-16: the manager hat and the cost grant, given by no person.
+      const hats = await owner.pool.query<{ hat: string; granted_by: string | null }>(
+        'SELECT hat, granted_by FROM hat_assignments WHERE user_id = $1::uuid',
+        [row?.id],
+      );
+      expect(hats.rows).toEqual([{ hat: 'manager', granted_by: null }]);
+      const grants = await owner.pool.query<{ permission: string; granted_by: string | null }>(
+        'SELECT permission, granted_by FROM permission_grants WHERE user_id = $1::uuid',
+        [row?.id],
+      );
+      expect(grants.rows).toEqual([{ permission: 'cost.view', granted_by: null }]);
       // Only a hash is stored.
       expect(row?.password).not.toContain(adminPassword);
     });
@@ -190,7 +201,8 @@ describe('staff sign in (thin thread)', { timeout: 90_000 }, () => {
       expect(MeResponse.parse(await me.json())).toMatchObject({
         name: 'Owner One',
         email: 'owner@example.com',
-        role: 'admin',
+        hats: ['manager'],
+        partnerAccountId: null,
         phone: null,
         staffCode: null,
         language: null,

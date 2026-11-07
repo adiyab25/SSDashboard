@@ -6,6 +6,9 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
+  WORKING_HATS,
+  type TestAccess,
   secretFromUri,
   start,
   stop,
@@ -62,15 +65,16 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
   };
 
   async function addPerson(
-    options: { role?: 'admin' | 'staff'; mustChange?: boolean } = {},
+    options: { access?: TestAccess; mustChange?: boolean } = {},
   ): Promise<{ id: string; email: string }> {
     counter += 1;
     const email = `factor${counter}@example.com`;
     const { rows } = await owner.pool.query<{ id: string }>(
-      `INSERT INTO users (name, email, role, must_change_password) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [`Person ${counter}`, email, options.role ?? 'staff', options.mustChange ?? false],
+      `INSERT INTO users (name, email, must_change_password) VALUES ($1, $2, $3) RETURNING id`,
+      [`Person ${counter}`, email, options.mustChange ?? false],
     );
     const id = rows[0]?.id as string;
+    await giveHats(owner.pool, id, options.access ?? WORKING_HATS);
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
@@ -238,7 +242,7 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
     });
 
     it('shows the new state in GET /api/me and, to an admin, in the staff list', async () => {
-      const admin = await addPerson({ role: 'admin' });
+      const admin = await addPerson({ access: { hats: ['manager'], costView: true } });
       const person = await addPerson();
       const { cookie } = await enroll(person.email);
 
@@ -602,7 +606,7 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
 
   describe('an admin resetting two factor (AC-20)', () => {
     it('turns it off and ends their sessions, leaving the password alone', async () => {
-      const admin = await addPerson({ role: 'admin' });
+      const admin = await addPerson({ access: { hats: ['manager'], costView: true } });
       const person = await addPerson();
       const { cookie } = await enroll(person.email);
       const adminCookie = await signIn(admin.email);
@@ -627,7 +631,7 @@ describe('two factor sign in', { timeout: 300_000 }, () => {
 
     it('is for admins only, and answers 404 for an unknown person', async () => {
       const staff = await addPerson();
-      const admin = await addPerson({ role: 'admin' });
+      const admin = await addPerson({ access: { hats: ['manager'], costView: true } });
       const target = await addPerson();
 
       const forbidden = await call(

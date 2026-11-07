@@ -5,7 +5,13 @@ import { ReceiptFormPage } from './receipt-form-page';
 import { renderWithQuery } from './render-with-query';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
-vi.mock('@/auth/use-me', () => ({ useMe: () => ({ id: 'a', role: 'admin' }) }));
+vi.mock('@/auth/use-me', () => ({
+  useMe: () => ({
+    id: 'a',
+    hats: ['manager'],
+    permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+  }),
+}));
 vi.mock('@/shell/current-location-provider', () => ({
   useCurrentLocation: () => 'all',
   useLocationSwitcher: () => ({ retry: vi.fn(), ready: true, status: 'ready', locations: [] }),

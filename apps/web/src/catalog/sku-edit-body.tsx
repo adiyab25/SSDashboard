@@ -24,7 +24,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { useMe } from '@/auth/use-me';
+import { useAccess } from '@/access/use-access';
 import { ConfirmActionDialog } from '@/inventory/confirm-action-dialog';
 import {
   changeSkuCode,
@@ -67,8 +67,8 @@ export function SkuEditBody({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const me = useMe();
-  const isAdmin = me?.role === 'admin';
+  const access = useAccess();
+  const canManage = access.can('catalog.manage');
   // The version this dialog edits against. It is set on open, then by the first fresh fetch while
   // the form is untouched, then only by this dialog's own saves and Reload, never by the shared
   // query: a refetch from the detail page mid edit must not
@@ -94,7 +94,7 @@ export function SkuEditBody({
   const usage = useQuery({
     queryKey: inventoryKeys.skuUsage(sku.id),
     queryFn: ({ signal }) => getSkuUsage(sku.id, signal),
-    enabled: isAdmin && !deleted,
+    enabled: canManage && !deleted,
   });
 
   const form = useForm<EditInput, unknown, EditOutput>({
@@ -253,7 +253,7 @@ export function SkuEditBody({
   });
 
   const busy = save.isPending || recode.isPending;
-  const codeLocked = !isAdmin || usage.data?.codeLocked !== false;
+  const codeLocked = !canManage || usage.data?.codeLocked !== false;
   const messageFor = (code: KnownCode | 'generic') => t(`inventory.skuEdit.errors.${code}`);
   const blocked = usage.data?.canArchive === false;
 
@@ -412,7 +412,7 @@ export function SkuEditBody({
         </DialogFooter>
       </form>
 
-      {isAdmin && (
+      {canManage && (
         <section aria-labelledby="sku-admin-title" className="grid gap-4 border-t pt-4">
           <h3 id="sku-admin-title" className="text-sm font-semibold">
             {t('inventory.skuEdit.adminTitle')}

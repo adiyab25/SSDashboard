@@ -6,6 +6,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { NoAccessState } from '@/access/no-access-state';
 import { ApiError } from '@/api/client';
 import { AuditEntriesTable } from './audit-entries-table';
 import { auditKeys, listAuditEntries, type AuditFilter } from './audit-api';
@@ -15,8 +16,8 @@ const NO_FILTER: AuditFilter = {};
 
 /**
  * The audit trail (spec 0010, AC-12, AC-18): every recorded change, newest first, 50 a page with
- * Load more. Admins only; the api answers 403 to anyone else and this page says so instead of
- * showing a broken table. Read only: there is no way to edit an entry from here.
+ * Load more. Needs `audit.read` (the manager hat, spec 0008); the api answers 403 to anyone else and this page then shows the shared no access state
+ * instead of a broken table. Read only: there is no way to edit an entry from here.
  */
 export function AuditPage() {
   const { t } = useTranslation();
@@ -40,14 +41,7 @@ export function AuditPage() {
     }
   }, [atEnd, rows.length]);
 
-  if (forbidden) {
-    return (
-      <div className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold">{t('audit.title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('audit.forbidden')}</p>
-      </div>
-    );
-  }
+  if (forbidden) return <NoAccessState titleKey="audit.title" />;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">

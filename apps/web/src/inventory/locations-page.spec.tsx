@@ -17,9 +17,15 @@ vi.mock('./inventory-api', async (original) => ({
   ...api,
 }));
 
-const me = vi.hoisted((): { current: { id: string; role: string } | null } => ({
-  current: { id: 'a', role: 'admin' },
-}));
+const me = vi.hoisted(
+  (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
+    current: {
+      id: 'a',
+      hats: ['manager'],
+      permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+    },
+  }),
+);
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
 vi.mock('@/shell/current-location-provider', () => ({
   useLocationSwitcher: () => ({ retry: vi.fn(), locations: [] }),
@@ -42,15 +48,20 @@ const page = (items: LocationDetail[], nextCursor: string | null = null) => ({ i
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
-  me.current = { id: 'a', role: 'admin' };
+  me.current = {
+    id: 'a',
+    hats: ['manager'],
+    permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+  };
 });
 
 describe('LocationsPage (AC-4)', () => {
-  it('says only administrators can manage locations, and asks the api for nothing, to staff', async () => {
-    me.current = { id: 's', role: 'staff' };
+  it('shows the no access state, and asks the api for nothing, without catalog.manage (spec 0008, AC-11)', async () => {
+    me.current = { id: 's', hats: ['warehouse'], permissions: ['stock.view', 'catalog.edit'] };
     renderWithQuery(<LocationsPage />);
 
-    expect(await screen.findByText('Only administrators can manage locations.')).toBeVisible();
+    expect(await screen.findByText('You do not have access to this page')).toBeVisible();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Locations');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(api.listLocations).not.toHaveBeenCalled();
   });

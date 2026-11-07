@@ -23,7 +23,7 @@ export type StockListQuery = z.infer<typeof StockListQuery>;
 const SkuRef = z.object({ id: z.uuid(), code: z.string(), name: LocalizedText });
 const LocationRef = z.object({ id: z.uuid(), code: z.string(), name: LocalizedText });
 
-/** One SKU at one location. `avgUnitCost` and `totalValue` are present for admins only (AC-11). */
+/** One SKU at one location. `avgUnitCost` and `totalValue` are present only for a caller with `cost.view` (AC-11, spec 0008 AC-6). */
 export const StockRow = z.object({
   sku: SkuRef,
   location: LocationRef,
@@ -71,7 +71,7 @@ export type SkuMovementsQuery = z.infer<typeof SkuMovementsQuery>;
 /**
  * One movement of a SKU's history (AC-10). `source` links a stock receipt (`number` is its
  * `SR-…` number); other source types carry `null`. `isReversal` marks a void's row. `postedBy`
- * is null for a system job. `unitCost` and `totalCost` are present for admins only (AC-11).
+ * is null for a system job. `unitCost` and `totalCost` are present only for a caller with `cost.view` (AC-11, spec 0008 AC-6).
  */
 export const SkuMovement = z.object({
   id: z.uuid(),

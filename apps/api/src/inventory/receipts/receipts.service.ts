@@ -7,7 +7,6 @@ import {
   mulDivRound,
   UnitCost,
   type LocalizedText,
-  type StaffRole,
   type StockReceiptDetail,
   type StockReceiptLineError,
   type StockReceiptListQuery,
@@ -19,6 +18,7 @@ import type { z } from 'zod';
 import { AuditService } from '../../audit/audit.service.js';
 import { CatalogService, escapeLike } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.module.js';
+import type { Access } from '../../platform/access/access.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { NumberingService } from '../../platform/numbering.service.js';
@@ -36,8 +36,9 @@ const MAX_LINE_TOTAL_CENTS = 999_999_999_999n;
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
 /**
- * The receipt rules a caller can break: missing, replayed key with a different body, bad lines
- * or location, future date, already voided, or a void that would take stock below zero.
+ * The receipt rules a caller can break: missing, replayed key with a different body or by
+ * another person, bad lines or location, future date, already voided, or a void that would take
+ * stock below zero.
  */
 export type ReceiptErrorCode =
   | 'NotFound'
@@ -67,13 +68,16 @@ export class ReceiptError extends Error {
   }
 }
 
-/** Who is asking: the posting user, and whether cost fields are theirs to see (AC-11). */
+/**
+ * Who is asking: the posting user, what they may see (cost fields need `cost.view`, AC-11), and
+ * the hat a void's audit entry names (`actingHat`).
+ */
 export interface ReceiptCaller {
   id: string;
-  role: StaffRole;
+  access: Pick<Access, 'has' | 'actingHat'>;
 }
 
-/** A stored receipt with every field, before the role serializer. */
+/** A stored receipt with every field, before the cost serializer. */
 interface StoredReceipt {
   id: string;
   requestHash: string;
@@ -95,9 +99,15 @@ export function receiptRequestHash(input: CreateInput): string {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-/** Removes the cost fields for anyone but an admin (AC-11). One serializer for every answer. */
-export function serializeReceipt(detail: StockReceiptDetail, role: StaffRole): StockReceiptDetail {
-  if (role === 'admin') return detail;
+/**
+ * Removes the cost fields (`COST_FIELD_KEYS`) for a caller without `cost.view` (AC-11, spec 0008
+ * AC-6). One serializer for every receipt answer, replays included.
+ */
+export function serializeReceipt(
+  detail: StockReceiptDetail,
+  access: Pick<Access, 'has'>,
+): StockReceiptDetail {
+  if (access.has('cost.view')) return detail;
   const { referenceValue: _value, ...rest } = detail;
   return {
     ...rest,
@@ -223,14 +233,14 @@ export class ReceiptsService {
       lineCount: lines.length,
       userId: caller.id,
     });
-    return { receipt: serializeReceipt(stored.detail, caller.role), created: true };
+    return { receipt: serializeReceipt(stored.detail, caller.access), created: true };
   }
 
   /** One receipt through the caller's serializer, or `NotFound`. */
   async get(id: string, caller: ReceiptCaller): Promise<StockReceiptDetail> {
     const stored = await this.find(this.connection.db, id);
     if (!stored) throw new ReceiptError('NotFound', 'Stock receipt not found');
-    return serializeReceipt(stored.detail, caller.role);
+    return serializeReceipt(stored.detail, caller.access);
   }
 
   /**
@@ -337,7 +347,11 @@ export class ReceiptsService {
             // Recorded before the update, so a missing reason fails on the audit policy (422)
             // rather than on the void_reason check; either way the void rolls back whole.
             await this.audit.record(tx, {
-              actor: { kind: 'person', userId: caller.id, hat: caller.role },
+              actor: {
+                kind: 'person',
+                userId: caller.id,
+                hat: caller.access.actingHat('stock.correct'),
+              },
               action: 'stock_receipt.voided',
               record: { type: 'stock_receipt', id, label: locked.number },
               before: { status: 'posted' },
@@ -405,14 +419,20 @@ export class ReceiptsService {
     return rows.map((row) => row.variant_id);
   }
 
+  /**
+   * The answer to a key that already holds a receipt. Only the person who posted it gets a
+   * replay; anyone else gets `IdempotencyConflict` whatever the body, before the hash is compared,
+   * so the answer never tells a caller without `cost.view` whether a guessed unit cost was right
+   * (spec 0008 security review M1).
+   */
   private replayOf(stored: StoredReceipt, hash: string, caller: ReceiptCaller) {
-    if (stored.requestHash !== hash) {
+    if (stored.detail.postedBy.id !== caller.id || stored.requestHash !== hash) {
       throw new ReceiptError(
         'IdempotencyConflict',
         'This idempotency key was already used for a different receipt',
       );
     }
-    return serializeReceipt(stored.detail, caller.role);
+    return serializeReceipt(stored.detail, caller.access);
   }
 
   /** One active warehouse or shop; the ledger alone would accept transit and scrap. */

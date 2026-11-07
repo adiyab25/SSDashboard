@@ -22,9 +22,11 @@ vi.mock('@/inventory/inventory-api', async (original) => ({
   ...api,
 }));
 
-const me = vi.hoisted((): { current: { id: string; role: string } | null } => ({
-  current: { id: 'me', role: 'staff' },
-}));
+const me = vi.hoisted(
+  (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
+    current: { id: 'me', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] },
+  }),
+);
 vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
 
 const sku = (n: number, overrides: Partial<SkuSummary> = {}): SkuSummary => ({
@@ -45,7 +47,7 @@ const detail = (n: number) => ({
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
-  me.current = { id: 'me', role: 'staff' };
+  me.current = { id: 'me', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] };
 });
 
 describe('SkusPage (AC-13)', () => {
@@ -287,7 +289,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
 
   describe('as an admin', () => {
     it('explains a locked code, disables it, and blocks archive while stock is on hand', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: false });
       const dialog = await openEdit();
@@ -303,7 +316,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('changes an unlocked code with updatedAt, and reports SKU_TAKEN on the field', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
       api.changeSkuCode.mockRejectedValue(new ApiError(409, { code: 'SKU_TAKEN' }));
@@ -325,7 +349,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('reports STYLE_CODE_TAKEN on the code field, apart from SKU_TAKEN', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
       api.changeSkuCode.mockRejectedValue(new ApiError(409, { code: 'STYLE_CODE_TAKEN' }));
@@ -346,7 +381,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('shows the stock on hand message when archiving is refused', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
       api.setSkuArchived.mockRejectedValue(new ApiError(409, { code: 'STOCK_ON_HAND' }));
@@ -365,7 +411,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('shows the in use message when delete is refused', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: true });
       api.deleteSku.mockRejectedValue(new ApiError(409, { code: 'IN_USE' }));
@@ -379,7 +436,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('Escape in the confirm step closes only that step and keeps the typed edits', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: false, canArchive: true });
       const dialog = await openEdit();
@@ -402,7 +470,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('names the confirm close icon Close and keeps one control named Cancel', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue(detail(1));
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: true });
       const dialog = await openEdit();
@@ -415,7 +494,18 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     });
 
     it('offers Unarchive for an archived SKU', async () => {
-      me.current = { id: 'a', role: 'admin' };
+      me.current = {
+        id: 'a',
+        hats: ['manager'],
+        permissions: [
+          'catalog.manage',
+          'catalog.edit',
+          'stock.receive',
+          'cost.view',
+          'people.manage',
+          'stock.correct',
+        ],
+      };
       api.getSku.mockResolvedValue({ ...detail(1), archived: true, status: 'archived' });
       api.getSkuUsage.mockResolvedValue({ codeLocked: true, canArchive: true });
       const dialog = await openEdit();

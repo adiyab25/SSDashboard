@@ -19,7 +19,7 @@ export const auditKeys = {
   list: (filter: AuditFilter) => ['audit', 'list', filter] as const,
 };
 
-/** One page of audit entries, newest first, narrowed by the filter (admins only: 403 otherwise). */
+/** One page of audit entries, newest first, narrowed by the filter (needs `audit.read`: 403 otherwise). */
 export function listAuditEntries(
   filter: AuditFilter,
   cursor: string | undefined,

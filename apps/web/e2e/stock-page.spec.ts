@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import { ownAddress, seedAccount, signInThroughApi } from './accounts';
+import { ownAddress, seedAccount, signInThroughApi, WORKING_HATS } from './accounts';
 import { createLocation, createSku, findRow, receive } from './master-data-api';
 import {
   chooseLocation,
@@ -255,7 +255,7 @@ test.describe('staff see no cost columns on the Stock page (AC-9, AC-11)', () =>
       baseURL,
     }) => {
       const scene = await seedStockScene(page.request);
-      const clerkAccount = await seedAccount({ role: 'staff', language });
+      const clerkAccount = await seedAccount({ hats: WORKING_HATS, language });
       const clerk = await browser.newContext({ baseURL, extraHTTPHeaders: ownAddress() });
       try {
         // The admin (the saved session) sees both cost columns, with 10 at 5.0000 worth 50.00.
