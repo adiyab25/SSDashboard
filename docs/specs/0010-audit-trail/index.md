@@ -1,7 +1,7 @@
 # 0010. Audit trail: one append only log of who did what, when, and why, written in the same transaction as the change
 
 **Date**: 2026-11-05
-**Status**: In Progress
+**Status**: Built 2026-11-07 (milestones 1 to 4)
 **Depends on**: the feature 4 baseline ([spec 0002 amendment](../0002-core-data-model/index.md#amendment-2026-11-05), [tenancy child](../0002-core-data-model/0002-tenancy-platform.md): `tenant_id`, `ssd_reject_change()`, `ssd_stamp_operating_day()`, the append only list, the table ownership map). Milestone 1 starts only after that baseline migration has landed. Hats (spec 0008, written in parallel) and settings (spec 0009) are consumers of this shape, not prerequisites.
 
 ## Summary

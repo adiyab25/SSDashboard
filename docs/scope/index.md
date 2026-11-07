@@ -20,7 +20,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 
 ## Epics
 
-- [Foundations](foundations.md): 10 features, stack, standards, dev environment, data model, design system, languages, sign in, roles, settings, audit. 8 of 10 done.
+- [Foundations](foundations.md): 10 features, stack, standards, dev environment, data model, design system, languages, sign in, roles, settings, audit. 9 of 10 done.
 - [Slice 1a: confirmation to cash](confirmation-to-cash.md): 17 features, Shopify, orders, customers, confirmation, Bosta mirror, failures, settlement, period close, dashboard, daily report, hosting, exit package. 0 of 17 done.
 - [Slice 1b: the exchange loop](exchange-loop.md): 12 features, credit ledger, portal, rules, Bosta driver mode, picking, execution, refunds, retention, write back, transfers. 0 of 12 done.
 - [Slice 2: consignment partners and the accounting handoff](consignment-and-accounting.md): 8 features, channel code mapping, partners, ingestion, settlement, tax documents, export engine, provisioning. 0 of 8 done.
@@ -42,7 +42,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 | 7 | [Staff sign in](foundations.md) | Foundation | Core | GA | done |
 | 8 | [Roles as hats](foundations.md) | Foundation | Core | GA | done |
 | 9 | [Settings, module toggles & bundles](foundations.md) | Foundation | Core | GA | in-progress |
-| 10 | [Audit trail](foundations.md) | Foundation | Core | Beta | in-progress |
+| 10 | [Audit trail](foundations.md) | Foundation | Core | Beta | done |
 | 11 | [Stock ledger & locations](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
 | 12 | [Catalog, styles & variants](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |
 | 13 | [Shopify connector](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
