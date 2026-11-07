@@ -42,6 +42,14 @@ export function judgeStaffSet(hats: readonly Hat[], costView: boolean): void {
   }
 }
 
+/** A partner account that is not a consignment partner (spec 0008, AC-15): 422 `UNKNOWN_PARTNER_ACCOUNT`. */
+export function unknownPartnerAccount(): HttpException {
+  return unprocessable(
+    'UNKNOWN_PARTNER_ACCOUNT',
+    'There is no consignment partner with this account',
+  );
+}
+
 /** Nobody changes their own hats or cost grant, either way (spec 0005 AC-33 f, spec 0008 AC-7). */
 export function refuseSelfChange(targetId: string, actor: Actor): void {
   if (targetId === actor.id) {
@@ -67,6 +75,11 @@ export interface HoldingDiff {
   costAdded: boolean;
   /** The cost grant is taken by this change. */
   costRemoved: boolean;
+  /**
+   * A partner user is bound to another partner account: the old binding is taken away, the new
+   * one given (the partner hat itself stays, so it is in neither `added` nor `removed`).
+   */
+  accountMoved: boolean;
   /** Anything at all changes. */
   changed: boolean;
 }
@@ -79,24 +92,30 @@ export function diffHoldings(before: AccessHolding, after: AccessHolding): Holdi
   const removed = Hat.options.filter((hat) => was.has(hat) && !now.has(hat));
   const costAdded = after.costView && !before.costView;
   const costRemoved = before.costView && !after.costView;
+  const accountMoved =
+    before.partnerAccountId !== null &&
+    after.partnerAccountId !== null &&
+    before.partnerAccountId !== after.partnerAccountId;
   const changed =
     added.length > 0 ||
     removed.length > 0 ||
     costAdded ||
     costRemoved ||
     before.partnerAccountId !== after.partnerAccountId;
-  return { added, removed, costAdded, costRemoved, changed };
+  return { added, removed, costAdded, costRemoved, accountMoved, changed };
 }
 
 /**
  * The audit action of one access change. Spec 0010 writes one entry per changed record (its AC-1)
  * and spec 0008 AC-13 one entry per change, with the whole holding before and after, so a change
- * is one entry: `hat.revoked` when it takes anything away (a hat or the cost grant), else
- * `hat.granted`. The revoke wins in a mixed change because it carries the stricter reason policy
+ * is one entry: `hat.revoked` when it takes anything away (a hat, the cost grant, or a partner
+ * user's binding to their old partner account), else `hat.granted`. The revoke wins in a mixed change because it carries the stricter reason policy
  * (spec 0010 actions table: required for `hat.revoked` of the manager hat).
  */
 export function auditActionOf(diff: HoldingDiff): IdentityAuditAction {
-  return diff.removed.length > 0 || diff.costRemoved ? 'hat.revoked' : 'hat.granted';
+  return diff.removed.length > 0 || diff.costRemoved || diff.accountMoved
+    ? 'hat.revoked'
+    : 'hat.granted';
 }
 
 /**

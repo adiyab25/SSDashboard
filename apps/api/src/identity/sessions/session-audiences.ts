@@ -30,6 +30,13 @@ export interface SessionAudiences {
    * in their `WHERE`, so a partner user is never listed, counted as an admin or made one (AC-28).
    */
   staffCondition(): SQL;
+
+  /**
+   * A SQL condition on a row of `users`, named `users` in the query, that holds exactly when that
+   * person may use the partner audience (they wear the partner hat). `/api/partner-users` puts it
+   * in every query on `users`, so a staff person is never listed or found there (404).
+   */
+  partnerCondition(): SQL;
 }
 
 /** The Nest token `SessionAudiences` is bound to: `HatSessionAudiences` in `identity.module.ts`. */
@@ -63,7 +70,8 @@ export function holdsHat(hat: Hat): SQL {
  * The real `SessionAudiences` (spec 0005 AC-29, spec 0008 AC-10), bound to `SESSION_AUDIENCES` in
  * `identity.module.ts` and built by `src/create-admin.ts`, which has no Nest container. It reads
  * the person's hats from `hat_assignments` on every call and caches nothing; `staffCondition()` is
- * the same answer as SQL: at least one hat, and not the partner hat.
+ * the same answer as SQL: at least one hat, and not the partner hat; `partnerCondition()` the
+ * partner side: the partner hat.
  */
 @Injectable()
 export class HatSessionAudiences implements SessionAudiences {
@@ -86,6 +94,11 @@ export class HatSessionAudiences implements SessionAudiences {
   staffCondition(): SQL {
     return sql`(EXISTS (SELECT 1 FROM hat_assignments h WHERE h.user_id = users.id)
       AND NOT ${holdsHat('partner')})`;
+  }
+
+  /** True for a person who wears the partner hat (who then wears no other, `HatService` keeps it so). */
+  partnerCondition(): SQL {
+    return holdsHat('partner');
   }
 }
 

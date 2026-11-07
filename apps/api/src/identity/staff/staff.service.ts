@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import {
   StaffHat,
   type CreateStaffRequest,
@@ -9,44 +9,10 @@ import {
   type StaffListQuery,
   type StaffListResponse,
   type StaffRow,
-  type StaffSetup,
-  type StaffStatus,
   type UpdateStaffRequest,
 } from '@ssdashboard/contracts';
-import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
-import { hashPassword } from 'better-auth/crypto';
-import { randomBytes } from 'node:crypto';
-import { auditActorOf, type Actor } from '../access/actor.js';
-import {
-  IDENTITY_AUDIT,
-  type IdentityAudit,
-  type IdentityAuditEntry,
-} from '../audit-port/identity-audit.js';
-import { judgeStaffSet, refuseCostChangeWithoutCost } from '../hats/access-rules.js';
-import { HatService } from '../hats/hat.service.js';
-import { assertAnotherManager, lockAdminRule } from '../hats/last-manager.js';
-import { AuthAudit } from '../sign-in/auth-audit.service.js';
-import { emailKey } from '../sign-in/client-info.js';
-import {
-  deleteTokens,
-  deleteTwoFactorChallenges,
-  issueToken,
-  type Executor,
-} from '../sign-in/reset-tokens.js';
-import { revokeSessions } from '../sessions/revoke-sessions.js';
-import {
-  holdsHat,
-  SESSION_AUDIENCES,
-  type SessionAudiences,
-} from '../sessions/session-audiences.js';
-import { SignInLockout } from '../sign-in/sign-in-lockout.js';
-import { generateTemporaryPassword } from '../sign-in/temporary-password.js';
-import { ENV } from '../../config/config.module.js';
-import type { Env } from '../../config/env.js';
+import { sql, type Database, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../../database/database.module.js';
-import type { Transaction } from '../../database/sql.js';
-import { MailProducer } from '../../mail/mail-queue.js';
-import type { MailKind } from '../../mail/mail-templates.js';
 import {
   StaffCreated,
   StaffDisabled,
@@ -55,20 +21,25 @@ import {
   StaffSessionsRevoked,
   StaffTwoFactorReset,
   StaffUpdated,
-  type AuthEvent,
-  type AuthEventContext,
 } from '../../platform/events/auth-events.js';
-import { assertLanguageEnabled } from '../../platform/languages.js';
-import { SettingsService } from '../../platform/settings.service.js';
+import type { Actor } from '../access/actor.js';
+import {
+  AccountActions,
+  statusOf,
+  type AccountKind,
+  type AccountRowBase,
+} from '../accounts/account-actions.js';
+import { judgeStaffSet, refuseCostChangeWithoutCost } from '../hats/access-rules.js';
+import { HatService } from '../hats/hat.service.js';
+import {
+  holdsHat,
+  SESSION_AUDIENCES,
+  type SessionAudiences,
+} from '../sessions/session-audiences.js';
 
-type Tx = Transaction;
-
-interface UserRow extends Record<string, unknown> {
-  id: string;
+interface UserRow extends AccountRowBase {
   name: string;
   email: string;
-  /** Whether the person wears the `manager` hat, read with the row. */
-  manager: boolean;
   /** The person's hats, read with the row. */
   hats: string[];
   /** Whether the person holds the `cost.view` grant, read with the row. */
@@ -84,12 +55,10 @@ interface UserRow extends Record<string, unknown> {
   /** Raw `execute` rows hand timestamps back as text, so both forms are read. */
   last_sign_in_at: Date | string | null;
   created_at: Date | string;
-  /** `lower(name)` as the database computes it, so a cursor never disagrees with the ordering. */
-  name_key: string;
 }
 
-const COLUMNS = sql`id, name, email, ${holdsHat('manager')} AS manager, banned, ban_reason, phone,
-  staff_code, language, two_factor_enabled, last_sign_in_at, created_at, lower(name) AS name_key,
+const COLUMNS = sql`id, name, email, banned, ban_reason, phone, staff_code, language,
+  two_factor_enabled, last_sign_in_at, created_at,
   coalesce((SELECT array_agg(h.hat) FROM hat_assignments h WHERE h.user_id = users.id), '{}') AS hats,
   EXISTS (SELECT 1 FROM permission_grants g
            WHERE g.user_id = users.id AND g.permission = 'cost.view') AS cost_view,
@@ -101,90 +70,14 @@ const staffHatsOf = (row: { hats: readonly string[] }): StaffHat[] => {
   return StaffHat.options.filter((hat) => held.has(hat));
 };
 
-/** The cursor does not decode to a page position this endpoint issued. */
-export class InvalidStaffCursorError extends Error {
-  constructor() {
-    super('The cursor is not one this endpoint issued');
-  }
-}
-
-interface Cursor {
-  name: string;
-  id: string;
-}
-
-/** Turns the last row of a page into the opaque cursor for the next one. */
-export function encodeStaffCursor(cursor: Cursor): string {
-  return Buffer.from(JSON.stringify([cursor.name, cursor.id]), 'utf8').toString('base64url');
-}
-
-/**
- * Reads a cursor back. Throws `InvalidStaffCursorError` for anything this endpoint did not
- * issue.
- */
-export function decodeStaffCursor(value: string): Cursor {
-  try {
-    if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('shape');
-    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
-    if (
-      Array.isArray(parsed) &&
-      parsed.length === 2 &&
-      typeof parsed[0] === 'string' &&
-      typeof parsed[1] === 'string'
-    ) {
-      const cursor = { name: parsed[0], id: parsed[1] };
-      // Node decodes loosely; only a cursor that round trips is one we issued.
-      if (encodeStaffCursor(cursor) === value) return cursor;
-    }
-  } catch {
-    // fall through
-  }
-  throw new InvalidStaffCursorError();
-}
-
-/** Escapes `%`, `_` and the escape character, so a search for `50%` finds `50%` and nothing else. */
-export function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
-
 const iso = (value: Date | string): string => new Date(value).toISOString();
 
 /**
- * Derives the shown status: disabled when banned, invited when the person never signed in,
- * otherwise active.
- */
-export const statusOf = (row: {
-  banned: boolean;
-  last_sign_in_at: Date | string | null;
-}): StaffStatus => (row.banned ? 'disabled' : row.last_sign_in_at === null ? 'invited' : 'active');
-
-/** The pg error code for a unique violation, found through Drizzle's wrapper. */
-function uniqueViolation(error: unknown): string | undefined {
-  for (let cause: unknown = error; cause; cause = (cause as { cause?: unknown }).cause) {
-    const pg = cause as { code?: string; constraint?: string };
-    if (pg.code === '23505') return pg.constraint;
-  }
-  return undefined;
-}
-
-const conflict = (code: string, message: string) => new ConflictException({ code, message });
-const notFound = () =>
-  new NotFoundException({ code: 'NOT_FOUND', message: 'No such staff account' });
-/** An admin resets or signs out someone else from the staff page, never themselves (no password check there). */
-const refuseSelf = (id: string, actor: Actor, action: string): void => {
-  if (id === actor.id) {
-    throw conflict('SELF_ACTION', `You cannot ${action} your own account from the staff page`);
-  }
-};
-
-/**
- * Staff administration (spec 0005, AC-12 to AC-18). Every change that could remove the last
- * active manager runs in one transaction under `ADMIN_RULE_LOCK`, the lock `create-admin` takes
- * too. Better Auth still owns password hashing and the sign in ban check; the rest is our SQL.
- * Hats and the cost grant are written only by `HatService` (spec 0008): a new person's first set
- * inside `create`'s transaction, every later change through `PUT /api/staff/:id/access`. Creating,
- * disabling, enabling and resetting a password each write one audit entry through the identity
- * audit port in their own transaction (spec 0010 task 10).
+ * Staff administration (spec 0005, AC-12 to AC-18). The account mechanics (invites, resets,
+ * lockout, sessions, the transaction checked writes and their audit entries) are the shared
+ * `AccountActions`, run with the staff {@link AccountKind}: staff only, the last manager guarded
+ * on disable. Hats and the cost grant are written only by `HatService` (spec 0008): a new person's
+ * first set inside `create`'s transaction, every later change through `PUT /api/staff/:id/access`.
  *
  * Staff only (AC-28): every read of a person goes through `SessionAudiences.staffCondition()`,
  * so a partner user is never listed, found (404 for every action), counted as an admin, or made
@@ -193,77 +86,48 @@ const refuseSelf = (id: string, actor: Actor, action: string): void => {
 @Injectable()
 export class StaffService {
   private readonly db: Database;
+  private readonly kind: AccountKind;
 
   /**
-   * Takes the env, the app database connection, the mail producer, lockout and audit services,
-   * the `SessionAudiences` port that says who is staff, the hat service that writes a new
-   * person's first hats, and the identity audit port.
+   * Takes the app database connection, the `SessionAudiences` port that says who is staff, the
+   * hat service that writes a new person's first hats, and the shared account mechanics.
    */
   constructor(
-    @Inject(ENV) private readonly env: Env,
     @Inject(DATABASE) connection: DatabaseConnection,
-    private readonly settings: SettingsService,
-    private readonly producer: MailProducer,
-    private readonly lockout: SignInLockout,
-    private readonly audit: AuthAudit,
-    @Inject(SESSION_AUDIENCES) private readonly audiences: SessionAudiences,
+    @Inject(SESSION_AUDIENCES) audiences: SessionAudiences,
     private readonly hats: HatService,
-    @Inject(IDENTITY_AUDIT) private readonly trail: IdentityAudit,
+    private readonly accounts: AccountActions,
   ) {
     this.db = connection.db;
-  }
-
-  /** The condition that keeps every query to staff people (AC-28). */
-  private get staffOnly(): SQL {
-    return sql`(${this.audiences.staffCondition()})`;
-  }
-
-  private get mailOn(): boolean {
-    return this.env.MAIL_DRIVER !== 'none';
+    this.kind = {
+      noun: 'staff account',
+      only: () => audiences.staffCondition(),
+      guardsLastManager: true,
+      events: {
+        updated: (context) => new StaffUpdated(context),
+        disabled: (context, reason) => new StaffDisabled(context, reason),
+        enabled: (context) => new StaffEnabled(context),
+        passwordReset: (context) => new StaffPasswordReset(context),
+        sessionsRevoked: (context) => new StaffSessionsRevoked(context),
+        twoFactorReset: (context) => new StaffTwoFactorReset(context),
+      },
+    };
   }
 
   /**
    * One keyset page of staff ordered by name, with the optional search and filters of the query.
+   * Throws `InvalidAccountCursorError` for a cursor this endpoint did not issue.
    */
   async list(query: StaffListQuery): Promise<StaffListResponse> {
-    const filters = [this.staffOnly];
-    if (query.q) {
-      const like = `%${escapeLike(query.q)}%`;
-      filters.push(
-        sql`(lower(name) LIKE lower(${like}) ESCAPE '\\' OR lower(email) LIKE lower(${like}) ESCAPE '\\'
-             OR staff_code LIKE upper(${like}) ESCAPE '\\')`,
-      );
-    }
-    if (query.hat !== undefined) filters.push(holdsHat(query.hat));
-    if (query.status === 'disabled') filters.push(sql`banned`);
-    else if (query.status === 'invited') filters.push(sql`NOT banned AND last_sign_in_at IS NULL`);
-    else if (query.status === 'active')
-      filters.push(sql`NOT banned AND last_sign_in_at IS NOT NULL`);
-    if (query.cursor !== undefined) {
-      const after = decodeStaffCursor(query.cursor);
-      filters.push(
-        sql`(lower(name) COLLATE "C", id) > (${after.name} COLLATE "C", ${after.id}::uuid)`,
-      );
-    }
-    const result = await this.db.execute<UserRow>(
-      sql`SELECT ${COLUMNS} FROM users WHERE ${sql.join(filters, sql` AND `)}
-          ORDER BY lower(name) COLLATE "C", id LIMIT ${query.limit + 1}`,
-    );
-    const page = result.rows.slice(0, query.limit);
-    const last = page.at(-1);
-    return {
-      rows: page.map((row) => this.toRow(row)),
-      nextCursor:
-        result.rows.length > query.limit && last
-          ? encodeStaffCursor({ name: last.name_key, id: last.id })
-          : null,
-    };
+    const extra = query.hat === undefined ? [] : [holdsHat(query.hat)];
+    const page = await this.accounts.page<UserRow>(this.kind, query, COLUMNS, extra);
+    return { rows: page.rows.map((row) => this.toRow(row)), nextCursor: page.nextCursor };
   }
 
   /** One account's detail; throws 404 `NOT_FOUND` for an unknown id. */
   async get(id: string): Promise<StaffDetail> {
-    const row = await this.find(this.db, id);
-    if (!row) throw notFound();
+    const row = await this.accounts.find<UserRow>(this.db, this.kind, id, COLUMNS);
+    if (!row) throw this.accounts.notFound(this.kind);
     return this.toDetail(row);
   }
 
@@ -275,45 +139,13 @@ export class StaffService {
     // The access rules first: nothing slow runs for a set that is refused anyway.
     judgeStaffSet(input.hats, input.costView);
     if (input.costView) refuseCostChangeWithoutCost(actor);
-    await this.assertLanguage(input.language);
-    // Hashing is slow and must not hold any lock.
-    const temporaryPassword = this.mailOn ? undefined : generateTemporaryPassword();
-    const passwordHash = await hashPassword(
-      temporaryPassword ?? randomBytes(32).toString('base64url'),
+    const { id, setup } = await this.accounts.create(input, actor, (tx, userId) =>
+      this.hats.giveFirstAccess(tx, userId, input.hats, input.costView, actor),
     );
-
-    let created: { id: string; tokenId?: string };
-    try {
-      created = await this.db.transaction(async (tx) => {
-        const inserted = await tx.execute<{ id: string }>(
-          sql`INSERT INTO users (name, email, phone, staff_code, language, must_change_password)
-              VALUES (${input.name}, ${input.email}, ${input.phone ?? null},
-                      ${input.staffCode ?? null}, ${input.language ?? null}, ${!this.mailOn})
-              RETURNING id`,
-        );
-        const id = inserted.rows[0]?.id;
-        if (id === undefined) throw new Error('Could not create the staff account');
-        const holding = await this.hats.giveFirstAccess(tx, id, input.hats, input.costView, actor);
-        // Better Auth's own layout: one `credential` account whose id is the user id.
-        await tx.execute(
-          sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
-              VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})`,
-        );
-        const tokenId = await this.replaceInvite(tx, id);
-        await this.record(tx, actor, id, 'staff_user.created', { after: { ...holding } });
-        return { id, ...(tokenId && { tokenId }) };
-      });
-    } catch (error) {
-      this.rethrowUnique(error);
-      throw error;
-    }
-
-    if (created.tokenId) await this.queue(created.id, 'invite', created.tokenId);
-    const staff = await this.get(created.id);
-    this.emit(new StaffCreated(this.context(actor, created.id), staff.hats, staff.costView));
-    const setup: StaffSetup = temporaryPassword
-      ? { mode: 'temporary_password', temporaryPassword }
-      : { mode: 'email' };
+    const staff = await this.get(id);
+    this.accounts.emit(
+      new StaffCreated(this.accounts.context(actor, id), staff.hats, staff.costView),
+    );
     return { staff, setup };
   }
 
@@ -323,313 +155,45 @@ export class StaffService {
    * (`PUT /api/staff/:id/access`).
    */
   async update(id: string, input: UpdateStaffRequest, actor: Actor): Promise<StaffDetail> {
-    if (input.language) await this.assertLanguage(input.language);
-    // Hashing is slow and must not hold any lock, so the unusable password an email change needs
-    // is made first, and only when the email looks set to change.
-    const current = input.email === undefined ? undefined : await this.find(this.db, id);
-    let unusableHash =
-      current && input.email !== current.email.toLowerCase()
-        ? await hashPassword(randomBytes(32).toString('base64url'))
-        : undefined;
-    let otherChanged = false;
-    let inviteTokenId: string | undefined;
-
-    try {
-      await this.db.transaction(async (tx) => {
-        const target = await this.find(tx, id, true);
-        if (!target) throw notFound();
-
-        const sets: SQL[] = [];
-        let emailChanged = false;
-        if (input.email !== undefined && input.email !== target.email.toLowerCase()) {
-          if (statusOf(target) !== 'invited') {
-            throw conflict(
-              'EMAIL_LOCKED',
-              'The email can only change while the account is invited',
-            );
-          }
-          sets.push(sql`email = ${input.email}`, sql`must_change_password = true`);
-          otherChanged = true;
-          emailChanged = true;
-        }
-        const plain: Array<[string, string | null | undefined, string | null]> = [
-          ['name', input.name, target.name],
-          ['phone', input.phone, target.phone],
-          ['staff_code', input.staffCode, target.staff_code],
-          ['language', input.language, target.language],
-        ];
-        for (const [column, next, current] of plain) {
-          if (next !== undefined && next !== current) {
-            sets.push(sql`${sql.raw(column)} = ${next}`);
-            otherChanged = true;
-          }
-        }
-        if (sets.length > 0) {
-          await tx.execute(
-            sql`UPDATE users SET ${sql.join(sets, sql`, `)}, updated_at = now() WHERE id = ${id}::uuid`,
-          );
-        }
-        if (emailChanged) {
-          // Whoever held the old address may have set a password through its link already: that
-          // password stops working, with any session, as an admin reset does (AC-18). With mail on
-          // a new link goes to the new address, exactly as a re-invite would. With mail off no
-          // password is shown here; the admin issues one with Reset password (AC-13).
-          unusableHash ??= await hashPassword(randomBytes(32).toString('base64url'));
-          await this.replacePassword(tx, id, unusableHash);
-          await revokeSessions(id, tx);
-          await deleteTwoFactorChallenges(tx, id);
-          inviteTokenId = await this.replaceInvite(tx, id);
-        }
-      });
-    } catch (error) {
-      this.rethrowUnique(error);
-      throw error;
-    }
-
-    if (inviteTokenId) await this.queue(id, 'invite', inviteTokenId);
-    if (otherChanged) this.emit(new StaffUpdated(this.context(actor, id)));
+    await this.accounts.update(this.kind, id, input, actor);
     return this.get(id);
   }
 
   /**
    * Disables an account, deleting its sessions and unused links in the same transaction. Refuses
-   * to disable the last active admin.
+   * to disable the last active manager.
    */
   async disable(id: string, reason: string | undefined, actor: Actor): Promise<StaffDetail> {
-    await this.db.transaction(async (tx) => {
-      await lockAdminRule(tx);
-      const target = await this.find(tx, id, true);
-      if (!target) throw notFound();
-      if (id === actor.id) throw conflict('SELF_DISABLE', 'You cannot disable your own account');
-      if (target.manager && !target.banned) {
-        await assertAnotherManager(tx, id, this.staffOnly);
-      }
-
-      await tx.execute(
-        sql`UPDATE users SET banned = true, ban_reason = ${reason ?? null}, updated_at = now()
-             WHERE id = ${id}::uuid`,
-      );
-      // The same transaction: a disabled person has no live session, and no link that could log them in.
-      await revokeSessions(id, tx);
-      await deleteTokens(tx, id);
-      await this.record(tx, actor, id, 'staff_user.disabled', {
-        before: { banned: target.banned },
-        after: { banned: true },
-        ...(reason !== undefined && { reason }),
-      });
-    });
-    this.emit(new StaffDisabled(this.context(actor, id), reason ?? null));
+    await this.accounts.disable(this.kind, id, reason, actor);
     return this.get(id);
   }
 
-  /**
-   * Re-enables a disabled account; 404 for an unknown id. The staff check locks the row and the
-   * write follows in the same transaction, so a person who stops being staff in between is never
-   * enabled from here (AC-28).
-   */
+  /** Re-enables a disabled account; 404 for an unknown id. */
   async enable(id: string, actor: Actor): Promise<StaffDetail> {
-    await this.db.transaction(async (tx) => {
-      const target = await this.find(tx, id, true);
-      if (!target) throw notFound();
-      await tx.execute(
-        sql`UPDATE users SET banned = false, ban_reason = NULL, ban_expires = NULL, updated_at = now()
-             WHERE id = ${id}::uuid`,
-      );
-      await this.record(tx, actor, id, 'staff_user.enabled', {
-        before: { banned: target.banned },
-        after: { banned: false },
-      });
-    });
-    this.emit(new StaffEnabled(this.context(actor, id)));
+    await this.accounts.enable(this.kind, id, actor);
     return this.get(id);
   }
 
-  /**
-   * Admin reset (AC-18). The old password stops working at once: the stored hash is replaced in
-   * the same transaction, by a temporary password, or by a random value nobody knows until the
-   * person follows the emailed link. Sessions and older links go, and the lockout clears.
-   */
+  /** Admin reset (AC-18): the old password stops working at once; sessions and older links go. */
   async resetPassword(id: string, actor: Actor): Promise<ResetStaffPasswordResponse> {
-    refuseSelf(id, actor, 'reset the password of');
-    const temporaryPassword = this.mailOn ? undefined : generateTemporaryPassword();
-    const passwordHash = await hashPassword(
-      temporaryPassword ?? randomBytes(32).toString('base64url'),
-    );
-
-    const done = await this.db.transaction(async (tx) => {
-      const target = await this.find(tx, id, true);
-      if (!target) throw notFound();
-      await this.replacePassword(tx, id, passwordHash);
-      await tx.execute(
-        sql`UPDATE users SET must_change_password = true, updated_at = now() WHERE id = ${id}::uuid`,
-      );
-      await revokeSessions(id, tx);
-      await deleteTwoFactorChallenges(tx, id);
-      let tokenId: string | undefined;
-      if (this.mailOn) tokenId = (await issueToken(tx, id, 'reset')).tokenId;
-      else await deleteTokens(tx, id);
-      await this.record(tx, actor, id, 'staff_user.password_reset', {
-        after: { mustChangePassword: true, mode: this.mailOn ? 'email' : 'temporary_password' },
-      });
-      return { email: target.email, tokenId };
-    });
-
-    await this.lockout.reset(emailKey(done.email));
-    if (done.tokenId) await this.queue(id, 'reset', done.tokenId);
-    this.emit(new StaffPasswordReset(this.context(actor, id)));
-    return {
-      setup: temporaryPassword
-        ? { mode: 'temporary_password', temporaryPassword }
-        : { mode: 'email' },
-    };
+    return { setup: await this.accounts.resetPassword(this.kind, id, actor) };
   }
 
-  /**
-   * Issues a fresh invite link to an account that has never signed in. Throws 409 `NOT_INVITED`
-   * or `MAIL_DISABLED` when that cannot work. The staff check locks the row and the token is
-   * issued in the same transaction, so a staff invite never goes to a person who stopped being
-   * staff in between (AC-28); the mail is queued after the commit.
-   */
+  /** Issues a fresh invite link to an account that has never signed in. */
   async resendInvite(id: string, actor: Actor): Promise<{ ok: true }> {
-    const tokenId = await this.db.transaction(async (tx) => {
-      const target = await this.find(tx, id, true);
-      if (!target) throw notFound();
-      if (statusOf(target) !== 'invited') {
-        throw conflict(
-          'NOT_INVITED',
-          'Only an account that has not signed in yet can be re-invited',
-        );
-      }
-      if (!this.mailOn) throw conflict('MAIL_DISABLED', 'This install does not send email');
-      return (await issueToken(tx, id, 'invite')).tokenId;
-    });
-    await this.queue(id, 'invite', tokenId);
-    this.emit(new StaffUpdated(this.context(actor, id)));
+    await this.accounts.resendInvite(this.kind, id, actor);
     return { ok: true };
   }
 
-  /**
-   * Deletes every session of another person, the `POST /api/staff/:id/revoke-sessions` action.
-   * Throws 409 `SELF_ACTION` when the admin targets themselves. The staff check locks the row and
-   * the delete goes through the module's one writer, `revokeSessions(userId, tx)` from
-   * `sessions/revoke-sessions.ts` (the bare call below, not this method), in the same transaction.
-   */
+  /** Deletes every session of another person (`POST /api/staff/:id/revoke-sessions`). */
   async revokeSessions(id: string, actor: Actor): Promise<RevokeSessionsResponse> {
-    refuseSelf(id, actor, 'sign out every session of');
-    const count = await this.db.transaction(async (tx) => {
-      if (!(await this.find(tx, id, true))) throw notFound();
-      return revokeSessions(id, tx);
-    });
-    this.emit(new StaffSessionsRevoked(this.context(actor, id)));
-    return { count };
+    return { count: await this.accounts.revokeSessions(this.kind, id, actor) };
   }
 
-  /**
-   * Turns off someone else's two factor and ends their sessions (AC-20), for a person who lost
-   * their phone. Their password is untouched, so they sign in with it and can enroll again.
-   */
+  /** Turns off someone else's two factor and ends their sessions (AC-20). */
   async resetTwoFactor(id: string, actor: Actor): Promise<StaffDetail> {
-    refuseSelf(id, actor, 'reset the two factor of');
-    await this.db.transaction(async (tx) => {
-      const target = await this.find(tx, id, true);
-      if (!target) throw notFound();
-      await tx.execute(sql`DELETE FROM two_factors WHERE user_id = ${id}::uuid`);
-      await tx.execute(
-        sql`UPDATE users SET two_factor_enabled = false, updated_at = now() WHERE id = ${id}::uuid`,
-      );
-      await revokeSessions(id, tx);
-      await deleteTwoFactorChallenges(tx, id);
-    });
-    this.emit(new StaffTwoFactorReset(this.context(actor, id)));
+    await this.accounts.resetTwoFactor(this.kind, id, actor);
     return this.get(id);
-  }
-
-  // ---- helpers ----
-
-  private async find(executor: Pick<Database, 'execute'>, id: string, forUpdate = false) {
-    // A malformed id is simply "not found", not a database error.
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
-      return undefined;
-    const result = await executor.execute<UserRow>(
-      forUpdate
-        ? sql`SELECT ${COLUMNS} FROM users WHERE id = ${id}::uuid AND ${this.staffOnly} FOR UPDATE`
-        : sql`SELECT ${COLUMNS} FROM users WHERE id = ${id}::uuid AND ${this.staffOnly}`,
-    );
-    return result.rows[0];
-  }
-
-  /**
-   * Writes one audit entry for a staff account action through the identity audit port, inside
-   * the action's own transaction (spec 0010 task 10). `detail` holds ids, flags and the reason
-   * only: never an email, a name or a phone.
-   */
-  private record(
-    tx: Tx,
-    actor: Actor,
-    id: string,
-    action: IdentityAuditEntry['action'],
-    detail: Pick<IdentityAuditEntry, 'before' | 'after' | 'reason'>,
-  ): Promise<void> {
-    return this.trail.record(tx, {
-      actor: auditActorOf(actor, 'people.manage'),
-      action,
-      record: { type: 'user', id },
-      ...detail,
-      correlationId: this.trail.newCorrelationId(),
-    });
-  }
-
-  private assertLanguage(language: string | undefined): Promise<void> {
-    return assertLanguageEnabled(this.settings, language);
-  }
-
-  private rethrowUnique(error: unknown): void {
-    const constraint = uniqueViolation(error);
-    if (constraint === 'users_email_unique') {
-      throw conflict('EMAIL_TAKEN', 'Another account already uses this email');
-    }
-    if (constraint === 'users_staff_code_unique') {
-      throw conflict('STAFF_CODE_TAKEN', 'Another account already uses this staff code');
-    }
-  }
-
-  /** Sets the stored hash of the person's one `credential` account, making it if it is missing. */
-  private async replacePassword(tx: Tx, id: string, passwordHash: string): Promise<void> {
-    await tx.execute(
-      sql`INSERT INTO accounts (user_id, provider_id, account_id, password)
-          VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})
-          ON CONFLICT (tenant_id, provider_id, account_id) DO UPDATE SET password = excluded.password, updated_at = now()`,
-    );
-  }
-
-  /**
-   * Ends the person's older links and, with mail on, issues a fresh invite token. Returns its id
-   * for `queue`, which runs after the commit so the worker reads the committed row.
-   */
-  private async replaceInvite(executor: Executor, id: string): Promise<string | undefined> {
-    if (!this.mailOn) {
-      await deleteTokens(executor, id);
-      return undefined;
-    }
-    return (await issueToken(executor, id, 'invite')).tokenId;
-  }
-
-  private async queue(userId: string, kind: MailKind, tokenId: string): Promise<void> {
-    await this.producer.enqueue({ userId, kind, tokenId });
-  }
-
-  private context(actor: Actor, targetId: string): AuthEventContext {
-    return {
-      actorId: actor.id,
-      targetId,
-      ip: actor.ip,
-      userAgent: actor.userAgent,
-      at: new Date(),
-    };
-  }
-
-  private emit(event: AuthEvent): void {
-    this.audit.record(event);
   }
 
   private toRow(row: UserRow): StaffRow {

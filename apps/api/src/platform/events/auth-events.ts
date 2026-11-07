@@ -123,6 +123,57 @@ export class StaffSessionsRevoked {
   constructor(readonly context: AuthEventContext) {}
 }
 
+/**
+ * A manager created a partner login (spec 0008, AC-15). `targetId` is the new person;
+ * `partnerAccountId` the partner account they were bound to: ids only.
+ */
+export class PartnerUserCreated {
+  /** Takes the shared context and the partner account the login was bound to. */
+  constructor(
+    readonly context: AuthEventContext,
+    readonly partnerAccountId: string,
+  ) {}
+}
+
+/** A manager changed a partner user's details or re-sent their invite (never their account). */
+export class PartnerUserUpdated {
+  /** Takes the shared context. */
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** A manager disabled a partner login; `reason` is what they wrote, when they wrote one. */
+export class PartnerUserDisabled {
+  /** Takes the shared context and the manager's optional reason. */
+  constructor(
+    readonly context: AuthEventContext,
+    readonly reason: string | null,
+  ) {}
+}
+
+/** A manager re-enabled a disabled partner login. */
+export class PartnerUserEnabled {
+  /** Takes the shared context. */
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** A manager reset a partner user's password (by email or with a temporary password). */
+export class PartnerUserPasswordReset {
+  /** Takes the shared context. */
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** A manager signed a partner user out everywhere. */
+export class PartnerUserSessionsRevoked {
+  /** Takes the shared context. */
+  constructor(readonly context: AuthEventContext) {}
+}
+
+/** A manager turned off a partner user's two factor and ended their sessions. */
+export class PartnerUserTwoFactorReset {
+  /** Takes the shared context. */
+  constructor(readonly context: AuthEventContext) {}
+}
+
 /** Every auth event the audit service can record. A `switch` over it must name each one. */
 export type AuthEvent =
   | SignedIn
@@ -139,7 +190,14 @@ export type AuthEvent =
   | StaffDisabled
   | StaffEnabled
   | StaffPasswordReset
-  | StaffSessionsRevoked;
+  | StaffSessionsRevoked
+  | PartnerUserCreated
+  | PartnerUserUpdated
+  | PartnerUserDisabled
+  | PartnerUserEnabled
+  | PartnerUserPasswordReset
+  | PartnerUserSessionsRevoked
+  | PartnerUserTwoFactorReset;
 
 /** The event names `@OnEvent` listens for: the class name, past tense. */
 export const eventName = (event: AuthEvent): string => event.constructor.name;

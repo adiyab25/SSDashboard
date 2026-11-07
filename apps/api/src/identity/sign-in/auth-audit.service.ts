@@ -38,6 +38,7 @@ export class AuthAudit {
         ...('reason' in event ? { reason: event.reason } : {}),
         ...('scope' in event ? { scope: event.scope } : {}),
         ...('hats' in event ? { hats: event.hats, costView: event.costView } : {}),
+        ...('partnerAccountId' in event ? { partnerAccountId: event.partnerAccountId } : {}),
       }),
     );
     // A listener that throws must never fail a sign in.

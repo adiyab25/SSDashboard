@@ -8,6 +8,23 @@ import { Audience, type AudienceName } from '../../platform/audience/audience.de
 import type { SessionAudience } from '../sessions/session-audiences.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { SessionGuard } from './session.guard.js';
+import { WhoAmI } from './who-am-i.decorator.js';
+
+/** A handler function read off a class, as Nest hands it to the guard. */
+const handlerOf = (target: { prototype: object }, name: string): unknown =>
+  Object.getOwnPropertyDescriptor(target.prototype, name)?.value;
+
+/** A handler marked `@WhoAmI()`, as `MeController.read` and `PartnerMeController.read` are. */
+class Marked {
+  @WhoAmI()
+  read(): string {
+    return 'me';
+  }
+
+  update(): string {
+    return 'patched';
+  }
+}
 
 const ORIGIN = 'https://erp.example.com';
 const env = { PUBLIC_URL: `${ORIGIN}` } as Env;
@@ -42,6 +59,8 @@ function setup(options: {
    * `manager` with `cost.view` for `staff`, `partner` for `partner`, and no hat for none.
    */
   audiences?: SessionAudience[];
+  /** Run a handler marked `@WhoAmI()` (true) or an unmarked one (false, the default). */
+  whoAmI?: boolean;
 }) {
   const getSession = vi.fn(() =>
     Promise.resolve({
@@ -65,7 +84,7 @@ function setup(options: {
   const response = { append: vi.fn() };
   const context = {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
-    getHandler: () => undefined,
+    getHandler: () => handlerOf(Marked, options.whoAmI ? 'read' : 'update'),
     getClass: () => Controller,
   } as unknown as ExecutionContext;
   const deleteSession = vi.fn(() => Promise.resolve());
@@ -203,17 +222,18 @@ describe('SessionGuard', () => {
 
   describe('a temporary password that must be changed (AC-14)', () => {
     const forced = { ...USER, mustChangePassword: true };
-    const run = (method: string, path: string) =>
+    const run = (method: string, path: string, whoAmI: boolean) =>
       setup({
         method,
         path,
+        whoAmI,
         origin: ORIGIN,
         cookie: 'better-auth.session_token=abc',
         session: { user: forced, session: liveSession() },
       });
 
-    it('lets only GET /api/me through', async () => {
-      const { guard, context } = run('GET', '/api/me');
+    it('lets only the handler marked @WhoAmI() through', async () => {
+      const { guard, context } = run('GET', '/api/me', true);
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
     });
@@ -224,13 +244,20 @@ describe('SessionGuard', () => {
       ['POST', '/api/staff'],
       ['PATCH', '/api/me'],
       ['POST', '/api/me'],
-    ])('answers 403 PASSWORD_CHANGE_REQUIRED to %s %s', async (method, path) => {
-      const { guard, context } = run(method, path);
+      // The path no longer decides (security review L3): an unmarked handler on the who am I
+      // path, say a partner `@Get(':id')` registered first, is refused.
+      ['GET', '/api/me'],
+      ['GET', '/api/partner/me'],
+    ])(
+      'answers 403 PASSWORD_CHANGE_REQUIRED to an unmarked handler on %s %s',
+      async (method, path) => {
+        const { guard, context } = run(method, path, false);
 
-      await expect(guard.canActivate(context)).rejects.toMatchObject({
-        response: { code: 'PASSWORD_CHANGE_REQUIRED' },
-      });
-    });
+        await expect(guard.canActivate(context)).rejects.toMatchObject({
+          response: { code: 'PASSWORD_CHANGE_REQUIRED' },
+        });
+      },
+    );
 
     it('does not gate a person with no forced change', async () => {
       const { guard, context } = setup({
@@ -424,11 +451,24 @@ describe('SessionGuard', () => {
         'language',
         'mustChangePassword',
         'name',
+        'partnerAccountId',
         'phone',
         'sessionId',
         'twoFactorEnabled',
         'userId',
       ]);
+    });
+
+    it('puts the partner account of the person’s own hat row on request.partner (spec 0008, AC-9)', async () => {
+      const { guard, context, request } = signedIn('partner', ['partner']);
+      request.query = { partnerAccountId: '0190c0de-0000-7000-8000-0000000000bb' };
+      request.headers = { ...(request.headers as object), 'x-partner-account-id': 'other' };
+
+      await guard.canActivate(context);
+
+      expect(request.partner).toMatchObject({
+        partnerAccountId: '0190c0de-0000-7000-8000-0000000000aa',
+      });
     });
 
     it('reads the person once per request and judges the audience from those hats (one read)', async () => {
@@ -496,18 +536,19 @@ describe('SessionGuard', () => {
     });
 
     it.each([
-      ['GET', '/api/partner/me', true],
-      ['GET', '/api/me', false],
-      ['GET', '/api/partner/stock', false],
-      ['PATCH', '/api/partner/me', false],
+      ['GET', '/api/partner/me', true, true],
+      ['GET', '/api/partner/me', false, false],
+      ['GET', '/api/partner/stock', false, false],
+      ['PATCH', '/api/partner/me', false, false],
     ] as const)(
-      'lets a partner user with a temporary password %s %s: %s',
-      async (method, path, allowed) => {
+      'lets a partner user with a temporary password %s %s (marked: %s): %s',
+      async (method, path, whoAmI, allowed) => {
         const { guard, context } = setup({
           audience: 'partner',
           audiences: ['partner'],
           method,
           path,
+          whoAmI,
           origin: ORIGIN,
           cookie: 'better-auth.session_token=abc',
           session: { user: { ...USER, mustChangePassword: true }, session: liveSession() },

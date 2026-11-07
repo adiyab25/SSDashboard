@@ -13,23 +13,19 @@ import type { Request, Response } from 'express';
 import { ENV } from '../../config/config.module.js';
 import { staffOrigin, type Env } from '../../config/env.js';
 import type { Access } from '../../platform/access/access.js';
+import { forbidden } from '../../platform/access/permission.guard.js';
 import { audienceOf } from '../../platform/audience/audience.decorator.js';
 import { AccessLoader } from '../access/access-loader.js';
 import { audiencesOfHats, homeOf, type SessionAudience } from '../sessions/session-audiences.js';
 import type { CurrentPartner, CurrentStaff } from './current-staff.js';
 import { IS_PUBLIC } from './public.decorator.js';
+import { isWhoAmI } from './who-am-i.decorator.js';
 import { AUTH, type Auth } from './auth.tokens.js';
 import { pastAbsoluteCap } from './session-policy.js';
 
 /** Better Auth's session cookie, with or without the `__Secure-` prefix it uses over https. */
 const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=/;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-/** The one "who am I" route per audience: all a person with a temporary password may call. */
-const WHO_AM_I: Readonly<Record<SessionAudience, string>> = {
-  staff: '/api/me',
-  partner: '/api/partner/me',
-};
 
 type GuardedRequest = Request & {
   staff?: CurrentStaff;
@@ -51,8 +47,8 @@ type GuardedRequest = Request & {
  *   `WRONG_AUDIENCE`. A controller with no audience is held to the staff rule (`AudienceGuard`
  *   then answers 500 `AUDIENCE_MISSING`).
  *
- * The Origin check, the disabled check, the 7 day cap and the forced password change apply to
- * every audience it serves. The person, and what they may use, are read from the database on
+ * The Origin check, the disabled check, the 7 day cap and the forced password change (only the
+ * handler marked `@WhoAmI()` while a temporary password stands) apply to every audience it serves. The person, and what they may use, are read from the database on
  * every request, so a disabled account or a hat change acts on the next call. On a `staff` or
  * `partner` route it reads the person's `Access` (hats, grants, partner account, spec 0008) once,
  * judges the audience from those same hats, and puts it on `request.access` for `PermissionGuard`,
@@ -153,10 +149,17 @@ export class SessionGuard implements CanActivate {
     };
     // Never from the session or the cookie: the read above, of this request.
     request.access = access;
-    // A partner user gets the partner shape. Neither shape carries anything to authorize on:
-    // permissions live only on `request.access`.
+    // A partner user gets the partner shape, with the account of their own hat row (spec 0008,
+    // AC-9). Neither shape carries anything to authorize on: permissions live only on
+    // `request.access`.
     if (needed === 'partner') {
-      request.partner = { userId: user.id, ...shared } satisfies CurrentPartner;
+      // The hat rules bind every partner hat to one account; a row without one fails closed.
+      if (access.partnerAccountId === null) throw forbidden();
+      request.partner = {
+        userId: user.id,
+        partnerAccountId: access.partnerAccountId,
+        ...shared,
+      } satisfies CurrentPartner;
     } else {
       request.staff = {
         id: user.id,
@@ -165,12 +168,10 @@ export class SessionGuard implements CanActivate {
       } satisfies CurrentStaff;
     }
 
-    // A temporary password must be changed first (AC-14): only "who am I" works until then. Change
-    // password and sign out are Better Auth routes, which their own before hook lets through.
-    if (
-      user.mustChangePassword &&
-      !(request.method === 'GET' && request.path === WHO_AM_I[needed])
-    ) {
+    // A temporary password must be changed first (AC-14): only "who am I" works until then, the
+    // handler marked `@WhoAmI()` (never matched by its path). Change password and sign out are
+    // Better Auth routes, which their own before hook lets through.
+    if (user.mustChangePassword && !isWhoAmI(context.getHandler())) {
       throw new ForbiddenException({
         code: 'PASSWORD_CHANGE_REQUIRED',
         message: 'Change your password to continue.',

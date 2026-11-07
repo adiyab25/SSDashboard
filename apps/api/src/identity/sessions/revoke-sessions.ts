@@ -8,8 +8,9 @@ import type { SessionAudience } from './session-audiences.js';
  * (AC-16). The person's next request with the old cookie is 401 `SESSION_EXPIRED`. Returns how
  * many sessions it ended.
  *
- * It is the one writer of "delete every session of this person" in identity: the staff service,
- * the break glass reset and spec 0008's hat service all call it rather than repeat the statement.
+ * It is the one writer of "delete every session of this person" in identity: the shared account
+ * mechanics (`AccountActions`, for staff and partner logins), the break glass reset and spec 0008's
+ * hat service all call it rather than repeat the statement.
  * (The session guard's no hat purge goes through Better Auth's own adapter, and the nightly
  * cleanup deletes expired rows of everyone.) It takes a transaction on purpose: it must never open its own, and never run after the change
  * has committed, or a request could slip in between with the old access.

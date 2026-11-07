@@ -1,9 +1,15 @@
 import { Inject, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { Hat, type AccessHolding, type AccessRequest } from '@ssdashboard/contracts';
+import {
+  Hat,
+  type AccessHolding,
+  type AccessRequest,
+  type PartnerAccessRequest,
+} from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Transaction } from '../../database/sql.js';
 import { HatsChanged } from '../../platform/events/auth-events.js';
+import { PartnerAccounts } from '../../partners/partner-accounts.service.js';
 import { auditActorOf, type Actor } from '../access/actor.js';
 import { IDENTITY_AUDIT, type IdentityAudit } from '../audit-port/identity-audit.js';
 import { hatChangeLogLine } from '../sessions/hat-change-log.js';
@@ -20,6 +26,7 @@ import {
   judgeStaffSet,
   normalHolding,
   refuseCostChangeWithoutCost,
+  unknownPartnerAccount,
   refuseSelfChange,
   requireReasonForManagerRemoval,
   type HoldingDiff,
@@ -45,8 +52,20 @@ interface Committed {
   diff: HoldingDiff;
 }
 
-const notFound = () =>
-  new NotFoundException({ code: 'NOT_FOUND', message: 'No such staff account' });
+const notFound = (noun = 'staff account') =>
+  new NotFoundException({ code: 'NOT_FOUND', message: `No such ${noun}` });
+const stale = () =>
+  new ConflictException({
+    code: 'STALE_RECORD',
+    message: 'This person changed since you opened them. Reload and try again.',
+  });
+
+/** The only holding a partner user has: the partner hat, bound to one account, never cost. */
+const partnerHolding = (partnerAccountId: string): AccessHolding => ({
+  hats: ['partner'],
+  costView: false,
+  partnerAccountId,
+});
 
 /**
  * Gives and takes hats and the cost grant (spec 0008, AC-7, AC-12, AC-13): the only writer of
@@ -67,6 +86,10 @@ const notFound = () =>
  *    entry through the identity audit port, all in that transaction;
  * 5. after the commit, and only then, writes one log line and emits one `HatsChanged`.
  *
+ * A partner user's hat is given by `givePartnerAccess` (inside the creating transaction) and moved
+ * to another account by `movePartnerUser`, by the same steps with the partner condition, and a
+ * consignment partner checked through the partners module's `PartnerAccounts`.
+ *
  * It must never write outside the transaction that checked the rules, never decide an audience
  * other than by `audiencesOfHats`, and never put an email, a name or a phone in the log, the event
  * or the audit entry.
@@ -77,13 +100,17 @@ export class HatService {
 
   /**
    * Takes the app database connection, the `SessionAudiences` port (its `staffCondition()` keeps a
-   * partner user out of the staff route), the auth log, and the identity audit port.
+   * partner user out of the staff route, its `partnerCondition()` staff out of the partner one),
+   * the auth log, the identity audit port, and the partners module's `PartnerAccounts`, which says
+   * whether an id is a consignment partner (identity never reads `parties`).
    */
   constructor(
     @Inject(DATABASE) connection: DatabaseConnection,
     @Inject(SESSION_AUDIENCES) private readonly audiences: SessionAudiences,
     private readonly authAudit: AuthAudit,
     @Inject(IDENTITY_AUDIT) private readonly audit: IdentityAudit,
+    @Inject(PartnerAccounts)
+    private readonly partners: Pick<PartnerAccounts, 'isConsignmentPartner'>,
   ) {
     this.db = connection.db;
   }
@@ -107,14 +134,14 @@ export class HatService {
       // The lock before the row, as every writer of the last manager rule takes them.
       const mayRemoveManager = !after.hats.includes('manager');
       if (mayRemoveManager) await lockAdminRule(tx);
-      const target = await this.lockTarget(tx, id, change.updatedAt);
+      const target = await this.lockTarget(
+        tx,
+        id,
+        change.updatedAt,
+        this.audiences.staffCondition(),
+      );
       if (!target) throw notFound();
-      if (!target.fresh) {
-        throw new ConflictException({
-          code: 'STALE_RECORD',
-          message: 'This person changed since you opened them. Reload and try again.',
-        });
-      }
+      if (!target.fresh) throw stale();
       const before = normalHolding({
         hats: target.hats.map((hat) => Hat.parse(hat)),
         costView: target.cost_view,
@@ -129,7 +156,7 @@ export class HatService {
         await assertAnotherManager(tx, id, this.audiences.staffCondition());
       }
 
-      await this.write(tx, id, diff, actor.id);
+      await this.write(tx, id, diff, actor.id, after.partnerAccountId);
       const ends = hatChangeEndsSessions(
         { audiences: audiencesOfHats(before.hats), partnerAccountId: before.partnerAccountId },
         { audiences: audiencesOfHats(after.hats), partnerAccountId: after.partnerAccountId },
@@ -173,17 +200,105 @@ export class HatService {
       userId,
       diffHoldings({ hats: [], costView: false, partnerAccountId: null }, holding),
       actor.id,
+      null,
     );
     return holding;
   }
 
-  /** Reads and locks the staff person's row with their holding and the stale check. */
+  /**
+   * Gives a partner user just created by `POST /api/partner-users` their one hat, `partner`, bound
+   * to `partnerAccountId`, inside the caller's transaction (the one that inserted the person),
+   * with `granted_by` the actor (spec 0008, AC-9 and AC-15). Refuses an id that is not a
+   * consignment partner (422 `UNKNOWN_PARTNER_ACCOUNT`), asked of `PartnerAccounts` in the same
+   * transaction. A partner user never gets another hat or the cost grant.
+   */
+  async givePartnerAccess(
+    tx: Transaction,
+    userId: string,
+    partnerAccountId: string,
+    actor: Actor,
+  ): Promise<AccessHolding> {
+    if (!(await this.partners.isConsignmentPartner(partnerAccountId, tx))) {
+      throw unknownPartnerAccount();
+    }
+    const holding = partnerHolding(partnerAccountId);
+    await this.write(
+      tx,
+      userId,
+      diffHoldings({ hats: [], costView: false, partnerAccountId: null }, holding),
+      actor.id,
+      partnerAccountId,
+    );
+    return holding;
+  }
+
+  /**
+   * Binds a partner user to another partner account (`PUT /api/partner-users/:id/access`, spec
+   * 0008 AC-12): under the person's `users` row lock (partner users only, 404 for anyone else),
+   * the stale check (409 `STALE_RECORD`), a consignment partner only (422
+   * `UNKNOWN_PARTNER_ACCOUNT`), the partner row replaced, `users.updated_at` set, every session
+   * ended through `revokeSessions(userId, tx)` (spec 0005 AC-33 b) and one audit entry
+   * (`hat.revoked`: the old binding is taken), all in one transaction; the log line and
+   * `HatsChanged` after the commit. The same account is no write. Returns whether it changed.
+   */
+  async movePartnerUser(id: string, change: PartnerAccessRequest, actor: Actor): Promise<boolean> {
+    refuseSelfChange(id, actor);
+    if (!UUID.test(id)) throw notFound('partner login');
+    const after = partnerHolding(change.partnerAccountId);
+
+    const committed = await this.db.transaction(async (tx): Promise<Committed | undefined> => {
+      const target = await this.lockTarget(
+        tx,
+        id,
+        change.updatedAt,
+        this.audiences.partnerCondition(),
+      );
+      if (!target) throw notFound('partner login');
+      if (!target.fresh) throw stale();
+      const before = normalHolding({
+        hats: target.hats.map((hat) => Hat.parse(hat)),
+        costView: target.cost_view,
+        partnerAccountId: target.partner_account_id,
+      });
+      const diff = diffHoldings(before, after);
+      if (!diff.changed) return undefined;
+      if (!(await this.partners.isConsignmentPartner(change.partnerAccountId, tx))) {
+        throw unknownPartnerAccount();
+      }
+
+      await this.write(tx, id, diff, actor.id, after.partnerAccountId);
+      const ends = hatChangeEndsSessions(
+        { audiences: audiencesOfHats(before.hats), partnerAccountId: before.partnerAccountId },
+        { audiences: audiencesOfHats(after.hats), partnerAccountId: after.partnerAccountId },
+      );
+      if (ends) await revokeSessions(id, tx);
+      await this.audit.record(tx, {
+        actor: auditActorOf(actor, 'people.manage'),
+        action: auditActionOf(diff),
+        record: { type: 'user', id },
+        before: { ...before },
+        after: { ...after },
+        ...(change.reason !== undefined && { reason: change.reason }),
+        correlationId: this.audit.newCorrelationId(),
+      });
+      return { before, after, diff };
+    });
+
+    if (!committed) return false;
+    this.announce(id, actor, committed, change.reason);
+    return true;
+  }
+
+  /**
+   * Reads and locks the person's row with their holding and the stale check, only when they are
+   * of the kind `only` names (`staffCondition()` or `partnerCondition()`).
+   */
   private async lockTarget(
     tx: Transaction,
     id: string,
     updatedAt: string,
+    only: SQL,
   ): Promise<TargetRow | undefined> {
-    const staffOnly: SQL = this.audiences.staffCondition();
     const result = await tx.execute<TargetRow>(
       sql`SELECT banned,
                  updated_at = ${updatedAt}::timestamptz AS fresh,
@@ -194,7 +309,7 @@ export class HatService {
                  (SELECT h.partner_account_id FROM hat_assignments h
                    WHERE h.user_id = users.id AND h.hat = 'partner') AS partner_account_id
             FROM users
-           WHERE id = ${id}::uuid AND (${staffOnly})
+           WHERE id = ${id}::uuid AND (${only})
              FOR UPDATE OF users`,
     );
     return result.rows[0];
@@ -202,14 +317,26 @@ export class HatService {
 
   /**
    * Deletes the hats and grant the change takes, inserts the ones it gives (kept rows keep their
-   * `granted_by` and `granted_at`), and marks the person changed, so the next `updatedAt` differs.
+   * `granted_by` and `granted_at`; a `partner` row is bound to `partnerAccountId`), replaces the
+   * partner row when the person moves to another account (the app role has no `UPDATE` on the
+   * hat tables), and marks the person changed, so the next `updatedAt` differs.
    */
   private async write(
     tx: Transaction,
     userId: string,
     diff: HoldingDiff,
     grantedBy: string,
+    partnerAccountId: string | null,
   ): Promise<void> {
+    if (diff.accountMoved) {
+      await tx.execute(
+        sql`DELETE FROM hat_assignments WHERE user_id = ${userId}::uuid AND hat = 'partner'`,
+      );
+      await tx.execute(
+        sql`INSERT INTO hat_assignments (user_id, hat, partner_account_id, granted_by)
+            VALUES (${userId}::uuid, 'partner', ${partnerAccountId}::uuid, ${grantedBy}::uuid)`,
+      );
+    }
     if (diff.removed.length > 0) {
       await tx.execute(
         sql`DELETE FROM hat_assignments
@@ -218,8 +345,9 @@ export class HatService {
     }
     if (diff.added.length > 0) {
       await tx.execute(
-        sql`INSERT INTO hat_assignments (user_id, hat, granted_by)
-            SELECT ${userId}::uuid, hat, ${grantedBy}::uuid
+        sql`INSERT INTO hat_assignments (user_id, hat, partner_account_id, granted_by)
+            SELECT ${userId}::uuid, hat,
+                   CASE WHEN hat = 'partner' THEN ${partnerAccountId}::uuid END, ${grantedBy}::uuid
               FROM unnest(${pgArray(diff.added)}::text[]) AS hat`,
       );
     }

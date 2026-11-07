@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  decodeStaffCursor,
-  encodeStaffCursor,
+  decodeAccountCursor,
+  encodeAccountCursor,
   escapeLike,
-  InvalidStaffCursorError,
+  InvalidAccountCursorError,
   statusOf,
-} from './staff.service.js';
+} from './account-actions.js';
 
 describe('statusOf (AC-15)', () => {
   const signedIn = new Date();
@@ -18,11 +18,11 @@ describe('statusOf (AC-15)', () => {
   });
 });
 
-describe('the staff cursor', () => {
+describe('the account list cursor (staff and partner users)', () => {
   it('round trips a name and id, including Arabic and punctuation', () => {
     const cursor = { name: 'سامي \u200f"x", o/', id: '0190c0de-0000-7000-8000-000000000001' };
 
-    expect(decodeStaffCursor(encodeStaffCursor(cursor))).toEqual(cursor);
+    expect(decodeAccountCursor(encodeAccountCursor(cursor))).toEqual(cursor);
   });
 
   it.each([
@@ -30,9 +30,9 @@ describe('the staff cursor', () => {
     ['characters outside base64url', 'abc def'],
     ['JSON that is not a pair', Buffer.from('{"a":1}').toString('base64url')],
     ['a pair of numbers', Buffer.from('[1,2]').toString('base64url')],
-    ['a loosely padded value we did not issue', `${encodeStaffCursor({ name: 'a', id: 'b' })}AA`],
+    ['a loosely padded value we did not issue', `${encodeAccountCursor({ name: 'a', id: 'b' })}AA`],
   ])('rejects %s', (_name, value) => {
-    expect(() => decodeStaffCursor(value)).toThrow(InvalidStaffCursorError);
+    expect(() => decodeAccountCursor(value)).toThrow(InvalidAccountCursorError);
   });
 });
 

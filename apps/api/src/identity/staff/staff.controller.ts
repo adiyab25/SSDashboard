@@ -25,12 +25,13 @@ import {
 } from '@ssdashboard/contracts';
 import type { AuthenticatedRequest } from '../sign-in/current-staff.js';
 import { actorOf } from '../access/actor.js';
+import { InvalidAccountCursorError } from '../accounts/account-actions.js';
 import { HatService } from '../hats/hat.service.js';
 import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
-import { InvalidStaffCursorError, StaffService } from './staff.service.js';
+import { StaffService } from './staff.service.js';
 
 /**
  * Staff administration (spec 0005, AC-12 to AC-18). Every route needs `people.manage` (spec 0008
@@ -58,7 +59,7 @@ export class StaffController {
     try {
       return await this.staff.list(query);
     } catch (error) {
-      if (error instanceof InvalidStaffCursorError) {
+      if (error instanceof InvalidAccountCursorError) {
         throw new BadRequestException({ code: 'INVALID_QUERY', message: error.message });
       }
       throw error;

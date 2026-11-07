@@ -16,16 +16,20 @@ export interface CurrentStaff extends Omit<
 /**
  * The signed in partner user on a `partner` route (spec 0005, AC-29), read fresh from the
  * database by the guard on every request. Its own shape, not the staff one: it carries no staff
- * code and nothing to authorize on (permissions are on `request.access`). It holds
- * the person's id and what the partner "who am I" answer (`GET /api/partner/me`, spec 0008
- * AC-11) needs about the person.
+ * code and nothing to authorize on (permissions are on `request.access`). It holds the person's
+ * id, the partner account they are bound to, and what the partner "who am I" answer
+ * (`GET /api/partner/me`, spec 0008 AC-11) needs about the person.
  *
- * Spec 0008 (AC-9) adds `partnerAccountId`, read from the person's own hat row by the guard: a
- * handler must never take an account id from a header, path, query or body.
+ * `partnerAccountId` (spec 0008, AC-9) is read by the guard from the person's own `partner` hat
+ * row on this request. A partner handler takes the account from here and only from here: never
+ * from a header, path, query or body (`test/partner-account-source.spec.ts` fails a partner
+ * handler that declares such a field).
  */
 export interface CurrentPartner {
   /** The partner user's id (`users.id`), named as spec 0008 AC-9 names it. */
   userId: string;
+  /** The partner account (`parties.id`) of the person's `partner` hat row, never from the request. */
+  partnerAccountId: string;
   name: string;
   email: string;
   phone: string | null;

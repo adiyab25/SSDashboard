@@ -8,7 +8,9 @@ import { MailModule } from '../mail/mail.module.js';
 import { PermissionGuard } from '../platform/access/permission.guard.js';
 import { AudienceGuard } from '../platform/audience/audience.guard.js';
 import { PlatformModule } from '../platform/platform.module.js';
+import { PartnersModule } from '../partners/partners.module.js';
 import { AccessLoader } from './access/access-loader.js';
+import { AccountActions } from './accounts/account-actions.js';
 import { IDENTITY_AUDIT, PendingIdentityAudit } from './audit-port/identity-audit.js';
 import { HatService } from './hats/hat.service.js';
 import { AuthAudit } from './sign-in/auth-audit.service.js';
@@ -17,6 +19,9 @@ import { createAuth } from './sign-in/auth.factory.js';
 import { AUTH, type Auth } from './sign-in/auth.tokens.js';
 import { HatSessionAudiences, SESSION_AUDIENCES } from './sessions/session-audiences.js';
 import { MeController } from './sign-in/me.controller.js';
+import { PartnerMeController } from './sign-in/partner-me.controller.js';
+import { PartnerUserService } from './partner-users/partner-user.service.js';
+import { PartnerUsersController } from './partner-users/partner-users.controller.js';
 import { ProfileService } from './sign-in/profile.service.js';
 import { SessionGuard } from './sign-in/session.guard.js';
 import { SignInLockout } from './sign-in/sign-in-lockout.js';
@@ -24,10 +29,12 @@ import { StaffController } from './staff/staff.controller.js';
 import { StaffService } from './staff/staff.service.js';
 
 /**
- * The identity module (spec 0005, AC-27): staff sign in (Better Auth, the lockout, the mail
- * callbacks, the global session guard, `GET /api/me`), the person's hats and grants read on every
- * request (spec 0008, `access/`), giving and taking hats (`hats/`, `HatService`), and staff
- * administration (`/api/staff`).
+ * The identity module (spec 0005, AC-27): staff and partner sign in (Better Auth, the lockout, the
+ * mail callbacks, the global session guard, `GET /api/me` and `GET /api/partner/me`), the person's
+ * hats and grants read on every request (spec 0008, `access/`), giving and taking hats (`hats/`,
+ * `HatService`), and the accounts a manager runs (`accounts/`): staff at `/api/staff` and partner
+ * logins at `/api/partner-users`. It imports the partners module for `PartnerAccounts` and never
+ * reads `parties` itself.
  *
  * It exports no provider. Other modules reach identity only through a short list of files,
  * `IDENTITY_PUBLIC_FILES` in `src/module-boundary.spec.ts`: this file, the request type in
@@ -38,14 +45,16 @@ import { StaffService } from './staff/staff.service.js';
  * this module.
  */
 @Module({
-  imports: [MailModule, PlatformModule],
-  controllers: [MeController, StaffController],
+  imports: [MailModule, PlatformModule, PartnersModule],
+  controllers: [MeController, PartnerMeController, StaffController, PartnerUsersController],
   providers: [
     SignInLockout,
     AuthAudit,
     AuthMail,
     ProfileService,
+    AccountActions,
     StaffService,
+    PartnerUserService,
     AccessLoader,
     HatService,
     // The audit trail of spec 0010 is not on this branch yet: entries go nowhere and the log lines

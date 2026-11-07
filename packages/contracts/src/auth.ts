@@ -11,11 +11,12 @@ export const Home = z.enum(['backoffice', 'partner']);
 export type Home = z.infer<typeof Home>;
 
 /**
- * Response of `GET /api/me` (and, with spec 0008 milestone 3, `GET /api/partner/me`): the signed
- * in person, read fresh from the database on every request. `hats` and `permissions` (the
- * effective list, sorted) tell the web what to show; the api still decides every route on its own
- * (spec 0008, AC-11). `partnerAccountId` is null for staff. There is no role: what a person may do
- * comes only from their hats and grants.
+ * Response of `GET /api/me` (staff) and `GET /api/partner/me` (partner users), one shape for both
+ * (spec 0008, AC-11): the signed in person, read fresh from the database on every request. `hats`
+ * and `permissions` (the effective list, sorted) tell the web what to show; the api still decides
+ * every route on its own. `partnerAccountId` is null for staff and, for a partner user, the
+ * account of their own hat row, never anything the request sent; `staffCode` is null for a
+ * partner user. There is no role: what a person may do comes only from their hats and grants.
  */
 export const MeResponse = z.object({
   id: z.uuid(),

@@ -59,6 +59,10 @@ class CountingHats implements SessionAudiences {
   staffCondition(): SQL {
     return this.real.staffCondition();
   }
+
+  partnerCondition(): SQL {
+    return this.real.partnerCondition();
+  }
 }
 
 /**
