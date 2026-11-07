@@ -464,7 +464,7 @@ Tracer Bullet: milestone 1 proves one real thread (a recorded Shopify order thro
 - One read is requested from spec 0011 (candidate location figures for the gate preview) and one confirmation from spec 0013 (no shipment posting for imported `shipped` orders) before milestones 2 and 3.
 
 **Neutral**:
-- The baseline gains four tables and two amended ones; whichever of specs 0011 to 0015 lands second regenerates the baseline on top of the first.
+- Four new tables and two amended ones, as the forward migration `0005_connector_tables.sql` (built 2026-11-07): feature 9's license migrations 0003 and 0004 landed first, so the baseline is no longer regenerated and each later spec adds its own forward migration.
 - Customers without orders are created from `customers/create` when they have a phone (spec 0014 rule e).
 - The freshness line is shown to every hat that sees orders, not only operations and manager (spec 0007 named those two; showing more harms nothing).
 
