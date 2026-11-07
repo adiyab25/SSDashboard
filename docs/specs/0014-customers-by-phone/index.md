@@ -3,7 +3,7 @@
 **Date**: 2026-11-07
 **Status**: Proposed
 **Feature**: [scope feature 14, Customers by phone](../../scope/confirmation-to-cash.md) (slice 1a, Core, Beta)
-**Depends on**: the feature 4 baseline as built ([spec 0002 customers child](../0002-core-data-model/0002-customers-credit-tasks.md): `customers`, `customer_phones`, `customer_external_ids`, `customer_merges`, `EgyptianPhone`); hats ([spec 0008](../0008-roles-as-hats/index.md)); the audit trail and its undo registry ([spec 0010](../0010-audit-trail/index.md)); the settings registry of [spec 0009](../0009-settings-toggles-bundles/index.md) milestone 1 (milestone 3 here only). Milestone 4 needs the orders read service of spec 0013 (scope feature 16). Specs 0013 (orders) and 0015 (Shopify) call this feature's `findOrCreate`, so milestone 1 lands before their first link.
+**Depends on**: the feature 4 baseline as built ([spec 0002 customers child](../0002-core-data-model/0002-customers-credit-tasks.md): `customers`, `customer_phones`, `customer_external_ids`, `customer_merges`, `EgyptianPhone`); hats ([spec 0008](../0008-roles-as-hats/index.md)); the audit trail and its undo registry ([spec 0010](../0010-audit-trail/index.md)); the settings registry of [spec 0009](../0009-settings-toggles-bundles/index.md) milestone 1 (milestone 3 here only). Milestone 4 needs `OrderQueries.forCustomers` and `OrderQueries.countsForCustomers` of spec 0013 (scope feature 16, its AC-21) and `ChannelsService.storeLabelsByConnection` of spec 0015. Specs 0013 (orders) and 0015 (Shopify) call this feature's `findOrCreate`, so milestone 1 lands before their first link.
 
 ## Summary
 
@@ -38,10 +38,10 @@ A customer is one normalized Egyptian phone number, however the number was typed
 *The flag*
 - **AC-11** (set and clear): a person with `customers.flag` sets a flag kind (`returner`, `refuser`, `fake`, `abusive`) with an optional note (at most 500 characters, personal data) and an optional reason code through `PUT /api/customers/:id/flag`, which writes source `manual`, `risk_flag_set_at`, `risk_flag_set_by`, and `customer.flagged`; `POST /api/customers/:id/flag/clear` with a required reason code clears the flag on every id of the canonical customer and writes one `customer.unflagged` per changed record. Both carry `expectedUpdatedAt` and answer 409 `STALE_RECORD` on a mismatch; clearing an unflagged customer answers 409 `NOT_FLAGGED`. The flag shows on the profile header (kind, source, who, when, note) and on every search row; the canonical flag follows spec 0002's rule (the canonical row's, else the most severe on its ids: `fake`, `abusive`, `refuser`, `returner`).
 - **AC-12** (import entry point): `CustomersService.setFlagFromImport(tx, customerId, kind, importRunId)` writes source `blacklist_import` with no person, never replaces a `manual` flag (answers `kept_manual`), and replaces an older import or rule flag; feature 15 calls it and writes its own import audit.
-- **AC-13** (returner signal): the profile shows how many of the customer's orders were refused at the door and how many came back after delivery within the last `windowDays`, read through the orders read service (never the orders tables). When the customer has no flag and refusals reach `refusalsToSuggest` the header suggests `refuser`, else when returns reach `returnsToSuggest` it suggests `returner`; one tap (with `customers.flag`) applies it as a `manual` flag with reason code `suggestion_applied`, the counts in the entry's `after`. The three numbers come from the setting `customer_risk_signal` (owner decisions Q-14.1 and Q-14.2, recommended).
+- **AC-13** (returner signal): the profile shows how many of the customer's orders were refused at the door and how many came back after delivery within the last `windowDays`, read through `OrderQueries.countsForCustomers` of spec 0013 (`refused` and `returned`, gifted orders left out; never the orders tables). When the customer has no flag and refusals reach `refusalsToSuggest` the header suggests `refuser`, else when returns reach `returnsToSuggest` it suggests `returner`; one tap (with `customers.flag`) applies it as a `manual` flag with reason code `suggestion_applied`, the counts in the entry's `after`. The three numbers come from the setting `customer_risk_signal` (owner decisions Q-14.1 and Q-14.2, recommended).
 
 *Timeline and lenses*
-- **AC-14** (one timeline): `GET /api/customers/:id/timeline` answers the entries of every id of the canonical customer, newest first, keyset paged with no entry skipped or repeated across pages and sources. Entry kinds in this feature: `order` (one per order: number with its store, placed time, fulfillment state, cash state, outcome, total, payment method, refusal reason), `merge`, `unmerge`, `phone_added`, `channel_id_added`, and `flag` (the current flag at its set time). Orders come only through spec 0013's exported read service; the module wall test (`apps/api/src/module-boundary.spec.ts`) fails if a customers file names an orders table.
+- **AC-14** (one timeline): `GET /api/customers/:id/timeline` answers the entries of every id of the canonical customer, newest first, keyset paged with no entry skipped or repeated across pages and sources. Entry kinds in this feature: `order` (one per order: number with its store, placed time, fulfillment state, cash state, outcome, total, payment method, refusal reason), `merge`, `unmerge`, `phone_added`, `channel_id_added`, and `flag` (the current flag at its set time). Orders come only through `OrderQueries.forCustomers(customerIds, { cursor, limit })` of spec 0013; the module wall test (`apps/api/src/module-boundary.spec.ts`) fails if a customers file names an orders table.
 - **AC-15** (lens per hat): each entry kind, and each guarded field or action on it, declares the permission it needs in one table, `CUSTOMER_TIMELINE_KINDS` in `packages/contracts`. The api leaves out every kind and field the viewer's permissions do not reach, so hats see the same records through their own lens: `order` needs `orders.view`; `merge`, `unmerge`, `phone_added`, `channel_id_added`, and `flag` need `customers.view`; the Undo action on a merge needs `customers.merge`; the "Open in audit" link needs `audit.read`. No answer carries a key from `COST_FIELD_KEYS`. A unit test with built `Access` sets proves that a viewer with `customers.view` but not `orders.view` gets no order entry.
 - **AC-16** (who may call): every customers route declares the permission in the API table below; the warehouse hat (no `customers.view`), the media buyer, and partner users answer 403 on every customers route; each route has its `FIXTURES` entry in `apps/api/test/access-sweep.e2e-spec.ts`, and the media buyer sweep finds no personal data key in any answer.
 
@@ -52,7 +52,7 @@ A customer is one normalized Egyptian phone number, however the number was typed
 
 ## Decision
 
-**Chosen option**: Option 2 in [rationale.md](rationale.md): one `CustomersModule` whose exported `CustomersService` is the only way any module links, finds, or flags a customer, with merges by pointer as spec 0002 fixed them, merge suggestions in a small table of their own, the flag set by a person or an import with a read time suggestion from order counts, and the profile and timeline in a leaf module (`CustomerProfileModule`) that imports the orders read service, so the orders module can import `CustomersModule` without a cycle.
+**Chosen option**: Option 2 in [rationale.md](rationale.md): one `CustomersModule` whose exported `CustomersService` is the only way any module links, finds, or flags a customer, with merges by pointer as spec 0002 fixed them, merge suggestions in a small table of their own, the flag set by a person or an import with a read time suggestion from order counts, and the profile and timeline in a leaf module (`CustomerProfileModule`) that imports spec 0013's `OrderQueries`, so the orders module can import `CustomersModule` without a cycle.
 
 Runner up: Option 3, a timeline provider registry that each module fills from `onModuleInit` (like `AuditUndoRegistry`). Rejected for now because the leaf module gives the same freedom from cycles with plain imports that the type checker and the module wall can see; reconsider when more than four modules add entry kinds.
 
@@ -75,7 +75,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 ### Where it lives
 
-- `apps/api/src/customers/` (module `customers`, bundle `core`, no toggle): `customers.module.ts` (`CustomersModule`, imports `AuditModule`, exports `CustomersService`), `find-or-create/`, `merges/` (merge, undo, the audit undo handler, suggestions), `flags/`, `search/`, `profile/` (`CustomerProfileModule`, the leaf: profile and timeline controllers, imports `CustomersModule` and the orders module's read service; only `AppModule` imports it), `customer-locks.ts`, `README.md` (Owns, Never touches, How to test, Governing spec, Decisions).
+- `apps/api/src/customers/` (module `customers`, bundle `core`, no toggle): `customers.module.ts` (`CustomersModule`, imports `AuditModule`, exports `CustomersService`), `find-or-create/`, `merges/` (merge, undo, the audit undo handler, suggestions), `flags/`, `search/`, `profile/` (`CustomerProfileModule`, the leaf: profile and timeline controllers, imports `CustomersModule`, the orders module's `OrderQueries`, and the channels module's `ChannelsService`; only `AppModule` imports it), `customer-locks.ts`, `README.md` (Owns, Never touches, How to test, Governing spec, Decisions).
 - `packages/db/src/schema/customers.ts`: the new columns and `customer_merge_suggestions`; `packages/db/src/table-ownership.ts` adds the new table under `customers`.
 - `packages/contracts/src/customers/`: beside `egyptian-phone.ts`, one file per concern: `customer-enums.ts` (`CustomerRiskFlag`, `CustomerRiskFlagSource`, `CustomerExternalIdKind`, `MergeSuggestionReason`, `MergeSuggestionStatus`, each in `enum-parity.e2e-spec.ts`), `customer-views.ts`, `customer-search.ts`, `customer-merges.ts`, `customer-flags.ts`, `customer-timeline.ts` (the entry union and `CUSTOMER_TIMELINE_KINDS`), `customer-reason-codes.ts`.
 - `apps/web/src/customers/` (feature folder with README): `customers-page.tsx`, `customer-search-form.tsx`, `customer-results-table.tsx`, `merge-suggestions-table.tsx`, `customer-detail-page.tsx`, `customer-header.tsx`, `customer-flag-dialog.tsx`, `customer-timeline.tsx`, `merge-page.tsx`, `merge-compare.tsx`. Routes `apps/web/src/app/(backoffice)/customers/page.tsx`, `customers/[id]/page.tsx`, `customers/merge/page.tsx` stay thin. Nav group `customers` in `src/shell/nav.ts`.
@@ -127,7 +127,7 @@ The caller parses phone text with `EgyptianPhone.parse` at its own edge and keep
 
 ### Timeline and lenses
 
-`CustomerTimelineService` (in the leaf module) merges sources by one total order: `at` descending, then source key, then entry id descending. The cursor is that triple, base64url encoded. Each source answers at most `limit` entries strictly after the cursor; the service merges and cuts to `limit`. Sources in this feature: the customers module's own rows (`customer_merges`, `customer_phones.first_seen_at`, `customer_external_ids.created_at`, the current flag) and spec 0013's orders read service. Later features add their own kind and source in their own build (credit 28, tasks 17, exchanges 34, messages 50), each declaring its permission in `CUSTOMER_TIMELINE_KINDS`.
+`CustomerTimelineService` (in the leaf module) merges sources by one total order: `at` descending, then source key, then entry id descending. The cursor is that triple, base64url encoded. Each source answers at most `limit` entries strictly after the cursor; the service merges and cuts to `limit`. Sources in this feature: the customers module's own rows (`customer_merges`, `customer_phones.first_seen_at`, `customer_external_ids.created_at`, the current flag) and `OrderQueries.forCustomers` of spec 0013, called with `idsOf(canonical)` and the order source's own part of the cursor (`placed_at`, `id`, its keyset). Later features add their own kind and source in their own build (credit 28, tasks 17, exchanges 34, messages 50), each declaring its permission in `CUSTOMER_TIMELINE_KINDS`.
 
 | Entry kind | Shows | Needs | support | operations | manager | warehouse, media buyer, partner |
 |---|---|---|---|---|---|---|
@@ -187,11 +187,11 @@ New entries in `packages/contracts/src/audit/audit-actions.ts`, module `customer
 | undo | allowed? | `customer_merges` rows of the merge and `customers.merged_into_id` of both, under the locks (undo rule above) |
 | profile | canonical customer and `resolvedFrom` | `canonicalOf(id)` |
 | profile | phones | `customer_phones` over `idsOf(canonical)`, primary first then `first_seen_at` |
-| profile | channel id store label | the channels module's exported store lookup by `connection_id` (spec 0015), channel name by `channel_id` |
+| profile | channel id store label | `ChannelsService.storeLabelsByConnection(connectionIds)` of spec 0015 (`storeCode`, `storeName`); channel name by `channel_id` from `ChannelsService.channels(ids)` |
 | profile | flag | the canonical row's flag, else the most severe flag on its ids (spec 0002 order); `set by` name through the identity module's `StaffDirectory.namesByIds` |
-| profile | signal counts | spec 0013's orders read service over `idsOf(canonical)` since the operating day `windowDays` ago (the install time zone through `localDate` in `apps/api/src/platform/settings.service.ts`) |
+| profile | signal counts | `OrderQueries.countsForCustomers(idsOf(canonical), { sinceDay })` of spec 0013 (`refused`, `returned`, gifted orders left out), `sinceDay` the operating day the operating day `windowDays` ago (the install time zone through `localDate` in `apps/api/src/platform/settings.service.ts`) |
 | profile | signal thresholds | setting `customer_risk_signal` (requested from feature 9, below) |
-| profile | order count (merge compare) | spec 0013's orders read service |
+| profile | order count (merge compare) | `OrderQueries.countsForCustomers(idsOf(canonical), { sinceDay: null })`, its `orders` |
 | search | phone match | `EgyptianPhone.parse(body.phone).e164` against the unique phone key |
 | search | name match | `name ILIKE '%' || nameContains || '%'` on the trigram index, canonical rows only |
 | timeline | entries and cursor | the sources above; order (`at` desc, source key, id desc) |
@@ -209,7 +209,7 @@ New entries in `packages/contracts/src/audit/audit-actions.ts`, module `customer
 - An undo restores exactly the pointers its merge changed, at most once, and only in reverse order of merges.
 - A pair of customers has at most one suggestion row, ever.
 - A flag always has a source and a set time; a `manual` flag names its person; an import never replaces a `manual` flag.
-- The customers module reads orders only through spec 0013's exported read service and writes no table it does not own.
+- The customers module reads orders only through spec 0013's `OrderQueries` (`forCustomers`, `countsForCustomers`, and `summaryOf` where an order id needs its number and store) and writes no table it does not own.
 
 ### Security model
 
@@ -237,7 +237,7 @@ No environment variable. One setting, registered in the settings registry of spe
 
 ## Build plan
 
-Tracer Bullet: milestone 1 runs one real thread through every layer (database, service, api, contract, screen): a phone in any form finds or creates one customer and shows her profile. It also hands specs 0013 and 0015 the `findOrCreate` they link through. Each later milestone thickens one segment end to end: merge and undo, then the flag, then the timeline with its lenses once the orders read service exists. Each milestone is one commit.
+Tracer Bullet: milestone 1 runs one real thread through every layer (database, service, api, contract, screen): a phone in any form finds or creates one customer and shows her profile. It also hands specs 0013 and 0015 the `findOrCreate` they link through. Each later milestone thickens one segment end to end: merge and undo, then the flag, then the timeline with its lenses once spec 0013's `OrderQueries` exists. Each milestone is one commit.
 
 **Milestone 1: One phone, one customer, end to end**
 
@@ -270,10 +270,10 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (database, s
 
 **Done when** milestone 1's commands pass with the flag cases, and `registry.spec.ts` of spec 0009 passes with the new key.
 
-**Milestone 4: One timeline through each lens** (needs spec 0013's orders read service)
+**Milestone 4: One timeline through each lens** (needs spec 0013's `OrderQueries.forCustomers` and `countsForCustomers`, and spec 0015's `ChannelsService.storeLabelsByConnection`)
 
 17. [ ] `CUSTOMER_TIMELINE_KINDS` and the entry union in contracts, with the unit test over built `Access` sets, satisfies **AC-15**
-18. [ ] `CustomerProfileModule` (leaf, imported only by `AppModule`): the timeline service with the merged keyset, own sources, the order source through spec 0013's read service; move the profile route into it and add `signal` and the order count, satisfies **AC-13**, **AC-14**, **AC-15**
+18. [ ] `CustomerProfileModule` (leaf, imported only by `AppModule`): the timeline service with the merged keyset, own sources, the order source through `OrderQueries.forCustomers`; move the profile route into it, add `signal` from `OrderQueries.countsForCustomers` with `sinceDay`, the order count from the same call with `sinceDay: null`, and store labels from `ChannelsService.storeLabelsByConnection`, satisfies **AC-13**, **AC-14**, **AC-15**
 19. [ ] Route `GET /api/customers/:id/timeline` with `FIXTURES`; the module wall stays green with no orders table named, satisfies **AC-14**, **AC-16**
 20. [ ] Web: the timeline on `/customers/[id]` (entry kinds, load more, empty and error states), the suggested flag with one tap apply, the order count on the merge compare, satisfies **AC-7**, **AC-13**, **AC-14**, **AC-18**
 21. [ ] Tests: `apps/api/test/customers-timeline.e2e-spec.ts` (paging across sources, lens per hat, signal thresholds from the setting) and the web timeline flow, satisfies **AC-13**, **AC-14**, **AC-15**, **AC-16**
@@ -292,7 +292,7 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (database, s
 - An undo restores pointers, not phones: a phone attached to the survivor after the merge stays on the survivor.
 - Undo from the customer screen writes `customer.unmerged`, so the original `customer.merged` entry on `/audit` still offers Undo and answers `MERGE_ALREADY_UNDONE` when clicked.
 - The returner signal is computed on each profile read and is not stored, so no list can filter "suggested but not flagged" in this feature.
-- Milestone 4 waits on spec 0013's read service, and milestone 3 on spec 0008's amendment for `customers.flag`.
+- Milestone 4 waits on spec 0013's `OrderQueries`, and milestone 3 on spec 0008's amendment for `customers.flag`.
 
 **Neutral**:
 - One new table and two columns, additive only; the trigram index on names grows with customers.
@@ -302,8 +302,8 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (database, s
 
 - [ ] Spec 0008 (its owner): add `customers.flag` (personal, support, operations, manager) to the permission matrix and the route mapping (owner decision Q-14.3); needed before milestone 3.
 - [ ] Spec 0009 (its owner, after feature 9 lands): list `customer_risk_signal` under *Policy knobs* with "Registered by 14".
-- [ ] Spec 0013: export from the orders module a read service with (1) a timeline page of orders for a list of customer ids after a cursor `(at, sourceKey, id)` with the fields of the `order` entry, (2) counts of orders refused at the door and returned after delivery for a list of customer ids since an operating day, (3) an order count per customer id set; and call `CustomersService.findOrCreate` on order create and on a phone fix (its draft of 2026-11-07 names `findOrCreateByPhone(tx, { phone, name })`; the name and the `channelCustomer` and `seenAt` fields here are the contract, and `ChannelOrderInput` needs the channel customer id for 0015 to pass through); use `findByPhone` and `idsOf` for its search box.
-- [ ] Spec 0015: export a store label lookup by `connection_id` from the channels module; call `findOrCreate` for Shopify orders and for `customers/create` and `customers/update` webhooks.
+- [ ] Spec 0013 (final): its AC-21 `OrderQueries.forCustomers`, `countsForCustomers`, and `summaryOf` are the reads this spec uses; it calls `CustomersService.findOrCreate` on order create and on a phone fix (its draft of 2026-11-07 named `findOrCreateByPhone(tx, { phone, name })`; the name and the `channelCustomer` and `seenAt` fields here are the contract), and uses `findByPhone` and `idsOf` for its search box.
+- [ ] Spec 0015 (final): `ChannelsService.storeLabelsByConnection` gives the store labels of Shopify ids; it calls `findOrCreate` for Shopify orders and for `customers/create` and `customers/update` webhooks.
 - [ ] Feature 15: blacklist rows call `setFlagFromImport` with the kind mapped from the brand's categories (spec 0002 brand question 7).
 - [ ] Feature 17: an open suggestion count in My work for `customers.merge` holders; a task type for orders with a phone that did not parse, if the confirmation queue does not cover older orders.
 - [ ] Feature 18: the confirmation outcome `fake` sets the flag through `CustomersService` with reason code `confirmed_fake`; the second phone joins through `addPhone`.

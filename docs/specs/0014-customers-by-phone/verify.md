@@ -39,4 +39,4 @@ _Steps derived from spec 0014 acceptance criteria and its Value sourcing table. 
 - [ ] After a merge, `customer_merges.repointed_ids` holds exactly the customers that pointed at the merged one → AC-6
 - [ ] The flag set by a person stores `manual`, the person, and the time; by an import stores `blacklist_import`, no person → AC-11, AC-12
 - [ ] The signal counts change when `customer_risk_signal.windowDays` changes on `/settings`; the window starts at the Cairo operating day → AC-13
-- [ ] The store label beside a Shopify id comes from the channels module, not a customers column → AC-4
+- [ ] The store label beside a Shopify id comes from `ChannelsService.storeLabelsByConnection`, not a customers column → AC-4

@@ -26,7 +26,7 @@ Orders, Shopify, and imports each normalize the phone and look up `customer_phon
 
 ### Option 2: One `CustomersService` as the only door, merge by pointer, suggestions in their own table, the timeline in a leaf module (chosen)
 
-`CustomersModule` exports one service (`findOrCreate`, `addPhone`, `canonicalOf`, `idsOf`, `briefs`, `lockCustomers`, `setFlagFromImport`) with one written rule set for every caller. Merge and undo follow spec 0002 exactly. Conflicts become rows in a small `customer_merge_suggestions` table a person works. The profile and timeline live in `CustomerProfileModule`, a leaf imported only by `AppModule`, which imports the orders module's exported read service.
+`CustomersModule` exports one service (`findOrCreate`, `addPhone`, `canonicalOf`, `idsOf`, `briefs`, `lockCustomers`, `setFlagFromImport`) with one written rule set for every caller. Merge and undo follow spec 0002 exactly. Conflicts become rows in a small `customer_merge_suggestions` table a person works. The profile and timeline live in `CustomerProfileModule`, a leaf imported only by `AppModule`, which imports spec 0013's `OrderQueries` (`forCustomers`, `countsForCustomers`) and spec 0015's `ChannelsService.storeLabelsByConnection`.
 
 **Pros**:
 - One rule set, one lock order, one place to test concurrency; orders and Shopify never see a customer table.
