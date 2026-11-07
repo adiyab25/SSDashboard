@@ -11,6 +11,10 @@ import {
   InboundStatus,
   InboundSubject,
   LedgerSourceType,
+  LicenseCheckOutcome,
+  LicenseCheckTrigger,
+  LicensePhase,
+  LicenseSource,
   LocationOwnerType,
   OrderActorType,
   OrderCostRuleKind,
@@ -104,6 +108,10 @@ describe('every database enum with a Zod twin matches its contract', () => {
     ['external_entity', ExternalEntity.options],
     ['sync_run_kind', SyncRunKind.options],
     ['sync_run_status', SyncRunStatus.options],
+    ['license_source', LicenseSource.options],
+    ['license_check_trigger', LicenseCheckTrigger.options],
+    ['license_check_outcome', LicenseCheckOutcome.options],
+    ['license_phase', LicensePhase.options],
   ] as const)('%s has the values of its Zod enum', async (type, options) => {
     const { rows } = await owner.query<{ value: string }>(
       `SELECT unnest(enum_range(NULL::public.${type}))::text AS value`,

@@ -14,6 +14,7 @@ import {
 import { SettingsService } from '../src/platform/settings/settings.service.js';
 import { WorkerModule } from '../src/worker.module.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
+import { grantLicense, testVendorKey, trustTestKey } from './license-support.js';
 
 /** How long the worker's listener waits before reconnecting in this suite: past the 35 s check. */
 const WORKER_RETRY: ListenerRetry = { firstMs: 40_000, maxMs: 40_000 };
@@ -87,7 +88,8 @@ describe('settings across processes (spec 0009, AC-4)', { timeout: 180_000 }, ()
   };
 
   beforeAll(async () => {
-    api = await startInProcessApi();
+    const key = testVendorKey();
+    api = await startInProcessApi((builder) => trustTestKey(builder, key));
     // The worker entry point's own module graph on the same database (env set by the api), with
     // a slow reconnect so the lifetime case can keep its listener down.
     worker = await Test.createTestingModule({ imports: [WorkerModule] })
@@ -98,6 +100,8 @@ describe('settings across processes (spec 0009, AC-4)', { timeout: 180_000 }, ()
     await worker.init();
     const manager = await api.addPerson(['manager']);
     cookie = await api.signIn(manager.email);
+    // `operations_wind_down_days` needs the Operations plan (security finding S6).
+    await grantLicense(api, key, manager);
   });
 
   afterAll(async () => {

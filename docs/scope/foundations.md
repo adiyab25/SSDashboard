@@ -103,7 +103,7 @@ Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep
 - [x] Design it (spec): `/architect settings, module toggles & bundles`
 - [ ] Build it: `/develop settings, module toggles & bundles`
   - [x] One setting through every layer
-  - [ ] The signed license
+  - [x] The signed license
   - [ ] Module gate and toggles with no orphaned jobs
   - [ ] Lapse, read only wind down, and renewal backfill
   - [ ] Executing steps, policy knobs, owner type policies, cost rules, and the full settings screen

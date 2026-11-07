@@ -23,6 +23,8 @@ describe('loadEnv', () => {
       'EXTENSIONS',
       'LEDGER_RECONCILE_CRON',
       'AUTH_CLEANUP_CRON',
+      'LICENSE_FILE',
+      'LICENSE_CHECK_CRON',
       'APP_VERSION',
       'CLIENT_DISPLAY_NAME',
       'PUBLIC_URL',
@@ -64,6 +66,7 @@ describe('loadEnv', () => {
         EXTENSIONS: [],
         LEDGER_RECONCILE_CRON: '0 2 * * *',
         AUTH_CLEANUP_CRON: '0 3 * * *',
+        LICENSE_CHECK_CRON: '20 0 * * *',
         APP_VERSION: '0.0.0-dev',
         CLIENT_DISPLAY_NAME: 'SSDashboard',
         PUBLIC_URL: 'https://erp.example.com',
@@ -144,6 +147,18 @@ describe('loadEnv', () => {
       expect(loadEnv().LEDGER_RECONCILE_CRON).toBe('15 1 * * 1');
     });
 
+    it('keeps a license file path and a custom license check schedule, and counts a blank path as unset', () => {
+      vi.stubEnv('LICENSE_FILE', '/run/secrets/license.json');
+      vi.stubEnv('LICENSE_CHECK_CRON', '5 1 * * *');
+
+      expect(loadEnv()).toMatchObject({
+        LICENSE_FILE: '/run/secrets/license.json',
+        LICENSE_CHECK_CRON: '5 1 * * *',
+      });
+      vi.stubEnv('LICENSE_FILE', '  ');
+      expect(loadEnv().LICENSE_FILE).toBeUndefined();
+    });
+
     it('keeps a custom auth cleanup schedule', () => {
       vi.stubEnv('AUTH_CLEANUP_CRON', '30 4 * * 0');
 
@@ -221,6 +236,12 @@ describe('loadEnv', () => {
       ['a cron range that runs backwards', 'AUTH_CLEANUP_CRON', '0 3 * * 5-1', 'AUTH_CLEANUP_CRON'],
       ['a cron step of zero', 'AUTH_CLEANUP_CRON', '*/0 3 * * *', 'AUTH_CLEANUP_CRON'],
       ['a cron with a bad name', 'AUTH_CLEANUP_CRON', '0 3 * foo *', 'AUTH_CLEANUP_CRON'],
+      [
+        'a license check cron hour out of range',
+        'LICENSE_CHECK_CRON',
+        '20 25 * * *',
+        'LICENSE_CHECK_CRON',
+      ],
       [
         'a non postgres MIGRATION_DATABASE_URL',
         'MIGRATION_DATABASE_URL',

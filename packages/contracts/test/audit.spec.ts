@@ -271,6 +271,7 @@ describe('audit record types', () => {
       location: 'text',
       user: 'text',
       setting: 'text',
+      license: 'text',
       audit_entry: 'text',
       customer: 'code',
       order: 'code',

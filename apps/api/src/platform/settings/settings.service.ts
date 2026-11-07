@@ -6,6 +6,7 @@ import {
   SETTING_WRITE_DEPENDENCIES,
   settingDefinitionOf,
   settingWriteIssues,
+  type SettingBundle,
   type SettingDefinition,
   type SettingKey,
   type SettingValues,
@@ -51,6 +52,12 @@ export interface SettingWrite {
   expectedUpdatedAt: string | null;
   /** The person changing it and the hat the audit entry names. */
   actor: { userId: string; hat: string };
+  /**
+   * The bundles licensed now (`LicenseService.licensedBundles()`, read by the caller because the
+   * license reads settings): an entry of another bundle is refused with `NotLicensed` (security
+   * finding S6). Always includes `core`.
+   */
+  licensed: ReadonlySet<SettingBundle>;
 }
 
 /** What a write did: the setting as it now stands, and whether anything was written. */
@@ -158,7 +165,8 @@ export class SettingsService {
 
   /**
    * Changes one setting (spec 0009, AC-3). Refuses an unknown key (`SettingUnknown`), a key
-   * nobody may change (`SettingLocked`), a value nested deeper than 16 levels or failing the
+   * nobody may change (`SettingLocked`), a key whose bundle is not in `change.licensed`
+   * (`NotLicensed`, security finding S6), a value nested deeper than 16 levels or failing the
    * entry's schema (`SettingInvalid`, with the issues), and a missing required reason
    * (`SettingReasonRequired`). In one transaction it locks the row, refuses a stale
    * `expectedUpdatedAt` (`StaleSetting`), checks the rules across settings under one advisory lock
@@ -173,6 +181,9 @@ export class SettingsService {
     if (!definition) throw new SettingError('SettingUnknown', 'No such setting');
     if (definition.whoMayChange === 'nobody') {
       throw new SettingError('SettingLocked', 'This setting cannot be changed in the app');
+    }
+    if (!change.licensed.has(definition.bundle)) {
+      throw new SettingError('NotLicensed', 'The plan this setting belongs to is not licensed');
     }
     if (nestsDeeperThan(change.value, SETTING_VALUE_MAX_DEPTH)) {
       throw new SettingError('SettingInvalid', 'The value is not valid for this setting', [

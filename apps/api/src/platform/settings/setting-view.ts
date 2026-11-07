@@ -8,14 +8,12 @@ export interface SettingViewContext {
   names: ReadonlyMap<string, string>;
   /** Whether the caller holds the permission the entry's `whoMayChange` names. */
   mayChange: (definition: SettingDefinition) => boolean;
-}
-
-/**
- * Whether a bundle is licensed now. Until the license lands (spec 0009 milestone 2) only `core`
- * is: with no license ever recorded, only core modules are on (AC-16).
- */
-export function bundleLicensed(bundle: SettingDefinition['bundle']): boolean {
-  return bundle === 'core';
+  /**
+   * The bundles licensed now (`LicenseService.licensedBundles`): `core` always, and each bundle
+   * whose live phase is `active`, `expiring`, or `grace` (spec 0009, *Effective
+   * state*). With no license ever recorded, only core (AC-16).
+   */
+  licensedBundles: ReadonlySet<SettingDefinition['bundle']>;
 }
 
 /**
@@ -47,6 +45,6 @@ export function settingView(
       ? { id: setting.updatedBy, name: context.names.get(setting.updatedBy) ?? null }
       : null,
     canChange: definition.whoMayChange !== 'nobody' && context.mayChange(definition),
-    licensed: bundleLicensed(definition.bundle),
+    licensed: context.licensedBundles.has(definition.bundle),
   };
 }
