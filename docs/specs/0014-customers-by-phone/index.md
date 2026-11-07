@@ -1,7 +1,7 @@
 # 0014. Customers by phone: one customer per normalized phone, merged and undone as daily work, with one timeline read through each hat
 
 **Date**: 2026-11-07
-**Status**: Proposed
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
 **Feature**: [scope feature 14, Customers by phone](../../scope/confirmation-to-cash.md) (slice 1a, Core, Beta)
 **Depends on**: the feature 4 baseline as built ([spec 0002 customers child](../0002-core-data-model/0002-customers-credit-tasks.md): `customers`, `customer_phones`, `customer_external_ids`, `customer_merges`, `EgyptianPhone`); hats ([spec 0008](../0008-roles-as-hats/index.md)); the audit trail and its undo registry ([spec 0010](../0010-audit-trail/index.md)); the settings registry of [spec 0009](../0009-settings-toggles-bundles/index.md) milestone 1 (milestone 3 here only). Milestone 4 needs `OrderQueries.forCustomers` and `OrderQueries.countsForCustomers` of spec 0013 (scope feature 16, its AC-21) and `ChannelsService.storeLabelsByConnection` of spec 0015. Specs 0013 (orders) and 0015 (Shopify) call this feature's `findOrCreate`, so milestone 1 lands before their first link.
 

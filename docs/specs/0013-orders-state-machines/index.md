@@ -1,7 +1,7 @@
 # 0013. Orders and their state machines: one orders module that is the only writer of orders, with named moves other features call inside one order transaction
 
 **Date**: 2026-11-07 (domain review folded in the same day: [domain-orders](../../reviews/domain-orders.md))
-**Status**: Proposed
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
 **Scope feature**: 16, Orders & their state machines (GA), in [Slice 1a: confirmation to cash](../../scope/confirmation-to-cash.md)
 **Depends on**: the feature 4 baseline (built: [spec 0002 orders child](../0002-core-data-model/0002-orders.md), the `orders`, `order_lines`, and `order_events` tables, and the pure rules in `packages/contracts/src/orders/`); [spec 0008](../0008-roles-as-hats/index.md) (built: the `orders.*` and `fulfillment.work` permissions); [spec 0010](../0010-audit-trail/index.md) (built: `AuditService.record`). Written beside [spec 0011](../0011-stock-ledger-locations/index.md) (stock transaction and reservations), [spec 0012](../0012-catalog-styles-variants/index.md) (variants), [spec 0014](../0014-customers-by-phone/index.md) (customer link), and [spec 0015](../0015-shopify-connector/index.md) (Shopify intake, outbound commands, stores and channels); the calls this spec makes to each are in [Contracts with the parallel specs](#contracts-with-the-parallel-specs), and the build order across them is in [Build plan](#build-plan).
 

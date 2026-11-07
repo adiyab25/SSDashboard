@@ -1,7 +1,7 @@
 # 0011. Stock ledger and locations: one gated online location, an online stock read for channels, reservations with waiting demand, showroom moves, and manual corrections on the built ledger
 
 **Date**: 2026-11-07 (domain review folded in the same day)
-**Status**: Proposed
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
 **Feature**: scope feature 11, [Stock ledger & locations](../../scope/confirmation-to-cash.md) (Slice 1a, Core, GA)
 **Depends on**: the built ledger of [spec 0002](../0002-core-data-model/index.md) (AC-1 to AC-13, AC-29, AC-31, AC-36) and [spec 0006](../0006-core-stock-loop/index.md) (receipts, voids, the Stock page, locations management); hats and permissions of [spec 0008](../0008-roles-as-hats/index.md); the audit writer of [spec 0010](../0010-audit-trail/index.md); the platform `DomainEvents` service designed by spec 0013 (its milestone 1, task 1; whichever of the two features is built first builds it to that design). Neighbours in the same wave call this spec's services and never write its tables: orders (spec 0013), the Shopify connector (spec 0015), catalog (spec 0012); they are written in parallel, so they are named here without links.
 **Review**: [domain review](../../reviews/domain-stock-ledger.md) (accept with changes), folded in on 2026-11-07; the finding map is under `## Domain review map`.

@@ -1,7 +1,7 @@
 # 0015. Shopify connector: one brand owned app per store, webhooks as hints read back through one mapper, a sweep with a 15 minute promise, and stock pushed from the ledger with compare and set
 
 **Date**: 2026-11-07 (revised the same day for the [domain review](../../reviews/domain-shopify-connector.md): accept with changes)
-**Status**: Proposed
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
 **Scope feature**: 13, Shopify connector (GA), in [Slice 1a: confirmation to cash](../../scope/confirmation-to-cash.md)
 **Depends on**: the feature 4 baseline ([spec 0002 orders child](../0002-core-data-model/0002-orders.md): `stores`, `channels`, `connections`, `outbound_commands`); the connector pattern of [spec 0007](../0007-stack-architecture-operations-layer/index.md) section 1; [spec 0008](../0008-roles-as-hats/index.md) (permissions); [spec 0009](../0009-settings-toggles-bundles/index.md) (`JobRegistry`, `ModuleStateService`, executing steps, `LicenseService.acceptsHook`; read only here, see *Settings requested from feature 9*); [spec 0010](../0010-audit-trail/index.md) (`AuditService.record`). Written in parallel with the four specs it calls, each named with the exact call below: [0011](../0011-stock-ledger-locations/index.md) (online stock reads, `OnlineStockGate`, stock events), [0012](../0012-catalog-styles-variants/index.md) (`CatalogChannelSync`), [0013](../0013-orders-state-machines/index.md) (`OrderTransactions.run`, `OrderIntake`, `OrderTransitions`, `DomainEvents`), [0014](../0014-customers-by-phone/index.md) (`CustomersService.findOrCreate`).
 

@@ -58,6 +58,7 @@ Shopify stays the truth for the storefront: returns and exchanges done here are 
 ### 38. Minimal transfers · GA · needs a decision
 Move stock between locations so partner handovers and returns keep stock true: scan out, in transit, scan in, discrepancy.
 **Done when:** a transfer scans out of one location and into another, stock shows in transit between them, a short or extra scan records a discrepancy with a reason, and every step writes ledger movements.
+Also from spec 0011: the thinnest part already lands in feature 11 (slice 1a): numbered send to and return from a partner location at average cost (`stock_transfers`, `TR-` numbers), with no transit, scanning, or discrepancy. This feature builds transit and scanning on that record.
 - [ ] Design it (spec): `/architect minimal transfers`
 
 ### 39. Exchange dashboard · needs a decision

@@ -43,12 +43,12 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 | 8 | [Roles as hats](foundations.md) | Foundation | Core | GA | done |
 | 9 | [Settings, module toggles & bundles](foundations.md) | Foundation | Core | GA | in-progress |
 | 10 | [Audit trail](foundations.md) | Foundation | Core | Beta | done |
-| 11 | [Stock ledger & locations](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
-| 12 | [Catalog, styles & variants](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |
-| 13 | [Shopify connector](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
-| 14 | [Customers by phone](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |
+| 11 | [Stock ledger & locations](confirmation-to-cash.md) | Slice 1a | Core | GA | in-progress |
+| 12 | [Catalog, styles & variants](confirmation-to-cash.md) | Slice 1a | Core | Beta | in-progress |
+| 13 | [Shopify connector](confirmation-to-cash.md) | Slice 1a | Core | GA | in-progress |
+| 14 | [Customers by phone](confirmation-to-cash.md) | Slice 1a | Core | Beta | in-progress |
 | 15 | [Onboarding imports](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
-| 16 | [Orders & their state machines](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
+| 16 | [Orders & their state machines](confirmation-to-cash.md) | Slice 1a | Core | GA | in-progress |
 | 17 | [Tasks & My work inbox](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |
 | 18 | [Confirmation queue](confirmation-to-cash.md) | Slice 1a | Operations | GA | planned |
 | 19 | [Bosta connector, mirror mode](confirmation-to-cash.md) | Slice 1a | Operations | GA | planned |

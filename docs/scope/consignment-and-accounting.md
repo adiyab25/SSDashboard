@@ -11,6 +11,7 @@ Every partner and channel names products its own way. Map their codes and texts 
 Partners as locations you still own stock at, and the handover that puts it there.
 **Done when:** a partner is a location with the consignment owner type; a handover is a transfer with a consignment note (pieces, consignment prices, date); partner stock shows per partner and is never offered online; fulfilling an online order from partner stock means a logged transfer back to the warehouse first.
 Also from spec 0007: a partner serving several brands holds one login per brand stack in slice 2; a shared partner sign in is a later design question.
+Also from spec 0011: a minimal consignment partner record (code and name) and its location already land in feature 11 (slice 1a), as core, so showroom moves work before this feature; the partner portal, consignment note, and settlement stay here and stay Operations.
 - [ ] Design it (spec): `/architect consignment partners & handover`
 
 ### 42. Partner sales ingestion · GA · needs a decision

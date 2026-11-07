@@ -1,7 +1,7 @@
 # 0012. Catalog, styles and variants: one normalized search column, style screens, visible cost, and a channel upsert contract
 
 **Date**: 2026-11-07
-**Status**: Proposed
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
 **Feature**: scope feature 12, [Catalog, styles & variants](../../scope/confirmation-to-cash.md) (Slice 1a, Core, Beta)
 **Depends on**: the built catalog of [spec 0002](../0002-core-data-model/index.md) ([catalog child](../0002-core-data-model/0002-catalog-locations.md): `products` as styles, `seasons`, `product_groups`, `cost_records`, `CostService`) and [spec 0006](../0006-core-stock-loop/index.md) (SKU create, edit, archive, delete, list); permissions of [spec 0008](../0008-roles-as-hats/index.md); `AuditService` of [spec 0010](../0010-audit-trail/index.md); three settings requested from feature 9 ([spec 0009](../0009-settings-toggles-bundles/index.md), see *Settings requested from feature 9*). Neighbours, written in parallel: spec 0015 (the Shopify connector calls `CatalogChannelSync`), spec 0011 (stock ledger and locations), spec 0013 (orders reference variants).
 
