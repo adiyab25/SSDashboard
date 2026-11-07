@@ -15,7 +15,7 @@ import type { Access } from '../platform/access/access.js';
 import { CurrentAccess } from '../platform/access/current-access.decorator.js';
 import { Permission } from '../platform/access/permission.decorator.js';
 import { Audience } from '../platform/audience/audience.decorator.js';
-import { SettingsService } from '../platform/settings.service.js';
+import { SettingsService } from '../platform/settings/settings.service.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { auditReadError } from './audit-entries.controller.js';
 import { AuditExportCutOff, AuditExportService } from './audit-export.service.js';

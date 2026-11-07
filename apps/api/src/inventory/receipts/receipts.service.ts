@@ -23,7 +23,7 @@ import type { Access } from '../../platform/access/access.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { NumberingService } from '../../platform/numbering.service.js';
-import { SettingsService } from '../../platform/settings.service.js';
+import { SettingsService } from '../../platform/settings/settings.service.js';
 import { StaffDirectory } from '../../identity/staff/staff-directory.js';
 import { LedgerError } from '../ledger/ledger.errors.js';
 import { LedgerService } from '../ledger/ledger.service.js';

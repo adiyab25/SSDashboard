@@ -10,7 +10,7 @@ import {
 import { InvalidAmountError } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import { InvalidCursorError as KeysetCursorError } from '../platform/keyset-cursor.js';
-import { NumberingError } from '../platform/numbering.service.js';
+import { DocumentPrefixesUnreadable, NumberingError } from '../platform/numbering.service.js';
 import { LedgerError } from './ledger/ledger.errors.js';
 import { InvalidCursorError as LocationCursorError } from './locations/locations.service.js';
 
@@ -52,6 +52,9 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
         return new ConflictException({ code: 'IDEMPOTENCY_CONFLICT', message: error.message });
       case 'AlreadyReversed':
         return new ConflictException({ code: 'ALREADY_VOIDED', message: error.message });
+      // The stored lock date fails its schema: postings stop until a manager sets it again.
+      case 'LockDateUnreadable':
+        return new ConflictException({ code: 'LOCK_DATE_UNREADABLE', message: error.message });
       case 'LockTimeout':
         logger.warn('Answered 503 BUSY: a ledger lock wait timed out');
         response?.setHeader('Retry-After', String(BUSY_RETRY_AFTER_SECONDS));
@@ -76,6 +79,10 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
   }
   if (error instanceof KeysetCursorError || error instanceof LocationCursorError) {
     return new BadRequestException({ code: 'INVALID_QUERY', message: error.message });
+  }
+  // The stored prefixes fail their schema: documents stop until a manager sets them again.
+  if (error instanceof DocumentPrefixesUnreadable) {
+    return new ConflictException({ code: 'DOCUMENT_PREFIXES_UNREADABLE', message: error.message });
   }
   if (error instanceof NumberingError) {
     logger.error(error.message);

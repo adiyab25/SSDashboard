@@ -255,6 +255,14 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => `/audit/entries/${ids.auditEntry}/undo`,
       body: () => ({ reason: 'sweep' }),
     },
+    // Spec 0009: the brand's settings, `settings.manage` on the manager hat only. The write is
+    // stale on purpose (409 for a manager), so the sweep never changes a setting.
+    'GET /settings': { needs: ['settings.manage'] },
+    'PUT /settings/:key': {
+      needs: ['settings.manage'],
+      path: () => '/settings/operations_wind_down_days',
+      body: () => ({ value: 90, reason: 'sweep', expectedUpdatedAt: STALE }),
+    },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
       needs: PEOPLE_MANAGE,

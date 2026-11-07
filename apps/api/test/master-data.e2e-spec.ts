@@ -20,7 +20,7 @@ import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ledgerTransaction, lockKey } from '../src/inventory/ledger/locks.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import { encodeKeyset } from '../src/platform/keyset-cursor.js';
-import { SettingsService } from '../src/platform/settings.service.js';
+import { SettingsService } from '../src/platform/settings/settings.service.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,

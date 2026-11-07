@@ -27,7 +27,7 @@ import { useReturnFocus } from '@/shared/use-return-focus';
 type VoidInput = z.input<typeof VoidStockReceiptRequest>;
 type VoidOutput = z.output<typeof VoidStockReceiptRequest>;
 
-const KNOWN = new Set(['ALREADY_VOIDED', 'INSUFFICIENT_STOCK', 'BUSY']);
+const KNOWN = new Set(['ALREADY_VOIDED', 'INSUFFICIENT_STOCK', 'BUSY', 'LOCK_DATE_UNREADABLE']);
 
 /**
  * Confirms a void (spec 0006, AC-8): the reason is required, the destructive button names the
@@ -80,7 +80,9 @@ export function VoidReceiptDialog({
         ? t('inventory.void.errors.ALREADY_VOIDED')
         : code === 'BUSY'
           ? t('inventory.void.errors.BUSY')
-          : t('inventory.void.errors.generic');
+          : code === 'LOCK_DATE_UNREADABLE'
+            ? t('inventory.void.errors.LOCK_DATE_UNREADABLE')
+            : t('inventory.void.errors.generic');
 
   return (
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>

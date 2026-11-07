@@ -92,7 +92,14 @@ const LINE_CODES = new Set([
   'LINE_TOTAL_TOO_LARGE',
 ]);
 /** Answers shown in the alert above the form; date faults show on the date field instead. */
-const FORM_CODES = new Set(['INVALID_LINES', 'INVALID_LOCATION', 'BUSY', 'IDEMPOTENCY_CONFLICT']);
+const FORM_CODES = new Set([
+  'INVALID_LINES',
+  'INVALID_LOCATION',
+  'BUSY',
+  'IDEMPOTENCY_CONFLICT',
+  'LOCK_DATE_UNREADABLE',
+  'DOCUMENT_PREFIXES_UNREADABLE',
+]);
 const DATE_CODES = new Set(['FUTURE_DATE', 'PERIOD_LOCKED']);
 
 /**

@@ -7,7 +7,7 @@ import type {
   MailRecipients,
   MailToken,
 } from '../identity/sign-in/mail-recipients.js';
-import type { SettingsService } from '../platform/settings.service.js';
+import type { SettingsService } from '../platform/settings/settings.service.js';
 import { MAIL_RETRY_LIMIT, type MailJob } from './mail-queue.js';
 import { MailWorker } from './mail.worker.js';
 import type { Mailer } from './mailer.js';

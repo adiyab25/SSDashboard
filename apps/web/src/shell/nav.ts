@@ -6,6 +6,7 @@ import {
   PackagePlusIcon,
   PaletteIcon,
   ScrollTextIcon,
+  SettingsIcon,
   TagIcon,
   UsersIcon,
   type LucideIcon,
@@ -69,6 +70,14 @@ export const navItems: readonly NavItem[] = [
     icon: ScrollTextIcon,
     group: 'general',
     needs: 'audit.read',
+  },
+  {
+    id: 'settings',
+    labelKey: 'shell.nav.items.settings',
+    href: '/settings',
+    icon: SettingsIcon,
+    group: 'general',
+    needs: 'settings.manage',
   },
   {
     id: 'stock',

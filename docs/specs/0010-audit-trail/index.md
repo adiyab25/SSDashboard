@@ -444,7 +444,7 @@ Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milesto
 
 - [x] Spec 0002 tenancy child (`docs/specs/0002-core-data-model/0002-tenancy-platform.md`, A3 stamped list): add `audit_entries` (`recorded_at`) to the list of operating day tables; A4 and A5 already list it. Owner of that file: the architect, via Igris. (2026-11-06: the A3 list already names it; nothing to add.)
 - [ ] Spec 0008 (hats): adopt the permission names `audit.read`, `audit.undo`, `audit.export` for the manager hat, add `hat.granted` and `hat.revoked` to the registry, and decide whether `actor_hat` stores the hat code.
-- [ ] Spec 0009 (settings): add `setting.changed` and the list of sensitive setting keys that need a reason.
+- [x] Spec 0009 (settings): add `setting.changed` and the list of sensitive setting keys that need a reason. (2026-11-07: spec 0009 *Audit actions* names it; each registry entry's `reason` rule is the list; built in spec 0009 milestone 1.)
 - [ ] Align names: `order_events.actor_type` uses `system`, this spec uses `system_job`; the order and credit specs map one to the other, or the orders build renames. Tell the orders build.
 - [ ] Features 14, 34, 45, orders, tasks, credit, settlement, channels: each build task names AC-11 and AC-19 and adds its registry entries and proof tests.
 - [ ] Scope `docs/scope/foundations.md` feature 10: link this spec and add the milestones as sub tasks (the scope owner, after approval). Not done here.

@@ -1,14 +1,23 @@
 import { Controller, Get, Inject, Logger } from '@nestjs/common';
-import type { ConfigResponse } from '@ssdashboard/contracts';
+import {
+  PUBLIC_CONFIG_KEYS,
+  type ConfigResponse,
+  type PublicConfigKey,
+  type SettingValues,
+} from '@ssdashboard/contracts';
 import { Public } from '../identity/sign-in/public.decorator.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { Audience } from './audience/audience.decorator.js';
-import { SettingsService, type Settings } from './settings.service.js';
+import { SettingsService } from './settings/settings.service.js';
 
 const FALLBACK_LANGUAGE = 'en';
 
-/** Public by design: the shell and the sign in page need it, and it holds nothing secret. */
+/**
+ * Public by design: the shell and the sign in page need it, and it holds nothing secret. It reads
+ * only the registry entries marked `public_config` (spec 0009, AC-5): never bundles, licenses,
+ * module states, steps, policies, owner policies, or cost rules.
+ */
 @Audience('public')
 @Public()
 @Controller('config')
@@ -18,12 +27,12 @@ export class ConfigController {
   /** Takes the env and the settings service. */
   constructor(
     @Inject(ENV) private readonly env: Env,
-    private readonly settings: SettingsService,
+    @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
 
   /**
-   * Returns the install's currency, time zone, enabled languages and default language, for the
-   * shell and sign in page.
+   * Returns exactly the spec 0004 fields: the install's name, version, currency, time zone,
+   * enabled languages and default language, and whether mail is on.
    */
   @Get()
   async read(): Promise<ConfigResponse> {
@@ -31,9 +40,8 @@ export class ConfigController {
     const enabled = languages ?? [FALLBACK_LANGUAGE];
     let defaultLanguage = default_language ?? enabled[0] ?? FALLBACK_LANGUAGE;
     if (!enabled.includes(defaultLanguage)) {
-      this.logger.warn(
-        `default_language "${defaultLanguage}" is not in languages; using "${enabled[0]}"`,
-      );
+      // Names the keys only, never a value (security review S8).
+      this.logger.warn('default_language is not in languages; using the first enabled language');
       defaultLanguage = enabled[0] ?? FALLBACK_LANGUAGE;
     }
     return {
@@ -48,18 +56,19 @@ export class ConfigController {
   }
 
   /**
-   * Each setting on its own, so one bad or missing value costs only that field. A setting
-   * that cannot be read is logged and left out; the endpoint still answers.
+   * Each public setting on its own, so a read that fails costs only that field. A missing or
+   * invalid row already reads as its default; only a database error leaves a field out, and the
+   * endpoint still answers.
    */
-  private async readSettings(): Promise<
-    Partial<Pick<Settings, 'currency' | 'timezone' | 'languages' | 'default_language'>>
-  > {
-    const keys = ['currency', 'timezone', 'languages', 'default_language'] as const;
-    const results = await Promise.allSettled(keys.map((key) => this.settings.read([key])));
-    const found: Partial<Settings> = {};
+  private async readSettings(): Promise<Partial<Pick<SettingValues, PublicConfigKey>>> {
+    const results = await Promise.allSettled(
+      PUBLIC_CONFIG_KEYS.map((key) => this.settings.read([key])),
+    );
+    const found: Partial<Pick<SettingValues, PublicConfigKey>> = {};
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') Object.assign(found, result.value);
-      else this.logger.error(`Could not read setting "${keys[index]}"`, result.reason);
+      else
+        this.logger.error(`Could not read setting "${PUBLIC_CONFIG_KEYS[index]}"`, result.reason);
     });
     return found;
   }

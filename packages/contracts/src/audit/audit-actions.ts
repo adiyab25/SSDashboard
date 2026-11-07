@@ -194,6 +194,18 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.locationUnarchived',
     proof: INVENTORY_PROOF,
   },
+  // Spec 0009, AC-3: every settings write, module toggle, and step switch. The record id is the
+  // setting's stable uuid (`settingRecordId`, from its key) and the label is the key. Optional
+  // here: `SettingsService.write` passes `reasonRequired` from the registry entry.
+  'setting.changed': {
+    module: 'platform',
+    recordType: 'setting',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.settingChanged',
+    proof: 'apps/api/test/settings.e2e-spec.ts',
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */

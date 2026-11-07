@@ -1,8 +1,8 @@
-import { ConfigResponse } from '@ssdashboard/contracts';
+import { CONFIG_RESPONSE_FIELDS, ConfigResponse, PUBLIC_CONFIG_KEYS } from '@ssdashboard/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../config/env.js';
 import { ConfigController } from './config.controller.js';
-import type { SettingsService } from './settings.service.js';
+import type { SettingsService } from './settings/settings.service.js';
 
 const env = { CLIENT_DISPLAY_NAME: 'Acme Home', APP_VERSION: '1.2.3', MAIL_DRIVER: 'none' } as Env;
 
@@ -37,6 +37,19 @@ describe('ConfigController', () => {
       defaultLanguage: 'en',
       mailEnabled: false,
     });
+  });
+
+  // Spec 0009, AC-5: exactly the spec 0004 fields, and only `public_config` settings are read.
+  it('answers exactly the public key set and reads only public settings', async () => {
+    const values: Record<string, unknown> = { ...installed, operations_wind_down_days: 90 };
+    const read = vi.fn(([key]: [string]) => Promise.resolve({ [key]: values[key] }));
+    const controller = new ConfigController(env, { read } as unknown as SettingsService);
+
+    const body = await controller.read();
+
+    expect(Object.keys(body).sort()).toEqual([...CONFIG_RESPONSE_FIELDS].sort());
+    const asked = read.mock.calls.flatMap(([keys]) => keys);
+    expect(asked.sort()).toEqual([...PUBLIC_CONFIG_KEYS].sort());
   });
 
   it('still answers with the env fields and defaults when settings cannot be read', async () => {

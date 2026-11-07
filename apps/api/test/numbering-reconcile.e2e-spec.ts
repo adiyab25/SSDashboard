@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import { NumberingError, NumberingService } from '../src/platform/numbering.service.js';
-import { SettingsService } from '../src/platform/settings.service.js';
+import { SettingsService } from '../src/platform/settings/settings.service.js';
 import { driftedBalances, fixtures, ledgerHarness, posting, type LedgerHarness } from './ledger.js';
 
 // Spec 0002, Milestone 4: document numbering and the nightly reconciliation, against PostgreSQL.

@@ -8,16 +8,14 @@ import {
 import { PgBoss } from 'pg-boss';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
-import { SettingsService } from '../../platform/settings.service.js';
+import { SettingsService } from '../../platform/settings/settings.service.js';
+import { JOB_SCHEMA } from '../../platform/job-schema.js';
 import { ReconciliationService } from './reconciliation.service.js';
 
 /** The pg-boss queue that carries the nightly reconciliation job. */
 export const RECONCILE_QUEUE = 'ledger.reconcile';
 /** How long a reconciliation run may take (one hour) before pg-boss lets another start. */
 export const RECONCILE_EXPIRY_SECONDS = 3_600;
-
-/** pg-boss keeps its tables in this schema, created by migration and owned by the app role. */
-export const JOB_SCHEMA = 'pgboss';
 
 /** Runs the nightly ledger reconciliation in the `worker` entry point (spec 0002, AC-11). */
 @Injectable()
