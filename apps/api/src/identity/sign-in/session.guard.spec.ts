@@ -5,7 +5,7 @@ import type { Env } from '../../config/env.js';
 import { Access } from '../../platform/access/access.js';
 import type { Auth } from './auth.tokens.js';
 import { Audience, type AudienceName } from '../../platform/audience/audience.decorator.js';
-import type { SessionAudience, SessionAudiences } from '../sessions/session-audiences.js';
+import type { SessionAudience } from '../sessions/session-audiences.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { SessionGuard } from './session.guard.js';
 
@@ -37,7 +37,10 @@ function setup(options: {
   audience?: AudienceName;
   session?: { user: typeof USER; session: { id: string; token: string; createdAt: Date } } | null;
   setCookies?: string[];
-  /** What the fake `SessionAudiences` answers; `staff` when not given. */
+  /**
+   * The audiences the person's hats give, `staff` when not given: the fake loader answers
+   * `manager` with `cost.view` for `staff`, `partner` for `partner`, and no hat for none.
+   */
   audiences?: SessionAudience[];
 }) {
   const getSession = vi.fn(() =>
@@ -71,16 +74,20 @@ function setup(options: {
     api: { getSession },
     $context: Promise.resolve({ internalAdapter: { deleteSession, deleteUserSessions } }),
   } as unknown as Auth;
-  const audiencesFor = vi.fn(() =>
-    Promise.resolve(new Set<SessionAudience>(options.audiences ?? ['staff'])),
-  );
-  const audiences = { audiencesFor } as unknown as SessionAudiences;
+  const audiences = options.audiences ?? ['staff'];
+  const partner = audiences.includes('partner');
+  const hats = partner ? ['partner'] : audiences.length > 0 ? ['manager'] : [];
   const load = vi.fn((userId: string) =>
     Promise.resolve(
-      new Access({ userId, hats: ['manager'], grants: ['cost.view'], partnerAccountId: null }),
+      new Access({
+        userId,
+        hats,
+        grants: hats.includes('manager') ? ['cost.view'] : [],
+        partnerAccountId: partner ? '0190c0de-0000-7000-8000-0000000000aa' : null,
+      }),
     ),
   );
-  const guard = new SessionGuard(reflector, auth, env, audiences, { load });
+  const guard = new SessionGuard(reflector, auth, env, { load });
   return {
     guard,
     context,
@@ -89,7 +96,6 @@ function setup(options: {
     getSession,
     deleteSession,
     deleteUserSessions,
-    audiencesFor,
     load,
   };
 }
@@ -292,8 +298,8 @@ describe('SessionGuard', () => {
     expect(request.staff).not.toHaveProperty('permissions');
   });
 
-  it('reads no Access for a person with no hat, whose sessions it ends', async () => {
-    const { guard, context, load } = setup({
+  it('judges a person with no hat from the one Access read, ends their sessions, and sets nothing', async () => {
+    const { guard, context, request, load } = setup({
       cookie: 'better-auth.session_token=abc',
       session: { user: USER, session: liveSession() },
       audiences: [],
@@ -302,7 +308,8 @@ describe('SessionGuard', () => {
     await expect(guard.canActivate(context)).rejects.toMatchObject({
       response: { code: 'SESSION_EXPIRED' },
     });
-    expect(load).not.toHaveBeenCalled();
+    expect(load).toHaveBeenCalledExactlyOnceWith(USER.id);
+    expect(request.access).toBeUndefined();
   });
 
   describe('the Origin check on writes', () => {
@@ -347,11 +354,11 @@ describe('SessionGuard', () => {
     it.each<AudienceName>(['portal', 'hook'])(
       'never reads the cookie on a %s route, even a valid staff one, and puts no one on the request',
       async (audience) => {
-        const { guard, context, request, getSession, audiencesFor } = signedIn(audience, ['staff']);
+        const { guard, context, request, getSession, load } = signedIn(audience, ['staff']);
 
         await expect(guard.canActivate(context)).resolves.toBe(true);
         expect(getSession).not.toHaveBeenCalled();
-        expect(audiencesFor).not.toHaveBeenCalled();
+        expect(load).not.toHaveBeenCalled();
         expect(request.staff).toBeUndefined();
         expect(request.partner).toBeUndefined();
       },
@@ -424,14 +431,15 @@ describe('SessionGuard', () => {
       ]);
     });
 
-    it('asks SessionAudiences on every request, with the person from the session', async () => {
-      const { guard, context, audiencesFor } = signedIn('staff', ['staff']);
+    it('reads the person once per request and judges the audience from those hats (one read)', async () => {
+      const { guard, context, load, request } = signedIn('staff', ['staff']);
 
       await guard.canActivate(context);
       await guard.canActivate(context);
 
-      expect(audiencesFor).toHaveBeenCalledTimes(2);
-      expect(audiencesFor).toHaveBeenCalledWith(USER.id);
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(load).toHaveBeenCalledWith(USER.id);
+      expect(request.staff).toMatchObject({ home: 'backoffice' });
     });
 
     it.each<AudienceName>(['staff', 'partner'])(

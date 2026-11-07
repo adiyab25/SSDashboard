@@ -11,7 +11,7 @@ import { AudienceGuard } from '../../platform/audience/audience.guard.js';
 import { Access } from '../../platform/access/access.js';
 import { AnyHat, Permission } from '../../platform/access/permission.decorator.js';
 import { PermissionGuard } from '../../platform/access/permission.guard.js';
-import type { SessionAudience, SessionAudiences } from '../sessions/session-audiences.js';
+import type { SessionAudience } from '../sessions/session-audiences.js';
 import type { Auth } from './auth.tokens.js';
 import type { CurrentPartner, CurrentStaff } from './current-staff.js';
 import { Public } from './public.decorator.js';
@@ -146,20 +146,12 @@ async function createApp(options: {
       }),
     ),
   );
-  const audiencesFor = vi.fn(() => Promise.resolve(new Set(options.audiences)));
-  const audiences: SessionAudiences = {
-    audiencesFor,
-    staffCondition: () => {
-      throw new Error('not used by the guard');
-    },
-  };
   const env = { PUBLIC_URL: ORIGIN } as Env;
   const guards = [
     {
       provide: APP_GUARD,
       inject: [Reflector],
-      useFactory: (reflector: Reflector) =>
-        new SessionGuard(reflector, auth, env, audiences, { load }),
+      useFactory: (reflector: Reflector) => new SessionGuard(reflector, auth, env, { load }),
     },
     ...(options.fullChain
       ? [
@@ -174,7 +166,7 @@ async function createApp(options: {
   }).compile();
   const app = moduleRef.createNestApplication<INestApplication<Server>>({ logger: false });
   await app.init();
-  return { app, getSession, audiencesFor };
+  return { app, getSession, load };
 }
 
 describe('the session guard over HTTP (AC-29)', () => {
@@ -204,7 +196,7 @@ describe('the session guard over HTTP (AC-29)', () => {
         expect(response.status).toBeLessThan(300);
         expect(response.body).toEqual({ staff: null, partner: null });
         expect(made.getSession).not.toHaveBeenCalled();
-        expect(made.audiencesFor).not.toHaveBeenCalled();
+        expect(made.load).not.toHaveBeenCalled();
       },
     );
 

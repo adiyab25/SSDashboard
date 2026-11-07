@@ -15,6 +15,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 import { DATABASE } from '../src/database/database.module.js';
+import { AccessLoader } from '../src/identity/access/access-loader.js';
+import { HatService } from '../src/identity/hats/hat.service.js';
+import { Access } from '../src/platform/access/access.js';
 import {
   hatChangeEndsSessions,
   revokeSessions,
@@ -58,6 +61,22 @@ class CountingHats implements SessionAudiences {
   }
 }
 
+/**
+ * The real `AccessLoader` the session guard reads a person through, wrapped only to count every
+ * read, so a test can see the guard reading the hats on every request (spec 0008 milestone 2 folds
+ * the audience question into this one read).
+ */
+class CountingAccess {
+  readonly asked: string[] = [];
+
+  constructor(private readonly real: AccessLoader) {}
+
+  load(userId: string): Promise<Access> {
+    this.asked.push(userId);
+    return this.real.load(userId);
+  }
+}
+
 interface Reply {
   status: number;
   body: Record<string, unknown>;
@@ -71,6 +90,7 @@ interface Reply {
 // scratch database.
 describe('sessions and audiences', { timeout: 300_000 }, () => {
   let hats: CountingHats;
+  let loads: CountingAccess;
   /** Partner account ids by code (`p1`, `p2`): `parties` rows that are consignment partners. */
   const accounts = new Map<string, string>();
   let scratch: { name: string; url: string };
@@ -114,6 +134,12 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
         inject: [DATABASE],
         factory: (connection: DatabaseConnection) =>
           (hats = new CountingHats(new HatSessionAudiences(connection))),
+      })
+      .overrideProvider(AccessLoader)
+      .useFactory({
+        inject: [DATABASE],
+        factory: (connection: DatabaseConnection) =>
+          (loads = new CountingAccess(new AccessLoader(connection))),
       })
       .compile();
     app = moduleRef.createNestApplication<NestExpressApplication>({
@@ -301,10 +327,10 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
   });
 
   describe('sessions follow hats (AC-33)', () => {
-    it('asks on every request, so a change acts on the next request with the same cookie (a)', async () => {
+    it('reads the hats on every request, so a change acts on the next request with the same cookie (a)', async () => {
       const person = await addPerson({ holding: staffHolding('warehouse') });
       const cookie = await signIn(person.email);
-      const askedBefore = hats.asked.filter((id) => id === person.id).length;
+      const askedBefore = loads.asked.filter((id) => id === person.id).length;
 
       expect((await call(cookie, 'GET', '/api/me')).status).toBe(200);
       // The model moves the person away from staff without ending the session.
@@ -315,7 +341,9 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       await hold(person.id, staffHolding('warehouse'));
       expect((await call(cookie, 'GET', '/api/me')).status).toBe(200);
 
-      expect(hats.asked.filter((id) => id === person.id).length - askedBefore).toBe(3);
+      // One read per request: the audience and the permissions come from the same hats.
+      expect(loads.asked.filter((id) => id === person.id).length - askedBefore).toBe(3);
+      expect(hats.asked.filter((id) => id === person.id)).toEqual([]);
     });
 
     it('ends every session when the last hat goes, in the same transaction, and no one else’s (b)', async () => {
@@ -526,7 +554,7 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       ['POST', '/revoke-sessions'],
       ['POST', '/reset-two-factor'],
     ])('answers 404 to %s /api/staff/:id%s for a partner user', async (method, suffix) => {
-      const body = method === 'PATCH' ? { role: 'admin' } : method === 'POST' ? {} : undefined;
+      const body = method === 'PATCH' ? { name: 'Renamed' } : method === 'POST' ? {} : undefined;
 
       const reply = await call(cookie, method, `/api/staff/${partner.id}${suffix}`, body);
 
@@ -534,18 +562,50 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       expect(reply.body).toMatchObject({ code: 'NOT_FOUND' });
     });
 
-    it('never counts a partner user as the other active admin', async () => {
+    it('answers 404 to PUT /api/staff/:id/access for a partner user', async () => {
+      const reply = await call(cookie, 'PUT', `/api/staff/${partner.id}/access`, {
+        hats: ['support'],
+        costView: false,
+        updatedAt: new Date().toISOString(),
+      });
+
+      expect(reply.status).toBe(404);
+      expect(reply.body).toMatchObject({ code: 'NOT_FOUND' });
+    });
+
+    it('never counts a partner user as the other active manager', async () => {
       await owner.pool.query(
         `UPDATE users SET banned = true
           WHERE id IN (SELECT user_id FROM hat_assignments WHERE hat = 'manager')
             AND id NOT IN ($1::uuid, $2::uuid)`,
         [admin.id, partner.id],
       );
+      // Over HTTP the acting manager is always another active one, so the hat service is called
+      // in process by a person who is not counted (a warehouse person acting as a manager).
+      const actor = await addPerson({ holding: staffHolding('warehouse') });
+      const { rows } = await owner.pool.query<{ at: string }>(
+        `SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at
+           FROM users WHERE id = $1::uuid`,
+        [admin.id],
+      );
 
-      const reply = await call(cookie, 'PATCH', `/api/staff/${admin.id}`, { role: 'staff' });
+      const change = app?.get(HatService).replaceStaffAccess(
+        admin.id,
+        { hats: ['support'], costView: true, updatedAt: rows[0]?.at as string, reason: 'Test' },
+        {
+          id: actor.id,
+          ip: '198.51.100.1',
+          userAgent: null,
+          access: new Access({
+            userId: actor.id,
+            hats: ['manager'],
+            grants: ['cost.view'],
+            partnerAccountId: null,
+          }),
+        },
+      );
 
-      expect(reply.status).toBe(409);
-      expect(reply.body).toMatchObject({ code: 'LAST_ADMIN' });
+      await expect(change).rejects.toMatchObject({ response: { code: 'LAST_ADMIN' } });
     });
 
     it('lets create-admin make a staff admin when the only active admin is a partner user', async () => {

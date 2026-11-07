@@ -5,6 +5,7 @@ import {
   eventName,
   type AuthEvent,
   type AuthEventContext,
+  type HatsChanged,
 } from '../../platform/events/auth-events.js';
 import type { HatChangeLogLine } from '../sessions/hat-change-log.js';
 
@@ -36,6 +37,7 @@ export class AuthAudit {
         at: context.at.toISOString(),
         ...('reason' in event ? { reason: event.reason } : {}),
         ...('scope' in event ? { scope: event.scope } : {}),
+        ...('hats' in event ? { hats: event.hats, costView: event.costView } : {}),
       }),
     );
     // A listener that throws must never fail a sign in.
@@ -50,12 +52,14 @@ export class AuthAudit {
   /**
    * Writes the log line of a hat change (spec 0005, AC-33 e), built by `hatChangeLogLine` so it
    * holds ids, address, user agent, time, hat names and, when given, the `before` and `after`
-   * holdings and the reason (spec 0008, AC-13). It writes only those named fields, as `record`
-   * does, so an object wider than the line can never log more. It emits nothing: the
-   * `HatsChanged` event and its payload are spec 0008's, emitted after the commit by the hat
-   * service.
+   * holdings and the reason (spec 0008, AC-13), and emits the `HatsChanged` event when one is
+   * given. `HatService` calls it once per change, after the commit and never before. It writes
+   * only the line's named fields, as `record` does, so an object wider than the line can never
+   * log more; the logger's redaction (`ROW_MARKER_RULES` in `packages/config/src/redaction.ts`)
+   * then hides the manager's free text `reason` on this line. Never throws: a failing listener is
+   * logged by its pg code and the change stands.
    */
-  hatsChanged(line: HatChangeLogLine): void {
+  hatsChanged(line: HatChangeLogLine, event?: HatsChanged): void {
     const holding = (value: HatChangeLogLine['before']) =>
       value && {
         hats: value.hats,
@@ -77,6 +81,13 @@ export class AuthAudit {
         ...(line.reason !== undefined && { reason: line.reason }),
       }),
     );
+    if (!event) return;
+    // A listener that throws must never fail a change that has already committed.
+    try {
+      this.events.emit('HatsChanged', event);
+    } catch (error) {
+      this.logger.error(`A HatsChanged listener failed: ${describeError(error)}`);
+    }
   }
 
   /**

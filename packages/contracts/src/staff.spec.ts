@@ -7,14 +7,20 @@ import {
   UpdateStaffRequest,
 } from './staff.js';
 
-const valid = { name: 'Sam', email: 'sam@example.com', role: 'staff' } as const;
+const valid = {
+  name: 'Sam',
+  email: 'sam@example.com',
+  hats: ['warehouse'],
+  costView: false,
+} as const;
 
 describe('CreateStaffRequest field rules (AC-12)', () => {
   it('trims text, lowercases the email and uppercases the staff code', () => {
     const parsed = CreateStaffRequest.parse({
       name: '  Sam Ali ',
       email: '  Sam@Example.COM ',
-      role: 'admin',
+      hats: ['manager', 'support'],
+      costView: true,
       phone: ' +20 100 123 4567 ',
       staffCode: ' ab12 ',
       language: ' ar ',
@@ -23,7 +29,8 @@ describe('CreateStaffRequest field rules (AC-12)', () => {
     expect(parsed).toEqual({
       name: 'Sam Ali',
       email: 'sam@example.com',
-      role: 'admin',
+      hats: ['manager', 'support'],
+      costView: true,
       phone: '+20 100 123 4567',
       staffCode: 'AB12',
       language: 'ar',
@@ -34,7 +41,9 @@ describe('CreateStaffRequest field rules (AC-12)', () => {
     ['an empty name', { name: '   ' }],
     ['a name over 100 characters', { name: 'x'.repeat(101) }],
     ['a bad email', { email: 'sam@' }],
-    ['an unknown role', { role: 'owner' }],
+    ['an unknown hat', { hats: ['owner'] }],
+    ['a hat given twice', { hats: ['support', 'support'] }],
+    ['a cost switch that is not a boolean', { costView: 'yes' }],
     ['a phone under 5 characters', { phone: '1234' }],
     ['a phone over 30 characters', { phone: '1'.repeat(31) }],
     ['a phone with letters', { phone: '555-ABCD' }],
@@ -44,8 +53,8 @@ describe('CreateStaffRequest field rules (AC-12)', () => {
     expect(CreateStaffRequest.safeParse({ ...valid, ...change }).success).toBe(false);
   });
 
-  it('needs a name, an email and a role', () => {
-    for (const key of ['name', 'email', 'role'] as const) {
+  it('needs a name, an email, the hats and the cost switch', () => {
+    for (const key of ['name', 'email', 'hats', 'costView'] as const) {
       const { [key]: _removed, ...rest } = valid;
       expect(CreateStaffRequest.safeParse(rest).success).toBe(false);
     }
@@ -64,8 +73,14 @@ describe('UpdateStaffRequest (AC-15)', () => {
 
   it('still checks what is given', () => {
     expect(UpdateStaffRequest.safeParse({ phone: '12' }).success).toBe(false);
-    expect(UpdateStaffRequest.safeParse({ role: 'root' }).success).toBe(false);
   });
+
+  it.each(['role', 'hats', 'costView'])(
+    'refuses %s rather than ignoring it: access changes only through PUT /access',
+    (field) => {
+      expect(UpdateStaffRequest.safeParse({ name: 'Sam', [field]: 'admin' }).success).toBe(false);
+    },
+  );
 });
 
 describe('StaffListQuery (AC-15)', () => {
@@ -74,6 +89,11 @@ describe('StaffListQuery (AC-15)', () => {
     expect(StaffListQuery.parse({ limit: '100' }).limit).toBe(100);
     expect(StaffListQuery.safeParse({ limit: '101' }).success).toBe(false);
     expect(StaffListQuery.safeParse({ limit: '0' }).success).toBe(false);
+  });
+
+  it('filters by one staff hat, never the partner hat', () => {
+    expect(StaffListQuery.parse({ hat: 'warehouse' }).hat).toBe('warehouse');
+    expect(StaffListQuery.safeParse({ hat: 'partner' }).success).toBe(false);
   });
 
   it('only knows the three statuses', () => {

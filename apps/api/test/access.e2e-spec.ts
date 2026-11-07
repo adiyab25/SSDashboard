@@ -73,19 +73,19 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
     await waitForHttp(`${base}/api/health`, api);
     warehouse = await signInAs(base, owner.pool, {
       email: 'warehouse@example.com',
-      role: { hats: ['warehouse'] },
+      access: { hats: ['warehouse'] },
     });
     manager = await signInAs(base, owner.pool, {
       email: 'manager@example.com',
-      role: { hats: ['manager'], costView: true },
+      access: { hats: ['manager'], costView: true },
     });
     managerWithoutCost = await signInAs(base, owner.pool, {
       email: 'manager.nocost@example.com',
-      role: { hats: ['manager'] },
+      access: { hats: ['manager'] },
     });
     both = await signInAs(base, owner.pool, {
       email: 'support.warehouse@example.com',
-      role: { hats: ['support', 'warehouse'] },
+      access: { hats: ['support', 'warehouse'] },
     });
   });
 
@@ -215,7 +215,7 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
     const sku = SkuDetail.parse(created.body);
     const otherWarehouse = await signInAs(base, owner.pool, {
       email: 'warehouse.two@example.com',
-      role: { hats: ['warehouse'] },
+      access: { hats: ['warehouse'] },
     });
 
     const key = randomUUID();
@@ -281,7 +281,7 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
     // 201 with both hats and 403 with support alone.
     const supportOnly = await signInAs(base, owner.pool, {
       email: 'support.only@example.com',
-      role: { hats: ['support'] },
+      access: { hats: ['support'] },
     });
     const location = await call('POST', '/locations', manager, {
       body: { code: 'wh-union', name: { en: 'Union warehouse' }, kind: 'warehouse' },
@@ -337,7 +337,7 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
   it('ends the session of a person whose last hat is gone (AC-10)', async () => {
     const cookie = await signInAs(base, owner.pool, {
       email: 'leaving@example.com',
-      role: { hats: ['support'] },
+      access: { hats: ['support'] },
     });
     expect((await call('GET', '/me', cookie)).status).toBe(200);
 

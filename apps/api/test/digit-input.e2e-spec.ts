@@ -36,8 +36,14 @@ describe('Arabic digit input at the api edge', { timeout: 90_000 }, () => {
       PUBLIC_URL: base,
     });
     await waitForHttp(`${base}/api/health`, api);
-    staff = await signInAs(base, owner.pool, { email: 'staff@example.com', role: 'staff' });
-    admin = await signInAs(base, owner.pool, { email: 'admin@example.com', role: 'admin' });
+    staff = await signInAs(base, owner.pool, {
+      email: 'staff@example.com',
+      access: { hats: ['support', 'operations', 'warehouse'] },
+    });
+    admin = await signInAs(base, owner.pool, {
+      email: 'admin@example.com',
+      access: { hats: ['manager'], costView: true },
+    });
   });
 
   afterAll(async () => {
@@ -129,7 +135,10 @@ describe('Arabic digit input at the api edge', { timeout: 90_000 }, () => {
   });
 
   it('keeps a password with Arabic digits exactly as typed (AC-18)', async () => {
-    const person = await signInAs(base, owner.pool, { email: 'digits@example.com', role: 'staff' });
+    const person = await signInAs(base, owner.pool, {
+      email: 'digits@example.com',
+      access: { hats: ['support', 'operations', 'warehouse'] },
+    });
     const typed = 'Mixed-Pass-1-٣١';
     const changed = await call('POST', '/auth/change-password', person, {
       currentPassword: 'Test-Password-1',

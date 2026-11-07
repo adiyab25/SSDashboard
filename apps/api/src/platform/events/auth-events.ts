@@ -1,3 +1,5 @@
+import type { AccessHolding, StaffHat } from '@ssdashboard/contracts';
+
 /** Who did it, to whom, from where. Every auth event carries this (spec 0005, AC-23). */
 export interface AuthEventContext {
   /** The person acting; null when nobody is signed in (a failed sign in). */
@@ -75,25 +77,23 @@ export class StaffTwoFactorReset {
   constructor(readonly context: AuthEventContext) {}
 }
 
-/** An admin created an account. `targetId` is the new account. */
+/**
+ * A manager created an account. `targetId` is the new account; `hats` and `costView` are the
+ * access it was given (spec 0008, AC-14), ids and hat names only.
+ */
 export class StaffCreated {
-  /** Takes the shared context. */
-  constructor(readonly context: AuthEventContext) {}
+  /** Takes the shared context and the access the new person was given. */
+  constructor(
+    readonly context: AuthEventContext,
+    readonly hats: readonly StaffHat[],
+    readonly costView: boolean,
+  ) {}
 }
 
-/** An admin changed a person's details, other than their role. */
+/** An admin changed a person's details (never their hats or cost: that is `HatsChanged`). */
 export class StaffUpdated {
   /** Takes the shared context. */
   constructor(readonly context: AuthEventContext) {}
-}
-
-/** An admin changed a person's role. `reason` carries the new role. */
-export class StaffRoleChanged {
-  /** Takes the shared context and the new role. */
-  constructor(
-    readonly context: AuthEventContext,
-    readonly reason: string,
-  ) {}
 }
 
 /** `reason` is what the admin wrote, when they wrote one. */
@@ -136,7 +136,6 @@ export type AuthEvent =
   | StaffTwoFactorReset
   | StaffCreated
   | StaffUpdated
-  | StaffRoleChanged
   | StaffDisabled
   | StaffEnabled
   | StaffPasswordReset
@@ -144,3 +143,20 @@ export type AuthEvent =
 
 /** The event names `@OnEvent` listens for: the class name, past tense. */
 export const eventName = (event: AuthEvent): string => event.constructor.name;
+
+/**
+ * A manager changed a person's hats or cost grant (spec 0008, AC-13; spec 0005, AC-33 e). Emitted
+ * by identity's `HatService` after the change committed, never before and never for a change that
+ * rolled back. `before` and `after` are the whole holdings (`{ hats, costView, partnerAccountId }`)
+ * and `reason` the manager's optional text: ids and hat names only, never an email, a name or a
+ * phone. It is not an `AuthEvent`: its log line is `AuthAudit.hatsChanged`, not `record`.
+ */
+export class HatsChanged {
+  /** Takes the shared context (actor, target, address, agent, time), the holdings and the reason. */
+  constructor(
+    readonly context: AuthEventContext,
+    readonly before: AccessHolding,
+    readonly after: AccessHolding,
+    readonly reason: string | null,
+  ) {}
+}

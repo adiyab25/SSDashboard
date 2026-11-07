@@ -15,12 +15,7 @@ import { staffOrigin, type Env } from '../../config/env.js';
 import type { Access } from '../../platform/access/access.js';
 import { audienceOf } from '../../platform/audience/audience.decorator.js';
 import { AccessLoader } from '../access/access-loader.js';
-import {
-  homeOf,
-  SESSION_AUDIENCES,
-  type SessionAudience,
-  type SessionAudiences,
-} from '../sessions/session-audiences.js';
+import { audiencesOfHats, homeOf, type SessionAudience } from '../sessions/session-audiences.js';
 import type { CurrentPartner, CurrentStaff } from './current-staff.js';
 import { IS_PUBLIC } from './public.decorator.js';
 import { AUTH, type Auth } from './auth.tokens.js';
@@ -51,16 +46,19 @@ type GuardedRequest = Request & {
  *   sealed token, a signature) comes with their features; until then `AudienceGuard` denies them.
  * - `public` routes (and `@Public()`) pass after the Origin check, without reading the cookie.
  * - `staff` and `partner` routes need a live session whose person may use that audience, as
- *   `SessionAudiences` answers on every request; a live session that does not fit is 403
+ *   their hats say on every request (`audiencesOfHats`, the rule `SessionAudiences` answers by);
+ *   a live session that does not fit is 403
  *   `WRONG_AUDIENCE`. A controller with no audience is held to the staff rule (`AudienceGuard`
  *   then answers 500 `AUDIENCE_MISSING`).
  *
  * The Origin check, the disabled check, the 7 day cap and the forced password change apply to
  * every audience it serves. The person, and what they may use, are read from the database on
- * every request, so a disabled account or a hat change acts on the next call: on a `staff` or
- * `partner` route it also puts the person's `Access` (hats, grants, partner account, spec 0008) on
- * `request.access` for `PermissionGuard`, which runs after `AudienceGuard`. It never caches an
- * answer and never takes an audience, a permission or an account from the request.
+ * every request, so a disabled account or a hat change acts on the next call. On a `staff` or
+ * `partner` route it reads the person's `Access` (hats, grants, partner account, spec 0008) once,
+ * judges the audience from those same hats, and puts it on `request.access` for `PermissionGuard`,
+ * which runs after `AudienceGuard`: one read, one snapshot, so the audience and the permissions
+ * can never disagree. It never caches an answer and never takes an audience, a permission or an
+ * account from the request.
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -68,13 +66,12 @@ export class SessionGuard implements CanActivate {
 
   /**
    * Takes the reflector for route metadata, the Better Auth instance, the env for the trusted
-   * origin, the `SessionAudiences` port, and the loader of the person's `Access`.
+   * origin, and the loader of the person's `Access`, which the audience is judged from too.
    */
   constructor(
     private readonly reflector: Reflector,
     @Inject(AUTH) private readonly auth: Auth,
     @Inject(ENV) env: Env,
-    @Inject(SESSION_AUDIENCES) private readonly audiences: SessionAudiences,
     @Inject(AccessLoader) private readonly accessLoader: Pick<AccessLoader, 'load'>,
   ) {
     this.origin = staffOrigin(env);
@@ -125,9 +122,11 @@ export class SessionGuard implements CanActivate {
     }
 
     const { user, session } = found;
-    // Read fresh on every request (AC-33 a). A person with no hat left has no session at all
-    // (spec 0008, AC-10): every one of theirs is deleted and the answer is an ended session.
-    const allowed = await this.audiences.audiencesFor(user.id);
+    // Read fresh on every request (AC-33 a), once: the audiences come from the same hats as the
+    // permissions. A person with no hat left has no session at all (spec 0008, AC-10): every one
+    // of theirs is deleted and the answer is an ended session.
+    const access = await this.accessLoader.load(user.id);
+    const allowed = audiencesOfHats(access.hats);
     if (allowed.size === 0) {
       const { internalAdapter } = await this.auth.$context;
       await internalAdapter.deleteUserSessions(user.id);
@@ -152,8 +151,8 @@ export class SessionGuard implements CanActivate {
       home: homeOf(allowed),
       sessionId: session.id,
     };
-    // Read fresh on every request, like the audiences: never from the session or the cookie.
-    request.access = await this.accessLoader.load(user.id);
+    // Never from the session or the cookie: the read above, of this request.
+    request.access = access;
     // A partner user gets the partner shape. Neither shape carries anything to authorize on:
     // permissions live only on `request.access`.
     if (needed === 'partner') {

@@ -7,6 +7,8 @@ import {
   dropScratchDatabase,
   freePort,
   giveHats,
+  WORKING_HATS,
+  type TestAccess,
   start,
   stop,
   waitForHttp,
@@ -56,7 +58,7 @@ describe('own profile and password', { timeout: 180_000 }, () => {
   });
 
   async function addPerson(
-    options: { role?: 'admin' | 'staff'; mustChange?: boolean } = {},
+    options: { access?: TestAccess; mustChange?: boolean } = {},
   ): Promise<{ id: string; email: string }> {
     counter += 1;
     const email = `profile${counter}@example.com`;
@@ -66,7 +68,7 @@ describe('own profile and password', { timeout: 180_000 }, () => {
       [`Person ${counter}`, email, `SC${counter}`, options.mustChange ?? false],
     );
     const id = rows[0]?.id as string;
-    await giveHats(owner.pool, id, options.role ?? 'staff');
+    await giveHats(owner.pool, id, options.access ?? WORKING_HATS);
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,
@@ -223,7 +225,7 @@ describe('own profile and password', { timeout: 180_000 }, () => {
     });
 
     it('shows an admin the new name in the staff list', async () => {
-      const admin = await addPerson({ role: 'admin' });
+      const admin = await addPerson({ access: { hats: ['manager'], costView: true } });
       const person = await addPerson();
       await call(await signIn(person.email), 'PATCH', '/api/me', { name: 'Zora Visible' });
 

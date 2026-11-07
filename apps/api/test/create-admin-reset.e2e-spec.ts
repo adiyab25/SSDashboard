@@ -93,7 +93,9 @@ describe('create-admin --reset-password', { timeout: 120_000 }, () => {
     const other = await owner.pool.query<{ id: string }>(
       `INSERT INTO users (name, email) VALUES ('Other', 'other@example.com') RETURNING id`,
     );
-    await giveHats(owner.pool, other.rows[0]?.id as string, 'staff');
+    await giveHats(owner.pool, other.rows[0]?.id as string, {
+      hats: ['support', 'operations', 'warehouse'],
+    });
     const adminId = (
       await owner.pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [EMAIL])
     ).rows[0]?.id as string;

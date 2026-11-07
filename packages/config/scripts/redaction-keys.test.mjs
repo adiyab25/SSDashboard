@@ -291,3 +291,36 @@ describe('redaction of the settlement rows', () => {
     assert.equal(redact(snake(settlementMatchRow)).payment_reference, REDACTED);
   });
 });
+
+describe('redaction of the hat change log line (spec 0008 AC-13)', () => {
+  const line = {
+    event: 'HatsChanged',
+    actorId: 'u-1',
+    targetId: 'u-2',
+    ip: '203.0.113.7',
+    userAgent: 'Firefox',
+    at: '2026-11-06T00:00:00Z',
+    hatsAdded: ['support'],
+    hatsRemoved: ['manager'],
+    before: { hats: ['manager'], costView: true, partnerAccountId: null },
+    after: { hats: ['support'], costView: true, partnerAccountId: null },
+    reason: 'Mona Hassan asked to step down, call her on 01001234567',
+  };
+
+  it('redacts the manager reason, keeping the ids, hats and holdings', () => {
+    const out = redact(line);
+    assert.equal(out.reason, REDACTED);
+    assert.deepEqual({ ...out, reason: line.reason }, line);
+  });
+
+  it('redacts it in the JSON text the auth log writes', () => {
+    const out = JSON.parse(redact(JSON.stringify(line)));
+    assert.equal(out.reason, REDACTED);
+    assert.deepEqual(out.hatsRemoved, ['manager']);
+  });
+
+  it('leaves a sign in failure reason code alone', () => {
+    const failed = { event: 'SignInFailed', actorId: null, targetId: 'u-1', reason: 'locked' };
+    assert.equal(redact(failed).reason, 'locked');
+  });
+});

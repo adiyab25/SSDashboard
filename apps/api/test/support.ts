@@ -3,7 +3,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import type { StaffAccessPreset } from '@ssdashboard/contracts';
+import type { Hat } from '@ssdashboard/contracts';
 import { createDatabase, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 
@@ -178,19 +178,18 @@ export async function stop(proc: RunningProcess | undefined): Promise<void> {
   await proc.exited;
 }
 
-/**
- * The hats and cost grant of the two presets before hats (spec 0008, AC-16): `admin` is `manager`
- * plus `cost.view`, `staff` is `support`, `operations` and `warehouse` without cost.
- */
-export const PRESET_ACCESS: Readonly<
-  Record<StaffAccessPreset, { hats: readonly string[]; costView: boolean }>
-> = {
-  admin: { hats: ['manager'], costView: true },
-  staff: { hats: ['support', 'operations', 'warehouse'], costView: false },
-};
+/** What a test person wears: exact hats, with or without the `cost.view` grant (spec 0008). */
+export interface TestAccess {
+  hats: readonly Hat[];
+  costView?: boolean;
+}
 
-/** What a test person wears: a preset, or exact hats with or without the cost grant. */
-export type TestAccess = StaffAccessPreset | { hats: readonly string[]; costView?: boolean };
+/**
+ * The hats a suite's everyday person wears when the suite does not say: the three working hats,
+ * no `manager` and no cost. Named for what it is, not a role: pass exact hats when a test is about
+ * one of them.
+ */
+export const WORKING_HATS: TestAccess = { hats: ['support', 'operations', 'warehouse'] };
 
 /**
  * Replaces a person's hats and cost grant straight in the database, as the owner, so a suite can
@@ -202,7 +201,7 @@ export async function giveHats(
   access: TestAccess,
   partnerAccountId: string | null = null,
 ): Promise<void> {
-  const { hats, costView = false } = typeof access === 'string' ? PRESET_ACCESS[access] : access;
+  const { hats, costView = false } = access;
   await owner.query('DELETE FROM hat_assignments WHERE user_id = $1::uuid', [userId]);
   await owner.query('DELETE FROM permission_grants WHERE user_id = $1::uuid', [userId]);
   for (const hat of hats) {
@@ -220,14 +219,14 @@ export async function giveHats(
 }
 
 /**
- * Adds a staff account straight to the database with its hats (`staff` preset by default) and
- * signs it in through the running api, so a suite can call guarded routes. `base` must be the
+ * Adds a staff account straight to the database with its hats ({@link WORKING_HATS} by default)
+ * and signs it in through the running api, so a suite can call guarded routes. `base` must be the
  * api's `PUBLIC_URL`. Returns the cookie header.
  */
 export async function signInAs(
   base: string,
   owner: DatabaseConnection['pool'],
-  options: { email?: string; role?: TestAccess } = {},
+  options: { email?: string; access?: TestAccess } = {},
 ): Promise<string> {
   const email = options.email ?? 'tester@example.com';
   const password = 'Test-Password-1';
@@ -236,7 +235,7 @@ export async function signInAs(
     [email],
   );
   const userId = rows[0]?.id as string;
-  await giveHats(owner, userId, options.role ?? 'staff');
+  await giveHats(owner, userId, options.access ?? WORKING_HATS);
   await owner.query(
     `INSERT INTO accounts (user_id, provider_id, account_id, password)
      VALUES ($1::uuid, 'credential', $1::text, $2)`,

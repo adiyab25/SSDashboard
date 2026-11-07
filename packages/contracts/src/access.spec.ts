@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AccessHolding,
+  AccessRequest,
   COST_FIELD_KEYS,
   COST_VIEW_DEFAULT,
   ExternalHat,
@@ -11,6 +13,7 @@ import {
   Permission,
   PERMISSIONS,
   permissionsFor,
+  StaffHat,
 } from './access.js';
 
 // Spec 0008, the permission matrix (AC-1, AC-6, AC-8): the rules every later change to the matrix
@@ -153,7 +156,9 @@ describe('the permission matrix, cell by cell (spec 0008 table)', () => {
         'campaigns.view',
         'people.manage',
         'settings.manage',
-        'audit.view',
+        'audit.read',
+        'audit.undo',
+        'audit.export',
       ],
       media_buyer: ['campaigns.view'],
       partner: ['partner.view_own', 'partner.submit_sales'],
@@ -190,7 +195,9 @@ describe('the permission matrix, cell by cell (spec 0008 table)', () => {
       'campaigns.view': staffOnly,
       'people.manage': staffOnly,
       'settings.manage': staffOnly,
-      'audit.view': staffP,
+      'audit.read': staffP,
+      'audit.undo': staffP,
+      'audit.export': staffP,
       'partner.view_own': partnerOnly,
       'partner.submit_sales': partnerOnly,
       'cost.view': staffOnly,
@@ -225,5 +232,47 @@ describe('permissionsFor', () => {
 
   it('is empty for a person with no hat and no grant', () => {
     expect(permissionsFor([], [])).toEqual([]);
+  });
+});
+
+describe('AccessRequest (AC-12)', () => {
+  const valid = {
+    hats: ['support', 'warehouse'],
+    costView: false,
+    updatedAt: '2026-11-06T10:00:00.123456Z',
+  };
+
+  it('takes the whole new set with the updatedAt read before, and a trimmed optional reason', () => {
+    expect(AccessRequest.parse({ ...valid, reason: '  moved to the shop floor ' })).toEqual({
+      ...valid,
+      reason: 'moved to the shop floor',
+    });
+    expect(AccessRequest.parse({ ...valid, reason: '   ' }).reason).toBeUndefined();
+  });
+
+  it('lets the api judge an empty set and the partner hat, so it answers NO_HAT and HAT_CONFLICT', () => {
+    expect(AccessRequest.safeParse({ ...valid, hats: [] }).success).toBe(true);
+    expect(AccessRequest.safeParse({ ...valid, hats: ['partner', 'support'] }).success).toBe(true);
+  });
+
+  it.each([
+    ['an unknown hat', { hats: ['owner'] }],
+    ['a hat given twice', { hats: ['support', 'support'] }],
+    ['no cost switch', { costView: undefined }],
+    ['no updatedAt', { updatedAt: undefined }],
+    ['an updatedAt that is not a time', { updatedAt: 'yesterday' }],
+    ['a reason over 500 characters', { reason: 'x'.repeat(501) }],
+  ])('refuses %s', (_name, change) => {
+    expect(AccessRequest.safeParse({ ...valid, ...change }).success).toBe(false);
+  });
+});
+
+describe('StaffHat and AccessHolding', () => {
+  it('offers the four internal hats and media_buyer on the staff route, never partner (AC-14)', () => {
+    expect(StaffHat.options).toEqual([...InternalHat.options, 'media_buyer']);
+  });
+
+  it('holds ids only: hats, the cost grant and the partner account (AC-13)', () => {
+    expect(Object.keys(AccessHolding.shape)).toEqual(['hats', 'costView', 'partnerAccountId']);
   });
 });

@@ -117,7 +117,7 @@ describe('staff cookie contract', { timeout: 300_000 }, () => {
       [`Person ${counter}`, email],
     );
     const id = rows[0]?.id as string;
-    await giveHats(owner.pool, id, 'staff');
+    await giveHats(owner.pool, id, { hats: ['support', 'operations', 'warehouse'] });
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

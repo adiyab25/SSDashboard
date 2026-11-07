@@ -53,7 +53,9 @@ export const Permission = z.enum([
   'campaigns.view',
   'people.manage',
   'settings.manage',
-  'audit.view',
+  'audit.read',
+  'audit.undo',
+  'audit.export',
   'partner.view_own',
   'partner.submit_sales',
   'cost.view',
@@ -100,7 +102,9 @@ export const PERMISSIONS: Readonly<Record<Permission, PermissionTraits>> = {
   'campaigns.view': staff(false),
   'people.manage': staff(false),
   'settings.manage': staff(false),
-  'audit.view': staff(true),
+  'audit.read': staff(true),
+  'audit.undo': staff(true),
+  'audit.export': staff(true),
   'partner.view_own': { audience: 'partner', personal: false },
   'partner.submit_sales': { audience: 'partner', personal: false },
   'cost.view': staff(false),
@@ -185,7 +189,9 @@ export const HAT_PERMISSIONS: Readonly<Record<Hat, readonly Permission[]>> = {
     'campaigns.view',
     'people.manage',
     'settings.manage',
-    'audit.view',
+    'audit.read',
+    'audit.undo',
+    'audit.export',
   ],
   media_buyer: ['campaigns.view'],
   partner: ['partner.view_own', 'partner.submit_sales'],
@@ -237,3 +243,78 @@ export function permissionsFor(hats: readonly Hat[], grants: readonly Permission
   for (const hat of hats) for (const permission of HAT_PERMISSIONS[hat]) all.add(permission);
   return [...all].sort();
 }
+
+/**
+ * The hats a staff person can be given on `/api/staff` (AC-12, AC-14): the four internal hats and
+ * `media_buyer`. `partner` is never given there; a partner user comes only through
+ * `/api/partner-users` (milestone 3). The web offers exactly these on the hats dialog.
+ */
+export const StaffHat = z.enum([...InternalHat.options, 'media_buyer']);
+/** The validated shape of `StaffHat`, as the api and web see it after parsing. */
+export type StaffHat = z.infer<typeof StaffHat>;
+
+/**
+ * The hats of an access change or a new staff person as the api reads them: any catalog hat, at
+ * most once each, so the api answers the spec's stable codes itself (422 `NO_HAT` for none,
+ * `HAT_CONFLICT` for `partner` on a staff route or beside another hat) instead of a generic
+ * validation failure. The web sends only {@link StaffHat} values.
+ */
+export const RequestedHats = z
+  .array(Hat)
+  .max(Hat.options.length)
+  .refine((hats) => new Set(hats).size === hats.length, 'Each hat at most once');
+
+/**
+ * The manager's optional reason for an access change, trimmed, up to 500 characters (AC-13). Empty
+ * text is no reason. Required by the api when the change takes `manager` away (spec 0010, action
+ * `hat.revoked`): 422 `REASON_REQUIRED`.
+ */
+export const AccessReason = z
+  .string()
+  .trim()
+  .max(500)
+  .transform((value) => value || undefined);
+
+/**
+ * `PUT /api/staff/:id/access` (AC-12): the person's whole new access set, replacing the old one.
+ * `updatedAt` is the `updatedAt` of the staff detail read before the change; a mismatch is 409
+ * `STALE_RECORD`. A cost change needs the actor to hold `cost.view` (403 `FORBIDDEN`), and nobody
+ * changes their own hats or cost (409 `SELF_HAT_CHANGE`).
+ */
+export const AccessRequest = z.object({
+  hats: RequestedHats,
+  costView: z.boolean(),
+  updatedAt: z.iso.datetime({ offset: true }),
+  reason: AccessReason.optional(),
+});
+/** The validated shape of `AccessRequest`, as the api and web see it after parsing. */
+export type AccessRequest = z.infer<typeof AccessRequest>;
+
+/**
+ * What a person holds, before or after an access change, as spec 0008 AC-13 names it: the hats,
+ * whether they hold the `cost.view` grant, and the partner account of a partner user (null for
+ * staff). The `before` and `after` of the `HatsChanged` event and of the audit entry. Ids only:
+ * never a name, an email or a phone.
+ */
+export const AccessHolding = z.object({
+  hats: z.array(Hat),
+  costView: z.boolean(),
+  partnerAccountId: z.uuid().nullable(),
+});
+/** The validated shape of `AccessHolding`, as the api and web see it after parsing. */
+export type AccessHolding = z.infer<typeof AccessHolding>;
+
+/** The stable codes an access change answers with, besides the shared ones (AC-12, spec 0008 errors). */
+export const AccessErrorCode = z.enum([
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'STALE_RECORD',
+  'SELF_HAT_CHANGE',
+  'LAST_ADMIN',
+  'HAT_CONFLICT',
+  'GRANT_NOT_ALLOWED',
+  'NO_HAT',
+  'REASON_REQUIRED',
+]);
+/** The validated shape of `AccessErrorCode`, as the api and web see it after parsing. */
+export type AccessErrorCode = z.infer<typeof AccessErrorCode>;

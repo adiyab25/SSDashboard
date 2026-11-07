@@ -63,14 +63,14 @@ describe('create-admin --reset-two-factor', { timeout: 120_000 }, () => {
         [CLERK],
       )
     ).rows[0]?.id as string;
-    await giveHats(owner.pool, clerkId, 'staff');
+    await giveHats(owner.pool, clerkId, { hats: ['support', 'operations', 'warehouse'] });
     otherId = (
       await owner.pool.query<{ id: string }>(
         `INSERT INTO users (name, email) VALUES ('Other', $1) RETURNING id`,
         [OTHER],
       )
     ).rows[0]?.id as string;
-    await giveHats(owner.pool, otherId, 'admin');
+    await giveHats(owner.pool, otherId, { hats: ['manager'], costView: true });
     // The admin changed the temporary password long ago; the flag stays off through this reset.
     await owner.pool.query(`UPDATE users SET must_change_password = false WHERE id = $1::uuid`, [
       adminId,
