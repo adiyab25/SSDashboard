@@ -20,6 +20,7 @@ import type { AuditUndoneWriter } from './audit-undone.writer.js';
 import type { AuditService } from './audit.service.js';
 import {
   AlreadyUndone,
+  AuditReadForbidden,
   AuditReasonInvalid,
   AuditUndoHandlerDuplicate,
   AuditUndoHandlerForeign,
@@ -461,5 +462,16 @@ describe('AuditUndoService', () => {
       undone: false,
       canUndo: false,
     });
+  });
+
+  // Security review AS37: the fallback covers a failed read, never a refused one.
+  it('passes on a read refusal after commit instead of answering from the written row', async () => {
+    plant();
+    const undos = new AuditUndoRegistry();
+    undos.register(HANDLER, noop, 'inventory');
+    const { service, view } = serviceWith(reads(), undos);
+    view.mockRejectedValueOnce(new AuditReadForbidden());
+
+    await expect(service.undo(ID, viewer, 'wrong')).rejects.toBeInstanceOf(AuditReadForbidden);
   });
 });

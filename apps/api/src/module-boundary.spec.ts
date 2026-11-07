@@ -665,7 +665,10 @@ describe('audit imports no owning module (spec 0010, AC-9, AC-14)', () => {
 // Spec 0010 AC-14, review M4R4 and security review AS33: an undone entry claims its target for
 // good (the unique index then blocks the real undo), so only the undo writes one. The writer is a
 // provider `AuditUndoModule` does not export, and no file but the undo service, its module, and
-// the audit module's own tests may name it. Extensions are held to the same wall.
+// the audit module's own tests may name it. Security review AS36: the insert pieces it shares with
+// `AuditService` (`entryValues`, `INSERT_ENTRIES`, in `audit-entry-sql.ts`) would build the same
+// row around it, so they are walled too: only the service and the writer may name them.
+// Extensions are held to both walls.
 
 /** The files that may name the undone entry writer, each with why. */
 const UNDONE_WRITER_USERS: Readonly<Record<string, string>> = {
@@ -677,16 +680,40 @@ const UNDONE_WRITER_USERS: Readonly<Record<string, string>> = {
 /** What names the writer: its class, its file, or the method the exported service once had. */
 const UNDONE_WRITER_NAMES = /\bAuditUndoneWriter\b|audit-undone\.writer|\brecordUndone\b/;
 
-/** Every file outside the allowed list (and the audit module's own specs) that names the writer. */
-function undoneWriterBreaches(files: readonly SourceFile[]): string[] {
+/** The files that may name the shared entry insert pieces, each with why (AS36). */
+const ENTRY_SQL_USERS: Readonly<Record<string, string>> = {
+  'apps/api/src/audit/audit-entry-sql.ts': 'the insert pieces themselves',
+  'apps/api/src/audit/audit.service.ts': 'record and recordMany: entries of listed codes',
+  'apps/api/src/audit/audit-undone.writer.ts': 'the undone entry writer',
+};
+
+/** What names the insert pieces: the values builder, the column list, or their file. */
+const ENTRY_SQL_NAMES = /\bentryValues\b|\bINSERT_ENTRIES\b|audit-entry-sql/;
+
+/** Every file outside `users` (and the audit module's own specs) whose text matches `names`. */
+function namedOutside(
+  files: readonly SourceFile[],
+  users: Readonly<Record<string, string>>,
+  names: RegExp,
+): string[] {
   return files
     .filter(
       (file) =>
-        !Object.hasOwn(UNDONE_WRITER_USERS, file.path) &&
+        !Object.hasOwn(users, file.path) &&
         !/^apps\/api\/src\/audit\/[^/]+\.spec\.ts$/.test(file.path) &&
-        UNDONE_WRITER_NAMES.test(file.text),
+        names.test(file.text),
     )
     .map((file) => file.path);
+}
+
+/** Every file outside the allowed list (and the audit module's own specs) that names the writer. */
+function undoneWriterBreaches(files: readonly SourceFile[]): string[] {
+  return namedOutside(files, UNDONE_WRITER_USERS, UNDONE_WRITER_NAMES);
+}
+
+/** Every file outside the allowed list (and the audit specs) that names the insert pieces. */
+function entrySqlBreaches(files: readonly SourceFile[]): string[] {
+  return namedOutside(files, ENTRY_SQL_USERS, ENTRY_SQL_NAMES);
 }
 
 describe('only the undo writes an undone entry (spec 0010 AC-14, AS33)', () => {
@@ -698,10 +725,46 @@ describe('only the undo writes an undone entry (spec 0010 AC-14, AS33)', () => {
     const paths = new Set(files.map((file) => file.path));
 
     expect(Object.keys(UNDONE_WRITER_USERS).filter((path) => !paths.has(path))).toEqual([]);
+    expect(Object.keys(ENTRY_SQL_USERS).filter((path) => !paths.has(path))).toEqual([]);
   });
 
   it('finds the writer named nowhere but the undo service, its module, and the audit specs', () => {
     expect(undoneWriterBreaches(files)).toEqual([]);
+  });
+
+  it('finds the insert pieces named nowhere but the service, the writer, and the audit specs (AS36)', () => {
+    expect(entrySqlBreaches(files)).toEqual([]);
+  });
+
+  it('reports a planted module, extension, or other audit file that builds an entry row itself (AS36)', () => {
+    const planted: SourceFile[] = [
+      {
+        path: 'apps/api/src/inventory/claim.ts',
+        text: [
+          "import { entryValues, INSERT_ENTRIES } from '../audit/audit-entry-sql.js';",
+          'await tx.execute(sql`${INSERT_ENTRIES} VALUES ${entryValues(entry, targetId)}`);',
+        ].join('\n'),
+      },
+      {
+        path: 'extensions/acme/claim.ts',
+        text: "const pieces = await import('x/audit-entry-sql');",
+      },
+      {
+        path: 'apps/api/src/audit/audit-undo.service.ts',
+        text: 'const row = entryValues(entry, id);',
+      },
+      {
+        path: 'apps/api/src/audit/audit-undone.writer.ts',
+        text: "import { entryValues, INSERT_ENTRIES } from './audit-entry-sql.js';",
+      },
+      { path: 'apps/api/src/audit/audit.service.spec.ts', text: 'INSERT_ENTRIES' },
+    ];
+
+    expect(entrySqlBreaches(planted)).toEqual([
+      'apps/api/src/inventory/claim.ts',
+      'extensions/acme/claim.ts',
+      'apps/api/src/audit/audit-undo.service.ts',
+    ]);
   });
 
   it('reports a planted owner, extension, or other audit file that names it', () => {

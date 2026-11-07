@@ -1,27 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import {
-  AuditActor,
-  auditActionOf,
-  auditRecordTypeOf,
-  auditUndoneParentOf,
-  type AuditActionCode,
-} from '@ssdashboard/contracts';
-import { sql, type SQL } from '@ssdashboard/db';
-import { pgArray, type Transaction } from '../database/sql.js';
-import {
-  AuditCorrelationMismatch,
-  AuditPersonalDataRefused,
-  AuditRecordTypeMismatch,
-  UnknownAuditAction,
-} from './audit.errors.js';
-import {
-  hasPhoneShapedKey,
-  holdsNoPersonalData,
-  isUndoArgsShape,
-  maskPersonalData,
-} from './personal-data.js';
-import { checkedAuditReason } from './audit-reason.js';
+import type { AuditActor, AuditActionCode } from '@ssdashboard/contracts';
+import { sql } from '@ssdashboard/db';
+import type { Transaction } from '../database/sql.js';
+import { entryValues, INSERT_ENTRIES } from './audit-entry-sql.js';
+import { AuditCorrelationMismatch } from './audit.errors.js';
 
 /**
  * A value JSON can carry unchanged (review AR5). `bigint`, `Date`, `undefined`, and functions are
@@ -55,126 +38,9 @@ export interface AuditEntryInput {
   undo?: { action: string; args: JsonObject };
 }
 
-/** What `entryValues` checks: an entry of a listed code, or an undone entry. */
-export type WritableEntry = Omit<AuditEntryInput, 'action'> & { action: string };
-
-/** The actor columns of `audit_entries`, one shape per actor kind (AC-3). */
-interface ActorColumns {
-  kind: AuditActor['kind'];
-  userId: string | null;
-  ref: string | null;
-  jobId: string | null;
-  hat: string | null;
-}
-
-function actorColumns(actor: AuditActor): ActorColumns {
-  const none = { userId: null, ref: null, jobId: null, hat: null };
-  switch (actor.kind) {
-    case 'person':
-      return { ...none, kind: actor.kind, userId: actor.userId, hat: actor.hat };
-    case 'partner_user':
-      return { ...none, kind: actor.kind, userId: actor.userId, ref: actor.partnerAccountId };
-    case 'system_job':
-      return { ...none, kind: actor.kind, ref: actor.name, jobId: actor.jobId };
-    case 'carrier':
-      return { ...none, kind: actor.kind, ref: actor.connectionCode };
-    case 'import':
-      return { ...none, kind: actor.kind, ref: actor.runId };
-    case 'portal_customer':
-      return { ...none, kind: actor.kind, ref: actor.customerId };
-  }
-}
-
 /**
- * The column list every entry insert names, in `entryValues` order. Shared with the undone entry
- * writer, the only other insert into `audit_entries`.
- */
-export const INSERT_ENTRIES = sql`
-  INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
-                             actor_hat, action, record_type, record_id, record_label,
-                             before, after, personal_fields, reason, undo_action, undo_args,
-                             undoes_entry_id)`;
-
-const json = (value: Readonly<Record<string, unknown>> | undefined): string | null =>
-  value === undefined ? null : JSON.stringify(value);
-
-/**
- * Checks one entry in the spec's order and returns its VALUES tuple. Throws before anything is
- * written: an unknown code, or an undone code outside an undo (or a listed code inside one)
- * (`UnknownAuditAction`), a record type the registry does not give the
- * code or one the audit trail does not know (`AuditRecordTypeMismatch`), a malformed actor (a
- * `ZodError`, security review AS19), a missing required reason (`AuditReasonRequired`), a reason
- * over 500 characters (`AuditReasonTooLong`), a typed note where the record type takes a reason
- * code (`AuditReasonInvalid`, AS13), or personal data in the label or undo arguments or a phone
- * shaped key anywhere (`AuditPersonalDataRefused`). Masks personal values in `before` and `after`,
- * with the record type's own personal keys, and phones and emails in a free text reason. Never
- * touches the database. Exported for the undo module's writer of undone entries, the only
- * other insert; never call it from outside the audit module.
- */
-export function entryValues(entry: WritableEntry, undoesEntryId: string | null): SQL {
-  const definition = auditActionOf(entry.action);
-  if (!definition) throw new UnknownAuditAction(entry.action);
-  // An undone code (`<action>_undone`) is written only by an undo, and an undo writes only one.
-  const undone = auditUndoneParentOf(entry.action) !== undefined;
-  if (undone !== (undoesEntryId !== null)) throw new UnknownAuditAction(entry.action);
-  const recordType = auditRecordTypeOf(entry.record.type);
-  if (entry.record.type !== definition.recordType || !recordType) {
-    throw new AuditRecordTypeMismatch(entry.action, entry.record.type);
-  }
-  const actor = actorColumns(AuditActor.parse(entry.actor));
-
-  const reason = checkedAuditReason(
-    entry.action,
-    definition,
-    recordType.reason,
-    entry.reason,
-    entry.reasonRequired === true,
-  );
-
-  for (const [field, value] of [
-    ['before', entry.before],
-    ['after', entry.after],
-    ['undo.args', entry.undo?.args],
-  ] as const) {
-    if (value !== undefined && hasPhoneShapedKey(value)) throw new AuditPersonalDataRefused(field);
-  }
-  const { personalKeys, labelPattern, labelIsOwnCode } = recordType;
-  const ownCode = labelIsOwnCode && labelPattern ? labelPattern : undefined;
-  const before = entry.before ? maskPersonalData(entry.before, personalKeys, ownCode) : undefined;
-  const after = entry.after ? maskPersonalData(entry.after, personalKeys, ownCode) : undefined;
-  const personalFields = [
-    ...new Set([...(before?.personalPaths ?? []), ...(after?.personalPaths ?? [])]),
-  ].sort();
-
-  // A label must fit its record type's shape. A label that is the record's own code (a SKU, a
-  // location, a document number) is trusted as it is; any other is refused when it looks like a
-  // phone. A customer takes no label (security reviews AS16, AS17).
-  const label = entry.record.label ?? null;
-  if (
-    label !== null &&
-    (labelPattern === null ||
-      !labelPattern.test(label) ||
-      (!labelIsOwnCode && !holdsNoPersonalData(label, personalKeys)))
-  ) {
-    throw new AuditPersonalDataRefused('record.label');
-  }
-  if (
-    entry.undo &&
-    (!isUndoArgsShape(entry.undo.args) || !holdsNoPersonalData(entry.undo.args, personalKeys))
-  ) {
-    throw new AuditPersonalDataRefused('undo.args');
-  }
-
-  return sql`(${entry.correlationId}, ${actor.kind}, ${actor.userId}, ${actor.ref},
-              ${actor.jobId}, ${actor.hat}, ${entry.action}, ${entry.record.type},
-              ${entry.record.id}, ${label}, ${json(before?.masked)}::jsonb,
-              ${json(after?.masked)}::jsonb,
-              ${pgArray(personalFields)}::text[], ${reason}, ${entry.undo?.action ?? null},
-              ${json(entry.undo?.args)}::jsonb, ${undoesEntryId}::uuid)`;
-}
-
-/**
- * The only writer of `audit_entries` (spec 0010, AC-2, AC-9). Every other module records through
+ * The writer of every entry of a listed code in `audit_entries` (spec 0010, AC-2, AC-9; the undo
+ * module's writer adds undone entries, nothing else writes). Every other module records through
  * `record` or `recordMany`, inside its own transaction, so an entry exists if and only if its
  * change commits. It never opens a transaction, never swallows an error, never reads another
  * module's table, and never stores a customer's personal data. `id`, `recorded_at`, `tenant_id`,

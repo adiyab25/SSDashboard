@@ -1,5 +1,5 @@
 # Verify: audit trail · spec 0010 · updated 2026-11-05
-_Steps derived from spec 0010 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones append theirs. Nothing is ticked yet: the spec is In Progress (milestone 1 built, 2026-11-06)._
+_Steps derived from spec 0010 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones append theirs. Ticks are added only where `docs/reviews/verify-audit-trail.md` or a named passing test proves the line; the spec is In Progress. Updated 2026-11-07 (spec task 19): one more line ticked, the rest stay open and are named below where they are not proven._
 
 ## UI / manual
 - [x] As a manager, void a posted stock receipt with the reason "wrong supplier" → `/audit` lists a row: your name, the time in Cairo time, "Receipt voided" (Arabic label in Arabic), the receipt number, the reason → AC-1, AC-5, AC-12
@@ -30,7 +30,7 @@ _Steps derived from spec 0010 acceptance criteria and its Value sourcing table. 
 - [ ] An entry from a worker job → `actor_kind = 'system_job'`, `actor_ref` the job name, `job_id` the pg-boss job id, no user → AC-3
 - [ ] An entry from a partner user session → `actor_kind = 'partner_user'`, `actor_user_id` set, `actor_ref` the partner account id (from the session user row, never the request) → AC-3
 - [ ] An entry for a customer acting through a signed link → `actor_kind = 'portal_customer'`, `actor_ref` the customer id → AC-3
-- [ ] Try to insert `actor_kind = 'person'` with no user, and `system_job` with a user → both fail the table check → AC-3
+- [x] Try to insert `actor_kind = 'person'` with no user, and `system_job` with a user → both fail the table check → AC-3 (proven by `apps/api/test/audit.e2e-spec.ts` "refuses each wrong actor shape at the table", listed in `docs/reviews/verify-audit-trail.md` AC-3)
 - [ ] Record with an unknown action code → `UnknownAuditAction`; a required reason missing, or `"   "` → 422 `REASON_REQUIRED` → AC-5, AC-10 (registry)
 - [x] Reason `call 01012345678` → stored as `call [phone]` → AC-5 (`maskPhones`)
 - [ ] `undo_args` containing a phone key, or `record_label` with a phone → `AuditPersonalDataRefused` → AC-4, AC-14 (redacted copy must equal input)

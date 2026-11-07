@@ -29,6 +29,7 @@ import { AuditService } from './audit.service.js';
 import {
   AlreadyUndone,
   AuditEntryNotFound,
+  AuditReadForbidden,
   AuditRecordTypeMismatch,
   AuditUndoHandlerMissing,
   AuditUndoRecordMismatch,
@@ -110,7 +111,8 @@ export class AuditUndoService {
    * a fresh correlation id (one business action). A second undone entry the unique index refuses
    * is `AlreadyUndone`. The person actor names the viewer's hat that holds `audit.undo`. If the
    * read after commit fails, it answers from the row it wrote (review M4R17), never an error for
-   * an undo that is done.
+   * an undo that is done; but a viewer the reader refuses (`AuditReadForbidden`, no `audit.read`)
+   * gets that refusal, never the row (security review AS37).
    */
   async undo(entryId: string, viewer: AuditViewer, reason: string): Promise<AuditEntryView> {
     const id = entryId.toLowerCase();
@@ -174,7 +176,9 @@ export class AuditUndoService {
     }
     try {
       return await this.reader.view(written.id, viewer);
-    } catch {
+    } catch (error) {
+      // A viewer the reader refuses never gets the entry another way (security review AS37).
+      if (error instanceof AuditReadForbidden) throw error;
       // The undo is committed: answer from what was written rather than an error a retry would
       // meet as "already undone". The undone entry is never itself undone or undoable.
       this.logger.warn('An undo committed but its entry could not be read back');

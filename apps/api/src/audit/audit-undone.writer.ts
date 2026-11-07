@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { sql } from '@ssdashboard/db';
 import type { Transaction } from '../database/sql.js';
 import { ENTRY_COLUMNS, type EntryRow } from './audit-query.service.js';
-import { entryValues, INSERT_ENTRIES, type AuditEntryInput } from './audit.service.js';
+import { entryValues, INSERT_ENTRIES } from './audit-entry-sql.js';
+import type { AuditEntryInput } from './audit.service.js';
 
 /**
  * The undone entry an undo writes (spec 0010, AC-14, task 16): an entry of the undone code
