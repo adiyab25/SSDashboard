@@ -230,6 +230,8 @@ One image. Each module declares its bundle (`core`, `warehouse`, `operations`) a
 
 > Amended 2026-11-05: [spec 0009](../0009-settings-toggles-bundles/index.md) AC-8 keeps `GET` routes of a `read_only` (wind down) module answering, so the brand's data stays readable; only an `off` module answers 404 `MODULE_OFF` on every route.
 
+> Amended 2026-11-07: spec 0009, as accepted, gates routes by capability where Operations work sits inside a core module (`@RequiresCapability`), widens the wind down so the carrier settlement can match, reconcile, and close the pre lapse cash and work in flight can finish (a `limited` state), and lets a license carry an optional Warehouse expiry for pilot and trial licenses (absent, Warehouse never expires); see its AC-8, AC-14, AC-18, and AC-28.
+
 ### Database roles and the append only ledgers
 
 - Per client roles on the shared server: `ssd_<client>_owner` (owns the schema, used only by `migrate`), `ssd_<client>_app` (api and worker), `ssd_<client>_backup` (read only, used only by `ops`). Each client database gets `REVOKE CONNECT ON DATABASE ... FROM PUBLIC` and `CONNECT` only for its own three roles. The server superuser is used only by the host bootstrap that creates a client's database and roles.

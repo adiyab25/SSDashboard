@@ -111,7 +111,7 @@ Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep
 - [ ] Test it: `/test settings, module toggles & bundles`
 - [ ] Review it: `/check review settings, module toggles & bundles`
 - [ ] Document it: `/document settings, module toggles & bundles`
-Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Proposed 2026-11-05)
+Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Accepted 2026-11-07)
 
 ### 10. Audit trail
 Agent accountability: who did what, when, and why, across edits, merges, overrides, confirmations, exports, and every automatic action.
