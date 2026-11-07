@@ -21,6 +21,7 @@ const me = vi.hoisted(
         'catalog.manage',
         'catalog.edit',
         'stock.receive',
+        'stock.view',
         'cost.view',
         'people.manage',
         'stock.correct',
@@ -28,7 +29,9 @@ const me = vi.hoisted(
     },
   }),
 );
-vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
+vi.mock('@/auth/use-me', () => ({
+  useMeState: () => (me.current ? { status: 'ready', me: me.current } : { status: 'loading' }),
+}));
 
 const WH = '50000000-0000-4000-8000-000000000001';
 const shell = vi.hoisted(() => ({ current: 'all', ready: true }));
@@ -70,6 +73,7 @@ afterEach(() => {
       'catalog.manage',
       'catalog.edit',
       'stock.receive',
+      'stock.view',
       'cost.view',
       'people.manage',
       'stock.correct',
@@ -99,7 +103,11 @@ describe('StockPage (AC-9, AC-16)', () => {
   });
 
   it('hides cost and value columns from staff', async () => {
-    me.current = { id: 's', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] };
+    me.current = {
+      id: 's',
+      hats: ['warehouse'],
+      permissions: ['stock.view', 'catalog.edit', 'stock.receive'],
+    };
     api.listStock.mockResolvedValue(page([row(1)]));
     renderWithQuery(<StockPage />);
 

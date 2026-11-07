@@ -34,7 +34,10 @@ const me = vi.hoisted(
     },
   }),
 );
-vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
+vi.mock('@/auth/use-me', () => ({
+  useMe: () => me.current,
+  useMeState: () => (me.current ? { status: 'ready', me: me.current } : { status: 'loading' }),
+}));
 
 const loadConfig = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
 vi.mock('@/shell/client-config', () => ({ loadConfig: () => loadConfig() }));

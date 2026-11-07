@@ -1,5 +1,6 @@
 'use client';
 
+import { AccessErrorState } from '@/access/access-error-state';
 import { NoAccessState } from '@/access/no-access-state';
 import { useAccess } from '@/access/use-access';
 import { LocationsView } from './locations-view';
@@ -14,6 +15,8 @@ export function LocationsPage() {
   const access = useAccess();
   const canManage = access.can('catalog.manage');
 
+  if (access.failed)
+    return <AccessErrorState titleKey="inventory.locations.title" onRetry={access.retry} />;
   if (access.ready && !canManage) return <NoAccessState titleKey="inventory.locations.title" />;
   return <LocationsView enabled={canManage} />;
 }

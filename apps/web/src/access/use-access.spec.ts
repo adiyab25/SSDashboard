@@ -1,23 +1,29 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAccess } from './use-access';
 
 const me = vi.hoisted(
   (): {
     current: { hats: string[]; permissions: string[] } | null;
+    failed: boolean;
     path: string | undefined;
-  } => ({ current: null, path: undefined }),
+    attempts: number[];
+  } => ({ current: null, failed: false, path: undefined, attempts: [] }),
 );
 vi.mock('@/auth/use-me', () => ({
-  useMe: (path?: string) => {
+  useMeState: (path?: string, attempt = 0) => {
     me.path = path;
-    return me.current;
+    me.attempts.push(attempt);
+    if (me.current) return { status: 'ready', me: me.current };
+    return { status: me.failed ? 'failed' : 'loading' };
   },
 }));
 
 afterEach(() => {
   me.current = null;
+  me.failed = false;
   me.path = undefined;
+  me.attempts = [];
 });
 
 describe('useAccess (spec 0008, AC-11)', () => {
@@ -25,9 +31,23 @@ describe('useAccess (spec 0008, AC-11)', () => {
     const { result } = renderHook(() => useAccess());
 
     expect(result.current.ready).toBe(false);
+    expect(result.current.failed).toBe(false);
     expect(result.current.hats).toEqual([]);
     expect(result.current.permissions).toEqual([]);
     expect(result.current.can('stock.view')).toBe(false);
+  });
+
+  it('reports a failed who am I call as failed, not ready, and retry asks again', () => {
+    me.failed = true;
+    const { result } = renderHook(() => useAccess());
+
+    expect(result.current.failed).toBe(true);
+    expect(result.current.ready).toBe(false);
+    expect(result.current.can('stock.view')).toBe(false);
+
+    act(() => result.current.retry());
+
+    expect(me.attempts.at(-1)).toBe(1);
   });
 
   it('answers can from the effective permissions, extra grants included', () => {

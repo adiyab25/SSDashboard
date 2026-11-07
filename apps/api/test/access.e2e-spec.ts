@@ -275,6 +275,29 @@ describe('hats and permissions on the api', { timeout: 120_000 }, () => {
     expect((await call('GET', '/staff', manager)).status).toBe(200);
   });
 
+  it('answers GET /api/me for support plus warehouse with both hats and the sorted union of their permissions (AC-2, AC-11)', async () => {
+    const supportOnly = await signInAs(base, owner.pool, {
+      email: 'support.me@example.com',
+      access: { hats: ['support'] },
+    });
+    const warehouseMe = MeResponse.parse((await call('GET', '/me', warehouse)).body);
+    const supportMe = MeResponse.parse((await call('GET', '/me', supportOnly)).body);
+
+    const reply = await call('GET', '/me', both);
+    expect(reply.status).toBe(200);
+    const me = MeResponse.parse(reply.body);
+    expect(me).toMatchObject({
+      hats: ['support', 'warehouse'],
+      partnerAccountId: null,
+      home: 'backoffice',
+    });
+    expect(me.permissions).toEqual(
+      [...new Set([...supportMe.permissions, ...warehouseMe.permissions])].sort(),
+    );
+    expect(me.permissions).not.toContain('cost.view');
+    expect(me.permissions).not.toContain('people.manage');
+  });
+
   it('lets a person with support and warehouse reach the routes of both hats, and nothing else (AC-2)', async () => {
     // No route needs a permission that support holds and warehouse lacks yet (orders, customers
     // and exchanges come later), so the union shows on a warehouse only write: the same POST is

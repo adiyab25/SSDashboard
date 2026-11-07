@@ -1,46 +1,20 @@
 'use client';
 
-import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
-import { Button } from '@ssdashboard/ui/components/button';
-import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useTranslation } from 'react-i18next';
-import { ApiError } from '@/api/client';
-import { getSku, inventoryKeys } from '@/inventory/inventory-api';
-import { SkuDetailSkeleton } from './sku-detail-skeleton';
-import { SkuView } from './sku-view';
+import { AccessErrorState } from '@/access/access-error-state';
+import { NoAccessState } from '@/access/no-access-state';
+import { useAccess } from '@/access/use-access';
+import { SkuDetailView } from './sku-detail-view';
 
-/** One SKU: its stock per location and its movement history (spec 0006, AC-10). */
+/**
+ * One SKU. Opened by its address without `stock.view` it shows the no access state and asks the api for
+ * nothing (spec 0008, AC-11); the api enforces the permission too.
+ */
 export function SkuDetailPage() {
-  const { t } = useTranslation();
-  const { id } = useParams<{ id: string }>();
-  const query = useQuery({
-    queryKey: inventoryKeys.sku(id),
-    queryFn: ({ signal }) => getSku(id, signal),
-  });
+  const access = useAccess();
+  const allowed = access.can('stock.view');
 
-  if (query.isPending) return <SkuDetailSkeleton />;
-  if (query.isError) {
-    const notFound = query.error instanceof ApiError && query.error.status === 404;
-    return (
-      <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold">{t('inventory.skus.title')}</h1>
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-3">
-            {notFound ? t('inventory.skuDetail.notFound') : t('inventory.skuDetail.loadError')}
-            {!notFound && (
-              <Button size="sm" variant="outline" onClick={() => void query.refetch()}>
-                {t('inventory.retry')}
-              </Button>
-            )}
-            <Button asChild size="sm" variant="outline">
-              <Link href="/skus">{t('inventory.skuDetail.back')}</Link>
-            </Button>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-  return <SkuView sku={query.data} />;
+  if (access.failed)
+    return <AccessErrorState titleKey="inventory.skus.title" onRetry={access.retry} />;
+  if (access.ready && !allowed) return <NoAccessState titleKey="inventory.skus.title" />;
+  return <SkuDetailView enabled={allowed} />;
 }

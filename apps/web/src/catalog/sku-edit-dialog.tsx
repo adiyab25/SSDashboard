@@ -23,13 +23,13 @@ import { skuEditMutationKey } from './sku-edit-schema';
 interface Props {
   skuId: string;
   onClose: () => void;
-  /** After an admin deletes the SKU, so the detail page can leave. */
+  /** After a person holding `catalog.manage` deletes the SKU, so the detail page can leave. */
   onDeleted?: () => void;
 }
 
 /**
  * Edits one SKU (spec 0006, AC-2, AC-3). Name and price for anyone; the code, archive,
- * unarchive, and delete for admins only (the api enforces it too). `updatedAt` goes back
+ * unarchive, and delete for people holding `catalog.manage` only (the api enforces it too). `updatedAt` goes back
  * exactly as read, and a stale answer offers a reload.
  */
 export function SkuEditDialog({ skuId, onClose, onDeleted }: Props) {

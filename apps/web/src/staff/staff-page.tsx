@@ -16,6 +16,7 @@ import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { LoaderCircleIcon, MoreHorizontalIcon, PlusIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AccessErrorState } from '@/access/access-error-state';
 import { NoAccessState } from '@/access/no-access-state';
 import { useAccess } from '@/access/use-access';
 import { useMe } from '@/auth/use-me';
@@ -218,6 +219,7 @@ export function StaffPage() {
     if (failure) setMessage(failure);
   }
 
+  if (access.failed) return <AccessErrorState titleKey="staff.title" onRetry={access.retry} />;
   if (access.ready && !canManage) return <NoAccessState titleKey="staff.title" />;
 
   // The table's scroll box below is `relative`: the screen reader only header text is absolutely

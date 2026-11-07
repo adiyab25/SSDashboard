@@ -4,7 +4,7 @@ The back office page at `/audit`: who changed what, newest first, for people wit
 
 ## Owns
 
-- The page: [audit-page.tsx](audit-page.tsx) (loading, empty, error with retry, the 403 state, Load more)
+- The page: [audit-page.tsx](audit-page.tsx) (checks `audit.read`, so the api is asked for nothing without it) and [audit-view.tsx](audit-view.tsx) (loading, empty, error with retry, the 403 state, Load more; takes `enabled`)
 - The table: [audit-entries-table.tsx](audit-entries-table.tsx)
 - Calls to the api and query keys: [audit-api.ts](audit-api.ts)
 - Which catalog key labels an action, an actor kind, or a record type: [audit-labels.ts](audit-labels.ts)
@@ -21,11 +21,13 @@ The back office page at `/audit`: who changed what, newest first, for people wit
 ```bash
 pnpm --filter @ssdashboard/web exec vitest run src/audit
 pnpm --filter @ssdashboard/web exec playwright test e2e/audit.spec.ts --project=desktop
+pnpm --filter @ssdashboard/web exec playwright test e2e/no-access.spec.ts --project=desktop
 ```
 
 ## Governing spec
 
 - [0010 Audit trail](../../../../docs/specs/0010-audit-trail/index.md) (AC-12, AC-18)
+- [0008 Roles as hats](../../../../docs/specs/0008-roles-as-hats/index.md)
 
 ## Decisions
 
