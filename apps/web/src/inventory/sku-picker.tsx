@@ -39,6 +39,8 @@ interface Props {
   placeholder?: string;
   /** An accessible name for the trigger when no visible label points at it. */
   label?: string;
+  /** True while the page may not ask the api yet; the trigger cannot open, so no search runs. */
+  disabled?: boolean;
 }
 
 /**
@@ -55,6 +57,7 @@ export function SkuPicker({
   buttonRef,
   placeholder,
   label,
+  disabled,
 }: Props) {
   const { t } = useTranslation();
   const text = useLocalizedText();
@@ -98,6 +101,7 @@ export function SkuPicker({
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            disabled={disabled}
             aria-invalid={invalid}
             aria-labelledby={label ? `${id}-label ${id}` : undefined}
             aria-describedby={describedBy}

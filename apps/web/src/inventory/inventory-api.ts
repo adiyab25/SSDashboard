@@ -84,7 +84,7 @@ export function searchSkus(q: string, signal?: AbortSignal) {
 export const createSku = (body: CreateProductRequest) =>
   apiRequest('POST', '/api/products', SkuDetail, { body });
 
-/** `POST /api/locations`: a new warehouse or shop (admin). */
+/** `POST /api/locations`: a new warehouse or shop (`catalog.manage`). */
 export const createLocation = (body: CreateLocationRequest) =>
   apiRequest('POST', '/api/locations', LocationDetail, { body });
 
@@ -150,7 +150,7 @@ export const getSku = (id: string, signal?: AbortSignal) =>
 export const updateSku = (id: string, body: UpdateSkuRequest) =>
   apiRequest('PATCH', skuPath(id), SkuDetail, { body });
 
-/** Deletes a SKU that has no stock history (admin). */
+/** Deletes a SKU that has no stock history (`catalog.manage`). */
 export const deleteSku = (id: string) => apiRequest('DELETE', skuPath(id), noContent);
 
 /** What still uses a SKU, so the dialog can say why it cannot be deleted. */
@@ -161,13 +161,13 @@ export const getSkuUsage = (id: string, signal?: AbortSignal) =>
 export const changeSkuCode = (id: string, body: ChangeSkuCodeRequest) =>
   withBusyRetry(() => apiRequest('PATCH', `${skuPath(id)}/code`, SkuDetail, { body }));
 
-/** Archives or unarchives a SKU (admin). Keyed by the SKU, so the busy retry is safe. */
+/** Archives or unarchives a SKU (`catalog.manage`). Keyed by the SKU, so the busy retry is safe. */
 export const setSkuArchived = (id: string, archived: boolean) =>
   withBusyRetry(() =>
     apiRequest('POST', `${skuPath(id)}/${archived ? 'archive' : 'unarchive'}`, SkuDetail),
   );
 
-/** One SKU's on-hand quantity per location, with cost fields for admins. */
+/** One SKU's on-hand quantity per location, with cost fields for people holding `cost.view`. */
 export const getSkuStock = (id: string, signal?: AbortSignal) =>
   apiRequest('GET', `${skuPath(id)}/stock`, SkuStockResponse, { signal });
 
@@ -180,7 +180,7 @@ export function listSkuMovements(id: string, cursor: string | undefined, signal?
   });
 }
 
-/** The Locations page. `archived` is admin only. */
+/** The Locations page. `archived` needs `catalog.manage`. */
 export function listLocations(
   status: LocationStatus,
   cursor: string | undefined,
@@ -191,15 +191,15 @@ export function listLocations(
   return apiRequest('GET', `/api/locations?${params}`, LocationListResponse, { signal });
 }
 
-/** `PATCH /api/locations/:id`: rename or retype a location (admin). */
+/** `PATCH /api/locations/:id`: rename or retype a location (`catalog.manage`). */
 export const updateLocation = (id: string, body: UpdateLocationRequest) =>
   apiRequest('PATCH', locationPath(id), LocationDetail, { body });
 
-/** Archives or unarchives a location (admin). Keyed by the location, so the busy retry is safe. */
+/** Archives or unarchives a location (`catalog.manage`). Keyed by the location, so the busy retry is safe. */
 export const setLocationArchived = (id: string, archived: boolean) =>
   withBusyRetry(() =>
     apiRequest('POST', `${locationPath(id)}/${archived ? 'archive' : 'unarchive'}`, LocationDetail),
   );
 
-/** Deletes a location with no stock or documents (admin). */
+/** Deletes a location with no stock or documents (`catalog.manage`). */
 export const deleteLocation = (id: string) => apiRequest('DELETE', locationPath(id), noContent);

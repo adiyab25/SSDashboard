@@ -7,6 +7,7 @@ import { schema, type Database } from '@ssdashboard/db';
 import { staffOrigin as staffOriginOf, type Env } from '../../config/env.js';
 import { createAuthHooks, type AuthHookDeps } from './auth-hooks.js';
 import { betterAuthLog } from './auth-logger.js';
+import { createLastSignIn } from './last-sign-in.js';
 import type { AuthMail } from './auth-mail.service.js';
 import { SESSION_IDLE_SECONDS, SESSION_RENEW_SECONDS } from './session-policy.js';
 
@@ -119,6 +120,7 @@ export function createAuth(
       lockout: parts.lockout,
       audit: parts.audit,
       audiences: parts.audiences,
+      lastSignIn: createLastSignIn(db),
     }),
     plugins: [
       // Kept for the ban check (spec 0005). Every person's `role` is `user`, the plugin's own

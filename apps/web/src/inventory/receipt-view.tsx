@@ -22,7 +22,7 @@ import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { VoidReceiptDialog } from './void-receipt-dialog';
 
-/** The loaded receipt: header, lines with totals, and the void action for admins. */
+/** The loaded receipt: header, lines with totals, and the void action for people holding `stock.correct`. */
 export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
   const { t } = useTranslation();
   const format = useFormat();

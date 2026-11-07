@@ -45,10 +45,16 @@ const FIELD_IDS = {
 export function AuditFilterBar({
   applied,
   onApply,
+  peopleEnabled,
 }: {
   /** The filter the page is showing, from the URL. */
   applied: AuditFilter;
   onApply: (filter: AuditFilter) => void;
+  /**
+   * Whether the person picker may read the staff list (`people.manage`, spec 0008); without it
+   * the picker offers only Anyone and a person id in the URL still filters.
+   */
+  peopleEnabled: boolean;
 }) {
   const { t } = useTranslation();
   const appliedKey = paramsFromFilter(applied);
@@ -56,7 +62,12 @@ export function AuditFilterBar({
   const [draft, setDraft] = useState<AuditFilter>(applied);
   const [pending, setPending] = useState<string | null>(null);
   const [problems, setProblems] = useState<FilterProblems>({});
-  const people = useQuery({ queryKey: auditKeys.people, queryFn: listPeople, staleTime: 60_000 });
+  const people = useQuery({
+    queryKey: auditKeys.people,
+    queryFn: listPeople,
+    staleTime: 60_000,
+    enabled: peopleEnabled,
+  });
 
   // The URL changed under the bar (a "same action" link, Back): show it. A change this bar
   // asked for itself is not shown again, so text typed while the page navigates is kept.

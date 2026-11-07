@@ -910,6 +910,10 @@ export const en = {
     },
   },
   access: {
+    loadError: {
+      message: 'We could not check what you can use. Check your connection and try again.',
+      retry: 'Try again',
+    },
     noAccess: {
       title: 'You do not have access to this page',
       description:

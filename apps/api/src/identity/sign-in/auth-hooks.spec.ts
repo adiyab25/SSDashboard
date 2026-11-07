@@ -50,7 +50,11 @@ function setup(lock = { locked: false }) {
     turnedAway: vi.fn<(route: string, context: unknown, locked: boolean) => void>(),
   };
   const audiences = { audiencesFor: vi.fn(() => Promise.resolve(new Set(['staff' as const]))) };
-  const deps = { origin: ORIGIN, lockout, audit, audiences, now: () => NOW };
+  const lastSignIn = {
+    stamp: vi.fn((_id: string, _at: Date) => Promise.resolve()),
+    clearForcedPasswordChange: vi.fn((_id: string) => Promise.resolve()),
+  };
+  const deps = { origin: ORIGIN, lockout, audit, audiences, lastSignIn, now: () => NOW };
   const internalAdapter = {
     updateUser: vi.fn(() => Promise.resolve()),
     findUserByEmail: vi.fn(() => Promise.resolve({ user: { id: USER_ID } })),
@@ -84,6 +88,7 @@ function setup(lock = { locked: false }) {
     lockout,
     audit,
     audiences,
+    lastSignIn,
     internalAdapter,
     context,
     before: createBeforeHook(deps),
@@ -372,7 +377,9 @@ describe('after hook', () => {
 
     await attempt(s, { newSession: { user: { id: USER_ID } }, returned: { token: 't' } });
 
-    expect(s.internalAdapter.updateUser).toHaveBeenCalledWith(USER_ID, { lastSignInAt: NOW });
+    expect(s.lastSignIn.stamp).toHaveBeenCalledWith(USER_ID, NOW);
+    // Better Auth's updateUser also sets updated_at, the stale record token (spec 0008 AC-12).
+    expect(s.internalAdapter.updateUser).not.toHaveBeenCalled();
     expect(s.lockout.reset).toHaveBeenCalledWith('sam@example.com');
     expect(s.audit.record).toHaveBeenCalledWith(expect.any(SignedIn));
     expect(s.lockout.giveBack).toHaveBeenCalledWith(SLOT);
@@ -503,7 +510,7 @@ describe('sign in slots (AC-3)', () => {
 
   it('gives the slot back even when the after hook fails partway', async () => {
     const s = setup();
-    s.internalAdapter.updateUser.mockRejectedValueOnce(new Error('database down'));
+    s.lastSignIn.stamp.mockRejectedValueOnce(new Error('database down'));
 
     await expect(
       attempt(s, { newSession: { user: { id: USER_ID } }, returned: { token: 't' } }),
@@ -514,7 +521,7 @@ describe('sign in slots (AC-3)', () => {
 
   it('reports the first error when giving the slot back also fails', async () => {
     const s = setup();
-    s.internalAdapter.updateUser.mockRejectedValueOnce(new Error('database down'));
+    s.lastSignIn.stamp.mockRejectedValueOnce(new Error('database down'));
     s.lockout.giveBack.mockRejectedValueOnce(new Error('pool exhausted'));
 
     await expect(
@@ -570,9 +577,9 @@ describe('routes that ask for the current password (AC-3)', () => {
     await s.before(ctx);
     await s.after({ ...ctx, context: { ...ctx.context, returned: { status: true } } });
 
-    expect(s.internalAdapter.updateUser).toHaveBeenCalledWith(USER_ID, {
-      mustChangePassword: false,
-    });
+    expect(s.lastSignIn.clearForcedPasswordChange).toHaveBeenCalledWith(USER_ID);
+    // Better Auth's updateUser also sets updated_at, the stale record token (spec 0008 AC-12).
+    expect(s.internalAdapter.updateUser).not.toHaveBeenCalled();
     expect(s.lockout.giveBack).toHaveBeenCalledTimes(1);
     expect(s.lockout.giveBack).toHaveBeenCalledWith(SLOT);
   });

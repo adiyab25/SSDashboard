@@ -13,6 +13,7 @@ import {
 } from '../../platform/events/auth-events.js';
 import type { AuthAudit } from './auth-audit.service.js';
 import { clientIp, emailKey, userAgent } from './client-info.js';
+import type { LastSignIn } from './last-sign-in.js';
 import { refuseWhenNoHat, type AccessAudiences } from './no-access.js';
 import { pastAbsoluteCap } from './session-policy.js';
 import type { FailureOutcome, SignInLockout } from './sign-in-lockout.js';
@@ -56,6 +57,8 @@ export interface AuthHookDeps {
   audit: Pick<AuthAudit, 'record' | 'turnedAway'>;
   /** Which audiences a person may use, so a person with no hat is refused at sign in. */
   audiences: AccessAudiences;
+  /** Stamps `users.last_sign_in_at` without moving `users.updated_at` (spec 0008 AC-12). */
+  lastSignIn: LastSignIn;
   now?: () => Date;
   /** Waits this many milliseconds; replaced in tests. */
   sleep?: (ms: number) => Promise<void>;
@@ -417,14 +420,14 @@ export function createAfterHook(deps: AuthHookDeps) {
       eventContext(ctx, userId, userId, now()),
     );
     const at = now();
-    await ctx.context.internalAdapter.updateUser(userId, { lastSignInAt: at });
+    await deps.lastSignIn.stamp(userId, at);
     await deps.lockout.reset(key);
     deps.audit.record(new SignedIn(eventContext(ctx, userId, userId, at)));
   }
 
   /**
    * A route that asks for the current password. A wrong one counts toward the lock. A good change
-   * clears the forced change; a good two factor disable is recorded.
+   * clears the forced change (never through `updateUser`, which would move `users.updated_at`); a good two factor disable is recorded.
    */
   async function afterPasswordRoute(ctx: HookContext): Promise<void> {
     const who = ctx.request ? acting.get(ctx.request) : undefined;
@@ -440,7 +443,7 @@ export function createAfterHook(deps: AuthHookDeps) {
       return;
     }
     if (ctx.path === CHANGE_PASSWORD) {
-      await ctx.context.internalAdapter.updateUser(who.id, { mustChangePassword: false });
+      await deps.lastSignIn.clearForcedPasswordChange(who.id);
       deps.audit.record(new PasswordChanged(eventContext(ctx, who.id, who.id, now())));
     } else if (ctx.path === '/two-factor/disable') {
       deps.audit.record(new TwoFactorDisabled(eventContext(ctx, who.id, who.id, now())));

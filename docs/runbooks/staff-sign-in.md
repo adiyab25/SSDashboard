@@ -13,9 +13,9 @@ Run every command from the `deploy/` folder, with the install's `.env` in place.
 | Part | Today | Arrives with |
 |---|---|---|
 | Staff sign in and sign out, the first admin, break glass recovery | Works | |
-| Access by hats (support, operations, warehouse, manager) and the cost grant | Built in spec 0008 milestone 1; the staff page still offers "Administrator" (manager plus cost) or "Staff" (support, operations, warehouse) until its hats dialog | Hats dialog and partner logins, feature 8 (spec 0008) |
-| Partner users and the partners screen | Not built. Every person is staff | Feature 8 (spec 0008) |
-| Hat changes and what they do to sessions | Not built | Feature 8 (spec 0008) |
+| Access by hats (support, operations, warehouse, manager, media buyer, partner) and the cost grant | Built (spec 0008). The staff page gives and changes hats and the cost switch | Feature 8 (spec 0008), done |
+| Partner users and the Partner logins tab | Built (spec 0008 milestone 3). A partner user signs in to the partner side only | Feature 8 (spec 0008), done |
+| Hat changes and what they do to sessions | Built (spec 0008 milestones 2 and 3). See section 8 | Feature 8 (spec 0008), done |
 | `STAFF_ORIGIN`, the new name of `PUBLIC_URL` | Not in the code. Use `PUBLIC_URL` | The spec 0007 rename, features 3 and 26 |
 | A portal site in the Caddyfile | Not built. `deploy/Caddyfile` serves one site | Feature 26 |
 | A path prefix rule in the Caddyfile for `STAFF_BASE_PATH` | Not built | Features 26 and 47 |
@@ -179,7 +179,7 @@ The command refuses, exits with code 1 and changes nothing when:
 
 Create a second admin right after the first one signs in and changes the password:
 
-- On the staff page, choose Add staff. Set Role to Administrator. Give the temporary password to that person under the same rules as step 1.5.
+- On the staff page, choose Add staff. Give the person the Manager hat and turn the cost switch on. Give the temporary password to that person under the same rules as step 1.5.
 - Each admin turns on two factor from the account page (Turn on). They store the 10 backup codes offline. The codes show once, when two factor turns on or when new codes are made.
 
 With two admins, a lost authenticator never leaves the install without a working admin. A sole admin who loses the authenticator and every backup code uses section 2.2.
@@ -190,8 +190,8 @@ With two admins, a lost authenticator never leaves the install without a working
 |---|---|---|
 | An admin, with mail on | The admin uses the forgot password link. The link also clears the lock. | Section 2.1 |
 | An admin, with mail off, or no admin can sign in | Someone on the server shell runs `create-admin` | Section 2.1 |
-| Staff (not an admin) | An admin, on the staff page | Section 2.3 |
-| A partner user | An admin, on the partners screen. **Not built yet, feature 8.** | Section 2.4 |
+| Staff (no manager hat) | A manager, on the staff page | Section 2.3 |
+| A partner user | A manager, on the Partner logins tab of the staff page | Section 2.4 |
 | The only admin, with the password and the authenticator both lost | Someone on the server shell runs both reset flags in one command | Section 2.5 |
 
 ### 2.1 Admin: reset the password
@@ -268,11 +268,9 @@ An admin does this from the staff page. Find the person, then use the action you
 
 Staff cannot reset their own password from the staff page. They use the Account page, or the forgot password link when mail is on.
 
-### 2.4 Partner user: the partners screen (not built yet)
+### 2.4 Partner user: the Partner logins tab
 
-**This part arrives with feature 8 (spec 0008). It is not built.** There are no partner users today. Every person is staff until spec 0008 lands (spec 0005, AC-28).
-
-The spec sets the rule. When the partners screen exists, an admin can reset a partner user's password and clear the lock from it. The same 15 minute lock and the same wait apply (section 4). Partner users use the same reset link by email when mail is on. The screen's names and buttons are not built yet, so this guide does not name them.
+A partner user wears the `partner` hat and is bound to one consignment partner account (spec 0008, AC-9). A person with `people.manage` (the manager hat) manages partner users on the Partner logins tab of the staff page (spec 0008, AC-15). A manager can reset a partner user's password and clear the lock from that tab. The same 15 minute lock and the same wait apply (section 4). Partner users use the same reset link by email when mail is on.
 
 ### 2.5 The only admin, with the password and the authenticator both lost
 
@@ -381,7 +379,7 @@ Only `caddy` publishes ports (the `ports:` of `caddy` in `deploy/compose.yaml`).
 ### 8.1 What sessions do today
 
 - A session lasts 12 hours without use. Each use renews it, at most once an hour. It never lasts longer than 7 days from sign in (spec 0005, AC-5; `apps/api/src/identity/sign-in/session-policy.ts`).
-- The cookie is never cached. The session and the role are read from the database on every request (`createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts`, the `session.cookieCache` setting). A change acts on the next request.
+- The cookie is never cached. The session and the person's hats are read from the database on every request (`createAuth` in `apps/api/src/identity/sign-in/auth.factory.ts`, the `session.cookieCache` setting). A change acts on the next request.
 - A request with a cookie but no live session gets `SESSION_EXPIRED`, and the person is sent to sign in again. A request with no cookie gets `UNAUTHENTICATED`.
 
 What the actions in the staff page do to sessions today:
@@ -395,20 +393,22 @@ What the actions in the staff page do to sessions today:
 | Reset two factor (admin) | All sessions end (`StaffService.resetTwoFactor`) |
 | Change the email of an invited account (admin) | All sessions end (`StaffService.update`, the email branch for an invited account) |
 | Change own password | The person's other sessions end. The current session stays (AC-19) |
-| Change a role (admin or staff) | **Nothing ends.** The new role applies on the person's next request, with the same sign in. This is the one change today that does not end sessions |
+| Change hats or the cost grant (manager, staff page) | **Nothing ends** in the usual case. The new set applies on the person's next request, with the same sign in. The exceptions are in section 8.2 |
 
-Changing the role of the last active admin is refused with `409 LAST_ADMIN` (spec 0005, AC-17). This holds whichever way the role changes.
+Removing `manager` from the last active manager is refused with `409 LAST_ADMIN` (spec 0005, AC-17; spec 0008, AC-12). Disabling the last active manager is refused too.
 
-### 8.2 What hat changes will do (feature 8, not built)
+### 8.2 What hat changes do (spec 0008)
 
-**This part arrives with feature 8 (spec 0008). It is not built yet.** Until then there are no hats. Every person is staff, and a role change is the only change to what a person can do.
+Hats are built. A person wears one or more hats, and a hat change is the way to change what a person can do.
 
-The rules the spec sets (spec 0005, AC-33), in operator words:
+The rules the spec sets (spec 0005, AC-33, and spec 0008, AC-12), in operator words:
 
 - A hat added or removed takes effect on the person's next click. They keep the same sign in. They do not need to sign in again.
-- Removing a person's last hat signs them out at once. So does moving them from the staff side to the partner side, or from the partner side to the staff side. So does binding them to a different partner account. Their next click gets the sign in page.
-- A change that only adds or removes a hat, while the person keeps a hat of the same side and the same partner account, keeps their sessions.
-- You still cannot remove the admin hat from the last active admin. The change is refused.
+- A change that would leave a person with no hat is refused (`422 NO_HAT`). Nobody is signed out by it.
+- No screen or route moves a person between the staff side and the partner side. `/api/staff` refuses the partner hat (`422 HAT_CONFLICT`).
+- Binding a partner user to another partner account ends all their sessions in the same change. Their next click gets the sign in page.
+- A change that only adds or removes a staff hat or the cost grant keeps their sessions.
+- You still cannot remove `manager` from the last active manager. The change is refused (`409 LAST_ADMIN`).
 - Nobody can change their own hats.
 - Each hat change writes one log line, with no email, name or phone. It also writes one domain event.
 

@@ -160,7 +160,7 @@ function codeTaken(error: unknown, code: string): unknown {
   return error;
 }
 
-/** Warehouses and shops: the switcher list and full management for admins (AC-4). */
+/** Warehouses and shops: the switcher list, and full management for people holding `catalog.manage` (AC-4). */
 @Injectable()
 export class LocationsService {
   /**

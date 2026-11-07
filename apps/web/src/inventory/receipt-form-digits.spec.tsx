@@ -6,10 +6,20 @@ import { renderWithQuery } from './render-with-query';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/auth/use-me', () => ({
-  useMe: () => ({
-    id: 'a',
-    hats: ['manager'],
-    permissions: ['catalog.manage', 'cost.view', 'people.manage', 'stock.correct'],
+  useMeState: () => ({
+    status: 'ready',
+    me: {
+      id: 'a',
+      hats: ['manager'],
+      permissions: [
+        'catalog.manage',
+        'stock.view',
+        'stock.receive',
+        'cost.view',
+        'people.manage',
+        'stock.correct',
+      ],
+    },
   }),
 }));
 vi.mock('@/shell/current-location-provider', () => ({

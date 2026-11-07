@@ -1,10 +1,10 @@
 import type { AuditEntryView } from '@ssdashboard/contracts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/inventory/render-with-query';
-import { AuditPage } from './audit-page';
+import { AuditView } from './audit-view';
 
 const api = vi.hoisted(() => ({
   listAuditEntries: vi.fn(),
@@ -22,6 +22,15 @@ vi.mock('next/navigation', () => ({
 vi.mock('./audit-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
+}));
+/** The person's permissions as the who am I answer gives them (a manager by default). */
+const MANAGER_PERMISSIONS = ['audit.read', 'audit.export', 'people.manage'];
+const me = vi.hoisted(() => ({ permissions: [] as string[] }));
+vi.mock('@/auth/use-me', () => ({
+  useMeState: () => ({
+    status: 'ready',
+    me: { id: 'me', hats: ['manager'], permissions: me.permissions },
+  }),
 }));
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -43,17 +52,22 @@ const entry = (n: number, overrides: Partial<AuditEntryView> = {}): AuditEntryVi
   ...overrides,
 });
 
+beforeEach(() => {
+  me.permissions = MANAGER_PERMISSIONS;
+});
+
 afterEach(() => {
   for (const mock of [api.listAuditEntries, api.getAuditEntry, api.listRecordHistory, nav.push]) {
     mock.mockReset();
   }
+  api.listPeople.mockClear();
   nav.search = '';
 });
 
-describe('AuditPage (AC-12, AC-18)', () => {
+describe('AuditView (AC-12, AC-18)', () => {
   it('lists the actor, action label, record, and reason under one h1', async () => {
     api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     const table = await screen.findByRole('table', { name: 'Audit entries' });
     expect(await within(table).findByText('Nour Admin')).toBeVisible();
@@ -72,7 +86,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
       ],
       nextCursor: null,
     });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     const table = await screen.findByRole('table', { name: 'Audit entries' });
     expect(await within(table).findByText(/Carrier request/)).toBeVisible();
@@ -97,7 +111,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
       ],
       nextCursor: null,
     });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     expect(await screen.findByText('System job')).toBeVisible();
     expect(screen.getByText('nightly-close')).toBeVisible();
@@ -111,7 +125,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
         cursor ? { items: [entry(2)], nextCursor: null } : { items: [entry(1)], nextCursor: 'c1' },
       ),
     );
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('Entered twice 2')).toBeVisible();
@@ -122,14 +136,14 @@ describe('AuditPage (AC-12, AC-18)', () => {
 
   it('says No entries match on an empty list', async () => {
     api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
     expect(await screen.findByText('No entries match')).toBeVisible();
   });
 
   it('shows an error with Try again that loads again', async () => {
     api.listAuditEntries.mockRejectedValueOnce(new ApiError(500, { code: 'generic' }));
     api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Nour Admin')).toBeVisible();
@@ -137,7 +151,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
 
   it('shows the no audit access message on a 403, with no table', async () => {
     api.listAuditEntries.mockRejectedValue(new ApiError(403, { code: 'FORBIDDEN' }));
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     expect(await screen.findByText('You do not have access to this page')).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
@@ -154,7 +168,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
           })
         : Promise.resolve({ items: [entry(1)], nextCursor: 'c1' }),
     );
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     const more = await screen.findByRole('button', { name: 'Load more' });
     more.focus();
@@ -173,7 +187,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
   it('reads the filter from the URL and sends it with the list call', async () => {
     nav.search = `recordType=stock_receipt&dayFrom=2026-11-01&dayTo=2026-11-07&correlationId=${uuid(9)}`;
     api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await screen.findByText('Nour Admin');
     expect(api.listAuditEntries).toHaveBeenCalledWith(
@@ -192,7 +206,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
 
   it('puts applied filters in the URL, and refuses a record ID without a type', async () => {
     api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await screen.findByText('No entries match');
     await userEvent.type(screen.getByLabelText('Record ID'), uuid(3));
@@ -218,7 +232,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
       ],
     });
     api.listRecordHistory.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await userEvent.click(
       await screen.findByRole('button', { name: /Details of Stock receipt voided/ }),
@@ -245,5 +259,32 @@ describe('AuditPage (AC-12, AC-18)', () => {
       undefined,
       expect.anything() as unknown,
     );
+  });
+
+  it('asks for nothing and offers no export while not enabled (spec 0008, AC-11)', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled={false} />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible();
+    expect(api.listAuditEntries).not.toHaveBeenCalled();
+    expect(api.listPeople).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
+  });
+
+  it('shows the export only with audit.export and reads the staff list only with people.manage', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+    expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeInTheDocument();
+    await waitFor(() => expect(api.listPeople).toHaveBeenCalled());
+  });
+
+  it('hides the export and skips the staff list for a reader without those permissions', async () => {
+    me.permissions = ['audit.read'];
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+
+    expect(await screen.findByText('No entries match')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
+    expect(api.listPeople).not.toHaveBeenCalled();
   });
 });

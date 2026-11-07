@@ -4,8 +4,8 @@ The back office page at `/audit`: who changed what, newest first, for people wit
 
 ## Owns
 
-- The page: [audit-page.tsx](audit-page.tsx) (filters read from and written to the URL query, loading, empty, error with retry, the shared no access state on a 403)
-- The filters: [audit-filter-bar.tsx](audit-filter-bar.tsx) (person from the staff list, record type and ID, action from the registry, day range, correlation ID) and [audit-filter.ts](audit-filter.ts) (URL query to filter and back, and the rules checked before a call)
+- The page: [audit-page.tsx](audit-page.tsx) (checks `audit.read`, so the api is asked for nothing without it; the no access state, or an error with Try again when the who am I call fails) and [audit-view.tsx](audit-view.tsx) (takes `enabled`; filters read from and written to the URL query, loading, empty, error with retry, the shared no access state on a 403, the export only with `audit.export`)
+- The filters: [audit-filter-bar.tsx](audit-filter-bar.tsx) (person from the staff list, read only with `people.manage`; record type and ID, action from the registry, day range, correlation ID) and [audit-filter.ts](audit-filter.ts) (URL query to filter and back, and the rules checked before a call)
 - The table: [audit-entries-table.tsx](audit-entries-table.tsx), and the wording of an entry in [use-entry-text.tsx](use-entry-text.tsx)
 - Load more and its focus rules (stays focused while loading, then the end of list line): [audit-pager.tsx](audit-pager.tsx)
 - The entry detail with the field by field diff, "hidden, personal data", the same action link, and the history toggle: [audit-entry-dialog.tsx](audit-entry-dialog.tsx)
@@ -27,11 +27,13 @@ The back office page at `/audit`: who changed what, newest first, for people wit
 ```bash
 pnpm --filter @ssdashboard/web exec vitest run src/audit
 pnpm --filter @ssdashboard/web exec playwright test e2e/audit.spec.ts --project=desktop
+pnpm --filter @ssdashboard/web exec playwright test e2e/no-access.spec.ts --project=desktop
 ```
 
 ## Governing spec
 
 - [0010 Audit trail](../../../../docs/specs/0010-audit-trail/index.md) (AC-12, AC-13, AC-15, AC-18)
+- [0008 Roles as hats](../../../../docs/specs/0008-roles-as-hats/index.md)
 
 ## Decisions
 
@@ -39,3 +41,4 @@ pnpm --filter @ssdashboard/web exec playwright test e2e/audit.spec.ts --project=
 - The entry detail is a dialog (like the other confirm and detail dialogs); the history panel opens inside it on request and is the same component other screens embed.
 - The export is fetched and saved from a blob, so a 400 or 413 shows a message on the page instead of replacing it with JSON.
 - Undo (milestone 4) plugs into the detail dialog.
+- The page and its body are split (`AuditPage` gates, `AuditView` draws), like the other gated pages of spec 0008: the body takes `enabled` so it asks for nothing until the person is known to hold `audit.read`.

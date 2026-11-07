@@ -20,7 +20,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn() }),
 }));
 vi.mock('@/auth/use-me', () => ({
-  useMe: () => ({ id: 'me', hats: ['warehouse'], permissions: [] }),
+  useMeState: () => ({
+    status: 'ready',
+    me: { id: 'me', hats: ['warehouse'], permissions: ['stock.view', 'stock.receive'] },
+  }),
 }));
 
 const SKU_ID = '00000000-0000-4000-8000-000000000001';
