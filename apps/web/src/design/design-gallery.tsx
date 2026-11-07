@@ -40,6 +40,9 @@ const PAIRS: readonly ContrastPairSpec[] = [
   { fg: 'info', bg: 'background', min: 4.5 },
   { fg: 'info-foreground', bg: 'info', min: 4.5 },
   { fg: 'brand-foreground', bg: 'brand', min: 4.5 },
+  // `primary` is also a text colour (links, the active tab), so it is held to the text minimum.
+  { fg: 'primary', bg: 'background', min: 4.5 },
+  { fg: 'primary', bg: 'card', min: 4.5 },
   // Meaning colors (Daftar): text on the page, on a card, and on its own chip surface. The
   // provisional chip surface is transparent, so it is measured on the card only.
   { fg: 'confirmed', bg: 'background', min: 4.5 },
@@ -60,6 +63,7 @@ const PAIRS: readonly ContrastPairSpec[] = [
   { fg: 'input', bg: 'background', min: 3 },
   { fg: 'input', bg: 'card', min: 3 },
   { fg: 'ring', bg: 'background', min: 3 },
+  { fg: 'ring', bg: 'card', min: 3 },
 ];
 
 const TYPE_SCALE = [
@@ -116,7 +120,9 @@ export function DesignGallery() {
         </ul>
         <div lang="ar" dir="rtl" className="flex flex-col gap-1 rounded-lg border p-4">
           <p className="text-base font-semibold">استلام ٢٤ طاولة من خشب البلوط</p>
-          <p>نص تجريبي بخط Noto Sans Arabic لعرض شكل الحروف والمسافات بين الأسطر.</p>
+          <p className="text-sm">
+            نص تجريبي بخط Noto Sans Arabic لعرض شكل الحروف والمسافات بين الأسطر.
+          </p>
         </div>
         <div className="flex flex-col gap-1 rounded-lg border p-4">
           <LtrText className="font-mono text-sm">

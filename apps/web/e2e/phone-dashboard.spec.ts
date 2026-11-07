@@ -163,13 +163,16 @@ for (const language of LANGUAGES) {
     test('typing ? in an input does not open the panel', async ({ page }) => {
       await openIn(page, language, '/design');
       const input = page.getByRole('textbox').first();
-      await input.scrollIntoViewIfNeeded();
 
-      await input.focus();
-      await page.keyboard.type('?');
-
-      await expect(input).toHaveValue(/\?$/);
-      await expect(page.locator('[data-slot="help-panel"]')).toHaveCount(0);
+      // The gallery remounts once after the shell loads; retry the whole step if it lands here.
+      await expect(async () => {
+        await input.scrollIntoViewIfNeeded({ timeout: 2_000 });
+        await input.focus();
+        await input.fill('');
+        await page.keyboard.type('?');
+        await expect(input).toHaveValue('?', { timeout: 2_000 });
+        await expect(page.locator('[data-slot="help-panel"]')).toHaveCount(0);
+      }).toPass({ timeout: 15_000 });
     });
 
     test('a help hint opens by Enter and by Space, and Esc brings focus back', async ({ page }) => {

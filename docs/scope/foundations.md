@@ -49,8 +49,8 @@ Visual language, layout primitives, and base components, shaped with the Impecca
   - [x] Status chips, provisional values, the freshness strip, and the floor density scope
   - [x] Portal and partner frames with per brand theming
   - [x] Phone first dashboard pattern and in screen help
-- [ ] Verify it: `/check verify design system & UI foundation`
-- [ ] Test it: `/test design system & UI foundation`
+- [x] Verify it: `/check verify design system & UI foundation`
+- [x] Test it: `/test design system & UI foundation`
 Spec [0003](../specs/0003-design-system-ui-foundation/index.md) (amendment of 2026-11-05, Proposed; the owner chose direction B, Daftar, with the floor density scope, 2026-11-05)
 
 ### 6. Localization (Arabic & English)

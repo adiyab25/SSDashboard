@@ -29,7 +29,9 @@ const inter = localFont({
   ],
 });
 
-// Not preloaded, so English pages never download it; `:lang(ar)` switches to it.
+// Not preloaded, so a page with no Arabic text (the staff English pages) never downloads it. The
+// English portal and partner pages do, because their "العربية" language link is Arabic text.
+// `:lang(ar)` switches to it.
 const notoArabic = localFont({
   src: './fonts/noto-sans-arabic-arabic-variable.woff2',
   weight: '100 900',
