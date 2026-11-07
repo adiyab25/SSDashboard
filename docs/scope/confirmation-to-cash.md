@@ -44,6 +44,7 @@ Also from spec 0007: one store per Shopify connection, order numbers unique per 
   - [ ] Catalog, orders in full, go live, backfill, and the sweep
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
+  - [ ] Re-record fixtures from a Shopify dev store (owner ruling 2026-11-07: the fixtures are synthetic until then, written to the shopify.dev shapes of the pinned API version; this feature is not done until this box is ticked)
 - [ ] Verify it: `/check verify shopify connector`
 - [ ] Test it: `/test shopify connector`
 - [ ] Review it (fresh model): `/check review shopify connector`
