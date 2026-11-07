@@ -97,7 +97,7 @@ export function SettingValueField({
     const rows = typeof draft === 'object' ? draft : {};
     return (
       <fieldset className="grid gap-3" aria-describedby={error ? errorId : undefined}>
-        <legend className="mb-1 text-sm font-medium">{name}</legend>
+        <legend className="mb-1 flex gap-1 text-sm font-medium">{name}</legend>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {Object.entries(rows).map(([code, prefix], index) => {
             const itemError = itemErrors[code];

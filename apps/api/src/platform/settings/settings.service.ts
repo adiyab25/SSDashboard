@@ -34,6 +34,13 @@ const UPDATED_AT_TEXT = sql.raw(
   `to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
 );
 
+/**
+ * What an audit entry holds as `before` when the stored row fails its schema: the row's content is
+ * never copied, because corrupt JSON can carry a phone shaped key that the audit writer refuses,
+ * which would stop a manager repairing the row from the screen (security review, finding 3).
+ */
+export const INVALID_BEFORE_VALUE = { invalid: true } as const;
+
 /** One change asked for through `SettingsService.write`. */
 export interface SettingWrite {
   key: string;
@@ -221,6 +228,11 @@ export class SettingsService {
         throw new SettingError('StaleSetting', 'This setting was changed by someone else');
       }
       const current = row ? row.value : definition.default;
+      // A stored row that fails its schema is audited as a fixed placeholder, never as itself.
+      const before: JsonValue =
+        row && !definition.schema.safeParse(row.value).success
+          ? { ...INVALID_BEFORE_VALUE }
+          : { value: current as JsonValue };
       if (canonicalJson(current) === canonicalJson(next)) {
         return { setting: this.decode(definition, row), changed: false };
       }
@@ -246,7 +258,7 @@ export class SettingsService {
         actor: { kind: 'person', userId: change.actor.userId, hat: change.actor.hat },
         action: 'setting.changed',
         record: { type: 'setting', id: settingRecordId(key), label: key },
-        before: { value: current as JsonValue },
+        before,
         after: { value: next as JsonValue },
         ...(change.reason !== undefined && { reason: change.reason }),
         ...(reasonRequired && { reasonRequired: true as const }),

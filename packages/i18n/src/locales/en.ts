@@ -1296,6 +1296,9 @@ export const en = {
         FORBIDDEN: 'You do not have permission to change settings.',
         SETTING_UNREADABLE:
           'This setting is stored in a form the app cannot read. Set it again to repair it.',
+        languageRepeated: 'Each language can appear only once.',
+        defaultLanguageKept:
+          'The default language must stay in the list. Change the default language first.',
         languageInvalid:
           'The language code “{{code}}” is not available. Use one of the app’s languages.',
         prefixInvalid: 'Use 1 to 8 capital letters or digits, different from every other prefix.',

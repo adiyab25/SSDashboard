@@ -243,6 +243,86 @@ describe('the change dialog (AC-25)', () => {
     ).toBeVisible();
   });
 
+  it.each(['', ' '])(
+    'does not blame a typed language code for a list wide issue (path %j)',
+    async (path) => {
+      const languages = entry({
+        key: 'languages',
+        group: 'brand',
+        label: 'settings.entries.languages.label',
+        description: 'settings.entries.languages.description',
+        reason: 'optional',
+        value: ['en', 'ar'],
+        default: ['en', 'ar'],
+      });
+      const dialog = await open(languages, 'Change Languages');
+      await userEvent.clear(within(dialog).getByLabelText(/New value/));
+      await userEvent.type(within(dialog).getByLabelText(/New value/), 'ar, fr');
+      api.putSetting.mockRejectedValueOnce(
+        new ApiError(422, {
+          code: 'SETTING_INVALID',
+          issues: [{ path, message: 'The default language en must stay enabled' }],
+        }),
+      );
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+      expect(
+        await within(dialog).findByText(/This value is not allowed|must stay in the list/),
+      ).toBeVisible();
+      expect(within(dialog).queryByText(/language code/)).toBeNull();
+    },
+  );
+
+  it('refuses a repeated language locally, with no request', async () => {
+    const languages = entry({
+      key: 'languages',
+      group: 'brand',
+      label: 'settings.entries.languages.label',
+      description: 'settings.entries.languages.description',
+      reason: 'optional',
+      value: ['en', 'ar'],
+      default: ['en', 'ar'],
+    });
+    const dialog = await open(languages, 'Change Languages');
+    await userEvent.clear(within(dialog).getByLabelText(/New value/));
+    await userEvent.type(within(dialog).getByLabelText(/New value/), 'en, ar, ar');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await within(dialog).findByText('Each language can appear only once.')).toBeVisible();
+    expect(api.putSetting).not.toHaveBeenCalled();
+  });
+
+  it('says the default language must stay when the api refuses a list without it', async () => {
+    const languages = entry({
+      key: 'languages',
+      group: 'brand',
+      label: 'settings.entries.languages.label',
+      description: 'settings.entries.languages.description',
+      reason: 'optional',
+      value: ['en', 'ar'],
+      default: ['en', 'ar'],
+    });
+    const dialog = await open(languages, 'Change Languages');
+    await userEvent.clear(within(dialog).getByLabelText(/New value/));
+    await userEvent.type(within(dialog).getByLabelText(/New value/), 'ar');
+    api.putSetting.mockRejectedValueOnce(
+      new ApiError(422, {
+        code: 'SETTING_INVALID',
+        issues: [{ path: '', message: 'The default language en must stay enabled' }],
+      }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await within(dialog).findByText(/default language must stay in the list/)).toBeVisible();
+  });
+
+  it('names a stored last editor with no name as someone no longer listed', async () => {
+    api.listSettings.mockResolvedValue({
+      entries: [{ ...vat, updatedBy: { id: '00000000-0000-4000-8000-000000000002', name: null } }],
+    });
+    renderWithQuery(<SettingsView enabled />);
+    expect(
+      await screen.findByText(/Last changed by someone who is no longer listed/),
+    ).toBeVisible();
+  });
+
   it('focuses the confirmation before the reason when both are missing', async () => {
     const dialog = await open(vat, 'Change Prices include VAT');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));

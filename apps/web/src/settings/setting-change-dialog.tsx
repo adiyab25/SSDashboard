@@ -139,12 +139,15 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
         if (kind === 'list') {
           const parsed = parseDraft(draft, 'list');
           const codes = parsed.ok && Array.isArray(parsed.value) ? parsed.value : [];
-          const badIndex = issues
-            .map((issue) => Number(issue.path))
-            .find((i) => Number.isInteger(i));
-          const bad = badIndex === undefined ? undefined : codes[badIndex];
-          if (typeof bad === 'string')
+          // Only a path that is a position names a code; an empty path is about the list as a
+          // whole (the default language must stay in it).
+          const position = issues.find((issue) => /^[0-9]+$/.test(issue.path))?.path;
+          const bad = position === undefined ? undefined : codes[Number(position)];
+          if (typeof bad === 'string') {
             message = t('settings.dialog.errors.languageInvalid', { code: bad });
+          } else if (issues.some((issue) => issue.path === '')) {
+            message = t('settings.dialog.errors.defaultLanguageKept');
+          }
         }
         setItemErrors(items);
         // A fault on one prefix shows on that input; anything else shows on the field.
@@ -169,6 +172,12 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
     const parsed = parseDraft(draft, kind);
     const next: typeof errors = {};
     if (!parsed.ok) next.value = t('settings.dialog.errors.valueRequired');
+    else if (kind === 'list' && Array.isArray(parsed.value)) {
+      // The same check the api makes, so a repeated code is refused before any request.
+      if (new Set(parsed.value).size !== parsed.value.length) {
+        next.value = t('settings.dialog.errors.languageRepeated');
+      }
+    }
     if (reasonRequired && reason.trim() === '') {
       next.reason = t('settings.dialog.errors.reasonRequired');
     } else if (reason.trim().length > REASON_MAX) {
@@ -180,7 +189,7 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
     setErrors(next);
     setItemErrors({});
     setFailure(null);
-    if (!parsed.ok || next.reason || next.confirm) {
+    if (!parsed.ok || next.value || next.reason || next.confirm) {
       // Screen order: the value, the confirmation, then the reason.
       if (next.value) valueRef.current?.focus();
       else if (next.confirm) confirmRef.current?.focus();

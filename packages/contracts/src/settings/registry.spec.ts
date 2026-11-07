@@ -3,6 +3,7 @@ import { en, flatten } from '@ssdashboard/i18n';
 import { ar } from '@ssdashboard/i18n/ar';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { AUDIT_RECORD_LABEL_PATTERN } from '../audit/audit-record-types.js';
 import { ConfigResponse } from '../platform.js';
 import { CONFIG_RESPONSE_FIELDS, PUBLIC_CONFIG_FIELDS } from './public-config.js';
 import { SETTING_DEFINITIONS, SETTINGS_REGISTRY, isSettingKey } from './registry.js';
@@ -41,6 +42,10 @@ function registryProblems(entries: readonly SettingDefinition[], facts: Registry
     if (seen.has(entry.key)) problems.push(`${entry.key}: two entries share the key`);
     seen.add(entry.key);
     if (!/^[a-z][a-z0-9_.]*$/.test(entry.key)) problems.push(`${entry.key}: not a snake_case key`);
+    // The key is the audit label of every write; a longer one would fail each write.
+    if (!AUDIT_RECORD_LABEL_PATTERN.test(entry.key)) {
+      problems.push(`${entry.key}: not a valid audit label (at most 64 characters)`);
+    }
     if (!entry.schema.safeParse(entry.default).success) {
       problems.push(`${entry.key}: the default fails its own schema`);
     }
@@ -107,6 +112,7 @@ describe('the settings registry (spec 0009, AC-1)', () => {
       [{ ...sound, kind: 'executing_step', schema: z.boolean(), default: false }],
       'notifies the customer',
     ],
+    ['a key too long for an audit label', [{ ...sound, key: 'a'.repeat(65) }], 'audit label'],
     ['a missing label', [{ ...sound, label: 'settings.entries.nope.label' }], 'lacks an English'],
     ['an unknown invalid rule', [{ ...sound, onInvalid: 'ignore' }], 'onInvalid must be'],
   ] as const)('fails on %s', (_name, broken, problem) => {

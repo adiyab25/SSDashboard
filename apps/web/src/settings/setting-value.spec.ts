@@ -92,4 +92,12 @@ describe('namesSetting', () => {
     expect(namesSetting('الأسـعار شاملة ضريبة القيمة المضافة', name)).toBe(true);
     expect(namesSetting('الأسعار شاملة ضريبة القيمة', name)).toBe(false);
   });
+
+  it('folds ة to ه and ى to ي, and keeps Arabic digits apart', () => {
+    const name = 'الأسعار شاملة ضريبة القيمة المضافة';
+    expect(namesSetting('الاسعار شاملة ضريبة القيمة المضافه', name)).toBe(true);
+    expect(namesSetting('على', 'علي')).toBe(true);
+    expect(namesSetting('٣', '٤')).toBe(false);
+    expect(namesSetting('٣', '٣')).toBe(true);
+  });
 });

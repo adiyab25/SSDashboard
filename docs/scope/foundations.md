@@ -102,7 +102,7 @@ Per brand settings and the switches that make one image into a Warehouse install
 Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep continue for shipments created before the lapse until a final cash state or `operations_wind_down_days`, default 60); expiry warnings at 30, 14, and 7 days in the shell and the daily report; 14 day grace; a renewal starts a backfill sweep.
 - [x] Design it (spec): `/architect settings, module toggles & bundles`
 - [ ] Build it: `/develop settings, module toggles & bundles`
-  - [ ] One setting through every layer
+  - [x] One setting through every layer
   - [ ] The signed license
   - [ ] Module gate and toggles with no orphaned jobs
   - [ ] Lapse, read only wind down, and renewal backfill

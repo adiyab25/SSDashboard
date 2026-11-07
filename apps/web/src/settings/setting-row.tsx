@@ -49,7 +49,7 @@ export function SettingRow({ entry, onChange }: SettingRowProps) {
       : null;
 
   const when = entry.updatedAt ? format.dateTime(entry.updatedAt) : null;
-  const who = entry.updatedBy?.name ?? null;
+  const who = entry.updatedBy ? (entry.updatedBy.name ?? t('settings.row.unknownPerson')) : null;
 
   return (
     <li className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-start md:justify-between">

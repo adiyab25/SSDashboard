@@ -24,8 +24,7 @@ export function valueKindOf(entry: Pick<SettingEntryView, 'key' | 'default'>): S
 
 /**
  * Whether a value of this kind is a code that must read left to right inside Arabic text (a time
- * zone, a language code, a prefix, a calendar date as `YYYY-MM-DD`). The row and the dialog both
- * wrap such a value in `LtrText`.
+ * zone, a language code, a prefix). The row and the dialog both wrap such a value in `LtrText`.
  */
 export function isCodeKind(kind: SettingValueKind): boolean {
   return kind === 'text' || kind === 'list' || kind === 'record';
@@ -110,12 +109,17 @@ export function parseDraft(
   return { ok: true, value: text };
 }
 
-/** Folds the spellings of a name a person may type differently: NFC, no marks, one alef. */
+/** Arabic vowel marks (U+064B to U+065F), the dagger alef (U+0670), and the tatweel (U+0640); not the digits U+0660 to U+066F. */
+const MARKS = new RegExp('[\u064b-\u065f\u0670\u0640]', 'g');
+
+/** Folds the spellings of a name a person may type differently: NFC, no marks, one alef, ة as ه, ى as ي. */
 function foldName(text: string): string {
   return text
     .normalize('NFC')
-    .replace(/[ً-ٰٟـ]/g, '')
+    .replace(MARKS, '')
     .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import {
+  DOCUMENT_PREFIX_DEFAULTS,
   PutSettingAnswer,
   SettingsListResponse,
   type SettingEntryView,
@@ -440,6 +441,57 @@ describe('settings read and write (spec 0009)', { timeout: 120_000 }, () => {
       );
     }
     expect((await receipt()).status).toBe(201);
+  });
+
+  // Security review finding 3: a corrupt row with a phone shaped key must not block its repair.
+  it('repairs a corrupt prefixes row holding a phone shaped key, auditing a placeholder before (AC-3)', async () => {
+    await api.owner.pool.query(
+      `UPDATE settings SET value = '{"01012345678": "X"}'::jsonb WHERE key = 'document_prefixes'`,
+    );
+    const stored = await entry('document_prefixes');
+    expect(stored).toMatchObject({ invalid: true });
+    const before = await auditCount('document_prefixes');
+
+    const reply = await put('document_prefixes', {
+      value: DOCUMENT_PREFIX_DEFAULTS,
+      expectedUpdatedAt: stored.updatedAt,
+    });
+
+    expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+    expect(await auditCount('document_prefixes')).toBe(before + 1);
+    const { rows } = await api.owner.pool.query<{ before: unknown; after: unknown }>(
+      `SELECT before, after FROM audit_entries
+       WHERE action = 'setting.changed' AND record_label = 'document_prefixes'
+       ORDER BY recorded_at DESC LIMIT 1`,
+    );
+    expect(rows[0]?.before).toEqual({ invalid: true });
+    expect(rows[0]?.after).toEqual({ value: DOCUMENT_PREFIX_DEFAULTS });
+    expect(await entry('document_prefixes')).toMatchObject({ invalid: false });
+    // Numbering works again: a stock receipt, which takes a document number, posts.
+    const boss = await api.addPerson(['manager'], { costView: true });
+    const cookie = await api.signIn(boss.email);
+    const location = await api.call(cookie, 'POST', '/api/locations', {
+      code: 'repair-wh',
+      name: { en: 'Repair warehouse' },
+      kind: 'warehouse',
+    });
+    expect(location.status, JSON.stringify(location.body)).toBe(201);
+    const product = await api.call(cookie, 'POST', '/api/products', {
+      name: { en: 'Repair tee' },
+      variants: [{ sku: 'REPAIR-TEE', price: '9.99' }],
+    });
+    expect(product.status, JSON.stringify(product.body)).toBe(201);
+    const receipt = await api.call(
+      cookie,
+      'POST',
+      '/api/stock-receipts',
+      {
+        locationId: (location.body as { id: string }).id,
+        lines: [{ skuId: (product.body as { id: string }).id, quantity: 1, unitCost: '7' }],
+      },
+      { 'idempotency-key': randomUUID() },
+    );
+    expect(receipt.status, JSON.stringify(receipt.body)).toBe(201);
   });
 
   it('answers 403 to a person without settings.manage (AC-3, AC-26)', async () => {
