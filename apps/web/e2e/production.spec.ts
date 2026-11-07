@@ -8,6 +8,11 @@ test.describe('production build', () => {
     expect(response?.status()).toBe(404);
   });
 
+  // Spec 0003 AC-20: the sample phone dashboard under /design is development only too.
+  test('the phone dashboard sample answers a real 404', async ({ request }) => {
+    expect((await request.get('/design/phone-dashboard', { maxRedirects: 0 })).status()).toBe(404);
+  });
+
   // Spec 0003 AC-18: the frame previews of /design are development only too.
   test('the frame previews answer a real 404', async ({ request }) => {
     for (const path of [

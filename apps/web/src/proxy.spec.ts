@@ -36,6 +36,7 @@ describe('proxy', () => {
     it.each([
       '/design',
       '/design/',
+      '/design/phone-dashboard',
       '/en/returns/preview/brand',
       '/ar/returns/preview/rejected',
       '/ar/partner/preview',

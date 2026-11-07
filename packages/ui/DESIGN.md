@@ -123,7 +123,15 @@ Disabled controls are exempt from contrast but stay at 3:1 or more, so a disable
 
 ## Type
 
-Fonts: Inter (Latin), Noto Sans Arabic (Arabic), JetBrains Mono (codes). All SIL OFL 1.1, self hosted by the app (`next/font`, variables `--font-inter`, `--font-noto-arabic`, `--font-jetbrains-mono` on `<html>` from `apps/web/src/shell/root-fonts.ts`), never from a font host at runtime. Tailwind maps them: `font-sans` and `font-heading` are Inter; `font-arabic` is Noto Sans Arabic then Inter; `font-mono` is JetBrains Mono.
+Fonts: Inter (Latin), Noto Sans Arabic (Arabic), JetBrains Mono (codes). All SIL OFL 1.1, self hosted by the app (`next/font/local`, variables `--font-inter`, `--font-noto-arabic`, `--font-jetbrains-mono` on `<html>` from `apps/web/src/shell/root-fonts.ts`), never from a font host at runtime. Tailwind maps them: `font-sans` and `font-heading` are Inter; `font-arabic` is Noto Sans Arabic then Inter; `font-mono` is JetBrains Mono.
+
+Font coverage (three variable woff2 files kept in the repo, see `apps/web/src/shell/fonts/README.md`):
+
+- **Files.** Inter, latin subset, wght 100 to 900 (Version 4.001). Noto Sans Arabic, arabic subset (`U+6??` and related), wght 100 to 900 (Version 2.012); it covers the Arabic-Indic digits U+0660 to U+0669 and U+06F0 to U+06F9. JetBrains Mono, latin subset, wght 100 to 800 (Version 2.211). Only weights 400, 500, and 600 are used.
+- **Latin inside Arabic text.** Under `:lang(ar)` the `--font-arabic` stack is Noto Sans Arabic then Inter. The arabic subset has no Latin glyphs, so Western digits, Latin letters, and Latin punctuation inside Arabic text render in Inter, the system's one Latin and numeral face, with tabular figures. This keeps numbers identical in both languages. Do not expect Noto Sans Arabic to draw them.
+- **Outside the latin subset.** Latin characters beyond it (Latin Extended, Vietnamese) fall back to the system face. Brand and product names with such characters will not render in Inter; add a subset file before relying on them.
+- **First paint.** The generated metric adjusted fallback faces are off (`adjustFontFallback: false`) and `display: swap` is on, so the first paint uses the plain system stack until the font loads. Expect a small text shift on a cold load.
+- **No third party host.** Fonts never come from a third party host, at build time or at run time. New faces or subsets are added as files in the repo.
 
 | Step | Utility | Latin size / line | Arabic size / line | Weight |
 |---|---|---|---|---|
@@ -237,10 +245,10 @@ The owner's first screen is a phone screen. Design it at 360 by 800, make it wor
 - **Targets**: at least 44 by 44px (`min-h-touch` on cards, 48px rows in the list, 56px tabs). Chips and values inside a card are not targets.
 - **Provisional is dashed**, never solid, like every provisional boundary (AC-17). The owed card's start edge (`rowStripeClassName('owed')`, 4px) is decorative; the label and the chip repeat the meaning.
 - **Tables collapse to cards below 640px (`sm`).** `CollapsingTable` takes its columns once and draws a table from `sm` up and a card list below: the title column on top, then label and value pairs with the same `StatusChip`s. The other view is `display: none`, so no control is reachable twice and the tab order is one list.
-- **The tab bar** (`BottomTabs`): at most four tabs (Today, Orders, Cash, More), 56px (`h-14`), an icon plus a label that is always visible, `aria-current="page"` and the primary fill on the current tab, sticky at the bottom with the safe area inset. A fifth tab is dropped (tested), not squeezed in; extra pages live under "More". Hide it from 768px up where the sidebar takes over.
+- **The tab bar** (`BottomTabs`): at most four tabs (Today, Orders, Cash, More), 56px (`h-14`), an icon plus a label that is always visible, `aria-current="page"` and the primary fill on the current tab, fixed to the bottom with the safe area inset. A fifth tab is dropped (tested), not squeezed in; extra pages live under "More". Hide it from 768px up where the sidebar takes over. **A phone page with `BottomTabs` must also render `BottomTabsSpacer` (`@ssdashboard/ui/dashboard/bottom-tabs-spacer`) as the last child of its content**, with the same `md:hidden`: it is 56px plus `env(safe-area-inset-bottom)` plus a 16px gap, so the bar never covers a target (axe `target-size`) and `NeedsYouList` keeps a gap above the bar. Never position the bar without the spacer.
 - **Needs you** (`NeedsYouList`): at most five rows, most urgent first, each a full width link of at least 48px with a `StatusChip`, a sentence, and a chevron that mirrors in right to left. With more rows, one "N more" link (the app passes `total`, `moreHref`, and `moreLabel(hidden)`).
 - **Freshness strip** under the header, composed by the app ("Confirmed through 4 Nov, today is provisional").
-- The parts take all text as props and all numbers already formatted, and never import `next/*`. They live at `@ssdashboard/ui/dashboard/metric-card`, `.../bottom-tabs`, `.../needs-you-list`, and `.../collapsing-table`.
+- The parts take all text as props and all numbers already formatted, and never import `next/*`. They live at `@ssdashboard/ui/dashboard/metric-card`, `.../bottom-tabs`, `.../bottom-tabs-spacer`, `.../needs-you-list`, and `.../collapsing-table`.
 - jsdom checks classes and axe; the 320 to 430px overflow check and measured target sizes belong to the Playwright pass at 360 by 800 with touch, in both languages.
 
 ## In screen help (AC-21)

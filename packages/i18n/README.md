@@ -20,6 +20,8 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 - Business data or api calls.
 - The language cookie and head script, the provider, and client language files: those stay in `apps/web/src/i18n/`.
 
+In screen help lives in the catalogs under `help.<screen>.*` (for example `help.confirmationQueue.steps.1`, `help.confirmationQueue.glossary.noAnswer.description`), with the words every screen shares under `help.common.*`. A policy number in help text is a message parameter (`{{limit}}`) filled from the live setting, never typed into the text. A help key missing in Arabic fails [catalog.spec.ts](src/catalog.spec.ts) and the focused [help-catalog.spec.ts](src/help-catalog.spec.ts) (spec 0003, AC-21).
+
 Only the core languages, `en` and `ar`, live here. Client languages (`extensions/<client>/locales/<code>.json`) apply to the back office only; portal and partner pages, mail, the report, and exports use `en` and `ar`, and a user whose saved language is a client language gets English there until a server side loader exists (spec 0004, AC-23).
 
 ## How to test

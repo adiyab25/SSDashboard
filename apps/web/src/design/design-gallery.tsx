@@ -9,6 +9,7 @@ import { ContrastPair, type ContrastPairSpec } from './contrast-pair';
 import { DesignSection } from './design-section';
 import { FieldStates } from './field-states';
 import { FramesSection } from './frames-section';
+import { HelpSample } from './help-sample';
 import { OrderStatusSection } from './order-status-section';
 import { Overlays } from './overlays';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
@@ -181,6 +182,25 @@ export function DesignGallery() {
 
       <DesignSection id="orders" title="Order rows and confirmation queue">
         <OrderStatusSection />
+      </DesignSection>
+
+      <DesignSection id="phone" title="Phone first dashboard">
+        <p className="text-muted-foreground">
+          The owner&apos;s first screen at 360px wide, with sample numbers, as a page of its own so
+          it can be opened on a phone.{' '}
+          <a className="text-primary underline focus-ring" href="/design/phone-dashboard">
+            Open the phone dashboard sample
+          </a>
+        </p>
+      </DesignSection>
+
+      <DesignSection id="help" title="In screen help">
+        <p className="text-muted-foreground">
+          The confirmation queue&apos;s help: the Help button or the ? key opens the page guide; the
+          question mark buttons on the queue card above open a short note. The no answer limit is a
+          sample number, not a setting yet.
+        </p>
+        <HelpSample />
       </DesignSection>
 
       <DesignSection id="frames" title="Frames">
