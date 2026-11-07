@@ -15,6 +15,7 @@ export type AuditErrorCode =
   | 'UndoNotPossible'
   | 'AuditUndoHandlerMissing'
   | 'AuditUndoHandlerDuplicate'
+  | 'AuditUndoHandlerForeign'
   | 'AuditUndoRecordMismatch';
 
 /**
@@ -111,9 +112,10 @@ export class AuditPersonalDataRefused extends AuditError {
 }
 
 /**
- * The viewer may not read the trail (spec 0010, AC-13): they lack `audit.read` (the manager hat
- * by default, spec 0008). Thrown by `AuditQueryService.forRecord`, which other modules reach with a viewer
- * (review AR3); the api answers 403 `FORBIDDEN`.
+ * The viewer may not read the trail (spec 0010, AC-13): they lack `audit.read` (or, for the export
+ * reads, `audit.export`; the manager hat by default, spec 0008). Thrown by every public reader of
+ * `AuditQueryService`, which other modules reach with a viewer (review AR3, security review
+ * AS29); the api answers 403 `FORBIDDEN`.
  */
 export class AuditReadForbidden extends AuditError {
   /** Builds the error; it names no viewer. */
@@ -170,18 +172,21 @@ const UNDO_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
 /**
  * Thrown by an owning module's undo handler when it cannot restore its change (spec 0010, AC-14):
  * a later change got in the way, for example a merge that is no longer the latest. `undoCode` is
- * the owner's stable upper snake case code (`MERGE_NOT_LATEST`); a code of another shape becomes
- * `UNDO_NOT_POSSIBLE`, so no value ever reaches the answer. Everything the handler wrote rolls
- * back; the api answers 409 `UNDO_NOT_POSSIBLE` with `undoCode`.
+ * the owner's stable upper snake case code (`MERGE_NOT_LATEST`), one of the `undoRefusalCodes`
+ * its action declares in the registry. It carries no message of the owner's: the api answers a
+ * fixed text (security review AS31). `AuditUndoService` passes on only a declared code; a code
+ * the action does not declare, or of another shape, leaves `undoCode` undefined, so no value ever
+ * reaches the answer or a log. Everything the handler wrote rolls back; the api answers 409
+ * `UNDO_NOT_POSSIBLE`, with `undoCode` when there is one.
  */
 export class UndoNotPossible extends AuditError {
-  /** The owner's code, safe to show and log. */
-  readonly undoCode: string;
+  /** The owner's declared code, safe to show and log, or undefined. */
+  readonly undoCode: string | undefined;
 
-  /** Takes the owner's code and a message safe to show and log (never a record's values). */
-  constructor(undoCode: string, message = 'This change can no longer be undone') {
-    super('UndoNotPossible', message);
-    this.undoCode = UNDO_CODE.test(undoCode) ? undoCode : 'UNDO_NOT_POSSIBLE';
+  /** Takes the owner's refusal code (upper snake case), or nothing for a plain refusal. */
+  constructor(undoCode?: string) {
+    super('UndoNotPossible', 'This change can no longer be undone');
+    this.undoCode = undoCode !== undefined && UNDO_CODE.test(undoCode) ? undoCode : undefined;
   }
 }
 
@@ -202,6 +207,25 @@ export class AuditUndoHandlerDuplicate extends AuditError {
   /** Takes the handler code registered twice. */
   constructor(readonly handler: string) {
     super('AuditUndoHandlerDuplicate', `The undo handler ${handler} is registered twice`);
+  }
+}
+
+/**
+ * A module registered an undo handler code that no registry action of its own names (security
+ * review AS33): the registry's undoable actions bind each `undoHandler` to their `module`, so a
+ * module can never answer for another owner's undo. A programming error, thrown at start; names
+ * the handler code and the module, never data.
+ */
+export class AuditUndoHandlerForeign extends AuditError {
+  /** Takes the handler code and the module that tried to register it. */
+  constructor(
+    readonly handler: string,
+    readonly owner: string,
+  ) {
+    super(
+      'AuditUndoHandlerForeign',
+      `The undo handler ${handler} is not named by any undoable action of module ${owner}`,
+    );
   }
 }
 

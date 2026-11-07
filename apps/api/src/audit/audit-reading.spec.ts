@@ -115,6 +115,87 @@ describe('audit reading (spec 0010, milestone 3)', () => {
     expect(shown.items[0]?.before).toEqual({ code: 'TEE-OLD', unitCost: '5.00' });
   });
 
+  // Security review AS29: every public reader guards itself, so another module that calls one
+  // with a support agent's access gets 403, never the trail or its costs.
+  it('refuses the list, the detail, the view, and the export reads without their permission, before any read', async () => {
+    const execute = vi.fn();
+    const reader = new AuditQueryService(
+      { db: { execute } } as unknown as DatabaseConnection,
+      { namesByIds: vi.fn() } as unknown as StaffDirectory,
+    );
+    // Holds everything but the permission each reader needs.
+    const without = (missing: string) => ({ has: (permission: string) => permission !== missing });
+    const query = { dayFrom: '2026-11-01', dayTo: '2026-11-07' };
+    const key = { at: '2026-11-07T10:00:00.000001Z', id: ID };
+
+    await expect(reader.list({ limit: 50 }, without('audit.read'))).rejects.toBeInstanceOf(
+      AuditReadForbidden,
+    );
+    await expect(reader.get(ID, without('audit.read'))).rejects.toBeInstanceOf(AuditReadForbidden);
+    await expect(reader.view(ID, without('audit.read'))).rejects.toBeInstanceOf(AuditReadForbidden);
+    await expect(reader.exportBound(query, without('audit.export'))).rejects.toBeInstanceOf(
+      AuditReadForbidden,
+    );
+    await expect(reader.exportSize(query, without('audit.export'), key, 10)).rejects.toBeInstanceOf(
+      AuditReadForbidden,
+    );
+    await expect(
+      reader.exportBatches(query, without('audit.export'), 'UTC', key, 1_000, 10).next(),
+    ).rejects.toBeInstanceOf(AuditReadForbidden);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('leaves cost fields out of the list, the detail, the view, and the export rows without cost.view', async () => {
+    const costly = row({
+      before: { code: 'TEE-OLD', unit_cost: '5.00' },
+      after: { code: 'TEE-NEW', payload: '{"lines":[{"UnitCost":"4.00","qty":1}]}' },
+      personal_fields: [],
+    });
+    const readerOf = () => {
+      // Every select answers the costed row, and the undone lookup finds nothing.
+      const execute = vi.fn((query: unknown) =>
+        Promise.resolve({
+          rows: sqlText(query).includes('undoes_entry_id = ANY') ? [] : [costly],
+        }),
+      );
+      return new AuditQueryService(
+        { db: { execute } } as unknown as DatabaseConnection,
+        { namesByIds: vi.fn(() => Promise.resolve(new Map())) } as unknown as StaffDirectory,
+      );
+    };
+    const reads = { has: (permission: string) => permission !== 'cost.view' };
+    const hiddenBefore = { code: 'TEE-OLD' };
+    const hiddenAfter = { code: 'TEE-NEW', payload: '{"lines":[{"qty":1}]}' };
+
+    const page = await readerOf().list({ limit: 50 }, reads);
+    expect(page.items[0]).toMatchObject({ before: hiddenBefore, after: hiddenAfter });
+    const detail = await readerOf().get(ID, reads);
+    expect(detail).toMatchObject({ before: hiddenBefore, after: hiddenAfter });
+    expect(detail.changes.map((change) => change.field)).toEqual(['code', 'payload']);
+    expect(await readerOf().view(ID, reads)).toMatchObject({
+      before: hiddenBefore,
+      after: hiddenAfter,
+    });
+    const key = { at: '2026-11-07T10:00:00.000001Z', id: ID };
+    const batches = readerOf().exportBatches(
+      { dayFrom: '2026-11-01', dayTo: '2026-11-07' },
+      reads,
+      'UTC',
+      key,
+      1_000,
+      1,
+    );
+    const first = await batches.next();
+    expect(first.value).toEqual([
+      expect.objectContaining({
+        row: expect.objectContaining({ before: hiddenBefore, after: hiddenAfter }) as unknown,
+      }),
+    ]);
+
+    const all = { has: () => true };
+    expect((await readerOf().view(ID, all)).before).toEqual({ code: 'TEE-OLD', unit_cost: '5.00' });
+  });
+
   it('quotes every cell, doubles inner quotes, and defuses spreadsheet formulas', () => {
     expect(csvCell('plain')).toBe('"plain"');
     expect(csvCell('say "hi"')).toBe('"say ""hi"""');
@@ -220,9 +301,11 @@ describe('audit reading order (spec 0010, AC-17)', () => {
   it('orders the export bound and its batches by the table columns', async () => {
     const { service, statements } = reader();
     const query = { dayFrom: '2026-11-01', dayTo: '2026-11-07' };
-    await service.exportBound(query);
+    const viewer = { has: () => true };
+    await service.exportBound(query, viewer);
     const batches = service.exportBatches(
       query,
+      viewer,
       'Africa/Cairo',
       { at: '2026-11-07T10:00:00.000001Z', id: ID },
       1_000,
@@ -290,9 +373,17 @@ describe('audit day range bound (spec 0010, AC-17)', () => {
     const { service, statements } = reader();
     const query = { dayFrom: '2026-11-01', dayTo: '2026-11-07' };
     const key = { at: '2026-11-07T10:00:00.000001Z', id: ID };
-    await service.exportBound(query);
-    await service.exportSize(query, key, 200_001);
-    for await (const batch of service.exportBatches(query, 'Africa/Cairo', key, 1_000, 10)) {
+    const viewer = { has: () => true };
+    await service.exportBound(query, viewer);
+    await service.exportSize(query, viewer, key, 200_001);
+    for await (const batch of service.exportBatches(
+      query,
+      viewer,
+      'Africa/Cairo',
+      key,
+      1_000,
+      10,
+    )) {
       expect(batch).toEqual([]);
     }
 

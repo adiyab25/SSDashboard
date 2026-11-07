@@ -64,6 +64,18 @@ function registryFaults(registry: Readonly<Record<string, AuditActionDefinition>
     if (!auditRecordTypeOf(action.recordType)) faults.push(`${code}: unknown record type`);
     if (action.undoable && !action.undoHandler) faults.push(`${code}: undoable without a handler`);
     if (!action.undoable && action.undoHandler) faults.push(`${code}: handler on a final action`);
+    // Security review AS31: an undoable action lists the refusal codes its handler may answer,
+    // each upper snake case with no phone in it; a final action lists none.
+    if (action.undoable && !action.undoRefusalCodes?.length) {
+      faults.push(`${code}: undoable without refusal codes`);
+    }
+    if (!action.undoable && action.undoRefusalCodes)
+      faults.push(`${code}: refusal codes on a final`);
+    for (const refusal of action.undoRefusalCodes ?? []) {
+      if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(refusal) || maskPhones(refusal) !== refusal) {
+        faults.push(`${code}: refusal code shape ${refusal}`);
+      }
+    }
     // Security review AS23: a record type that keeps reason codes needs the action's own list,
     // each a code with no phone in it; a free text record type takes no list.
     const form = auditRecordTypeOf(action.recordType)?.reason;
@@ -129,6 +141,36 @@ describe('audit action registry', () => {
         undoHandler: 'customers.merge_undo',
       },
       'stock_receipt.voided_undone: reason codes missing',
+    ],
+    [
+      'an undoable code without refusal codes',
+      { ...complete, undoable: true, undoHandler: 'inventory.receipt_undo' },
+      'stock_receipt.voided: undoable without refusal codes',
+    ],
+    [
+      'a refusal code holding a phone',
+      {
+        ...complete,
+        undoable: true,
+        undoHandler: 'inventory.receipt_undo',
+        undoRefusalCodes: ['CALL_01012345678'],
+      },
+      'refusal code shape CALL_01012345678',
+    ],
+    [
+      'a refusal code that is not upper snake case',
+      {
+        ...complete,
+        undoable: true,
+        undoHandler: 'inventory.receipt_undo',
+        undoRefusalCodes: ['Ahmed Ali'],
+      },
+      'refusal code shape Ahmed Ali',
+    ],
+    [
+      'refusal codes on a final action',
+      { ...complete, undoRefusalCodes: ['MERGE_NOT_LATEST'] },
+      'refusal codes on a final',
     ],
     [
       'undo reason codes on a final action',

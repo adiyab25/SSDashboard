@@ -7,8 +7,7 @@ import {
   type AuditExportQuery,
   type StaffRow,
 } from '@ssdashboard/contracts';
-import { ApiError, apiRequest } from '@/api/client';
-import { apiFetch } from '@/auth/api-fetch';
+import { apiRequest } from '@/api/client';
 import { listStaff } from '@/staff/staff-api';
 
 /**
@@ -101,60 +100,20 @@ export async function listPeople(): Promise<PeopleList> {
 }
 
 /**
- * A refused undo: the api's stable `code`, plus `undoCode` when the code is `UNDO_NOT_POSSIBLE`
- * (the owning module's own code, such as `MERGE_NOT_LATEST`). `apiRequest` keeps only `code`, so
- * the undo call reads its own answer.
- */
-export class AuditUndoError extends ApiError {
-  /** Carries the status, the code, and the owner's code when the api sent one. */
-  constructor(
-    status: number,
-    code: string,
-    readonly undoCode: string | null,
-  ) {
-    super(status, { code });
-    this.name = 'AuditUndoError';
-  }
-}
-
-/** One string field of a JSON error body, or undefined. */
-function bodyField(json: unknown, name: string): string | undefined {
-  if (typeof json !== 'object' || json === null || !(name in json)) return undefined;
-  const value = (json as Record<string, unknown>)[name];
-  return typeof value === 'string' ? value : undefined;
-}
-
-/**
  * Undoes one entry (`POST /api/audit/entries/:id/undo`, needs `audit.undo`): the reason is typed
  * (or one of the action's reason codes), and the answer is the new undone entry. Throws
- * `AuditUndoError` with the api's code.
+ * `ApiError`: `code` is the api's code, and `body.undoCode` the owner's code on `UNDO_NOT_POSSIBLE`.
  */
-export async function undoAuditEntry(id: string, reason: string): Promise<AuditEntryView> {
-  let response: Response;
-  try {
-    response = await apiFetch(`/api/audit/entries/${encodeURIComponent(id)}/undo`, {
-      method: 'POST',
-      cache: 'no-store',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ reason }),
-    });
-  } catch {
-    throw new AuditUndoError(0, 'generic', null);
-  }
-  const json: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new AuditUndoError(
-      response.status,
-      bodyField(json, 'code') ?? 'generic',
-      bodyField(json, 'undoCode') ?? null,
-    );
-  }
-  return AuditEntryView.parse(json);
+export function undoAuditEntry(id: string, reason: string): Promise<AuditEntryView> {
+  return apiRequest('POST', `/api/audit/entries/${encodeURIComponent(id)}/undo`, AuditEntryView, {
+    body: { reason },
+  });
 }
 
 /**
- * The export request as a relative url: the filter plus the required day range. The reason never
- * goes in the url (an access log would keep it, Law 151): it travels in the `x-audit-reason` header.
+ * The export request as a relative url for `POST`: the filter plus the required day range. The
+ * reason never goes in the url (an access log would keep it, Law 151): it travels in the
+ * `x-audit-reason` header. The request is a POST because it writes an audit entry (AS28).
  */
 export function exportUrl(query: Omit<AuditExportQuery, 'reason'>): string {
   const params = new URLSearchParams();

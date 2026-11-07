@@ -68,8 +68,11 @@ describe('audit cost fields on every diff route (spec 0010 QA)', { timeout: 120_
     if (scratch) await dropScratchDatabase(scratch.name);
   });
 
-  const get = async (path: string, cookie: string) => {
-    const response = await fetch(`${base}/api${path}`, { headers: { cookie, origin: base } });
+  const get = async (path: string, cookie: string, method = 'GET') => {
+    const response = await fetch(`${base}/api${path}`, {
+      method,
+      headers: { cookie, origin: base },
+    });
     return { status: response.status, text: await response.text() };
   };
 
@@ -97,12 +100,13 @@ describe('audit cost fields on every diff route (spec 0010 QA)', { timeout: 120_
     expect((await get(path, withCost)).text).toMatch(/unitCost/);
   });
 
+  // The export is a POST since security review AS28.
   it('strips cost from the export cells for a manager without cost.view', async () => {
     const path = `/audit/entries/export?action=planted.costed&dayFrom=${day}&dayTo=${day}`;
-    const hidden = await get(path, withoutCost);
+    const hidden = await get(path, withoutCost, 'POST');
     expect(hidden.status).toBe(200);
     expect(hidden.text).toContain('planted.costed');
     expect(hidden.text).not.toMatch(/referenceValue|unitCost|10\.00|2\.00/);
-    expect((await get(path, withCost)).text).toMatch(/unitCost/);
+    expect((await get(path, withCost, 'POST')).text).toMatch(/unitCost/);
   });
 });

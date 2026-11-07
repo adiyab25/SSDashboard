@@ -1,12 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { maskEmails, maskPhones } from '@ssdashboard/config/redaction';
 import {
   AuditActor,
   auditActionOf,
   auditRecordTypeOf,
   auditUndoneParentOf,
-  ReasonCode,
   type AuditActionCode,
 } from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
@@ -14,9 +12,6 @@ import { pgArray, type Transaction } from '../database/sql.js';
 import {
   AuditCorrelationMismatch,
   AuditPersonalDataRefused,
-  AuditReasonInvalid,
-  AuditReasonRequired,
-  AuditReasonTooLong,
   AuditRecordTypeMismatch,
   UnknownAuditAction,
 } from './audit.errors.js';
@@ -26,9 +21,7 @@ import {
   isUndoArgsShape,
   maskPersonalData,
 } from './personal-data.js';
-
-/** The longest reason an entry keeps, after trimming (spec 0010, AC-5). */
-export const AUDIT_REASON_MAX = 500;
+import { checkedAuditReason } from './audit-reason.js';
 
 /**
  * A value JSON can carry unchanged (review AR5). `bigint`, `Date`, `undefined`, and functions are
@@ -62,19 +55,8 @@ export interface AuditEntryInput {
   undo?: { action: string; args: JsonObject };
 }
 
-/**
- * The undone entry an undo writes (spec 0010, AC-14, task 16): an entry of the undone code
- * `<action>_undone` on the undone entry's own record, with the reason the undo needs and no undo
- * of its own. Only `AuditUndoService` writes one, through `AuditService.recordUndone`.
- */
-export interface AuditUndoneEntryInput extends Omit<AuditEntryInput, 'action' | 'undo'> {
-  /** The undone code, `auditUndoneCodeOf(<the undone entry's action>)`. */
-  action: string;
-  reason: string;
-}
-
 /** What `entryValues` checks: an entry of a listed code, or an undone entry. */
-type WritableEntry = Omit<AuditEntryInput, 'action'> & { action: string };
+export type WritableEntry = Omit<AuditEntryInput, 'action'> & { action: string };
 
 /** The actor columns of `audit_entries`, one shape per actor kind (AC-3). */
 interface ActorColumns {
@@ -103,8 +85,11 @@ function actorColumns(actor: AuditActor): ActorColumns {
   }
 }
 
-/** The column list every entry insert names, in `entryValues` order. */
-const INSERT_ENTRIES = sql`
+/**
+ * The column list every entry insert names, in `entryValues` order. Shared with the undone entry
+ * writer, the only other insert into `audit_entries`.
+ */
+export const INSERT_ENTRIES = sql`
   INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
                              actor_hat, action, record_type, record_id, record_label,
                              before, after, personal_fields, reason, undo_action, undo_args,
@@ -123,9 +108,10 @@ const json = (value: Readonly<Record<string, unknown>> | undefined): string | nu
  * code (`AuditReasonInvalid`, AS13), or personal data in the label or undo arguments or a phone
  * shaped key anywhere (`AuditPersonalDataRefused`). Masks personal values in `before` and `after`,
  * with the record type's own personal keys, and phones and emails in a free text reason. Never
- * touches the database.
+ * touches the database. Exported for the undo module's writer of undone entries, the only
+ * other insert; never call it from outside the audit module.
  */
-function entryValues(entry: WritableEntry, undoesEntryId: string | null): SQL {
+export function entryValues(entry: WritableEntry, undoesEntryId: string | null): SQL {
   const definition = auditActionOf(entry.action);
   if (!definition) throw new UnknownAuditAction(entry.action);
   // An undone code (`<action>_undone`) is written only by an undo, and an undo writes only one.
@@ -137,25 +123,13 @@ function entryValues(entry: WritableEntry, undoesEntryId: string | null): SQL {
   }
   const actor = actorColumns(AuditActor.parse(entry.actor));
 
-  const trimmed = entry.reason?.trim() ?? '';
-  const required = definition.reason === 'required' || entry.reasonRequired === true;
-  if (!trimmed && required) throw new AuditReasonRequired(entry.action);
-  if ([...trimmed].length > AUDIT_REASON_MAX) throw new AuditReasonTooLong();
-  let reason: string | null = null;
-  if (trimmed && recordType.reason === 'code') {
-    // A customer facing record keeps a reason code, never a typed note (spec 0010, AC-5).
-    // Only a code this action lists, and never one that holds a phone (security review AS23).
-    if (
-      !ReasonCode.safeParse(trimmed).success ||
-      maskPhones(trimmed) !== trimmed ||
-      !definition.reasonCodes?.includes(trimmed)
-    ) {
-      throw new AuditReasonInvalid(entry.action);
-    }
-    reason = trimmed;
-  } else if (trimmed) {
-    reason = maskEmails(maskPhones(trimmed));
-  }
+  const reason = checkedAuditReason(
+    entry.action,
+    definition,
+    recordType.reason,
+    entry.reason,
+    entry.reasonRequired === true,
+  );
 
   for (const [field, value] of [
     ['before', entry.before],
@@ -238,26 +212,6 @@ export class AuditService {
     }
     const rows = entries.map((entry) => entryValues(entry, null));
     await tx.execute(sql`${INSERT_ENTRIES} VALUES ${sql.join(rows, sql`, `)}`);
-  }
-
-  /**
-   * Writes the undone entry of one undo through `tx` and returns its id (spec 0010, AC-14, task
-   * 16). Called only by `AuditUndoService`, inside the undo's transaction, after the owner's
-   * handler has reversed its change; never by an owning module. Runs every check of `record`
-   * (the undone code's reason policy is `required`), and the table's `audit_entries_undo_matches`
-   * trigger refuses a target that is not an undoable entry of the same record.
-   */
-  async recordUndone(
-    tx: Transaction,
-    undoesEntryId: string,
-    entry: AuditUndoneEntryInput,
-  ): Promise<string> {
-    const { rows } = await tx.execute<{ id: string }>(
-      sql`${INSERT_ENTRIES} VALUES ${entryValues(entry, undoesEntryId)} RETURNING id`,
-    );
-    const id = rows[0]?.id;
-    if (!id) throw new Error('The undone entry was not written');
-    return id;
   }
 
   /**

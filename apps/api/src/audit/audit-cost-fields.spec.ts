@@ -1,6 +1,12 @@
 import type { AuditEntryDetail, AuditEntryListResponse } from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
-import { auditDiffFor, serializeAuditDetail, serializeAuditPage } from './audit-cost-fields.js';
+import {
+  auditDiffFor,
+  isCostKey,
+  serializeAuditDetail,
+  serializeAuditEntry,
+  serializeAuditPage,
+} from './audit-cost-fields.js';
 
 const entry = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -85,5 +91,87 @@ describe('auditDiffFor (the export cells)', () => {
     expect(auditDiffFor(entry.before, false)).toEqual({ status: 'posted', lines: [{ sku: 'A' }] });
     expect(auditDiffFor(entry.before, true)).toBe(entry.before);
     expect(auditDiffFor(null, false)).toBeNull();
+  });
+});
+
+// Security review AS34: the undo answers one entry through `serializeAuditEntry`.
+describe('serializeAuditEntry (the undo answer, spec 0010 AC-14)', () => {
+  it('strips cost fields from one entry without cost.view and keeps it whole with it', () => {
+    const shown = serializeAuditEntry(entry, { has: () => false });
+    expect(shown.before).toEqual({ status: 'posted', lines: [{ sku: 'A' }] });
+    expect(shown.after).toEqual({ status: 'voided' });
+    expect(shown.reason).toBe('wrong count');
+    expect(entry.before.referenceValue).toBe('100.00');
+    expect(serializeAuditEntry(entry, { has: (p) => p === 'cost.view' })).toBe(entry);
+  });
+});
+
+// Security review AS30 and review M4R8: a diff is whatever JSON its writer built, so a cost key
+// is matched in any spelling the route sweep's `normalKey` treats as the same, and inside JSON
+// text a diff stores as a string.
+describe('cost keys in any spelling and inside JSON text', () => {
+  it('knows a cost key by case and separators, and nothing else', () => {
+    for (const key of [
+      'unitCost',
+      'unit_cost',
+      'UnitCost',
+      'UNIT-COST',
+      'unit cost',
+      'total_value',
+    ]) {
+      expect(isCostKey(key), key).toBe(true);
+    }
+    for (const key of ['cost', 'unit', 'price', 'unitCostNote'])
+      expect(isCostKey(key), key).toBe(false);
+  });
+
+  it('strips snake and pascal case cost keys at any depth', () => {
+    expect(
+      auditDiffFor(
+        { status: 'posted', unit_cost: '5.00', lines: [{ sku: 'A', LineTotal: '9.00' }] },
+        false,
+      ),
+    ).toEqual({ status: 'posted', lines: [{ sku: 'A' }] });
+  });
+
+  it('strips cost keys inside JSON text and writes it back as JSON, leaving other text alone', () => {
+    const diff = {
+      lines: '[{"unitCost":"7.00","qty":2}]',
+      payload: ' {"order":{"total_cost":"9.00","ref":"A1"}} ',
+      note: '{not json',
+      plain: 'unitCost is a word here',
+      clean: '{"qty":1}',
+    };
+
+    expect(auditDiffFor(diff, false)).toEqual({
+      lines: '[{"qty":2}]',
+      payload: '{"order":{"ref":"A1"}}',
+      note: '{not json',
+      plain: 'unitCost is a word here',
+      clean: '{"qty":1}',
+    });
+    expect(auditDiffFor(diff, true)).toBe(diff);
+  });
+
+  it('drops a detail change whose field is a cost key in any spelling', () => {
+    const detail: AuditEntryDetail = {
+      ...entry,
+      before: { unit_cost: '5.00' },
+      after: { unit_cost: '6.00' },
+      changes: [
+        { field: 'unit_cost', kind: 'changed', before: '5.00', after: '6.00', personal: false },
+        {
+          field: 'payload',
+          kind: 'added',
+          before: null,
+          after: '{"UnitCost":"6.00","qty":1}',
+          personal: false,
+        },
+      ],
+    };
+
+    expect(serializeAuditDetail(detail, { has: () => false }).changes).toEqual([
+      { field: 'payload', kind: 'added', before: null, after: '{"qty":1}', personal: false },
+    ]);
   });
 });

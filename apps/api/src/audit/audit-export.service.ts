@@ -82,6 +82,12 @@ export interface AuditExportPlan {
    * the `before` and `after` cells, as it leaves the screen.
    */
   showCost: boolean;
+  /**
+   * The person exporting, as `prepare` was given them: the batch reader checks `audit.export` on
+   * them again and strips cost itself (security review AS29), so the file never rests on the
+   * route alone.
+   */
+  viewer: AuditViewer;
 }
 
 /**
@@ -129,8 +135,10 @@ export class AuditExportService {
     viewer: AuditViewer,
     reason?: string,
   ): Promise<AuditExportPlan> {
-    const bound = await this.reader.exportBound(query);
-    const rows = bound ? await this.reader.exportSize(query, bound, AUDIT_EXPORT_MAX_ROWS + 1) : 0;
+    const bound = await this.reader.exportBound(query, viewer);
+    const rows = bound
+      ? await this.reader.exportSize(query, viewer, bound, AUDIT_EXPORT_MAX_ROWS + 1)
+      : 0;
     if (rows > AUDIT_EXPORT_MAX_ROWS) throw new AuditExportTooLarge(AUDIT_EXPORT_MAX_ROWS);
     const exportId = this.audit.newCorrelationId();
     // The filter, without the fields the caller left out, is the entry's `after`.
@@ -147,7 +155,13 @@ export class AuditExportService {
         correlationId: exportId,
       }),
     );
-    return { fileName: exportFileName(query), bound, rows, showCost: viewer.has('cost.view') };
+    return {
+      fileName: exportFileName(query),
+      bound,
+      rows,
+      showCost: viewer.has('cost.view'),
+      viewer,
+    };
   }
 
   /**
@@ -167,6 +181,7 @@ export class AuditExportService {
     let written = 0;
     const batches = this.reader.exportBatches(
       query,
+      plan.viewer,
       timezone,
       plan.bound,
       AUDIT_EXPORT_BATCH,

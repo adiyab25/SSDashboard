@@ -574,6 +574,7 @@ test.describe('as a manager', () => {
   }) => {
     let calls = 0;
     await page.route('**/api/audit/entries/export?*', (route) => {
+      expect(route.request().method()).toBe('POST');
       calls += 1;
       return route.fulfill({ status: 413, json: { code: 'EXPORT_TOO_LARGE' } });
     });

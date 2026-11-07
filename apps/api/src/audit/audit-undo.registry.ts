@@ -1,4 +1,4 @@
-import { Injectable, type OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   AUDIT_ACTIONS,
   auditActionOf,
@@ -7,7 +7,11 @@ import {
 } from '@ssdashboard/contracts';
 import type { Transaction } from '../database/sql.js';
 import type { JsonObject } from './audit.service.js';
-import { AuditUndoHandlerDuplicate, AuditUndoHandlerMissing } from './audit.errors.js';
+import {
+  AuditUndoHandlerDuplicate,
+  AuditUndoHandlerForeign,
+  AuditUndoHandlerMissing,
+} from './audit.errors.js';
 
 /**
  * The entry an undo handler reverses (spec 0010, Undo): what the entry already holds, its
@@ -24,7 +28,12 @@ export interface AuditUndoTarget {
   undo: { action: string; args: Record<string, unknown> };
 }
 
-/** What a handler is told: the entry, the person undoing it, and their trimmed reason. */
+/**
+ * What a handler is told: the entry, the person undoing it, and their reason, already checked
+ * against the undone code's policy and masked (review M4R2, security review AS32): one of the
+ * action's `undoReasonCodes` on a record type that keeps codes, else the trimmed text with phones
+ * and emails masked. A handler may log or pass it on; it never sees the raw text.
+ */
 export interface AuditUndoContext {
   entry: AuditUndoTarget;
   actor: AuditActor;
@@ -47,6 +56,8 @@ export interface AuditUndoResult {
  * `tx`, the undo's own transaction, touching only the owner's tables; it throws `UndoNotPossible`
  * with the owner's code when a later change got in the way, and never writes an audit entry
  * itself. It should be the owner's existing service method, so "undo a merge" has one code path.
+ * Its refusal codes are the `undoRefusalCodes` its action declares; any other reaches the manager
+ * as a plain `UNDO_NOT_POSSIBLE` (security review AS31).
  */
 export interface AuditUndoHandler {
   undo(tx: Transaction, context: AuditUndoContext): Promise<AuditUndoResult>;
@@ -66,21 +77,36 @@ export function isUndoableEntry(action: string, undoAction: string | null): bool
 
 /**
  * The undo handlers owning modules register (spec 0010, Undo, AC-9): an owner injects it and
- * calls `register(code, handler)` from its own `onModuleInit`, so the audit module imports no
- * owning module. Once every module has started (`onApplicationBootstrap`), it checks that each
- * `undoHandler` the registry names has a handler and stops the process otherwise
- * (`AuditUndoHandlerMissing`). Every process that loads the audit module therefore loads every
- * module that owns an undoable code. It holds handlers only, never entries or data.
+ * calls `register(code, handler, '<its module>')` from its own `onModuleInit`, so the audit module
+ * imports no owning module. A code is bound to the module the registry's actions name: a module
+ * can register only a handler code its own undoable actions name (security review AS33). It holds
+ * handlers only, never entries or data, and it never stops a process: the start check that every
+ * undoable code has a handler is `AuditUndoStartCheck`, which runs only where the undo route is
+ * served (the api, never the worker; review M4R1).
  */
 @Injectable()
-export class AuditUndoRegistry implements OnApplicationBootstrap {
+export class AuditUndoRegistry {
   private readonly handlers = new Map<string, AuditUndoHandler>();
 
   /**
-   * Registers the handler for one handler code. Throws `AuditUndoHandlerDuplicate` when the code
-   * is taken, so two owners can never answer for one undo.
+   * Registers the handler for one handler code on behalf of `owner`, the registering module's
+   * name as the registry spells it (`customers`). Throws `AuditUndoHandlerForeign` unless an
+   * undoable action of `owner` names the code (read live from `registry`, so a test can plant a
+   * row), and `AuditUndoHandlerDuplicate` when the code is taken, so two owners can never answer
+   * for one undo.
    */
-  register(code: string, handler: AuditUndoHandler): void {
+  register(
+    code: string,
+    handler: AuditUndoHandler,
+    owner: string,
+    registry: Readonly<Record<string, AuditActionDefinition>> = AUDIT_ACTIONS,
+  ): void {
+    const naming = Object.values(registry).filter(
+      (action) => action.undoable && action.undoHandler === code,
+    );
+    if (!naming.length || naming.some((action) => action.module !== owner)) {
+      throw new AuditUndoHandlerForeign(code, owner);
+    }
     if (this.handlers.has(code)) throw new AuditUndoHandlerDuplicate(code);
     this.handlers.set(code, handler);
   }
@@ -108,10 +134,5 @@ export class AuditUndoRegistry implements OnApplicationBootstrap {
   assertComplete(registry: Readonly<Record<string, AuditActionDefinition>> = AUDIT_ACTIONS): void {
     const missing = this.missingHandlers(registry);
     if (missing.length) throw new AuditUndoHandlerMissing(missing);
-  }
-
-  /** Runs after every module's `onModuleInit`, where owners register: stops a start with a gap. */
-  onApplicationBootstrap(): void {
-    this.assertComplete();
   }
 }

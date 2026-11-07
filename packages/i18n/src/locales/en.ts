@@ -1059,7 +1059,9 @@ export const en = {
       person: 'Person',
       anyPerson: 'Anyone',
       personLoadError: 'The people list could not be loaded.',
-      personTruncated: 'Only the first {{count}} people are listed, so some are missing here.',
+      personTruncated_one: 'Only the first person is listed, so some are missing here.',
+      personTruncated_other:
+        'Only the first {{count}} people are listed, so some are missing here.',
       recordType: 'Record type',
       anyRecordType: 'Any record',
       recordId: 'Record ID',
@@ -1113,7 +1115,6 @@ export const en = {
       reasonCodeChoose: 'Choose a reason',
       confirm: 'Undo',
       cancel: 'Cancel',
-      done: 'The action was undone.',
       required: 'required',
       errors: {
         reasonRequired: 'Give a reason to undo this action.',

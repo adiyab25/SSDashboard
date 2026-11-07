@@ -85,6 +85,7 @@ export function AuditExportControl({ filter }: { filter: AuditFilter }) {
     try {
       const trimmed = reason.trim();
       const response = await apiFetch(exportUrl({ ...filter, dayFrom, dayTo }), {
+        method: 'POST',
         cache: 'no-store',
         // The reason is free text: a header, never the url, so no access log keeps it.
         ...(trimmed && { headers: { [AUDIT_REASON_HEADER]: encodeURIComponent(trimmed) } }),

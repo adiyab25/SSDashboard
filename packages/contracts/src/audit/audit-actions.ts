@@ -40,6 +40,14 @@ export interface AuditActionDefinition {
    * a free text record type, where the undo takes typed text.
    */
   readonly undoReasonCodes?: readonly string[];
+  /**
+   * The refusal codes the owner's undo handler may throw with `UndoNotPossible` (security review
+   * AS31): required, and non empty, on an undoable action, each upper snake case with no phone in
+   * it (`MERGE_NOT_LATEST`). Only a listed code reaches the 409 answer as `undoCode`; any other
+   * refusal is answered as a plain `UNDO_NOT_POSSIBLE`, so a handler can never put a value in
+   * the answer. Unused on a final action; the registry test refuses it there.
+   */
+  readonly undoRefusalCodes?: readonly string[];
   /** The catalog key of the action's label, shown on the audit screen. */
   readonly label: MessageKey;
   /** The repo path of the test that proves the action writes its entry. */

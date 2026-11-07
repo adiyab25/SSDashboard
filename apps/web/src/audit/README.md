@@ -11,15 +11,15 @@ The back office page at `/audit`: who changed what, newest first, for people wit
 - The entry detail with the field by field diff ("none" for a side the field does not have, "empty" for a stored null, "hidden, personal data" for a masked field), the same action link (focus moves to the page heading), the history toggle, the "Undone" marker, and the Undo button (only when the entry's `canUndo` is true): [audit-entry-dialog.tsx](audit-entry-dialog.tsx)
 - The undo confirm dialog: [audit-undo-dialog.tsx](audit-undo-dialog.tsx) (one step: the typed reason, 1 to 500 characters, or a select of the action's `undoReasonCodes`, sits beside the destructive button; each api error shown from its code, `UNDO_NOT_POSSIBLE` with the owner's code; on success the audit list, detail, and history queries refresh and focus moves to the "This action was undone" notice)
 - The record history block: [record-history-panel.tsx](record-history-panel.tsx), props `recordType` and `recordId`; it draws an `h2`, never an `h1`, and shows its own loading, empty, error, and 403 states
-- The CSV export control: [audit-export-control.tsx](audit-export-control.tsx) (day range required, 366 day limit counting both days, the reason sent in the `x-audit-reason` header (percent encoded) never the url, 400 and 413 shown from their codes)
+- The CSV export control: [audit-export-control.tsx](audit-export-control.tsx) (a `POST`, day range required, 366 day limit counting both days, the reason sent in the `x-audit-reason` header (percent encoded) never the url, 400 and 413 shown from their codes)
 - The route's loading state: [audit-page-skeleton.tsx](audit-page-skeleton.tsx) (the `h1` and a skeleton table)
-- Calls to the api and query keys: [audit-api.ts](audit-api.ts) (including `undoAuditEntry`, which reads its own error body because the shared client drops `undoCode`)
+- Calls to the api and query keys: [audit-api.ts](audit-api.ts) (including `undoAuditEntry`, which goes through the shared `apiRequest`; the owner's `undoCode` rides in `ApiError.body`)
 - Which catalog key labels an actor kind: [audit-labels.ts](audit-labels.ts) (actions and record types come from the registries in `@ssdashboard/contracts`)
 - The route: `src/app/(backoffice)/audit/page.tsx`
 
 ## Never touches
 
-- Writing an entry. Only server code records entries; the screen only reads, and its one write is the undo request (`POST /api/audit/entries/:id/undo`), which the api turns into a new entry: the list (`GET /api/audit/entries`), one entry's detail (`GET /api/audit/entries/:id`), a record's history (`GET /api/audit/records/:type/:id/entries`), and the CSV export (`GET /api/audit/entries/export`).
+- Writing an entry. Only server code records entries; the screen only reads, and its one write is the undo request (`POST /api/audit/entries/:id/undo`), which the api turns into a new entry: the list (`GET /api/audit/entries`), one entry's detail (`GET /api/audit/entries/:id`), a record's history (`GET /api/audit/records/:type/:id/entries`), and the CSV export (`POST /api/audit/entries/export`, a POST because it writes an audit entry).
 - The action registry. It lives in `@ssdashboard/contracts`; the screen only reads each label key from it.
 - Hard coded text. Use `t()`.
 

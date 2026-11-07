@@ -27,7 +27,8 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import type { z } from 'zod';
 import { useReturnFocus } from '@/shared/use-return-focus';
-import { AuditUndoError, auditKeys, undoAuditEntry } from './audit-api';
+import { ApiError } from '@/api/client';
+import { auditKeys, undoAuditEntry } from './audit-api';
 import { useEntryText } from './use-entry-text';
 
 type UndoInput = z.input<typeof AuditUndoRequest>;
@@ -47,8 +48,11 @@ const REASON_CODES = new Set(['REASON_REQUIRED', 'REASON_TOO_LONG', 'REASON_INVA
  * same dialog as the destructive button, so the person never meets a second confirmation. An
  * action whose record type keeps reason codes (`undoReasonCodes` in the registry) offers a select
  * of those codes instead of free text, because the api refuses anything else. Each api error
- * shows from its stable code; `UNDO_NOT_POSSIBLE` also names the owner's code. On success the
- * list, detail, and history queries refresh and `onUndone` runs; Cancel and Escape give focus
+ * shows from its stable code; `UNDO_NOT_POSSIBLE` also names the owner's code. On success every
+ * query refreshes (`invalidateQueries()` with no key, M4R6: the owning module's screens read the
+ * data the handler just changed, and an undo is rare) and `onUndone` runs; after a final refusal
+ * (already undone, not undoable, not found) the audit list, detail, and history refresh (M4R5), so
+ * the stored state shows behind the dialog. Cancel and Escape give focus
  * back to the Undo button that opened it. Never undoes anything by itself: the api decides.
  */
 export function AuditUndoDialog({
@@ -82,30 +86,30 @@ export function AuditUndoDialog({
     mutationFn: (values: UndoOutput) => undoAuditEntry(entry.id, values.reason),
     onSuccess: (undone) => {
       succeeded.current = true;
-      // The list, this detail, and every record history: the original now reads `undone`.
-      void queryClient.invalidateQueries({
-        queryKey: auditKeys.all,
-        predicate: (query) => query.queryKey[1] !== 'people',
-      });
+      // Everything: the audit screens (the original now reads `undone`) and the owner's screens.
+      void queryClient.invalidateQueries();
       onUndone(undone);
     },
     onError: (error) => {
-      if (error instanceof AuditUndoError && REASON_CODES.has(error.code)) {
+      if (error instanceof ApiError && REASON_CODES.has(error.code)) {
         form.setFocus('reason');
       }
       // Someone else undid it, or it changed meanwhile: show the stored state behind the dialog.
-      if (error instanceof AuditUndoError && FINAL_CODES.has(error.code)) {
-        void queryClient.invalidateQueries({ queryKey: auditKeys.entry(entry.id) });
+      if (error instanceof ApiError && FINAL_CODES.has(error.code)) {
+        void queryClient.invalidateQueries({
+          queryKey: auditKeys.all,
+          predicate: (query) => query.queryKey[1] !== 'people',
+        });
       }
     },
   });
 
-  const failed = mutation.error instanceof AuditUndoError ? mutation.error : null;
+  const failed = mutation.error instanceof ApiError ? mutation.error : null;
   const failure = mutation.error && !failed ? t('audit.undo.errors.generic') : failureText(failed);
   const reasonFailure = failed && REASON_CODES.has(failed.code) ? failure : null;
   const alertFailure = reasonFailure ? null : failure;
 
-  function failureText(error: AuditUndoError | null): string | null {
+  function failureText(error: ApiError | null): string | null {
     if (!error) return null;
     switch (error.code) {
       case 'ENTRY_NOT_FOUND':
@@ -175,8 +179,10 @@ export function AuditUndoDialog({
             <Alert variant="destructive" role="alert">
               <AlertDescription className="flex flex-col gap-1">
                 {alertFailure}
-                {failed?.code === 'UNDO_NOT_POSSIBLE' && failed.undoCode && (
-                  <span>{t('audit.undo.errors.notPossibleCode', { code: failed.undoCode })}</span>
+                {failed?.code === 'UNDO_NOT_POSSIBLE' && failed.body.undoCode && (
+                  <span>
+                    {t('audit.undo.errors.notPossibleCode', { code: failed.body.undoCode })}
+                  </span>
                 )}
               </AlertDescription>
             </Alert>

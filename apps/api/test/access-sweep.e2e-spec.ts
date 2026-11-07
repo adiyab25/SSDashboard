@@ -99,8 +99,16 @@ function personalDataIn(body: unknown, allowed: readonly string[]): string[] {
   return [...found];
 }
 
-/** The `COST_FIELD_KEYS` an answer holds, at any depth. */
+/**
+ * The `COST_FIELD_KEYS` an answer holds, at any depth. A text answer (the CSV export, whose
+ * `before` and `after` cells are JSON text) counts a key named anywhere in it, in any spelling
+ * `normalKey` treats as the same (security review AS34).
+ */
 function costKeysIn(body: unknown): string[] {
+  if (typeof body === 'string') {
+    const text = normalKey(body);
+    return COST_FIELD_KEYS.filter((key) => text.includes(normalKey(key)));
+  }
   const keys = new Set(keyPaths(body).map((path) => path.at(-1)));
   return COST_FIELD_KEYS.filter((key) => keys.has(normalKey(key)));
 }
@@ -233,7 +241,10 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['audit.read'],
       path: () => `/audit/records/stock_receipt/${ids.receipt}/entries`,
     },
-    'GET /audit/entries/export': {
+    // A POST since security review AS28 (it writes `audit.exported`): the filter stays in the
+    // query string, and there is no body. Its CSV answer is text, so the cost check reads it as
+    // text (`costKeysIn`, security review AS34).
+    'POST /audit/entries/export': {
       needs: ['audit.export'],
       path: () => `/audit/entries/export?dayFrom=${ids.auditDay}&dayTo=${ids.auditDay}`,
     },
@@ -586,6 +597,7 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         'GET /skus/:id/movements',
         'GET /audit/entries/:id',
         'GET /audit/records/:type/:id/entries',
+        'POST /audit/entries/export',
       ]),
     );
   });

@@ -12,6 +12,7 @@ import {
   AuditRecordTypeMismatch,
   UnknownAuditAction,
 } from './audit.errors.js';
+import { AuditUndoneWriter } from './audit-undone.writer.js';
 import { AuditService, type AuditEntryInput, type JsonObject } from './audit.service.js';
 
 // Scratch codes, as later features add them (AC-19): a customer edit, whose record type masks a
@@ -708,9 +709,11 @@ describe('AuditService personal data guard (spec 0010, AC-4)', () => {
 });
 
 // Spec 0010 milestone 4 task 16 (security review AS5): the undone code is written only by an undo,
-// on its own derived definition (reason required), with `undoes_entry_id`, and returns its id.
-describe('AuditService.recordUndone (spec 0010, AC-14)', () => {
+// on its own derived definition (reason required), with `undoes_entry_id`, and returns the row it
+// wrote. Reviews M4R4 and AS33: that writer is `AuditUndoneWriter`, not the exported service.
+describe('AuditUndoneWriter (spec 0010, AC-14)', () => {
   const audit = new AuditService();
+  const writer = new AuditUndoneWriter();
   const UNDOABLE = 'sku.scratch_merged';
   const registry = actualRegistry();
   const target = '01937f3a-0000-7000-8000-0000000000aa';
@@ -746,10 +749,10 @@ describe('AuditService.recordUndone (spec 0010, AC-14)', () => {
     delete registry[UNDOABLE];
   });
 
-  it('writes the undone code with undoes_entry_id and a masked reason, and returns its id', async () => {
+  it('writes the undone code with undoes_entry_id and a masked reason, and returns its row', async () => {
     const { tx, statements } = returningTx();
 
-    await expect(audit.recordUndone(tx, target, undone)).resolves.toBe('new-entry');
+    await expect(writer.write(tx, target, undone)).resolves.toEqual({ id: 'new-entry' });
 
     const params = statements[0] ?? [];
     expect(params[PARAM.action]).toBe(`${UNDOABLE}_undone`);
@@ -761,29 +764,33 @@ describe('AuditService.recordUndone (spec 0010, AC-14)', () => {
   it('requires a reason on the undone code', async () => {
     const { tx, statements } = returningTx();
 
-    await expect(
-      audit.recordUndone(tx, target, { ...undone, reason: '  ' }),
-    ).rejects.toBeInstanceOf(AuditReasonRequired);
+    await expect(writer.write(tx, target, { ...undone, reason: '  ' })).rejects.toBeInstanceOf(
+      AuditReasonRequired,
+    );
     expect(statements).toEqual([]);
   });
 
-  it('refuses an undone code through record, and a listed code through recordUndone', async () => {
+  it('refuses an undone code through record, and a listed code through the undone writer', async () => {
     const { tx, statements } = returningTx();
 
     await expect(
       audit.record(tx, { ...undone, action: `${UNDOABLE}_undone` as AuditActionCode }),
     ).rejects.toBeInstanceOf(UnknownAuditAction);
     await expect(
-      audit.recordUndone(tx, target, { ...undone, action: 'sku.archived' }),
+      writer.write(tx, target, { ...undone, action: 'sku.archived' }),
     ).rejects.toBeInstanceOf(UnknownAuditAction);
     expect(statements).toEqual([]);
+  });
+
+  it('leaves the exported service without an undone entry writer', () => {
+    expect('recordUndone' in audit).toBe(false);
   });
 
   it('knows no undone code of an action that is not undoable', async () => {
     const { tx } = returningTx();
 
     await expect(
-      audit.recordUndone(tx, target, { ...undone, action: 'sku.archived_undone' }),
+      writer.write(tx, target, { ...undone, action: 'sku.archived_undone' }),
     ).rejects.toBeInstanceOf(UnknownAuditAction);
   });
 });

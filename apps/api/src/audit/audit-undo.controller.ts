@@ -71,9 +71,11 @@ export class AuditUndoController {
 
   /**
    * Undoes the entry and answers 200 with the undone entry. 404 `ENTRY_NOT_FOUND`, 409
-   * `NOT_UNDOABLE`, 409 `ALREADY_UNDONE`, 409 `UNDO_NOT_POSSIBLE` with the owner's `undoCode`
-   * (nothing changed), 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, and on a record type that
-   * keeps reason codes 422 `REASON_INVALID`.
+   * `NOT_UNDOABLE`, 409 `ALREADY_UNDONE`, 409 `UNDO_NOT_POSSIBLE` (nothing changed; with
+   * `undoCode` only when it is a refusal code the action declares, and a fixed message, never the
+   * owner's text), 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, and on a record type that keeps
+   * reason codes 422 `REASON_INVALID`, each reason answer decided before the owner's handler runs.
+   * The id is matched in any letter case.
    */
   @Post(':id/undo')
   @HttpCode(200)

@@ -2,10 +2,10 @@ import { once } from 'node:events';
 import {
   BadRequestException,
   Controller,
-  Get,
   Headers,
   Inject,
   Logger,
+  Post,
   Query,
   Res,
 } from '@nestjs/common';
@@ -73,11 +73,15 @@ export function exportReason(header: string | undefined): string | undefined {
 }
 
 /**
- * `GET /api/audit/entries/export` (spec 0010, AC-15, task 14), in its own module so the audit
+ * `POST /api/audit/entries/export` (spec 0010, AC-15, task 14), in its own module so the audit
  * module never imports the platform module (review M3R6: spec 0009 makes platform import audit).
- * Staff audience, `@Permission('audit.export')` (the manager hat by default, spec 0008). The
- * `before` and `after` cells leave out cost fields for a reader without `cost.view`, like the
- * screen (spec 0008 AC-6).
+ * A POST, never a GET (security review AS28): the export writes `audit.exported` under the
+ * caller's name, and `SessionGuard` refuses an unsafe method whose `Origin` is not the staff
+ * origin (403 `FORBIDDEN_ORIGIN`), so a link or redirect from another site cannot plant that
+ * entry. A GET to this path meets the entry detail (`GET /api/audit/entries/:id`), which answers
+ * 404 `ENTRY_NOT_FOUND` and writes nothing. Staff audience, `@Permission('audit.export')` (the
+ * manager hat by default, spec 0008). The `before` and `after` cells leave out cost fields for a
+ * reader without `cost.view`, like the screen (spec 0008 AC-6).
  */
 @Audience('staff')
 @Controller('audit/entries')
@@ -91,15 +95,16 @@ export class AuditExportController {
   ) {}
 
   /**
-   * `audit.export`: the filter as a CSV file. `dayFrom` and `dayTo` are required and cover at
-   * most 366 days, both included (400 `INVALID_FILTER`); more than 200,000 rows is 413
-   * `EXPORT_TOO_LARGE`, decided before anything streams. The optional reason is the
-   * `x-audit-reason` header. The export is recorded as `audit.exported` before the first byte.
+   * `audit.export`: the filter, in the query string, as a CSV file; there is no body. `dayFrom`
+   * and `dayTo` are required and cover at most 366 days, both included (400 `INVALID_FILTER`);
+   * more than 200,000 rows is 413 `EXPORT_TOO_LARGE`, decided before anything streams. The
+   * optional reason is the `x-audit-reason` header. The answer is 200 (set here, not Nest's 201
+   * for a POST). The export is recorded as `audit.exported` before the first byte.
    * If the reader goes away, the stream stops and one line is logged, with no values; any other
    * failure while streaming cuts the connection, so a partial file never looks complete.
    */
   @Permission('audit.export')
-  @Get('export')
+  @Post('export')
   async export(
     @Query(new ZodQueryPipe(AuditExportQuery, 'INVALID_FILTER')) query: AuditExportQuery,
     @Headers(AUDIT_REASON_HEADER) reasonHeader: string | undefined,

@@ -14,7 +14,12 @@ import { pgArray } from '../database/sql.js';
 import { StaffDirectory } from '../identity/staff/staff-directory.js';
 import type { Access } from '../platform/access/access.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
-import { serializeAuditPage } from './audit-cost-fields.js';
+import {
+  auditDiffFor,
+  serializeAuditDetail,
+  serializeAuditEntry,
+  serializeAuditPage,
+} from './audit-cost-fields.js';
 import { isUndoableEntry } from './audit-undo.registry.js';
 import { AuditEntryNotFound, AuditReadForbidden } from './audit.errors.js';
 
@@ -55,8 +60,11 @@ export type EntryRow = {
   undo_action: string | null;
 };
 
-/** The columns every reader selects, `recorded_at` as the microsecond UTC text the cursor uses. */
-const ENTRY_COLUMNS = sql`
+/**
+ * The columns every reader selects, `recorded_at` as the microsecond UTC text the cursor uses.
+ * The undone entry writer returns the same columns, so the undo can answer from what it wrote.
+ */
+export const ENTRY_COLUMNS = sql`
   id, to_char(recorded_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS recorded_at,
   to_char(operating_day, 'YYYY-MM-DD') AS operating_day, correlation_id, actor_kind,
   actor_user_id, actor_ref, actor_hat, job_id, action, record_type, record_id,
@@ -76,6 +84,46 @@ function atOrBelow(key: AuditKey): SQL {
 /** Whether a viewer may undo entries: they hold `audit.undo` (the manager hat by default). */
 export function canUndoAudit(viewer: Pick<Access, 'has'>): boolean {
   return viewer.has('audit.undo');
+}
+
+/** Whether a viewer may export the trail: they hold `audit.export` (the manager hat by default). */
+export function canExportAudit(viewer: Pick<Access, 'has'>): boolean {
+  return viewer.has('audit.export');
+}
+
+/**
+ * One row as the screen shows it, given what the row alone cannot say: the actor's name, whether
+ * a later entry undid it, and whether this viewer may undo it now (spec 0010, State, AC-14).
+ * Pure; it strips nothing (the readers strip cost for the viewer).
+ */
+export function entryViewOf(
+  row: EntryRow,
+  actorName: string | null,
+  undone: boolean,
+  canUndo: boolean,
+): AuditEntryView {
+  return {
+    id: row.id,
+    recordedAt: row.recorded_at,
+    operatingDay: row.operating_day,
+    correlationId: row.correlation_id,
+    actor: {
+      kind: row.actor_kind,
+      userId: row.actor_user_id,
+      ref: row.actor_ref,
+      hat: row.actor_hat,
+      jobId: row.job_id,
+    },
+    actorName,
+    action: row.action,
+    record: { type: row.record_type, id: row.record_id, label: row.record_label },
+    before: row.before,
+    after: row.after,
+    personalFields: row.personal_fields,
+    reason: row.reason,
+    undone,
+    canUndo,
+  };
 }
 
 /**
@@ -142,11 +190,11 @@ export function fieldChanges(row: EntryRow): AuditFieldChange[] {
  * The only reader of `audit_entries` (spec 0010, AC-9, AC-12). Other modules read history through
  * it, never through the table. Person names come from the staff directory by id, never from a
  * join. Each entry view says whether the viewer may undo it now (`canUndo`, AC-14), so every
- * reader takes the viewer. `list`, `get`, and the export reads are guarded by their controller
- * (`@Permission('audit.read')` or `@Permission('audit.export')`), which also strips cost fields
- * for a reader without `cost.view`; `forRecord`, which other modules may reach, takes the viewer,
- * refuses without the read permission itself (review AR3), and strips cost fields itself. It never
- * pages by offset and never counts all rows.
+ * reader takes the viewer. Every public reader guards itself, whoever calls it (security review
+ * AS29, review AR3): `list`, `get`, `view`, and `forRecord` refuse a viewer without `audit.read`,
+ * the export reads one without `audit.export` (`AuditReadForbidden`), and each leaves out cost
+ * fields for a viewer without `cost.view`; the routes' `@Permission` is the first wall, not the
+ * only one. It never pages by offset and never counts all rows.
  */
 @Injectable()
 export class AuditQueryService {
@@ -160,13 +208,16 @@ export class AuditQueryService {
    * Entries newest first (`recorded_at`, then id), filtered by person, record, action, operating
    * day range, and correlation id, one keyset page at a time. A cursor this endpoint did not issue
    * throws `InvalidCursorError` from the keyset helper. `canUndo` follows the viewer's
-   * `audit.undo`.
+   * `audit.undo`. Refuses a viewer without `audit.read` (`AuditReadForbidden`) and leaves out
+   * cost fields for one without `cost.view` (`serializeAuditPage`).
    */
   async list(
     query: AuditEntryListQuery,
     viewer: Pick<Access, 'has'>,
   ): Promise<AuditEntryListResponse> {
-    return this.page(filtersOf(query), query.cursor, query.limit, viewer);
+    if (!canReadAudit(viewer)) throw new AuditReadForbidden();
+    const page = await this.page(filtersOf(query), query.cursor, query.limit, viewer);
+    return serializeAuditPage(page, viewer);
   }
 
   /**
@@ -194,19 +245,25 @@ export class AuditQueryService {
 
   /**
    * One entry with its field diff (spec 0010, AC-12), or `AuditEntryNotFound`. `canUndo` follows
-   * the viewer's `audit.undo`.
+   * the viewer's `audit.undo`. Refuses a viewer without `audit.read` (`AuditReadForbidden`) and
+   * leaves cost fields out of the diff and its changes for one without `cost.view`
+   * (`serializeAuditDetail`).
    */
   async get(id: string, viewer: Pick<Access, 'has'>): Promise<AuditEntryDetail> {
+    if (!canReadAudit(viewer)) throw new AuditReadForbidden();
     const { row, view } = await this.one(id, viewer);
-    return { ...view, changes: fieldChanges(row) };
+    return serializeAuditDetail({ ...view, changes: fieldChanges(row) }, viewer);
   }
 
   /**
    * One entry as the list shows it, without the field diff (the answer of an undo, spec 0010
-   * AC-14), or `AuditEntryNotFound`.
+   * AC-14), or `AuditEntryNotFound`. Refuses a viewer without `audit.read`
+   * (`AuditReadForbidden`) and leaves cost fields out for one without `cost.view`
+   * (`serializeAuditEntry`).
    */
   async view(id: string, viewer: Pick<Access, 'has'>): Promise<AuditEntryView> {
-    return (await this.one(id, viewer)).view;
+    if (!canReadAudit(viewer)) throw new AuditReadForbidden();
+    return serializeAuditEntry((await this.one(id, viewer)).view, viewer);
   }
 
   /** One row and its view, or `AuditEntryNotFound`. */
@@ -227,9 +284,13 @@ export class AuditQueryService {
    * The newest entry key inside an export's filter, or null when it holds none (spec 0010,
    * AC-15, review M3R2). The export counts and streams only entries at or below it, so the file
    * is exactly what was counted, and entries recorded later (the export's own among them) never
-   * join it.
+   * join it. Refuses a viewer without `audit.export` (`AuditReadForbidden`).
    */
-  async exportBound(query: AuditExportQuery): Promise<AuditKey | null> {
+  async exportBound(
+    query: AuditExportQuery,
+    viewer: Pick<Access, 'has'>,
+  ): Promise<AuditKey | null> {
+    if (!canExportAudit(viewer)) throw new AuditReadForbidden();
     const { rows } = await this.connection.db.execute<{ at: string; id: string }>(sql`
       SELECT to_char(recorded_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS at, id
       FROM audit_entries WHERE ${sql.join(filtersOf(query), sql` AND `)}
@@ -240,9 +301,16 @@ export class AuditQueryService {
 
   /**
    * How many entries at or below `bound` an export holds, counting at most `cap` of them (spec
-   * 0010, AC-15): a `LIMIT`ed count, never a count of the whole table.
+   * 0010, AC-15): a `LIMIT`ed count, never a count of the whole table. Refuses a viewer without
+   * `audit.export` (`AuditReadForbidden`).
    */
-  async exportSize(query: AuditExportQuery, bound: AuditKey, cap: number): Promise<number> {
+  async exportSize(
+    query: AuditExportQuery,
+    viewer: Pick<Access, 'has'>,
+    bound: AuditKey,
+    cap: number,
+  ): Promise<number> {
+    if (!canExportAudit(viewer)) throw new AuditReadForbidden();
     const filters = [...filtersOf(query), atOrBelow(bound)];
     const { rows } = await this.connection.db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM (
@@ -255,15 +323,20 @@ export class AuditQueryService {
    * The export's entries at or below `bound`, newest first, one keyset batch of `batch` rows at
    * a time and `max` rows in all, with the instant in the install time zone (`local_at`) and
    * actor names (spec 0010, AC-15). The caller closes the generator (a `for await` that stops
-   * early does) when its reader goes away.
+   * early does) when its reader goes away. Refuses a viewer without `audit.export`
+   * (`AuditReadForbidden`, on the first read) and leaves cost fields out of each row's `before`
+   * and `after` for one without `cost.view` (`auditDiffFor`).
    */
   async *exportBatches(
     query: AuditExportQuery,
+    viewer: Pick<Access, 'has'>,
     timezone: string,
     bound: AuditKey,
     batch: number,
     max: number,
   ): AsyncGenerator<{ row: EntryRow; localAt: string; actorName: string | null }[]> {
+    if (!canExportAudit(viewer)) throw new AuditReadForbidden();
+    const showCost = viewer.has('cost.view');
     const filters = filtersOf(query);
     let after: AuditKey | null = null;
     let left = max;
@@ -282,7 +355,11 @@ export class AuditQueryService {
         rows.flatMap((row) => (row.actor_user_id ? [row.actor_user_id] : [])),
       );
       yield rows.map((row) => ({
-        row,
+        row: {
+          ...row,
+          before: auditDiffFor(row.before, showCost),
+          after: auditDiffFor(row.after, showCost),
+        },
         localAt: row.local_at,
         actorName: row.actor_user_id ? (names.get(row.actor_user_id) ?? null) : null,
       }));
@@ -332,28 +409,14 @@ export class AuditQueryService {
     const names = await this.staff.namesByIds(
       rows.flatMap((row) => (row.actor_user_id ? [row.actor_user_id] : [])),
     );
-    return rows.map((row): AuditEntryView => ({
-      id: row.id,
-      recordedAt: row.recorded_at,
-      operatingDay: row.operating_day,
-      correlationId: row.correlation_id,
-      actor: {
-        kind: row.actor_kind,
-        userId: row.actor_user_id,
-        ref: row.actor_ref,
-        hat: row.actor_hat,
-        jobId: row.job_id,
-      },
-      actorName: row.actor_user_id ? (names.get(row.actor_user_id) ?? null) : null,
-      action: row.action,
-      record: { type: row.record_type, id: row.record_id, label: row.record_label },
-      before: row.before,
-      after: row.after,
-      personalFields: row.personal_fields,
-      reason: row.reason,
-      undone: undone.has(row.id),
-      canUndo: mayUndo && !undone.has(row.id) && isUndoableEntry(row.action, row.undo_action),
-    }));
+    return rows.map((row) =>
+      entryViewOf(
+        row,
+        row.actor_user_id ? (names.get(row.actor_user_id) ?? null) : null,
+        undone.has(row.id),
+        mayUndo && !undone.has(row.id) && isUndoableEntry(row.action, row.undo_action),
+      ),
+    );
   }
 
   /** The ids among `ids` that a later entry undoes (spec 0010, State). */

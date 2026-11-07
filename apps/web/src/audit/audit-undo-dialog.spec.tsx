@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/shared/render-with-query';
-import { AuditUndoError } from './audit-api';
 import { AuditEntryDialog } from './audit-entry-dialog';
 import { AuditEntriesTable } from './audit-entries-table';
 
@@ -143,7 +142,8 @@ describe('the undo dialog (AC-14, AC-18)', () => {
     await waitFor(() => expect(notice).toHaveFocus());
     expect(screen.queryByRole('button', { name: 'Undo this action' })).toBeNull();
     expect(screen.getByText('Undone')).toBeVisible();
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['audit'] }));
+    // Every query, so the owning module's screens refresh too (M4R6): no filter at all.
+    expect(spy).toHaveBeenCalledWith();
   });
 
   it('gives focus back to the Undo button on Cancel and on Escape', async () => {
@@ -172,7 +172,7 @@ describe('the undo dialog (AC-14, AC-18)', () => {
   ];
   it.each(MESSAGES)('shows %s from its code', async (code, status, message) => {
     open(entry());
-    api.undoAuditEntry.mockRejectedValue(new AuditUndoError(status, code, null));
+    api.undoAuditEntry.mockRejectedValue(new ApiError(status, { code }));
     await userEvent.click(await screen.findByRole('button', { name: 'Undo this action' }));
     const confirm = await screen.findByRole('dialog', { name: /Undo/ });
     await userEvent.type(within(confirm).getByLabelText(/Reason/), 'Because');
@@ -183,7 +183,7 @@ describe('the undo dialog (AC-14, AC-18)', () => {
   it('shows UNDO_NOT_POSSIBLE with the owner code', async () => {
     open(entry());
     api.undoAuditEntry.mockRejectedValue(
-      new AuditUndoError(409, 'UNDO_NOT_POSSIBLE', 'MERGE_NOT_LATEST'),
+      new ApiError(409, { code: 'UNDO_NOT_POSSIBLE', undoCode: 'MERGE_NOT_LATEST' }),
     );
     await userEvent.click(await screen.findByRole('button', { name: 'Undo this action' }));
     const confirm = await screen.findByRole('dialog', { name: /Undo/ });
@@ -193,6 +193,51 @@ describe('the undo dialog (AC-14, AC-18)', () => {
       'A later change got in the way, so this cannot be undone. Nothing was changed.',
     );
     expect(within(confirm).getByRole('alert')).toHaveTextContent('Reference: MERGE_NOT_LATEST');
+  });
+
+  it.each(['ALREADY_UNDONE', 'NOT_UNDOABLE', 'ENTRY_NOT_FOUND'])(
+    'after the final code %s turns the button off and refreshes the audit queries (M4R5, M4R10)',
+    async (code) => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const spy = vi.spyOn(client, 'invalidateQueries');
+      api.getAuditEntry.mockResolvedValue({ ...entry(), changes: [] });
+      api.undoAuditEntry.mockRejectedValue(new ApiError(409, { code }));
+      render(
+        <QueryClientProvider client={client}>
+          <AuditEntryDialog entry={entry()} onClose={vi.fn()} />
+        </QueryClientProvider>,
+      );
+      await userEvent.click(await screen.findByRole('button', { name: 'Undo this action' }));
+      const confirm = await screen.findByRole('dialog', { name: /Undo/ });
+      await userEvent.type(within(confirm).getByLabelText(/Reason/), 'Because');
+      await userEvent.click(within(confirm).getByRole('button', { name: 'Undo' }));
+      await within(confirm).findByRole('alert');
+      expect(within(confirm).getByRole('button', { name: 'Undo' })).toBeDisabled();
+      const call = spy.mock.calls.find(([filters]) => filters?.predicate);
+      expect(call?.[0]?.queryKey).toEqual(['audit']);
+      const predicate = call?.[0]?.predicate as unknown as (query: {
+        queryKey: unknown[];
+      }) => boolean;
+      expect(predicate({ queryKey: ['audit', 'list', {}] })).toBe(true);
+      expect(predicate({ queryKey: ['audit', 'record', 'sku', 'x'] })).toBe(true);
+      expect(predicate({ queryKey: ['audit', 'people'] })).toBe(false);
+    },
+  );
+
+  it('shows a server REASON code under the field and moves focus there (M4R10)', async () => {
+    open(entry());
+    api.undoAuditEntry.mockRejectedValue(new ApiError(422, { code: 'REASON_TOO_LONG' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo this action' }));
+    const confirm = await screen.findByRole('dialog', { name: /Undo/ });
+    const reason = within(confirm).getByLabelText(/Reason/);
+    await userEvent.type(reason, 'Because');
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Undo' }));
+    const message = await within(confirm).findByText('The reason is more than 500 characters.');
+    expect(message).toHaveAttribute('id', 'undo-reason-error');
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(reason).toHaveFocus());
+    expect(within(confirm).queryByRole('alert')).toBeNull();
+    expect(within(confirm).getByRole('button', { name: 'Undo' })).toBeEnabled();
   });
 
   it('shows a network failure as the generic message', async () => {

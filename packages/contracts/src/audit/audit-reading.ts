@@ -132,9 +132,11 @@ export const AuditExportReason = z.string().trim().min(1).max(500);
 export type AuditExportReason = z.infer<typeof AuditExportReason>;
 
 /**
- * `GET /api/audit/entries/export` (spec 0010, AC-15): the list's filter (`AuditEntryFilter`,
- * review M3R11) without paging, with `dayFrom` and `dayTo` required and covering at most 366
- * days, both ends included (`auditExportDayCount`). The optional reason travels in
+ * `POST /api/audit/entries/export` (spec 0010, AC-15; a POST since security review AS28, because
+ * the export writes `audit.exported`, and a POST passes the Origin check a cross site link cannot):
+ * the query string carries the list's filter (`AuditEntryFilter`, review M3R11) without paging,
+ * with `dayFrom` and `dayTo` required and covering at most 366 days, both ends included
+ * (`auditExportDayCount`). There is no body. The optional reason travels in
  * `AUDIT_REASON_HEADER`, never here. A bad query answers 400 `INVALID_FILTER`.
  */
 export const AuditExportQuery = AuditEntryFilter.extend({

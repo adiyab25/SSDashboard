@@ -132,12 +132,17 @@ test.describe('who may use the audit api, and the Undo control', () => {
         '/api/audit/entries',
         `/api/audit/entries/${id}`,
         `/api/audit/records/sku/${id}/entries`,
-        '/api/audit/entries/export?dayFrom=2026-01-01&dayTo=2026-01-02',
       ]) {
         const response = await page.request.get(path);
         expect(response.status(), path).toBe(403);
         expect(await response.json(), path).toMatchObject({ code: 'FORBIDDEN' });
       }
+      const exported = await page.request.post(
+        '/api/audit/entries/export?dayFrom=2026-01-01&dayTo=2026-01-02',
+        { headers: { origin: new URL(baseURL ?? '').origin } },
+      );
+      expect(exported.status(), 'export').toBe(403);
+      expect(await exported.json()).toMatchObject({ code: 'FORBIDDEN' });
       const undo = await page.request.post(`/api/audit/entries/${id}/undo`, {
         data: { reason: 'x' },
         headers: { origin: new URL(baseURL ?? '').origin },

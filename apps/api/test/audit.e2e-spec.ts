@@ -471,20 +471,33 @@ describe('audit trail api (spec 0010)', { timeout: 240_000 }, () => {
 
   it('refuses the detail, the history, and the export to a non manager (AC-13)', async () => {
     const id = randomUUID();
-    for (const path of [
-      `/audit/entries/${id}`,
-      `/audit/records/sku/${id}/entries`,
-      '/audit/entries/export?dayFrom=2026-01-01&dayTo=2026-01-02',
-    ]) {
-      const response = await call('GET', path, { cookie: staff });
+    for (const [method, path] of [
+      ['GET', `/audit/entries/${id}`],
+      ['GET', `/audit/records/sku/${id}/entries`],
+      ['POST', '/audit/entries/export?dayFrom=2026-01-01&dayTo=2026-01-02'],
+    ] as const) {
+      const response = await call(method, path, { cookie: staff });
       expect(response.status, path).toBe(403);
       expect(response.body, path).toMatchObject({ code: 'FORBIDDEN' });
     }
   });
 
-  /** A raw export call: status, headers, and the body's bytes. */
+  /** How many `audit.exported` entries the trail holds, read as the owner. */
+  const exportCount = async () =>
+    (
+      await owner.pool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM audit_entries WHERE action = 'audit.exported'",
+      )
+    ).rows[0]?.n;
+
+  /**
+   * A raw export call, `POST /api/audit/entries/export` with the filter in the query string, no
+   * body, and the staff Origin unless `headers` overrides it: status, headers, and the body's
+   * bytes.
+   */
   async function exportFile(query: string, cookie = admin, headers: Record<string, string> = {}) {
     const response = await fetch(`${base}/api/audit/entries/export${query}`, {
+      method: 'POST',
       headers: { cookie, origin: base, ...headers },
     });
     return {
@@ -551,6 +564,37 @@ describe('audit trail api (spec 0010)', { timeout: 240_000 }, () => {
     expect(wholeLines.map((line) => line.split(',').at(-1))).not.toContain(`"${own?.id}"`);
   });
 
+  // Security review AS28: the export writes `audit.exported` under the caller's name, so a link or
+  // a redirect from another site must never run it. It is a POST, which the session guard's
+  // Origin check covers; a GET to its path is the entry detail, which finds no entry `export`.
+  it('runs the export only as a same origin POST: a GET or a cross site POST writes no entry (AS28)', async () => {
+    const day = '2026-01-01';
+    const query = `?dayFrom=${day}&dayTo=${day}`;
+    const before = await exportCount();
+
+    const viaGet = await fetch(`${base}/api/audit/entries/export${query}`, {
+      headers: { cookie: admin },
+    });
+    expect([404, 405]).toContain(viaGet.status);
+    expect(await viaGet.json()).toMatchObject({ code: 'ENTRY_NOT_FOUND' });
+
+    const crossSite = await exportFile(query, admin, { origin: 'https://evil.example' });
+    expect(crossSite.status).toBe(403);
+    expect(JSON.parse(crossSite.bytes.toString('utf8'))).toMatchObject({
+      code: 'FORBIDDEN_ORIGIN',
+    });
+    const noOrigin = await fetch(`${base}/api/audit/entries/export${query}`, {
+      method: 'POST',
+      headers: { cookie: admin },
+    });
+    expect(noOrigin.status).toBe(403);
+    expect(await exportCount()).toBe(before);
+
+    // The same request from our own page goes through and is recorded once.
+    expect((await exportFile(query)).status).toBe(200);
+    expect(await exportCount()).toBe((before ?? 0) + 1);
+  });
+
   it('refuses an export without a day range, over 366 days, or with a query reason (AC-15)', async () => {
     for (const query of [
       '',
@@ -603,13 +647,6 @@ describe('audit trail api (spec 0010)', { timeout: 240_000 }, () => {
     }
   }
 
-  const exportCount = async () =>
-    (
-      await owner.pool.query<{ n: number }>(
-        "SELECT count(*)::int AS n FROM audit_entries WHERE action = 'audit.exported'",
-      )
-    ).rows[0]?.n;
-
   // Last in this suite: it plants 200,000 entries on one past day, then one more.
   it('allows exactly 200,000 rows, survives a reader that goes away, then answers 413 past it (AC-15)', async () => {
     await plantBulk(200_000, 0);
@@ -620,6 +657,7 @@ describe('audit trail api (spec 0010)', { timeout: 240_000 }, () => {
     const response = await fetch(
       `${base}/api/audit/entries/export?dayFrom=2020-03-01&dayTo=2020-03-01`,
       {
+        method: 'POST',
         headers: { cookie: admin, origin: base },
         signal: controller.signal,
       },
@@ -883,7 +921,12 @@ describe('audit undo api (spec 0010, milestone 4)', { timeout: 240_000 }, () => 
   // A scratch undoable code and its derived undone code, `sku.scratch_relabelled_undone`.
   const UNDOABLE = 'sku.scratch_relabelled';
   const UNDONE = 'sku.scratch_relabelled_undone';
+  // The same fixture on a record type that keeps reason codes (security review AS13): its undo
+  // takes one of `undoReasonCodes`, never a typed note.
+  const CODED = 'customer.scratch_relabelled';
   const HANDLER = 'fixture.relabel_undo';
+  /** How often the fixture handler ran, so a case can prove it never did. */
+  let handlerCalls = 0;
   const registry = AUDIT_ACTIONS as Record<string, AuditActionDefinition>;
   let api: InProcessApi;
   let audit: AuditService;
@@ -906,25 +949,44 @@ describe('audit undo api (spec 0010, milestone 4)', { timeout: 240_000 }, () => 
       ...AUDIT_ACTIONS['sku.archived'],
       undoable: true,
       undoHandler: HANDLER,
+      undoRefusalCodes: ['FIXTURE_LATER_CHANGE'],
     };
-    api.app.get(AuditUndoRegistry).register(HANDLER, {
-      async undo(tx, { entry }) {
-        const mode = entry.undo.args.mode;
-        if (mode === 'slow') await tx.execute(sql`SELECT pg_sleep(0.3)`);
-        const before = String(entry.before?.label);
-        const after = String(entry.after?.label);
-        await tx.execute(
-          sql`UPDATE undo_fixture_labels SET label = ${before} WHERE id = ${entry.record.id}`,
-        );
-        // A later change got in the way: everything above rolls back with the undo.
-        if (mode === 'refuse') throw new UndoNotPossible('FIXTURE_LATER_CHANGE');
-        return {
-          record: { type: 'sku', id: entry.record.id },
-          before: { label: after },
-          after: { label: before },
-        };
+    registry[CODED] = {
+      ...AUDIT_ACTIONS['sku.archived'],
+      recordType: 'customer',
+      reason: 'optional',
+      reasonCodes: ['duplicate_contact'],
+      undoable: true,
+      undoHandler: HANDLER,
+      undoReasonCodes: ['wrong_match'],
+      undoRefusalCodes: ['FIXTURE_LATER_CHANGE'],
+    };
+    // Both rows copy `sku.archived`, so the handler code is inventory's (security review AS33).
+    api.app.get(AuditUndoRegistry).register(
+      HANDLER,
+      {
+        async undo(tx, { entry }) {
+          handlerCalls += 1;
+          const mode = entry.undo.args.mode;
+          if (mode === 'slow') await tx.execute(sql`SELECT pg_sleep(0.3)`);
+          const before = String(entry.before?.label);
+          const after = String(entry.after?.label);
+          await tx.execute(
+            sql`UPDATE undo_fixture_labels SET label = ${before} WHERE id = ${entry.record.id}`,
+          );
+          // A later change got in the way: everything above rolls back with the undo.
+          if (mode === 'refuse') throw new UndoNotPossible('FIXTURE_LATER_CHANGE');
+          // A code the action does not declare (security review AS31): never in the answer.
+          if (mode === 'refuse_undeclared') throw new UndoNotPossible('AHMED_MOHAMED_ALI');
+          return {
+            record: { type: entry.record.type, id: entry.record.id },
+            before: { label: after },
+            after: { label: before },
+          };
+        },
       },
-    });
+      'inventory',
+    );
     const person = await api.addPerson(['manager'], { costView: true });
     manager = { id: person.id, cookie: await api.signIn(person.email) };
     const keeper = await api.addPerson(['warehouse']);
@@ -933,11 +995,15 @@ describe('audit undo api (spec 0010, milestone 4)', { timeout: 240_000 }, () => 
 
   afterAll(async () => {
     delete registry[UNDOABLE];
+    delete registry[CODED];
     await api?.close();
   });
 
-  /** A relabelled SKU (in the fixture table) and its undoable entry. */
-  async function relabelled(mode: 'normal' | 'slow' | 'refuse' = 'normal') {
+  /** A relabelled SKU (in the fixture table, or a customer with `CODED`) and its undoable entry. */
+  async function relabelled(
+    mode: 'normal' | 'slow' | 'refuse' | 'refuse_undeclared' = 'normal',
+    action: string = UNDOABLE,
+  ) {
     const skuId = randomUUID();
     await api.owner.pool.query(
       `INSERT INTO undo_fixture_labels (id, label) VALUES ($1, 'NEW-LABEL')`,
@@ -946,8 +1012,8 @@ describe('audit undo api (spec 0010, milestone 4)', { timeout: 240_000 }, () => 
     await connection.db.transaction((tx) =>
       audit.record(tx, {
         actor: personActor(manager.id, 'manager'),
-        action: UNDOABLE as AuditActionCode,
-        record: { type: 'sku', id: skuId },
+        action: action as AuditActionCode,
+        record: { type: action === CODED ? 'customer' : 'sku', id: skuId },
         before: { label: 'OLD-LABEL' },
         after: { label: 'NEW-LABEL' },
         correlationId: audit.newCorrelationId(),
@@ -1129,5 +1195,59 @@ describe('audit undo api (spec 0010, milestone 4)', { timeout: 240_000 }, () => 
     expect(unknown.status).toBe(404);
     expect(unknown.body).toMatchObject({ code: 'ENTRY_NOT_FOUND' });
     expect((await undo('not-a-uuid')).status).toBe(404);
+  });
+  // Security review AS31: an undeclared refusal code never reaches the manager.
+  it('answers 409 UNDO_NOT_POSSIBLE without undoCode when the handler refuses with an undeclared code (AS31)', async () => {
+    const { skuId, entryId } = await relabelled('refuse_undeclared');
+
+    const reply = await undo(entryId);
+
+    expect(reply.status).toBe(409);
+    expect(reply.body).toEqual({
+      code: 'UNDO_NOT_POSSIBLE',
+      message: 'This change can no longer be undone',
+    });
+    expect(JSON.stringify(reply.body)).not.toContain('AHMED');
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'NEW-LABEL', undone: 0 });
+  });
+
+  // Review M4R2, security review AS32: the reason policy is checked before the owner runs.
+  it('answers 422 REASON_INVALID for a typed note on a coded record type before the handler runs, changing nothing (M4R2)', async () => {
+    const { skuId, entryId } = await relabelled('normal', CODED);
+    const calls = handlerCalls;
+
+    for (const reason of ['customer Ahmed asked, call 01012345678', 'duplicate_contact']) {
+      const reply = await undo(entryId, { body: { reason } });
+      expect(reply.status, reason).toBe(422);
+      expect(reply.body).toMatchObject({ code: 'REASON_INVALID' });
+    }
+    expect(handlerCalls).toBe(calls);
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'NEW-LABEL', undone: 0 });
+
+    // The listed undo reason code goes through and is kept as it is.
+    const reply = await undo(entryId, { body: { reason: 'wrong_match' } });
+    expect(reply.status).toBe(200);
+    expect(AuditEntryView.parse(reply.body)).toMatchObject({
+      action: 'customer.scratch_relabelled_undone',
+      reason: 'wrong_match',
+    });
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'OLD-LABEL', undone: 1 });
+  });
+
+  // Review M4R3: the id is matched in any letter case, and both spellings share one lock.
+  it('undoes an id sent in upper case, and lets one of two parallel undos spelled differently through (M4R3)', async () => {
+    const first = await relabelled();
+    const upper = await undo(first.entryId.toUpperCase());
+    expect(upper.status).toBe(200);
+    expect(await stateOf(first.skuId, first.entryId)).toEqual({ label: 'OLD-LABEL', undone: 1 });
+
+    const { skuId, entryId } = await relabelled('slow');
+    const replies = await Promise.all([undo(entryId.toUpperCase()), undo(entryId)]);
+
+    expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
+    expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
+      code: 'ALREADY_UNDONE',
+    });
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'OLD-LABEL', undone: 1 });
   });
 });

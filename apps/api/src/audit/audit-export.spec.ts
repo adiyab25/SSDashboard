@@ -70,8 +70,10 @@ describe('AuditExportService.prepare', () => {
       bound: BOUND,
       rows: 200_000,
       showCost: false,
+      viewer: VIEWER,
     });
-    expect(reader.exportSize).toHaveBeenCalledWith(QUERY, BOUND, AUDIT_EXPORT_MAX_ROWS + 1);
+    expect(reader.exportBound).toHaveBeenCalledWith(QUERY, VIEWER);
+    expect(reader.exportSize).toHaveBeenCalledWith(QUERY, VIEWER, BOUND, AUDIT_EXPORT_MAX_ROWS + 1);
     expect(audit.record).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -103,11 +105,19 @@ describe('AuditExportService.prepare', () => {
 describe('AuditExportService.stream', () => {
   it('reads only up to the planned key and row count', async () => {
     const { service, reader } = harness(5, 1);
-    const plan = { fileName: 'f', bound: BOUND, rows: 5, showCost: false };
+    const plan = { fileName: 'f', bound: BOUND, rows: 5, showCost: false, viewer: VIEWER };
 
     await service.stream(QUERY, plan, 'Africa/Cairo', () => Promise.resolve());
 
-    expect(reader.exportBatches).toHaveBeenCalledWith(QUERY, 'Africa/Cairo', BOUND, 1_000, 5);
+    // The batch reader gets the viewer, so it checks `audit.export` and strips cost itself (AS29).
+    expect(reader.exportBatches).toHaveBeenCalledWith(
+      QUERY,
+      VIEWER,
+      'Africa/Cairo',
+      BOUND,
+      1_000,
+      5,
+    );
   });
 
   it('stops and closes its batches when the response closes instead of draining', async () => {
@@ -117,7 +127,7 @@ describe('AuditExportService.stream', () => {
 
     const streaming = service.stream(
       QUERY,
-      { fileName: 'f', bound: BOUND, rows: 3_000, showCost: false },
+      { fileName: 'f', bound: BOUND, rows: 3_000, showCost: false, viewer: VIEWER },
       'UTC',
       write,
     );
@@ -134,7 +144,7 @@ describe('AuditExportService.stream', () => {
     const sink = responseSink(live as unknown as ExportResponse);
     const running = second.service.stream(
       QUERY,
-      { fileName: 'f', bound: BOUND, rows: 3_000, showCost: false },
+      { fileName: 'f', bound: BOUND, rows: 3_000, showCost: false, viewer: VIEWER },
       'UTC',
       sink,
     );
@@ -210,7 +220,8 @@ describe('AuditExportService cost fields', () => {
       yield await Promise.resolve([{ row: costly, localAt: 't', actorName: null }]);
     });
     const chunks: string[] = [];
-    await service.stream(QUERY, { fileName: 'f', bound: BOUND, rows: 1, showCost }, 'UTC', (c) => {
+    const plan = { fileName: 'f', bound: BOUND, rows: 1, showCost, viewer: VIEWER };
+    await service.stream(QUERY, plan, 'UTC', (c) => {
       chunks.push(c);
       return Promise.resolve();
     });

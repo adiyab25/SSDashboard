@@ -661,3 +661,71 @@ describe('audit imports no owning module (spec 0010, AC-9, AC-14)', () => {
     ]);
   });
 });
+
+// Spec 0010 AC-14, review M4R4 and security review AS33: an undone entry claims its target for
+// good (the unique index then blocks the real undo), so only the undo writes one. The writer is a
+// provider `AuditUndoModule` does not export, and no file but the undo service, its module, and
+// the audit module's own tests may name it. Extensions are held to the same wall.
+
+/** The files that may name the undone entry writer, each with why. */
+const UNDONE_WRITER_USERS: Readonly<Record<string, string>> = {
+  'apps/api/src/audit/audit-undone.writer.ts': 'the writer itself',
+  'apps/api/src/audit/audit-undo.service.ts': 'the undo, its only caller',
+  'apps/api/src/audit/audit-undo.module.ts': 'provides it, exports nothing',
+};
+
+/** What names the writer: its class, its file, or the method the exported service once had. */
+const UNDONE_WRITER_NAMES = /\bAuditUndoneWriter\b|audit-undone\.writer|\brecordUndone\b/;
+
+/** Every file outside the allowed list (and the audit module's own specs) that names the writer. */
+function undoneWriterBreaches(files: readonly SourceFile[]): string[] {
+  return files
+    .filter(
+      (file) =>
+        !Object.hasOwn(UNDONE_WRITER_USERS, file.path) &&
+        !/^apps\/api\/src\/audit\/[^/]+\.spec\.ts$/.test(file.path) &&
+        UNDONE_WRITER_NAMES.test(file.text),
+    )
+    .map((file) => file.path);
+}
+
+describe('only the undo writes an undone entry (spec 0010 AC-14, AS33)', () => {
+  const files = [...sourceFiles(API_SRC), ...sourceFiles(EXTENSIONS)]
+    .map((path) => ({ path: toRepoPath(path), text: readFileSync(path, 'utf8') }))
+    .filter((file) => file.path !== 'apps/api/src/module-boundary.spec.ts');
+
+  it('lists only files that exist', () => {
+    const paths = new Set(files.map((file) => file.path));
+
+    expect(Object.keys(UNDONE_WRITER_USERS).filter((path) => !paths.has(path))).toEqual([]);
+  });
+
+  it('finds the writer named nowhere but the undo service, its module, and the audit specs', () => {
+    expect(undoneWriterBreaches(files)).toEqual([]);
+  });
+
+  it('reports a planted owner, extension, or other audit file that names it', () => {
+    const planted: SourceFile[] = [
+      {
+        path: 'apps/api/src/inventory/shortcut.ts',
+        text: "import { AuditUndoneWriter } from '../audit/audit-undone.writer.js';",
+      },
+      { path: 'extensions/acme/claim.ts', text: 'await audit.recordUndone(tx, id, entry);' },
+      {
+        path: 'apps/api/src/audit/audit-entries.controller.ts',
+        text: "import type { AuditUndoneEntryInput } from './audit-undone.writer.js';",
+      },
+      {
+        path: 'apps/api/src/audit/audit-undo.service.ts',
+        text: "import { AuditUndoneWriter } from './audit-undone.writer.js';",
+      },
+      { path: 'apps/api/src/audit/audit-undo.spec.ts', text: 'AuditUndoneWriter' },
+    ];
+
+    expect(undoneWriterBreaches(planted)).toEqual([
+      'apps/api/src/inventory/shortcut.ts',
+      'extensions/acme/claim.ts',
+      'apps/api/src/audit/audit-entries.controller.ts',
+    ]);
+  });
+});
