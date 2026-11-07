@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import type { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { inventoryKeys, voidReceipt } from './inventory-api';
-import { useReturnFocus } from './use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 
 type VoidInput = z.input<typeof VoidStockReceiptRequest>;
 type VoidOutput = z.output<typeof VoidStockReceiptRequest>;

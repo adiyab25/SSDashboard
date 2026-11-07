@@ -2,6 +2,7 @@
 
 import type { AuditEntryView, AuditFieldChange } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
+import { Badge } from '@ssdashboard/ui/components/badge';
 import { Button } from '@ssdashboard/ui/components/button';
 import {
   Dialog,
@@ -23,11 +24,12 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
-import { useReturnFocus } from '@/inventory/use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 import { auditKeys, getAuditEntry } from './audit-api';
+import { AuditUndoDialog } from './audit-undo-dialog';
 import { RecordHistoryPanel } from './record-history-panel';
 import { useEntryText } from './use-entry-text';
 
@@ -41,29 +43,53 @@ function valueText(value: unknown): string {
  * one row each (field name, before, after) so a screen reader reads a value with its field. A
  * personal field shows "Hidden, personal data" and never the stored marker. "Show entries of
  * the same action" links to the list filtered by the entry's correlation id, and "Show the history
- * of this record" opens the record history panel. Read only; focus goes back to the row's button.
+ * of this record" opens the record history panel. A diff row says "none" for a side the field
+ * does not have (`added`, `removed`), "empty" for a stored null, and "hidden" for personal data.
+ * The Undo button shows only when the api says the viewer may undo the entry (`canUndo`) and opens
+ * the one step confirm dialog; once undone the entry shows an "Undone" marker and focus moves to
+ * it. Never undoes anything itself; focus goes back to the row's button on close, or to
+ * `onSameAction`'s target after the same action link.
  */
 export function AuditEntryDialog({
   entry,
   onClose,
+  onSameAction,
 }: {
   entry: AuditEntryView;
   onClose: () => void;
+  /** Moves focus to the results once the dialog has closed through "same action" (M3R17). */
+  onSameAction?: () => void;
 }) {
   const { t } = useTranslation();
   const format = useFormat();
   const text = useEntryText();
   const returnFocus = useReturnFocus();
   const [history, setHistory] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const [justUndone, setJustUndone] = useState(false);
+  const sameAction = useRef(false);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   const detail = useQuery({
     queryKey: auditKeys.entry(entry.id),
     queryFn: ({ signal }) => getAuditEntry(entry.id, signal),
   });
+  // The fresh answer wins over the row the list handed in: the row may be stale after an undo.
+  const current = detail.data ?? entry;
+  const undone = current.undone || justUndone;
+  const canUndo = current.canUndo && !justUndone;
+
+  useEffect(() => {
+    if (justUndone) noticeRef.current?.focus();
+  }, [justUndone]);
 
   function cell(change: AuditFieldChange, side: 'before' | 'after') {
     if (change.personal) return t('audit.detail.hidden');
+    const absent = change.kind === (side === 'before' ? 'added' : 'removed');
     const value = change[side];
-    return value === null || value === undefined ? (
+    if (!absent && value === null) {
+      return <span className="text-muted-foreground">{t('audit.detail.empty')}</span>;
+    }
+    return absent || value === undefined ? (
       <span className="text-muted-foreground">{t('audit.detail.none')}</span>
     ) : (
       <span dir="auto" className="break-words">
@@ -76,13 +102,34 @@ export function AuditEntryDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         closeLabel={t('audit.detail.close')}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={(event) => {
+          if (sameAction.current && onSameAction) {
+            event.preventDefault();
+            onSameAction();
+          } else {
+            returnFocus(event);
+          }
+        }}
         className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
       >
         <DialogHeader>
-          <DialogTitle>{text.actionName(entry)}</DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {text.actionName(entry)}
+            {undone && <Badge variant="outline">{t('audit.undo.undone')}</Badge>}
+          </DialogTitle>
           <DialogDescription>{t('audit.detail.description')}</DialogDescription>
         </DialogHeader>
+
+        {undone && (
+          <p
+            ref={noticeRef}
+            role="status"
+            tabIndex={-1}
+            className="rounded-lg border bg-muted px-3 py-2 text-sm outline-none focus-ring"
+          >
+            {t('audit.undo.undoneNotice')}
+          </p>
+        )}
 
         <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
           <dt className="font-medium">{t('audit.columns.time')}</dt>
@@ -171,7 +218,10 @@ export function AuditEntryDialog({
           <Button asChild variant="outline">
             <Link
               href={`/audit?${new URLSearchParams({ correlationId: entry.correlationId })}`}
-              onClick={onClose}
+              onClick={() => {
+                sameAction.current = true;
+                onClose();
+              }}
             >
               {t('audit.detail.sameAction')}
             </Link>
@@ -184,6 +234,11 @@ export function AuditEntryDialog({
           >
             {history ? t('audit.detail.hideHistory') : t('audit.detail.showHistory')}
           </Button>
+          {canUndo && (
+            <Button variant="destructive" onClick={() => setUndoing(true)}>
+              {t('audit.undo.button')}
+            </Button>
+          )}
         </div>
         <div id="audit-entry-history">
           {history && (
@@ -200,6 +255,17 @@ export function AuditEntryDialog({
             {t('audit.detail.close')}
           </Button>
         </DialogFooter>
+        {undoing && (
+          <AuditUndoDialog
+            entry={entry}
+            onClose={() => setUndoing(false)}
+            onUndone={() => {
+              setJustUndone(true);
+              setUndoing(false);
+            }}
+            onDoneFocus={() => noticeRef.current?.focus()}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

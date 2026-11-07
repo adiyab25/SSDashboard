@@ -1,12 +1,14 @@
 import {
   AuditEntryDetail,
+  AuditEntryView,
   AuditEntryListResponse,
   AUDIT_PAGE_DEFAULT,
   type AuditEntryListQuery,
   type AuditExportQuery,
   type StaffRow,
 } from '@ssdashboard/contracts';
-import { apiRequest } from '@/api/client';
+import { ApiError, apiRequest } from '@/api/client';
+import { apiFetch } from '@/auth/api-fetch';
 import { listStaff } from '@/staff/staff-api';
 
 /**
@@ -70,21 +72,84 @@ export function listRecordHistory(
 /** Pages of the staff list the person filter reads, at most (50 a page: 500 people). */
 const PEOPLE_PAGES_MAX = 10;
 
+/** The people the person filter offers, and whether the staff list had more than it read. */
+export interface PeopleList {
+  people: StaffRow[];
+  /** True when the page limit was reached while the staff list still had a next page. */
+  truncated: boolean;
+}
+
 /**
  * The people the person filter offers: the staff list the Staff page reads (`listStaff`), page by
- * page. Throws when a page cannot be read, so the query shows its error.
+ * page, at most `PEOPLE_PAGES_MAX` pages. `truncated` tells the filter bar to say the list is cut
+ * (review M3R20) instead of silently dropping people. Throws when a page cannot be read, so the
+ * query shows its error.
  */
-export async function listPeople(): Promise<StaffRow[]> {
+export async function listPeople(): Promise<PeopleList> {
   const people: StaffRow[] = [];
   let cursor: string | undefined;
+  let truncated = false;
   for (let page = 0; page < PEOPLE_PAGES_MAX; page += 1) {
     const result = await listStaff({ q: '', status: '', hat: '' }, cursor);
     if (!result.ok) throw new Error(`The staff list answered ${result.status} ${result.code}`);
     people.push(...result.data.rows);
     if (!result.data.nextCursor) break;
     cursor = result.data.nextCursor;
+    truncated = page === PEOPLE_PAGES_MAX - 1;
   }
-  return people;
+  return { people, truncated };
+}
+
+/**
+ * A refused undo: the api's stable `code`, plus `undoCode` when the code is `UNDO_NOT_POSSIBLE`
+ * (the owning module's own code, such as `MERGE_NOT_LATEST`). `apiRequest` keeps only `code`, so
+ * the undo call reads its own answer.
+ */
+export class AuditUndoError extends ApiError {
+  /** Carries the status, the code, and the owner's code when the api sent one. */
+  constructor(
+    status: number,
+    code: string,
+    readonly undoCode: string | null,
+  ) {
+    super(status, { code });
+    this.name = 'AuditUndoError';
+  }
+}
+
+/** One string field of a JSON error body, or undefined. */
+function bodyField(json: unknown, name: string): string | undefined {
+  if (typeof json !== 'object' || json === null || !(name in json)) return undefined;
+  const value = (json as Record<string, unknown>)[name];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Undoes one entry (`POST /api/audit/entries/:id/undo`, needs `audit.undo`): the reason is typed
+ * (or one of the action's reason codes), and the answer is the new undone entry. Throws
+ * `AuditUndoError` with the api's code.
+ */
+export async function undoAuditEntry(id: string, reason: string): Promise<AuditEntryView> {
+  let response: Response;
+  try {
+    response = await apiFetch(`/api/audit/entries/${encodeURIComponent(id)}/undo`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+  } catch {
+    throw new AuditUndoError(0, 'generic', null);
+  }
+  const json: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new AuditUndoError(
+      response.status,
+      bodyField(json, 'code') ?? 'generic',
+      bodyField(json, 'undoCode') ?? null,
+    );
+  }
+  return AuditEntryView.parse(json);
 }
 
 /**

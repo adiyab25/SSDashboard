@@ -276,6 +276,7 @@ test.describe('as a manager', () => {
     await expect(page).toHaveURL(new RegExp(`correlationId=${mine.entry.correlationId}`));
     await expect(dataRows(page)).toHaveCount(1);
     await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Audit trail' })).toBeFocused();
   });
 
   test('a personal field is shown as hidden, never its marker (AC-12)', async ({
@@ -313,6 +314,126 @@ test.describe('as a manager', () => {
     await expect(diff.getByRole('row', { name: /phone/ })).toContainText('Hidden, personal data');
     await expect(diff.getByText('[REDACTED]')).toHaveCount(0);
     await expect(diff.getByRole('row', { name: /status/ })).toContainText('voided');
+  });
+
+  // Undo (spec 0010, AC-14, AC-18). No action is undoable in the real registry yet, so the detail
+  // answer (`canUndo: true`) and the undo answers are stubbed with page.route; the row itself is a
+  // real voided receipt.
+  for (const { dir, name } of LANGUAGES) {
+    test(`undoes an entry by keyboard alone with a typed reason, axe clean in ${name} (AC-14, AC-18)`, async ({
+      page,
+      request,
+      viewport,
+    }) => {
+      const tag = randomUUID().slice(0, 6).toUpperCase();
+      const mine = await voidedReceipt(request, tag, `Undo ${tag}`);
+      let undone = false;
+      let sentReason: unknown;
+      await page.route(`**/api/audit/entries/${mine.entry.id}`, (route) =>
+        route.fulfill({
+          json: { ...mine.entry, undone, canUndo: !undone, changes: [] },
+        }),
+      );
+      await page.route(`**/api/audit/entries/${mine.entry.id}/undo`, (route) => {
+        sentReason = (route.request().postDataJSON() as { reason: string }).reason;
+        undone = true;
+        return route.fulfill({
+          json: { ...mine.entry, id: randomUUID(), action: `${mine.entry.action}_undone` },
+        });
+      });
+      await useBrowserState(page, { dir });
+      await page.goto(`/audit?recordType=stock_receipt&recordId=${mine.receipt.id}`);
+      const details = page.getByRole('button', { name: new RegExp(mine.receipt.number) });
+      await details.focus();
+      await page.keyboard.press('Enter');
+      const detail = page.getByRole('dialog', {
+        name: textFor(dir, 'audit.actions.stockReceiptVoided'),
+      });
+      const undo = detail.getByRole('button', { name: textFor(dir, 'audit.undo.button') });
+      await expect(undo).toBeVisible();
+      await undo.focus();
+      await page.keyboard.press('Enter');
+
+      const field = page.getByRole('textbox', {
+        name: new RegExp(textFor(dir, 'audit.undo.reason')),
+      });
+      await expect(field).toBeFocused();
+      if ((viewport?.width ?? 0) >= 1000) await expectNoAxeViolations(page);
+
+      // A blank reason is refused beside the field, with no request: Tab to Undo, Enter.
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Enter');
+      await expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(sentReason).toBeUndefined();
+
+      await field.focus();
+      await page.keyboard.type(`  Wrong receipt ${tag}  `);
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Enter');
+      await expect.poll(() => sentReason).toBe(`Wrong receipt ${tag}`);
+      await expect(detail.getByText(textFor(dir, 'audit.undo.undoneNotice'))).toBeFocused();
+      await expect(undo).toHaveCount(0);
+      await expect(
+        detail.getByText(textFor(dir, 'audit.undo.undone'), { exact: true }),
+      ).toBeVisible();
+    });
+  }
+
+  test('Cancel and Escape give focus back to Undo, and an owner refusal shows its code (AC-14)', async ({
+    page,
+    request,
+  }) => {
+    const tag = randomUUID().slice(0, 6).toUpperCase();
+    const mine = await voidedReceipt(request, tag, `Refuse ${tag}`);
+    await page.route(`**/api/audit/entries/${mine.entry.id}`, (route) =>
+      route.fulfill({ json: { ...mine.entry, canUndo: true, changes: [] } }),
+    );
+    await page.route(`**/api/audit/entries/${mine.entry.id}/undo`, (route) =>
+      route.fulfill({
+        status: 409,
+        json: { code: 'UNDO_NOT_POSSIBLE', undoCode: 'MERGE_NOT_LATEST' },
+      }),
+    );
+    await page.goto(`/audit?recordType=stock_receipt&recordId=${mine.receipt.id}`);
+    await page.getByRole('button', { name: new RegExp(mine.receipt.number) }).click();
+    const undo = page.getByRole('button', { name: 'Undo this action' });
+    await undo.click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(undo).toBeFocused();
+
+    await undo.click();
+    await page.getByRole('textbox', { name: /Reason/ }).fill('Because');
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('A later change got in the way');
+    await expect(page.getByRole('alert')).toContainText('MERGE_NOT_LATEST');
+    await page.keyboard.press('Escape');
+    await expect(undo).toBeFocused();
+  });
+
+  test('a stored null reads Empty and a missing side reads None in the diff (M3R12)', async ({
+    page,
+    request,
+  }) => {
+    const tag = randomUUID().slice(0, 6).toUpperCase();
+    const mine = await voidedReceipt(request, tag, `Kinds ${tag}`);
+    await page.route(`**/api/audit/entries/${mine.entry.id}`, (route) =>
+      route.fulfill({
+        json: {
+          ...mine.entry,
+          changes: [
+            { field: 'created', kind: 'added', before: null, after: 'yes', personal: false },
+            { field: 'note', kind: 'changed', before: null, after: 'new', personal: false },
+          ],
+        },
+      }),
+    );
+    await page.goto(`/audit?recordType=stock_receipt&recordId=${mine.receipt.id}`);
+    await page.getByRole('button', { name: /^Details of/ }).click();
+    const diff = page.getByRole('dialog').getByRole('table', { name: 'Changed fields' });
+    await expect(diff.getByRole('row', { name: /created/ })).toContainText('None');
+    await expect(diff.getByRole('row', { name: /note/ })).toContainText('Empty');
   });
 
   test('Load more works by keyboard alone and keeps focus (AC-18)', async ({ page }) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import type { AuditEntryView } from '@ssdashboard/contracts';
+import { auditUndoneParentOf, type AuditEntryView } from '@ssdashboard/contracts';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,11 @@ export interface EntryText {
   action: (entry: AuditEntryView) => ReactNode;
   /** The action label as plain text, for an accessible name. */
   actionName: (entry: AuditEntryView) => string;
+  /**
+   * The label of an action code as plain text (an undone code names the action it undid), for a
+   * picker option, or the raw code when the registry does not know it.
+   */
+  actionCodeName: (code: string) => string;
   /** The record type label with the record's label under it. */
   record: (entry: AuditEntryView) => ReactNode;
 }
@@ -25,6 +30,15 @@ export interface EntryText {
  */
 export function useEntryText(): EntryText {
   const { t } = useTranslation();
+
+  function codeName(code: string): string {
+    const key = actionLabelKey(code);
+    if (!key) return code;
+    const parent = auditUndoneParentOf(code)?.code;
+    const parentKey = parent ? actionLabelKey(parent) : undefined;
+    return parentKey ? t('audit.undo.named', { undone: t(key), action: t(parentKey) }) : t(key);
+  }
+
   return {
     actor(entry) {
       if (entry.actorName) return entry.actorName;
@@ -43,12 +57,22 @@ export function useEntryText(): EntryText {
     },
     action(entry) {
       const key = actionLabelKey(entry.action);
-      return key ? t(key) : <LtrText>{entry.action}</LtrText>;
+      if (!key) return <LtrText>{entry.action}</LtrText>;
+      const parent = auditUndoneParentOf(entry.action)?.code;
+      const parentKey = parent ? actionLabelKey(parent) : undefined;
+      return parentKey ? (
+        <span className="flex flex-col">
+          <span>{t(key)}</span>
+          <span className="text-xs font-normal text-muted-foreground">{t(parentKey)}</span>
+        </span>
+      ) : (
+        t(key)
+      );
     },
     actionName(entry) {
-      const key = actionLabelKey(entry.action);
-      return key ? t(key) : entry.action;
+      return codeName(entry.action);
     },
+    actionCodeName: codeName,
     record(entry) {
       const key = recordTypeLabelKey(entry.record.type);
       return (

@@ -6,7 +6,7 @@ import { Button } from '@ssdashboard/ui/components/button';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NoAccessState } from '@/access/no-access-state';
 import { useAccess } from '@/access/use-access';
@@ -38,6 +38,7 @@ export function AuditView({ enabled }: { enabled: boolean }) {
   const filter = useMemo(() => filterFromParams(new URLSearchParams(searchText)), [searchText]);
   const problem = filterProblem(filter);
   const [open, setOpen] = useState<AuditEntryView | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
 
   const query = useInfiniteQuery({
     queryKey: auditKeys.list(filter),
@@ -59,7 +60,9 @@ export function AuditView({ enabled }: { enabled: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold">{t('audit.title')}</h1>
+        <h1 ref={titleRef} tabIndex={-1} className="text-xl font-semibold outline-none focus-ring">
+          {t('audit.title')}
+        </h1>
         <p className="text-sm text-muted-foreground">{t('audit.description')}</p>
       </div>
 
@@ -111,7 +114,13 @@ export function AuditView({ enabled }: { enabled: boolean }) {
 
       {enabled && access.can('audit.export') && <AuditExportControl filter={filter} />}
 
-      {open && <AuditEntryDialog entry={open} onClose={() => setOpen(null)} />}
+      {open && (
+        <AuditEntryDialog
+          entry={open}
+          onClose={() => setOpen(null)}
+          onSameAction={() => titleRef.current?.focus()}
+        />
+      )}
     </div>
   );
 }

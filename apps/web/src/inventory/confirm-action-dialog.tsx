@@ -12,7 +12,7 @@ import {
 } from '@ssdashboard/ui/components/dialog';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useReturnFocus } from './use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 
 interface Props {
   title: string;

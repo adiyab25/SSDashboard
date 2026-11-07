@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ReceiptFormPage } from './receipt-form-page';
-import { renderWithQuery } from './render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/auth/use-me', () => ({

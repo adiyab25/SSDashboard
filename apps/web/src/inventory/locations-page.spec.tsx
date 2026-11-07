@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { LocationsPage } from './locations-page';
-import { renderWithQuery } from './render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 
 const api = vi.hoisted(() => ({
   listLocations: vi.fn(),

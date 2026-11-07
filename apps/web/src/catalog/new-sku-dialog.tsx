@@ -29,7 +29,7 @@ import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import type { MessageKey } from '@ssdashboard/i18n';
 import { createSku, inventoryKeys } from '@/inventory/inventory-api';
-import { useReturnFocus } from '@/inventory/use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 
 /** The form, built from the contract's field schemas (spec 0006, AC-1). */
 const NewSkuForm = z

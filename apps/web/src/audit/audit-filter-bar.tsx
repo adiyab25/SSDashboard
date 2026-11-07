@@ -14,6 +14,7 @@ import {
   paramsFromFilter,
   type FilterProblems,
 } from './audit-filter';
+import { useEntryText } from './use-entry-text';
 
 const SELECT =
   'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
@@ -57,6 +58,7 @@ export function AuditFilterBar({
   peopleEnabled: boolean;
 }) {
   const { t } = useTranslation();
+  const text = useEntryText();
   const appliedKey = paramsFromFilter(applied);
   const [seen, setSeen] = useState(appliedKey);
   const [draft, setDraft] = useState<AuditFilter>(applied);
@@ -130,7 +132,7 @@ export function AuditFilterBar({
     ) : null;
   }
 
-  const known = people.data?.some((person) => person.id === draft.actorUserId) ?? false;
+  const known = people.data?.people.some((person) => person.id === draft.actorUserId) ?? false;
 
   return (
     <form noValidate onSubmit={submit} aria-label={t('audit.filters.title')} className="grid gap-3">
@@ -148,7 +150,7 @@ export function AuditFilterBar({
             {draft.actorUserId && !known && (
               <option value={draft.actorUserId}>{draft.actorUserId}</option>
             )}
-            {people.data?.map((person) => (
+            {people.data?.people.map((person) => (
               <option key={person.id} value={person.id}>
                 {person.name}
               </option>
@@ -158,6 +160,11 @@ export function AuditFilterBar({
           {people.isError && (
             <span className="text-xs text-muted-foreground">
               {t('audit.filters.personLoadError')}
+            </span>
+          )}
+          {people.data?.truncated && (
+            <span className="text-xs text-muted-foreground">
+              {t('audit.filters.personTruncated', { count: people.data.people.length })}
             </span>
           )}
         </Field>
@@ -205,7 +212,7 @@ export function AuditFilterBar({
           >
             <option value="">{t('audit.filters.anyAction')}</option>
             {draft.action && !(draft.action in AUDIT_ACTIONS) && (
-              <option value={draft.action}>{draft.action}</option>
+              <option value={draft.action}>{text.actionCodeName(draft.action)}</option>
             )}
             {AUDIT_ACTION_CODES.map((code) => (
               <option key={code} value={code}>

@@ -15,7 +15,7 @@ import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '@/api/client';
 import { getSku, inventoryKeys } from '@/inventory/inventory-api';
-import { useReturnFocus } from '@/inventory/use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 import { SkuEditBody } from './sku-edit-body';
 import { skuEditMutationKey } from './sku-edit-schema';
 

@@ -1,6 +1,7 @@
 'use client';
 
 import type { AuditEntryView } from '@ssdashboard/contracts';
+import { Badge } from '@ssdashboard/ui/components/badge';
 import { Button } from '@ssdashboard/ui/components/button';
 import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import {
@@ -91,7 +92,12 @@ export function AuditEntriesTable({
                   <time dateTime={entry.recordedAt}>{format.dateTime(entry.recordedAt)}</time>
                 </TableCell>
                 <TableCell className="px-3">{text.actor(entry)}</TableCell>
-                <TableCell className="px-3 font-medium">{text.action(entry)}</TableCell>
+                <TableCell className="px-3 font-medium">
+                  <span className="flex flex-wrap items-center gap-2">
+                    {text.action(entry)}
+                    {entry.undone && <Badge variant="outline">{t('audit.undo.undone')}</Badge>}
+                  </span>
+                </TableCell>
                 <TableCell className="px-3">{text.record(entry)}</TableCell>
                 <TableCell className="px-3">
                   {entry.reason ? (

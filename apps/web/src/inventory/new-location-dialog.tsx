@@ -31,7 +31,7 @@ import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { useLocationSwitcher } from '@/shell/current-location-provider';
 import { createLocation, inventoryKeys } from './inventory-api';
-import { useReturnFocus } from './use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 
 /** The form, built from the contract's field schemas (spec 0006, AC-4). */
 const NewLocationForm = z

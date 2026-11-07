@@ -5,7 +5,7 @@ import { SkuView } from '@/catalog/sku-view';
 import { SkusPage } from '@/catalog/skus-page';
 import { ReceiptView } from '@/inventory/receipt-view';
 import { ReceiptsPage } from '@/inventory/receipts-page';
-import { renderWithQuery } from '@/inventory/render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { StockPage } from '@/inventory/stock-page';
 
 const api = vi.hoisted(() => ({

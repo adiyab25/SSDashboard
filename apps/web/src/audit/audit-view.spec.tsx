@@ -3,13 +3,16 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
-import { renderWithQuery } from '@/inventory/render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { AuditView } from './audit-view';
 
 const api = vi.hoisted(() => ({
   listAuditEntries: vi.fn(),
   listPeople: vi.fn(() =>
-    Promise.resolve([{ id: '00000000-0000-4000-8000-000000000500', name: 'Priya Picker' }]),
+    Promise.resolve({
+      people: [{ id: '00000000-0000-4000-8000-000000000500', name: 'Priya Picker' }],
+      truncated: false,
+    }),
   ),
   getAuditEntry: vi.fn(),
   listRecordHistory: vi.fn(),
@@ -292,5 +295,35 @@ describe('AuditView (AC-12, AC-18)', () => {
     expect(await screen.findByText('No entries match')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
     expect(api.listPeople).not.toHaveBeenCalled();
+  });
+
+  it('moves focus to the page heading after the same action link closes the detail (M3R17)', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    api.getAuditEntry.mockResolvedValue({ ...entry(1), changes: [] });
+    renderWithQuery(<AuditView enabled />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Details of Stock receipt voided/ }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(
+      within(dialog).getByRole('link', { name: 'Show entries of the same action' }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Audit trail' })).toHaveFocus(),
+    );
+  });
+
+  it('says so when the person list was cut at its limit (M3R20)', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    api.listPeople.mockResolvedValueOnce({
+      people: Array.from({ length: 500 }, (_, n) => ({ id: uuid(n + 1), name: `Person ${n}` })),
+      truncated: true,
+    });
+    renderWithQuery(<AuditView enabled />);
+    expect(
+      await screen.findByText('Only the first 500 people are listed, so some are missing here.'),
+    ).toBeVisible();
   });
 });
