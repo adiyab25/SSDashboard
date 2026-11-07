@@ -116,7 +116,7 @@ Every foreign key column above has its own index or leads one (PostgreSQL does n
 | any owner type question | answer | `LocationPolicyService.policyFor(locationId)` |
 | archive location | allowed? | no balance with `on_hand <> 0` and no active reservation there (spec 0006's `usage`) |
 
-> Amended 2026-11-07 by spec 0011: `sellable_online` is allowed only when the policy allows it, the location is a sellable warehouse, and no other active location has it; archiving a location sets it to false ([spec 0011](../0011-stock-ledger-locations/index.md) AC-1).
+> Amended 2026-11-07 by spec 0011: `sellable_online` is allowed only when the policy allows it, the location is a sellable warehouse, and no other active location has it, and it is set only through the gated make online action (stock confirmed counted, registered checks passed); archiving a location sets it to false ([spec 0011](../0011-stock-ledger-locations/index.md) AC-1, AC-19).
 
 ## Critical test scenarios
 

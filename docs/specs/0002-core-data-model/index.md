@@ -165,6 +165,7 @@ Owner answers to the reviewer's real brand questions, applied: full shipping is 
 - **AC-3**: Every movement carries a non zero signed whole number quantity in the SKU's base unit, a unit cost (4 decimals), a total cost (2 decimals, EGP), an effective date, a recorded time, a source type and source id (and source line id when the source has lines), and the user who posted it (when signed in users exist).
   > Amended 2026-11-05: unchanged; opening stock also needs a cost (AC-31).
 - **AC-4**: An outbound posting that would take a balance below zero is rejected, unless the location has `allow_negative` on. An outbound line that fulfils no reservation may not take on hand (summed over bins for that SKU, location, and lot) below the active reserved quantity. Two postings on the same balance at the same moment are applied one after the other, never losing an update, and postings touching the same balances in opposite orders never deadlock.
+  > Amended 2026-11-07 by spec 0011: two named exceptions to the reserved stock rule: a carrier fact shipment (`postCarrierShipment`) is never refused for stock and may go below zero, and a `damaged` or `missing` adjustment may take on hand below reserved; after either, the newest reservations are shortened and announced ([spec 0011](../0011-stock-ledger-locations/index.md) AC-22, AC-23).
 - **AC-5**: Posting twice with the same idempotency key moves stock once and returns the first posting's result, rebuilt from the stored group and movements, without checking stock or the lock date again. The same key with different content (or used for a reversal and a posting) is rejected.
 - **AC-6**: A posting's effective date may be in the past but not in the future (beyond a 5 minute clock tolerance), and its operating day (stamped by `ssd_operating_day`, so the cutoff hour counts) must be after the inventory lock date (gate ruling 2026-11-06, review R5). When none is given, it defaults to now. A reversal follows the same rule, so reversing a movement from a locked month means passing a current date.
 - **AC-7**: A posting with several lines (for example a transfer: out of one location, into another) is atomic. Either every line and balance change lands, or none does.
@@ -265,7 +266,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 > Amended 2026-11-05: `movement_groups` and `stock_movements` gain `operating_day` (A3); `idempotency_key` is unique per tenant; `cost_layers` is now feature 59's decision.
 
-> Amended 2026-11-07 by spec 0011: `reservations` gains `updated_at` (set on every reservation write) and the index (`location_id`, `updated_at`); `stock_levels` gains the index (`location_id`, `updated_at`); `LedgerService` gains `transaction`, `reserveLines`, `releaseLines`, `releaseSource`, and `reservationsFor` ([spec 0011](../0011-stock-ledger-locations/index.md)).
+> Amended 2026-11-07 by spec 0011: `reservations` gains `updated_at` and `unfilled_quantity` (waiting demand; `quantity` may then be 0 and the row stays `active` while open or unfilled quantity is above 0) and four indexes; `stock_levels` gains the index (`location_id`, `updated_at`); `locations` gains `stock_verified_at` and `stock_verified_by`; a new append only `stock_transfers` table numbers showroom moves; `LedgerService` gains `transaction`, `reserveLines`, `releaseLines`, `releaseSource`, `reservationsFor`, and `postCarrierShipment` ([spec 0011](../0011-stock-ledger-locations/index.md), Data model).
 
 **Documents** (○, each built by its own module): purchase orders and receipts (21, 22), sales orders and shipments (26, 27), returns (28), transfers (12), adjustments and counts (11), BOMs and production orders (39, 40), price lists (49). Each document gets a `number text unique` from `document_counters`. Every line uses one money shape: `quantity int`, `uom_id`, `unit_price numeric(14,2)`, `discount_amount`, `net_amount`, `tax_rate numeric(5,2)`, `tax_amount`, `gross_amount numeric(14,2)`, and `unit_cost numeric(14,4)` where cost applies. Lines are converted to base units (quantity times factor) before they reach the ledger.
 
@@ -280,6 +281,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 - **Movement group**: posted (final). The only follow up is one reversal group, which is itself final.
 - **Serial**: created as `in_stock` on its first inbound movement → `out` on an outbound movement → `in_stock` again on a later inbound one (a return). A move between bins or locations updates its place in the same transaction.
 - **Reservation**: `active` (open quantity reduced in place by partial release or fulfilment) → `released` when released to zero, or `fulfilled` when consumed to zero by shipments. Both are final; reversing a shipment never reactivates a reservation.
+  > Amended 2026-11-07 by spec 0011: a reservation also carries waiting demand (`unfilled_quantity`); it stays `active` while open or unfilled quantity is above 0, a freed piece fills the oldest waiting demand first, and a carrier shipment or a damaged or missing removal can move held quantity back to unfilled ([spec 0011](../0011-stock-ledger-locations/index.md) AC-21 to AC-23).
 - **Discrepancy**: open → `rebuilt` or `dismissed` by an admin.
 
 ### API surface
@@ -302,6 +304,8 @@ This feature adds no HTTP endpoints. It exposes an internal NestJS service from 
 Any function above also raises `InvalidInput` when its input fails the Zod contract.
 
 Fulfilling a reservation happens inside `ledger.post`: an outbound line with `reservationId` must match that reservation's SKU, location, and lot, with absolute quantity no more than its open quantity, and reduces the open quantity in the same transaction (`ReservationMismatch` otherwise).
+
+> Amended 2026-11-07 by spec 0011: `postCarrierShipment` is the exception: a line fulfils its reservation's open quantity, then its unfilled quantity, and posts the rest unreserved ([spec 0011](../0011-stock-ledger-locations/index.md) AC-22).
 
 Callers convert document lines to base units before posting: quantity times the unit factor, and unit cost divided by the factor, rounded to 4 decimals (a box of 12 at 120.00 posts 12 units at 10.0000). Lines are never merged. When several lines in one posting hit the same balance key, the service locks that balance once and applies the lines to it one by one, in sorted order and then input order. Each line becomes its own movement with its own `source_line_id` and cost.
 
