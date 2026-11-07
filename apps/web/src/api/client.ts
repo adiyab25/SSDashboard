@@ -10,6 +10,8 @@ export interface ApiErrorBody {
   undoCode?: string;
   /** `SETTING_INVALID`: where inside the value each fault is (a document type, an array index, or empty). */
   issues?: { path: string; message: string }[];
+  /** `LICENSE_INVALID`: the check outcome that refused the upload, such as `bad_signature`. */
+  outcome?: string;
 }
 
 /** A failed call. `status` 0 means the request never got an answer. */
@@ -60,12 +62,14 @@ function errorBody(json: unknown): ApiErrorBody {
             : [];
         })
       : undefined;
+  const outcome = 'outcome' in json && typeof json.outcome === 'string' ? json.outcome : undefined;
   return {
     code,
     ...(lineErrors && { lineErrors }),
     ...(skuIds && { skuIds }),
     ...(undoCode && { undoCode }),
     ...(issues && { issues }),
+    ...(outcome && { outcome }),
   };
 }
 

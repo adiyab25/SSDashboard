@@ -260,8 +260,18 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'GET /settings': { needs: ['settings.manage'] },
     'PUT /settings/:key': {
       needs: ['settings.manage'],
-      path: () => '/settings/operations_wind_down_days',
-      body: () => ({ value: 90, reason: 'sweep', expectedUpdatedAt: STALE }),
+      // A core key (security finding S6): on this unlicensed install an Operations key would answer
+      // 409 NOT_LICENSED before the stale check, so the stale write is made on a core one.
+      path: () => '/settings/operating_day_cutoff_hour',
+      body: () => ({ value: 5, reason: 'sweep', expectedUpdatedAt: STALE }),
+    },
+    // Spec 0009 milestone 2: the license, `settings.manage`. The upload is not a license, so a
+    // manager gets 422 LICENSE_INVALID (`bad_format`): one refused check row, no license, no phase
+    // change, however often the sweep calls it.
+    'GET /platform/license': { needs: ['settings.manage'] },
+    'POST /platform/license': {
+      needs: ['settings.manage'],
+      body: () => ({ envelope: 'not a license' }),
     },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {

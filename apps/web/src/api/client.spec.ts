@@ -62,4 +62,15 @@ describe('apiRequest error bodies', () => {
     refuse({ code: 'SETTING_INVALID', issues: 'nope' });
     expect((await failure()).body.issues).toBeUndefined();
   });
+
+  it('keeps the outcome of a refused license and drops one that is not text', async () => {
+    refuse({ code: 'LICENSE_INVALID', outcome: 'bad_signature' });
+    const refused = await failure();
+    expect(refused.code).toBe('LICENSE_INVALID');
+    expect(refused.body.outcome).toBe('bad_signature');
+    refuse({ code: 'LICENSE_INVALID', outcome: 7 });
+    expect((await failure()).body.outcome).toBeUndefined();
+    refuse({ code: 'LICENSE_TOO_LARGE' });
+    expect((await failure()).body.outcome).toBeUndefined();
+  });
 });

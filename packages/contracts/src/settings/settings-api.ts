@@ -53,8 +53,8 @@ export const SettingInstant = z.iso.datetime({ offset: true });
  * keys. `canChange` says whether the caller may change it (false for `whoMayChange: nobody`);
  * `licensed` says whether the entry's bundle is licensed. They are kept apart so the screen can
  * say why: the web disables an entry when either is false, showing "needs the Warehouse plan" or
- * "needs the Operations plan" for `licensed: false` (AC-25). The api does not refuse a write of an
- * unlicensed entry yet (spec 0009 milestone 2 or 3 decides, security review S6).
+ * "needs the Operations plan" for `licensed: false` (AC-25). The api refuses a write of an
+ * unlicensed entry with 409 `NOT_LICENSED` (security review S6, decided in milestone 2).
  */
 export const SettingEntryView = z.object({
   key: z.string(),
@@ -109,7 +109,9 @@ export type PutSettingAnswer = z.infer<typeof PutSettingAnswer>;
 /**
  * The stable error codes of the settings routes (spec 0009, AC-3): 404 `SETTING_UNKNOWN`, 422
  * `SETTING_INVALID` (with `issues`), 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, 409
- * `STALE_SETTING`, 409 `SETTING_LOCKED`, and the guard's 403 `FORBIDDEN`. A malformed body is 422
+ * `STALE_SETTING`, 409 `SETTING_LOCKED`, 409 `NOT_LICENSED` (the entry's bundle is not licensed
+ * now: core always is; Warehouse or Operations while its phase is active, expiring, or grace;
+ * security finding S6), and the guard's 403 `FORBIDDEN`. A malformed body is 422
  * `VALIDATION_FAILED`.
  */
 export const SettingErrorCode = z.enum([
@@ -119,6 +121,7 @@ export const SettingErrorCode = z.enum([
   'REASON_TOO_LONG',
   'STALE_SETTING',
   'SETTING_LOCKED',
+  'NOT_LICENSED',
   'FORBIDDEN',
   'VALIDATION_FAILED',
 ]);

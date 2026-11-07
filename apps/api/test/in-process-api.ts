@@ -65,9 +65,14 @@ export interface InProcessApi {
  * Starts the real `AppModule` in this process on a fresh scratch database as the app role, with
  * mail off (`MAIL_DRIVER=none`, so a new person gets a temporary password), so a suite can read
  * the Nest module graph and listen to events. `configure` may override providers.
+ *
+ * `LICENSE_FILE` is set here too, blank (`none_configured`) unless `options.licenseFile` names
+ * a file, so no suite depends on the license the root `.env` points at (the dev bootstrap
+ * license, which this production mode refuses). A worker booted after the api reads the same env.
  */
 export async function startInProcessApi(
   configure?: (builder: ReturnType<typeof Test.createTestingModule>) => void,
+  options: { licenseFile?: string } = {},
 ): Promise<InProcessApi> {
   const savedEnv = { ...process.env };
   const scratch = await createScratchDatabase();
@@ -84,6 +89,7 @@ export async function startInProcessApi(
     BETTER_AUTH_SECRET: randomBytes(32).toString('base64url'),
     MAIL_DRIVER: 'none',
     PORT: String(port),
+    LICENSE_FILE: options.licenseFile ?? '',
   });
   const builder = Test.createTestingModule({ imports: [AppModule] });
   configure?.(builder);

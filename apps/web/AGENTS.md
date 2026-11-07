@@ -78,5 +78,7 @@ pnpm --filter @ssdashboard/web test:e2e    # Playwright: desktop, mobile, and pr
 - [nextjs-app-router-patterns](../../.claude/skills/nextjs-app-router-patterns/): `wshobson/agents`, App Router, server and client components
 - [vercel-react-best-practices](../../.claude/skills/vercel-react-best-practices/): React and Next.js performance guidance
 - [playwright-best-practices](../../.claude/skills/playwright-best-practices/): `currents-dev/playwright-best-practices-skill`, the `e2e/` suite: locators, waiting, projects, axe checks
+- [react-hook-form-zod](../../.claude/skills/react-hook-form-zod/): forms validated by the Zod contract schemas
+- [tanstack-query](../../.claude/skills/tanstack-query/): query keys, `setQueryData` after a mutation, refetch on focus
 
 _Drafted by /sync from the design system change, worth a quick human pass._

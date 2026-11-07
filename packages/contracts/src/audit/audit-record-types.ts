@@ -1,5 +1,6 @@
 import type { MessageKey } from '@ssdashboard/i18n';
 import { SKU_CODE_PATTERN } from '../catalog.js';
+import { LICENSE_ID_PATTERN } from '../license/license-envelope.js';
 import { LOCATION_CODE_PATTERN } from '../locations.js';
 
 /**
@@ -104,6 +105,17 @@ export const AUDIT_RECORD_TYPES = {
     reason: 'text',
     labelPattern: AUDIT_RECORD_LABEL_PATTERN,
     labelIsOwnCode: false,
+  },
+  license: {
+    // A recorded license (spec 0009, AC-20): the record id is `licenses.id`, the label is the
+    // vendor's license id (`LICENSE_ID_PATTERN`, its own code), the diff holds the license's terms
+    // (bundles, expiry dates, key id, source), never its signature. A license carries no personal
+    // data.
+    label: 'audit.recordTypes.license',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: LICENSE_ID_PATTERN,
+    labelIsOwnCode: true,
   },
   audit_entry: {
     // An export of the trail (spec 0010, AC-15): the record id is the export's own id, the filter

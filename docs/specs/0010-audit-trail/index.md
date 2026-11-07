@@ -198,6 +198,7 @@ The registry starts with these. "Reason" is `required` (R) or `optional` (o). "A
 | `policy.changed` (a `location_owner_policies` or similar policy row) | `policy` | R | no | no | feature 4 follow up, settings screen (feature 9) |
 | `setting.changed` | `setting` | o; R when the key is sensitive (time zone, cutoff hour, cost rules) | no | no | feature 9 |
 | `hat.granted`, `hat.revoked` | `user` | o; R for `hat.revoked` of the manager hat | no | no | feature 8 |
+| `license.added` (a verified license recorded for the first time, from the file or an upload) | `license` (`licenses.id`; the label is the vendor's license id) | o | no (actor the uploader, or `system_job` for the file) | no | feature 9 (spec 0009 milestone 2) |
 | `confirmation.confirmed` | `confirmation` | o | no | no | period close (spec 0007 section 3) |
 | `confirmation.confirmed_automatic` | `confirmation` | not applicable (system) | yes | yes | spec 0007 section 3 |
 | `confirmation.revoked`, `settlement.revoked` | `confirmation` or `settlement_period` | R | no | no | period close, settlement |

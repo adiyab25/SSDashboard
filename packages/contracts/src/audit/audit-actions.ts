@@ -206,6 +206,18 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.settingChanged',
     proof: 'apps/api/test/settings.e2e-spec.ts',
   },
+  // Spec 0009, AC-20: a verified license recorded for the first time, from the file (actor a
+  // `system_job`, the check) or an upload (the manager). The record id is `licenses.id`, the label
+  // the vendor's license id. Recorded licenses only add, so there is nothing to undo.
+  'license.added': {
+    module: 'platform',
+    recordType: 'license',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.licenseAdded',
+    proof: 'apps/api/test/license.e2e-spec.ts',
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */

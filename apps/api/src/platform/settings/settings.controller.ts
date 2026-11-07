@@ -5,6 +5,7 @@ import {
   settingDefinitionOf,
   type PutSettingAnswer,
   type PutSettingBody,
+  type SettingBundle,
   type SettingDefinition,
   type SettingsListResponse,
 } from '@ssdashboard/contracts';
@@ -16,6 +17,7 @@ import type { Access } from '../access/access.js';
 import { CurrentAccess } from '../access/current-access.decorator.js';
 import { Permission } from '../access/permission.decorator.js';
 import { Audience } from '../audience/audience.decorator.js';
+import { LicenseService } from '../license/license.service.js';
 import { PutSettingBodyPipe } from './put-setting-body.pipe.js';
 import { settingView, type SettingViewContext } from './setting-view.js';
 import type { StoredSetting } from './settings-cache.js';
@@ -31,11 +33,15 @@ import { SettingsService } from './settings.service.js';
 @Permission('settings.manage')
 @Controller('settings')
 export class SettingsController {
-  /** Takes the settings service, the database (fresh reads), and the staff directory (names). */
+  /**
+   * Takes the settings service, the database (fresh reads), the staff directory (names), and the
+   * license service (which bundles are licensed now).
+   */
   constructor(
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(StaffDirectory) private readonly staff: StaffDirectory,
+    @Inject(LicenseService) private readonly license: LicenseService,
   ) {}
 
   /** Every registry entry in screen order, read from the database, never from the cache. */
@@ -52,7 +58,8 @@ export class SettingsController {
 
   /**
    * Changes one setting (AC-3): 404 `SETTING_UNKNOWN`, 422 `SETTING_INVALID`, 422
-   * `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, 409 `STALE_SETTING`, 409 `SETTING_LOCKED`.
+   * `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, 409 `STALE_SETTING`, 409 `SETTING_LOCKED`, 409
+   * `NOT_LICENSED` (the entry's bundle is not licensed now, security finding S6).
    */
   @Put(':key')
   async write(
@@ -61,18 +68,21 @@ export class SettingsController {
     @CurrentAccess() access: Access,
   ): Promise<PutSettingAnswer> {
     try {
+      // Read once: the write's NOT_LICENSED rule and the answer's `licensed` see the same set.
+      const licensed = await this.license.licensedBundles();
       const { setting, changed } = await this.settings.write({
         key,
         value: body.value,
         ...(body.reason !== undefined && { reason: body.reason }),
         expectedUpdatedAt: body.expectedUpdatedAt,
         actor: { userId: access.userId, hat: access.actingHat('settings.manage') },
+        licensed,
       });
       return {
         entry: settingView(
           settingDefinitionOf(key) as SettingDefinition,
           setting,
-          await this.context([setting], access),
+          await this.context([setting], access, licensed),
         ),
         changed,
       };
@@ -84,10 +94,12 @@ export class SettingsController {
   private async context(
     stored: readonly StoredSetting[],
     access: Access,
+    licensed?: ReadonlySet<SettingBundle>,
   ): Promise<SettingViewContext> {
     const ids = stored.flatMap((setting) => (setting.updatedBy ? [setting.updatedBy] : []));
     return {
       names: await this.staff.namesByIds(ids),
+      licensedBundles: licensed ?? (await this.license.licensedBundles()),
       mayChange: (definition) =>
         definition.whoMayChange === 'settings.manage' && access.has('settings.manage'),
     };

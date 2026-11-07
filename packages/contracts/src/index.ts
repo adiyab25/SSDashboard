@@ -36,3 +36,6 @@ export * from './settings/registry.js';
 export * from './settings/public-config.js';
 export * from './settings/settings-api.js';
 export * from './settings/write-checks.js';
+export * from './license/license-envelope.js';
+export * from './license/license-phase.js';
+export * from './license/license-api.js';

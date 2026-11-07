@@ -6,6 +6,7 @@
 // 3. Gives Garage its storage layout, the dev bucket, and the access key, then writes the key to .env.
 // 4. Stops, with the fix, if the database was migrated by the old migration history (ADR 0003).
 // 5. Applies database migrations.
+// 6. Writes a development license signed with the committed dev key and sets LICENSE_FILE.
 // Safe to run again: every step checks before it acts, and no data volume is removed.
 // Plain Node with no dependencies, so it runs the same on Windows, macOS, and Linux.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -20,6 +21,17 @@ const ENV_EXAMPLE = join(ROOT, '.env.example');
 const COMPOSE_FILE = join(ROOT, 'deploy', 'compose.dev.yaml');
 const MIGRATIONS_DIR = join(ROOT, 'packages', 'db', 'migrations');
 const KEY_NAME = 'ssdashboard-dev';
+// The development license (spec 0009): written here, signed with the committed dev-only key.
+const DEV_LICENSE_FILE = join(ROOT, '.env.license.json');
+const DEV_LICENSE_KEY = join(
+  ROOT,
+  'apps',
+  'api',
+  'src',
+  'platform',
+  'license',
+  'dev-license-key.pem',
+);
 const STARTED = Date.now();
 
 const seconds = (since) => `${((Date.now() - since) / 1000).toFixed(1)}s`;
@@ -250,6 +262,89 @@ ${detail.trim()}`);
   }
 }
 
+/**
+ * Writes a development license for this install to .env.license.json (git ignored by `.env.*`)
+ * and points LICENSE_FILE at it when LICENSE_FILE is empty (spec 0009, *Configuration required*).
+ * It grants Warehouse for ever and Operations for a year, bound to the database's install row, and
+ * is signed with the committed dev key through the api's `sign-license` command (built by
+ * `pnpm db:migrate`). A production process or a release build (any APP_VERSION but 0.0.0-dev) refuses it
+ * (`dev_key_in_production`). A license that still
+ * fits this install and has more than 30 days of Operations left is kept.
+ */
+function writeDevLicense() {
+  const url = new URL(
+    valueOf('MIGRATION_DATABASE_URL') || 'postgres://ssdashboard@localhost/ssdashboard',
+  );
+  const install = compose([
+    'exec',
+    '-T',
+    'postgres',
+    'psql',
+    '-U',
+    decodeURIComponent(url.username),
+    '-d',
+    decodeURIComponent(url.pathname.slice(1)),
+    '-At',
+    '-c',
+    "SELECT id || ' ' || client_code FROM install",
+  ]).trim();
+  const [tenantId, clientCode] = install.split(' ');
+  if (!tenantId || !clientCode) fail('the install row is missing; migrations did not finish.');
+  const today = new Date().toISOString().slice(0, 10);
+  const later = (days) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+  let keep = false;
+  if (existsSync(DEV_LICENSE_FILE)) {
+    try {
+      const envelope = JSON.parse(readFileSync(DEV_LICENSE_FILE, 'utf8'));
+      const payload = JSON.parse(Buffer.from(envelope.payload, 'base64url').toString('utf8'));
+      keep =
+        payload.tenantId === tenantId &&
+        payload.clientCode === clientCode &&
+        payload.operationsExpiresOn > later(30);
+    } catch {
+      keep = false;
+    }
+  }
+  if (keep) {
+    say('  kept the development license (it fits this install)');
+  } else {
+    const signer = join(ROOT, 'apps', 'api', 'dist', 'platform', 'license', 'sign-license.js');
+    if (!existsSync(signer)) fail('the api build is missing; run `pnpm db:migrate` first.');
+    const signed = spawnSync(
+      process.execPath,
+      [
+        signer,
+        '--private-key',
+        DEV_LICENSE_KEY,
+        '--key-id',
+        'dev-1',
+        '--license-id',
+        `DEV-${today}`,
+        '--client-code',
+        clientCode,
+        '--tenant-id',
+        tenantId,
+        '--bundles',
+        'warehouse,operations',
+        '--operations-expires-on',
+        later(365),
+        '--issued-on',
+        today,
+        '--out',
+        DEV_LICENSE_FILE,
+      ],
+      { cwd: ROOT, stdio: 'inherit' },
+    );
+    if (signed.status !== 0) fail('signing the development license failed.');
+    say('  wrote .env.license.json (Warehouse, and Operations for a year)');
+  }
+  // Forward slashes work on every platform and need no escaping in .env.
+  if (fillEnv('LICENSE_FILE', DEV_LICENSE_FILE.replaceAll('\\', '/'))) {
+    say('  set LICENSE_FILE in .env');
+  }
+}
+
 if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0) {
   fail('Docker Compose was not found. Install and start Docker Desktop, then run this again.');
 }
@@ -270,6 +365,7 @@ step('applying database migrations', () => {
   const migrate = spawnSync('pnpm', ['db:migrate'], { cwd: ROOT, stdio: 'inherit', shell: true });
   if (migrate.status !== 0) fail('pnpm db:migrate failed. Did you run `pnpm install` first?');
 });
+step('writing the development license', writeDevLicense);
 
 say(`ready in ${seconds(STARTED)}. Start the apps with:  pnpm dev`);
 console.log(`
