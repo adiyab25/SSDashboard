@@ -28,6 +28,7 @@ vi.mock('@/auth/use-me', () => ({
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: '50000000-0000-4000-8000-000000000001' }),
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock('@/shell/current-location-provider', () => ({
   useCurrentLocation: () => 'all',

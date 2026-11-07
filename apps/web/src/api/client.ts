@@ -6,6 +6,8 @@ export interface ApiErrorBody {
   lineErrors?: { index: number; code: string }[];
   /** `INSUFFICIENT_STOCK` on a void: the SKUs that would go below zero. */
   skuIds?: string[];
+  /** `UNDO_NOT_POSSIBLE` on an audit undo: the owning module's own code, such as `MERGE_NOT_LATEST`. */
+  undoCode?: string;
 }
 
 /** A failed call. `status` 0 means the request never got an answer. */
@@ -44,7 +46,14 @@ function errorBody(json: unknown): ApiErrorBody {
     'skuIds' in json && Array.isArray(json.skuIds)
       ? json.skuIds.filter((id): id is string => typeof id === 'string')
       : undefined;
-  return { code, ...(lineErrors && { lineErrors }), ...(skuIds && { skuIds }) };
+  const undoCode =
+    'undoCode' in json && typeof json.undoCode === 'string' ? json.undoCode : undefined;
+  return {
+    code,
+    ...(lineErrors && { lineErrors }),
+    ...(skuIds && { skuIds }),
+    ...(undoCode && { undoCode }),
+  };
 }
 
 /**

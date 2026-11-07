@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { ReceiptDetailPage } from './receipt-detail-page';
-import { renderWithQuery } from './render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 
 const api = vi.hoisted(() => ({ getReceipt: vi.fn() }));
 vi.mock('./inventory-api', async (original) => ({

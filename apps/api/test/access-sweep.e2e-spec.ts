@@ -99,8 +99,16 @@ function personalDataIn(body: unknown, allowed: readonly string[]): string[] {
   return [...found];
 }
 
-/** The `COST_FIELD_KEYS` an answer holds, at any depth. */
+/**
+ * The `COST_FIELD_KEYS` an answer holds, at any depth. A text answer (the CSV export, whose
+ * `before` and `after` cells are JSON text) counts a key named anywhere in it, in any spelling
+ * `normalKey` treats as the same (security review AS34).
+ */
 function costKeysIn(body: unknown): string[] {
+  if (typeof body === 'string') {
+    const text = normalKey(body);
+    return COST_FIELD_KEYS.filter((key) => text.includes(normalKey(key)));
+  }
   const keys = new Set(keyPaths(body).map((path) => path.at(-1)));
   return COST_FIELD_KEYS.filter((key) => keys.has(normalKey(key)));
 }
@@ -128,6 +136,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     partnerTarget: '',
     accountA: '',
     accountB: '',
+    auditEntry: '',
+    auditDay: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -220,8 +230,31 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => `/stock-receipts/${ids.receiptToVoid}/void`,
       body: () => ({ reason: 'sweep' }),
     },
-    // Spec 0010: the audit trail, `audit.read` on the manager hat only.
+    // Spec 0010: the audit trail, `audit.read` and `audit.export` on the manager hat only. The
+    // detail and the history read a planted entry whose diff carries cost fields.
     'GET /audit/entries': { needs: ['audit.read'] },
+    'GET /audit/entries/:id': {
+      needs: ['audit.read'],
+      path: () => `/audit/entries/${ids.auditEntry}`,
+    },
+    'GET /audit/records/:type/:id/entries': {
+      needs: ['audit.read'],
+      path: () => `/audit/records/stock_receipt/${ids.receipt}/entries`,
+    },
+    // A POST since security review AS28 (it writes `audit.exported`): the filter stays in the
+    // query string, and there is no body. Its CSV answer is text, so the cost check reads it as
+    // text (`costKeysIn`, security review AS34).
+    'POST /audit/entries/export': {
+      needs: ['audit.export'],
+      path: () => `/audit/entries/export?dayFrom=${ids.auditDay}&dayTo=${ids.auditDay}`,
+    },
+    // Spec 0010 AC-14: `audit.undo`. The planted entry is not undoable, so an allowed caller gets
+    // 409 NOT_UNDOABLE and nothing changes, however often the sweep calls it.
+    'POST /audit/entries/:id/undo': {
+      needs: ['audit.undo'],
+      path: () => `/audit/entries/${ids.auditEntry}/undo`,
+      body: () => ({ reason: 'sweep' }),
+    },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
       needs: PEOPLE_MANAGE,
@@ -423,6 +456,19 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     ids.receiptToVoid = await receipt();
     ids.staffTarget = (await api.addPerson(['support'])).id;
     ids.partnerTarget = (await api.addPerson(['partner'], { partnerAccountId: ids.accountA })).id;
+    // An entry of the planted receipt whose diff carries cost fields, written as the owner (the
+    // registry is not the point here), so the audit reads show whether cost leaves them.
+    const planted = await api.owner.pool.query<{ id: string; day: string }>(
+      `INSERT INTO audit_entries (correlation_id, actor_kind, actor_ref, action, record_type,
+                                  record_id, record_label, before, after)
+       VALUES (gen_random_uuid(), 'carrier', 'bosta', 'planted.costed', 'stock_receipt', $1,
+               NULL, '{"status":"posted","referenceValue":"28.00"}'::jsonb,
+               '{"status":"voided","lines":[{"unitCost":"7.00","quantity":4}]}'::jsonb)
+       RETURNING id, to_char(operating_day, 'YYYY-MM-DD') AS day`,
+      [ids.receipt],
+    );
+    ids.auditEntry = planted.rows[0]?.id ?? '';
+    ids.auditDay = planted.rows[0]?.day ?? '';
   }, 180_000);
 
   afterAll(async () => {
@@ -549,6 +595,9 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         'GET /stock',
         'GET /skus/:id/stock',
         'GET /skus/:id/movements',
+        'GET /audit/entries/:id',
+        'GET /audit/records/:type/:id/entries',
+        'POST /audit/entries/export',
       ]),
     );
   });

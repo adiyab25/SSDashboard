@@ -2,7 +2,7 @@ import type { SkuMovement } from '@ssdashboard/contracts';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderWithQuery } from '@/inventory/render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { SkuDetailPage } from './sku-detail-page';
 
 const api = vi.hoisted(() => ({

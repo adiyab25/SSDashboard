@@ -117,11 +117,11 @@ Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Proposed 2026-11-0
 Agent accountability: who did what, when, and why, across edits, merges, overrides, confirmations, exports, and every automatic action.
 **Done when:** each of those actions writes an audit entry with actor, time, before and after, and reason where one is required; managers can filter it by person and record; nothing can edit or delete an entry.
 - [x] Design it (spec): `/architect audit trail`
-- [ ] Build it: `/develop audit trail`
+- [x] Build it: `/develop audit trail`
   - [x] The thin thread: void a receipt, see the entry, cannot change it
-  - [ ] Every action recorded, with no raw personal data
-  - [ ] The manager screen and the export
-  - [ ] One step undo and scale
-- [ ] Verify it: `/check verify audit trail`
-- [ ] Test it: `/test audit trail`
-Spec [0010](../specs/0010-audit-trail/index.md) (Proposed 2026-11-05)
+  - [x] Every action recorded, with no raw personal data
+  - [x] The manager screen and the export
+  - [x] One step undo and scale
+- [x] Verify it: `/check verify audit trail`
+- [x] Test it: `/test audit trail`
+Spec [0010](../specs/0010-audit-trail/index.md) (Built 2026-11-07)

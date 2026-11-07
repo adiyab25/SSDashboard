@@ -954,7 +954,7 @@ test.describe('keyboard use of the edit dialog (AC-16)', () => {
 
 test.describe('focus returns to the control that opened a dialog (WCAG 2.4.3, AC-16)', () => {
   // The list pages mount their dialogs without a Radix trigger, so each dialog hands focus back
-  // to the control that opened it itself (use-return-focus.ts).
+  // to the control that opened it itself (src/shared/use-return-focus.ts).
   test('SKU edit dialog: Escape hands focus back to its Edit button', async ({ page }) => {
     const sku = await createSku(page.request, code('FOC'), { en: `Focus ${tag}` });
     await openSkus(page, sku.code);

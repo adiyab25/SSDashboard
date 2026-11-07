@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { inventoryKeys } from '@/inventory/inventory-api';
-import { renderWithQuery } from '@/inventory/render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { SkusPage } from './skus-page';
 
 const api = vi.hoisted(() => ({

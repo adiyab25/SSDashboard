@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { NewSkuDialog } from '@/catalog/new-sku-dialog';
 import { NewLocationDialog } from './new-location-dialog';
-import { renderWithQuery } from './render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { VoidReceiptDialog } from './void-receipt-dialog';
 
 vi.mock('@/shell/current-location-provider', () => ({

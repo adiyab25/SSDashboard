@@ -1,15 +1,39 @@
 import type { AuditEntryView } from '@ssdashboard/contracts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
-import { renderWithQuery } from '@/inventory/render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { AuditView } from './audit-view';
 
-const api = vi.hoisted(() => ({ listAuditEntries: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listAuditEntries: vi.fn(),
+  listPeople: vi.fn(() =>
+    Promise.resolve({
+      people: [{ id: '00000000-0000-4000-8000-000000000500', name: 'Priya Picker' }],
+      truncated: false,
+    }),
+  ),
+  getAuditEntry: vi.fn(),
+  listRecordHistory: vi.fn(),
+}));
+const nav = vi.hoisted(() => ({ search: '', push: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: nav.push }),
+  useSearchParams: () => new URLSearchParams(nav.search),
+}));
 vi.mock('./audit-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
+}));
+/** The person's permissions as the who am I answer gives them (a manager by default). */
+const MANAGER_PERMISSIONS = ['audit.read', 'audit.export', 'people.manage'];
+const me = vi.hoisted(() => ({ permissions: [] as string[] }));
+vi.mock('@/auth/use-me', () => ({
+  useMeState: () => ({
+    status: 'ready',
+    me: { id: 'me', hats: ['manager'], permissions: me.permissions },
+  }),
 }));
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -31,7 +55,17 @@ const entry = (n: number, overrides: Partial<AuditEntryView> = {}): AuditEntryVi
   ...overrides,
 });
 
-afterEach(() => api.listAuditEntries.mockReset());
+beforeEach(() => {
+  me.permissions = MANAGER_PERMISSIONS;
+});
+
+afterEach(() => {
+  for (const mock of [api.listAuditEntries, api.getAuditEntry, api.listRecordHistory, nav.push]) {
+    mock.mockReset();
+  }
+  api.listPeople.mockClear();
+  nav.search = '';
+});
 
 describe('AuditView (AC-12, AC-18)', () => {
   it('lists the actor, action label, record, and reason under one h1', async () => {
@@ -45,6 +79,21 @@ describe('AuditView (AC-12, AC-18)', () => {
     expect(within(table).getByText('Entered twice 1')).toBeVisible();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('labels a record type from the contracts registry and shows an unknown one as its code', async () => {
+    api.listAuditEntries.mockResolvedValue({
+      items: [
+        entry(1, { record: { type: 'outbound_command', id: uuid(1), label: 'CMD-1' } }),
+        entry(2, { record: { type: 'future_record', id: uuid(2), label: 'FR-2' } }),
+      ],
+      nextCursor: null,
+    });
+    renderWithQuery(<AuditView enabled />);
+
+    const table = await screen.findByRole('table', { name: 'Audit entries' });
+    expect(await within(table).findByText(/Carrier request/)).toBeVisible();
+    expect(within(table).getByText('future_record')).toBeVisible();
   });
 
   it('names a system actor by its kind and reference, and an unknown action by its code', async () => {
@@ -136,5 +185,145 @@ describe('AuditView (AC-12, AC-18)', () => {
     const end = await screen.findByText('End of the audit trail');
     await waitFor(() => expect(end).toHaveFocus());
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('reads the filter from the URL and sends it with the list call', async () => {
+    nav.search = `recordType=stock_receipt&dayFrom=2026-11-01&dayTo=2026-11-07&correlationId=${uuid(9)}`;
+    api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+
+    await screen.findByText('Nour Admin');
+    expect(api.listAuditEntries).toHaveBeenCalledWith(
+      {
+        recordType: 'stock_receipt',
+        dayFrom: '2026-11-01',
+        dayTo: '2026-11-07',
+        correlationId: uuid(9),
+      },
+      undefined,
+      expect.anything() as unknown,
+    );
+    expect(screen.getByLabelText('Record type')).toHaveValue('stock_receipt');
+    expect(screen.getByLabelText('From day')).toHaveValue('2026-11-01');
+  });
+
+  it('puts applied filters in the URL, and refuses a record ID without a type', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+
+    await screen.findByText('No entries match');
+    await userEvent.type(screen.getByLabelText('Record ID'), uuid(3));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    const type = screen.getByLabelText('Record type');
+    expect(type).toHaveAttribute('aria-invalid', 'true');
+    expect(type).toHaveAccessibleDescription('Choose a record type to filter by record ID.');
+    expect(type).toHaveFocus();
+    expect(nav.push).not.toHaveBeenCalled();
+
+    await userEvent.selectOptions(screen.getByLabelText('Record type'), 'stock_receipt');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(nav.push).toHaveBeenCalledWith(`/audit?recordType=stock_receipt&recordId=${uuid(3)}`);
+  });
+
+  it('shows a diff in the detail, hides personal values, and links to the same action', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    api.getAuditEntry.mockResolvedValue({
+      ...entry(1),
+      changes: [
+        { field: 'status', kind: 'changed', before: 'posted', after: 'voided', personal: false },
+        {
+          field: 'phone',
+          kind: 'changed',
+          before: '[REDACTED]',
+          after: '[REDACTED]',
+          personal: true,
+        },
+      ],
+    });
+    api.listRecordHistory.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Details of Stock receipt voided/ }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Stock receipt voided' });
+    const diff = await within(dialog).findByRole('table', { name: 'Changed fields' });
+    expect(within(diff).getByRole('rowheader', { name: 'status' })).toBeVisible();
+    expect(within(diff).getByText('voided')).toBeVisible();
+    expect(within(diff).getAllByText('Hidden, personal data')).toHaveLength(2);
+    expect(within(diff).queryByText('[REDACTED]')).toBeNull();
+    expect(
+      within(dialog).getByRole('link', { name: 'Show entries of the same action' }),
+    ).toHaveAttribute('href', `/audit?correlationId=${uuid(901)}`);
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Show the history of this record' }),
+    );
+    expect(
+      await within(dialog).findByRole('heading', { name: 'History of this record' }),
+    ).toBeVisible();
+    expect(api.listRecordHistory).toHaveBeenCalledWith(
+      'stock_receipt',
+      uuid(701),
+      undefined,
+      expect.anything() as unknown,
+    );
+  });
+
+  it('asks for nothing and offers no export while not enabled (spec 0008, AC-11)', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled={false} />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Audit trail' })).toBeVisible();
+    expect(api.listAuditEntries).not.toHaveBeenCalled();
+    expect(api.listPeople).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
+  });
+
+  it('shows the export only with audit.export and reads the staff list only with people.manage', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+    expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeInTheDocument();
+    await waitFor(() => expect(api.listPeople).toHaveBeenCalled());
+  });
+
+  it('hides the export and skips the staff list for a reader without those permissions', async () => {
+    me.permissions = ['audit.read'];
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditView enabled />);
+
+    expect(await screen.findByText('No entries match')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull();
+    expect(api.listPeople).not.toHaveBeenCalled();
+  });
+
+  it('moves focus to the page heading after the same action link closes the detail (M3R17)', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    api.getAuditEntry.mockResolvedValue({ ...entry(1), changes: [] });
+    renderWithQuery(<AuditView enabled />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Details of Stock receipt voided/ }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(
+      within(dialog).getByRole('link', { name: 'Show entries of the same action' }),
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Audit trail' })).toHaveFocus(),
+    );
+  });
+
+  it('says so when the person list was cut at its limit (M3R20)', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    api.listPeople.mockResolvedValueOnce({
+      people: Array.from({ length: 500 }, (_, n) => ({ id: uuid(n + 1), name: `Person ${n}` })),
+      truncated: true,
+    });
+    renderWithQuery(<AuditView enabled />);
+    expect(
+      await screen.findByText('Only the first 500 people are listed, so some are missing here.'),
+    ).toBeVisible();
   });
 });
