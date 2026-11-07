@@ -1,6 +1,6 @@
 # Foundations
 
-The ground every slice stands on. Features 1 to 3 are done (wave 3, branch `feat/scaffold-shape-a`, 2026-11-05); features 4 to 10 are designed (wave 4, branch `feat/foundation-specs`, 2026-11-05) and passed the owner's gate: the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chose Shape A (2026-11-05): wave 3 keeps and amends them, and each foundation spec below amends the old spec it inherits. [Back to the scope](index.md).
+The ground every slice stands on. Features 1 to 3 are done (wave 3, branch `feat/scaffold-shape-a`, 2026-11-05) and features 4 to 8 are done (2026-11-06 to 2026-11-07); features 4 to 10 are designed (wave 4, branch `feat/foundation-specs`, 2026-11-05) and passed the owner's gate: the earlier scaffold and its specs (0002 to 0006) predate the new positioning. Spec 0007 assesses them, and at its gate the owner chose Shape A (2026-11-05): wave 3 keeps and amends them, and each foundation spec below amends the old spec it inherits. [Back to the scope](index.md).
 
 ### 1. Stack & architecture
 Decide the stack again against the new positioning, then reshape the runnable skeleton by keeping and amending the current code (Shape A, chosen at the gate on 2026-11-05). The decision covers the two bundles as module toggles plus a license, vendor hosting in an Egyptian data center with self host kept, one database per client, a tenant id on every row, connectors in a worker that respects rate limits, carrier mirror and driver modes, a public HTTPS endpoint per install for webhooks, and the hybrid dev environment.
@@ -38,7 +38,7 @@ Also from spec 0007: order number unique per (tenant, store), never per tenant; 
 - [x] Test it: `/test data model`
 - [x] Review it: `/check review data model`
 - [x] Document it: `/document data model`
-Spec [0002](../specs/0002-core-data-model/index.md) (amendment of 2026-11-05, Proposed; Fable gate review approves; domain review [domain-data-model](../reviews/domain-data-model.md): first pass 5 blockers, re-review 2026-11-05 approves with 0 open blockers)
+Spec [0002](../specs/0002-core-data-model/index.md) (amendment of 2026-11-05, accepted and built 2026-11-06; Fable gate review approves; domain review [domain-data-model](../reviews/domain-data-model.md): first pass 5 blockers, re-review 2026-11-05 approves with 0 open blockers)
 
 ### 5. Design system & UI foundation
 Visual language, layout primitives, and base components, shaped with the Impeccable skill, so every screen feels like one product in Arabic and English.
