@@ -1,4 +1,10 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { AccessHolding, StaffSetup, StaffStatus } from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
@@ -196,7 +202,7 @@ const conflict = (code: string, message: string) => new ConflictException({ code
 /** A manager resets or signs out someone else from the people page, never themselves. */
 const refuseSelf = (id: string, actor: Actor, action: string): void => {
   if (id === actor.id) {
-    throw conflict('SELF_ACTION', `You cannot ${action} your own account from the staff page`);
+    throw conflict('SELF_ACTION', `You cannot ${action} your own account`);
   }
 };
 
@@ -339,6 +345,7 @@ export class AccountActions {
       temporaryPassword ?? randomBytes(32).toString('base64url'),
     );
 
+    const correlationId = this.trail.newCorrelationId();
     let created: { id: string; tokenId?: string };
     try {
       created = await this.db.transaction(async (tx) => {
@@ -357,7 +364,14 @@ export class AccountActions {
               VALUES (${id}::uuid, 'credential', ${id}, ${passwordHash})`,
         );
         const tokenId = await this.replaceInvite(tx, id);
-        await this.record(tx, actor, id, 'staff_user.created', { after: { ...holding } });
+        await this.record(
+          tx,
+          actor,
+          id,
+          'staff_user.created',
+          { after: { ...holding } },
+          correlationId,
+        );
         return { id, ...(tokenId && { tokenId }) };
       });
     } catch (error) {
@@ -408,6 +422,8 @@ export class AccountActions {
               'The email can only change while the account is invited',
             );
           }
+          // Taking over a cost holder's sign in is a way round the cost rule (spec 0008 AC-7).
+          await this.refuseCostHolderTakeover(tx, id, actor);
           sets.push(sql`email = ${input.email}`, sql`must_change_password = true`);
           otherChanged = true;
           emailChanged = true;
@@ -461,6 +477,7 @@ export class AccountActions {
     reason: string | undefined,
     actor: Actor,
   ): Promise<void> {
+    const correlationId = this.trail.newCorrelationId();
     await this.db.transaction(async (tx) => {
       if (kind.guardsLastManager) await lockAdminRule(tx);
       const target = await this.find<TargetRow>(tx, kind, id, TARGET_COLUMNS, true);
@@ -477,11 +494,18 @@ export class AccountActions {
       // The same transaction: a disabled person has no live session, and no link that could log them in.
       await revokeSessions(id, tx);
       await deleteTokens(tx, id);
-      await this.record(tx, actor, id, 'staff_user.disabled', {
-        before: { banned: target.banned },
-        after: { banned: true },
-        ...(reason !== undefined && { reason }),
-      });
+      await this.record(
+        tx,
+        actor,
+        id,
+        'staff_user.disabled',
+        {
+          before: { banned: target.banned },
+          after: { banned: true },
+          ...(reason !== undefined && { reason }),
+        },
+        correlationId,
+      );
     });
     this.emit(kind.events.disabled(this.context(actor, id), reason ?? null));
   }
@@ -491,6 +515,7 @@ export class AccountActions {
    * write follows in the same transaction (AC-28).
    */
   async enable(kind: AccountKind, id: string, actor: Actor): Promise<void> {
+    const correlationId = this.trail.newCorrelationId();
     await this.db.transaction(async (tx) => {
       const target = await this.find<TargetRow>(tx, kind, id, TARGET_COLUMNS, true);
       if (!target) throw this.notFound(kind);
@@ -498,10 +523,14 @@ export class AccountActions {
         sql`UPDATE users SET banned = false, ban_reason = NULL, ban_expires = NULL, updated_at = now()
              WHERE id = ${id}::uuid`,
       );
-      await this.record(tx, actor, id, 'staff_user.enabled', {
-        before: { banned: target.banned },
-        after: { banned: false },
-      });
+      await this.record(
+        tx,
+        actor,
+        id,
+        'staff_user.enabled',
+        { before: { banned: target.banned }, after: { banned: false } },
+        correlationId,
+      );
     });
     this.emit(kind.events.enabled(this.context(actor, id)));
   }
@@ -519,9 +548,11 @@ export class AccountActions {
       temporaryPassword ?? randomBytes(32).toString('base64url'),
     );
 
+    const correlationId = this.trail.newCorrelationId();
     const done = await this.db.transaction(async (tx) => {
       const target = await this.find<TargetRow>(tx, kind, id, TARGET_COLUMNS, true);
       if (!target) throw this.notFound(kind);
+      await this.refuseCostHolderTakeover(tx, id, actor);
       await this.replacePassword(tx, id, passwordHash);
       await tx.execute(
         sql`UPDATE users SET must_change_password = true, updated_at = now() WHERE id = ${id}::uuid`,
@@ -531,9 +562,16 @@ export class AccountActions {
       let tokenId: string | undefined;
       if (this.mailOn) tokenId = (await issueToken(tx, id, 'reset')).tokenId;
       else await deleteTokens(tx, id);
-      await this.record(tx, actor, id, 'staff_user.password_reset', {
-        after: { mustChangePassword: true, mode: this.mailOn ? 'email' : 'temporary_password' },
-      });
+      await this.record(
+        tx,
+        actor,
+        id,
+        'staff_user.password_reset',
+        {
+          after: { mustChangePassword: true, mode: this.mailOn ? 'email' : 'temporary_password' },
+        },
+        correlationId,
+      );
       return { email: target.email, tokenId };
     });
 
@@ -590,6 +628,7 @@ export class AccountActions {
     refuseSelf(id, actor, 'reset the two factor of');
     await this.db.transaction(async (tx) => {
       if (!(await this.find(tx, kind, id, TARGET_COLUMNS, true))) throw this.notFound(kind);
+      await this.refuseCostHolderTakeover(tx, id, actor);
       await tx.execute(sql`DELETE FROM two_factors WHERE user_id = ${id}::uuid`);
       await tx.execute(
         sql`UPDATE users SET two_factor_enabled = false, updated_at = now() WHERE id = ${id}::uuid`,
@@ -619,7 +658,8 @@ export class AccountActions {
   /**
    * Writes one audit entry for an account action through the identity audit port, inside the
    * action's own transaction (spec 0010 task 10). `detail` holds ids, flags and the reason only:
-   * never an email, a name or a phone.
+   * never an email, a name or a phone. The caller makes `correlationId` before it opens the
+   * transaction (`AuditService`'s rule, so a retried transaction keeps one id).
    */
   private record(
     tx: Transaction,
@@ -627,14 +667,36 @@ export class AccountActions {
     id: string,
     action: IdentityAuditEntry['action'],
     detail: Pick<IdentityAuditEntry, 'before' | 'after' | 'reason'>,
+    correlationId: string,
   ): Promise<void> {
     return this.trail.record(tx, {
       actor: auditActorOf(actor, 'people.manage'),
       action,
       record: { type: 'user', id },
       ...detail,
-      correlationId: this.trail.newCorrelationId(),
+      correlationId,
     });
+  }
+
+  /**
+   * The cost rule on the actions that let the actor sign in as the target (spec 0008 AC-7, gate
+   * ruling of 2026-11-06): only someone who holds `cost.view` may reset the password or two factor
+   * of, or change the email of, a person who holds it, else 403 `COST_HOLDER_PROTECTED` (its own code, so
+   * the screen can say why; review round 2, r1) and nothing changes.
+   * Runs inside the transaction that locked the target's row; an actor with `cost.view` costs no
+   * query.
+   */
+  private async refuseCostHolderTakeover(tx: Transaction, id: string, actor: Actor): Promise<void> {
+    if (actor.access.has('cost.view')) return;
+    const held = await tx.execute(
+      sql`SELECT 1 FROM permission_grants WHERE user_id = ${id}::uuid AND permission = 'cost.view'`,
+    );
+    if (held.rows.length > 0) {
+      throw new ForbiddenException({
+        code: 'COST_HOLDER_PROTECTED',
+        message: 'Only someone who can see cost can change how this person signs in',
+      });
+    }
   }
 
   private rethrowUnique(error: unknown): void {

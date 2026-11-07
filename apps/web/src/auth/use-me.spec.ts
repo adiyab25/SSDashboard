@@ -83,4 +83,20 @@ describe('loadMe and useMeState (review finding 6)', () => {
 
     await waitFor(() => expect(result.current).toEqual({ status: 'ready', me: PARTNER }));
   });
+
+  it('loads again when the attempt is raised, which is what Try again does (review r12)', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 404 }));
+    const { result, rerender } = renderHook(
+      ({ attempt }) => useMeState('/api/partner/me', attempt),
+      { initialProps: { attempt: 0 } },
+    );
+    await waitFor(() => expect(result.current).toEqual({ status: 'failed' }));
+
+    rerender({ attempt: 1 });
+
+    // The new attempt reads as loading, then as the person: the failure was not cached.
+    expect(result.current).toEqual({ status: 'loading' });
+    await waitFor(() => expect(result.current).toEqual({ status: 'ready', me: PARTNER }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

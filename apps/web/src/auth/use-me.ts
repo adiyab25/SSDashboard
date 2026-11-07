@@ -37,22 +37,29 @@ export type MeState =
 
 /**
  * The signed in person with the state of the load, so a page that must show an error instead of
- * loading forever (the account screen) can tell a failure from a load still running.
+ * loading forever (the account screen) can tell a failure from a load still running. Raising
+ * `attempt` loads again (a failure is not cached), which is what a Try again button does.
  */
-export function useMeState(path: string = ME_PATH.backoffice): MeState {
-  const [state, setState] = useState<MeState>({ status: 'loading' });
+export function useMeState(path: string = ME_PATH.backoffice, attempt = 0): MeState {
+  // The answer is tagged with the attempt it belongs to, so a new attempt reads as loading
+  // again without setting state inside the effect.
+  const [answer, setAnswer] = useState<{ attempt: number; state: MeState } | null>(null);
 
   useEffect(() => {
     let active = true;
     void loadMe(path).then((result) => {
-      if (active) setState(result ? { status: 'ready', me: result } : { status: 'failed' });
+      if (!active) return;
+      setAnswer({
+        attempt,
+        state: result ? { status: 'ready', me: result } : { status: 'failed' },
+      });
     });
     return () => {
       active = false;
     };
-  }, [path]);
+  }, [path, attempt]);
 
-  return state;
+  return answer && answer.attempt === attempt ? answer.state : { status: 'loading' };
 }
 
 /** The signed in person, or null while loading and when it could not be loaded. */

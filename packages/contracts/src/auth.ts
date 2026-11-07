@@ -42,6 +42,15 @@ export const SessionErrorCode = z.enum(['UNAUTHENTICATED', 'SESSION_EXPIRED']);
 export type SessionErrorCode = z.infer<typeof SessionErrorCode>;
 
 /**
+ * The stable codes the sign in answers with when the password is not the problem. `NO_ACCESS` is
+ * a 403: the person's account holds no hat (spec 0008, AC-10), so no one may sign in as them until
+ * a manager gives them one. The web shows its own copy for it.
+ */
+export const SignInErrorCode = z.enum(['NO_ACCESS']);
+/** The validated shape of `SignInErrorCode`, as the api and web see it after parsing. */
+export type SignInErrorCode = z.infer<typeof SignInErrorCode>;
+
+/**
  * The password rule (spec 0005, AC-8): 8 to 128 characters with a lowercase, an uppercase and a
  * digit, any decimal digit (Western, Arabic-Indic, and the rest of Unicode `Nd`).
  */

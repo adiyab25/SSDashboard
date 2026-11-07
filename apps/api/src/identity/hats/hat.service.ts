@@ -130,6 +130,8 @@ export class HatService {
       partnerAccountId: null,
     });
 
+    // Made before the transaction, as `AuditService` asks (a retried transaction keeps one id).
+    const correlationId = this.audit.newCorrelationId();
     const committed = await this.db.transaction(async (tx): Promise<Committed | undefined> => {
       // The lock before the row, as every writer of the last manager rule takes them.
       const mayRemoveManager = !after.hats.includes('manager');
@@ -172,7 +174,7 @@ export class HatService {
         // The registry says `optional` for `hat.revoked`; the manager hat's revoke tightens it, so
         // the audit trail refuses it too, behind `requireReasonForManagerRemoval` above.
         ...(diff.removed.includes('manager') && { reasonRequired: true as const }),
-        correlationId: this.audit.newCorrelationId(),
+        correlationId,
       });
       return { before, after, diff };
     });
@@ -249,6 +251,8 @@ export class HatService {
     if (!UUID.test(id)) throw notFound('partner login');
     const after = partnerHolding(change.partnerAccountId);
 
+    // Made before the transaction, as `AuditService` asks (a retried transaction keeps one id).
+    const correlationId = this.audit.newCorrelationId();
     const committed = await this.db.transaction(async (tx): Promise<Committed | undefined> => {
       const target = await this.lockTarget(
         tx,
@@ -282,7 +286,7 @@ export class HatService {
         before: { ...before },
         after: { ...after },
         ...(change.reason !== undefined && { reason: change.reason }),
-        correlationId: this.audit.newCorrelationId(),
+        correlationId,
       });
       return { before, after, diff };
     });

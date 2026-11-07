@@ -68,7 +68,8 @@ describe('StaffHatsDialog (spec 0008, AC-7, AC-12, AC-18)', () => {
     expect(hat('Warehouse')).toBeChecked();
     expect(hat('Manager')).not.toBeChecked();
     expect(costSwitch()).toBeChecked();
-    expect(hat('Support')).toHaveFocus();
+    // The dialog moves focus in after it mounts, and under load that lands a tick later.
+    await waitFor(() => expect(hat('Support')).toHaveFocus());
     expect(screen.queryByRole('checkbox', { name: 'Partner' })).not.toBeInTheDocument();
   });
 

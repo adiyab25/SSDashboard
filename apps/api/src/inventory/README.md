@@ -20,7 +20,7 @@ Agent rules, locking and costing gotchas: [AGENTS.md](AGENTS.md).
 ## Never touches
 
 - Updating or deleting a stock movement. Correct with `reverse`.
-- Other modules' tables, with recorded exceptions listed in `KNOWN_BREACHES` of [../module-boundary.spec.ts](../module-boundary.spec.ts): `LocationPolicyService` reads `parties` (the role check for a partner or wholesale location) until the partners module has a service, and the ledger and reconciliation lock `product_variants` rows (spec 0006) until catalog offers a locking service.
+- Other modules' tables, with recorded exceptions listed in `KNOWN_BREACHES` of [../module-boundary.spec.ts](../module-boundary.spec.ts): the ledger and reconciliation lock `product_variants` rows (spec 0006) until catalog offers a locking service.
 - Ledger tables from any other folder. Other modules import `LedgerService`, `ReconciliationService`, and `LocationPolicyService` from [inventory.module.ts](inventory.module.ts). [../module-boundary.spec.ts](../module-boundary.spec.ts) (every module's tables, from `TABLE_OWNERSHIP` in `packages/db`) and a lint rule enforce this.
 - The service schemas `PostingInput` in controllers. Routes validate with `PostingRequest` or `ReverseRequest` from `@ssdashboard/contracts` ([controller-contracts.spec.ts](controller-contracts.spec.ts)).
 
@@ -42,6 +42,6 @@ pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts t
 ## Decisions
 
 - The app role has SELECT only on `location_owner_policies` (the baseline revokes the rest), so a compromised api cannot turn on online selling for partner stock. Feature 9, which owns editing the policy, grants editing back.
-- `LocationPolicyService` reads `parties` directly for now; see Never touches. Remove the read when the partners module exists.
+- `LocationPolicyService` asks the partners module's `PartnerAccounts.holdsRole` (imported through `PartnersModule`) whether a location's party holds the role its owner type needs; the party row is locked `FOR SHARE` in the inserting transaction. It never reads `parties`.
 
 Record other non obvious decisions as ADRs in docs/adr/ and link them here.

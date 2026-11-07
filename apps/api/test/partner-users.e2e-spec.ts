@@ -75,6 +75,31 @@ describe('partner logins', { timeout: 300_000 }, () => {
     return Number(rows[0]?.count);
   }
 
+  /**
+   * The audit entries of one person as the owner reads them, with the transaction id of the row
+   * (`xmin`) and of the `users` row beside it: equal means the entry committed in the same
+   * transaction as the change (spec 0010, AC-1; spec 0008, AC-13). Read straight after the change,
+   * before anything else updates the person.
+   */
+  async function auditOf(userId: string) {
+    const { rows } = await api.owner.pool.query<{
+      action: string;
+      before: Record<string, unknown> | null;
+      after: Record<string, unknown> | null;
+      reason: string | null;
+      xact: string;
+    }>(
+      `SELECT action, before, after, reason, xmin::text AS xact
+         FROM audit_entries WHERE record_id = $1::uuid ORDER BY recorded_at, id`,
+      [userId],
+    );
+    const users = await api.owner.pool.query<{ xact: string }>(
+      'SELECT xmin::text AS xact FROM users WHERE id = $1::uuid',
+      [userId],
+    );
+    return { rows, usersXact: users.rows[0]?.xact };
+  }
+
   /** A planted partner user of account A, signed in, with no temporary password. */
   async function signedInPartner(partnerAccountId = accountA) {
     const person = await api.addPerson(['partner'], { partnerAccountId });
@@ -83,6 +108,14 @@ describe('partner logins', { timeout: 300_000 }, () => {
 
   it('creates a partner login with the partner hat only, bound to the account, never cost', async () => {
     const created = await createPartnerUser();
+    // Spec 0008 AC-13: the creation is one real audit entry, in the creating transaction.
+    const trail = await auditOf(created.partnerUser.id);
+    expect(trail.rows).toHaveLength(1);
+    expect(trail.rows[0]).toMatchObject({
+      action: 'staff_user.created',
+      after: { hats: ['partner'], partnerAccountId: accountA },
+    });
+    expect(trail.rows[0]?.xact).toBe(trail.usersXact);
 
     expect(created.partnerUser).toMatchObject({
       partnerAccountId: accountA,
@@ -314,6 +347,16 @@ describe('partner logins', { timeout: 300_000 }, () => {
     });
 
     expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    // One `hat.revoked` entry (the old binding is taken), with the reason, in the move's transaction.
+    const trail = await auditOf(partner.id);
+    expect(trail.rows).toHaveLength(1);
+    expect(trail.rows[0]).toMatchObject({
+      action: 'hat.revoked',
+      before: { hats: ['partner'], partnerAccountId: accountA },
+      after: { hats: ['partner'], partnerAccountId: accountB },
+      reason: 'Moved to the other shop',
+    });
+    expect(trail.rows[0]?.xact).toBe(trail.usersXact);
     const after = PartnerUserDetail.parse(moved.body);
     expect(after.partnerAccountId).toBe(accountB);
     expect(after.updatedAt).not.toBe(before.updatedAt);

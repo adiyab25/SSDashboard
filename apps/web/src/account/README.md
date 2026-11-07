@@ -1,6 +1,6 @@
 # My account
 
-One account screen for both audiences: the signed in person's own profile, password, and two factor. Staff open it at `/account`; a partner user at `/en/partner/account` or `/ar/partner/account`, inside the `PartnerFrame` (`AccountPage` takes `audience`, which picks `/api/me` or `/api/partner/me`, and `inFrame`, which leaves the one `h1` to the frame's title; a partner user sees no role or staff code). When the person cannot be loaded (the call fails, or `/api/partner/me` does not exist yet), the page shows an inline error instead of loading forever; the way back is the frame's navigation.
+One account screen for both audiences: the signed in person's own profile, password, and two factor. Staff open it at `/account`; a partner user at `/en/partner/account` or `/ar/partner/account`, inside the `PartnerFrame` (`AccountPage` takes `audience`, which picks `/api/me` or `/api/partner/me`, and `inFrame`, which leaves the one `h1` to the frame's title; a partner user sees no role or staff code). When the person cannot be loaded (the call fails, or `/api/partner/me` does not exist yet), the page shows an inline error with a Try again button (it asks `useMeState` again with a higher `attempt`) instead of loading forever; the way back is the frame's navigation.
 
 ## Owns
 

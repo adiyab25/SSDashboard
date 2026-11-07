@@ -5,7 +5,7 @@ The brand's partner accounts: suppliers, factories, consignment partners and who
 ## Owns
 
 - The `parties` table (defined in [packages/db](../../../../packages/db/src/schema/parties.ts)), owned by `partners` in [table-ownership.ts](../../../../packages/db/src/table-ownership.ts). Only this module reads or writes it.
-- `PartnerAccounts` ([partner-accounts.service.ts](partner-accounts.service.ts)), the one exported service: `isConsignmentPartner(id, executor)` (a consignment partner that is not archived, read through the caller's transaction) and `list()` (`{ id, code, name }` of every such partner, ordered by code). Identity uses it for `/api/partner-users` and never reads `parties` itself.
+- `PartnerAccounts` ([partner-accounts.service.ts](partner-accounts.service.ts)), the one exported service: `isConsignmentPartner(id, executor)` (a consignment partner that is not archived, read `FOR SHARE` through the caller's transaction so archiving the party waits for the bind), `holdsRole(id, role, executor)` (whether an unarchived party holds a role flag, also `FOR SHARE`; inventory's location rules use it) and `list()` (`{ id, code, name }` of every such partner, ordered by code). Identity uses it for `/api/partner-users` and inventory for the location party role check; neither reads `parties` itself.
 - The module wiring: [partners.module.ts](partners.module.ts) exports `PartnerAccounts`.
 
 ## Never touches

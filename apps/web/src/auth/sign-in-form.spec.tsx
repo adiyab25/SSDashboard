@@ -156,6 +156,11 @@ describe('SignInForm', () => {
         { status: 403, code: 'BANNED_USER' },
         'This account is disabled. Ask an administrator for help.',
       ],
+      [
+        'a person with no hat',
+        { status: 403, code: 'NO_ACCESS' },
+        'This account has no access yet. Ask a manager to give you a hat.',
+      ],
       ['too many attempts', { status: 429 }, 'Too many attempts. Wait a minute, then try again.'],
       [
         'an api failure',

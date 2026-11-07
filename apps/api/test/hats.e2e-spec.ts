@@ -453,6 +453,76 @@ describe('giving and taking hats', { timeout: 300_000 }, () => {
       expect(await costOf(holding.id)).toBe(true);
     });
 
+    it('answers 403 to a manager without cost.view resetting, or changing the email of, a person who holds it (AC-7)', async () => {
+      const poor = await manager(false);
+      const rich = await manager(true);
+      const holder = await addPerson(['operations'], true);
+      const invitedHolder = await addPerson(['operations'], true);
+      await owner.pool.query('UPDATE users SET last_sign_in_at = NULL WHERE id = $1::uuid', [
+        invitedHolder.id,
+      ]);
+      const plain = await addPerson(['operations']);
+      const hashBefore = async (id: string) =>
+        (
+          await owner.pool.query<{ password: string }>(
+            `SELECT password FROM accounts WHERE user_id = $1::uuid AND provider_id = 'credential'`,
+            [id],
+          )
+        ).rows[0]?.password;
+      const passwordBefore = await hashBefore(holder.id);
+      const session = await signIn(holder.email);
+      await owner.pool.query(
+        'INSERT INTO two_factors (user_id, secret, backup_codes) VALUES ($1::uuid, $2, $2)',
+        [holder.id, 'secret'],
+      );
+      await owner.pool.query('UPDATE users SET two_factor_enabled = true WHERE id = $1::uuid', [
+        holder.id,
+      ]);
+
+      const reset = await call(poor.cookie, 'POST', `/api/staff/${holder.id}/reset-password`);
+      const twoFactor = await call(poor.cookie, 'POST', `/api/staff/${holder.id}/reset-two-factor`);
+      const email = await call(poor.cookie, 'PATCH', `/api/staff/${invitedHolder.id}`, {
+        email: 'taken.over@example.com',
+      });
+
+      for (const reply of [reset, twoFactor, email]) {
+        expect(reply.status, JSON.stringify(reply.body)).toBe(403);
+        expect(reply.body).toMatchObject({ code: 'COST_HOLDER_PROTECTED' });
+      }
+      // Nothing changed: same password, two factor still on, the session alive, the email as it was.
+      expect(await hashBefore(holder.id)).toBe(passwordBefore);
+      expect(await sessionsOf(holder.id)).toBe(1);
+      expect(session).toBeTruthy();
+      const left = await owner.pool.query(
+        'SELECT two_factor_enabled FROM users WHERE id = $1::uuid',
+        [holder.id],
+      );
+      expect(left.rows[0]).toMatchObject({ two_factor_enabled: true });
+      const kept = await owner.pool.query<{ email: string }>(
+        'SELECT email FROM users WHERE id = $1::uuid',
+        [invitedHolder.id],
+      );
+      expect(kept.rows[0]?.email).toBe(invitedHolder.email);
+
+      // A manager who holds cost.view may do all three, and one without may for a person without it.
+      expect(
+        (await call(rich.cookie, 'POST', `/api/staff/${holder.id}/reset-two-factor`)).status,
+      ).toBe(200);
+      expect(
+        (await call(poor.cookie, 'POST', `/api/staff/${plain.id}/reset-password`)).status,
+      ).toBe(200);
+      expect(
+        (await call(rich.cookie, 'POST', `/api/staff/${holder.id}/reset-password`)).status,
+      ).toBe(200);
+      expect(
+        (
+          await call(rich.cookie, 'PATCH', `/api/staff/${invitedHolder.id}`, {
+            email: 'new.address@example.com',
+          })
+        ).status,
+      ).toBe(200);
+    });
+
     it('answers 422 REASON_REQUIRED when the manager hat is taken without a reason', async () => {
       const boss = await manager();
       const other = await addPerson(['manager'], true);

@@ -471,6 +471,19 @@ describe('SessionGuard', () => {
       });
     });
 
+    it('fails closed with 403 FORBIDDEN for a partner hat that names no account, and sets nothing', async () => {
+      const { guard, context, request, load } = signedIn('partner', ['partner']);
+      load.mockResolvedValueOnce(
+        new Access({ userId: USER.id, hats: ['partner'], grants: [], partnerAccountId: null }),
+      );
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'FORBIDDEN' },
+      });
+      expect(request.partner).toBeUndefined();
+    });
+
     it('reads the person once per request and judges the audience from those hats (one read)', async () => {
       const { guard, context, load, request } = signedIn('staff', ['staff']);
 

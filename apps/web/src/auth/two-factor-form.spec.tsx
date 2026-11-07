@@ -147,4 +147,25 @@ describe('TwoFactorForm (AC-20, AC-3)', () => {
       '/sign-in',
     );
   });
+
+  it.each([false, true])(
+    'says the account has no access, not a connection problem, on a 403 NO_ACCESS (backup=%s, review r2)',
+    async (backup) => {
+      (backup ? verifyBackupCode : verifyTotp).mockResolvedValue({
+        data: null,
+        error: { status: 403, code: 'NO_ACCESS' },
+      });
+      render(<TwoFactorForm />);
+      if (backup)
+        await userEvent.click(screen.getByRole('button', { name: 'Use a backup code instead' }));
+
+      await verify();
+
+      expect(
+        await screen.findByText('This account has no access yet. Ask a manager to give you a hat.'),
+      ).toBeVisible();
+      expect(screen.queryByText(/Check your connection/)).not.toBeInTheDocument();
+      expect(assign).not.toHaveBeenCalled();
+    },
+  );
 });

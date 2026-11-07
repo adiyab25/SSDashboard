@@ -25,12 +25,14 @@ const ME: MeResponse = {
   home: 'backoffice',
 };
 
-const me = vi.hoisted((): { current: unknown; failed: boolean } => ({
+const me = vi.hoisted((): { current: unknown; failed: boolean; attempts: number[] } => ({
   current: null,
   failed: false,
+  attempts: [],
 }));
 vi.mock('@/auth/use-me', () => ({
-  useMeState: () => {
+  useMeState: (_path: string, attempt: number) => {
+    me.attempts.push(attempt);
     if (me.current) return { status: 'ready', me: me.current };
     return { status: me.failed ? 'failed' : 'loading' };
   },
@@ -44,6 +46,7 @@ describe('AccountPage (AC-8, AC-19)', () => {
   beforeEach(() => {
     me.current = ME;
     me.failed = false;
+    me.attempts = [];
     loadConfig.mockResolvedValue({ languages: ['en', 'ar'], mailEnabled: false });
   });
   afterEach(() => {
@@ -65,12 +68,20 @@ describe('AccountPage (AC-8, AC-19)', () => {
     me.failed = true;
     render(<AccountPage />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Something went wrong. Check your connection and try again.',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your account could not be loaded.');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Name/)).not.toBeInTheDocument();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
+  it('offers Try again on that error, which asks for the person once more', async () => {
+    me.current = null;
+    me.failed = true;
+    render(<AccountPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+
+    expect(me.attempts).toContain(1);
   });
 
   describe('your details', () => {

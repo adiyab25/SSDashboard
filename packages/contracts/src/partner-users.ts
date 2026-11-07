@@ -150,6 +150,7 @@ export const PartnerUserErrorCode = z.enum([
   'INVALID_LANGUAGE',
   'STALE_RECORD',
   'UNKNOWN_PARTNER_ACCOUNT',
+  'COST_HOLDER_PROTECTED',
 ]);
 /** The validated shape of `PartnerUserErrorCode`, as the api and web see it after parsing. */
 export type PartnerUserErrorCode = z.infer<typeof PartnerUserErrorCode>;

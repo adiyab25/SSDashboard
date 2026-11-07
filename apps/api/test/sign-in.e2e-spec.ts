@@ -262,6 +262,55 @@ describe('staff sign in (thin thread)', { timeout: 90_000 }, () => {
       }
     });
 
+    it('refuses a person with no hat after a right password: 403 NO_ACCESS, no session row, no cookie, slot free; a wrong password answers as any other (spec 0008, AC-10)', async () => {
+      const held = await owner.pool.query<{ user_id: string; hat: string }>(
+        'SELECT user_id, hat FROM hat_assignments',
+      );
+      await owner.pool.query('DELETE FROM hat_assignments');
+      const slotsBefore = await owner.pool.query('SELECT 1 FROM sign_in_slots');
+      const sessionsBefore = await owner.pool.query('SELECT 1 FROM sessions');
+      try {
+        // A wrong password answers exactly as it does for a person who holds a hat: the refusal
+        // tells nobody that the email exists and has no hat.
+        const wrong = await post('/api/auth/sign-in/email', {
+          email: 'owner@example.com',
+          password: 'Wrong-Password-1',
+        });
+        const unknown = await post('/api/auth/sign-in/email', {
+          email: 'nobody@example.com',
+          password: 'Wrong-Password-1',
+        });
+        expect(wrong.status).toBe(401);
+        expect(await wrong.json()).toEqual(await unknown.json());
+
+        const response = await post('/api/auth/sign-in/email', {
+          email: 'owner@example.com',
+          password: adminPassword,
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({ code: 'NO_ACCESS' });
+        expect(response.headers.getSetCookie().some((c) => c.includes('session_token'))).toBe(
+          false,
+        );
+        const sessions = await owner.pool.query('SELECT 1 FROM sessions');
+        expect(sessions.rowCount).toBe(sessionsBefore.rowCount);
+        const slots = await owner.pool.query('SELECT 1 FROM sign_in_slots');
+        expect(slots.rowCount).toBe(slotsBefore.rowCount);
+      } finally {
+        for (const row of held.rows) {
+          await owner.pool.query(
+            'INSERT INTO hat_assignments (user_id, hat) VALUES ($1::uuid, $2)',
+            [row.user_id, row.hat],
+          );
+        }
+      }
+      const again = await post('/api/auth/sign-in/email', {
+        email: 'owner@example.com',
+        password: adminPassword,
+      });
+      expect(again.status).toBe(200);
+    });
+
     it('treats a disabled account as signed out on its next request', async () => {
       const cookie = sessionCookie(
         await post('/api/auth/sign-in/email', {

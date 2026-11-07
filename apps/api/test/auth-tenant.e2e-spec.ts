@@ -8,6 +8,7 @@ import {
   createScratchDatabase,
   dropScratchDatabase,
   freePort,
+  giveHats,
   requireBuild,
   secretFromUri,
   start,
@@ -191,6 +192,8 @@ describe('the tenant id on the auth tables (AC-32)', { timeout: 180_000 }, () =>
       [email],
     );
     const userId = rows[0]?.id as string;
+    // A person with no hat is refused at sign in (spec 0008, AC-10), so this one wears a hat.
+    await giveHats(owner.pool, userId, { hats: ['support'] });
     await owner.pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

@@ -4,6 +4,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { routeCatalog } from '../../../test/route-catalog.js';
+import { AppModule } from '../../app.module.js';
 import { MeController } from './me.controller.js';
 import { PartnerMeController } from './partner-me.controller.js';
 import { isWhoAmI, WhoAmI } from './who-am-i.decorator.js';
@@ -45,6 +47,15 @@ describe('the who am I mark (spec 0005 AC-14, security review L3)', () => {
       'identity/sign-in/me.controller.ts',
       'identity/sign-in/partner-me.controller.ts',
     ]);
+  });
+
+  it('marks exactly GET /me and GET /partner/me among every handler of the app', () => {
+    const marked = routeCatalog(AppModule)
+      .filter((route) => isWhoAmI(route.handler))
+      .map((route) => `${route.method} ${route.path}`)
+      .sort();
+
+    expect(marked).toEqual(['GET /me', 'GET /partner/me']);
   });
 
   it('reads the mark of the handler itself, never of anything else', () => {

@@ -335,6 +335,8 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       const person = await addPerson({ holding: staffHolding('warehouse') });
       const cookie = await signIn(person.email);
       const askedBefore = loads.asked.filter((id) => id === person.id).length;
+      // The sign in itself asks `audiencesFor` once (the no hat refusal); requests never do.
+      const hatsAskedBefore = hats.asked.filter((id) => id === person.id).length;
 
       expect((await call(cookie, 'GET', '/api/me')).status).toBe(200);
       // The model moves the person away from staff without ending the session.
@@ -347,7 +349,7 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
 
       // One read per request: the audience and the permissions come from the same hats.
       expect(loads.asked.filter((id) => id === person.id).length - askedBefore).toBe(3);
-      expect(hats.asked.filter((id) => id === person.id)).toEqual([]);
+      expect(hats.asked.filter((id) => id === person.id).length - hatsAskedBefore).toBe(0);
     });
 
     it('ends every session when the last hat goes, in the same transaction, and no one else’s (b)', async () => {

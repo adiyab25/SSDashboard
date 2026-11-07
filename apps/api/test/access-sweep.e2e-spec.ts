@@ -220,6 +220,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => `/stock-receipts/${ids.receiptToVoid}/void`,
       body: () => ({ reason: 'sweep' }),
     },
+    // Spec 0010: the audit trail, `audit.read` on the manager hat only.
+    'GET /audit/entries': { needs: ['audit.read'] },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
       needs: PEOPLE_MANAGE,
@@ -503,6 +505,15 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
           problems.push(`expected 403 ${denied}: ${where}`);
         }
         if (denied === undefined && reply.status === 403) problems.push(`unexpected 403: ${where}`);
+        // A persona the matrix allows must get a real answer on a read, so the cost and personal
+        // data checks below look at a body and never at an error (a fixture that 404s is wrong).
+        if (
+          denied === undefined &&
+          route.method === 'GET' &&
+          (reply.status < 200 || reply.status >= 300)
+        ) {
+          problems.push(`an allowed GET did not answer 2xx: ${where}`);
+        }
         if (reply.status !== 403)
           reached.set(persona.name, [...(reached.get(persona.name) ?? []), key]);
 
@@ -540,6 +551,21 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         'GET /skus/:id/movements',
       ]),
     );
+  });
+
+  it('can fail: the personal data check finds a customer name and a phone, and lets only the own profile phone through', async () => {
+    expect(personalDataIn({ customer: { name: 'x' }, phone: '1' }, []).sort()).toEqual([
+      'customer.name',
+      'phone',
+    ]);
+    expect(personalDataIn({ phone: '1' }, OWN_PROFILE_KEYS['GET /me'] ?? [])).toEqual([]);
+    const buyer = personas.find((persona) => persona.name === 'media_buyer') as Persona;
+
+    const me = (await api.call(buyer.cookie, 'GET', '/api/me')).body;
+
+    // The media buyer's own answer does hold a `phone` key, and only the allow list lets it by.
+    expect(personalDataIn(me, [])).toContain('phone');
+    expect(personalDataIn(me, OWN_PROFILE_KEYS['GET /me'] ?? [])).toEqual([]);
   });
 
   it('answers the media buyer’s who am I with campaigns.view alone and no partner account (AC-8)', async () => {

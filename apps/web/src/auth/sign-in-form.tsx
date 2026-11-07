@@ -1,5 +1,6 @@
 'use client';
 
+import { SignInErrorCode } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@ssdashboard/ui/components/field';
@@ -98,6 +99,8 @@ export function SignInForm() {
 
   function failureMessage(error: { status: number; code?: string | undefined }): string {
     if (error.status === 403 && error.code === 'BANNED_USER') return t('auth.signIn.disabled');
+    if (error.status === 403 && error.code === SignInErrorCode.enum.NO_ACCESS)
+      return t('auth.signIn.noAccess');
     if (error.status === 429) return t('auth.signIn.rateLimited');
     if (error.status === 401) return t('auth.signIn.invalidCredentials');
     return t('auth.signIn.failed');

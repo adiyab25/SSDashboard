@@ -13,6 +13,7 @@ import {
 } from '../../platform/events/auth-events.js';
 import type { AuthAudit } from './auth-audit.service.js';
 import { clientIp, emailKey, userAgent } from './client-info.js';
+import { refuseWhenNoHat, type AccessAudiences } from './no-access.js';
 import { pastAbsoluteCap } from './session-policy.js';
 import type { FailureOutcome, SignInLockout } from './sign-in-lockout.js';
 
@@ -26,7 +27,12 @@ export interface HookContext {
   getSignedCookie?: (name: string, secret: string) => Promise<string | null | undefined>;
   context: {
     returned?: unknown;
-    newSession?: { user: { id: string; twoFactorEnabled?: boolean | null } } | null;
+    /** The headers Better Auth has set so far (the session cookie); read by the no hat refusal. */
+    responseHeaders?: Headers;
+    newSession?: {
+      user: { id: string; twoFactorEnabled?: boolean | null };
+      session?: { token: string };
+    } | null;
     secret?: string;
     createAuthCookie?: (name: string) => { name: string };
     internalAdapter: {
@@ -48,6 +54,8 @@ export interface AuthHookDeps {
   origin: string;
   lockout: Pick<SignInLockout, 'takeSlot' | 'giveBack' | 'reset'>;
   audit: Pick<AuthAudit, 'record' | 'turnedAway'>;
+  /** Which audiences a person may use, so a person with no hat is refused at sign in. */
+  audiences: AccessAudiences;
   now?: () => Date;
   /** Waits this many milliseconds; replaced in tests. */
   sleep?: (ms: number) => Promise<void>;
@@ -390,8 +398,24 @@ export function createAfterHook(deps: AuthHookDeps) {
     }
   }
 
-  /** A full session was issued: stamp the sign in, clear the counters, and record it. */
-  async function fullSignIn(ctx: HookContext, userId: string, key: string): Promise<void> {
+  /**
+   * A full session was issued: a person with no hat is refused first (the session is deleted and
+   * the answer is 403 `NO_ACCESS`, spec 0008 AC-10; the slot is still given back by `afterAuth`),
+   * else stamp the sign in, clear the counters, and record it.
+   */
+  async function fullSignIn(
+    ctx: HookContext,
+    issued: NonNullable<HookContext['context']['newSession']>,
+    key: string,
+  ): Promise<void> {
+    const userId = issued.user.id;
+    await refuseWhenNoHat(
+      deps.audiences,
+      (token) => ctx.context.internalAdapter.deleteSession(token),
+      issued,
+      ctx.context.responseHeaders,
+      eventContext(ctx, userId, userId, now()),
+    );
     const at = now();
     await ctx.context.internalAdapter.updateUser(userId, { lastSignInAt: at });
     await deps.lockout.reset(key);
@@ -451,7 +475,7 @@ export function createAfterHook(deps: AuthHookDeps) {
       return;
     }
     const issued = ctx.context.newSession;
-    if (issued) await fullSignIn(ctx, issued.user.id, emailKey(who.email));
+    if (issued) await fullSignIn(ctx, issued, emailKey(who.email));
   }
 
   return async function afterAuth(ctx: HookContext): Promise<void> {
@@ -494,7 +518,7 @@ export function createAfterHook(deps: AuthHookDeps) {
       // back and asks for a code. The counters, the last sign in time and `SignedIn` wait for the
       // code (AC-3, AC-23).
       if (issued.user.twoFactorEnabled) return;
-      await fullSignIn(ctx, issued.user.id, key);
+      await fullSignIn(ctx, issued, key);
       return;
     }
 

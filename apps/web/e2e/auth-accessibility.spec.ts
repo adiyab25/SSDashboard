@@ -6,6 +6,7 @@ import {
   stubConfig,
   textFor,
   useBrowserState,
+  waitForPageHydration,
   type TextDirection,
   type Theme,
 } from './support';
@@ -190,6 +191,9 @@ test.describe('auth screens, keyboard', () => {
       await useBrowserState(page, { dir });
       await openAuthPage(page, '/sign-in');
       await expectDirection(page, dir);
+      // The /api/config answer can arrive before React owns the form; a Tab pressed while the
+      // form is still being taken over (a cold dev compile, a loaded machine) lands out of order.
+      await waitForPageHydration(page);
 
       // The skip link comes first; then the form runs top to bottom.
       await page.keyboard.press('Tab');

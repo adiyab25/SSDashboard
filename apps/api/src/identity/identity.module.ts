@@ -19,7 +19,11 @@ import { AuthAudit } from './sign-in/auth-audit.service.js';
 import { AuthMail } from './sign-in/auth-mail.service.js';
 import { createAuth } from './sign-in/auth.factory.js';
 import { AUTH, type Auth } from './sign-in/auth.tokens.js';
-import { HatSessionAudiences, SESSION_AUDIENCES } from './sessions/session-audiences.js';
+import {
+  HatSessionAudiences,
+  SESSION_AUDIENCES,
+  type SessionAudiences,
+} from './sessions/session-audiences.js';
 import { MeController } from './sign-in/me.controller.js';
 import { PartnerMeController } from './sign-in/partner-me.controller.js';
 import { PartnerUserService } from './partner-users/partner-user.service.js';
@@ -67,14 +71,15 @@ import { StaffService } from './staff/staff.service.js';
     { provide: SESSION_AUDIENCES, useClass: HatSessionAudiences },
     {
       provide: AUTH,
-      inject: [ENV, DATABASE, SignInLockout, AuthAudit, AuthMail],
+      inject: [ENV, DATABASE, SignInLockout, AuthAudit, AuthMail, SESSION_AUDIENCES],
       useFactory: (
         env: Env,
         connection: DatabaseConnection,
         lockout: SignInLockout,
         audit: AuthAudit,
         mail: AuthMail,
-      ): Auth => createAuth(env, connection.db, { lockout, audit, mail }),
+        audiences: SessionAudiences,
+      ): Auth => createAuth(env, connection.db, { lockout, audit, mail, audiences }),
     },
     // The guards run in this order (spec 0008, guard order): the session guard puts the person
     // and their `Access` on the request, the audience guard denies any route without an audience

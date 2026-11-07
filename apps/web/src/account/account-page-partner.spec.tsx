@@ -40,14 +40,14 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     render(<AccountPage audience="partner" />);
 
     await screen.findByLabelText(/^Name/);
-    expect(useMeState).toHaveBeenCalledWith('/api/partner/me');
+    expect(useMeState).toHaveBeenCalledWith('/api/partner/me', 0);
   });
 
   it('keeps the back office route for the default audience', async () => {
     render(<AccountPage />);
 
     await screen.findByLabelText(/^Name/);
-    expect(useMeState).toHaveBeenCalledWith('/api/me');
+    expect(useMeState).toHaveBeenCalledWith('/api/me', 0);
   });
 
   it('has one heading and shows the email only, with no role or staff code and no staff wording', async () => {
@@ -67,9 +67,7 @@ describe('AccountPage for a partner user (AC-28, AC-34)', () => {
     useMeState.mockReturnValue({ status: 'failed' });
     const { container } = render(<AccountPage audience="partner" />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Something went wrong. Check your connection and try again.',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your account could not be loaded.');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/staff|employee/i);
   });

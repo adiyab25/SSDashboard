@@ -19,6 +19,12 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('./staff-api', () => api);
 
+const partnerApi = vi.hoisted(() => ({
+  listPartnerUsers: vi.fn(),
+  listPartnerAccounts: vi.fn(),
+}));
+vi.mock('./partner-users-api', () => partnerApi);
+
 const me = vi.hoisted(
   (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
     current: {
@@ -93,6 +99,25 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
     const amira = within(table).getByRole('row', { name: /Amira Admin/ });
     expect(within(amira).getAllByRole('cell')[2]).toHaveTextContent('Manager');
     expect(within(amira).getAllByRole('cell')[3]).toHaveTextContent('Yes');
+  });
+
+  it('has a Partner logins tab that loads partner logins only once opened, under the same one h1', async () => {
+    partnerApi.listPartnerAccounts.mockImplementation(() => ok([]));
+    partnerApi.listPartnerUsers.mockImplementation(() => page([]));
+    render(<StaffPage />);
+    await screen.findByRole('table');
+
+    expect(screen.getByRole('tab', { name: 'Staff' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel', { name: 'Staff' })).toBeVisible();
+    expect(partnerApi.listPartnerUsers).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Partner logins' }));
+
+    expect(await screen.findByText(/No partner logins match/)).toBeVisible();
+    expect(screen.getByRole('tabpanel', { name: 'Partner logins' })).toBeVisible();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Add staff' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add partner login' })).toBeVisible();
   });
 
   it('shows the no access state, and asks the api for no staff, without people.manage (spec 0008, AC-11)', async () => {
@@ -268,6 +293,46 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
       expect(screen.getByRole('menuitem', { name: 'Sign out everywhere' })).toBeVisible();
     });
 
+    it('does not offer a reset on a person who sees cost to someone who does not (COST_HOLDER_PROTECTED)', async () => {
+      me.current = { id: 'me-id', hats: ['manager'], permissions: ['people.manage'] };
+      api.listStaff.mockImplementation(() =>
+        page([
+          row({ id: 'cost-id', name: 'Carla Cost', costView: true, twoFactorEnabled: true }),
+          row({ id: 'sam-id', name: 'Sam Carter', twoFactorEnabled: true }),
+        ]),
+      );
+      render(<StaffPage />);
+
+      await openMenu('Carla Cost');
+      expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
+      expect(screen.queryByRole('menuitem', { name: 'Reset password' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: 'Reset two factor' })).not.toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: 'Sign out everywhere' })).toBeVisible();
+      await userEvent.keyboard('{Escape}');
+
+      await openMenu('Sam Carter');
+      expect(screen.getByRole('menuitem', { name: 'Reset password' })).toBeVisible();
+      expect(screen.getByRole('menuitem', { name: 'Reset two factor' })).toBeVisible();
+    });
+
+    it('says the cost holder refusal in its own words, not "Only a manager"', async () => {
+      api.resetStaffPassword.mockImplementation(() => fail('COST_HOLDER_PROTECTED', 403));
+      render(<StaffPage />);
+
+      await openMenu('Sam Carter');
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Reset password' }));
+      await userEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', { name: 'Reset password' }),
+      );
+
+      expect(
+        await screen.findByText(
+          'Only a person who sees cost can reset the password, reset two factor or change the email of someone who sees cost.',
+        ),
+      ).toBeVisible();
+      expect(screen.queryByText('Only a manager can do this.')).not.toBeInTheDocument();
+    });
+
     it('hides resend invite when the install sends no mail', async () => {
       loadConfig.mockResolvedValue({ mailEnabled: false, languages: ['en'] });
       render(<StaffPage />);
@@ -304,7 +369,7 @@ describe('StaffPage (AC-12 to AC-18, AC-25)', () => {
       await userEvent.click(await screen.findByRole('button', { name: 'Disable account' }));
 
       expect(
-        await screen.findByText('There must always be at least one active administrator.'),
+        await screen.findByText('There must always be at least one active manager.'),
       ).toBeVisible();
       expect(screen.getByRole('dialog')).toBeVisible();
     });

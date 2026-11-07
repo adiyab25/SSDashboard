@@ -98,6 +98,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
   const [costByHand, setCostByHand] = useState<boolean | null>(null);
   const [detail, setDetail] = useState<StaffDetail | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [reloads, setReloads] = useState(0);
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -145,10 +146,15 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
     return () => {
       active = false;
     };
-  }, [editId]);
+  }, [editId, reloads]);
 
   const loading = editId !== null && detail === null && !loadFailed;
-  const emailLocked = detail !== null && detail.status !== 'invited';
+  // A failed load leaves the fields empty: they stay shut, so Save can never clear a phone.
+  const blocked = loading || loadFailed;
+  // Only a person who sees cost can change the email of someone who sees cost (the api answers 403).
+  const costHolderLocked = detail !== null && detail.costView && !canChangeCost;
+  const signedInLocked = detail !== null && detail.status !== 'invited';
+  const emailLocked = signedInLocked || costHolderLocked;
   const set = (name: keyof Values) => (value: string) =>
     setValues((current) => ({ ...current, [name]: value }));
 
@@ -179,7 +185,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending || loading) return;
+    if (pending || blocked) return;
     setFailure(null);
     const found = validate();
     setErrors(found);
@@ -263,7 +269,22 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
 
           {(failure || loadFailed) && (
             <Alert variant="destructive">
-              <AlertDescription>{failure ?? t('staff.errors.generic')}</AlertDescription>
+              <AlertDescription className="flex flex-wrap items-center gap-3">
+                {failure ?? t('staff.form.loadError')}
+                {loadFailed && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setLoadFailed(false);
+                      setReloads((count) => count + 1);
+                    }}
+                  >
+                    {t('staff.form.reload')}
+                  </Button>
+                )}
+              </AlertDescription>
             </Alert>
           )}
 
@@ -278,7 +299,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
                 id="staff-name"
                 value={values.name}
                 onChange={(event) => set('name')(event.target.value)}
-                disabled={loading}
+                disabled={blocked}
                 required
                 aria-required
                 aria-invalid={field('name')}
@@ -301,7 +322,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
                 dir="ltr"
                 value={values.email}
                 onChange={(event) => set('email')(event.target.value)}
-                disabled={loading || emailLocked}
+                disabled={blocked || emailLocked}
                 required
                 aria-required
                 aria-invalid={field('email')}
@@ -314,7 +335,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
               />
               {emailLocked && (
                 <FieldDescription id="staff-email-help">
-                  {t('staff.form.emailLocked')}
+                  {t(signedInLocked ? 'staff.form.emailLocked' : 'staff.form.emailCostHolder')}
                 </FieldDescription>
               )}
               <FieldError id="staff-email-error">
@@ -345,7 +366,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
                   id="staff-language"
                   className={SELECT}
                   value={values.language}
-                  disabled={loading}
+                  disabled={blocked}
                   onChange={(event) => set('language')(event.target.value)}
                 >
                   <option value="">{t('staff.form.languageDefault')}</option>
@@ -368,7 +389,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
                   dir="ltr"
                   value={values.phone}
                   onChange={(event) => set('phone')(event.target.value)}
-                  disabled={loading}
+                  disabled={blocked}
                   aria-invalid={field('phone')}
                   aria-describedby={errors.phone ? 'staff-phone-error' : undefined}
                   autoComplete="off"
@@ -385,7 +406,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
                   dir="ltr"
                   value={values.staffCode}
                   onChange={(event) => set('staffCode')(event.target.value)}
-                  disabled={loading}
+                  disabled={blocked}
                   aria-invalid={field('staffCode')}
                   aria-describedby={errors.staffCode ? 'staff-code-error' : undefined}
                   autoComplete="off"
@@ -401,7 +422,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
             <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
               {t('staff.form.cancel')}
             </Button>
-            <Button type="submit" disabled={pending || loading} aria-busy={pending}>
+            <Button type="submit" disabled={pending || blocked} aria-busy={pending}>
               {pending && (
                 <LoaderCircleIcon
                   aria-hidden

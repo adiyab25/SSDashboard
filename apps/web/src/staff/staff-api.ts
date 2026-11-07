@@ -8,41 +8,12 @@ import {
   StaffListResponse,
   type StaffHat,
   type StaffStatus,
+  type UpdateStaffRequest,
 } from '@ssdashboard/contracts';
-import { apiFetch } from '@/auth/api-fetch';
+import type { z } from 'zod';
+import { Ok, request } from './api-request';
 
-/** An answer from `/api/staff`: the parsed data, or the api's stable error code. */
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; status: number; code: string };
-
-async function request<T>(
-  method: string,
-  path: string,
-  schema: { parse: (value: unknown) => T },
-  body?: unknown,
-): Promise<ApiResult<T>> {
-  try {
-    const response = await apiFetch(path, {
-      method,
-      ...(body !== undefined && {
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      }),
-      cache: 'no-store',
-    });
-    const json: unknown = await response.json().catch(() => null);
-    if (response.ok) return { ok: true, data: schema.parse(json) };
-    const code =
-      typeof json === 'object' && json !== null && 'code' in json && typeof json.code === 'string'
-        ? json.code
-        : 'generic';
-    return { ok: false, status: response.status, code };
-  } catch {
-    return { ok: false, status: 0, code: 'generic' };
-  }
-}
-
-/** The api answers `{ ok: true }` to a re-invite; nothing else is read from it. */
-const Ok = { parse: () => ({ ok: true as const }) };
+export type { ApiResult } from './api-request';
 
 /** The staff list filters: text search, status and hat (empty means any). */
 export interface StaffFilter {
@@ -75,7 +46,7 @@ export const createStaff = (body: CreateStaffRequest) =>
  * Changes a staff member's details: name, email, phone, staff code or language. Never hats or
  * cost: the api refuses any other field, `role` included (use {@link replaceStaffAccess}).
  */
-export const updateStaff = (id: string, body: Record<string, unknown>) =>
+export const updateStaff = (id: string, body: z.input<typeof UpdateStaffRequest>) =>
   request('PATCH', `/api/staff/${id}`, StaffDetail, body);
 
 /**
