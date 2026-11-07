@@ -1,17 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { maskPhones } from '@ssdashboard/config/redaction';
-import { auditActionOf, type AuditActionCode, type AuditActor } from '@ssdashboard/contracts';
+import { maskEmails, maskPhones } from '@ssdashboard/config/redaction';
+import {
+  AuditActor,
+  auditActionOf,
+  auditRecordTypeOf,
+  ReasonCode,
+  type AuditActionCode,
+} from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
 import { pgArray, type Transaction } from '../database/sql.js';
 import {
+  AuditCorrelationMismatch,
   AuditPersonalDataRefused,
+  AuditReasonInvalid,
   AuditReasonRequired,
   AuditReasonTooLong,
   AuditRecordTypeMismatch,
   UnknownAuditAction,
 } from './audit.errors.js';
-import { holdsNoPersonalData, maskPersonalData } from './personal-data.js';
+import {
+  hasPhoneShapedKey,
+  holdsNoPersonalData,
+  isUndoArgsShape,
+  maskPersonalData,
+} from './personal-data.js';
 
 /** The longest reason an entry keeps, after trimming (spec 0010, AC-5). */
 export const AUDIT_REASON_MAX = 500;
@@ -81,39 +94,77 @@ const json = (value: Readonly<Record<string, unknown>> | undefined): string | nu
 /**
  * Checks one entry in the spec's order and returns its VALUES tuple. Throws before anything is
  * written: an unknown code (`UnknownAuditAction`), a record type the registry does not give the
- * code (`AuditRecordTypeMismatch`), a missing required reason (`AuditReasonRequired`), a reason
- * over 500 characters (`AuditReasonTooLong`), or personal data in the label or undo arguments
- * (`AuditPersonalDataRefused`). Masks personal values in `before` and `after` and phones in the
- * reason. Never touches the database.
+ * code or one the audit trail does not know (`AuditRecordTypeMismatch`), a malformed actor (a
+ * `ZodError`, security review AS19), a missing required reason (`AuditReasonRequired`), a reason
+ * over 500 characters (`AuditReasonTooLong`), a typed note where the record type takes a reason
+ * code (`AuditReasonInvalid`, AS13), or personal data in the label or undo arguments or a phone
+ * shaped key anywhere (`AuditPersonalDataRefused`). Masks personal values in `before` and `after`,
+ * with the record type's own personal keys, and phones and emails in a free text reason. Never
+ * touches the database.
  */
 function entryValues(entry: AuditEntryInput): SQL {
   const definition = auditActionOf(entry.action);
   if (!definition) throw new UnknownAuditAction(entry.action);
-  if (entry.record.type !== definition.recordType) {
+  const recordType = auditRecordTypeOf(entry.record.type);
+  if (entry.record.type !== definition.recordType || !recordType) {
     throw new AuditRecordTypeMismatch(entry.action, entry.record.type);
   }
+  const actor = actorColumns(AuditActor.parse(entry.actor));
 
   const trimmed = entry.reason?.trim() ?? '';
   const required = definition.reason === 'required' || entry.reasonRequired === true;
   if (!trimmed && required) throw new AuditReasonRequired(entry.action);
   if ([...trimmed].length > AUDIT_REASON_MAX) throw new AuditReasonTooLong();
-  const reason = trimmed ? maskPhones(trimmed) : null;
+  let reason: string | null = null;
+  if (trimmed && recordType.reason === 'code') {
+    // A customer facing record keeps a reason code, never a typed note (spec 0010, AC-5).
+    // Only a code this action lists, and never one that holds a phone (security review AS23).
+    if (
+      !ReasonCode.safeParse(trimmed).success ||
+      maskPhones(trimmed) !== trimmed ||
+      !definition.reasonCodes?.includes(trimmed)
+    ) {
+      throw new AuditReasonInvalid(entry.action);
+    }
+    reason = trimmed;
+  } else if (trimmed) {
+    reason = maskEmails(maskPhones(trimmed));
+  }
 
-  const before = entry.before ? maskPersonalData(entry.before) : undefined;
-  const after = entry.after ? maskPersonalData(entry.after) : undefined;
+  for (const [field, value] of [
+    ['before', entry.before],
+    ['after', entry.after],
+    ['undo.args', entry.undo?.args],
+  ] as const) {
+    if (value !== undefined && hasPhoneShapedKey(value)) throw new AuditPersonalDataRefused(field);
+  }
+  const { personalKeys, labelPattern, labelIsOwnCode } = recordType;
+  const ownCode = labelIsOwnCode && labelPattern ? labelPattern : undefined;
+  const before = entry.before ? maskPersonalData(entry.before, personalKeys, ownCode) : undefined;
+  const after = entry.after ? maskPersonalData(entry.after, personalKeys, ownCode) : undefined;
   const personalFields = [
     ...new Set([...(before?.personalPaths ?? []), ...(after?.personalPaths ?? [])]),
   ].sort();
 
+  // A label must fit its record type's shape. A label that is the record's own code (a SKU, a
+  // location, a document number) is trusted as it is; any other is refused when it looks like a
+  // phone. A customer takes no label (security reviews AS16, AS17).
   const label = entry.record.label ?? null;
-  if (label !== null && !holdsNoPersonalData(label)) {
+  if (
+    label !== null &&
+    (labelPattern === null ||
+      !labelPattern.test(label) ||
+      (!labelIsOwnCode && !holdsNoPersonalData(label, personalKeys)))
+  ) {
     throw new AuditPersonalDataRefused('record.label');
   }
-  if (entry.undo && !holdsNoPersonalData(entry.undo.args)) {
+  if (
+    entry.undo &&
+    (!isUndoArgsShape(entry.undo.args) || !holdsNoPersonalData(entry.undo.args, personalKeys))
+  ) {
     throw new AuditPersonalDataRefused('undo.args');
   }
 
-  const actor = actorColumns(entry.actor);
   return sql`(${entry.correlationId}, ${actor.kind}, ${actor.userId}, ${actor.ref},
               ${actor.jobId}, ${actor.hat}, ${entry.action}, ${entry.record.type},
               ${entry.record.id}, ${label}, ${json(before?.masked)}::jsonb,
@@ -148,10 +199,17 @@ export class AuditService {
   /**
    * Writes several entries of one business action (a merge writes one per customer record) in
    * one multi row insert through `tx` (AC-6). Each entry passes every check of `record` before
-   * anything is written, so one bad entry writes none. An empty list writes nothing.
+   * anything is written, so one bad entry writes none. All entries must carry the same
+   * `correlationId` (`AuditCorrelationMismatch`): two actions are two calls. An empty list writes
+   * nothing.
    */
   async recordMany(tx: Transaction, entries: readonly AuditEntryInput[]): Promise<void> {
     if (!entries.length) return;
+    // One call is one business action, so its entries share one correlation id (AC-6).
+    const [first] = entries;
+    if (first && entries.some((entry) => entry.correlationId !== first.correlationId)) {
+      throw new AuditCorrelationMismatch();
+    }
     const rows = entries.map(entryValues);
     await tx.execute(sql`
       INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
@@ -161,10 +219,12 @@ export class AuditService {
   }
 
   /**
-   * A new id for one business action (AC-6). Call it once, before the transaction (a deadlock
-   * retry must reuse it), and pass it to every entry the action writes.
+   * The correlation id of one business action (AC-6, the shared rule). A system job's actions
+   * use its pg-boss job id, so every entry one job run writes, across transactions, shares it;
+   * any other actor gets a new id. Call it once, before the transaction (a deadlock retry must
+   * reuse it), and pass it to every entry the action writes.
    */
-  newCorrelationId(): string {
-    return randomUUID();
+  newCorrelationId(actor?: AuditActor): string {
+    return actor?.kind === 'system_job' ? actor.jobId : randomUUID();
   }
 }

@@ -377,6 +377,32 @@ describe('module boundary (spec 0002, A5)', () => {
     ]);
   });
 
+  // Spec 0010, AC-9 (milestone 2 task 11): only the audit module names audit_entries; every other
+  // module records through AuditService. A planted import or SQL read elsewhere fails the wall.
+  it('reports a planted import or read of the audit table outside the audit module', () => {
+    const planted: SourceFile[] = [
+      {
+        path: 'apps/api/src/inventory/audit-shortcut.ts',
+        text: "import { auditEntries } from '@ssdashboard/db';\nexport const read = auditEntries;\n",
+      },
+      {
+        path: 'apps/api/src/catalog/history.ts',
+        text: "q('SELECT action FROM audit_entries WHERE record_id = $1');",
+      },
+      { path: 'apps/api/src/audit/own.ts', text: "q('SELECT id FROM audit_entries');" },
+    ];
+
+    expect(breachesIn(planted)).toEqual([
+      {
+        file: 'apps/api/src/inventory/audit-shortcut.ts',
+        line: 1,
+        table: 'audit_entries',
+        owner: 'audit',
+      },
+      { file: 'apps/api/src/catalog/history.ts', line: 1, table: 'audit_entries', owner: 'audit' },
+    ]);
+  });
+
   it('reports schema access, SQL names, and extensions, and allows a module its own tables', () => {
     const planted: SourceFile[] = [
       { path: 'apps/api/src/catalog/a.ts', text: 'db.insert(schema.stockMovements);' },

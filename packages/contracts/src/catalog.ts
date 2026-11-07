@@ -2,12 +2,15 @@ import { z } from 'zod';
 import { moneyInput } from './digit-input.js';
 import { MoneyString } from './money.js';
 
+/** A stored SKU code: upper case letters, digits, dot, dash, and underscore, up to 64. */
+export const SKU_CODE_PATTERN = /^[A-Z0-9._-]{1,64}$/;
+
 /** Codes are trimmed and uppercased before the pattern check, and stored that way (spec 0006). */
 export const SkuCode = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[A-Z0-9._-]{1,64}$/, 'Letters, digits, dot, dash, and underscore, up to 64');
+  .regex(SKU_CODE_PATTERN, 'Letters, digits, dot, dash, and underscore, up to 64');
 
 /** A price of 0 or more with at most 2 decimals. */
 export const PriceString = MoneyString.refine(

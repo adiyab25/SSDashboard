@@ -2,16 +2,19 @@ import { Module } from '@nestjs/common';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { AuditEntriesController } from './audit-entries.controller.js';
 import { AuditQueryService } from './audit-query.service.js';
+import { AuditRecordsController } from './audit-records.controller.js';
 import { AuditService } from './audit.service.js';
 
 /**
  * The audit trail (spec 0010, bundle core, always on). Exports `AuditService`, the only writer of
  * `audit_entries`, and `AuditQueryService`, its only reader; other modules import this module and
  * never the table. It reads no other module's table: person names come from the staff directory.
+ * It must never import the platform module (spec 0009 makes platform import audit, review M3R6):
+ * the export, which needs the time zone setting, is the leaf `AuditExportModule`.
  */
 @Module({
   imports: [StaffDirectoryModule],
-  controllers: [AuditEntriesController],
+  controllers: [AuditEntriesController, AuditRecordsController],
   providers: [AuditService, AuditQueryService],
   exports: [AuditService, AuditQueryService],
 })

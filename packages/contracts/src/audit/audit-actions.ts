@@ -19,11 +19,28 @@ export interface AuditActionDefinition {
   readonly automatic: boolean;
   /** True when the owning module registers an undo handler for it. */
   readonly undoable: boolean;
+  /**
+   * The code of the undo handler the owning module registers (milestone 4,
+   * `AuditUndoRegistry`). Required exactly when `undoable`; the registry test refuses an undoable
+   * code without one.
+   */
+  readonly undoHandler?: string;
+  /**
+   * The reason codes this action accepts (security review AS23). Required, and the only codes
+   * `AuditService.record` takes, when the action's record type keeps its reason as a code
+   * (`AUDIT_RECORD_TYPES`, `reason: 'code'`: customer, order, exchange, outbound command), so a
+   * code such as `ahmed_mohamed` or `call_01012345678` can never be stored. Unused on a free text
+   * record type; the registry test refuses it there.
+   */
+  readonly reasonCodes?: readonly string[];
   /** The catalog key of the action's label, shown on the audit screen. */
   readonly label: MessageKey;
   /** The repo path of the test that proves the action writes its entry. */
   readonly proof: string;
 }
+
+/** The proof test of the inventory master data actions (SKUs and locations). */
+const INVENTORY_PROOF = 'apps/api/test/audit-inventory.e2e-spec.ts';
 
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
@@ -98,6 +115,69 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     label: 'audit.actions.staffUserPasswordReset',
     proof: 'apps/api/test/identity-audit.e2e-spec.ts',
+  },
+  'audit.exported': {
+    module: 'audit',
+    recordType: 'audit_entry',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.auditExported',
+    proof: 'apps/api/test/audit.e2e-spec.ts',
+  },
+  'sku.archived': {
+    module: 'inventory',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuArchived',
+    proof: INVENTORY_PROOF,
+  },
+  'sku.unarchived': {
+    module: 'inventory',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuUnarchived',
+    proof: INVENTORY_PROOF,
+  },
+  'sku.code_changed': {
+    module: 'inventory',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuCodeChanged',
+    proof: INVENTORY_PROOF,
+  },
+  'location.edited': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationEdited',
+    proof: INVENTORY_PROOF,
+  },
+  'location.archived': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationArchived',
+    proof: INVENTORY_PROOF,
+  },
+  'location.unarchived': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationUnarchived',
+    proof: INVENTORY_PROOF,
   },
 } as const satisfies Record<string, AuditActionDefinition>;
 

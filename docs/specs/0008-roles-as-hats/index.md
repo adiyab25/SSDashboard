@@ -98,7 +98,9 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `SkuLifecycleController` | `PATCH /api/skus/:id/code`, `POST /:id/archive`, `POST /:id/unarchive` | `catalog.manage` |
 | `StockController` | `GET /api/stock`, `GET /api/skus/:id/stock`, `GET /api/skus/:id/movements` | `stock.view` |
 | `StaffController` | every route | `people.manage` (class) |
-| `AuditEntriesController` | `GET /api/audit/entries` | `audit.read` (class; spec 0010) |
+| `AuditEntriesController` | `GET /api/audit/entries`, `GET /api/audit/entries/:id` | `audit.read` (class; spec 0010) |
+| `AuditRecordsController` | `GET /api/audit/records/:type/:id/entries` | `audit.read` (spec 0010; `AuditQueryService.forRecord` checks it again) |
+| `AuditExportController` | `GET /api/audit/entries/export` | `audit.export` (spec 0010) |
 | `HealthController`, `ConfigController` | `GET /api/health`, `GET /api/config` | none (public) |
 
 ## Decision

@@ -2,9 +2,14 @@
 export type AuditErrorCode =
   | 'AuditReasonRequired'
   | 'AuditReasonTooLong'
+  | 'AuditReasonInvalid'
   | 'UnknownAuditAction'
   | 'AuditRecordTypeMismatch'
-  | 'AuditPersonalDataRefused';
+  | 'AuditCorrelationMismatch'
+  | 'AuditPersonalDataRefused'
+  | 'AuditReadForbidden'
+  | 'AuditEntryNotFound'
+  | 'AuditExportTooLarge';
 
 /**
  * Base of every typed audit domain error (spec 0010, API surface). Domain code throws these; the
@@ -38,6 +43,19 @@ export class AuditReasonTooLong extends AuditError {
   }
 }
 
+/**
+ * A typed note, or a code the action does not list, where the record type takes a reason code
+ * (spec 0010, AC-5, security reviews AS13, AS23): a customer, order, exchange, or outbound
+ * command keeps one of its action's `reasonCodes`, never free text about a person. The api
+ * answers 422 `REASON_INVALID`.
+ */
+export class AuditReasonInvalid extends AuditError {
+  /** Takes the action code; the reason text itself is never carried. */
+  constructor(readonly action: string) {
+    super('AuditReasonInvalid', 'This action takes a reason code, not a typed note');
+  }
+}
+
 /** The action code is not in `AUDIT_ACTIONS` (AC-10): a programming error, caught in tests. */
 export class UnknownAuditAction extends AuditError {
   /** Takes the code that is not registered. */
@@ -61,12 +79,58 @@ export class AuditRecordTypeMismatch extends AuditError {
 }
 
 /**
- * Personal data reached `record_label` or `undo_args`, where it is refused rather than masked
- * (AC-4, AC-14): a programming error, caught in tests. Names the field, never the value.
+ * A `recordMany` call mixed correlation ids (spec 0010, AC-6): one call is one business action,
+ * so its entries share one id. A programming error, caught in tests.
+ */
+export class AuditCorrelationMismatch extends AuditError {
+  /** Builds the error; the ids themselves are not carried. */
+  constructor() {
+    super(
+      'AuditCorrelationMismatch',
+      'The entries of one recordMany call must share a correlation id',
+    );
+  }
+}
+
+/**
+ * Personal data reached `record_label` or `undo_args`, where it is refused rather than masked, or
+ * a phone shaped key reached any diff (AC-4, AC-14; security review AS3, AS4): a programming
+ * error, caught in tests. Names the field, never the value.
  */
 export class AuditPersonalDataRefused extends AuditError {
   /** Takes the entry field that held personal data (`record.label` or `undo.args`). */
   constructor(readonly field: string) {
     super('AuditPersonalDataRefused', `Personal data is not allowed in ${field}`);
+  }
+}
+
+/**
+ * The viewer may not read the trail (spec 0010, AC-13): they lack `audit.read` (the manager hat
+ * by default, spec 0008). Thrown by `AuditQueryService.forRecord`, which other modules reach with a viewer
+ * (review AR3); the api answers 403 `FORBIDDEN`.
+ */
+export class AuditReadForbidden extends AuditError {
+  /** Builds the error; it names no viewer. */
+  constructor() {
+    super('AuditReadForbidden', 'Only a manager can read the audit trail');
+  }
+}
+
+/** No entry has this id (spec 0010, API surface); the api answers 404 `ENTRY_NOT_FOUND`. */
+export class AuditEntryNotFound extends AuditError {
+  /** Builds the error; the id is not carried. */
+  constructor() {
+    super('AuditEntryNotFound', 'Audit entry not found');
+  }
+}
+
+/**
+ * The export would hold more than 200,000 rows (spec 0010, AC-15): decided before anything
+ * streams; the api answers 413 `EXPORT_TOO_LARGE` and asks for a narrower range.
+ */
+export class AuditExportTooLarge extends AuditError {
+  /** Builds the error with the row limit the caller passed. */
+  constructor(readonly limit: number) {
+    super('AuditExportTooLarge', `An export holds at most ${limit} rows. Choose a shorter range.`);
   }
 }

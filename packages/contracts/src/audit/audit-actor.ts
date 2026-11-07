@@ -36,3 +36,37 @@ export const AuditActor = z.discriminatedUnion('kind', [
 ]);
 /** One actor, as the audit module's writer takes it. */
 export type AuditActor = z.infer<typeof AuditActor>;
+
+/**
+ * A staff person acting under a hat (spec 0010, AC-3), built from the session. Validates the
+ * shape and throws a `ZodError` on a malformed id or an empty hat, so a wrong actor fails in the
+ * caller's code, before the table check.
+ */
+export function personActor(userId: string, hat: string): AuditActor {
+  return AuditActor.parse({ kind: 'person', userId, hat });
+}
+
+/** A partner user acting for the partner account on their own hat row (spec 0008, AC-9). */
+export function partnerUserActor(userId: string, partnerAccountId: string): AuditActor {
+  return AuditActor.parse({ kind: 'partner_user', userId, partnerAccountId });
+}
+
+/** A scheduled or queued job: its name and its pg-boss job id. */
+export function systemJobActor(name: string, jobId: string): AuditActor {
+  return AuditActor.parse({ kind: 'system_job', name, jobId });
+}
+
+/** A carrier acting through its connection (for example a Bosta status feed). */
+export function carrierActor(connectionCode: string): AuditActor {
+  return AuditActor.parse({ kind: 'carrier', connectionCode });
+}
+
+/** An import run (a file or a connector backfill). */
+export function importActor(runId: string): AuditActor {
+  return AuditActor.parse({ kind: 'import', runId });
+}
+
+/** A customer acting through a verified signed link (the portal). */
+export function portalCustomerActor(customerId: string): AuditActor {
+  return AuditActor.parse({ kind: 'portal_customer', customerId });
+}

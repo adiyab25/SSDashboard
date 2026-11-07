@@ -108,9 +108,9 @@ export const auditEntries = pgTable(
     check(
       'audit_actor_shape',
       sql`CASE ${t.actorKind}
-        WHEN 'person' THEN ${t.actorUserId} IS NOT NULL AND ${t.actorRef} IS NULL AND ${t.jobId} IS NULL
+        WHEN 'person' THEN ${t.actorUserId} IS NOT NULL AND ${t.actorRef} IS NULL AND ${t.jobId} IS NULL AND ${t.actorHat} IS NOT NULL
         WHEN 'partner_user' THEN ${t.actorUserId} IS NOT NULL AND ${t.actorRef} IS NOT NULL AND ${t.jobId} IS NULL AND ${t.actorHat} IS NULL
-        WHEN 'system_job' THEN ${t.actorUserId} IS NULL AND ${t.actorRef} IS NOT NULL AND ${t.actorHat} IS NULL
+        WHEN 'system_job' THEN ${t.actorUserId} IS NULL AND ${t.actorRef} IS NOT NULL AND ${t.actorHat} IS NULL AND ${t.jobId} IS NOT NULL
         ELSE ${t.actorUserId} IS NULL AND ${t.actorRef} IS NOT NULL AND ${t.jobId} IS NULL AND ${t.actorHat} IS NULL
       END`,
     ),
@@ -118,6 +118,11 @@ export const auditEntries = pgTable(
     check(
       'audit_reason_length',
       sql`${t.reason} IS NULL OR length(btrim(${t.reason})) BETWEEN 1 AND 500`,
+    ),
+    // A label is a short code or number (security review AS3); the writer also checks its shape.
+    check(
+      'audit_record_label_length',
+      sql`${t.recordLabel} IS NULL OR char_length(${t.recordLabel}) BETWEEN 1 AND 64`,
     ),
     check(
       'audit_json_objects',

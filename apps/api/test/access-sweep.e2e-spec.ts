@@ -128,6 +128,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     partnerTarget: '',
     accountA: '',
     accountB: '',
+    auditEntry: '',
+    auditDay: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -220,8 +222,21 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => `/stock-receipts/${ids.receiptToVoid}/void`,
       body: () => ({ reason: 'sweep' }),
     },
-    // Spec 0010: the audit trail, `audit.read` on the manager hat only.
+    // Spec 0010: the audit trail, `audit.read` and `audit.export` on the manager hat only. The
+    // detail and the history read a planted entry whose diff carries cost fields.
     'GET /audit/entries': { needs: ['audit.read'] },
+    'GET /audit/entries/:id': {
+      needs: ['audit.read'],
+      path: () => `/audit/entries/${ids.auditEntry}`,
+    },
+    'GET /audit/records/:type/:id/entries': {
+      needs: ['audit.read'],
+      path: () => `/audit/records/stock_receipt/${ids.receipt}/entries`,
+    },
+    'GET /audit/entries/export': {
+      needs: ['audit.export'],
+      path: () => `/audit/entries/export?dayFrom=${ids.auditDay}&dayTo=${ids.auditDay}`,
+    },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
       needs: PEOPLE_MANAGE,
@@ -423,6 +438,19 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     ids.receiptToVoid = await receipt();
     ids.staffTarget = (await api.addPerson(['support'])).id;
     ids.partnerTarget = (await api.addPerson(['partner'], { partnerAccountId: ids.accountA })).id;
+    // An entry of the planted receipt whose diff carries cost fields, written as the owner (the
+    // registry is not the point here), so the audit reads show whether cost leaves them.
+    const planted = await api.owner.pool.query<{ id: string; day: string }>(
+      `INSERT INTO audit_entries (correlation_id, actor_kind, actor_ref, action, record_type,
+                                  record_id, record_label, before, after)
+       VALUES (gen_random_uuid(), 'carrier', 'bosta', 'planted.costed', 'stock_receipt', $1,
+               NULL, '{"status":"posted","referenceValue":"28.00"}'::jsonb,
+               '{"status":"voided","lines":[{"unitCost":"7.00","quantity":4}]}'::jsonb)
+       RETURNING id, to_char(operating_day, 'YYYY-MM-DD') AS day`,
+      [ids.receipt],
+    );
+    ids.auditEntry = planted.rows[0]?.id ?? '';
+    ids.auditDay = planted.rows[0]?.day ?? '';
   }, 180_000);
 
   afterAll(async () => {
@@ -549,6 +577,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         'GET /stock',
         'GET /skus/:id/stock',
         'GET /skus/:id/movements',
+        'GET /audit/entries/:id',
+        'GET /audit/records/:type/:id/entries',
       ]),
     );
   });

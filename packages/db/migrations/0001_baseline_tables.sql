@@ -79,13 +79,14 @@ CREATE TABLE "audit_entries" (
 	"undoes_entry_id" uuid,
 	CONSTRAINT "audit_actor_kind" CHECK ("audit_entries"."actor_kind" IN ('person', 'partner_user', 'system_job', 'carrier', 'import', 'portal_customer')),
 	CONSTRAINT "audit_actor_shape" CHECK (CASE "audit_entries"."actor_kind"
-        WHEN 'person' THEN "audit_entries"."actor_user_id" IS NOT NULL AND "audit_entries"."actor_ref" IS NULL AND "audit_entries"."job_id" IS NULL
+        WHEN 'person' THEN "audit_entries"."actor_user_id" IS NOT NULL AND "audit_entries"."actor_ref" IS NULL AND "audit_entries"."job_id" IS NULL AND "audit_entries"."actor_hat" IS NOT NULL
         WHEN 'partner_user' THEN "audit_entries"."actor_user_id" IS NOT NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."job_id" IS NULL AND "audit_entries"."actor_hat" IS NULL
-        WHEN 'system_job' THEN "audit_entries"."actor_user_id" IS NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."actor_hat" IS NULL
+        WHEN 'system_job' THEN "audit_entries"."actor_user_id" IS NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."actor_hat" IS NULL AND "audit_entries"."job_id" IS NOT NULL
         ELSE "audit_entries"."actor_user_id" IS NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."job_id" IS NULL AND "audit_entries"."actor_hat" IS NULL
       END),
 	CONSTRAINT "audit_action_format" CHECK ("audit_entries"."action" ~ '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$'),
 	CONSTRAINT "audit_reason_length" CHECK ("audit_entries"."reason" IS NULL OR length(btrim("audit_entries"."reason")) BETWEEN 1 AND 500),
+	CONSTRAINT "audit_record_label_length" CHECK ("audit_entries"."record_label" IS NULL OR char_length("audit_entries"."record_label") BETWEEN 1 AND 64),
 	CONSTRAINT "audit_json_objects" CHECK (("audit_entries"."before" IS NULL OR jsonb_typeof("audit_entries"."before") = 'object') AND ("audit_entries"."after" IS NULL OR jsonb_typeof("audit_entries"."after") = 'object')),
 	CONSTRAINT "audit_undo_pair" CHECK (("audit_entries"."undo_action" IS NULL) = ("audit_entries"."undo_args" IS NULL)),
 	CONSTRAINT "audit_undo_entry_not_undoable" CHECK ("audit_entries"."undoes_entry_id" IS NULL OR "audit_entries"."undo_action" IS NULL)

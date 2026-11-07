@@ -1,6 +1,6 @@
-import type { AuditEntryListResponse } from '@ssdashboard/contracts';
+import type { AuditEntryDetail, AuditEntryListResponse } from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
-import { serializeAuditPage } from './audit-cost-fields.js';
+import { auditDiffFor, serializeAuditDetail, serializeAuditPage } from './audit-cost-fields.js';
 
 const entry = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -44,5 +44,40 @@ describe('serializeAuditPage (spec 0008 AC-6, spec 0010 security model)', () => 
     expect(shown.items[0]?.before).toBeNull();
     expect(shown.nextCursor).toBe('x');
     expect(entry.before.referenceValue).toBe('100.00');
+  });
+});
+
+describe('serializeAuditDetail (spec 0008 AC-6, spec 0010 AC-12)', () => {
+  const detail: AuditEntryDetail = {
+    ...entry,
+    changes: [
+      { field: 'status', before: 'posted', after: 'voided', personal: false },
+      { field: 'referenceValue', before: '100.00', after: null, personal: false },
+      { field: 'avgUnitCost', before: null, after: '4.00', personal: false },
+      { field: 'lines', before: [{ sku: 'A', unitCost: '5.00' }], after: null, personal: false },
+    ],
+  };
+
+  it('drops cost changes and strips cost keys inside the kept ones without cost.view', () => {
+    const shown = serializeAuditDetail(detail, { has: () => false });
+    expect(shown.before).toEqual({ status: 'posted', lines: [{ sku: 'A' }] });
+    expect(shown.after).toEqual({ status: 'voided' });
+    expect(shown.changes).toEqual([
+      { field: 'status', before: 'posted', after: 'voided', personal: false },
+      { field: 'lines', before: [{ sku: 'A' }], after: null, personal: false },
+    ]);
+    expect(detail.changes).toHaveLength(4);
+  });
+
+  it('keeps the detail unchanged with cost.view', () => {
+    expect(serializeAuditDetail(detail, { has: (p) => p === 'cost.view' })).toBe(detail);
+  });
+});
+
+describe('auditDiffFor (the export cells)', () => {
+  it('strips cost keys without cost.view, keeps them with it, and keeps null', () => {
+    expect(auditDiffFor(entry.before, false)).toEqual({ status: 'posted', lines: [{ sku: 'A' }] });
+    expect(auditDiffFor(entry.before, true)).toBe(entry.before);
+    expect(auditDiffFor(null, false)).toBeNull();
   });
 });
