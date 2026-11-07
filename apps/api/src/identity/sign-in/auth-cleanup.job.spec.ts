@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseConnection } from '@ssdashboard/db';
 import type { Env } from '../../config/env.js';
-import { JOB_SCHEMA } from '../../inventory/ledger/reconcile.job.js';
-import type { SettingsService } from '../../platform/settings.service.js';
+import { JOB_SCHEMA } from '../../platform/job-schema.js';
+import type { SettingsService } from '../../platform/settings/settings.service.js';
 import {
   AUTH_CLEANUP_EXPIRY_SECONDS,
   AUTH_CLEANUP_QUEUE,

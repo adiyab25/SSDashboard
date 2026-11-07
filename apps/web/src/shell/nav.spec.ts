@@ -52,6 +52,12 @@ describe('visibleNavItems (spec 0008, AC-11)', () => {
     expect(ids(['support', 'manager'])).toEqual(ids(['manager']));
   });
 
+  it('shows Settings to a manager only (settings.manage)', () => {
+    expect(ids(['manager'])).toContain('settings');
+    expect(ids(['support', 'operations', 'warehouse'])).not.toContain('settings');
+    expect(ids()).not.toContain('settings');
+  });
+
   it('shows Audit trail to a manager only (audit.read)', () => {
     expect(ids(['manager'])).toContain('audit');
     expect(ids(['support', 'operations', 'warehouse'])).not.toContain('audit');

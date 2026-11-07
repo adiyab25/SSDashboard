@@ -11,7 +11,7 @@ import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
-import { SettingsService } from '../src/platform/settings.service.js';
+import { SettingsService } from '../src/platform/settings/settings.service.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,

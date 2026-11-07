@@ -8,6 +8,8 @@ export interface ApiErrorBody {
   skuIds?: string[];
   /** `UNDO_NOT_POSSIBLE` on an audit undo: the owning module's own code, such as `MERGE_NOT_LATEST`. */
   undoCode?: string;
+  /** `SETTING_INVALID`: where inside the value each fault is (a document type, an array index, or empty). */
+  issues?: { path: string; message: string }[];
 }
 
 /** A failed call. `status` 0 means the request never got an answer. */
@@ -48,11 +50,22 @@ function errorBody(json: unknown): ApiErrorBody {
       : undefined;
   const undoCode =
     'undoCode' in json && typeof json.undoCode === 'string' ? json.undoCode : undefined;
+  const issues =
+    'issues' in json && Array.isArray(json.issues)
+      ? json.issues.flatMap((item: unknown) => {
+          if (typeof item !== 'object' || item === null) return [];
+          const { path, message } = item as { path?: unknown; message?: unknown };
+          return typeof message === 'string'
+            ? [{ path: typeof path === 'string' ? path : '', message }]
+            : [];
+        })
+      : undefined;
   return {
     code,
     ...(lineErrors && { lineErrors }),
     ...(skuIds && { skuIds }),
     ...(undoCode && { undoCode }),
+    ...(issues && { issues }),
   };
 }
 
@@ -61,7 +74,7 @@ function errorBody(json: unknown): ApiErrorBody {
  * throws `ApiError` with the api's stable code, which is what TanStack Query hands to `error`.
  */
 export async function apiRequest<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   schema: { parse: (value: unknown) => T },
   options: { body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {},

@@ -117,6 +117,8 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Staff',
       // Audit trail is admin only too (spec 0010, AC-18).
       'Audit trail',
+      // Settings needs settings.manage, which the administrator holds (spec 0009, AC-25).
+      'Settings',
       // The inventory group (spec 0006).
       'Stock on hand',
       'Stock receipts',

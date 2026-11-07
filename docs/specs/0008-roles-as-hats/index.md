@@ -104,6 +104,12 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `AuditExportController` | `POST /api/audit/entries/export` (a GET until 2026-11-07, spec 0010 security review AS28) | `audit.export` (spec 0010) |
 | `AuditUndoController` | `POST /api/audit/entries/:id/undo` | `audit.undo` (class; spec 0010 AC-14) |
 | `HealthController`, `ConfigController` | `GET /api/health`, `GET /api/config` | none (public) |
+| `ModulesController` | `GET /api/platform/modules` | `@AnyHat()` (added by [spec 0009](../0009-settings-toggles-bundles/index.md); the license notice inside only for `settings.manage`) |
+| `SettingsController` | `GET /api/settings`, `PUT /api/settings/:key`, `GET /api/settings/:key/off-impact` | `settings.manage` (class; added by spec 0009) |
+| `LicenseController` | `GET /api/platform/license`, `POST /api/platform/license` | `settings.manage` (class; added by spec 0009) |
+| `CostRulesController` | `GET /api/platform/cost-rules` | `cost.view` (added by spec 0009) |
+| `CostRulesController` | `POST /api/platform/cost-rules` | `settings.manage`, `cost.view` (both required; added by spec 0009) |
+| `OwnerPoliciesController` | `GET /api/inventory/owner-policies`, `PUT /api/inventory/owner-policies/:ownerType` | `settings.manage` (class; added by spec 0009) |
 
 ## Decision
 

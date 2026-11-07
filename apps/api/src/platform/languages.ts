@@ -1,5 +1,5 @@
 import { UnprocessableEntityException } from '@nestjs/common';
-import type { SettingsService } from './settings.service.js';
+import type { SettingsService } from './settings/settings.service.js';
 
 /**
  * Refuses a language the install has not enabled (422 `INVALID_LANGUAGE`). The allowed set is

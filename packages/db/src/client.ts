@@ -68,6 +68,20 @@ export interface CreateDatabaseOptions {
    * checked before any row is written. Never pass a handler that carries on.
    */
   onTenantMismatch?: (error: SessionTenantMismatch) => void;
+  /**
+   * TCP keepalive on every connection, so a connection the network silently dropped (a half open
+   * socket) errors instead of waiting forever. Off when unset (pg's default). The api's
+   * `LISTEN` connection turns it on.
+   */
+  keepAlive?: boolean;
+  /**
+   * With `keepAlive`, how long a connection may sit idle before the first keepalive probe is sent
+   * (the socket's `setKeepAlive` initial delay). After that the operating system's own probe
+   * interval and count decide when a dead peer is declared and the connection errors.
+   */
+  keepAliveInitialDelayMillis?: number;
+  /** How long to wait for a new connection before failing it; no limit when unset (pg's default). */
+  connectionTimeoutMillis?: number;
 }
 
 /** Opens a pooled connection for the given URL. The api and worker pass the app role URL; only migrate uses the owner URL. */
@@ -79,6 +93,13 @@ export function createDatabase(
   const pool = new pg.Pool({
     connectionString,
     max: options.max ?? 10,
+    ...(options.keepAlive !== undefined && { keepAlive: options.keepAlive }),
+    ...(options.keepAliveInitialDelayMillis !== undefined && {
+      keepAliveInitialDelayMillis: options.keepAliveInitialDelayMillis,
+    }),
+    ...(options.connectionTimeoutMillis !== undefined && {
+      connectionTimeoutMillis: options.connectionTimeoutMillis,
+    }),
     // pg-pool awaits this hook and only hands the connection out once it resolves; a rejection
     // ends the connection and fails the waiting query with the same error (pg-pool 3.14
     // `newClient`; @types/pg types the hook as returning void, hence the rule exception).

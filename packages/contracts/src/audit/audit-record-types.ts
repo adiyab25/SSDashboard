@@ -94,6 +94,17 @@ export const AUDIT_RECORD_TYPES = {
     labelPattern: null,
     labelIsOwnCode: false,
   },
+  setting: {
+    // An install setting (spec 0009, AC-3): the record id is the key's v5 uuid
+    // (`settingRecordId`), the label is the key itself (`operating_day_cutoff_hour`), the diff is
+    // the stored value before and after, and the reason is the manager's free text. Settings hold
+    // the brand's own choices, never a customer's data.
+    label: 'audit.recordTypes.setting',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: AUDIT_RECORD_LABEL_PATTERN,
+    labelIsOwnCode: false,
+  },
   audit_entry: {
     // An export of the trail (spec 0010, AC-15): the record id is the export's own id, the filter
     // is in `after`, and there is no label.

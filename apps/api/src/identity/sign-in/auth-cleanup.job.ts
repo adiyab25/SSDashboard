@@ -10,8 +10,8 @@ import { PgBoss } from 'pg-boss';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
 import { DATABASE } from '../../database/database.module.js';
-import { JOB_SCHEMA } from '../../inventory/ledger/reconcile.job.js';
-import { SettingsService } from '../../platform/settings.service.js';
+import { JOB_SCHEMA } from '../../platform/job-schema.js';
+import { SettingsService } from '../../platform/settings/settings.service.js';
 import { LOCKOUT } from './sign-in-lockout.js';
 
 /** The pg-boss queue that carries the nightly sign in cleanup job. */
