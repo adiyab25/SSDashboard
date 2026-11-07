@@ -327,8 +327,9 @@ describe('core data model schema (spec 0002)', () => {
 
   // AC-33 (spec 0002, A4): every table that can only grow. The app role is refused on permissions,
   // the owner on the trigger. The A4 tables not built yet join this list with their features:
-  // `audit_entries` (feature 10, spec 0010), `licenses` and `license_checks` (feature 9, spec 0009),
-  // and `export_runs` (feature 45, its status columns stay updatable).
+  // `licenses` and `license_checks` (feature 9, spec 0009), and `export_runs` (feature 45, its
+  // status columns stay updatable). `audit_entries` (spec 0010) is here, and its own suite
+  // (`audit-append-only.e2e-spec.ts`) adds the planted grant.
   describe('the append only tables (AC-33)', () => {
     type Seeded = { update: string; remove: string; params: string[] };
 
@@ -543,6 +544,19 @@ describe('core data model schema (spec 0002)', () => {
           params: [event.id],
         };
       },
+      audit_entries: async () => {
+        const entry = await one<{ id: string }>(
+          owner,
+          `INSERT INTO audit_entries (correlation_id, actor_kind, actor_ref, action, record_type, record_id)
+           VALUES (gen_random_uuid(), 'carrier', 'bosta', 'stock_receipt.voided', 'stock_receipt', gen_random_uuid())
+           RETURNING id`,
+        );
+        return {
+          update: "UPDATE audit_entries SET reason = 'x' WHERE id = $1",
+          remove: 'DELETE FROM audit_entries WHERE id = $1',
+          params: [entry.id],
+        };
+      },
       order_cost_rules: async () => {
         const rule = await one<{ id: string }>(
           owner,
@@ -710,6 +724,15 @@ describe('core data model schema (spec 0002)', () => {
           [period.id, FUTURE],
         );
       },
+      // Spec 0010 AS1: the audit trail's instant is the database's too (its id stamp follows).
+      audit_entries: () =>
+        one(
+          app,
+          `INSERT INTO audit_entries (recorded_at, correlation_id, actor_kind, actor_ref, action, record_type, record_id)
+           VALUES ($1, gen_random_uuid(), 'carrier', 'bosta', 'stock_receipt.voided', 'stock_receipt', gen_random_uuid())
+           RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
+          [FUTURE],
+        ),
     };
 
     it('stamps recorded_at on every append only table that has one, first of its insert triggers (S1)', async () => {

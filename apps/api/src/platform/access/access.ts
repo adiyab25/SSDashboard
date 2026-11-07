@@ -2,6 +2,7 @@ import {
   type AccessAudience,
   Hat,
   HAT_AUDIENCE,
+  HAT_PERMISSIONS,
   Permission,
   permissionsFor,
 } from '@ssdashboard/contracts';
@@ -73,6 +74,16 @@ export class Access {
   /** Whether the person holds every one of these permissions (an empty list is never enough). */
   hasAll(permissions: readonly Permission[]): boolean {
     return permissions.length > 0 && permissions.every((permission) => this.held.has(permission));
+  }
+
+  /**
+   * The hat an audit entry names for an action that needs `permission` (spec 0010, AC-3,
+   * `actor_hat`): the first hat in catalog order whose permissions include it, else the first hat
+   * worn (a permission held only through a grant), else `none`. Never a hat the person lacks.
+   */
+  actingHat(permission: Permission): string {
+    const hat = this.hats.find((held) => HAT_PERMISSIONS[held].includes(permission));
+    return hat ?? this.hats[0] ?? 'none';
   }
 
   /** Whether one of the person's hats belongs to this audience (what `@AnyHat()` asks). */

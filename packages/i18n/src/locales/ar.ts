@@ -27,6 +27,7 @@ export const ar: Catalog = {
         receipts: 'أذونات الاستلام',
         skus: 'الأصناف',
         locations: 'المواقع',
+        audit: 'سجل المراجعة',
       },
     },
     sidebar: {
@@ -916,6 +917,40 @@ export const ar: Catalog = {
       },
     },
   },
+  audit: {
+    title: 'سجل المراجعة',
+    description: 'من غيّر ماذا، من الأحدث إلى الأقدم. لا يمكن تعديل السجلات أو حذفها.',
+    tableLabel: 'سجلات المراجعة',
+    columns: { time: 'الوقت', actor: 'من', action: 'ماذا', record: 'السجل', reason: 'السبب' },
+    empty: 'لا توجد سجلات مطابقة',
+    noReason: 'لم يُذكر سبب',
+    loadError: 'تعذر تحميل سجلات المراجعة.',
+    retry: 'حاول مرة أخرى',
+    loadMore: 'تحميل المزيد',
+    endOfList: 'نهاية سجل المراجعة',
+    loadMoreError: 'تعذر تحميل السجلات التالية.',
+    forbidden: 'قبعاتك لا تشمل سجل المراجعة. اطلب من المدير إذا كنت تحتاجه.',
+    unknownPerson: 'شخص غير معروف',
+    actorKinds: {
+      person: 'شخص',
+      partnerUser: 'مستخدم شريك',
+      systemJob: 'مهمة النظام',
+      carrier: 'شركة الشحن',
+      import: 'استيراد',
+      portalCustomer: 'عميل',
+    },
+    recordTypes: { stockReceipt: 'إذن استلام', user: 'شخص' },
+    // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
+    actions: {
+      stockReceiptVoided: 'إلغاء إذن استلام',
+      hatGranted: 'منح قبعات أو صلاحية التكلفة',
+      hatRevoked: 'سحب قبعات أو صلاحية التكلفة',
+      staffUserCreated: 'إنشاء حساب موظف',
+      staffUserDisabled: 'تعطيل حساب موظف',
+      staffUserEnabled: 'تفعيل حساب موظف',
+      staffUserPasswordReset: 'إعادة تعيين كلمة مرور موظف',
+    },
+  },
   mail: {
     reset: {
       subject: 'إعادة تعيين كلمة المرور في {{clientName}}',
@@ -934,5 +969,68 @@ export const ar: Catalog = {
       ignore: 'إذا لم تكن تتوقع ذلك فتجاهل هذه الرسالة.',
     },
     fallbackName: 'زميلنا',
+  },
+  help: {
+    common: {
+      open: 'مساعدة',
+      close: 'إغلاق المساعدة',
+      stepsHeading: 'طريقة العمل',
+      glossaryHeading: 'معنى النتائج',
+      settingsHeading: 'إعدادات تغير هذه الشاشة',
+      checklistShow: 'أظهر الخطوات الأولى مرة أخرى',
+      checklistTitle: 'خطواتك الأولى',
+      checklistProgress: '{{done}} من {{total}}',
+      checklistDone: 'تم',
+      checklistTodo: 'قيد التنفيذ',
+      checklistDismiss: 'إخفاء الخطوات الأولى',
+    },
+    confirmationQueue: {
+      title: 'كيف تعمل قائمة التأكيد',
+      description: 'طلب واحد في كل مرة. اتصل بالعميل ثم سجل ما حدث.',
+      steps: {
+        '1': 'اقرأ الطلب: العميل والمنتجات والإجمالي والمنطقة.',
+        '2': 'اتصل بالعميل على الرقم الظاهر.',
+        '3': 'اضغط الزر المناسب لما حدث، أو مفتاح الرقم من 1 إلى 4.',
+        '4': 'يُفتح الطلب التالي تلقائياً.',
+      },
+      glossary: {
+        confirmed: {
+          chip: 'مؤكد',
+          description: 'وافق العميل على الطلب. ينتقل بعدها إلى المخزن.',
+        },
+        noAnswer: {
+          chip: 'لم يرد',
+          description:
+            'لم يرد العميل. يعود الطلب إلى قائمتك، وبعد {{limit}} مرات دون رد يُغلق الطلب.',
+        },
+        callBack: {
+          chip: 'معاودة الاتصال',
+          description: 'طلب العميل أن تتصل به لاحقاً. يعود الطلب بعد مدة الانتظار.',
+        },
+        cancelled: {
+          chip: 'ملغي',
+          description: 'لا يريد العميل الطلب. يُغلق الطلب ويُفرج عن المخزون.',
+        },
+      },
+      settings: {
+        noAnswerLimit: 'مرات عدم الرد قبل إغلاق الطلب',
+      },
+      hint: {
+        phone: {
+          label: 'مساعدة: هاتف العميل',
+          body: 'اتصل بهذا الرقم. لا يُحسب عدم الرد إلا بعد اتصال فعلي.',
+        },
+        noAnswer: {
+          label: 'مساعدة: لم يرد',
+          body: 'بعد {{limit}} مرات دون رد يُغلق الطلب، فلا تسجل ذلك إلا بعد أن تتصل.',
+        },
+      },
+      checklist: {
+        openQueue: 'افتح قائمة التأكيد',
+        confirmFirst: 'أكد أول طلب لك',
+        recordNoAnswer: 'سجل حالة لم يرد',
+        scheduleCallBack: 'حدد معاودة اتصال',
+      },
+    },
   },
 };

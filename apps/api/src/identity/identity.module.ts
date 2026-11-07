@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import type { DatabaseConnection } from '@ssdashboard/db';
+import { AuditModule } from '../audit/audit.module.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DATABASE } from '../database/database.module.js';
@@ -9,7 +10,8 @@ import { PermissionGuard } from '../platform/access/permission.guard.js';
 import { AudienceGuard } from '../platform/audience/audience.guard.js';
 import { PlatformModule } from '../platform/platform.module.js';
 import { AccessLoader } from './access/access-loader.js';
-import { IDENTITY_AUDIT, PendingIdentityAudit } from './audit-port/identity-audit.js';
+import { AuditTrailIdentityAudit } from './audit-port/audit-trail-identity-audit.js';
+import { IDENTITY_AUDIT } from './audit-port/identity-audit.js';
 import { HatService } from './hats/hat.service.js';
 import { AuthAudit } from './sign-in/auth-audit.service.js';
 import { AuthMail } from './sign-in/auth-mail.service.js';
@@ -27,7 +29,8 @@ import { StaffService } from './staff/staff.service.js';
  * The identity module (spec 0005, AC-27): staff sign in (Better Auth, the lockout, the mail
  * callbacks, the global session guard, `GET /api/me`), the person's hats and grants read on every
  * request (spec 0008, `access/`), giving and taking hats (`hats/`, `HatService`), and staff
- * administration (`/api/staff`).
+ * administration (`/api/staff`). It imports `AuditModule` and records through `AuditService`
+ * only (the `IDENTITY_AUDIT` adapter).
  *
  * It exports no provider. Other modules reach identity only through a short list of files,
  * `IDENTITY_PUBLIC_FILES` in `src/module-boundary.spec.ts`: this file, the request type in
@@ -38,7 +41,7 @@ import { StaffService } from './staff/staff.service.js';
  * this module.
  */
 @Module({
-  imports: [MailModule, PlatformModule],
+  imports: [AuditModule, MailModule, PlatformModule],
   controllers: [MeController, StaffController],
   providers: [
     SignInLockout,
@@ -48,9 +51,9 @@ import { StaffService } from './staff/staff.service.js';
     StaffService,
     AccessLoader,
     HatService,
-    // The audit trail of spec 0010 is not on this branch yet: entries go nowhere and the log lines
-    // and events stay the record. When `AuditService` lands, bind an adapter over it here.
-    { provide: IDENTITY_AUDIT, useClass: PendingIdentityAudit },
+    // Hat and staff account changes write their entries through spec 0010's `AuditService`, in
+    // the change's own transaction (spec 0008 AC-13).
+    { provide: IDENTITY_AUDIT, useClass: AuditTrailIdentityAudit },
     // Who may use which audience, from the person's hats (spec 0008, AC-10).
     { provide: SESSION_AUDIENCES, useClass: HatSessionAudiences },
     {

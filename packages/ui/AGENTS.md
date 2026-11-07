@@ -12,7 +12,7 @@
 | `src/components/*.tsx` | shadcn components in their vendor shape (compound files like `dialog.tsx` hold several components; exempt from the one component rule by [ADR 0001](../../docs/adr/0001-shadcn-component-files-keep-their-vendor-shape.md)), imported as `@ssdashboard/ui/components/<name>` |
 | `src/status/*.tsx` | Status display, one component per file (`status-chip`, `status-chip-overflow`, `provisional-value`, `freshness-strip`), imported as `@ssdashboard/ui/status/<name>`; outside `src/components/`, so the one component rules apply |
 | `src/frames/*.tsx` | `PortalFrame`, `PartnerFrame`, and their shared `BrandMark`, imported as `@ssdashboard/ui/frames/<name>`; each renders the one `main` and the one `h1`, the brand accent goes on the frame root as inline `--brand` tokens |
-| `src/dashboard/*.tsx` | Phone first dashboard parts (`metric-card`, `bottom-tabs`, `needs-you-list`, `collapsing-table`), imported as `@ssdashboard/ui/dashboard/<name>`; plain `<a>` links, no `next/*`, tabs capped at four, list at five |
+| `src/dashboard/*.tsx` | Phone first dashboard parts (`metric-card`, `bottom-tabs`, `bottom-tabs-spacer`, `needs-you-list`, `collapsing-table`), imported as `@ssdashboard/ui/dashboard/<name>`; plain `<a>` links, no `next/*`, tabs capped at four, list at five |
 | `src/help/*.tsx` | In screen help (`help-hint`, `help-panel`, `first-run-checklist`), imported as `@ssdashboard/ui/help/<name>`; text arrives as props, the app owns open state, dismissal, and the `help.<screen>.*` keys |
 | `src/lib/brand-tokens.ts` | `deriveBrandTokens(accent)` (4.5:1 gate, nearest passing suggestion), `FrameBrand`, `brandStyle` |
 | `src/lib/status-meaning.ts`, `src/lib/row-stripe.ts` | The `StatusMeaning` type and the decorative `rowStripeClassName` |

@@ -5,6 +5,7 @@ import {
   MapPinIcon,
   PackagePlusIcon,
   PaletteIcon,
+  ScrollTextIcon,
   TagIcon,
   UsersIcon,
   type LucideIcon,
@@ -60,6 +61,14 @@ export const navItems: readonly NavItem[] = [
     icon: UsersIcon,
     group: 'general',
     needs: 'people.manage',
+  },
+  {
+    id: 'audit',
+    labelKey: 'shell.nav.items.audit',
+    href: '/audit',
+    icon: ScrollTextIcon,
+    group: 'general',
+    needs: 'audit.read',
   },
   {
     id: 'stock',
