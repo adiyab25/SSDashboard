@@ -128,7 +128,7 @@ A style or variant is channel linked while its `channel_linked_at` is set. "Sour
     price: MoneyString | null, compareAtPrice: MoneyString | null,
     barcode: string | null, weightGrams: number | null,
     requiresShipping: boolean, tracked: boolean,
-  }[]                                  // 1 to 2,048
+  }[]                                  // 1 to 2,048 (Shopify's variant limit per product, confirmed on shopify.dev by spec 0015)
 }
 ```
 
@@ -171,7 +171,7 @@ All under `/api`, `@Audience('staff')`, bodies and queries as Zod schemas in `pa
 | `/seasons/:id/archive` · `/unarchive` (and the same for groups) | POST | id | the row | `catalog.manage` | 409 the protected code; 404 |
 | `/seasons/:id`, `/product-groups/:id` | DELETE | id | 204 | `catalog.manage` | 409 `IN_USE`, the protected code; 404 |
 
-Internal (exported, no route): `CatalogChannelSync.applyProduct(tx, input, actor)`, `CatalogChannelSync.unlink(tx, { styleIds, variantIds })`, `CostService.costForMany(variantIds, onDay)`.
+Internal (exported, no route): `CatalogChannelSync.applyProduct(tx, input, actor)`, `CatalogChannelSync.unlink(tx, { styleIds, variantIds })`, `CostService.costForMany(variantIds, onDay)`. Also exported, added by spec 0011 (task 9, AC-18): `CatalogService.lockForShare` and `CatalogService.lockForUpdate` on variant rows, so the ledger and reconciliation stop reading `product_variants` directly; this spec does not change them.
 
 ### Audit (AC-17)
 
@@ -337,7 +337,7 @@ Each is decided in this spec with the recommended answer, so the build can start
 ## Follow-up
 
 - [ ] Spec 0015: map Shopify's payload to `ChannelProductInput` (weight units to grams, the Default Title option to `[]`, gift cards skipped), keep `connection_external_ids`, call `unlink` when a connection or a Shopify variant goes, open tasks for `needs_sku`, `sku_mismatch`, `barcode_conflict`, `option_conflict`, and own the Shopify listing state (active, draft, archived).
-- [ ] Spec 0011 or the next catalog change: a catalog locking method (`CatalogService.lockForShare` and `lockForUpdate` on variant rows) so the ledger and reconciliation stop reading `product_variants` directly (`KNOWN_BREACHES` in `apps/api/src/module-boundary.spec.ts`).
+- [x] Taken by spec 0011 (task 9, AC-18): a catalog locking method (`CatalogService.lockForShare` and `lockForUpdate` on variant rows) so the ledger and reconciliation stop reading `product_variants` directly (`KNOWN_BREACHES` in `apps/api/src/module-boundary.spec.ts`).
 - [ ] Feature 9: register the three catalog settings and show them in a Catalog section.
 - [ ] Feature 8 (spec 0008): the matrix text of `catalog.manage` should also say "manage seasons and product groups, change style codes" (no new permission).
 - [ ] Feature 20: a scan endpoint can reuse the barcode branch (`barcodes_code_unique`) for an exact lookup.
