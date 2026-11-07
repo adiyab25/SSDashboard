@@ -13,7 +13,7 @@ import {
 // Spec 0009 milestone 1 (AC-25, AC-26): the /settings screen with the Brand and Policies
 // sections. A manager changes a setting with a reason in English and Arabic and the dialog
 // refuses without one; a typed confirmation guards the VAT switch; an Operations item is shown
-// disabled while only the core bundle is licensed; the screen is axe clean in both languages;
+// disabled with the plan it needs (the list is route mocked with that entry not licensed); the screen is axe clean in both languages;
 // a person without `settings.manage` gets the no access state and no sidebar entry.
 //
 // The write tests change `operating_day_cutoff_hour` and `prices_include_vat` (neither locks any
@@ -204,6 +204,17 @@ test.describe('as a manager', () => {
   test('shows an Operations item disabled with the plan it needs, and the currency without a change action', async ({
     page,
   }) => {
+    // The install may hold an Operations license (the dev bootstrap writes one), so the list is
+    // answered with that entry not licensed: the screen's own words for it are what is tested.
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const body = (await response.json()) as { entries: { key: string; licensed: boolean }[] };
+      const entries = body.entries.map((entry) =>
+        entry.key === 'operations_wind_down_days' ? { ...entry, licensed: false } : entry,
+      );
+      return route.fulfill({ response, json: { ...body, entries } });
+    });
     await useBrowserState(page, { dir: 'ltr' });
     await openSettings(page, 'ltr');
     const policies = rowOf(page, 'ltr', WIND_DOWN_LABEL);

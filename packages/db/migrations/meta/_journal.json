@@ -22,6 +22,20 @@
       "when": 1793994364569,
       "tag": "0002_baseline_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794080966102,
+      "tag": "0003_license_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794080967163,
+      "tag": "0004_license_rules",
+      "breakpoints": true
     }
   ]
 }

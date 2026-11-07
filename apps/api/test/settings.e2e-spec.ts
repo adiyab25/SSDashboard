@@ -11,6 +11,7 @@ import { PLATFORM_CHANGED_CHANNEL } from '../src/platform/settings/platform-chan
 import { RECONCILE_MODULES_QUEUE } from '../src/platform/settings/reconcile-modules.queue.js';
 import { settingRecordId } from '../src/platform/settings/setting-record-id.js';
 import { startInProcessApi, type InProcessApi, type PlantedPerson } from './in-process-api.js';
+import { grantLicense, testVendorKey, trustTestKey } from './license-support.js';
 
 // Spec 0009 milestone 1 (AC-2, AC-3, AC-26): one setting through the read and write path. A key
 // with no row reads as its default; a corrupt row reads as the default, flagged and logged once
@@ -77,8 +78,10 @@ describe('settings read and write (spec 0009)', { timeout: 120_000 }, () => {
     return heard.slice(0, heard.indexOf(sentinel)).filter((item) => !item.startsWith('sentinel-'));
   };
 
+  const key = testVendorKey();
+
   beforeAll(async () => {
-    api = await startInProcessApi();
+    api = await startInProcessApi((builder) => trustTestKey(builder, key));
     manager = await api.addPerson(['manager']);
     managerCookie = await api.signIn(manager.email);
     const support = await api.addPerson(['support']);
@@ -93,6 +96,38 @@ describe('settings read and write (spec 0009)', { timeout: 120_000 }, () => {
   afterAll(async () => {
     release?.();
     await api?.close();
+  });
+
+  // Security finding S6 (decided in spec 0009 milestone 2): on an install with no license only
+  // core settings change. An Operations setting answers 409 NOT_LICENSED and writes nothing; a
+  // core one is written. The case then records an Operations license, which the cases after it
+  // need for the Operations keys.
+  it('refuses an Operations setting until the Operations plan is licensed, and takes a core one (S6)', async () => {
+    expect((await entry('operations_wind_down_days')).licensed).toBe(false);
+
+    const operations = await put('operations_wind_down_days', {
+      value: 90,
+      reason: 'Longer wind down',
+      expectedUpdatedAt: null,
+    });
+    expect(operations.status, JSON.stringify(operations.body)).toBe(409);
+    expect(operations.body).toMatchObject({ code: 'NOT_LICENSED' });
+    const { rows } = await api.owner.pool.query<{ n: number }>(
+      `SELECT (SELECT count(*) FROM settings WHERE key = 'operations_wind_down_days')
+             + (SELECT count(*) FROM audit_entries WHERE action = 'setting.changed') AS n`,
+    );
+    expect(Number(rows[0]?.n)).toBe(0);
+
+    const core = await put('operating_day_cutoff_hour', {
+      value: 4,
+      reason: 'Night shift ends at four',
+      expectedUpdatedAt: (await entry('operating_day_cutoff_hour')).updatedAt,
+    });
+    expect(core.status, JSON.stringify(core.body)).toBe(200);
+    expect(PutSettingAnswer.parse(core.body)).toMatchObject({ changed: true, entry: { value: 4 } });
+
+    await grantLicense(api, key, manager);
+    expect((await entry('operations_wind_down_days')).licensed).toBe(true);
   });
 
   it('reads every registry entry, a key with no row as its default (AC-2, AC-26)', async () => {
@@ -111,7 +146,8 @@ describe('settings read and write (spec 0009)', { timeout: 120_000 }, () => {
       bundle: 'operations',
       group: 'policies',
       reason: 'required',
-      licensed: false,
+      // Licensed by the Operations license recorded in beforeAll.
+      licensed: true,
     });
     const timezone = entries.find((item) => item.key === 'timezone');
     expect(timezone).toMatchObject({

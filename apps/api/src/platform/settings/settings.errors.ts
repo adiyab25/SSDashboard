@@ -3,6 +3,7 @@ export type SettingErrorKind =
   | 'SettingUnknown'
   | 'SettingInvalid'
   | 'SettingLocked'
+  | 'NotLicensed'
   | 'SettingReasonRequired'
   | 'StaleSetting'
   | 'SettingUnreadable';

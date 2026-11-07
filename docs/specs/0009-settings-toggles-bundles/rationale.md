@@ -109,7 +109,7 @@ Executing steps are listed by name now, before their features exist, so that eve
 | Hook routes when off | 200 plus `ignored_unlicensed` | providers delete subscriptions that keep failing (spec 0007 section 1) | 404 |
 | License envelope | JSON with base64url payload bytes and signature | signs exact bytes, so no JSON canonicalization question | detached signature over canonical JSON |
 | Binding | `clientCode` and `tenantId` of the `install` row | a license cannot be copied to another brand's install | client code only |
-| Dev and tests | a committed `devOnly` key refused in production (the `app` image sets `NODE_ENV=production`, `deploy/Dockerfile.app`) | real verification path in dev and tests | a bypass flag |
+| Dev and tests | a committed `devOnly` key refused in production (the `app` image sets `NODE_ENV=production`, `deploy/Dockerfile.app`; amended 2026-11-07: trusted only when `APP_VERSION` is also `0.0.0-dev`, security review m2) | real verification path in dev and tests | a bypass flag |
 | Clock | database `now()`, rollback recorded not enforced | one clock for both processes; no permanent lockout from a wrong clock | high water mark enforcement |
 | Lapse instant | local 00:00 of expiry plus 15 days in `timezone` | expiry date is the last active day, then 14 grace days | the operating day with its cutoff (adds a dependency for no gain) |
 | Retention bonus default | not set (no bonus) | no money leaves by default, like "not set" cost rules (final plan 6.10) | a numeric default |

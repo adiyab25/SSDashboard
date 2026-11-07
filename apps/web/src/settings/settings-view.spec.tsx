@@ -1,15 +1,22 @@
 import type { SettingEntryView } from '@ssdashboard/contracts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/shared/render-with-query';
+import { activeSummary } from './license-fixtures';
 import { SettingsView } from './settings-view';
 
 const api = vi.hoisted(() => ({ listSettings: vi.fn(), putSetting: vi.fn() }));
 vi.mock('./settings-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
+}));
+
+const license = vi.hoisted(() => ({ getLicense: vi.fn() }));
+vi.mock('./license-api', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  ...license,
 }));
 
 const entry = (overrides: Partial<SettingEntryView>): SettingEntryView => ({
@@ -56,7 +63,10 @@ const vat = entry({
 });
 const winding = entry({ bundle: 'operations', licensed: false });
 
+beforeEach(() => license.getLicense.mockResolvedValue(activeSummary));
+
 afterEach(() => {
+  license.getLicense.mockReset();
   api.listSettings.mockReset();
   api.putSetting.mockReset();
 });
@@ -93,7 +103,27 @@ describe('SettingsView (AC-25)', () => {
     api.listSettings.mockRejectedValue(new ApiError(403, { code: 'FORBIDDEN' }));
     renderWithQuery(<SettingsView enabled />);
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
-    expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('heading', { level: 2 })).toBeNull());
+  });
+
+  it('keeps the Modules and license section while the settings list fails', async () => {
+    api.listSettings.mockRejectedValue(new ApiError(500, { code: 'generic' }));
+    renderWithQuery(<SettingsView enabled />);
+
+    expect(await screen.findByText(/settings could not be loaded/)).toBeVisible();
+    expect(await screen.findByRole('heading', { name: 'Operations' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: 'Modules and license' })).toBeVisible();
+  });
+
+  it('orders the sections Brand, Modules and license, Policies', async () => {
+    api.listSettings.mockResolvedValue({ entries: [currency, vat, winding] });
+    renderWithQuery(<SettingsView enabled />);
+    await screen.findByRole('heading', { name: 'Operations' });
+
+    const names = screen
+      .getAllByRole('heading', { level: 2 })
+      .map((heading) => heading.textContent);
+    expect(names).toEqual(['Brand', 'Modules and license', 'Policies']);
   });
 
   it('shows an error with Try again when the list cannot load', async () => {
@@ -345,5 +375,19 @@ describe('the change dialog (AC-25)', () => {
     expect(await within(dialog).findByText(/Someone else changed this setting/)).toBeVisible();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reload settings' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('words 409 NOT_LICENSED in its own sentence and keeps the dialog open', async () => {
+    const dialog = await open(entry({}), 'Change Wind down length in days');
+    await userEvent.type(within(dialog).getByLabelText(/^Reason/), 'Because');
+    api.putSetting.mockRejectedValueOnce(new ApiError(409, { code: 'NOT_LICENSED' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(
+      await within(dialog).findByText(
+        'This setting needs a plan this install does not have. Nothing was changed.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('dialog')).toBeVisible();
   });
 });

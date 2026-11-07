@@ -116,6 +116,14 @@ const EnvFields = z.object({
   /** When the nightly sign in cleanup runs (`worker`), in the `timezone` setting. */
   AUTH_CLEANUP_CRON: cron('0 3 * * *'),
   /**
+   * The signed license file inside the container (spec 0009, AC-14), read by the api and the
+   * worker at start and by the worker's daily check. Optional: unset or blank, every check
+   * records `none_configured` and only licenses already recorded (or uploaded) count.
+   */
+  LICENSE_FILE: blankIsUnset(z.string().min(1).optional()),
+  /** When the worker's daily license check runs, in the `timezone` setting (spec 0009). */
+  LICENSE_CHECK_CRON: cron('20 0 * * *'),
+  /**
    * The browser facing address (spec 0005): the auth base URL, the trusted origin, the
    * cookie `Secure` flag, and the links in emails. A trailing slash is dropped.
    */

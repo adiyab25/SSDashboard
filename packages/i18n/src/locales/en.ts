@@ -1059,6 +1059,7 @@ export const en = {
       outboundCommand: 'Carrier request',
       auditEntry: 'Audit trail export',
       setting: 'Setting',
+      license: 'License',
     },
     filters: {
       title: 'Filters',
@@ -1179,6 +1180,7 @@ export const en = {
       // Every undone entry (`<code>_undone`, spec 0010 task 16) shares this label.
       actionUndone: 'Earlier action undone',
       settingChanged: 'Setting changed',
+      licenseAdded: 'License added',
     },
   },
   // The settings registry of spec 0009 (AC-1): one label and description per entry, and the
@@ -1245,7 +1247,117 @@ export const en = {
     description: 'The brand’s own choices. Every change is recorded in the audit trail.',
     loadError: 'The settings could not be loaded. Try again.',
     retry: 'Try again',
-    sections: { brand: 'Brand', policies: 'Policies' },
+    sections: { brand: 'Brand', license: 'Modules and license', policies: 'Policies' },
+    license: {
+      description:
+        'What this install is licensed for. Core is always on. Warehouse and Operations follow the license files recorded here.',
+      loadError: 'The license could not be loaded. Try again.',
+      bundlesHeading: 'Plans',
+      bundles: { core: 'Core', warehouse: 'Warehouse', operations: 'Operations' },
+      coreAlways: 'Always on',
+      phases: {
+        not_licensed: 'Not licensed',
+        active: 'Active',
+        expiring: 'Ending soon',
+        grace: 'Grace period',
+        wind_down: 'Winding down',
+        off: 'Off',
+      },
+      phaseHints: {
+        not_licensed: 'No recorded license grants this plan.',
+        active: 'Working normally.',
+        expiring: 'Working normally. Record a renewal before it ends.',
+        grace: 'Still working. It stops when the grace period ends unless a renewal is recorded.',
+        wind_down: 'New work has stopped. Cash for shipments already out is still followed.',
+        off: 'Stopped. Record a renewal license to resume.',
+      },
+      perpetual: 'Never ends',
+      endsOn: 'Ends on {{date}}',
+      endedOn: 'Ended on {{date}}',
+      daysLeft: 'Days left: {{days}}',
+      stopsAt: 'Stops on {{date}}',
+      recordedHeading: 'Recorded licenses',
+      recordedEmpty: 'No license has been recorded yet. Upload the license file you received.',
+      issuedOn: 'Issued on {{date}}',
+      recordedAt: 'Recorded on {{date}}',
+      grantsLabel: 'Grants',
+      grantUntil: '{{bundle}}: until {{date}}',
+      grantPerpetual: '{{bundle}}: never ends',
+      sources: {
+        file: 'From the license file on the server',
+        upload: 'Uploaded on this screen',
+      },
+      lastCheckHeading: 'Last check of the license file',
+      lastCheckNone: 'The license file has not been checked yet.',
+      lastChecks: {
+        api_start: 'Checked on {{date}}, when the app started.',
+        worker_start: 'Checked on {{date}}, when the background worker started.',
+        daily: 'Checked on {{date}} in the daily check.',
+        upload: 'Checked on {{date}}, when a license was uploaded.',
+      },
+      outcomes: {
+        valid: 'A valid license was found and recorded.',
+        already_recorded: 'The license file is valid and was already recorded.',
+        none_configured: 'No license file is set up on this install.',
+        file_missing: 'The license file is missing from the server.',
+        file_unreadable: 'The license file cannot be read.',
+        bad_format: 'The license file is not in the right format.',
+        bad_signature: 'The license file was changed after it was issued.',
+        unknown_key: 'The license file was signed with a key this install does not know.',
+        dev_key_in_production:
+          'The license file is a development license, which a live install refuses.',
+        wrong_install: 'The license file was issued for a different install.',
+      },
+      problemHint:
+        'Licenses already recorded keep counting, so nothing has stopped. Ask whoever looks after the install to fix the file, or upload a new one here.',
+      problemHintNone:
+        'No plan is licensed yet. Upload the license file you received, or ask whoever looks after the install to fix the file.',
+      clockBehind:
+        'The server clock was more than a day behind an earlier check. This is for your information only; nothing changes because of it.',
+      upload: {
+        open: 'Upload a license file',
+        title: 'Upload a license file',
+        description:
+          'Choose the license file you received. It is checked and recorded, and it can only add to what is licensed.',
+        fileLabel: 'License file',
+        fileHint: 'A .json file of at most 16 KB.',
+        chosen: 'Chosen file:',
+        submit: 'Upload',
+        cancel: 'Cancel',
+        close: 'Close',
+        errors: {
+          fileRequired: 'Choose a license file.',
+          tooLarge: 'This file is larger than 16 KB, so it is not a license file.',
+          unreadable: 'The file could not be read. Choose it again.',
+          notLicense: 'This is not a license file. Choose the file you received.',
+          FORBIDDEN: 'You do not have permission to upload a license.',
+          generic: 'The license was not uploaded. Try again.',
+          refused: 'The license was refused. Nothing was changed.',
+          bad_format: 'This file is not in the license format. Choose the file you received.',
+          bad_signature:
+            'This license was changed after it was issued, so it was refused. Ask for a new file.',
+          unknown_key:
+            'This license was signed with a key this install does not know. Ask for a new file.',
+          dev_key_in_production:
+            'This is a development license. A live install does not accept it.',
+          wrong_install: 'This license was issued for a different install. Ask for the right file.',
+        },
+        recorded: 'License recorded.',
+        unchanged: 'Nothing changed: this license adds nothing new.',
+      },
+      banner: {
+        label: 'License notice',
+        levels: { info: 'Notice', warning: 'Warning', critical: 'Action needed' },
+        expiring:
+          'The {{bundle}} plan ends on {{expires}} (days left: {{days}}). It lapses on {{lapse}} unless a renewal is recorded.',
+        grace:
+          'The {{bundle}} plan ended on {{expires}}. It still works, and stops on {{lapse}} unless a renewal is recorded.',
+        wind_down:
+          'The {{bundle}} plan lapsed on {{lapse}} and its work has stopped. Cash for shipments already out keeps being followed until {{until}}.',
+        off: 'The {{bundle}} plan has lapsed and is off. Record a renewal license to resume.',
+        link: 'Open the license settings',
+      },
+    },
     row: {
       valueLabel: 'Value',
       defaultLabel: 'Default',
@@ -1292,6 +1404,7 @@ export const en = {
         STALE_SETTING:
           'Someone else changed this setting while you were looking. Reload to see the current value.',
         SETTING_LOCKED: 'This setting cannot be changed here.',
+        NOT_LICENSED: 'This setting needs a plan this install does not have. Nothing was changed.',
         SETTING_UNKNOWN: 'This setting no longer exists. Reload the page.',
         FORBIDDEN: 'You do not have permission to change settings.',
         SETTING_UNREADABLE:

@@ -326,8 +326,8 @@ describe('core data model schema (spec 0002)', () => {
   });
 
   // AC-33 (spec 0002, A4): every table that can only grow. The app role is refused on permissions,
-  // the owner on the trigger. The A4 tables not built yet join this list with their features:
-  // `licenses` and `license_checks` (feature 9, spec 0009), and `export_runs` (feature 45, its
+  // the owner on the trigger. `licenses` and `license_checks` joined with spec 0009 milestone 2
+  // (`0004_license_rules.sql`). The A4 table not built yet joins with its feature: `export_runs` (feature 45, its
   // status columns stay updatable). `audit_entries` (spec 0010) is here, and its own suite
   // (`audit-append-only.e2e-spec.ts`) adds the planted grant.
   describe('the append only tables (AC-33)', () => {
@@ -364,6 +364,25 @@ describe('core data model schema (spec 0002)', () => {
         [account.id, statement.id],
       );
       return { accountId: account.id, statementId: statement.id, lineId: line.id };
+    }
+
+    /**
+     * Records one license row (a Warehouse grant with a unique hash) through `client`, with the
+     * `recorded_at` a writer asks for, and returns its id and whether the stored instant is now.
+     */
+    async function makeLicense(
+      client: pg.Client,
+      recordedAt: string | null = null,
+    ): Promise<{ id: string; stamped: boolean }> {
+      return one<{ id: string; stamped: boolean }>(
+        client,
+        `INSERT INTO licenses (license_id, key_id, envelope, sha256, payload_sha256, client_code, bundles, issued_on, source, recorded_at)
+         VALUES ('LIC-T', 'dev-1', '{}', encode(sha256(gen_random_uuid()::text::bytea), 'hex'),
+                 encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'dev',
+                 ARRAY['warehouse'], '2026-11-07', 'file', coalesce($1::timestamptz, now()))
+         RETURNING id, recorded_at < now() + interval '1 minute' AS stamped`,
+        [recordedAt],
+      );
     }
 
     const seeds: Record<string, () => Promise<Seeded>> = {
@@ -557,6 +576,26 @@ describe('core data model schema (spec 0002)', () => {
           params: [entry.id],
         };
       },
+      licenses: async () => {
+        const license = await makeLicense(owner);
+        return {
+          update: "UPDATE licenses SET license_id = 'x' WHERE id = $1",
+          remove: 'DELETE FROM licenses WHERE id = $1',
+          params: [license.id],
+        };
+      },
+      license_checks: async () => {
+        const check = await one<{ id: string }>(
+          owner,
+          `INSERT INTO license_checks (checked_at, trigger, outcome, operations_phase, warehouse_phase)
+           VALUES (now(), 'daily', 'none_configured', 'not_licensed', 'not_licensed') RETURNING id`,
+        );
+        return {
+          update: "UPDATE license_checks SET outcome = 'valid' WHERE id = $1",
+          remove: 'DELETE FROM license_checks WHERE id = $1',
+          params: [check.id],
+        };
+      },
       order_cost_rules: async () => {
         const rule = await one<{ id: string }>(
           owner,
@@ -724,6 +763,11 @@ describe('core data model schema (spec 0002)', () => {
           [period.id, FUTURE],
         );
       },
+      // Spec 0009: a recorded license's instant is the database's too.
+      licenses: async () => {
+        const { stamped } = await makeLicense(app, FUTURE);
+        return { stamped };
+      },
       // Spec 0010 AS1: the audit trail's instant is the database's too (its id stamp follows).
       audit_entries: () =>
         one(
@@ -773,6 +817,36 @@ describe('core data model schema (spec 0002)', () => {
       }
       await expect(app.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/permission denied/);
       await expect(owner.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/append only/);
+    });
+
+    // Spec 0009, security review M2-2 and M2-6: a writer never chooses a license row's id, nor a
+    // check's id or its place in insert order (`seq`), not even with OVERRIDING SYSTEM VALUE.
+    it('stamps the id of a license and the id and seq of a check, whatever the writer sends', async () => {
+      const chosen = 'ffffffff-ffff-7fff-bfff-ffffffffffff';
+      const license = await one<{ id: string }>(
+        app,
+        `INSERT INTO licenses (id, license_id, key_id, envelope, sha256, payload_sha256, client_code, bundles, issued_on, source)
+         VALUES ($1, 'LIC-ID', 'dev-1', '{}', encode(sha256(gen_random_uuid()::text::bytea), 'hex'),
+                 encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'dev', ARRAY['warehouse'],
+                 '2026-11-07', 'file')
+         RETURNING id`,
+        [chosen],
+      );
+      expect(license.id).not.toBe(chosen);
+      const insertCheck = (client: pg.Client, id: string, seq: number) =>
+        one<{ id: string; seq: string }>(
+          client,
+          `INSERT INTO license_checks (id, seq, checked_at, trigger, outcome, operations_phase, warehouse_phase)
+           OVERRIDING SYSTEM VALUE
+           VALUES ($1, $2, now(), 'daily', 'none_configured', 'not_licensed', 'not_licensed')
+           RETURNING id, seq`,
+          [id, seq],
+        );
+      const first = await insertCheck(app, chosen, 9_000_000_000);
+      const second = await insertCheck(owner, chosen, 9_000_000_001);
+      expect([first.id, second.id]).not.toContain(chosen);
+      expect(Number(first.seq)).toBeLessThan(9_000_000_000);
+      expect(Number(second.seq)).toBe(Number(first.seq) + 1);
     });
 
     it('keeps the install row read only for the app role', async () => {

@@ -78,12 +78,14 @@ services:
       <<: [*app-env, *auth-env]
       # Read by the api only: /api/auth/* answers 404 for this host (spec 0005, AC-30).
       PORTAL_ORIGIN: ${PORTAL_ORIGIN:-}
+      # The signed license file's path inside the container (spec 0009); empty: none_configured.
+      LICENSE_FILE: ${LICENSE_FILE:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
     mem_limit: 512m
 
-  # Background jobs (pg-boss): the nightly ledger reconciliation and the email queue.
+  # Background jobs (pg-boss): the nightly ledger reconciliation, the email queue, and the daily license check.
   worker:
     <<: *app
     command: ["node", "dist/worker.js"]
@@ -91,6 +93,9 @@ services:
       <<: [*app-env, *auth-env]
       LEDGER_RECONCILE_CRON: ${LEDGER_RECONCILE_CRON:-0 2 * * *}
       AUTH_CLEANUP_CRON: ${AUTH_CLEANUP_CRON:-0 3 * * *}
+      # The signed license file (spec 0009), checked at worker start and daily at the cron below.
+      LICENSE_FILE: ${LICENSE_FILE:-}
+      LICENSE_CHECK_CRON: ${LICENSE_CHECK_CRON:-20 0 * * *}
     depends_on:
       migrate:
         condition: service_completed_successfully
