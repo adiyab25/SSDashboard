@@ -76,10 +76,20 @@ describe('audit cost fields on every diff route (spec 0010 QA)', { timeout: 120_
     return { status: response.status, text: await response.text() };
   };
 
+  /**
+   * No cost key and no cost value. The values are matched as whole quoted strings (a JSON string,
+   * or a CSV cell with doubled quotes), never as bare digits: a microsecond timestamp such as
+   * ":32.004" contains "2.00".
+   */
+  function expectNoCost(text: string): void {
+    expect(text).not.toMatch(/referenceValue|unitCost/);
+    expect(text).not.toMatch(/"{1,2}(10|2)\.00"{1,2}/);
+  }
+
   it('strips cost from the detail and its changes for a manager without cost.view', async () => {
     const hidden = await get(`/audit/entries/${entryId}`, withoutCost);
     expect(hidden.status).toBe(200);
-    expect(hidden.text).not.toMatch(/referenceValue|unitCost|10\.00|2\.00/);
+    expectNoCost(hidden.text);
     const parsed = AuditEntryDetail.parse(JSON.parse(hidden.text));
     expect(parsed.changes.map((change) => change.field)).toEqual(['status']);
 
@@ -96,7 +106,7 @@ describe('audit cost fields on every diff route (spec 0010 QA)', { timeout: 120_
     const hidden = await get(path, withoutCost);
     expect(hidden.status).toBe(200);
     expect(AuditEntryListResponse.parse(JSON.parse(hidden.text)).items).toHaveLength(1);
-    expect(hidden.text).not.toMatch(/referenceValue|unitCost|10\.00|2\.00/);
+    expectNoCost(hidden.text);
     expect((await get(path, withCost)).text).toMatch(/unitCost/);
   });
 
@@ -106,7 +116,7 @@ describe('audit cost fields on every diff route (spec 0010 QA)', { timeout: 120_
     const hidden = await get(path, withoutCost, 'POST');
     expect(hidden.status).toBe(200);
     expect(hidden.text).toContain('planted.costed');
-    expect(hidden.text).not.toMatch(/referenceValue|unitCost|10\.00|2\.00/);
+    expectNoCost(hidden.text);
     expect((await get(path, withCost, 'POST')).text).toMatch(/unitCost/);
   });
 });
