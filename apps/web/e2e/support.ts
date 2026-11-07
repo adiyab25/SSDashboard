@@ -164,3 +164,19 @@ export async function seedLocations(): Promise<SeededLocations> {
     },
   };
 }
+
+/**
+ * Opens /staff in the language of `dir`, switches to the Partner logins tab (spec 0008, AC-15) and
+ * waits for its search box. The page's one h1 is the people screen's title whichever tab is shown.
+ */
+export async function openPartnerLogins(page: Page, dir: TextDirection = 'ltr') {
+  await page.goto('/staff');
+  await expect(
+    page.getByRole('heading', { level: 1, name: textFor(dir, 'staff.title') }),
+  ).toBeVisible();
+  await waitForPageHydration(page);
+  await page.getByRole('tab', { name: textFor(dir, 'staff.tabs.partners') }).click();
+  await expect(
+    page.getByRole('searchbox', { name: textFor(dir, 'staff.partners.search') }),
+  ).toBeVisible();
+}

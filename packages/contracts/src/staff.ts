@@ -158,6 +158,7 @@ export const StaffErrorCode = z.enum([
   'HAT_CONFLICT',
   'GRANT_NOT_ALLOWED',
   'NO_HAT',
+  'COST_HOLDER_PROTECTED',
 ]);
 /** The validated shape of `StaffErrorCode`, as the api and web see it after parsing. */
 export type StaffErrorCode = z.infer<typeof StaffErrorCode>;

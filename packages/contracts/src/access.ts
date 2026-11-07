@@ -247,7 +247,7 @@ export function permissionsFor(hats: readonly Hat[], grants: readonly Permission
 /**
  * The hats a staff person can be given on `/api/staff` (AC-12, AC-14): the four internal hats and
  * `media_buyer`. `partner` is never given there; a partner user comes only through
- * `/api/partner-users` (milestone 3). The web offers exactly these on the hats dialog.
+ * `/api/partner-users`. The web offers exactly these on the hats dialog.
  */
 export const StaffHat = z.enum([...InternalHat.options, 'media_buyer']);
 /** The validated shape of `StaffHat`, as the api and web see it after parsing. */
@@ -304,7 +304,11 @@ export const AccessHolding = z.object({
 /** The validated shape of `AccessHolding`, as the api and web see it after parsing. */
 export type AccessHolding = z.infer<typeof AccessHolding>;
 
-/** The stable codes an access change answers with, besides the shared ones (AC-12, spec 0008 errors). */
+/**
+ * The stable codes an access change answers with, besides the shared ones (AC-12, spec 0008
+ * errors). `UNKNOWN_PARTNER_ACCOUNT` is the partner user's move to an account that is not a
+ * consignment partner (`PUT /api/partner-users/:id/access`).
+ */
 export const AccessErrorCode = z.enum([
   'FORBIDDEN',
   'NOT_FOUND',
@@ -315,6 +319,7 @@ export const AccessErrorCode = z.enum([
   'GRANT_NOT_ALLOWED',
   'NO_HAT',
   'REASON_REQUIRED',
+  'UNKNOWN_PARTNER_ACCOUNT',
 ]);
 /** The validated shape of `AccessErrorCode`, as the api and web see it after parsing. */
 export type AccessErrorCode = z.infer<typeof AccessErrorCode>;

@@ -11,11 +11,12 @@ export const Home = z.enum(['backoffice', 'partner']);
 export type Home = z.infer<typeof Home>;
 
 /**
- * Response of `GET /api/me` (and, with spec 0008 milestone 3, `GET /api/partner/me`): the signed
- * in person, read fresh from the database on every request. `hats` and `permissions` (the
- * effective list, sorted) tell the web what to show; the api still decides every route on its own
- * (spec 0008, AC-11). `partnerAccountId` is null for staff. There is no role: what a person may do
- * comes only from their hats and grants.
+ * Response of `GET /api/me` (staff) and `GET /api/partner/me` (partner users), one shape for both
+ * (spec 0008, AC-11): the signed in person, read fresh from the database on every request. `hats`
+ * and `permissions` (the effective list, sorted) tell the web what to show; the api still decides
+ * every route on its own. `partnerAccountId` is null for staff and, for a partner user, the
+ * account of their own hat row, never anything the request sent; `staffCode` is null for a
+ * partner user. There is no role: what a person may do comes only from their hats and grants.
  */
 export const MeResponse = z.object({
   id: z.uuid(),
@@ -39,6 +40,15 @@ export type MeResponse = z.infer<typeof MeResponse>;
 export const SessionErrorCode = z.enum(['UNAUTHENTICATED', 'SESSION_EXPIRED']);
 /** The validated shape of `SessionErrorCode`, as the api and web see it after parsing. */
 export type SessionErrorCode = z.infer<typeof SessionErrorCode>;
+
+/**
+ * The stable codes the sign in answers with when the password is not the problem. `NO_ACCESS` is
+ * a 403: the person's account holds no hat (spec 0008, AC-10), so no one may sign in as them until
+ * a manager gives them one. The web shows its own copy for it.
+ */
+export const SignInErrorCode = z.enum(['NO_ACCESS']);
+/** The validated shape of `SignInErrorCode`, as the api and web see it after parsing. */
+export type SignInErrorCode = z.infer<typeof SignInErrorCode>;
 
 /**
  * The password rule (spec 0005, AC-8): 8 to 128 characters with a lowercase, an uppercase and a

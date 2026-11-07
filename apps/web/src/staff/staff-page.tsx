@@ -33,6 +33,8 @@ import {
   type ApiResult,
   type StaffFilter,
 } from './staff-api';
+import { PartnerLoginsTab } from './partner-logins-tab';
+import { PeopleTabs, peoplePanelId, peopleTabId, type PeopleTab } from './people-tabs';
 import { StaffConfirmDialog, type ConfirmKind } from './staff-confirm-dialog';
 import { StaffSetupDialog } from './staff-setup-dialog';
 import { StaffFormDialog } from './staff-form-dialog';
@@ -69,6 +71,7 @@ export function StaffPage() {
   const format = useFormat();
   const me = useMe();
   const access = useAccess();
+  const [tab, setTab] = useState<PeopleTab>('staff');
   const [text, setText] = useState('');
   const [filter, setFilter] = useState<StaffFilter>({ q: '', status: '', hat: '' });
   const [reload, setReload] = useState(0);
@@ -88,6 +91,12 @@ export function StaffPage() {
   const loading = page === null || page.key !== key;
   const canManage = access.can('people.manage');
   const canChangeCost = access.can('cost.view');
+
+  /**
+   * A person who sees cost can only be reset by someone who sees cost; the api refuses the rest
+   * (`COST_HOLDER_PROTECTED`), so the actions are not offered.
+   */
+  const costHolderProtected = (row: StaffRow) => row.costView && !canChangeCost;
 
   /** The plain hat names of a row on one line, from the catalog, never the codes. */
   const hatsLabel = (hats: readonly Hat[]) =>
@@ -110,7 +119,7 @@ export function StaffPage() {
   // Loads the first page whenever the filter changes or something was saved. State is only set
   // when the answer arrives, so a slow answer for an old filter can never replace a newer one.
   useEffect(() => {
-    if (!canManage) return;
+    if (!canManage || tab !== 'staff') return;
     let active = true;
     void listStaff(filter).then((result) => {
       if (!active) return;
@@ -124,7 +133,7 @@ export function StaffPage() {
     return () => {
       active = false;
     };
-  }, [canManage, filter, key]);
+  }, [canManage, tab, filter, key]);
 
   // After a save reloads the list the old row buttons are gone; focus goes to the new one.
   useEffect(() => {
@@ -215,247 +224,279 @@ export function StaffPage() {
   // positioned and would otherwise escape the box and widen the whole page.
   const columns = ['name', 'email', 'hats', 'cost', 'status', 'lastSignIn', 'twoFactor'] as const;
 
+  const heading = (
+    <div className="flex flex-col gap-1">
+      <h1 className="text-xl font-semibold">{t('staff.title')}</h1>
+      <p className="text-sm text-muted-foreground">{t('staff.description')}</p>
+    </div>
+  );
+
+  if (tab === 'partners') {
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        {heading}
+        <PeopleTabs tab={tab} onTabChange={setTab} />
+        {canManage && <PartnerLoginsTab mailEnabled={mailEnabled} languages={languages} />}
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold">{t('staff.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('staff.description')}</p>
-        </div>
-        <Button onClick={() => setDialog({ kind: 'form', editId: null })}>
-          <PlusIcon aria-hidden data-icon="inline-start" />
-          {t('staff.add')}
-        </Button>
-      </div>
+      {heading}
+      <PeopleTabs tab={tab} onTabChange={setTab} />
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex min-w-52 flex-1 flex-col gap-1.5">
-          <label htmlFor="staff-search" className="text-sm font-medium">
-            {t('staff.search')}
-          </label>
-          <Input
-            id="staff-search"
-            type="search"
-            value={text}
-            aria-describedby="staff-search-hint"
-            onChange={(event) => onSearch(event.target.value)}
-            autoComplete="off"
-          />
-          <span id="staff-search-hint" className="text-xs text-muted-foreground">
-            {t('staff.searchHint')}
-          </span>
+      <div
+        id={peoplePanelId('staff')}
+        role="tabpanel"
+        aria-labelledby={peopleTabId('staff')}
+        className="flex min-w-0 flex-col gap-4"
+      >
+        <div className="flex justify-end">
+          <Button onClick={() => setDialog({ kind: 'form', editId: null })}>
+            <PlusIcon aria-hidden data-icon="inline-start" />
+            {t('staff.add')}
+          </Button>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="staff-status" className="text-sm font-medium">
-            {t('staff.status.label')}
-          </label>
-          <select
-            id="staff-status"
-            className={SELECT}
-            value={filter.status}
-            onChange={(event) =>
-              setFilter((current) => ({
-                ...current,
-                status: STATUSES.find((status) => status === event.target.value) ?? '',
-              }))
-            }
-          >
-            <option value="">{t('staff.status.all')}</option>
-            {STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {t(`staff.status.${status}`)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="staff-hat" className="text-sm font-medium">
-            {t('staff.hats.filter')}
-          </label>
-          <select
-            id="staff-hat"
-            className={SELECT}
-            value={filter.hat}
-            onChange={(event) =>
-              setFilter((current) => ({
-                ...current,
-                hat: STAFF_HATS.find((hat) => hat === event.target.value) ?? '',
-              }))
-            }
-          >
-            <option value="">{t('staff.hats.filterAll')}</option>
-            {STAFF_HATS.map((hat) => (
-              <option key={hat} value={hat}>
-                {t(`access.hats.${hat}.name`)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
 
-      <p role="status" className="min-h-5 text-sm text-muted-foreground">
-        {message}
-      </p>
-
-      {page?.key === key && page.failed ? (
-        <Alert variant="destructive">
-          <AlertDescription className="flex flex-wrap items-center gap-3">
-            {t('staff.loadError')}
-            <Button size="sm" variant="outline" onClick={() => setReload((count) => count + 1)}>
-              {t('staff.retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : (
-        <div className="relative overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm" aria-busy={loading}>
-            <thead className="bg-muted text-start">
-              <tr className="h-row-header">
-                {columns.map((column) => (
-                  <th key={column} scope="col" className="px-3 text-start font-medium">
-                    {t(`staff.columns.${column}`)}
-                  </th>
-                ))}
-                <th scope="col" className="w-12 px-3 text-start font-medium">
-                  <span className="sr-only">{t('staff.columns.actions')}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading &&
-                Array.from({ length: 5 }, (_, index) => (
-                  <tr key={index} className="h-row border-t" aria-hidden>
-                    <td colSpan={columns.length + 1} className="px-3">
-                      <Skeleton className="h-4 w-full" />
-                    </td>
-                  </tr>
-                ))}
-              {!loading && page?.rows.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={columns.length + 1}
-                    className="px-3 py-8 text-center text-muted-foreground"
-                  >
-                    {t('staff.empty')}
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                page?.rows.map((row) => (
-                  <tr key={row.id} className="h-row border-t">
-                    <td className="px-3 font-medium">{row.name}</td>
-                    <td className="px-3">
-                      <LtrText>{row.email}</LtrText>
-                    </td>
-                    <td className="px-3">{hatsLabel(row.hats)}</td>
-                    <td className="px-3">
-                      {row.costView ? t('staff.hats.costYes') : t('staff.hats.costNo')}
-                    </td>
-                    <td className="px-3">{t(`staff.status.${row.status}`)}</td>
-                    <td className="px-3">
-                      {row.lastSignInAt ? format.dateTime(row.lastSignInAt) : t('staff.never')}
-                    </td>
-                    <td className="px-3">
-                      {row.twoFactorEnabled ? t('staff.on') : t('staff.off')}
-                    </td>
-                    <td className="px-3">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            ref={(node) => {
-                              if (node) triggers.current.set(row.id, node);
-                              else triggers.current.delete(row.id);
-                            }}
-                            variant="ghost"
-                            size="icon-sm"
-                            className="coarse:min-h-touch coarse:min-w-touch"
-                            aria-label={t('staff.row.menu', { name: row.name })}
-                          >
-                            <MoreHorizontalIcon aria-hidden />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onSelect={() => setDialog({ kind: 'form', editId: row.id })}
-                          >
-                            {t('staff.row.edit')}
-                          </DropdownMenuItem>
-                          {row.id !== me?.id && (
-                            <DropdownMenuItem
-                              onSelect={() =>
-                                setDialog({
-                                  kind: 'hats',
-                                  row,
-                                  opener: triggers.current.get(row.id) ?? null,
-                                })
-                              }
-                            >
-                              {t('staff.hats.edit')}
-                            </DropdownMenuItem>
-                          )}
-                          {row.id !== me?.id && (
-                            <DropdownMenuItem onSelect={() => confirm('reset', row)}>
-                              {t('staff.row.resetPassword')}
-                            </DropdownMenuItem>
-                          )}
-                          {row.status === 'invited' && mailEnabled && (
-                            <DropdownMenuItem onSelect={() => void invite(row)}>
-                              {t('staff.row.resendInvite')}
-                            </DropdownMenuItem>
-                          )}
-                          {row.twoFactorEnabled && row.id !== me?.id && (
-                            <DropdownMenuItem onSelect={() => confirm('twoFactor', row)}>
-                              {t('staff.row.resetTwoFactor')}
-                            </DropdownMenuItem>
-                          )}
-                          {row.id !== me?.id && (
-                            <DropdownMenuItem onSelect={() => confirm('revoke', row)}>
-                              {t('staff.row.revokeSessions')}
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          {row.status === 'disabled' ? (
-                            <DropdownMenuItem onSelect={() => void enable(row)}>
-                              {t('staff.row.enable')}
-                            </DropdownMenuItem>
-                          ) : (
-                            row.id !== me?.id && (
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onSelect={() => confirm('disable', row)}
-                              >
-                                {t('staff.row.disable')}
-                              </DropdownMenuItem>
-                            )
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {!loading && page?.next && (
-        <Button
-          variant="outline"
-          className="self-center"
-          disabled={loadingMore}
-          aria-busy={loadingMore}
-          onClick={() => void loadMore()}
-        >
-          {loadingMore && (
-            <LoaderCircleIcon
-              aria-hidden
-              className="animate-spin motion-reduce:animate-none"
-              data-icon="inline-start"
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex min-w-52 flex-1 flex-col gap-1.5">
+            <label htmlFor="staff-search" className="text-sm font-medium">
+              {t('staff.search')}
+            </label>
+            <Input
+              id="staff-search"
+              type="search"
+              value={text}
+              aria-describedby="staff-search-hint"
+              onChange={(event) => onSearch(event.target.value)}
+              autoComplete="off"
             />
-          )}
-          {t('staff.loadMore')}
-        </Button>
-      )}
+            <span id="staff-search-hint" className="text-xs text-muted-foreground">
+              {t('staff.searchHint')}
+            </span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="staff-status" className="text-sm font-medium">
+              {t('staff.status.label')}
+            </label>
+            <select
+              id="staff-status"
+              className={SELECT}
+              value={filter.status}
+              onChange={(event) =>
+                setFilter((current) => ({
+                  ...current,
+                  status: STATUSES.find((status) => status === event.target.value) ?? '',
+                }))
+              }
+            >
+              <option value="">{t('staff.status.all')}</option>
+              {STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {t(`staff.status.${status}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="staff-hat" className="text-sm font-medium">
+              {t('staff.hats.filter')}
+            </label>
+            <select
+              id="staff-hat"
+              className={SELECT}
+              value={filter.hat}
+              onChange={(event) =>
+                setFilter((current) => ({
+                  ...current,
+                  hat: STAFF_HATS.find((hat) => hat === event.target.value) ?? '',
+                }))
+              }
+            >
+              <option value="">{t('staff.hats.filterAll')}</option>
+              {STAFF_HATS.map((hat) => (
+                <option key={hat} value={hat}>
+                  {t(`access.hats.${hat}.name`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <p role="status" className="min-h-5 text-sm text-muted-foreground">
+          {message}
+        </p>
+
+        {page?.key === key && page.failed ? (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-wrap items-center gap-3">
+              {t('staff.loadError')}
+              <Button size="sm" variant="outline" onClick={() => setReload((count) => count + 1)}>
+                {t('staff.retry')}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <div
+            role="region"
+            // A scrolling region must be reachable by keyboard (axe scrollable-region-focusable).
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            tabIndex={0}
+            aria-label={t('staff.columns.table')}
+            className="relative overflow-x-auto rounded-lg border focus-ring"
+          >
+            <table className="w-full text-sm" aria-busy={loading}>
+              <thead className="bg-muted text-start">
+                <tr className="h-row-header">
+                  {columns.map((column) => (
+                    <th key={column} scope="col" className="px-3 text-start font-medium">
+                      {t(`staff.columns.${column}`)}
+                    </th>
+                  ))}
+                  <th scope="col" className="w-12 px-3 text-start font-medium">
+                    <span className="sr-only">{t('staff.columns.actions')}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading &&
+                  Array.from({ length: 5 }, (_, index) => (
+                    <tr key={index} className="h-row border-t" aria-hidden>
+                      <td colSpan={columns.length + 1} className="px-3">
+                        <Skeleton className="h-4 w-full" />
+                      </td>
+                    </tr>
+                  ))}
+                {!loading && page?.rows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={columns.length + 1}
+                      className="px-3 py-8 text-center text-muted-foreground"
+                    >
+                      {t('staff.empty')}
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  page?.rows.map((row) => (
+                    <tr key={row.id} className="h-row border-t">
+                      <td className="px-3 font-medium">{row.name}</td>
+                      <td className="px-3">
+                        <LtrText>{row.email}</LtrText>
+                      </td>
+                      <td className="px-3">{hatsLabel(row.hats)}</td>
+                      <td className="px-3">
+                        {row.costView ? t('staff.hats.costYes') : t('staff.hats.costNo')}
+                      </td>
+                      <td className="px-3">{t(`staff.status.${row.status}`)}</td>
+                      <td className="px-3">
+                        {row.lastSignInAt ? format.dateTime(row.lastSignInAt) : t('staff.never')}
+                      </td>
+                      <td className="px-3">
+                        {row.twoFactorEnabled ? t('staff.on') : t('staff.off')}
+                      </td>
+                      <td className="px-3">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              ref={(node) => {
+                                if (node) triggers.current.set(row.id, node);
+                                else triggers.current.delete(row.id);
+                              }}
+                              variant="ghost"
+                              size="icon-sm"
+                              className="coarse:min-h-touch coarse:min-w-touch"
+                              aria-label={t('staff.row.menu', { name: row.name })}
+                            >
+                              <MoreHorizontalIcon aria-hidden />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => setDialog({ kind: 'form', editId: row.id })}
+                            >
+                              {t('staff.row.edit')}
+                            </DropdownMenuItem>
+                            {row.id !== me?.id && (
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  setDialog({
+                                    kind: 'hats',
+                                    row,
+                                    opener: triggers.current.get(row.id) ?? null,
+                                  })
+                                }
+                              >
+                                {t('staff.hats.edit')}
+                              </DropdownMenuItem>
+                            )}
+                            {row.id !== me?.id && !costHolderProtected(row) && (
+                              <DropdownMenuItem onSelect={() => confirm('reset', row)}>
+                                {t('staff.row.resetPassword')}
+                              </DropdownMenuItem>
+                            )}
+                            {row.status === 'invited' && mailEnabled && (
+                              <DropdownMenuItem onSelect={() => void invite(row)}>
+                                {t('staff.row.resendInvite')}
+                              </DropdownMenuItem>
+                            )}
+                            {row.twoFactorEnabled &&
+                              row.id !== me?.id &&
+                              !costHolderProtected(row) && (
+                                <DropdownMenuItem onSelect={() => confirm('twoFactor', row)}>
+                                  {t('staff.row.resetTwoFactor')}
+                                </DropdownMenuItem>
+                              )}
+                            {row.id !== me?.id && (
+                              <DropdownMenuItem onSelect={() => confirm('revoke', row)}>
+                                {t('staff.row.revokeSessions')}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            {row.status === 'disabled' ? (
+                              <DropdownMenuItem onSelect={() => void enable(row)}>
+                                {t('staff.row.enable')}
+                              </DropdownMenuItem>
+                            ) : (
+                              row.id !== me?.id && (
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => confirm('disable', row)}
+                                >
+                                  {t('staff.row.disable')}
+                                </DropdownMenuItem>
+                              )
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && page?.next && (
+          <Button
+            variant="outline"
+            className="self-center"
+            disabled={loadingMore}
+            aria-busy={loadingMore}
+            onClick={() => void loadMore()}
+          >
+            {loadingMore && (
+              <LoaderCircleIcon
+                aria-hidden
+                className="animate-spin motion-reduce:animate-none"
+                data-icon="inline-start"
+              />
+            )}
+            {t('staff.loadMore')}
+          </Button>
+        )}
+      </div>
 
       {dialog?.kind === 'form' && (
         <StaffFormDialog

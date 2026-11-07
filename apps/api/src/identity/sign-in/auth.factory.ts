@@ -22,7 +22,7 @@ import { SESSION_IDLE_SECONDS, SESSION_RENEW_SECONDS } from './session-policy.js
 export function createAuth(
   env: Env,
   db: Database,
-  parts: Pick<AuthHookDeps, 'lockout' | 'audit'> & {
+  parts: Pick<AuthHookDeps, 'lockout' | 'audit' | 'audiences'> & {
     mail: Pick<AuthMail, 'queueReset' | 'completeReset'>;
   },
 ) {
@@ -118,6 +118,7 @@ export function createAuth(
       origin: staffOrigin,
       lockout: parts.lockout,
       audit: parts.audit,
+      audiences: parts.audiences,
     }),
     plugins: [
       // Kept for the ban check (spec 0005). Every person's `role` is `user`, the plugin's own

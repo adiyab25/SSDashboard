@@ -23,6 +23,7 @@ const MANAGER_WITH_COST = actorWith(['manager'], ['cost.view']);
 /** The person as the locked read returns them. */
 interface Target {
   hats: string[];
+  partner_account_id?: string | null;
   cost_view?: boolean;
   fresh?: boolean;
   banned?: boolean;
@@ -33,7 +34,7 @@ interface Target {
  * records whether a call happened inside it. Every statement answers the target row, so the lock,
  * the read, the last manager check and the writes all pass.
  */
-function setup(target: Target, options: { recordFails?: boolean } = {}) {
+function setup(target: Target, options: { recordFails?: boolean; consignment?: boolean } = {}) {
   const steps: string[] = [];
   let inside = false;
   const tx = {
@@ -76,9 +77,15 @@ function setup(target: Target, options: { recordFails?: boolean } = {}) {
   };
   const hatsChanged = vi.fn(() => steps.push('announce'));
   const authAudit = { hatsChanged } as unknown as AuthAudit;
-  const audiences = { staffCondition: () => sql`true` } as unknown as SessionAudiences;
-  const service = new HatService(connection, audiences, authAudit, audit);
-  return { service, tx, entries, steps, hatsChanged, audit };
+  const audiences = {
+    staffCondition: () => sql`true`,
+    partnerCondition: () => sql`true`,
+  } as unknown as SessionAudiences;
+  const partners = {
+    isConsignmentPartner: vi.fn(() => Promise.resolve(options.consignment ?? true)),
+  };
+  const service = new HatService(connection, audiences, authAudit, audit, partners);
+  return { service, tx, entries, steps, hatsChanged, audit, partners };
 }
 
 const change = (hats: string[], costView: boolean, reason?: string) =>
@@ -289,5 +296,101 @@ describe('HatService.giveFirstAccess (spec 0008, AC-14)', () => {
       service.giveFirstAccess(tx as never, TARGET, ['support'], true, actorWith(['manager'])),
     ).rejects.toMatchObject({ status: 403 });
     expect(tx.execute).not.toHaveBeenCalled();
+  });
+});
+
+const ACCOUNT_A = '0190c0de-0000-7000-8000-0000000000aa';
+const ACCOUNT_B = '0190c0de-0000-7000-8000-0000000000bb';
+const move = (partnerAccountId: string, reason?: string) => ({
+  partnerAccountId,
+  updatedAt: UPDATED_AT,
+  ...(reason !== undefined && { reason }),
+});
+
+describe('HatService.givePartnerAccess (spec 0008, AC-9 and AC-15)', () => {
+  it('asks PartnerAccounts in the caller’s transaction and gives the partner hat only, bound to the account', async () => {
+    const { service, tx, partners } = setup({ hats: [] });
+
+    await expect(
+      service.givePartnerAccess(tx as never, TARGET, ACCOUNT_A, MANAGER_WITH_COST),
+    ).resolves.toEqual({ hats: ['partner'], costView: false, partnerAccountId: ACCOUNT_A });
+    expect(partners.isConsignmentPartner).toHaveBeenCalledWith(ACCOUNT_A, tx);
+    expect(tx.execute).toHaveBeenCalled();
+  });
+
+  it('answers 422 UNKNOWN_PARTNER_ACCOUNT and writes nothing for a party that is not a consignment partner', async () => {
+    const { service, tx } = setup({ hats: [] }, { consignment: false });
+
+    await expect(
+      service.givePartnerAccess(tx as never, TARGET, ACCOUNT_A, MANAGER_WITH_COST),
+    ).rejects.toMatchObject({ status: 422, response: { code: 'UNKNOWN_PARTNER_ACCOUNT' } });
+    expect(tx.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('HatService.movePartnerUser (spec 0008, AC-12; spec 0005 AC-33 b)', () => {
+  const partner = { hats: ['partner'], partner_account_id: ACCOUNT_A };
+  const statements = (tx: { execute: { mock: { calls: unknown[][] } } }) =>
+    JSON.stringify(tx.execute.mock.calls);
+
+  it('replaces the partner row, ends every session and writes hat.revoked in one transaction, then announces', async () => {
+    const { service, tx, entries, steps, hatsChanged } = setup(partner);
+
+    await expect(
+      service.movePartnerUser(TARGET, move(ACCOUNT_B, 'moved shops'), actorWith(['manager'])),
+    ).resolves.toBe(true);
+
+    expect(statements(tx)).toContain('DELETE FROM sessions');
+    expect(statements(tx)).toContain('DELETE FROM hat_assignments WHERE user_id = ');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.inside).toBe(true);
+    expect(entries[0]?.entry).toMatchObject({
+      action: 'hat.revoked',
+      record: { type: 'user', id: TARGET },
+      before: { hats: ['partner'], costView: false, partnerAccountId: ACCOUNT_A },
+      after: { hats: ['partner'], costView: false, partnerAccountId: ACCOUNT_B },
+      reason: 'moved shops',
+    });
+    expect(steps).toEqual(['begin', 'audit', 'commit', 'announce']);
+    expect(hatsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes nothing for the same account', async () => {
+    const { service, entries, hatsChanged, partners } = setup(partner);
+
+    await expect(service.movePartnerUser(TARGET, move(ACCOUNT_A), MANAGER_WITH_COST)).resolves.toBe(
+      false,
+    );
+    expect(entries).toEqual([]);
+    expect(hatsChanged).not.toHaveBeenCalled();
+    expect(partners.isConsignmentPartner).not.toHaveBeenCalled();
+  });
+
+  it('answers 422 UNKNOWN_PARTNER_ACCOUNT and rolls back for an account that is not a consignment partner', async () => {
+    const { service, entries, steps } = setup(partner, { consignment: false });
+
+    await expect(
+      service.movePartnerUser(TARGET, move(ACCOUNT_B), MANAGER_WITH_COST),
+    ).rejects.toMatchObject({ status: 422, response: { code: 'UNKNOWN_PARTNER_ACCOUNT' } });
+    expect(entries).toEqual([]);
+    expect(steps).toEqual(['begin', 'rollback']);
+  });
+
+  it('answers 409 STALE_RECORD when updatedAt is not the stored one', async () => {
+    const { service, entries } = setup({ ...partner, fresh: false });
+
+    await expect(
+      service.movePartnerUser(TARGET, move(ACCOUNT_B), MANAGER_WITH_COST),
+    ).rejects.toMatchObject({ response: { code: 'STALE_RECORD' } });
+    expect(entries).toEqual([]);
+  });
+
+  it('answers 404 for an id that is not a uuid', async () => {
+    const { service, steps } = setup(partner);
+
+    await expect(
+      service.movePartnerUser('nope', move(ACCOUNT_B), MANAGER_WITH_COST),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(steps).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { SignInErrorCode } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { Field, FieldError, FieldGroup, FieldLabel } from '@ssdashboard/ui/components/field';
@@ -56,7 +57,11 @@ export function TwoFactorForm() {
       }
       if (error.status === 429) setFailure(t('auth.twoFactor.rateLimited'));
       else if (error.code === CHALLENGE_ENDED) setExpired(true);
-      else if (error.status === 401) {
+      // The code was right but the account holds no hat (spec 0008): the api refuses the sign in,
+      // and the attempt spent a backup code if one was used.
+      else if (error.status === 403 && error.code === SignInErrorCode.enum.NO_ACCESS) {
+        setFailure(t('auth.signIn.noAccess'));
+      } else if (error.status === 401) {
         // A stopped challenge and a wrong code are both 401; the code tells them apart, and only
         // a wrong code can be tried again. A locked sign in answers like a wrong code.
         setFailure(backup ? t('auth.twoFactor.backupWrong') : t('auth.twoFactor.wrong'));

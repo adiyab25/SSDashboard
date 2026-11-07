@@ -16,7 +16,7 @@ The inventory module and its ledger service, the only writer of stock in the sys
 | `ledger/reconciliation.service.ts` | The nightly `reconcile` (one REPEATABLE READ snapshot) and the admin `rebuildLevel` |
 | `ledger/reconcile.job.ts` | The pg-boss job, registered only by `WorkerModule` |
 | `ledger/ledger.errors.ts` | `LedgerError` with a stable `code`; feature 7 maps codes to HTTP errors |
-| `locations/location-policy.service.ts` | `LocationPolicyService`: the only reader of `location_owner_policies`, the only code naming an owner type, and the owner type to party role map; `NotSellableOnline` and `PartyRoleMismatch` |
+| `locations/location-policy.service.ts` | `LocationPolicyService`: the only reader of `location_owner_policies`, the only code naming an owner type, and the owner type to party role map; `NotSellableOnline` and `PartyRoleMismatch`; the party role check goes through the partners module's `PartnerAccounts.holdsRole`, never a `parties` read |
 | `locations/owner-type-boundary.spec.ts` | Fails on an owner type literal (quoted, as a bare object key, or via `LocationOwnerType.enum`, `.options`, `.extract`, `.exclude`) in api, web, contracts, or extensions source, outside the allow list by full path: the policy service files, `packages/contracts/src/locations.ts`, and two web fixture specs |
 | `../module-boundary.spec.ts` | The module wall for every module (spec 0002, A5), not only inventory: fails if a file names another module's table by Drizzle export or SQL name, or an extension names a core table. `KNOWN_BREACHES` lists the recorded exceptions and may only shrink |
 

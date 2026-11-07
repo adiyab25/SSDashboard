@@ -6,6 +6,7 @@ import {
   LocationPolicyService,
   type LocationPolicy,
 } from '../src/inventory/locations/location-policy.service.js';
+import { PartnerAccounts } from '../src/partners/partner-accounts.service.js';
 import { LocationError, LocationsService } from '../src/inventory/locations/locations.service.js';
 import {
   driftedBalances,
@@ -78,7 +79,7 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
   beforeAll(async () => {
     h = await ledgerHarness();
     make = fixtures(h.owner);
-    policies = new LocationPolicyService(h.app);
+    policies = new LocationPolicyService(h.app, new PartnerAccounts(h.app));
     locations = new LocationsService(h.app, h.ledger, policies);
   });
 

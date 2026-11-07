@@ -306,13 +306,45 @@ describe('StaffFormDialog (AC-12, AC-15)', () => {
       });
     });
 
-    it('says so when the person cannot be loaded', async () => {
-      api.getStaff.mockImplementation(() => fail('NOT_FOUND'));
+    it('locks the email of a person who sees cost when the signed in person does not (COST_HOLDER_PROTECTED)', async () => {
+      api.getStaff.mockImplementation(() =>
+        ok({ ...DETAIL, status: 'invited', lastSignInAt: null, costView: true }),
+      );
+      show('sam-id', false);
+
+      await waitFor(() => expect(screen.getByLabelText(/^Name/)).toHaveValue('Sam Carter'));
+      expect(screen.getByLabelText(/^Email/)).toBeDisabled();
+      expect(screen.getByLabelText(/^Email/)).toHaveAccessibleDescription(
+        'Only a person who sees cost can change the email of someone who sees cost.',
+      );
+    });
+
+    it('keeps the email of a person who sees cost editable for someone who sees cost', async () => {
+      api.getStaff.mockImplementation(() =>
+        ok({ ...DETAIL, status: 'invited', lastSignInAt: null, costView: true }),
+      );
+      show('sam-id', true);
+
+      await waitFor(() => expect(screen.getByLabelText(/^Name/)).toHaveValue('Sam Carter'));
+      expect(screen.getByLabelText(/^Email/)).toBeEnabled();
+    });
+
+    it('says so, shuts the fields and Save, and reloads when the person cannot be loaded (review r8)', async () => {
+      api.getStaff.mockImplementationOnce(() => fail('NOT_FOUND'));
+      api.getStaff.mockImplementation(() => ok(DETAIL));
       show('sam-id');
 
-      expect(
-        await screen.findByText('Something went wrong. Check your connection and try again.'),
-      ).toBeVisible();
+      expect(await screen.findByText('This person could not be loaded.')).toBeVisible();
+      expect(screen.getByLabelText(/^Name/)).toBeDisabled();
+      expect(screen.getByLabelText('Phone')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Reload' }));
+
+      await waitFor(() => expect(screen.getByLabelText(/^Name/)).toHaveValue('Sam Carter'));
+      expect(screen.getByLabelText(/^Name/)).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+      expect(screen.queryByText('This person could not be loaded.')).not.toBeInTheDocument();
     });
   });
 });

@@ -994,7 +994,10 @@ describe('staff administration', { timeout: 300_000 }, () => {
         expect(line, event).toContain(`"actorId":"${admin.id}"`);
         expect(line, event).toContain('"ip":');
       }
-      expect(lines.find((l) => l.includes('"event":"StaffDisabled"'))).toContain('"reason":"Test"');
+      // The manager's free text reason never reaches the log line, only that one was given.
+      const disabled = lines.find((l) => l.includes('"event":"StaffDisabled"'));
+      expect(disabled).toContain('"reason":"[REDACTED]"');
+      expect(disabled).not.toContain('Test"');
       // The created line names the access given (spec 0008 AC-14), hat names only.
       expect(lines.find((l) => l.includes('"event":"StaffCreated"'))).toContain(
         '"hats":["support","operations","warehouse"],"costView":false',

@@ -8,12 +8,13 @@ import { HealthModule } from './health/health.module.js';
 import { IdentityModule } from './identity/identity.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { MailModule } from './mail/mail.module.js';
+import { PartnersModule } from './partners/partners.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 
 /**
  * The root module of the `app` entry point (the api process): wires config, database, mail,
- * identity (sign in and staff), platform, audit, catalog and inventory. The worker uses its own module
- * so no HTTP code runs there.
+ * identity (sign in, staff and partner logins), platform, audit, catalog, inventory and partners.
+ * The worker uses its own module so no HTTP code runs there.
  */
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { PlatformModule } from './platform/platform.module.js';
     AuditModule,
     CatalogModule,
     InventoryModule,
+    PartnersModule,
   ],
 })
 export class AppModule {}

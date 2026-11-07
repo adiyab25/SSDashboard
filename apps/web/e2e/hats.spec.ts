@@ -1,8 +1,17 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { E2E_ADMIN } from './auth';
-import { ownAddress, seedAccount, type SeededAccount } from './accounts';
+import {
+  ownAddress,
+  removeAccountByEmail,
+  seedAccount,
+  seedPartnerAccount,
+  seedPartnerLogin,
+  type SeededAccount,
+  type SeededPartnerAccount,
+} from './accounts';
 import {
   expectNoAxeViolations,
+  openPartnerLogins,
   textFor,
   useBrowserState,
   waitForPageHydration,
@@ -191,6 +200,210 @@ for (const dir of ['ltr', 'rtl'] as const) {
     await expect(
       dialog.getByText(textFor(dir, 'staff.hats.errors.NO_HAT'), { exact: true }),
     ).toBeVisible();
+    await expectNoAxeViolations(page);
+  });
+}
+
+// Spec 0008 milestone 3, item 6: the Partner logins tab on /staff (AC-15, AC-18). Each test seeds
+// its own partner accounts and logins and removes them in order (logins first).
+const partnerAccounts: SeededPartnerAccount[] = [];
+const partnerLogins: SeededAccount[] = [];
+const createdEmails: string[] = [];
+
+test.afterEach(async () => {
+  for (const email of createdEmails.splice(0)) await removeAccountByEmail(email);
+  for (const login of partnerLogins.splice(0)) await login.remove();
+  for (const account of partnerAccounts.splice(0)) await account.remove();
+});
+
+/** Seeds a partner account and keeps it for the clean up. */
+async function seedPartner(): Promise<SeededPartnerAccount> {
+  const account = await seedPartnerAccount();
+  partnerAccounts.push(account);
+  return account;
+}
+
+/** Narrows the Partner logins list to `email` and returns the one row left. */
+async function partnerRow(
+  page: Page,
+  account: { name: string; email: string },
+  dir: TextDirection = 'ltr',
+): Promise<Locator> {
+  // The list asks the api once the typing pauses, and swaps its rows for a skeleton while it waits.
+  // A menu opened on a row before that swap is closed under the test's feet (a short list already
+  // shows one row, so the row count alone settles too early), so wait for the filtered answer and
+  // for the table to stop being busy first.
+  const answered = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/partner-users?') &&
+      response.url().includes(`q=${encodeURIComponent(account.email)}`),
+  );
+  await page
+    .getByRole('searchbox', { name: textFor(dir, 'staff.partners.search') })
+    .fill(account.email);
+  await answered;
+  await expect(page.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.getByRole('row')).toHaveCount(2);
+  const row = page.getByRole('row', { name: new RegExp(account.name) });
+  await expect(row).toBeVisible();
+  return row;
+}
+
+const partnerActions = (row: Locator, name: string, dir: TextDirection = 'ltr') =>
+  row.getByRole('button', {
+    name: textFor(dir, 'staff.partners.row.menu').replace('{{name}}', name),
+  });
+
+test('a manager adds a partner login bound to a partner account, and it shows on the tab only', async ({
+  page,
+}) => {
+  const partner = await seedPartner();
+  const email = `e2e-partner-${partner.code.toLowerCase()}@example.com`;
+  const name = `Partner ${partner.code}`;
+  createdEmails.push(email);
+  await openPartnerLogins(page);
+
+  await page.getByRole('button', { name: 'Add partner login' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add partner login' });
+  // No hats and no cost switch: a partner login has neither.
+  await expect(dialog.getByRole('checkbox')).toHaveCount(0);
+  await expect(dialog.getByRole('switch')).toHaveCount(0);
+  await dialog.getByLabel(/^Name/).fill(name);
+  await dialog.getByLabel(/^Email/).fill(email);
+  await dialog
+    .getByLabel(/^Partner account/)
+    .selectOption({ label: `${partner.name} (${partner.code})` });
+  await dialog.getByRole('button', { name: 'Save' }).click();
+
+  const setup = page.getByRole('dialog', { name: `Temporary password for ${name}` });
+  await expect(setup).toBeVisible();
+  await setup.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByText('Partner login created.')).toBeVisible();
+
+  const row = await partnerRow(page, { name, email });
+  await expect(row).toContainText(partner.name);
+  await expect(row).toContainText('Invited');
+
+  // The same person is never on the Staff tab: partner logins and staff are separate lists.
+  await page.getByRole('tab', { name: 'Staff' }).click();
+  await page.getByRole('searchbox', { name: 'Search staff' }).fill(email);
+  await expect(page.getByText(/No staff match/)).toBeVisible();
+});
+
+test('a manager moves a partner login to another account with a reason, by keyboard, and focus returns', async ({
+  page,
+}) => {
+  const from = await seedPartner();
+  const to = await seedPartner();
+  const login = await seedPartnerLogin(from.id);
+  partnerLogins.push(login);
+  await openPartnerLogins(page);
+  const row = await partnerRow(page, login);
+  await expect(row).toContainText(from.name);
+
+  const trigger = partnerActions(row, login.name);
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('menuitem', { name: 'Move to another account' }).focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', {
+    name: `Move ${login.name} to another partner account`,
+  });
+  const select = dialog.getByLabel(/^New partner account/);
+  await expect(select).toBeFocused();
+  // Moving to the same account is not offered: only the other accounts are in the list.
+  await expect(select.locator('option', { hasText: from.name })).toHaveCount(0);
+  await select.selectOption({ label: `${to.name} (${to.code})` });
+  await dialog.getByLabel('Reason (optional)').fill('Moved to the new showroom');
+  await dialog.getByRole('button', { name: 'Move login' }).click();
+
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByText('Partner login moved. They were signed out everywhere.'),
+  ).toBeVisible();
+  await expect(row).toContainText(to.name);
+  await expect(trigger).toBeFocused();
+});
+
+test('a partner login can be disabled and enabled again from the tab', async ({ page }) => {
+  const partner = await seedPartner();
+  const login = await seedPartnerLogin(partner.id);
+  partnerLogins.push(login);
+  await openPartnerLogins(page);
+  const row = await partnerRow(page, login);
+
+  await partnerActions(row, login.name).click();
+  await page.getByRole('menuitem', { name: 'Disable' }).click();
+  await page
+    .getByRole('dialog', { name: `Disable ${login.name}?` })
+    .getByRole('button', { name: 'Disable account' })
+    .click();
+  await expect(page.getByText('Account disabled.')).toBeVisible();
+  await expect(row).toContainText('Disabled');
+
+  await partnerActions(row, login.name).click();
+  await page.getByRole('menuitem', { name: 'Enable' }).click();
+  await expect(page.getByText('Account enabled.')).toBeVisible();
+  await expect(row).not.toContainText('Disabled');
+});
+
+test('the tabs work by keyboard: arrows move between them and the panel follows', async ({
+  page,
+}) => {
+  await page.goto('/staff');
+  await waitForPageHydration(page);
+  const staff = page.getByRole('tab', { name: 'Staff' });
+  const partners = page.getByRole('tab', { name: 'Partner logins' });
+  await staff.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(partners).toBeFocused();
+  await expect(partners).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name: 'Partner logins' })).toBeVisible();
+  await page.keyboard.press('ArrowLeft');
+  await expect(staff).toBeFocused();
+  await expect(page.getByRole('tabpanel', { name: 'Staff' })).toBeVisible();
+});
+
+for (const dir of ['ltr', 'rtl'] as const) {
+  test(`both people tabs and the partner login dialogs pass axe in ${dir === 'rtl' ? 'Arabic' : 'English'}`, async ({
+    page,
+  }) => {
+    await useBrowserState(page, { dir });
+    const partner = await seedPartner();
+    const login = await seedPartnerLogin(partner.id);
+    partnerLogins.push(login);
+
+    await openPartnerLogins(page, dir);
+    await expect(page.locator('html')).toHaveAttribute('dir', dir);
+    const row = await partnerRow(page, login, dir);
+    await expectNoAxeViolations(page);
+
+    // The add dialog with its errors showing.
+    await page.getByRole('button', { name: textFor(dir, 'staff.partners.add') }).click();
+    const add = page.getByRole('dialog', { name: textFor(dir, 'staff.partners.form.createTitle') });
+    await add.getByRole('button', { name: textFor(dir, 'staff.form.save') }).click();
+    await expect(
+      add.getByText(textFor(dir, 'staff.form.nameRequired'), { exact: true }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+    await expect(add).toHaveCount(0);
+
+    // The move dialog.
+    await partnerActions(row, login.name, dir).click();
+    await page.getByRole('menuitem', { name: textFor(dir, 'staff.partners.row.move') }).click();
+    const move = page.getByRole('dialog', {
+      name: textFor(dir, 'staff.partners.move.title').replace('{{name}}', login.name),
+    });
+    await expect(
+      move.getByLabel(new RegExp(textFor(dir, 'staff.partners.move.account'))),
+    ).toBeVisible();
+    await expectNoAxeViolations(page);
+    await page.keyboard.press('Escape');
+
+    // And the Staff tab beside it.
+    await page.getByRole('tab', { name: textFor(dir, 'staff.tabs.staff') }).click();
+    await expect(page.getByRole('table')).toBeVisible();
     await expectNoAxeViolations(page);
   });
 }

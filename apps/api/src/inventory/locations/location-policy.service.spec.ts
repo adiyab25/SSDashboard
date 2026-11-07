@@ -18,7 +18,7 @@ describe('requiredPartyRole', () => {
 
 describe('LocationPolicyService.assertCanCreate', () => {
   // A connection is never reached: these cases fail before any query.
-  const service = new LocationPolicyService({ db: {} } as never);
+  const service = new LocationPolicyService({ db: {} } as never, {} as never);
   const code = async (promise: Promise<unknown>) =>
     promise.then(
       () => undefined,

@@ -125,6 +125,74 @@ export async function seedAccount(
   };
 }
 
+/** A consignment partner a partner login can be bound to (spec 0008, AC-15). */
+export interface SeededPartnerAccount {
+  id: string;
+  code: string;
+  name: string;
+  remove(): Promise<void>;
+}
+
+/**
+ * Inserts one throwaway consignment partner (a `parties` row) straight into the dev database, so
+ * a test can add or move a partner login. Remove every login bound to it first: a partner hat
+ * keeps a RESTRICT reference to the account.
+ */
+export async function seedPartnerAccount(): Promise<SeededPartnerAccount> {
+  const tag = randomUUID().slice(0, 8).toUpperCase();
+  const code = `E2E-${tag}`;
+  const name = `E2E Showroom ${tag}`;
+  const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
+  try {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO parties (code, name, is_consignment_partner) VALUES ($1, $2, true) RETURNING id`,
+      [code, name],
+    );
+    const id = rows[0]?.id;
+    if (!id) throw new Error('Could not seed the e2e partner account');
+    return {
+      id,
+      code,
+      name,
+      async remove() {
+        try {
+          await pool.query(`DELETE FROM parties WHERE id = $1::uuid`, [id]);
+        } finally {
+          await pool.end();
+        }
+      },
+    };
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * Seeds a partner login bound to a partner account: a person who wears the `partner` hat alone
+ * (spec 0008, AC-1 to AC-3). Remove it before its partner account.
+ */
+export async function seedPartnerLogin(
+  partnerAccountId: string,
+  options: { name?: string } = {},
+): Promise<SeededAccount> {
+  const account = await seedAccount({ hats: [], ...options });
+  const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });
+  try {
+    await pool.query(
+      `INSERT INTO hat_assignments (user_id, hat, partner_account_id)
+       VALUES ($1::uuid, 'partner', $2::uuid)`,
+      [account.id, partnerAccountId],
+    );
+  } catch (error) {
+    await account.remove();
+    throw error;
+  } finally {
+    await pool.end();
+  }
+  return account;
+}
+
 /** Removes any account the staff page created through the UI, by its email. */
 export async function removeAccountByEmail(email: string): Promise<void> {
   const { pool } = createDatabase(ownerDatabaseUrl(), { max: 1 });

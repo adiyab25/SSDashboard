@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { PASSWORD_MAX_LENGTH } from '@ssdashboard/contracts';
 import { APIError, getSessionFromCtx } from 'better-auth/api';
 import { hashPassword } from 'better-auth/crypto';
@@ -48,11 +49,12 @@ function setup(lock = { locked: false }) {
     record: vi.fn<(event: unknown) => void>(),
     turnedAway: vi.fn<(route: string, context: unknown, locked: boolean) => void>(),
   };
-  const deps = { origin: ORIGIN, lockout, audit, now: () => NOW };
+  const audiences = { audiencesFor: vi.fn(() => Promise.resolve(new Set(['staff' as const]))) };
+  const deps = { origin: ORIGIN, lockout, audit, audiences, now: () => NOW };
   const internalAdapter = {
     updateUser: vi.fn(() => Promise.resolve()),
     findUserByEmail: vi.fn(() => Promise.resolve({ user: { id: USER_ID } })),
-    deleteSession: vi.fn(() => Promise.resolve()),
+    deleteSession: vi.fn((_token: string) => Promise.resolve()),
   };
   const context = (
     path: string,
@@ -61,7 +63,10 @@ function setup(lock = { locked: false }) {
       origin?: string;
       body?: unknown;
       returned?: unknown;
-      newSession?: { user: { id: string; twoFactorEnabled?: boolean } } | null;
+      newSession?: {
+        user: { id: string; twoFactorEnabled?: boolean };
+        session?: { token: string };
+      } | null;
       ip?: string;
     } = {},
   ): HookContext => {
@@ -78,6 +83,7 @@ function setup(lock = { locked: false }) {
   return {
     lockout,
     audit,
+    audiences,
     internalAdapter,
     context,
     before: createBeforeHook(deps),
@@ -268,7 +274,8 @@ describe('password change ends the other sessions (AC-14, AC-19)', () => {
 
 type SignInResult = {
   returned?: unknown;
-  newSession?: { user: { id: string; twoFactorEnabled?: boolean } };
+  responseHeaders?: Headers;
+  newSession?: { user: { id: string; twoFactorEnabled?: boolean }; session?: { token: string } };
 };
 
 /** Runs the before hook, which takes the slot, then the after hook with Better Auth's result. */
@@ -282,9 +289,84 @@ async function attempt(
   await s.after({ ...ctx, context: { ...ctx.context, ...result } });
 }
 
+/** The one `SignInRefused` line a no hat refusal writes: ids, address and user agent only. */
+function expectRefusalLogged(log: { mock: { calls: unknown[][] } }): void {
+  const lines = log.mock.calls
+    .map((call) => String(call[0]))
+    .filter((line) => line.includes('SignInRefused'));
+  expect(lines).toHaveLength(1);
+  expect(JSON.parse(lines[0] ?? '{}')).toEqual({
+    event: 'SignInRefused',
+    reason: 'no_access',
+    actorId: USER_ID,
+    ip: '203.0.113.7',
+    userAgent: null,
+    at: NOW.toISOString(),
+  });
+}
+
 const FAILURE = { emailKey: 'sam@example.com', ip: '203.0.113.7' };
 
 describe('after hook', () => {
+  describe('a person with no hat (spec 0008, AC-10)', () => {
+    const issued = { user: { id: USER_ID }, session: { token: 'tok' } };
+
+    it('is refused with 403 NO_ACCESS after a right password: session deleted, nothing recorded, slot back', async () => {
+      const s = setup();
+      s.audiences.audiencesFor.mockResolvedValueOnce(new Set());
+      const responseHeaders = new Headers({ 'set-cookie': 'session_token=tok; Path=/' });
+      const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+
+      const error = await attempt(s, {
+        newSession: issued,
+        returned: { token: 'tok' },
+        responseHeaders,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(APIError);
+      expect((error as APIError).statusCode).toBe(403);
+      expect((error as APIError).body).toMatchObject({ code: 'NO_ACCESS' });
+      expect(s.internalAdapter.deleteSession).toHaveBeenCalledWith('tok');
+      expect(responseHeaders.get('set-cookie')).toBeNull();
+      expect(s.internalAdapter.updateUser).not.toHaveBeenCalled();
+      expect(s.audit.record).not.toHaveBeenCalled();
+      expect(s.lockout.giveBack).toHaveBeenCalledWith(SLOT);
+      expectRefusalLogged(log);
+      log.mockRestore();
+    });
+
+    it('never asks about hats before the password: a wrong password answers as for anyone', async () => {
+      const s = setup();
+
+      await attempt(s, { returned: wrongPassword() });
+
+      expect(s.audiences.audiencesFor).not.toHaveBeenCalled();
+      expect(s.internalAdapter.deleteSession).not.toHaveBeenCalled();
+    });
+
+    it('lets a person with a hat sign in as before', async () => {
+      const s = setup();
+
+      await attempt(s, { newSession: issued, returned: { token: 'tok' } });
+
+      expect(s.audiences.audiencesFor).toHaveBeenCalledWith(USER_ID);
+      expect(s.internalAdapter.deleteSession).not.toHaveBeenCalled();
+      expect(s.audit.record).toHaveBeenCalledWith(expect.any(SignedIn));
+    });
+
+    it('waits for the code when two factor is on, and refuses then', async () => {
+      const s = setup();
+      s.audiences.audiencesFor.mockResolvedValue(new Set());
+
+      await attempt(s, {
+        newSession: { ...issued, user: { id: USER_ID, twoFactorEnabled: true } },
+        returned: { token: 'tok' },
+      });
+
+      expect(s.audiences.audiencesFor).not.toHaveBeenCalled();
+    });
+  });
+
   it('on a full session: stamps the last sign in, clears the counters, emits SignedIn', async () => {
     const s = setup();
 
@@ -354,7 +436,7 @@ describe('after hook', () => {
 
   it('records an unknown email with no target, so it looks like a real one in the counters', async () => {
     const s = setup();
-    s.internalAdapter.findUserByEmail.mockResolvedValueOnce(null as never);
+    s.internalAdapter.findUserByEmail.mockResolvedValue(null as never);
 
     await attempt(s, { returned: wrongPassword() }, 'nobody@example.com');
 
@@ -572,6 +654,42 @@ describe('second factor codes (AC-3, AC-20)', () => {
     expect(s.lockout.giveBack).toHaveBeenCalledWith(SLOT, FAILURE);
     expect(consumeVerificationValue).not.toHaveBeenCalled();
   });
+
+  it.each(['/two-factor/verify-totp', '/two-factor/verify-backup-code'])(
+    'refuses a right code on %s for a person with no hat: 403 NO_ACCESS, session deleted, cookie removed, slot back, line logged (AC-10)',
+    async (path) => {
+      const s = setup();
+      s.audiences.audiencesFor.mockResolvedValueOnce(new Set());
+      const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      const { ctx } = pending(s);
+      const responseHeaders = new Headers({ 'set-cookie': 'session_token=tok; Path=/' });
+      const codeCtx: HookContext = { ...ctx, path };
+
+      await s.before(codeCtx);
+      const error = await s
+        .after({
+          ...codeCtx,
+          context: {
+            ...codeCtx.context,
+            returned: { token: 'tok' },
+            newSession: { user: { id: USER_ID }, session: { token: 'tok' } },
+            responseHeaders,
+          },
+        })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(APIError);
+      expect((error as APIError).statusCode).toBe(403);
+      expect((error as APIError).body).toMatchObject({ code: 'NO_ACCESS' });
+      expect(s.internalAdapter.deleteSession).toHaveBeenCalledWith('tok');
+      expect(responseHeaders.get('set-cookie')).toBeNull();
+      expect(s.lockout.giveBack).toHaveBeenCalledWith(SLOT);
+      expect(s.lockout.reset).not.toHaveBeenCalled();
+      expect(s.audit.record).not.toHaveBeenCalled();
+      expectRefusalLogged(log);
+      log.mockRestore();
+    },
+  );
 
   it('ends the pending sign in when the counted wrong code starts a lock', async () => {
     const s = setup();

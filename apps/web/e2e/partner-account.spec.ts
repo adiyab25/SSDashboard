@@ -138,7 +138,11 @@ test.describe('partner account page', () => {
       await page.goto(`/${language}/partner/account`);
 
       const main = page.getByRole('main');
-      await expect(main.getByRole('alert')).toHaveText(textFor(dir, 'account.twoFactor.failed'));
+      const alert = main.getByRole('alert');
+      await expect(alert).toContainText(textFor(dir, 'account.loadError'));
+      await expect(
+        alert.getByRole('button', { name: textFor(dir, 'account.retry') }),
+      ).toBeVisible();
       await expect(main.getByRole('status')).toHaveCount(0);
       await expect(page.locator('#account-name')).toHaveCount(0);
       await expect(main).not.toContainText(STAFF_WORDS);

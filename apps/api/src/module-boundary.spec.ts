@@ -219,12 +219,6 @@ const KNOWN_BREACHES: readonly { file: string; table: string; count: number; why
     why: 'the serial check JOINs product_variants to find serial tracked SKUs, and the rebuild locks the SKU row FOR SHARE like loadMaster; needs catalog services for both',
   },
   {
-    file: 'apps/api/src/inventory/locations/location-policy.service.ts',
-    table: 'parties',
-    count: 1,
-    why: 'the party role check reads parties directly; needs a partners module service',
-  },
-  {
     file: 'apps/api/src/database/pg-error.spec.ts',
     table: 'users',
     count: 1,

@@ -1,13 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { REDACTED } from '@ssdashboard/config/redaction';
 import { describeError } from '../../database/pg-error.js';
 import {
   eventName,
+  SignInFailed,
   type AuthEvent,
   type AuthEventContext,
   type HatsChanged,
 } from '../../platform/events/auth-events.js';
 import type { HatChangeLogLine } from '../sessions/hat-change-log.js';
+
+/**
+ * The `reason` a log line carries for an event that has one. Only a sign in failure reason is a
+ * stable code and stays readable; every other event's reason is a manager's free text (a disabled
+ * account's), so the line says only that one was given (`[REDACTED]`, null stays null), and a
+ * future event with a reason is hidden until it is named here. The event itself still carries the
+ * text.
+ */
+function loggedReason(event: Extract<AuthEvent, { reason: unknown }>): string | null {
+  if (event instanceof SignInFailed) return event.reason;
+  return event.reason === null ? null : REDACTED;
+}
 
 /**
  * One structured log line and one domain event for every sign in outcome (spec 0005, AC-23).
@@ -35,9 +49,10 @@ export class AuthAudit {
         ip: context.ip,
         userAgent: context.userAgent,
         at: context.at.toISOString(),
-        ...('reason' in event ? { reason: event.reason } : {}),
+        ...('reason' in event ? { reason: loggedReason(event) } : {}),
         ...('scope' in event ? { scope: event.scope } : {}),
         ...('hats' in event ? { hats: event.hats, costView: event.costView } : {}),
+        ...('partnerAccountId' in event ? { partnerAccountId: event.partnerAccountId } : {}),
       }),
     );
     // A listener that throws must never fail a sign in.

@@ -2,6 +2,7 @@
 
 import type { Home } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
+import { Button } from '@ssdashboard/ui/components/button';
 import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -30,7 +31,8 @@ export function AccountPage({
 }) {
   const { t } = useTranslation();
   const path = ME_PATH[audience];
-  const meState = useMeState(path);
+  const [attempt, setAttempt] = useState(0);
+  const meState = useMeState(path, attempt);
   const me = meState.status === 'ready' ? meState.me : null;
   const [languages, setLanguages] = useState<readonly string[]>(['en']);
   const [settled, setSettled] = useState(false);
@@ -70,7 +72,12 @@ export function AccountPage({
         </>
       ) : meState.status === 'failed' ? (
         <Alert variant="destructive">
-          <AlertDescription>{t('account.twoFactor.failed')}</AlertDescription>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            {t('account.loadError')}
+            <Button size="sm" variant="outline" onClick={() => setAttempt((count) => count + 1)}>
+              {t('account.retry')}
+            </Button>
+          </AlertDescription>
         </Alert>
       ) : (
         <div role="status" className="flex flex-col gap-3">

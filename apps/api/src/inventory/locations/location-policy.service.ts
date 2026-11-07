@@ -3,6 +3,7 @@ import type { LocationOwnerType } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../../database/database.module.js';
 import type { Executor } from '../../database/sql.js';
+import { PartnerAccounts, type PartyRoleColumn } from '../../partners/partner-accounts.service.js';
 
 /** Who pays a refund: the brand, or the owner of the location. */
 export type RefundBy = 'brand' | 'location_owner';
@@ -53,9 +54,6 @@ export class LocationPolicyError extends Error {
     this.name = 'LocationPolicyError';
   }
 }
-
-/** A party column that holds the role an owner type needs. */
-type PartyRoleColumn = 'is_consignment_partner' | 'is_wholesale_customer';
 
 interface PolicyRow extends Record<string, unknown> {
   owner_type: LocationOwnerType;
@@ -113,8 +111,14 @@ function notSellableOnline(): LocationPolicyError {
  */
 @Injectable()
 export class LocationPolicyService {
-  /** Takes the app database connection. */
-  constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
+  /**
+   * Takes the app database connection and the partners module's `PartnerAccounts`, which answers
+   * whether a party holds a role (this service never reads `parties`).
+   */
+  constructor(
+    @Inject(DATABASE) private readonly connection: DatabaseConnection,
+    @Inject(PartnerAccounts) private readonly partners: Pick<PartnerAccounts, 'holdsRole'>,
+  ) {}
 
   /** The policy of the location's owner type, or `NotFound` when the location does not exist. */
   async policyFor(
@@ -186,11 +190,7 @@ export class LocationPolicyService {
     if (partyId === undefined) {
       throw new LocationPolicyError('PartyRoleMismatch', 'This owner type needs a party');
     }
-    const { rows } = await executor.execute<{ ok: boolean }>(sql`
-      SELECT ${sql.identifier(role)} AS ok FROM parties
-      WHERE id = ${partyId} AND archived_at IS NULL
-      FOR SHARE`);
-    if (!rows[0]?.ok) {
+    if (!(await this.partners.holdsRole(partyId, role, executor))) {
       throw new LocationPolicyError(
         'PartyRoleMismatch',
         'The party does not hold the role this owner type needs',
