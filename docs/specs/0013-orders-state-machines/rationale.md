@@ -106,23 +106,45 @@ The cost of in transaction listeners is accepted deliberately and bounded: spec 
 
 **Manual prepayment only 0 or the full total.** Leaves room for D2: a deposit is exactly the case D2 says the gross share allocation gets wrong, so the manual path does not create one until feature 18 decides `prepaid_purpose`. Channel orders keep whatever the channel reports, as today.
 
-**Reservations never refuse an order.** A Shopify order is a fact; a manual order for a piece the warehouse cannot find is still a customer wanting it. The line is marked short and the confirmation agent sees it. This depends on spec 0011 answering a shortage instead of throwing, which the index lists as a contract.
+**Reservations never refuse an order.** A Shopify order is a fact; a manual order for a piece the warehouse cannot find is still a customer wanting it. The line is marked short and the confirmation agent sees it. Spec 0011 keeps the missing part as `reservations.unfilled_quantity` and fills it oldest first on every write that frees stock (its AC-21, the lead's ruling); the orders module keeps only a copy (`order_lines.short_quantity`) so the list can flag and filter short lines without reading inventory's tables, and refuses to pack a short line (Q-16.5).
 
-**Owner decisions, why each is the owner's.** Q-16.1 (where WhatsApp orders are entered) changes the brand's daily process and, in mirror mode, who creates the Bosta delivery. Q-16.2 (when stock is held) changes what available stock means to the brand's staff. Q-16.3 (editing Shopify orders with write back off) trades agent speed against the silent wrong parcel of review B2. Each has a recommended answer the rest of the design is built on.
+**Owner decisions, why each is the owner's.** Q-16.1 (where WhatsApp orders are entered) changes the brand's daily process and, in mirror mode, who creates the Bosta delivery. Q-16.2 (when stock is held) changes what available stock means to the brand's staff. Q-16.3 (editing Shopify orders with write back off) trades agent speed against the silent wrong parcel of review B2. Q-16.4 (cancel after the delivery exists) decides whether the agent or the Bosta dashboard closes a fake order. Q-16.5 (packing a short line) trades warehouse speed against a refusal at the door. Q-16.6 (linked orders) decides how a reopened or replacement order counts for the campaign and the return rate. Each has a recommended answer the rest of the design is built on.
+
+### Sub decisions from the domain reviews of 2026-11-07
+
+The [orders review](../../reviews/domain-orders.md) accepted the design with one blocker and seven majors; the lead added rulings from the reviews of spec 0011 and spec 0015. Each change and why:
+
+**Two locks instead of one (X1, Q-16.4).** The first draft locked edits and cancels at `carrier_delivery_created_at`. The reference brand's own Bosta sync retires deliveries that "never leave Pickup requested", so deliveries exist for orders that never ship, and with the lock a fake order stayed `new` for good, holding stock and cash expected. The money freeze stays at the delivery (the courier was told an amount); the cancel lock moves to pickup, which is what the transition table's from states already say. A carrier row to `cancelled` covers a delivery the carrier terminated before pickup. Runner up: keep the lock and cancel only in Bosta, rejected because the agent who knows the order is fake is in the app, not in Bosta.
+
+**One transaction entry point for every orders write.** Spec 0011 lets reservations run only inside `LedgerService.transaction`, whose deadlock retry reruns the caller's whole unit. Two choices: mark the few methods that touch stock and let the others take any transaction, or route every orders write through one runner. One runner wins: a caller cannot pick the wrong one, the rule is one sentence for features 13, 18, 19, 21, and 22, and the cost (the rerun discipline) applies to every unit of work anyway once any step in it may reserve. Orders owns the runner (`OrderTransactions.run`) so callers never import inventory. Runner up: callers open `LedgerService.transaction` themselves, rejected because it spreads inventory's type across five modules.
+
+**A channel edit waits while the app's own edit is unsynced (M2).** Without it, a Shopify update arriving between the agent's edit and its write back undoes the edit, and the echo of a synced edit duplicates the line the app added (it has no channel id yet). Applying nothing while a command is open, matching id less lines by variant, quantity, and price, and recording the channel's ids when the command syncs (`recordChannelLineIds`) close both. Runner up: merge the snapshot field by field against the open command's payload, rejected as too much logic for slice 1a.
+
+**Unknown carrier facts apply nothing (M3).** A carrier report is a fact and the table cannot foresee every one (the reference brand reships after a return to origin). Throwing rolls back the carrier sync forever; applying nothing with an attention keeps the sync moving and puts a person on the contradiction.
+
+**Shopify cancels after the parcel came back are expected (M4).** The reference brand cancels returned orders in Shopify as bookkeeping; a task for each would be about 26 a day of noise for a team of four.
+
+**Overpaid edits are refused (M5).** The built `codExpected` throws on a total below what was prepaid; a stable code and a rule beat a server error, and the refund belongs to feature 18's D2 work.
+
+**Linked orders now (M7, Q-16.6, and the Shopify review's Q-13.5).** `related_order_id` and `exchange_replacement` exist in the model; without a way to create them in slice 1a, reopened orders lose their campaign and size refusals count as failures. `goodwill_for` is a new enum value because a gift cannot carry `original_order_id` (that column means an exchange replacement by check).
+
+**Carrier shipments never wait on stock (the lead's ruling with spec 0011).** `postCarrierShipment` books what the carrier took even when the books disagree, and the disagreement becomes a task. The shipment stays a job after the move commits, so a slow posting never holds the carrier sync's transaction.
+
+**Three small calls for the Shopify connector.** A go live import enters old orders as `confirmed` without a fake confirmation path (Q-13.7); `linkChannelLineVariant` maps a line that arrived before its product without counting an edit (its M8); `rederivePaymentMethod` fixes a payment method a gateway mapping got wrong while nothing has moved (its M6), which needs three new cash rows limited to one reason.
 
 ### Evidence: what is built and what this spec uses
 
 | Built piece | Path | Used for |
 |---|---|---|
-| Order tables, checks, indexes | `packages/db/src/schema/orders.ts` | the write paths; two columns and five indexes added |
-| `nextState`, `firstCashState`, `replayStates`, `OrderTaskKind` | `packages/contracts/src/orders/order-states.ts` | every move; the `system_job` cancel row added |
+| Order tables, checks, indexes | `packages/db/src/schema/orders.ts` | the write paths; three columns, six indexes, and one enum value added |
+| `nextState`, `firstCashState`, `replayStates`, `OrderTaskKind` | `packages/contracts/src/orders/order-states.ts` | every move; the cancel row until pickup (person, `system_job`, `carrier`) and the `payment_method_rederived` cash rows |
 | `allocatePayments`, `codExpected`, `codDue` | `packages/contracts/src/orders/order-amounts.ts` | recompute; `codDue` reads the fulfillment state |
 | `splitLine` | `packages/contracts/src/orders/line-split.ts` | partial delivery |
 | `deriveOrderOutcome`, `deliveredAmountOf` | `packages/contracts/src/orders/order-outcome.ts` | outcome |
 | `LineAmounts.compute` | `packages/contracts/src/money.ts` | line and shipping money |
 | `NumberingService.next` and the seeded `SO` prefix | `apps/api/src/platform/numbering.service.ts`, `packages/db/migrations/0002_baseline_rules.sql` | internal store numbers |
 | `orders.*`, `fulfillment.work`, `cost.view`, `audit.read` | `packages/contracts/src/access.ts` | route permissions (none new) |
-| `AuditService.record`, the `order` record type (reason as a code) | `apps/api/src/audit/`, `packages/contracts/src/audit/audit-record-types.ts` | the four audit codes |
+| `AuditService.record`, the `order` record type (reason as a code) | `apps/api/src/audit/`, `packages/contracts/src/audit/audit-record-types.ts` | the five audit codes |
 | Ship to keys in the redaction list | `packages/config/src/redaction.ts` | audit and log privacy |
 | `outbound_commands` and its open index | `packages/db/src/schema/connectors.ts` | the packed guard and the hold, through feature 13's service |
 | Keyset cursor | `apps/api/src/platform/keyset-cursor.ts` | the list |
@@ -135,7 +157,8 @@ The cost of in transaction listeners is accepted deliberately and bounded: spec 
 - [Spec 0002](../0002-core-data-model/index.md) and its [orders child](../0002-core-data-model/0002-orders.md), [customers child](../0002-core-data-model/0002-customers-credit-tasks.md), and [tenancy child](../0002-core-data-model/0002-tenancy-platform.md) (A6).
 - [Spec 0007](../0007-stack-architecture-operations-layer/index.md): section 1 (outbound commands, the blocking rule, edit netting, mirror mode), section 7 (order number per store), section 10 (operating day), section 11 (scale), *Carried from the domain review* (B1, B2, m3).
 - [Spec 0008](../0008-roles-as-hats/index.md) (the permission matrix), [spec 0009](../0009-settings-toggles-bundles/index.md) (settings registry, module registry, executing steps, job registry), [spec 0010](../0010-audit-trail/index.md) (actions, reason codes, privacy).
-- [Spec 0014](../0014-customers-by-phone/index.md) (the `CustomersService` contract).
+- [Spec 0011](../0011-stock-ledger-locations/index.md) (the stock transaction, reservations with `unfilled_quantity`, `postCarrierShipment`, the events, `OnlineStockGate`), [spec 0014](../0014-customers-by-phone/index.md) (the `CustomersService` contract), [spec 0015](../0015-shopify-connector/index.md) (the build order, `ChannelsService`, `ConnectorsService`).
+- [Domain review of this spec](../../reviews/domain-orders.md) (X1, M1 to M7, m1 to m9, the eight brand questions), [domain review of spec 0015](../../reviews/domain-shopify-connector.md) (M6, M8, m2, Q-13.5, Q-13.7), and the lead's rulings from the [domain review of spec 0011](../../reviews/domain-stock-ledger.md).
 - [Domain review of the data model](../../reviews/domain-data-model.md) (B2, M5, m1 to m3, build re read D2 to D4) and [domain review of the stack](../../reviews/domain-stack.md) (B2, n1).
 - [Scope, slice 1a](../../scope/confirmation-to-cash.md) (features 13, 16, 18, 19, 21, 22, 24) and the final plan `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1, 6.14, 7.1, 7.2.
 - Installed skills: `postgresql-table-design` (partial unique index, index per access path), `nestjs-best-practices`, `drizzle-orm-patterns`, `pg-boss-v12`.
