@@ -55,6 +55,42 @@ CREATE TYPE "public"."stock_receipt_status" AS ENUM('posted', 'voided');--> stat
 CREATE TYPE "public"."task_created_by_type" AS ENUM('person', 'system_job');--> statement-breakpoint
 CREATE TYPE "public"."task_linked_type" AS ENUM('order', 'customer', 'exchange', 'refund', 'shipment', 'settlement_line', 'settlement_statement', 'settlement_period', 'outbound_command', 'party', 'location');--> statement-breakpoint
 CREATE TYPE "public"."task_status" AS ENUM('open', 'done', 'cancelled');--> statement-breakpoint
+CREATE TABLE "audit_entries" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
+	"recorded_at" timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+	"operating_day" date NOT NULL,
+	"correlation_id" uuid NOT NULL,
+	"actor_kind" text NOT NULL,
+	"actor_user_id" uuid,
+	"actor_ref" text,
+	"job_id" uuid,
+	"actor_hat" text,
+	"action" text NOT NULL,
+	"record_type" text NOT NULL,
+	"record_id" uuid NOT NULL,
+	"record_label" text,
+	"before" jsonb,
+	"after" jsonb,
+	"personal_fields" text[] DEFAULT '{}'::text[] NOT NULL,
+	"reason" text,
+	"undo_action" text,
+	"undo_args" jsonb,
+	"undoes_entry_id" uuid,
+	CONSTRAINT "audit_actor_kind" CHECK ("audit_entries"."actor_kind" IN ('person', 'partner_user', 'system_job', 'carrier', 'import', 'portal_customer')),
+	CONSTRAINT "audit_actor_shape" CHECK (CASE "audit_entries"."actor_kind"
+        WHEN 'person' THEN "audit_entries"."actor_user_id" IS NOT NULL AND "audit_entries"."actor_ref" IS NULL AND "audit_entries"."job_id" IS NULL
+        WHEN 'partner_user' THEN "audit_entries"."actor_user_id" IS NOT NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."job_id" IS NULL AND "audit_entries"."actor_hat" IS NULL
+        WHEN 'system_job' THEN "audit_entries"."actor_user_id" IS NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."actor_hat" IS NULL
+        ELSE "audit_entries"."actor_user_id" IS NULL AND "audit_entries"."actor_ref" IS NOT NULL AND "audit_entries"."job_id" IS NULL AND "audit_entries"."actor_hat" IS NULL
+      END),
+	CONSTRAINT "audit_action_format" CHECK ("audit_entries"."action" ~ '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$'),
+	CONSTRAINT "audit_reason_length" CHECK ("audit_entries"."reason" IS NULL OR length(btrim("audit_entries"."reason")) BETWEEN 1 AND 500),
+	CONSTRAINT "audit_json_objects" CHECK (("audit_entries"."before" IS NULL OR jsonb_typeof("audit_entries"."before") = 'object') AND ("audit_entries"."after" IS NULL OR jsonb_typeof("audit_entries"."after") = 'object')),
+	CONSTRAINT "audit_undo_pair" CHECK (("audit_entries"."undo_action" IS NULL) = ("audit_entries"."undo_args" IS NULL)),
+	CONSTRAINT "audit_undo_entry_not_undoable" CHECK ("audit_entries"."undoes_entry_id" IS NULL OR "audit_entries"."undo_action" IS NULL)
+);
+--> statement-breakpoint
 CREATE TABLE "accounts" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"tenant_id" uuid DEFAULT current_setting('ssd.tenant_id')::uuid NOT NULL,
@@ -1040,6 +1076,8 @@ CREATE TABLE "tasks" (
 	CONSTRAINT "tasks_dedupe_key_shape" CHECK ("tasks"."dedupe_key" IS NULL OR "tasks"."dedupe_key" ~ '^[A-Za-z0-9:_.-]{1,200}$')
 );
 --> statement-breakpoint
+ALTER TABLE "audit_entries" ADD CONSTRAINT "audit_entries_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "audit_entries" ADD CONSTRAINT "audit_entries_undoes_entry_id_audit_entries_id_fk" FOREIGN KEY ("undoes_entry_id") REFERENCES "public"."audit_entries"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "two_factors" ADD CONSTRAINT "two_factors_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1142,6 +1180,13 @@ ALTER TABLE "stock_receipts" ADD CONSTRAINT "stock_receipts_void_group_id_moveme
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_owner_user_id_users_id_fk" FOREIGN KEY ("owner_user_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_closed_by_users_id_fk" FOREIGN KEY ("closed_by") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "audit_entries_recorded_idx" ON "audit_entries" USING btree ("recorded_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "audit_entries_actor_recorded_idx" ON "audit_entries" USING btree ("actor_user_id","recorded_at" DESC NULLS FIRST,"id" DESC NULLS FIRST) WHERE "audit_entries"."actor_user_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "audit_entries_record_recorded_idx" ON "audit_entries" USING btree ("record_type","record_id","recorded_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "audit_entries_action_recorded_idx" ON "audit_entries" USING btree ("action","recorded_at" DESC NULLS FIRST,"id" DESC NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "audit_entries_correlation_idx" ON "audit_entries" USING btree ("correlation_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "audit_entries_undoes_entry_unique" ON "audit_entries" USING btree ("undoes_entry_id") WHERE "audit_entries"."undoes_entry_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "audit_entries_operating_day_brin" ON "audit_entries" USING brin ("operating_day");--> statement-breakpoint
 CREATE UNIQUE INDEX "accounts_provider_account_unique" ON "accounts" USING btree ("tenant_id","provider_id","account_id");--> statement-breakpoint
 CREATE INDEX "accounts_user_idx" ON "accounts" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "rate_limits_key_unique" ON "rate_limits" USING btree ("tenant_id","key");--> statement-breakpoint

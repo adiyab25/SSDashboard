@@ -27,6 +27,7 @@ export const ar: Catalog = {
         receipts: 'أذونات الاستلام',
         skus: 'الأصناف',
         locations: 'المواقع',
+        audit: 'سجل المراجعة',
       },
     },
     sidebar: {
@@ -772,6 +773,34 @@ export const ar: Catalog = {
       voidedBy: 'ألغاه',
       voidReason: 'سبب الإلغاء',
       allReceipts: 'كل الأذونات',
+    },
+  },
+  audit: {
+    title: 'سجل المراجعة',
+    description: 'من غيّر ماذا، من الأحدث إلى الأقدم. لا يمكن تعديل السجلات أو حذفها.',
+    tableLabel: 'سجلات المراجعة',
+    columns: { time: 'الوقت', actor: 'من', action: 'ماذا', record: 'السجل', reason: 'السبب' },
+    empty: 'لا توجد سجلات مطابقة',
+    noReason: 'لم يُذكر سبب',
+    loadError: 'تعذر تحميل سجلات المراجعة.',
+    retry: 'حاول مرة أخرى',
+    loadMore: 'تحميل المزيد',
+    endOfList: 'نهاية سجل المراجعة',
+    loadMoreError: 'تعذر تحميل السجلات التالية.',
+    forbidden: 'يمكن للمسؤولين فقط قراءة سجل المراجعة.',
+    unknownPerson: 'شخص غير معروف',
+    actorKinds: {
+      person: 'شخص',
+      partnerUser: 'مستخدم شريك',
+      systemJob: 'مهمة النظام',
+      carrier: 'شركة الشحن',
+      import: 'استيراد',
+      portalCustomer: 'عميل',
+    },
+    recordTypes: { stockReceipt: 'إذن استلام' },
+    // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
+    actions: {
+      stockReceiptVoided: 'إلغاء إذن استلام',
     },
   },
   mail: {

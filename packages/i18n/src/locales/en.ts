@@ -26,6 +26,7 @@ export const en = {
         receipts: 'Stock receipts',
         skus: 'SKUs',
         locations: 'Locations',
+        audit: 'Audit trail',
       },
     },
     sidebar: {
@@ -777,6 +778,34 @@ export const en = {
       voidedBy: 'Voided by',
       voidReason: 'Void reason',
       allReceipts: 'All receipts',
+    },
+  },
+  audit: {
+    title: 'Audit trail',
+    description: 'Who changed what, newest first. Entries cannot be edited or removed.',
+    tableLabel: 'Audit entries',
+    columns: { time: 'When', actor: 'Who', action: 'What', record: 'Record', reason: 'Reason' },
+    empty: 'No entries match',
+    noReason: 'No reason given',
+    loadError: 'The audit entries could not be loaded.',
+    retry: 'Try again',
+    loadMore: 'Load more',
+    endOfList: 'End of the audit trail',
+    loadMoreError: 'The next entries could not be loaded.',
+    forbidden: 'Only administrators can read the audit trail.',
+    unknownPerson: 'Unknown person',
+    actorKinds: {
+      person: 'Person',
+      partnerUser: 'Partner user',
+      systemJob: 'System job',
+      carrier: 'Carrier',
+      import: 'Import',
+      portalCustomer: 'Customer',
+    },
+    recordTypes: { stockReceipt: 'Stock receipt' },
+    // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
+    actions: {
+      stockReceiptVoided: 'Stock receipt voided',
     },
   },
   mail: {

@@ -75,6 +75,9 @@ CREATE TRIGGER "settlement_period_events_no_truncate" BEFORE TRUNCATE ON "settle
 -- Per order cost rules are write once (spec 0002, A4): a change is a newer rule row.
 CREATE TRIGGER "order_cost_rules_append_only" BEFORE UPDATE OR DELETE ON "order_cost_rules" FOR EACH ROW EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
 CREATE TRIGGER "order_cost_rules_no_truncate" BEFORE TRUNCATE ON "order_cost_rules" FOR EACH STATEMENT EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
+-- Audit entries are write once (spec 0010, AC-8): a correction is a new entry that undoes it.
+CREATE TRIGGER "audit_entries_append_only" BEFORE UPDATE OR DELETE ON "audit_entries" FOR EACH ROW EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
+CREATE TRIGGER "audit_entries_no_truncate" BEFORE TRUNCATE ON "audit_entries" FOR EACH STATEMENT EXECUTE FUNCTION "ssd_reject_change"();--> statement-breakpoint
 
 -- `recorded_at` on an append only table belongs to the database (security review S1): a writer's
 -- value is always overwritten, because a wrong one could never be corrected and would win "latest"
@@ -85,8 +88,8 @@ CREATE TRIGGER "order_cost_rules_no_truncate" BEFORE TRUNCATE ON "order_cost_rul
 --     FutureDate check compares effective_at with it, and nothing picks a "latest" row by it).
 --   'statement': clock_timestamp(), the moment of the insert. Tables whose latest row or replay
 --     order is read by recorded_at (cost records, cost rules, order events, period events, match
---     rows, merges): rows of one transaction keep their insert order, and a row inserted after
---     another committed one is never dated before it, as with the audit trail.
+--     rows, merges, audit entries): rows of one transaction keep their insert order, and a row
+--     inserted after another committed one is never dated before it.
 -- Each trigger's name puts `0_` after the table, so it fires before every other insert trigger of
 -- its table (triggers of one event fire in name order) and they all see the final value.
 CREATE FUNCTION "ssd_stamp_recorded_at"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
@@ -110,6 +113,19 @@ CREATE TRIGGER "order_events_0_stamp_recorded_at" BEFORE INSERT ON "order_events
 CREATE TRIGGER "customer_merges_0_stamp_recorded_at" BEFORE INSERT ON "customer_merges" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
 CREATE TRIGGER "settlement_line_matches_0_stamp_recorded_at" BEFORE INSERT ON "settlement_line_matches" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
 CREATE TRIGGER "settlement_period_events_0_stamp_recorded_at" BEFORE INSERT ON "settlement_period_events" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+-- An audit entry's instant and id are the database's, never the writer's (spec 0010 security
+-- review AS1): the shared stamp sets recorded_at (clock_timestamp(), so entries of one transaction
+-- keep their order), then audit_entries_1_stamp_id sets the id, both before
+-- audit_entries_stamp_operating_day (name order). No writer can backdate or forward date an
+-- entry, its operating day, or its place in the (recorded_at, id) keyset order.
+CREATE TRIGGER "audit_entries_0_stamp_recorded_at" BEFORE INSERT ON "audit_entries" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_recorded_at"('statement');--> statement-breakpoint
+CREATE FUNCTION "audit_entries_stamp_id"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  NEW.id := pg_catalog.uuidv7();
+  RETURN NEW;
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER "audit_entries_1_stamp_id" BEFORE INSERT ON "audit_entries" FOR EACH ROW EXECUTE FUNCTION "audit_entries_stamp_id"();--> statement-breakpoint
 
 -- The operating day (spec 0002, A3): the brand's local calendar day of an instant, with an
 -- optional cutoff hour (an order at 01:30 with cutoff 2 belongs to the previous day). It reads the
@@ -141,6 +157,9 @@ CREATE TRIGGER "orders_stamp_operating_day" BEFORE INSERT OR UPDATE OF "placed_a
 CREATE TRIGGER "order_events_stamp_operating_day" BEFORE INSERT OR UPDATE OF "occurred_at" ON "order_events" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('occurred_at');--> statement-breakpoint
 CREATE TRIGGER "credit_entries_stamp_operating_day" BEFORE INSERT OR UPDATE OF "effective_at" ON "credit_entries" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('effective_at');--> statement-breakpoint
 CREATE TRIGGER "tasks_stamp_operating_day" BEFORE INSERT OR UPDATE OF "created_at" ON "tasks" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('created_at');--> statement-breakpoint
+-- An audit entry's day comes from recorded_at (spec 0010, AC-7); the entry is never updated, so the
+-- UPDATE OF arm never fires past audit_entries_append_only (name order).
+CREATE TRIGGER "audit_entries_stamp_operating_day" BEFORE INSERT OR UPDATE OF "recorded_at" ON "audit_entries" FOR EACH ROW EXECUTE FUNCTION "ssd_stamp_operating_day"('recorded_at');--> statement-breakpoint
 -- An order is the first updatable stamped table: its operating day changes only through placed_at
 -- (security review m3, m1). The guard runs before the stamp trigger (triggers fire in name order),
 -- so a placed_at change still restamps the day. A day is never restated otherwise.
@@ -411,7 +430,7 @@ BEGIN
   EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', app_role);
   EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I', app_role);
   -- Append only history (A4): the app role inserts and reads, never changes.
-  EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON "movement_groups", "stock_movements", "movement_serials", "stock_receipt_lines", "cost_records", "order_events", "customer_merges", "credit_entries", "settlement_statements", "settlement_lines", "settlement_line_matches", "settlement_period_events", "order_cost_rules" FROM %I', app_role);
+  EXECUTE format('REVOKE UPDATE, DELETE, TRUNCATE ON "movement_groups", "stock_movements", "movement_serials", "stock_receipt_lines", "cost_records", "order_events", "customer_merges", "credit_entries", "settlement_statements", "settlement_lines", "settlement_line_matches", "settlement_period_events", "order_cost_rules", "audit_entries" FROM %I', app_role);
   -- A settlement period is never deleted (a trigger refuses it for every role too); the app role
   -- keeps UPDATE, which the period triggers limit to the dates of an open period.
   EXECUTE format('REVOKE DELETE, TRUNCATE ON "settlement_periods" FROM %I', app_role);

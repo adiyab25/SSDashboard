@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AuditModule } from './audit/audit.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
@@ -11,7 +12,7 @@ import { PlatformModule } from './platform/platform.module.js';
 
 /**
  * The root module of the `app` entry point (the api process): wires config, database, mail,
- * identity (sign in and staff), platform, catalog and inventory. The worker uses its own module
+ * identity (sign in and staff), platform, audit, catalog and inventory. The worker uses its own module
  * so no HTTP code runs there.
  */
 @Module({
@@ -23,6 +24,7 @@ import { PlatformModule } from './platform/platform.module.js';
     IdentityModule,
     HealthModule,
     PlatformModule,
+    AuditModule,
     CatalogModule,
     InventoryModule,
   ],
