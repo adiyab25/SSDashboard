@@ -99,6 +99,8 @@ Versions are the ones pinned on main today (`pnpm-lock.yaml`, `.nvmrc`, `package
 | Observability | pino JSON logs from every process with personal data redacted at the logger, a Sentry compatible error tracker run on the host or elsewhere in Egypt (never a tracker abroad), connector health shown in the shell and the daily report | Errors visible from day one without customer phones or addresses leaving Egypt (Law 151; see `## Conventions`). |
 | Releases | Semantic versions; images tagged with the version; each install pins a version and digest; vendor hosted installs move together to the latest minor, self hosted installs are supported on the latest and previous minor; refreshing time zone data is a release step | Controlled upgrades at a support cost 1 to 3 developers can carry (owner decision above). |
 
+> Amended 2026-11-07 by spec 0012 (designed, not built; the catalog build of feature 12 makes it true): the Search row no longer uses the `simple` full text configuration. Spec 0012 replaces it with Arabic normalized trigram search (`pg_trgm`) on a stored `search_text` column of each variant, kept by database triggers and normalized by the SQL function `ssd_search_normalize`.
+
 ## Architecture shape
 
 ### Module map and repo layout
@@ -225,6 +227,7 @@ Folded into `## Conventions` below, which both shapes implement.
 ### 11. Scale: 10,000 SKUs designed, 50,000 tested (R-11)
 
 - **Search**: trigram (`pg_trgm`) GIN indexes on normalized SKU code and name, plus `simple` full text search on normalized Arabic and English names; normalization is a SQL function so indexes and queries agree (feature 12 sets the Arabic rules).
+  > Amended 2026-11-07 by spec 0012 (designed, not built): the `simple` full text search in this line is replaced by Arabic normalized trigram search on a stored `search_text` column (`ssd_search_normalize`), served by one trigram GIN index; see spec 0012 for the rules.
 - **Lists**: server side filter, sort, and keyset pagination only (the pattern in `apps/api/src/inventory/locations/locations.service.ts`), 50 rows by default and 100 at most; the browser never loads a whole list, so no row virtualization is needed for tables; scan lists cap their history.
 - **Indexes**: every list's sort key and filter has an index; reports aggregate in SQL over `operating_day` indexes; ledger tables keep their BRIN index on recorded time.
 - **Shopify at size**: bulk operations for backfill; stock pushes batched within the query cost budget.

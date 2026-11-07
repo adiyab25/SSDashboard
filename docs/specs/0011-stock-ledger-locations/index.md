@@ -368,7 +368,7 @@ Tracer Bullet, the project default ([AGENTS.md](../../../AGENTS.md)). Milestone 
 
 **Neutral**:
 
-- Ten audit codes and five record types join the registry, with labels in both languages.
+- Nine audit codes (eight new, plus the detail of the existing `stock.adjusted_manually`) and three new record types (`partner`, `stock_adjustment_request`, `stock_discrepancy`) join the registry, with labels in both languages (spec 0010, amended 2026-11-07).
 - One new append only table, one seeded prefix; the baseline is regenerated again and developers recreate their database.
 - Two registries (`OnlineStockGate`, `ReturnsAwaitingRestock`) follow the `AuditUndoRegistry` pattern, so inventory imports neither orders nor connectors.
 
