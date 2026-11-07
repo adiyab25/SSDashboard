@@ -13,7 +13,7 @@ The inventory module and its ledger service, the only writer of stock in the sys
 | `ledger/costing.ts` | Pure cost rules: `costInbound`, `costOutbound`. Every money rule lives here, unit tested against the spec's worked examples |
 | `ledger/locks.ts` | `ledgerTransaction` (READ COMMITTED, 5 second lock cap, one deadlock retry, `LockTimeout`) and `lockPairs` (the SKU and location advisory lock) |
 | `ledger/request-hash.ts` | The idempotency request hash (line order and cost format do not matter) |
-| `ledger/reconciliation.service.ts` | The nightly `reconcile` (one REPEATABLE READ snapshot) and the admin `rebuildLevel` |
+| `ledger/reconciliation.service.ts` | The nightly `reconcile` (one REPEATABLE READ snapshot) and `rebuildLevel` (no route, job or command calls it yet: only the e2e suites do) |
 | `ledger/reconcile.job.ts` | The pg-boss job, registered only by `WorkerModule` |
 | `ledger/ledger.errors.ts` | `LedgerError` with a stable `code`; feature 7 maps codes to HTTP errors |
 | `locations/location-policy.service.ts` | `LocationPolicyService`: the only reader of `location_owner_policies`, the only code naming an owner type, and the owner type to party role map; `NotSellableOnline` and `PartyRoleMismatch`; the party role check goes through the partners module's `PartnerAccounts.holdsRole`, never a `parties` read |

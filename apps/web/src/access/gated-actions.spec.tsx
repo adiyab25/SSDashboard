@@ -31,7 +31,10 @@ const me = vi.hoisted(() => ({
   permissions: [] as string[],
 }));
 vi.mock('@/auth/use-me', () => ({
-  useMe: () => ({ id: 'me', hats: me.hats, permissions: me.permissions }),
+  useMeState: () => ({
+    status: 'ready',
+    me: { id: 'me', hats: me.hats, permissions: me.permissions },
+  }),
 }));
 
 /** What the matrix gives each hat for the two permissions the gated actions need (spec 0008). */

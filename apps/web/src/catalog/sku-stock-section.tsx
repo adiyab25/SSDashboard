@@ -19,7 +19,7 @@ import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { getSkuStock, inventoryKeys } from '@/inventory/inventory-api';
 
-/** Cost columns exist only when the api sent cost fields, which it does for admins only. */
+/** Cost columns exist only when the api sent cost fields, which it does for people holding `cost.view` only. */
 function hasCost(stock: SkuStockResponse): boolean {
   return (
     stock.totalValue !== undefined ||
@@ -27,7 +27,7 @@ function hasCost(stock: SkuStockResponse): boolean {
   );
 }
 
-/** The SKU's on-hand quantity per location, with cost columns for admins only. */
+/** The SKU's on-hand quantity per location, with cost columns for people holding `cost.view` only. */
 export function SkuStockSection({ skuId }: { skuId: string }) {
   const { t } = useTranslation();
   const format = useFormat();

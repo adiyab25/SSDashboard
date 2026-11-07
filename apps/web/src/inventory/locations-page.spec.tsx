@@ -26,7 +26,9 @@ const me = vi.hoisted(
     },
   }),
 );
-vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
+vi.mock('@/auth/use-me', () => ({
+  useMeState: () => (me.current ? { status: 'ready', me: me.current } : { status: 'loading' }),
+}));
 vi.mock('@/shell/current-location-provider', () => ({
   useLocationSwitcher: () => ({ retry: vi.fn(), locations: [] }),
 }));

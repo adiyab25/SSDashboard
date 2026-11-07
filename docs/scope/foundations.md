@@ -85,16 +85,16 @@ Spec [0005](../specs/0005-staff-sign-in/index.md) (amendment of 2026-11-05, buil
 Permissions as hats one person can wear several of: support, operations, warehouse, manager, plus external hats for the media buyer (campaign results only, no customer data) and partners (their own given, sold, owed). Cost and margin are a separate permission, off for support by default. Teams and routing are later settings on the same data.
 **Done when:** each default hat sees only what it should, a person can hold several hats, cost and margin hide without the cost permission, and the external hats cannot reach customer data.
 - [x] Design it (spec): `/architect roles as hats`
-- [ ] Build it: `/develop roles as hats`
-  - [ ] Hats in the data and one permission per route
-  - [ ] Giving and taking hats, audited
-  - [ ] The external hats (media buyer, partner) and the access sweep
-  - [ ] Hardening and docs
-- [ ] Verify it: `/check verify roles as hats`
-- [ ] Test it: `/test roles as hats`
-- [ ] Review it: `/check review roles as hats`
-- [ ] Document it: `/document roles as hats`
-Spec [0008](../specs/0008-roles-as-hats/index.md) (Proposed 2026-11-05)
+- [x] Build it: `/develop roles as hats`
+  - [x] Hats in the data and one permission per route
+  - [x] Giving and taking hats, audited
+  - [x] The external hats (media buyer, partner) and the access sweep
+  - [x] Hardening and docs
+- [x] Verify it: `/check verify roles as hats`
+- [x] Test it: `/test roles as hats`
+- [x] Review it: `/check review roles as hats`
+- [x] Document it: `/document roles as hats`
+Spec [0008](../specs/0008-roles-as-hats/index.md) (built 2026-11-07)
 
 ### 9. Settings, module toggles & bundles · GA
 Per brand settings and the switches that make one image into a Warehouse install, an Operations install, or both: bundle and license, module toggles, policy knobs (credit timing, retention limits, auto approval), and the switch per executing step.

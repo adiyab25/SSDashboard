@@ -6,7 +6,10 @@ import { renderWithQuery } from './render-with-query';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/auth/use-me', () => ({
-  useMe: () => ({ id: 'a', hats: ['warehouse'], permissions: [] }),
+  useMeState: () => ({
+    status: 'ready',
+    me: { id: 'a', hats: ['warehouse'], permissions: ['stock.view', 'stock.receive'] },
+  }),
 }));
 vi.mock('@/shell/current-location-provider', () => ({
   useCurrentLocation: () => 'all',

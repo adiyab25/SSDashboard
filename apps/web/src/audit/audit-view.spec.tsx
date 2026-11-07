@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/inventory/render-with-query';
-import { AuditPage } from './audit-page';
+import { AuditView } from './audit-view';
 
 const api = vi.hoisted(() => ({ listAuditEntries: vi.fn() }));
 vi.mock('./audit-api', async (original) => ({
@@ -33,10 +33,10 @@ const entry = (n: number, overrides: Partial<AuditEntryView> = {}): AuditEntryVi
 
 afterEach(() => api.listAuditEntries.mockReset());
 
-describe('AuditPage (AC-12, AC-18)', () => {
+describe('AuditView (AC-12, AC-18)', () => {
   it('lists the actor, action label, record, and reason under one h1', async () => {
     api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     const table = await screen.findByRole('table', { name: 'Audit entries' });
     expect(await within(table).findByText('Nour Admin')).toBeVisible();
@@ -65,7 +65,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
       ],
       nextCursor: null,
     });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     expect(await screen.findByText('System job')).toBeVisible();
     expect(screen.getByText('nightly-close')).toBeVisible();
@@ -79,7 +79,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
         cursor ? { items: [entry(2)], nextCursor: null } : { items: [entry(1)], nextCursor: 'c1' },
       ),
     );
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('Entered twice 2')).toBeVisible();
@@ -90,14 +90,14 @@ describe('AuditPage (AC-12, AC-18)', () => {
 
   it('says No entries match on an empty list', async () => {
     api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
     expect(await screen.findByText('No entries match')).toBeVisible();
   });
 
   it('shows an error with Try again that loads again', async () => {
     api.listAuditEntries.mockRejectedValueOnce(new ApiError(500, { code: 'generic' }));
     api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Nour Admin')).toBeVisible();
@@ -105,7 +105,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
 
   it('shows the no audit access message on a 403, with no table', async () => {
     api.listAuditEntries.mockRejectedValue(new ApiError(403, { code: 'FORBIDDEN' }));
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     expect(await screen.findByText('You do not have access to this page')).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
@@ -122,7 +122,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
           })
         : Promise.resolve({ items: [entry(1)], nextCursor: 'c1' }),
     );
-    renderWithQuery(<AuditPage />);
+    renderWithQuery(<AuditView enabled />);
 
     const more = await screen.findByRole('button', { name: 'Load more' });
     more.focus();

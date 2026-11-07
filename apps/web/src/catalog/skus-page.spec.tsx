@@ -24,10 +24,16 @@ vi.mock('@/inventory/inventory-api', async (original) => ({
 
 const me = vi.hoisted(
   (): { current: { id: string; hats: string[]; permissions: string[] } | null } => ({
-    current: { id: 'me', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] },
+    current: {
+      id: 'me',
+      hats: ['warehouse'],
+      permissions: ['stock.view', 'catalog.edit', 'stock.receive'],
+    },
   }),
 );
-vi.mock('@/auth/use-me', () => ({ useMe: () => me.current }));
+vi.mock('@/auth/use-me', () => ({
+  useMeState: () => (me.current ? { status: 'ready', me: me.current } : { status: 'loading' }),
+}));
 
 const sku = (n: number, overrides: Partial<SkuSummary> = {}): SkuSummary => ({
   id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
@@ -47,7 +53,11 @@ const detail = (n: number) => ({
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
-  me.current = { id: 'me', hats: ['warehouse'], permissions: ['catalog.edit', 'stock.receive'] };
+  me.current = {
+    id: 'me',
+    hats: ['warehouse'],
+    permissions: ['stock.view', 'catalog.edit', 'stock.receive'],
+  };
 });
 
 describe('SkusPage (AC-13)', () => {
@@ -296,6 +306,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -323,6 +334,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -356,6 +368,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -388,6 +401,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -418,6 +432,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -443,6 +458,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -477,6 +493,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',
@@ -501,6 +518,7 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
           'catalog.manage',
           'catalog.edit',
           'stock.receive',
+          'stock.view',
           'cost.view',
           'people.manage',
           'stock.correct',

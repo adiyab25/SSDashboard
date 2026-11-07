@@ -367,6 +367,79 @@ describe('giving and taking hats', { timeout: 300_000 }, () => {
       expect(await probeRows(person.id)).toHaveLength(entries);
     });
 
+    it('does not answer 409 STALE_RECORD because the person signed in after the dialog opened (AC-12)', async () => {
+      const boss = await manager();
+      const person = await addPerson(['warehouse']);
+      const opened = (await detail(boss.cookie, person.id)).updatedAt;
+      const stampOf = async () =>
+        (
+          await owner.pool.query<{ at: string | null; updated: string }>(
+            `SELECT last_sign_in_at::text AS at, updated_at::text AS updated
+             FROM users WHERE id = $1::uuid`,
+            [person.id],
+          )
+        ).rows[0];
+      const beforeSignIn = await stampOf();
+
+      await signIn(person.email);
+
+      const afterSignIn = await stampOf();
+      expect(afterSignIn?.at).not.toBe(beforeSignIn?.at);
+      expect(afterSignIn?.updated).toBe(beforeSignIn?.updated);
+      expect((await detail(boss.cookie, person.id)).updatedAt).toBe(opened);
+      const saved = await putAccess(
+        boss.cookie,
+        person.id,
+        { hats: ['warehouse', 'support'], costView: false },
+        opened,
+      );
+      expect(saved.status).toBe(200);
+      expect(await hatsOf(person.id)).toEqual(['support', 'warehouse']);
+    });
+
+    it('does not answer 409 STALE_RECORD because the person made the forced first password change after the dialog opened (AC-12)', async () => {
+      const boss = await manager();
+      const made = await call(boss.cookie, 'POST', '/api/staff', {
+        name: 'Forced Change',
+        email: 'forced.change@example.com',
+        hats: ['warehouse'],
+        costView: false,
+      });
+      expect(made.status).toBe(201);
+      const id = (made.body.staff as { id: string }).id;
+      const temporary = (made.body.setup as { temporaryPassword: string }).temporaryPassword;
+      const flagOf = async () =>
+        (
+          await owner.pool.query<{ must_change_password: boolean; updated: string }>(
+            `SELECT must_change_password, updated_at::text AS updated FROM users WHERE id = $1::uuid`,
+            [id],
+          )
+        ).rows[0];
+      expect((await flagOf())?.must_change_password).toBe(true);
+      const opened = (await detail(boss.cookie, id)).updatedAt;
+      const beforeChange = await flagOf();
+
+      const first = await signIn('forced.change@example.com', temporary);
+      const changed = await call(first, 'POST', '/api/auth/change-password', {
+        currentPassword: temporary,
+        newPassword: NEW_PASSWORD,
+        revokeOtherSessions: true,
+      });
+
+      expect(changed.status).toBe(200);
+      const afterChange = await flagOf();
+      expect(afterChange?.must_change_password).toBe(false);
+      expect(afterChange?.updated).toBe(beforeChange?.updated);
+      const saved = await putAccess(
+        boss.cookie,
+        id,
+        { hats: ['warehouse', 'support'], costView: false },
+        opened,
+      );
+      expect(saved.status).toBe(200);
+      expect(await hatsOf(id)).toEqual(['support', 'warehouse']);
+    });
+
     it('answers 409 SELF_HAT_CHANGE to a change of one’s own hats or own cost grant', async () => {
       const boss = await manager();
 
