@@ -7,7 +7,11 @@ import { maskPhones } from '@ssdashboard/config/redaction';
 import { describe, expect, it } from 'vitest';
 import {
   AUDIT_ACTIONS,
+  AUDIT_REASON_HEADER,
   AUDIT_RECORD_TYPES,
+  AuditExportQuery,
+  AuditExportReason,
+  auditExportDayCount,
   AuditActor,
   type AuditActionDefinition,
   auditRecordTypeOf,
@@ -145,6 +149,7 @@ describe('audit record types', () => {
       stock_receipt: 'text',
       sku: 'text',
       location: 'text',
+      audit_entry: 'text',
       customer: 'code',
       order: 'code',
       exchange: 'code',
@@ -278,5 +283,30 @@ describe('AuditEntryView', () => {
       AuditEntryView.safeParse({ ...entry, recordedAt: '2026-11-06T10:00:00.123Z' }).success,
     ).toBe(false);
     expect(AuditEntryView.safeParse({ ...entry, recordedAt: 'yesterday' }).success).toBe(false);
+  });
+});
+
+// Spec 0010, review M3R8 and M3R3: one meaning of an export's length, and no reason in the query.
+describe('AuditExportQuery', () => {
+  it('counts days with both ends included, and allows at most 366', () => {
+    expect(auditExportDayCount('2026-01-01', '2026-01-01')).toBe(1);
+    expect(auditExportDayCount('2025-01-01', '2026-01-01')).toBe(366);
+    expect(AuditExportQuery.safeParse({ dayFrom: '2025-01-01', dayTo: '2026-01-01' }).success).toBe(
+      true,
+    );
+    expect(AuditExportQuery.safeParse({ dayFrom: '2025-01-01', dayTo: '2026-01-02' }).success).toBe(
+      false,
+    );
+  });
+
+  it('takes no reason in the query; the reason header schema trims and caps it', () => {
+    expect(
+      AuditExportQuery.safeParse({ dayFrom: '2026-01-01', dayTo: '2026-01-01', reason: 'x' })
+        .success,
+    ).toBe(false);
+    expect(AUDIT_REASON_HEADER).toBe('x-audit-reason');
+    expect(AuditExportReason.parse('  monthly  ')).toBe('monthly');
+    expect(AuditExportReason.safeParse('   ').success).toBe(false);
+    expect(AuditExportReason.safeParse('x'.repeat(501)).success).toBe(false);
   });
 });

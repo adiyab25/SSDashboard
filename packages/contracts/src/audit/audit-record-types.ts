@@ -84,6 +84,15 @@ export const AUDIT_RECORD_TYPES = {
     labelPattern: LOCATION_CODE_PATTERN,
     labelIsOwnCode: true,
   },
+  audit_entry: {
+    // An export of the trail (spec 0010, AC-15): the record id is the export's own id, the filter
+    // is in `after`, and there is no label.
+    label: 'audit.recordTypes.auditEntry',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: null,
+    labelIsOwnCode: false,
+  },
   customer: {
     label: 'audit.recordTypes.customer',
     // A customer's name and email, the free text reason of a merge or unmerge, and an external

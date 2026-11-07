@@ -120,7 +120,7 @@ Agent accountability: who did what, when, and why, across edits, merges, overrid
 - [ ] Build it: `/develop audit trail`
   - [x] The thin thread: void a receipt, see the entry, cannot change it
   - [x] Every action recorded, with no raw personal data
-  - [ ] The manager screen and the export
+  - [x] The manager screen and the export
   - [ ] One step undo and scale
 - [ ] Verify it: `/check verify audit trail`
 - [ ] Test it: `/test audit trail`

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
   AUDIT_ACTIONS,
+  AUDIT_EXPORT_COLUMNS,
+  AuditEntryDetail,
   AuditEntryListResponse,
   personActor,
   SkuDetail,
@@ -16,6 +18,7 @@ import { AuditService } from '../src/audit/audit.service.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,
+  eventually,
   freePort,
   signInAs,
   start,
@@ -28,7 +31,7 @@ import {
 // `stock_receipt.voided` entry in the void's own transaction; a manager reads it through
 // GET /api/audit/entries; a failure before, inside, or after `record` leaves neither the change
 // nor the entry; a void without a reason is 422 REASON_REQUIRED; a non manager gets 403.
-describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
+describe('audit trail api (spec 0010)', { timeout: 240_000 }, () => {
   let scratch: { name: string; url: string };
   let owner: DatabaseConnection;
   let api: RunningProcess | undefined;
@@ -334,6 +337,272 @@ describe('audit trail api (spec 0010)', { timeout: 120_000 }, () => {
       (await listEntries('?action=stock_receipt.voided&limit=200')).body,
     );
     expect(entries.items.map((item) => item.record.id).sort()).toEqual([...voidedIds].sort());
+  });
+  // Spec 0010, milestone 3 (tasks 12 to 14, api side): the detail, the record history, the
+  // export, and paging while entries keep arriving.
+
+  /** Plants `count` entries of one action as the owner, in one statement. */
+  async function plant(action: string, count: number): Promise<void> {
+    await owner.pool.query(
+      `INSERT INTO audit_entries (correlation_id, actor_kind, actor_ref, action, record_type, record_id)
+       SELECT gen_random_uuid(), 'carrier', 'bosta', $1, 'sku', gen_random_uuid()
+       FROM generate_series(1, $2)`,
+      [action, count],
+    );
+  }
+
+  it('pages 120 entries 50 at a time while new ones arrive, with no gap and no repeat (AC-12)', async () => {
+    await plant('planted.batch', 120);
+    const { rows } = await owner.pool.query<{ id: string }>(
+      "SELECT id FROM audit_entries WHERE action = 'planted.batch' ORDER BY recorded_at DESC, id DESC",
+    );
+    expect(rows).toHaveLength(120);
+
+    const sizes: number[] = [];
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const query: string = `?action=planted.batch&limit=50${cursor ? `&cursor=${cursor}` : ''}`;
+      const page = AuditEntryListResponse.parse((await listEntries(query)).body);
+      sizes.push(page.items.length);
+      seen.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor;
+      // Entries recorded while a reader pages are newer than its cursor: they never shift a page.
+      await plant('planted.batch', 3);
+    } while (cursor);
+
+    expect(sizes).toEqual([50, 50, 20]);
+    expect(seen).toEqual(rows.map((row) => row.id));
+  });
+
+  it('shows one entry with its field diff, and 404 for an unknown id (AC-12)', async () => {
+    const receipt = await postReceipt();
+    expect((await voidReceipt(receipt.id)).status).toBe(200);
+    const [entry] = AuditEntryListResponse.parse(
+      (await listEntries(`?recordType=stock_receipt&recordId=${receipt.id}`)).body,
+    ).items;
+    if (!entry) throw new Error('no entry');
+
+    const detail = await call('GET', `/audit/entries/${entry.id}`, { cookie: admin });
+    expect(detail.status).toBe(200);
+    expect(AuditEntryDetail.parse(detail.body)).toMatchObject({
+      id: entry.id,
+      action: 'stock_receipt.voided',
+      actorName: 'Test Person',
+      changes: [{ field: 'status', before: 'posted', after: 'voided', personal: false }],
+      undone: false,
+      canUndo: false,
+    });
+
+    for (const id of [randomUUID(), 'not-an-id']) {
+      const missing = await call('GET', `/audit/entries/${id}`, { cookie: admin });
+      expect(missing.status).toBe(404);
+      expect(missing.body).toMatchObject({ code: 'ENTRY_NOT_FOUND' });
+    }
+  });
+
+  it('pages the history of one record, and refuses a malformed record (task 13)', async () => {
+    const receipt = await postReceipt();
+    expect((await voidReceipt(receipt.id)).status).toBe(200);
+
+    const history = await call('GET', `/audit/records/stock_receipt/${receipt.id}/entries`, {
+      cookie: admin,
+    });
+    expect(history.status).toBe(200);
+    const page = AuditEntryListResponse.parse(history.body);
+    expect(page.items.map((item) => item.record.id)).toEqual([receipt.id]);
+    expect(page.nextCursor).toBeNull();
+
+    for (const path of [
+      `/audit/records/Bad-Type/${receipt.id}/entries`,
+      '/audit/records/sku/x/entries',
+    ]) {
+      const bad = await call('GET', path, { cookie: admin });
+      expect(bad.status, path).toBe(400);
+      expect(bad.body, path).toMatchObject({ code: 'INVALID_FILTER' });
+    }
+  });
+
+  it('refuses the detail, the history, and the export to a non manager (AC-13)', async () => {
+    const id = randomUUID();
+    for (const path of [
+      `/audit/entries/${id}`,
+      `/audit/records/sku/${id}/entries`,
+      '/audit/entries/export?dayFrom=2026-01-01&dayTo=2026-01-02',
+    ]) {
+      const response = await call('GET', path, { cookie: staff });
+      expect(response.status, path).toBe(403);
+      expect(response.body, path).toMatchObject({ code: 'FORBIDDEN' });
+    }
+  });
+
+  /** A raw export call: status, headers, and the body's bytes. */
+  async function exportFile(query: string, cookie = admin, headers: Record<string, string> = {}) {
+    const response = await fetch(`${base}/api/audit/entries/export${query}`, {
+      headers: { cookie, origin: base, ...headers },
+    });
+    return {
+      status: response.status,
+      headers: response.headers,
+      bytes: Buffer.from(await response.arrayBuffer()),
+    };
+  }
+
+  it('exports the filtered entries as CSV with a byte order mark, and records the export (AC-15)', async () => {
+    const receipt = await postReceipt();
+    expect((await voidReceipt(receipt.id)).status).toBe(200);
+    const [entry] = AuditEntryListResponse.parse(
+      (await listEntries(`?recordType=stock_receipt&recordId=${receipt.id}`)).body,
+    ).items;
+    if (!entry) throw new Error('no entry');
+    const day = entry.operatingDay;
+    const filter = `?action=stock_receipt.voided&dayFrom=${day}&dayTo=${day}`;
+    const listed = AuditEntryListResponse.parse((await listEntries(`${filter}&limit=200`)).body);
+
+    // Review M3R3: the reason travels in the x-audit-reason header, percent encoded, never in
+    // the query string.
+    const file = await exportFile(filter, admin, {
+      'x-audit-reason': encodeURIComponent('monthly check'),
+    });
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toContain('text/csv');
+    expect(file.headers.get('content-disposition')).toBe(
+      `attachment; filename="audit-${day}-${day}.csv"`,
+    );
+    expect([...file.bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const lines = file.bytes.subarray(3).toString('utf8').trimEnd().split('\r\n');
+    expect(lines[0]).toBe(AUDIT_EXPORT_COLUMNS.map((column) => `"${column}"`).join(','));
+    expect(lines).toHaveLength(listed.items.length + 1);
+    expect(lines.slice(1).map((line) => line.split(',').at(-1))).toEqual(
+      listed.items.map((item) => `"${item.id}"`),
+    );
+    expect(lines[1]).toContain('"Stock receipt voided"');
+
+    const recorded = AuditEntryListResponse.parse(
+      (await listEntries('?action=audit.exported&limit=200')).body,
+    ).items;
+    expect(recorded[0]).toMatchObject({
+      action: 'audit.exported',
+      record: { type: 'audit_entry', label: null },
+      after: {
+        action: 'stock_receipt.voided',
+        dayFrom: day,
+        dayTo: day,
+        rows: listed.items.length,
+      },
+      reason: 'monthly check',
+    });
+
+    // Review M3R2: an export without an action filter holds exactly the rows it counted, and
+    // never its own entry, which is newer than the key it was bounded by.
+    const whole = await exportFile(`?dayFrom=${day}&dayTo=${day}`);
+    expect(whole.status).toBe(200);
+    const wholeLines = whole.bytes.subarray(3).toString('utf8').trimEnd().split('\r\n').slice(1);
+    const [own] = AuditEntryListResponse.parse(
+      (await listEntries('?action=audit.exported&limit=1')).body,
+    ).items;
+    expect(own?.after).toMatchObject({ rows: wholeLines.length });
+    expect(wholeLines.map((line) => line.split(',').at(-1))).not.toContain(`"${own?.id}"`);
+  });
+
+  it('refuses an export without a day range, over 366 days, or with a query reason (AC-15)', async () => {
+    for (const query of [
+      '',
+      '?dayFrom=2026-01-01',
+      // Review M3R8: 366 days counted inclusively; 2025-01-01 to 2026-01-02 is 367.
+      '?dayFrom=2025-01-01&dayTo=2026-01-02',
+      '?dayFrom=2026-01-01&dayTo=2026-01-01&reason=monthly',
+    ]) {
+      const file = await exportFile(query);
+      expect(file.status, query).toBe(400);
+      expect(JSON.parse(file.bytes.toString('utf8')), query).toMatchObject({
+        code: 'INVALID_FILTER',
+      });
+    }
+    // 2025-01-01 to 2026-01-01 is exactly 366 days, both included: allowed.
+    expect((await exportFile('?dayFrom=2025-01-01&dayTo=2026-01-01')).status).toBe(200);
+    const badReason = await exportFile('?dayFrom=2026-01-01&dayTo=2026-01-01', admin, {
+      'x-audit-reason': '%E0%A4%A',
+    });
+    expect(badReason.status).toBe(400);
+    expect(JSON.parse(badReason.bytes.toString('utf8'))).toMatchObject({ code: 'INVALID_REASON' });
+  });
+
+  /**
+   * Plants `count` entries on 2020-03-01 as the owner. The stamping triggers are disabled for
+   * the plant only (as the AR4 case does), with the day passed itself, inside one transaction, so
+   * they are back on before anything else can write.
+   */
+  async function plantBulk(count: number, offset: number): Promise<void> {
+    const client = await owner.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE audit_entries DISABLE TRIGGER USER');
+      await client.query(
+        `INSERT INTO audit_entries (id, recorded_at, operating_day, correlation_id, actor_kind,
+                                    actor_ref, action, record_type, record_id)
+         SELECT uuidv7(), '2020-03-01T10:00:00Z'::timestamptz + make_interval(secs => n / 1000.0),
+                '2020-03-01', gen_random_uuid(), 'carrier', 'bosta', 'planted.bulk', 'sku',
+                gen_random_uuid()
+         FROM generate_series($1::int, $2::int) AS n`,
+        [offset + 1, offset + count],
+      );
+      await client.query('ALTER TABLE audit_entries ENABLE TRIGGER USER');
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  const exportCount = async () =>
+    (
+      await owner.pool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM audit_entries WHERE action = 'audit.exported'",
+      )
+    ).rows[0]?.n;
+
+  // Last in this suite: it plants 200,000 entries on one past day, then one more.
+  it('allows exactly 200,000 rows, survives a reader that goes away, then answers 413 past it (AC-15)', async () => {
+    await plantBulk(200_000, 0);
+
+    // Review M3R1: the reader aborts after the first chunk; the server stops streaming and
+    // answers the next request as usual.
+    const controller = new AbortController();
+    const response = await fetch(
+      `${base}/api/audit/entries/export?dayFrom=2020-03-01&dayTo=2020-03-01`,
+      {
+        headers: { cookie: admin, origin: base },
+        signal: controller.signal,
+      },
+    );
+    expect(response.status).toBe(200);
+    const reader = response.body?.getReader();
+    const first = await reader?.read();
+    expect(first?.done).toBe(false);
+    controller.abort();
+    await reader?.cancel().catch(() => undefined);
+    // The server notices, stops, and says so once, with no values.
+    await eventually(
+      () => (api?.output().includes('An audit export was cut off') ? true : undefined),
+      { what: 'the cut off log line' },
+    );
+
+    const next = await exportFile(
+      `?action=stock_receipt.voided&dayFrom=2020-03-01&dayTo=2020-03-01`,
+    );
+    expect(next.status).toBe(200);
+    expect((await listEntries('?action=planted.bulk&limit=1')).status).toBe(200);
+
+    // Review M3R9: one more row is past the limit: 413, before streaming or recording.
+    await plantBulk(1, 200_000);
+    const before = await exportCount();
+    const file = await exportFile('?dayFrom=2020-03-01&dayTo=2020-03-01');
+    expect(file.status).toBe(413);
+    expect(JSON.parse(file.bytes.toString('utf8'))).toMatchObject({ code: 'EXPORT_TOO_LARGE' });
+    expect(await exportCount()).toBe(before);
   });
 });
 

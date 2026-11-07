@@ -60,6 +60,15 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.stockReceiptVoided',
     proof: 'apps/api/test/audit.e2e-spec.ts',
   },
+  'audit.exported': {
+    module: 'audit',
+    recordType: 'audit_entry',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.auditExported',
+    proof: 'apps/api/test/audit.e2e-spec.ts',
+  },
   'sku.archived': {
     module: 'inventory',
     recordType: 'sku',

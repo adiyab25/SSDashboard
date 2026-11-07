@@ -6,7 +6,10 @@ export type AuditErrorCode =
   | 'UnknownAuditAction'
   | 'AuditRecordTypeMismatch'
   | 'AuditCorrelationMismatch'
-  | 'AuditPersonalDataRefused';
+  | 'AuditPersonalDataRefused'
+  | 'AuditReadForbidden'
+  | 'AuditEntryNotFound'
+  | 'AuditExportTooLarge';
 
 /**
  * Base of every typed audit domain error (spec 0010, API surface). Domain code throws these; the
@@ -98,5 +101,36 @@ export class AuditPersonalDataRefused extends AuditError {
   /** Takes the entry field that held personal data (`record.label` or `undo.args`). */
   constructor(readonly field: string) {
     super('AuditPersonalDataRefused', `Personal data is not allowed in ${field}`);
+  }
+}
+
+/**
+ * The viewer may not read the trail (spec 0010, AC-13): `audit.read`, the `admin` role until
+ * hats land. Thrown by `AuditQueryService.forRecord`, which other modules reach with a viewer
+ * (review AR3); the api answers 403 `FORBIDDEN`.
+ */
+export class AuditReadForbidden extends AuditError {
+  /** Builds the error; it names no viewer. */
+  constructor() {
+    super('AuditReadForbidden', 'Only administrators can read the audit trail');
+  }
+}
+
+/** No entry has this id (spec 0010, API surface); the api answers 404 `ENTRY_NOT_FOUND`. */
+export class AuditEntryNotFound extends AuditError {
+  /** Builds the error; the id is not carried. */
+  constructor() {
+    super('AuditEntryNotFound', 'Audit entry not found');
+  }
+}
+
+/**
+ * The export would hold more than 200,000 rows (spec 0010, AC-15): decided before anything
+ * streams; the api answers 413 `EXPORT_TOO_LARGE` and asks for a narrower range.
+ */
+export class AuditExportTooLarge extends AuditError {
+  /** Builds the error with the row limit the caller passed. */
+  constructor(readonly limit: number) {
+    super('AuditExportTooLarge', `An export holds at most ${limit} rows. Choose a shorter range.`);
   }
 }

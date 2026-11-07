@@ -25,4 +25,5 @@ export * from './settlement/settlement-states.js';
 export * from './audit/audit-actor.js';
 export * from './audit/audit-actions.js';
 export * from './audit/audit-record-types.js';
+export * from './audit/audit-reading.js';
 export * from './audit/audit-entries.js';

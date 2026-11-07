@@ -16,10 +16,7 @@ export function actionLabelKey(code: string): MessageKey | undefined {
   return auditActionOf(code)?.label;
 }
 
-/**
- * The label key of a record type from the contracts registry (`AUDIT_RECORD_TYPES`), or undefined
- * for a type it does not know; the screen then shows the raw code.
- */
+/** The label key of a record type from the registry, or undefined for a type it does not know. */
 export function recordTypeLabelKey(type: string): MessageKey | undefined {
   return auditRecordTypeOf(type)?.label;
 }

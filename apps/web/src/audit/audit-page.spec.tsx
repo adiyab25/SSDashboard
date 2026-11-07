@@ -6,7 +6,19 @@ import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/inventory/render-with-query';
 import { AuditPage } from './audit-page';
 
-const api = vi.hoisted(() => ({ listAuditEntries: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listAuditEntries: vi.fn(),
+  listPeople: vi.fn(() =>
+    Promise.resolve([{ id: '00000000-0000-4000-8000-000000000500', name: 'Priya Picker' }]),
+  ),
+  getAuditEntry: vi.fn(),
+  listRecordHistory: vi.fn(),
+}));
+const nav = vi.hoisted(() => ({ search: '', push: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: nav.push }),
+  useSearchParams: () => new URLSearchParams(nav.search),
+}));
 vi.mock('./audit-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
@@ -31,7 +43,12 @@ const entry = (n: number, overrides: Partial<AuditEntryView> = {}): AuditEntryVi
   ...overrides,
 });
 
-afterEach(() => api.listAuditEntries.mockReset());
+afterEach(() => {
+  for (const mock of [api.listAuditEntries, api.getAuditEntry, api.listRecordHistory, nav.push]) {
+    mock.mockReset();
+  }
+  nav.search = '';
+});
 
 describe('AuditPage (AC-12, AC-18)', () => {
   it('lists the actor, action label, record, and reason under one h1', async () => {
@@ -151,5 +168,82 @@ describe('AuditPage (AC-12, AC-18)', () => {
     const end = await screen.findByText('End of the audit trail');
     await waitFor(() => expect(end).toHaveFocus());
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('reads the filter from the URL and sends it with the list call', async () => {
+    nav.search = `recordType=stock_receipt&dayFrom=2026-11-01&dayTo=2026-11-07&correlationId=${uuid(9)}`;
+    api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    renderWithQuery(<AuditPage />);
+
+    await screen.findByText('Nour Admin');
+    expect(api.listAuditEntries).toHaveBeenCalledWith(
+      {
+        recordType: 'stock_receipt',
+        dayFrom: '2026-11-01',
+        dayTo: '2026-11-07',
+        correlationId: uuid(9),
+      },
+      undefined,
+      expect.anything() as unknown,
+    );
+    expect(screen.getByLabelText('Record type')).toHaveValue('stock_receipt');
+    expect(screen.getByLabelText('From day')).toHaveValue('2026-11-01');
+  });
+
+  it('puts applied filters in the URL, and refuses a record ID without a type', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<AuditPage />);
+
+    await screen.findByText('No entries match');
+    await userEvent.type(screen.getByLabelText('Record ID'), uuid(3));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    const type = screen.getByLabelText('Record type');
+    expect(type).toHaveAttribute('aria-invalid', 'true');
+    expect(type).toHaveAccessibleDescription('Choose a record type to filter by record ID.');
+    expect(type).toHaveFocus();
+    expect(nav.push).not.toHaveBeenCalled();
+
+    await userEvent.selectOptions(screen.getByLabelText('Record type'), 'stock_receipt');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(nav.push).toHaveBeenCalledWith(`/audit?recordType=stock_receipt&recordId=${uuid(3)}`);
+  });
+
+  it('shows a diff in the detail, hides personal values, and links to the same action', async () => {
+    api.listAuditEntries.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    api.getAuditEntry.mockResolvedValue({
+      ...entry(1),
+      changes: [
+        { field: 'status', before: 'posted', after: 'voided', personal: false },
+        { field: 'phone', before: '[REDACTED]', after: '[REDACTED]', personal: true },
+      ],
+    });
+    api.listRecordHistory.mockResolvedValue({ items: [entry(1)], nextCursor: null });
+    renderWithQuery(<AuditPage />);
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Details of Stock receipt voided/ }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Stock receipt voided' });
+    const diff = await within(dialog).findByRole('table', { name: 'Changed fields' });
+    expect(within(diff).getByRole('rowheader', { name: 'status' })).toBeVisible();
+    expect(within(diff).getByText('voided')).toBeVisible();
+    expect(within(diff).getAllByText('Hidden, personal data')).toHaveLength(2);
+    expect(within(diff).queryByText('[REDACTED]')).toBeNull();
+    expect(
+      within(dialog).getByRole('link', { name: 'Show entries of the same action' }),
+    ).toHaveAttribute('href', `/audit?correlationId=${uuid(901)}`);
+
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Show the history of this record' }),
+    );
+    expect(
+      await within(dialog).findByRole('heading', { name: 'History of this record' }),
+    ).toBeVisible();
+    expect(api.listRecordHistory).toHaveBeenCalledWith(
+      'stock_receipt',
+      uuid(701),
+      undefined,
+      expect.anything() as unknown,
+    );
   });
 });
