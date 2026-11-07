@@ -17,7 +17,7 @@ import { MailProducer } from '../../mail/mail-queue.js';
 import type { MailKind } from '../../mail/mail-templates.js';
 import type { AuthEvent, AuthEventContext } from '../../platform/events/auth-events.js';
 import { assertLanguageEnabled } from '../../platform/languages.js';
-import { SettingsService } from '../../platform/settings.service.js';
+import { SettingsService } from '../../platform/settings/settings.service.js';
 import { auditActorOf, type Actor } from '../access/actor.js';
 import {
   IDENTITY_AUDIT,

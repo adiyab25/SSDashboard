@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/
 import { PgBoss } from 'pg-boss';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
-import { JOB_SCHEMA } from '../inventory/ledger/reconcile.job.js';
+import { JOB_SCHEMA } from '../platform/job-schema.js';
 import type { MailKind } from './mail-templates.js';
 
 /** The pg-boss queue that carries one job per email to send. */

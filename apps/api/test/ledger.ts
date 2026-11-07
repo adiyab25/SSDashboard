@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PostingInput, PostingLine } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
-import { SettingsService } from '../src/platform/settings.service.js';
+import { SettingsService } from '../src/platform/settings/settings.service.js';
 import { createScratchDatabase, dropScratchDatabase } from './support.js';
 
 /**

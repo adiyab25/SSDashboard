@@ -7,6 +7,10 @@ describe('recordTypeLabelKey', () => {
     expect(recordTypeLabelKey('stock_receipt')).toBe('audit.recordTypes.stockReceipt');
   });
 
+  it('labels a setting', () => {
+    expect(recordTypeLabelKey('setting')).toBe('audit.recordTypes.setting');
+  });
+
   it('knows nothing of an unknown type', () => {
     expect(recordTypeLabelKey('nope')).toBeUndefined();
   });

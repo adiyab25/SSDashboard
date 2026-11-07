@@ -24,7 +24,8 @@ import {
   type Executor,
   type Transaction,
 } from '../../database/sql.js';
-import { SettingsService } from '../../platform/settings.service.js';
+import { SettingError } from '../../platform/settings/settings.errors.js';
+import { SettingsService } from '../../platform/settings/settings.service.js';
 import { costInbound, costOutbound, type BalanceState, type CostedLine } from './costing.js';
 import { LedgerError } from './ledger.errors.js';
 import { ledgerTransaction, lockPairs } from './locks.js';
@@ -678,6 +679,25 @@ export class LedgerService {
     });
   }
 
+  /**
+   * The inventory lock date, read in the posting transaction. A stored lock date that fails its
+   * schema refuses the posting (`LockDateUnreadable`), never reads as "nothing locked" (security
+   * review S1): a manager fixes it in the settings screen, where it shows as invalid.
+   */
+  private async lockDate(tx: Transaction): Promise<string | null> {
+    try {
+      return await this.settings.get('inventory_lock_date', tx);
+    } catch (error) {
+      if (error instanceof SettingError && error.kind === 'SettingUnreadable') {
+        throw new LedgerError(
+          'LockDateUnreadable',
+          'The inventory lock date setting cannot be read, so stock cannot be posted. Set the lock date again in the settings.',
+        );
+      }
+      throw error;
+    }
+  }
+
   private transact<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
     return ledgerTransaction(this.connection.db, work);
   }
@@ -688,7 +708,7 @@ export class LedgerService {
     op: Operation,
     within?: WithinPosting,
   ): Promise<PostingOutcome> {
-    const { inventory_lock_date: lockDate } = await this.settings.read(['inventory_lock_date'], tx);
+    const lockDate = await this.lockDate(tx);
     // Claim the idempotency key. A repeat finds the stored group; a concurrent first
     // request makes this wait, and if that one rolls back, this one proceeds as new.
     // Dates stay in SQL: the date checks run on the stored values, to the microsecond.

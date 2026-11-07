@@ -587,6 +587,25 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
         );
       }
     });
+
+    // Spec 0009, security review S1: a corrupt lock date fails closed, never as "nothing locked".
+    it('refuses every posting while the stored lock date cannot be read', async () => {
+      const key = await sku();
+      await h.owner.pool.query(
+        `UPDATE settings SET value = '"not a date"' WHERE key = 'inventory_lock_date'`,
+      );
+      try {
+        await rejects(
+          h.ledger.post(posting([{ ...key, quantity: 1, unitCost: '1.0000' }])),
+          'LockDateUnreadable',
+        );
+      } finally {
+        await h.owner.pool.query(
+          "UPDATE settings SET value = 'null' WHERE key = 'inventory_lock_date'",
+        );
+      }
+      expect((await level(h.owner, key)).onHand).toBe(0);
+    });
   });
 
   describe('concurrency (AC-4)', () => {

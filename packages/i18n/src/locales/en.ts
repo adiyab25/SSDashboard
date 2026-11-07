@@ -27,6 +27,7 @@ export const en = {
         skus: 'SKUs',
         locations: 'Locations',
         audit: 'Audit trail',
+        settings: 'Settings',
       },
     },
     sidebar: {
@@ -840,6 +841,9 @@ export const en = {
         FUTURE_DATE: 'A receipt cannot be dated in the future.',
         PERIOD_LOCKED: 'Inventory is locked for that date.',
         BUSY: 'Stock is busy with another posting. Try again in a moment.',
+        LOCK_DATE_UNREADABLE: 'The inventory lock date cannot be read. Set it again in Settings.',
+        DOCUMENT_PREFIXES_UNREADABLE:
+          'Document numbers cannot be issued because the document prefixes setting is damaged. Set the prefixes again in Settings.',
         IDEMPOTENCY_CONFLICT:
           'This form was already posted with different details. Reload the page to start a new receipt.',
         generic: 'The receipt could not be posted. Check your connection and try again.',
@@ -882,6 +886,7 @@ export const en = {
         INSUFFICIENT_STOCK:
           'Some of this stock has already left ({{skus}}), so the receipt cannot be voided now.',
         BUSY: 'Stock is busy with another posting. Try again in a moment.',
+        LOCK_DATE_UNREADABLE: 'The inventory lock date cannot be read. Set it again in Settings.',
         generic: 'The receipt could not be voided. Check your connection and try again.',
       },
     },
@@ -1053,6 +1058,7 @@ export const en = {
       exchange: 'Exchange',
       outboundCommand: 'Carrier request',
       auditEntry: 'Audit trail export',
+      setting: 'Setting',
     },
     filters: {
       title: 'Filters',
@@ -1172,6 +1178,134 @@ export const en = {
       auditExported: 'Audit trail exported',
       // Every undone entry (`<code>_undone`, spec 0010 task 16) shares this label.
       actionUndone: 'Earlier action undone',
+      settingChanged: 'Setting changed',
+    },
+  },
+  // The settings registry of spec 0009 (AC-1): one label and description per entry, and the
+  // warning the change dialog shows where the entry has one. Keyed from SETTING_DEFINITIONS.
+  settings: {
+    entries: {
+      currency: {
+        label: 'Currency',
+        description:
+          'The currency every amount is kept in. It is set when the app is installed and cannot change.',
+      },
+      timezone: {
+        label: 'Time zone',
+        description:
+          'The brand’s local time. Operating days, document years, and scheduled jobs follow it.',
+      },
+      pricesIncludeVat: {
+        label: 'Prices include VAT',
+        description: 'Whether the prices you enter already include VAT.',
+      },
+      inventoryLockDate: {
+        label: 'Inventory lock date',
+        description:
+          'No stock change may be dated on or before this day. Leave it empty to lock nothing.',
+      },
+      documentPrefixes: {
+        label: 'Document prefixes',
+        description: 'The letters in front of each document number, such as PO or GRN.',
+      },
+      languages: {
+        label: 'Languages',
+        description: 'The languages the app offers, in the order the language switcher shows them.',
+      },
+      defaultLanguage: {
+        label: 'Default language',
+        description:
+          'The language a first visit opens in. It must be one of the languages offered.',
+      },
+      operatingDayCutoffHour: {
+        label: 'Operating day starts at',
+        description:
+          'Before this hour, an order or a stock change still belongs to the previous working day.',
+      },
+      operationsWindDownDays: {
+        label: 'Wind down length in days',
+        description:
+          'After the Operations plan lapses, how many days shipments already out with the carrier are still followed and their cash closed. At least 60.',
+      },
+      operationsWindDownPickupDays: {
+        label: 'Pickup window after a lapse in days',
+        description:
+          'How many days after a lapse a delivery for an order confirmed before it is still followed.',
+      },
+    },
+    warnings: {
+      timezone:
+        'The daily report and the operating day move to the new time zone from this hour. Days already recorded are never restated, so the day of the change is longer or shorter than usual.',
+      pricesIncludeVat:
+        'New orders will split net and tax differently from older ones in the same export. It must match the tax setting of every Shopify store.',
+      operatingDayCutoffHour:
+        'Days already recorded are never restated, so the day of the change is longer or shorter than usual.',
+    },
+    title: 'Settings',
+    description: 'The brand’s own choices. Every change is recorded in the audit trail.',
+    loadError: 'The settings could not be loaded. Try again.',
+    retry: 'Try again',
+    sections: { brand: 'Brand', policies: 'Policies' },
+    row: {
+      valueLabel: 'Value',
+      defaultLabel: 'Default',
+      isDefault: 'Default',
+      changed: 'Changed',
+      invalid: 'The stored value is not valid, so the default applies.',
+      neverChanged: 'Never changed',
+      lastChanged: 'Last changed by {{name}} on {{date}}',
+      lastChangedUnknown: 'Last changed on {{date}}',
+      unknownPerson: 'someone who is no longer listed',
+      change: 'Change',
+      changeNamed: 'Change {{name}}',
+      fixed: 'Set when the app was installed. It cannot be changed here.',
+      needsOperations: 'Needs the Operations plan',
+      needsWarehouse: 'Needs the Warehouse plan',
+    },
+    values: {
+      yes: 'Yes',
+      no: 'No',
+      notSet: 'Not set',
+      hour: '{{hour}}:00',
+    },
+    dialog: {
+      title: 'Change {{name}}',
+      description: 'Now:',
+      newValue: 'New value',
+      required: 'required',
+      optional: 'optional',
+      reason: 'Reason',
+      reasonHint: 'Saved in the audit trail with the change. Up to 500 characters.',
+      confirmLabel: 'Type “{{name}}” to confirm',
+      confirmHint: 'This change moves other things, so type the name of the setting to go on.',
+      listHint: 'Language codes separated by commas, in switcher order, for example en, ar.',
+      clearHint: 'Leave empty to clear it.',
+      cancel: 'Cancel',
+      save: 'Save',
+      close: 'Close',
+      reload: 'Reload settings',
+      errors: {
+        valueRequired: 'Enter a value.',
+        reasonRequired: 'Say why you are making this change.',
+        confirmMismatch: 'Type the name exactly as shown to confirm.',
+        SETTING_INVALID: 'This value is not allowed. Check it and try again.',
+        STALE_SETTING:
+          'Someone else changed this setting while you were looking. Reload to see the current value.',
+        SETTING_LOCKED: 'This setting cannot be changed here.',
+        SETTING_UNKNOWN: 'This setting no longer exists. Reload the page.',
+        FORBIDDEN: 'You do not have permission to change settings.',
+        SETTING_UNREADABLE:
+          'This setting is stored in a form the app cannot read. Set it again to repair it.',
+        languageInvalid:
+          'The language code “{{code}}” is not available. Use one of the app’s languages.',
+        prefixInvalid: 'Use 1 to 8 capital letters or digits, different from every other prefix.',
+        reasonTooLong: 'Keep the reason to 500 characters or fewer.',
+        generic: 'The change was not saved. Try again.',
+      },
+    },
+    messages: {
+      saved: 'Saved: {{name}}.',
+      unchanged: 'Nothing changed: that is already the value.',
     },
   },
   mail: {

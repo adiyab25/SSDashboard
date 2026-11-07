@@ -11,6 +11,7 @@ import { IdentityModule } from './identity/identity.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { MailModule } from './mail/mail.module.js';
 import { PartnersModule } from './partners/partners.module.js';
+import { PlatformApiModule } from './platform/platform-api.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 
 /**
@@ -30,6 +31,7 @@ import { PlatformModule } from './platform/platform.module.js';
     IdentityModule,
     HealthModule,
     PlatformModule,
+    PlatformApiModule,
     AuditModule,
     // The undo route and its start check: the api only, never the worker (review M4R1).
     AuditUndoModule,

@@ -1,13 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
-import type { SettingsService } from '../../platform/settings.service.js';
-import {
-  JOB_SCHEMA,
-  RECONCILE_EXPIRY_SECONDS,
-  RECONCILE_QUEUE,
-  ReconcileJob,
-} from './reconcile.job.js';
+import { JOB_SCHEMA } from '../../platform/job-schema.js';
+import type { SettingsService } from '../../platform/settings/settings.service.js';
+import { RECONCILE_EXPIRY_SECONDS, RECONCILE_QUEUE, ReconcileJob } from './reconcile.job.js';
 import type { ReconciliationService } from './reconciliation.service.js';
 
 // pg-boss is the boundary: a fake records what the job asks of it.
