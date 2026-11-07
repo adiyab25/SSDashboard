@@ -1,6 +1,6 @@
 'use client';
 
-import type { StaffRow, StaffSetup, StaffStatus } from '@ssdashboard/contracts';
+import type { Hat, StaffRow, StaffSetup, StaffStatus } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import {
@@ -36,6 +36,8 @@ import {
 import { StaffConfirmDialog, type ConfirmKind } from './staff-confirm-dialog';
 import { StaffSetupDialog } from './staff-setup-dialog';
 import { StaffFormDialog } from './staff-form-dialog';
+import { StaffHatsDialog } from './staff-hats-dialog';
+import { STAFF_HATS } from './cost-prefill';
 
 const STATUSES: readonly StaffStatus[] = ['invited', 'active', 'disabled'];
 const SELECT =
@@ -51,12 +53,14 @@ interface Page {
 
 type Dialog =
   | { kind: 'form'; editId: string | null }
+  | { kind: 'hats'; row: StaffRow; opener: HTMLElement | null }
   | { kind: 'confirm'; action: ConfirmKind; row: StaffRow }
   | { kind: 'setup'; setup: StaffSetup; reason: 'invite' | 'reset'; name: string };
 
 /**
- * Staff administration (spec 0005, AC-12 to AC-18): search and filter the list, add and edit
- * people, reset a password, sign someone out everywhere, and disable or enable an account.
+ * Staff administration (spec 0005, AC-12 to AC-18): search and filter the list (text, status,
+ * hat), add and edit people, change their hats and cost (spec 0008, AC-18; never one's own),
+ * reset a password, sign someone out everywhere, and disable or enable an account.
  * Needs `people.manage` (spec 0008); without it the page shows the no access state and asks the
  * api for no staff, and the api answers 403 anyway.
  */
@@ -66,7 +70,7 @@ export function StaffPage() {
   const me = useMe();
   const access = useAccess();
   const [text, setText] = useState('');
-  const [filter, setFilter] = useState<StaffFilter>({ q: '', status: '' });
+  const [filter, setFilter] = useState<StaffFilter>({ q: '', status: '', hat: '' });
   const [reload, setReload] = useState(0);
   const [page, setPage] = useState<Page | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -75,10 +79,21 @@ export function StaffPage() {
   const [mailEnabled, setMailEnabled] = useState(false);
   const [languages, setLanguages] = useState<readonly string[]>(['en']);
   const timer = useRef<number | undefined>(undefined);
+  // Each row's actions button, so focus can go back to it after the edit hats dialog.
+  const triggers = useRef(new Map<string, HTMLButtonElement>());
+  // The row whose actions button takes focus once the list has reloaded after a save.
+  const focusAfterLoad = useRef<string | null>(null);
 
   const key = JSON.stringify([filter, reload]);
   const loading = page === null || page.key !== key;
   const canManage = access.can('people.manage');
+  const canChangeCost = access.can('cost.view');
+
+  /** The plain hat names of a row on one line, from the catalog, never the codes. */
+  const hatsLabel = (hats: readonly Hat[]) =>
+    hats.length === 0
+      ? t('access.hats.none')
+      : hats.map((hat) => t(`access.hats.${hat}.name`)).join(t('access.hats.separator'));
 
   useEffect(() => {
     let active = true;
@@ -110,6 +125,13 @@ export function StaffPage() {
       active = false;
     };
   }, [canManage, filter, key]);
+
+  // After a save reloads the list the old row buttons are gone; focus goes to the new one.
+  useEffect(() => {
+    if (loading || focusAfterLoad.current === null) return;
+    triggers.current.get(focusAfterLoad.current)?.focus();
+    focusAfterLoad.current = null;
+  }, [loading, page]);
 
   function onSearch(value: string) {
     setText(value);
@@ -191,7 +213,7 @@ export function StaffPage() {
 
   // The table's scroll box below is `relative`: the screen reader only header text is absolutely
   // positioned and would otherwise escape the box and widen the whole page.
-  const columns = ['name', 'email', 'role', 'status', 'lastSignIn', 'twoFactor'] as const;
+  const columns = ['name', 'email', 'hats', 'cost', 'status', 'lastSignIn', 'twoFactor'] as const;
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -242,6 +264,29 @@ export function StaffPage() {
             {STATUSES.map((status) => (
               <option key={status} value={status}>
                 {t(`staff.status.${status}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="staff-hat" className="text-sm font-medium">
+            {t('staff.hats.filter')}
+          </label>
+          <select
+            id="staff-hat"
+            className={SELECT}
+            value={filter.hat}
+            onChange={(event) =>
+              setFilter((current) => ({
+                ...current,
+                hat: STAFF_HATS.find((hat) => hat === event.target.value) ?? '',
+              }))
+            }
+          >
+            <option value="">{t('staff.hats.filterAll')}</option>
+            {STAFF_HATS.map((hat) => (
+              <option key={hat} value={hat}>
+                {t(`access.hats.${hat}.name`)}
               </option>
             ))}
           </select>
@@ -302,7 +347,10 @@ export function StaffPage() {
                     <td className="px-3">
                       <LtrText>{row.email}</LtrText>
                     </td>
-                    <td className="px-3">{t(`shell.user.roles.${row.role}`)}</td>
+                    <td className="px-3">{hatsLabel(row.hats)}</td>
+                    <td className="px-3">
+                      {row.costView ? t('staff.hats.costYes') : t('staff.hats.costNo')}
+                    </td>
                     <td className="px-3">{t(`staff.status.${row.status}`)}</td>
                     <td className="px-3">
                       {row.lastSignInAt ? format.dateTime(row.lastSignInAt) : t('staff.never')}
@@ -314,6 +362,10 @@ export function StaffPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
+                            ref={(node) => {
+                              if (node) triggers.current.set(row.id, node);
+                              else triggers.current.delete(row.id);
+                            }}
                             variant="ghost"
                             size="icon-sm"
                             className="coarse:min-h-touch coarse:min-w-touch"
@@ -328,6 +380,19 @@ export function StaffPage() {
                           >
                             {t('staff.row.edit')}
                           </DropdownMenuItem>
+                          {row.id !== me?.id && (
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                setDialog({
+                                  kind: 'hats',
+                                  row,
+                                  opener: triggers.current.get(row.id) ?? null,
+                                })
+                              }
+                            >
+                              {t('staff.hats.edit')}
+                            </DropdownMenuItem>
+                          )}
                           {row.id !== me?.id && (
                             <DropdownMenuItem onSelect={() => confirm('reset', row)}>
                               {t('staff.row.resetPassword')}
@@ -396,6 +461,7 @@ export function StaffPage() {
         <StaffFormDialog
           editId={dialog.editId}
           languages={languages}
+          canChangeCost={canChangeCost}
           onClose={() => setDialog(null)}
           onSaved={({ staff, created, emailChanged }) => {
             setReload((count) => count + 1);
@@ -414,6 +480,21 @@ export function StaffPage() {
                   : t('staff.messages.saved'),
               );
             }
+          }}
+        />
+      )}
+      {dialog?.kind === 'hats' && (
+        <StaffHatsDialog
+          staffId={dialog.row.id}
+          name={dialog.row.name}
+          canChangeCost={canChangeCost}
+          opener={dialog.opener}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            focusAfterLoad.current = dialog.row.id;
+            setDialog(null);
+            setMessage(t('staff.hats.saved'));
+            setReload((count) => count + 1);
           }}
         />
       )}

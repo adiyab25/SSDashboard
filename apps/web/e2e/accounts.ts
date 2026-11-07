@@ -19,22 +19,10 @@ export interface SeededAccount {
 }
 
 /**
- * The hats and cost grant of the two presets before hats (spec 0008, AC-16): `admin` is `manager`
- * plus `cost.view`, `staff` is `support`, `operations` and `warehouse` without cost. Replaces what
- * the person held.
+ * The hats a seeded everyday person wears when a test does not say: the three working hats, no
+ * `manager` and no cost (spec 0008). Pass exact `hats` when a test is about one of them.
  */
-export async function giveHats(
-  pool: Pool,
-  userId: string,
-  preset: 'admin' | 'staff',
-): Promise<void> {
-  await wearHats(
-    pool,
-    userId,
-    preset === 'admin' ? ['manager'] : ['support', 'operations', 'warehouse'],
-    preset === 'admin' ? ['cost.view'] : [],
-  );
-}
+export const WORKING_HATS: readonly Hat[] = ['support', 'operations', 'warehouse'];
 
 /**
  * Gives a person exactly these hats and extra grants (spec 0008), replacing what they held, for
@@ -77,8 +65,7 @@ async function deleteByEmail(pool: Pool, email: string): Promise<void> {
  */
 export async function seedAccount(
   options: {
-    role?: 'admin' | 'staff';
-    /** Exact hats instead of a `role` preset (spec 0008), with `grants` such as `cost.view`. */
+    /** The person's hats (spec 0008), {@link WORKING_HATS} when not given, with `grants` such as `cost.view`. */
     hats?: readonly Hat[];
     grants?: readonly GrantablePermission[];
     mustChangePassword?: boolean;
@@ -99,8 +86,7 @@ export async function seedAccount(
     );
     id = rows[0]?.id;
     if (!id) throw new Error('Could not seed the e2e account');
-    if (options.hats) await wearHats(pool, id, options.hats, options.grants);
-    else await giveHats(pool, id, options.role ?? 'staff');
+    await wearHats(pool, id, options.hats ?? WORKING_HATS, options.grants);
     await pool.query(
       `INSERT INTO accounts (user_id, provider_id, account_id, password)
        VALUES ($1::uuid, 'credential', $1::text, $2)`,

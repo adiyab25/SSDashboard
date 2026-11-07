@@ -1,9 +1,12 @@
 import {
+  type AccessRequest,
+  type CreateStaffRequest,
   CreateStaffResponse,
   ResetStaffPasswordResponse,
   RevokeSessionsResponse,
   StaffDetail,
   StaffListResponse,
+  type StaffHat,
   type StaffStatus,
 } from '@ssdashboard/contracts';
 import { apiFetch } from '@/auth/api-fetch';
@@ -41,10 +44,11 @@ async function request<T>(
 /** The api answers `{ ok: true }` to a re-invite; nothing else is read from it. */
 const Ok = { parse: () => ({ ok: true as const }) };
 
-/** The staff list filters: text search and status (empty means any). */
+/** The staff list filters: text search, status and hat (empty means any). */
 export interface StaffFilter {
   q: string;
   status: StaffStatus | '';
+  hat: StaffHat | '';
 }
 
 /** One page of staff, 50 a page, narrowed by the filter. */
@@ -52,6 +56,7 @@ export function listStaff(filter: StaffFilter, cursor?: string) {
   const params = new URLSearchParams({ limit: '50' });
   if (filter.q) params.set('q', filter.q);
   if (filter.status) params.set('status', filter.status);
+  if (filter.hat) params.set('hat', filter.hat);
   if (cursor) params.set('cursor', cursor);
   return request('GET', `/api/staff?${params}`, StaffListResponse);
 }
@@ -59,13 +64,27 @@ export function listStaff(filter: StaffFilter, cursor?: string) {
 /** One staff member's detail. */
 export const getStaff = (id: string) => request('GET', `/api/staff/${id}`, StaffDetail);
 
-/** Invites a new staff member (admin). */
-export const createStaff = (body: Record<string, unknown>) =>
+/**
+ * Invites a new staff member with their hats and cost switch (spec 0008, AC-14). The body is the
+ * contract's input shape; the api validates and normalises it.
+ */
+export const createStaff = (body: CreateStaffRequest) =>
   request('POST', '/api/staff', CreateStaffResponse, body);
 
-/** Changes a staff member's name, phone, role or language (admin). */
+/**
+ * Changes a staff member's details: name, email, phone, staff code or language. Never hats or
+ * cost: the api refuses any other field, `role` included (use {@link replaceStaffAccess}).
+ */
 export const updateStaff = (id: string, body: Record<string, unknown>) =>
   request('PATCH', `/api/staff/${id}`, StaffDetail, body);
+
+/**
+ * Replaces a person's whole access set, hats and cost switch (spec 0008, AC-12), with the
+ * `updatedAt` read before so a change made meanwhile answers 409 `STALE_RECORD`. Answers the
+ * person's detail with the new `updatedAt`.
+ */
+export const replaceStaffAccess = (id: string, body: AccessRequest) =>
+  request('PUT', `/api/staff/${id}/access`, StaffDetail, body);
 
 /** Disables a staff member and ends their sessions, with an optional reason (admin). */
 export const disableStaff = (id: string, reason: string) =>

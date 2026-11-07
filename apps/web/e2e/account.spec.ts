@@ -5,6 +5,7 @@ import {
   signInThroughPage,
   type SeededAccount,
   ownAddress,
+  WORKING_HATS,
 } from './accounts';
 import { languageCookie } from './support';
 
@@ -22,7 +23,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 test.beforeEach(async ({ context, baseURL }) => {
-  person = await seedAccount({ role: 'staff' });
+  person = await seedAccount({ hats: WORKING_HATS });
   toRemove = person;
   await signInThroughApi(context, person, baseURL ?? '');
 });

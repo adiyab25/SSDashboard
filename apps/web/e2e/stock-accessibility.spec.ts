@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { ownAddress, seedAccount, signInThroughApi } from './accounts';
+import { ownAddress, seedAccount, signInThroughApi, WORKING_HATS } from './accounts';
 import { createLocation, createSku, findRow, receive } from './master-data-api';
 import { openStockAt, searchPicker, seedStockScene } from './stock-steps';
 import {
@@ -445,7 +445,7 @@ for (const { language, dir } of LANGUAGES) {
     }) => {
       const scene = await seedStockScene(page.request);
       const posted = await receive(page.request, scene.location.id, scene.stocked.id, 2);
-      const account = await seedAccount({ role: 'staff', language });
+      const account = await seedAccount({ hats: WORKING_HATS, language });
       const clerk = await browser.newContext({ baseURL, extraHTTPHeaders: ownAddress() });
       try {
         await signInThroughApi(clerk, account, baseURL ?? '');

@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
-import { ownAddress, seedAccount, signInThroughApi, type SeededAccount } from './accounts';
+import {
+  ownAddress,
+  seedAccount,
+  signInThroughApi,
+  type SeededAccount,
+  WORKING_HATS,
+} from './accounts';
 import { findRow } from './master-data-api';
 import { ownerDatabaseUrl } from './auth';
 import {
@@ -24,7 +30,7 @@ test.describe('core stock loop', () => {
   let staff: SeededAccount;
 
   test.beforeAll(async () => {
-    staff = await seedAccount({ role: 'staff', name: `Stock clerk ${tag}` });
+    staff = await seedAccount({ hats: WORKING_HATS, name: `Stock clerk ${tag}` });
   });
 
   test.afterAll(async () => {

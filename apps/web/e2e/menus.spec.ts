@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { ownAddress, seedAccount, type SeededAccount } from './accounts';
+import { ownAddress, seedAccount, type SeededAccount, WORKING_HATS } from './accounts';
 import { waitForPageHydration } from './support';
 
 // The dropdown menu is not modal (packages/ui), so these touch tests pin how it behaves with real
@@ -27,9 +27,9 @@ interface Rows {
 /** Seeds two people, lists only them, and returns each one's actions button. */
 async function openTwoRows(page: Page): Promise<Rows> {
   const tag = randomUUID().slice(0, 8);
-  const first = await seedAccount({ role: 'staff', name: `Menu Test A ${tag}` });
+  const first = await seedAccount({ hats: WORKING_HATS, name: `Menu Test A ${tag}` });
   people.push(first);
-  const second = await seedAccount({ role: 'staff', name: `Menu Test B ${tag}` });
+  const second = await seedAccount({ hats: WORKING_HATS, name: `Menu Test B ${tag}` });
   people.push(second);
 
   await page.goto('/staff');

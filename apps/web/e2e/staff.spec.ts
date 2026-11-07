@@ -8,6 +8,7 @@ import {
   signInThroughPage,
   type SeededAccount,
   ownAddress,
+  WORKING_HATS,
 } from './accounts';
 import { waitForPageHydration } from './support';
 
@@ -31,11 +32,12 @@ async function openStaff(page: Page) {
   await expect(page.getByRole('searchbox', { name: /Search staff/ })).toBeVisible();
 }
 
-async function addStaff(page: Page, fields: { name: string; email: string }) {
+async function addStaff(page: Page, fields: { name: string; email: string; hat: string }) {
   await page.getByRole('button', { name: 'Add staff' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add staff' });
   await dialog.getByLabel(/^Name/).fill(fields.name);
   await dialog.getByLabel(/^Email/).fill(fields.email);
+  await dialog.getByRole('checkbox', { name: fields.hat }).check();
   await dialog.getByRole('button', { name: 'Save' }).click();
   return dialog;
 }
@@ -65,7 +67,7 @@ test.describe('as an administrator', () => {
     created.push(email);
 
     await openStaff(page);
-    await addStaff(page, { name, email });
+    await addStaff(page, { name, email, hat: 'Warehouse' });
 
     // With mail off the answer is a temporary password, shown once.
     const setup = page.getByRole('dialog', { name: `Temporary password for ${name}` });
@@ -83,6 +85,9 @@ test.describe('as an administrator', () => {
     const row = page.getByRole('row', { name: new RegExp(name) });
     await expect(row).toBeVisible();
     await expect(row).toContainText('Invited');
+    // The hats and cost columns show what the form gave (spec 0008, AC-18).
+    await expect(row.getByRole('cell').nth(2)).toHaveText('Warehouse');
+    await expect(row.getByRole('cell').nth(3)).toHaveText('No');
     await page.reload();
     await expect(page.getByText(password)).toHaveCount(0);
 
@@ -100,7 +105,7 @@ test.describe('as an administrator', () => {
     browser,
     baseURL,
   }) => {
-    const target: SeededAccount = await seedAccount({ role: 'staff' });
+    const target: SeededAccount = await seedAccount({ hats: WORKING_HATS });
     try {
       // A first sign in makes the account active rather than invited.
       const first = await browser.newContext({ baseURL, extraHTTPHeaders: ownAddress() });
@@ -138,10 +143,10 @@ test.describe('as an administrator', () => {
     }
   });
 
-  test('an empty form names the problems and focuses the first; a duplicate email is refused (AC-12, AC-24)', async ({
+  test('an empty form names the problems and focuses the first; a duplicate email is refused (AC-12, AC-24; spec 0008, AC-14)', async ({
     page,
   }) => {
-    const target = await seedAccount({ role: 'staff' });
+    const target = await seedAccount({ hats: WORKING_HATS });
     try {
       await openStaff(page);
       await page.getByRole('button', { name: 'Add staff' }).click();
@@ -156,6 +161,14 @@ test.describe('as an administrator', () => {
 
       await dialog.getByLabel(/^Name/).fill('Duplicate Person');
       await dialog.getByLabel(/^Email/).fill(target.email);
+      // With the text filled in, the missing hat is the first problem.
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      await expect(dialog.getByRole('checkbox', { name: 'Support' })).toBeFocused();
+      await expect(dialog.getByRole('group', { name: /^Hats/ })).toHaveAccessibleDescription(
+        /Pick at least one hat\./,
+      );
+
+      await dialog.getByRole('checkbox', { name: 'Support' }).check();
       await dialog.getByRole('button', { name: 'Save' }).click();
       await expect(dialog.getByLabel(/^Email/)).toBeFocused();
       await expect(dialog.getByLabel(/^Email/)).toHaveAccessibleDescription(
@@ -176,6 +189,13 @@ test.describe('as an administrator', () => {
     await page.keyboard.type('Keyboard Hire');
     await page.keyboard.press('Tab');
     await page.keyboard.type(email);
+    // The first hat follows the email; Space ticks it, and Enter in the email field saves.
+    await page.keyboard.press('Tab');
+    await expect(
+      page.getByRole('dialog', { name: 'Add staff' }).getByRole('checkbox', { name: 'Support' }),
+    ).toBeFocused();
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Shift+Tab');
     await page.keyboard.press('Enter');
 
     await expect(page.getByRole('dialog', { name: /^Temporary password for/ })).toBeVisible();
@@ -191,7 +211,7 @@ test.describe('as a person with the staff role', () => {
   let toRemove: SeededAccount | undefined;
 
   test.beforeEach(async ({ context, baseURL }) => {
-    person = await seedAccount({ role: 'staff' });
+    person = await seedAccount({ hats: WORKING_HATS });
     toRemove = person;
     await signInThroughApi(context, person, baseURL ?? '');
   });
@@ -242,7 +262,12 @@ test.describe('as a person with the staff role', () => {
 
     const write = await context.request.post('/api/staff', {
       headers: { origin },
-      data: { name: 'Sneaky', email: 'sneaky@example.com', role: 'admin' },
+      data: {
+        name: 'Sneaky',
+        email: 'sneaky@example.com',
+        hats: ['manager'],
+        costView: true,
+      },
     });
     expect(write.status()).toBe(403);
     expect(await write.json()).toMatchObject({ code: 'FORBIDDEN' });

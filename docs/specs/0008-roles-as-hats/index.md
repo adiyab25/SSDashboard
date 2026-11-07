@@ -69,10 +69,14 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `campaigns.view` | See campaign results (spend, orders, kept revenue, return rate, campaign profit) | | | ✓ | | ✓ | ✓ | |
 | `people.manage` | Manage staff and partner logins, hats, cost grants, sessions, two factor resets | | | | | ✓ | | |
 | `settings.manage` | Change settings, module toggles, connections, and per order cost rules (with `cost.view`) | | | | | ✓ | | |
-| `audit.view` | Read the audit trail | P | | | | ✓ | | |
+| `audit.read` | Read the audit trail: the list, an entry, a record's history | P | | | | ✓ | | |
+| `audit.undo` | Undo an undoable audited action | P | | | | ✓ | | |
+| `audit.export` | Export the audit trail | P | | | | ✓ | | |
 | `partner.view_own` | Partner surface: see what was given, sold, and owed for the bound account only | | | | | | | ✓ |
 | `partner.submit_sales` | Partner surface: upload a sales statement or declare a no sales day | | | | | | | ✓ |
 | `cost.view` | See unit cost, stock value, cost of goods, and margin | | extra grant only, for any internal hat or media buyer (AC-7) | | | | | never |
+
+> Amended 2026-11-06 (gate ruling, spec 0010 AC-13): the single `audit.view` became `audit.read`, `audit.undo` and `audit.export`, all on the manager hat only and marked personal, because an entry's before and after can carry customer data and costs.
 
 **Location scoping**: none. Every permission applies to every location of the brand. The shell's location switcher stays a view filter, not a wall (owner question 5).
 
@@ -259,16 +263,17 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (tables, gua
 6. [x] `create-admin`, its reset modes, and the last admin rule count `manager`, satisfies **AC-14**
 7. [x] `GET /api/me` returns `hats`, `permissions`, `partnerAccountId`, `home`; web: `apps/web/src/access/` with `useAccess`, nav items declare `needs` (with the unit test), cost columns and admin actions read `can(...)`, the user menu shows hats, satisfies **AC-11**
 8. [x] End to end: the warehouse and manager thread (receipt, stock with and without cost, 403 on `/api/staff`), and the migration test, satisfies **AC-2**, **AC-6**, **AC-16**
-  > Built 2026-11-06: the matrix also exports `HAT_AUDIENCE` and `GrantablePermission`; `Access` lives in `apps/api/src/platform/access/` and is loaded by identity's `AccessLoader` after the audience check; `audiencesOfHats(hats)` is the pure rule the port and its SQL share. Until milestone 2, `/api/staff` keeps an `admin` / `staff` preset (`StaffAccessPreset`) that maps to hats by AC-16, so the AC-5 grep still finds `role` there. The guard reads the database twice per request (audiences, then access) against the budget of one extra read; milestone 2 folds them. The web nav uses `needs` per item, `ANY_HAT` for Home and Design only; `NoAccessState` is wired into `/staff` and `/locations` (the rest is milestone 4).
+  > Built 2026-11-06: the matrix also exports `HAT_AUDIENCE` and `GrantablePermission`; `Access` lives in `apps/api/src/platform/access/` and is loaded by identity's `AccessLoader` after the audience check; `audiencesOfHats(hats)` is the pure rule the port and its SQL share. Milestone 1 kept an `admin` / `staff` preset on `/api/staff` and read the database twice per request; milestone 2 removed the preset (hats and `costView` on every staff route) and folded the reads into one (`AccessLoader`, audiences derived with `audiencesOfHats`). The web nav uses `needs` per item, `ANY_HAT` for Home and Design only; `NoAccessState` is wired into `/staff` and `/locations` (the rest is milestone 4).
 
 **Done when:** `pnpm db:migrate && pnpm build && pnpm typecheck && pnpm --filter @ssdashboard/contracts test && pnpm --filter @ssdashboard/api test && pnpm --filter @ssdashboard/db test:e2e && pnpm --filter @ssdashboard/api test:e2e && pnpm --filter @ssdashboard/web test` pass, and `pnpm --filter @ssdashboard/api test -- src/platform/access` fails when one `@Permission` is removed from `catalog.controller.ts`.
 
 **Milestone 2: Giving and taking hats** (backend, then frontend)
-1. [ ] `HatService` in `identity/hats/`: set replace under the `users` row lock, one hat minimum, `HAT_CONFLICT`, `GRANT_NOT_ALLOWED`, `SELF_HAT_CHANGE`, `STALE_RECORD` on `users.updated_at`, `LAST_ADMIN` under `ADMIN_RULE_LOCK`, `revokeSessions(userId, tx)` per spec 0005 AC-33 b, satisfies **AC-7**, **AC-12**
-2. [ ] `PUT /api/staff/:id/access`, and `POST /api/staff` and the staff contracts with `hats` and `costView` instead of `role`, satisfies **AC-12**, **AC-14**
-3. [ ] Audit entry through feature 10's writer in the same transaction when it exists, else the log line; `HatsChanged` after commit; `StaffCreated` gains hats, satisfies **AC-13**
-4. [ ] Web: the hats dialog on `/staff` (checkbox per hat with its description, cost switch prefilled from `COST_VIEW_DEFAULT`, reason), the hats and cost columns in the list, both languages, satisfies **AC-7**, **AC-18**
-5. [ ] Tests: the concurrent last manager removal, stale and self refusals, same cookie grant and removal, session kept on a hat added, satisfies **AC-12**, **AC-14**
+1. [x] `HatService` in `identity/hats/`: set replace under the `users` row lock, one hat minimum, `HAT_CONFLICT`, `GRANT_NOT_ALLOWED`, `SELF_HAT_CHANGE`, `STALE_RECORD` on `users.updated_at`, `LAST_ADMIN` under `ADMIN_RULE_LOCK`, `revokeSessions(userId, tx)` per spec 0005 AC-33 b, satisfies **AC-7**, **AC-12**
+2. [x] `PUT /api/staff/:id/access`, and `POST /api/staff` and the staff contracts with `hats` and `costView` instead of `role`, satisfies **AC-12**, **AC-14**
+3. [x] Audit entry through feature 10's writer in the same transaction when it exists, else the log line; `HatsChanged` after commit; `StaffCreated` gains hats, satisfies **AC-13**
+4. [x] Web: the hats dialog on `/staff` (checkbox per hat with its description, cost switch prefilled from `COST_VIEW_DEFAULT`, reason), the hats and cost columns in the list, both languages, satisfies **AC-7**, **AC-18**
+5. [x] Tests: the concurrent last manager removal, stale and self refusals, same cookie grant and removal, session kept on a hat added, satisfies **AC-12**, **AC-14**
+  > Built 2026-11-06: one audit entry per change (spec 0010 AC-1 and AC-13): `hat.revoked` when any hat or the cost grant is taken away, else `hat.granted`, with before and after `{ hats, costView, partnerAccountId }`; `staff_user.created`, `.disabled`, `.enabled` and `.password_reset` are written in the staff service's transactions. Identity writes through an `IdentityAudit` port shaped like `AuditService.record`, bound to a no op until spec 0010 is on main. The manager's free text `reason` is redacted on the hat change log line. `PATCH /api/staff/:id` is strict (a `role` field is refused). Over HTTP the acting manager always counts as another manager, so `LAST_ADMIN` on removal is proven by the concurrent test. There is no staff detail page, so "Edit hats" sits in the row menu. The run command for the hats e2e is `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/hats.e2e-spec.ts` (a `--` filter does not apply).
 
 **Done when:** `pnpm --filter @ssdashboard/api test -- src/identity && pnpm --filter @ssdashboard/api test:e2e -- test/hats.e2e-spec.ts && pnpm --filter @ssdashboard/web test && pnpm --filter @ssdashboard/web test:e2e -- e2e/hats.spec.ts` pass.
 

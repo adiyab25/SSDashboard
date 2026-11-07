@@ -4,7 +4,7 @@ import {
   CreateStaffRequest,
   type CreateStaffResponse,
   type StaffDetail,
-  type StaffAccessPreset,
+  type StaffHat,
 } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
@@ -29,14 +29,21 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
 import type { MessageKey } from '@ssdashboard/i18n';
+import { startingCostView } from './cost-prefill';
+import { HatsFieldset } from './hats-fieldset';
 import { createStaff, getStaff, updateStaff } from './staff-api';
 
-type FieldName = 'name' | 'email' | 'phone' | 'staffCode';
+type FieldName = 'name' | 'email' | 'hats' | 'phone' | 'staffCode';
+
+/** The order problems are focused in: the order the fields are drawn. */
+const FIELD_ORDER = ['name', 'email', 'hats', 'phone', 'staffCode'] as const;
+
+/** Create refusals about hats or cost, said in the hats dialog's words. */
+const ACCESS_ERRORS = new Set(['FORBIDDEN', 'HAT_CONFLICT', 'GRANT_NOT_ALLOWED']);
 
 interface Values {
   name: string;
   email: string;
-  role: StaffAccessPreset;
   phone: string;
   staffCode: string;
   language: string;
@@ -45,7 +52,6 @@ interface Values {
 const EMPTY: Values = {
   name: '',
   email: '',
-  role: 'staff',
   phone: '',
   staffCode: '',
   language: '',
@@ -59,6 +65,11 @@ interface Props {
   editId: string | null;
   /** Language codes enabled on the install (`GET /api/config`). */
   languages: readonly string[];
+  /**
+   * True when the signed in person holds `cost.view`. Without it the cost switch of a new person
+   * stays off and disabled (spec 0008, AC-7 amendment: the api answers 403 otherwise).
+   */
+  canChangeCost: boolean;
   /**
    * Called after a save. A new account also hands back how the person gets their password.
    * `emailChanged` is true when the email of an invited account was changed by this save.
@@ -74,10 +85,17 @@ interface Props {
 const languageName = (code: string): string =>
   isCoreLanguage(code) ? CORE_LANGUAGES[code].nativeName : code;
 
-/** Add or edit one person (spec 0005, AC-12, AC-15). The email is locked once they have signed in. */
-export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) {
+/**
+ * Add or edit one person (spec 0005, AC-12, AC-15). The email is locked once they have signed in.
+ * Adding also picks the person's hats and cost switch (spec 0008, AC-7, AC-14), the switch
+ * prefilled from `COST_VIEW_DEFAULT` until moved by hand. Editing changes details only: hats and
+ * cost change in the edit hats dialog, and no `role` is ever sent.
+ */
+export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onClose }: Props) {
   const { t } = useTranslation();
   const [values, setValues] = useState<Values>(EMPTY);
+  const [hats, setHats] = useState<StaffHat[]>([]);
+  const [costByHand, setCostByHand] = useState<boolean | null>(null);
   const [detail, setDetail] = useState<StaffDetail | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({});
@@ -87,13 +105,23 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
   const emailRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
   const staffCodeRef = useRef<HTMLInputElement>(null);
+  const firstHatRef = useRef<HTMLInputElement>(null);
 
   function focusField(name: FieldName) {
-    const target = { name: nameRef, email: emailRef, phone: phoneRef, staffCode: staffCodeRef }[
-      name
-    ];
+    const target = {
+      name: nameRef,
+      email: emailRef,
+      hats: firstHatRef,
+      phone: phoneRef,
+      staffCode: staffCodeRef,
+    }[name];
     target.current?.focus();
   }
+
+  const creating = editId === null;
+  const costView =
+    costByHand ??
+    startingCostView({ hats, storedHats: [], storedCostView: false, canChange: canChangeCost });
 
   // Editing needs the fields the list does not carry (phone, staff code, language).
   useEffect(() => {
@@ -109,7 +137,6 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
       setValues({
         name: result.data.name,
         email: result.data.email,
-        role: result.data.role,
         phone: result.data.phone ?? '',
         staffCode: result.data.staffCode ?? '',
         language: result.data.language ?? '',
@@ -129,12 +156,14 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
     const parsed = CreateStaffRequest.safeParse({
       name: values.name,
       email: values.email,
-      role: values.role,
+      hats,
+      costView,
       ...(values.phone.trim() && { phone: values.phone }),
       ...(values.staffCode.trim() && { staffCode: values.staffCode }),
     });
-    if (parsed.success) return {};
     const found: Partial<Record<FieldName, MessageKey>> = {};
+    if (creating && hats.length === 0) found.hats = 'staff.hats.errors.NO_HAT';
+    if (parsed.success) return found;
     for (const issue of parsed.error.issues) {
       const field = issue.path[0];
       if (field === 'name') found.name ??= 'staff.form.nameRequired';
@@ -154,28 +183,33 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
     setFailure(null);
     const found = validate();
     setErrors(found);
-    const first = (['name', 'email', 'phone', 'staffCode'] as const).find((name) => found[name]);
+    const first = FIELD_ORDER.find((name) => found[name]);
     if (first) {
       focusField(first);
       return;
     }
 
     setPending(true);
-    const body: Record<string, unknown> = {
-      name: values.name,
-      role: values.role,
-      phone: values.phone,
-      staffCode: values.staffCode,
-      language: values.language,
-      ...(!emailLocked && { email: values.email }),
-    };
-    if (editId === null) {
-      // A new account only sends what was filled in; empty text would be refused.
-      for (const key of ['phone', 'staffCode', 'language'] as const) {
-        if (!values[key].trim()) delete body[key];
-      }
-    }
-    const result = editId === null ? await createStaff(body) : await updateStaff(editId, body);
+    // A new account only sends what was filled in (empty text would be refused); an edit sends
+    // empty text to clear a field, and never hats, cost or a role.
+    const result =
+      editId === null
+        ? await createStaff({
+            name: values.name,
+            email: values.email,
+            hats,
+            costView,
+            ...(values.phone.trim() && { phone: values.phone }),
+            ...(values.staffCode.trim() && { staffCode: values.staffCode }),
+            ...(values.language.trim() && { language: values.language }),
+          })
+        : await updateStaff(editId, {
+            name: values.name,
+            phone: values.phone,
+            staffCode: values.staffCode,
+            language: values.language,
+            ...(!emailLocked && { email: values.email }),
+          });
     if (result.ok) {
       const emailChanged =
         editId !== null &&
@@ -195,6 +229,11 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
     } else if (result.code === 'STAFF_CODE_TAKEN') {
       setErrors({ staffCode: 'staff.errors.STAFF_CODE_TAKEN' });
       focusField('staffCode');
+    } else if (result.code === 'NO_HAT') {
+      setErrors({ hats: 'staff.hats.errors.NO_HAT' });
+      focusField('hats');
+    } else if (ACCESS_ERRORS.has(result.code)) {
+      setFailure(t(`staff.hats.errors.${result.code}` as MessageKey));
     } else {
       const known = `staff.errors.${result.code}` as MessageKey;
       setFailure(t(known, { defaultValue: t('staff.errors.generic') }));
@@ -205,7 +244,10 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
 
   return (
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
-      <DialogContent closeLabel={t('staff.setup.close')} className="sm:max-w-lg">
+      <DialogContent
+        closeLabel={t('staff.setup.close')}
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+      >
         <form
           method="post"
           noValidate
@@ -280,20 +322,23 @@ export function StaffFormDialog({ editId, languages, onSaved, onClose }: Props) 
               </FieldError>
             </Field>
 
+            {creating && (
+              <HatsFieldset
+                idPrefix="staff"
+                hats={hats}
+                onHatsChange={(next) => {
+                  setHats(next);
+                  if (next.length > 0) setErrors((current) => ({ ...current, hats: undefined }));
+                }}
+                costView={costView}
+                onCostViewChange={setCostByHand}
+                canChangeCost={canChangeCost}
+                error={errors.hats ? t(errors.hats) : null}
+                firstHatRef={firstHatRef}
+              />
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="staff-role">{t('staff.form.role')}</FieldLabel>
-                <select
-                  id="staff-role"
-                  className={SELECT}
-                  value={values.role}
-                  disabled={loading}
-                  onChange={(event) => set('role')(event.target.value)}
-                >
-                  <option value="staff">{t('shell.user.roles.staff')}</option>
-                  <option value="admin">{t('shell.user.roles.admin')}</option>
-                </select>
-              </Field>
               <Field>
                 <FieldLabel htmlFor="staff-language">{t('staff.form.language')}</FieldLabel>
                 <select

@@ -195,6 +195,7 @@ _AC-12 to AC-18, AC-14 on the web, and AC-23 for the staff events. Run against a
 - [ ] With mail on, create a person → expect `setup.mode = email`, an invite email in the person's language, a link that works for 7 days, redirecting to `/reset-password?invite=1&token=...`, and a strong password setting `email_verified = true` and clearing the flag → AC-12, AC-13
 - [ ] Resend the invite → expect a second email, and the first link now `INVALID_TOKEN`; admin reset with mail on → expect a 1 hour reset link and `setup.mode = email` → AC-13, AC-18
 - [ ] Read the api log after the steps above → expect `StaffCreated`, `StaffUpdated`, `StaffRoleChanged`, `StaffDisabled` (with the reason), `StaffEnabled`, `StaffPasswordReset`, `StaffSessionsRevoked` and `PasswordChanged` lines with actor, target, `ip` and `userAgent`, and no temporary password → AC-23
+  > Amended 2026-11-06: the role step is now a hats change (spec 0008), so expect `HatsChanged` in place of `StaffRoleChanged`.
 - [ ] `pnpm --filter @ssdashboard/api test:e2e` → expect every suite to pass, `staff` included → AC-12 to AC-18
 
 ## Value sourcing

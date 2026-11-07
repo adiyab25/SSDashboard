@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
-import { ownAddress, seedAccount, signInThroughApi, type SeededAccount } from './accounts';
+import {
+  ownAddress,
+  seedAccount,
+  signInThroughApi,
+  type SeededAccount,
+  WORKING_HATS,
+} from './accounts';
 import {
   api,
   createLocation,
@@ -85,7 +91,7 @@ async function openAsPerson(page: Page, path: string) {
 test.describe('admin thread: create, receive, detail with cost; staff without cost', () => {
   let staff: SeededAccount;
   test.beforeAll(async () => {
-    staff = await seedAccount({ role: 'staff', name: `Master clerk ${tag}` });
+    staff = await seedAccount({ hats: WORKING_HATS, name: `Master clerk ${tag}` });
   });
   test.afterAll(async () => {
     await staff?.remove().catch(() => undefined);
