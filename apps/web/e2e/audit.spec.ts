@@ -6,7 +6,7 @@ import { expectNoAxeViolations, textFor, useBrowserState, type TextDirection } f
 
 // Spec 0010 milestone 1: the /audit page (AC-12, AC-18). A manager voids a stock receipt with a
 // reason and finds the entry on the page, in English and Arabic; a person without `audit.read`
-// (spec 0008) gets the 403 message; the page passes axe (WCAG 2.2 AA).
+// (spec 0008) gets the no access state; the page passes axe (WCAG 2.2 AA).
 const LANGUAGES = [
   { dir: 'ltr', name: 'English' },
   { dir: 'rtl', name: 'Arabic' },
@@ -91,7 +91,7 @@ test.describe('as a person without audit.read', () => {
     }) => {
       await useBrowserState(page, { dir });
       await page.goto('/audit');
-      await expect(page.getByText(textFor(dir, 'audit.forbidden'))).toBeVisible();
+      await expect(page.getByText(textFor(dir, 'access.noAccess.title'))).toBeVisible();
       await expect(page.getByRole('table')).toHaveCount(0);
       await expect(page.locator('h1')).toHaveCount(1);
       if ((viewport?.width ?? 0) >= 1000) await expectNoAxeViolations(page);

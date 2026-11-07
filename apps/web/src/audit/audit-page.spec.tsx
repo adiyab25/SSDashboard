@@ -107,11 +107,7 @@ describe('AuditPage (AC-12, AC-18)', () => {
     api.listAuditEntries.mockRejectedValue(new ApiError(403, { code: 'FORBIDDEN' }));
     renderWithQuery(<AuditPage />);
 
-    expect(
-      await screen.findByText(
-        'Your hats do not include the audit trail. Ask a manager if you need it.',
-      ),
-    ).toBeVisible();
+    expect(await screen.findByText('You do not have access to this page')).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(api.listAuditEntries).toHaveBeenCalledTimes(1);
