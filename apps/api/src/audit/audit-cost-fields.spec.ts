@@ -51,10 +51,16 @@ describe('serializeAuditDetail (spec 0008 AC-6, spec 0010 AC-12)', () => {
   const detail: AuditEntryDetail = {
     ...entry,
     changes: [
-      { field: 'status', before: 'posted', after: 'voided', personal: false },
-      { field: 'referenceValue', before: '100.00', after: null, personal: false },
-      { field: 'avgUnitCost', before: null, after: '4.00', personal: false },
-      { field: 'lines', before: [{ sku: 'A', unitCost: '5.00' }], after: null, personal: false },
+      { field: 'status', kind: 'changed', before: 'posted', after: 'voided', personal: false },
+      { field: 'referenceValue', kind: 'removed', before: '100.00', after: null, personal: false },
+      { field: 'avgUnitCost', kind: 'added', before: null, after: '4.00', personal: false },
+      {
+        field: 'lines',
+        kind: 'removed',
+        before: [{ sku: 'A', unitCost: '5.00' }],
+        after: null,
+        personal: false,
+      },
     ],
   };
 
@@ -63,8 +69,8 @@ describe('serializeAuditDetail (spec 0008 AC-6, spec 0010 AC-12)', () => {
     expect(shown.before).toEqual({ status: 'posted', lines: [{ sku: 'A' }] });
     expect(shown.after).toEqual({ status: 'voided' });
     expect(shown.changes).toEqual([
-      { field: 'status', before: 'posted', after: 'voided', personal: false },
-      { field: 'lines', before: [{ sku: 'A' }], after: null, personal: false },
+      { field: 'status', kind: 'changed', before: 'posted', after: 'voided', personal: false },
+      { field: 'lines', kind: 'removed', before: [{ sku: 'A' }], after: null, personal: false },
     ]);
     expect(detail.changes).toHaveLength(4);
   });

@@ -26,6 +26,7 @@ function row(overrides: Partial<EntryRow> = {}): EntryRow {
     after: { code: 'TEE-NEW', address: '[REDACTED]' },
     personal_fields: ['address'],
     reason: null,
+    undo_action: null,
     ...overrides,
   };
 }
@@ -34,9 +35,9 @@ function row(overrides: Partial<EntryRow> = {}): EntryRow {
 describe('audit reading (spec 0010, milestone 3)', () => {
   it('lists every changed field once, in stored order, with the personal ones marked', () => {
     expect(fieldChanges(row())).toEqual([
-      { field: 'code', before: 'TEE-OLD', after: 'TEE-NEW', personal: false },
-      { field: 'archived', before: false, after: null, personal: false },
-      { field: 'address', before: null, after: '[REDACTED]', personal: true },
+      { field: 'code', kind: 'changed', before: 'TEE-OLD', after: 'TEE-NEW', personal: false },
+      { field: 'archived', kind: 'removed', before: false, after: null, personal: false },
+      { field: 'address', kind: 'added', before: null, after: '[REDACTED]', personal: true },
     ]);
     expect(
       fieldChanges(
@@ -46,7 +47,21 @@ describe('audit reading (spec 0010, milestone 3)', () => {
           personal_fields: ['customer.name'],
         }),
       ),
-    ).toEqual([{ field: 'customer', before: null, after: { name: 'x' }, personal: true }]);
+    ).toEqual([
+      { field: 'customer', kind: 'added', before: null, after: { name: 'x' }, personal: true },
+    ]);
+  });
+
+  // Review M3R12: a stored null is a side that holds the field, not a missing side.
+  it('tells an explicit null from a field one side does not hold', () => {
+    const changes = fieldChanges(
+      row({ before: { note: null }, after: { note: 'set', tag: null }, personal_fields: [] }),
+    );
+
+    expect(changes).toEqual([
+      { field: 'note', kind: 'changed', before: null, after: 'set', personal: false },
+      { field: 'tag', kind: 'added', before: null, after: null, personal: false },
+    ]);
   });
 
   it('refuses the record history to a viewer without the read permission, before any read', async () => {

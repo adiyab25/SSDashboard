@@ -1125,6 +1125,8 @@ export const ar: Catalog = {
       locationArchived: 'أرشفة موقع',
       locationUnarchived: 'إلغاء أرشفة موقع',
       auditExported: 'تصدير سجل المراجعة',
+      // Every undone entry (`<code>_undone`, spec 0010 task 16) shares this label.
+      actionUndone: 'التراجع عن إجراء سابق',
     },
   },
   mail: {

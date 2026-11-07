@@ -289,8 +289,20 @@ test.describe('as a manager', () => {
         json: {
           ...mine.entry,
           changes: [
-            { field: 'status', before: 'posted', after: 'voided', personal: false },
-            { field: 'phone', before: '[REDACTED]', after: '[REDACTED]', personal: true },
+            {
+              field: 'status',
+              kind: 'changed',
+              before: 'posted',
+              after: 'voided',
+              personal: false,
+            },
+            {
+              field: 'phone',
+              kind: 'changed',
+              before: '[REDACTED]',
+              after: '[REDACTED]',
+              personal: true,
+            },
           ],
         },
       }),

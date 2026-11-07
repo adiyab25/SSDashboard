@@ -59,6 +59,18 @@ export function serializeAuditPage(
 }
 
 /**
+ * The cost serializer of one entry as the list shows it (spec 0008 AC-6): the answer of an undo
+ * (spec 0010 AC-14). For a reader without `cost.view` it strips `before` and `after` like
+ * `serializeAuditPage`; a reader with it gets the entry unchanged. Pure; never reads the database.
+ */
+export function serializeAuditEntry(
+  entry: AuditEntryView,
+  access: Pick<Access, 'has'>,
+): AuditEntryView {
+  return access.has('cost.view') ? entry : entryWithoutCost(entry);
+}
+
+/**
  * The cost serializer of one entry's detail (spec 0008 AC-6, spec 0010 AC-12): for a reader
  * without `cost.view` it strips `before` and `after` like `serializeAuditPage`, drops every
  * field by field change whose field is a cost key, and strips cost keys inside the values of the

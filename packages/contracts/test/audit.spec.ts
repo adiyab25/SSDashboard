@@ -8,6 +8,12 @@ import { describe, expect, it } from 'vitest';
 import {
   AUDIT_ACTIONS,
   AUDIT_REASON_HEADER,
+  AUDIT_UNDONE_SUFFIX,
+  AuditFieldChange,
+  AuditUndoRequest,
+  auditActionsWithUndone,
+  auditUndoneCodeOf,
+  auditUndoneParentOf,
   AUDIT_RECORD_TYPES,
   AuditExportQuery,
   AuditExportReason,
@@ -40,9 +46,15 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 function registryFaults(registry: Readonly<Record<string, AuditActionDefinition>>): string[] {
   const english = flatten(en);
   const arabic = flatten(ar);
-  return Object.entries(registry).flatMap(([code, action]) => {
+  // Milestone 4 task 16 (security review AS5): each undoable code brings its derived undone code,
+  // checked like any other entry, so its proof must name it and its reason codes must exist.
+  return Object.entries(auditActionsWithUndone(registry)).flatMap(([code, action]) => {
     const faults: string[] = [];
     if (!/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(code)) faults.push(`${code}: code shape`);
+    if (Object.hasOwn(registry, code) && code.endsWith(AUDIT_UNDONE_SUFFIX)) {
+      faults.push(`${code}: the undone suffix is reserved`);
+    }
+    if (action.undoReasonCodes && !action.undoable) faults.push(`${code}: undo codes on a final`);
     if (!action.module) faults.push(`${code}: module`);
     if (!['required', 'optional'].includes(action.reason)) faults.push(`${code}: reason`);
     if (typeof action.automatic !== 'boolean') faults.push(`${code}: automatic`);
@@ -101,10 +113,76 @@ describe('audit action registry', () => {
       'reason code shape',
     ],
     ['reason codes on a free text type', { ...complete, reasonCodes: ['wrong'] }, 'on free text'],
+    // Milestone 4 task 16: the derived undone code is checked like a listed one.
+    [
+      'an undoable code whose proof misses its undone code',
+      { ...complete, undoable: true, undoHandler: 'inventory.receipt_undo' },
+      'stock_receipt.voided_undone: proof misses code',
+    ],
+    [
+      'an undoable customer action without undo reason codes',
+      {
+        ...complete,
+        recordType: 'customer',
+        reasonCodes: ['duplicate_contact'],
+        undoable: true,
+        undoHandler: 'customers.merge_undo',
+      },
+      'stock_receipt.voided_undone: reason codes missing',
+    ],
+    [
+      'undo reason codes on a final action',
+      { ...complete, undoReasonCodes: ['wrong_match'] },
+      'undo codes on a final',
+    ],
   ])('refuses a planted entry with %s', (_case, planted, fault) => {
     const faults = registryFaults({ 'stock_receipt.voided': planted });
 
     expect(faults.join('\n')).toContain(fault);
+  });
+
+  it('refuses a listed code that ends with the undone suffix', () => {
+    const faults = registryFaults({ 'stock_receipt.voided_undone': complete });
+
+    expect(faults.join('\n')).toContain('the undone suffix is reserved');
+  });
+
+  // Security review AS5: an undone code keeps one dot, and derives everything from its action.
+  it('derives one undone code per undoable action, and none for a final one', () => {
+    const undoable: AuditActionDefinition = {
+      ...complete,
+      recordType: 'customer',
+      reasonCodes: ['duplicate_contact'],
+      undoable: true,
+      undoHandler: 'customers.merge_undo',
+      undoReasonCodes: ['wrong_match'],
+    };
+    const registry = { 'customer.merged': undoable, 'stock_receipt.voided': complete };
+
+    const all = auditActionsWithUndone(registry);
+
+    expect(Object.keys(all).sort()).toEqual([
+      'customer.merged',
+      'customer.merged_undone',
+      'stock_receipt.voided',
+    ]);
+    expect(all['customer.merged_undone']).toEqual({
+      module: 'audit',
+      recordType: 'customer',
+      reason: 'required',
+      automatic: false,
+      undoable: false,
+      reasonCodes: ['wrong_match'],
+      label: 'audit.actions.actionUndone',
+      proof: complete.proof,
+    });
+    expect(auditUndoneCodeOf('customer.merged')).toBe('customer.merged_undone');
+    expect(auditUndoneParentOf('customer.merged_undone', registry)?.code).toBe('customer.merged');
+    expect(auditUndoneParentOf('stock_receipt.voided_undone', registry)).toBeUndefined();
+    expect(auditUndoneParentOf('customer.merged', registry)).toBeUndefined();
+    // Nothing in today's registry is undoable, so no undone code is known.
+    expect(auditActionOf('stock_receipt.voided_undone')).toBeUndefined();
+    expect(Object.keys(auditActionsWithUndone())).toEqual(Object.keys(AUDIT_ACTIONS));
   });
 
   it('knows its codes and nothing else', () => {
@@ -309,5 +387,58 @@ describe('AuditExportQuery', () => {
     expect(AuditExportReason.parse('  monthly  ')).toBe('monthly');
     expect(AuditExportReason.safeParse('   ').success).toBe(false);
     expect(AuditExportReason.safeParse('x'.repeat(501)).success).toBe(false);
+  });
+});
+
+// Review M3R11: the list and the export share one filter schema and its rules.
+describe('the shared audit filter', () => {
+  const id = '01937f3a-0000-7000-8000-000000000001';
+  const day = { dayFrom: '2026-11-05', dayTo: '2026-11-05' };
+
+  it('refuses a record id without a type and a reversed range in the export as in the list', () => {
+    expect(AuditExportQuery.safeParse({ ...day, recordId: id }).success).toBe(false);
+    expect(AuditExportQuery.safeParse({ ...day, recordType: 'sku', recordId: id }).success).toBe(
+      true,
+    );
+    expect(AuditExportQuery.safeParse({ dayFrom: '2026-11-06', dayTo: '2026-11-05' }).success).toBe(
+      false,
+    );
+    expect(AuditExportQuery.safeParse({ dayFrom: '0000-01-01', dayTo: '2026-11-05' }).success).toBe(
+      false,
+    );
+  });
+
+  it('needs the day range in the export only, and paging in the list only', () => {
+    expect(AuditExportQuery.safeParse({ dayFrom: '2026-11-05' }).success).toBe(false);
+    expect(AuditExportQuery.safeParse({ ...day, cursor: 'x' }).success).toBe(false);
+    expect(AuditEntryListQuery.safeParse({ cursor: 'x' }).success).toBe(true);
+  });
+});
+
+// Spec 0010, AC-14: the undo takes a typed reason of 1 to 500 characters, trimmed.
+describe('AuditUndoRequest', () => {
+  it('trims the reason and refuses a blank, missing, long, or extra field', () => {
+    expect(AuditUndoRequest.parse({ reason: '  wrong match  ' })).toEqual({
+      reason: 'wrong match',
+    });
+    expect(AuditUndoRequest.safeParse({ reason: '   ' }).success).toBe(false);
+    expect(AuditUndoRequest.safeParse({}).success).toBe(false);
+    expect(AuditUndoRequest.safeParse({ reason: 'x'.repeat(501) }).success).toBe(false);
+    expect(AuditUndoRequest.safeParse({ reason: 'x'.repeat(500) }).success).toBe(true);
+    expect(AuditUndoRequest.safeParse({ reason: 'x', entryId: 'y' }).success).toBe(false);
+  });
+});
+
+// Review M3R12: a changed field says which sides hold it, so a stored null is not an absent side.
+describe('AuditFieldChange', () => {
+  it('carries the kind of change', () => {
+    const change = { field: 'note', kind: 'changed', before: null, after: 'x', personal: false };
+
+    expect(AuditFieldChange.parse(change)).toEqual(change);
+    expect(AuditFieldChange.safeParse({ ...change, kind: 'moved' }).success).toBe(false);
+    expect(
+      AuditFieldChange.safeParse({ field: 'note', before: null, after: 'x', personal: false })
+        .success,
+    ).toBe(false);
   });
 });

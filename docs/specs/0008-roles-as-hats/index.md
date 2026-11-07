@@ -102,6 +102,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `AuditEntriesController` | `GET /api/audit/entries`, `GET /api/audit/entries/:id` | `audit.read` (class; spec 0010) |
 | `AuditRecordsController` | `GET /api/audit/records/:type/:id/entries` | `audit.read` (spec 0010; `AuditQueryService.forRecord` checks it again) |
 | `AuditExportController` | `GET /api/audit/entries/export` | `audit.export` (spec 0010) |
+| `AuditUndoController` | `POST /api/audit/entries/:id/undo` | `audit.undo` (class; spec 0010 AC-14) |
 | `HealthController`, `ConfigController` | `GET /api/health`, `GET /api/config` | none (public) |
 
 ## Decision

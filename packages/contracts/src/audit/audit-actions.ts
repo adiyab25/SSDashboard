@@ -33,6 +33,13 @@ export interface AuditActionDefinition {
    * record type; the registry test refuses it there.
    */
   readonly reasonCodes?: readonly string[];
+  /**
+   * The reason codes an undo of this action accepts (spec 0010 task 16, security review AS13):
+   * required for an undoable action whose record type keeps its reason as a code, because the
+   * undone entry is written on the same record and the reason there must be a code too. Unused on
+   * a free text record type, where the undo takes typed text.
+   */
+  readonly undoReasonCodes?: readonly string[];
   /** The catalog key of the action's label, shown on the audit screen. */
   readonly label: MessageKey;
   /** The repo path of the test that proves the action writes its entry. */
@@ -184,7 +191,7 @@ export const AUDIT_ACTIONS = {
 /** A code in the registry. */
 export type AuditActionCode = keyof typeof AUDIT_ACTIONS;
 
-/** Every registered code, for pickers and checks. */
+/** Every registered code, for pickers and checks. Undone codes are derived, not listed. */
 export const AUDIT_ACTION_CODES = Object.keys(AUDIT_ACTIONS) as AuditActionCode[];
 
 /** Whether a string is a registered action code. Pure; never throws. */
@@ -192,7 +199,84 @@ export function isAuditActionCode(code: string): code is AuditActionCode {
   return Object.hasOwn(AUDIT_ACTIONS, code);
 }
 
-/** The registry entry of a code, or undefined for an unknown one. */
+/**
+ * The suffix of an undone code (spec 0010 task 16, security review AS5): the undo of
+ * `customer.merged` is recorded as `customer.merged_undone`, which keeps the one dot that
+ * `audit_action_format` allows. No registered code may end with it; the registry test checks.
+ */
+export const AUDIT_UNDONE_SUFFIX = '_undone';
+
+/** The one label every undone entry shows; the screen names the undone action beside it. */
+const UNDONE_LABEL: MessageKey = 'audit.actions.actionUndone';
+
+/** An undoable code of the registry (none today). */
+export type AuditUndoableActionCode = {
+  [Code in AuditActionCode]: (typeof AUDIT_ACTIONS)[Code]['undoable'] extends true ? Code : never;
+}[AuditActionCode];
+
+/** The undone code of an undoable code, `<noun>.<verb>_undone` (none today). */
+export type AuditUndoneActionCode = `${AuditUndoableActionCode}${typeof AUDIT_UNDONE_SUFFIX}`;
+
+/** The undone code an undo of `code` records. Pure; never checks the registry. */
+export function auditUndoneCodeOf(code: string): string {
+  return `${code}${AUDIT_UNDONE_SUFFIX}`;
+}
+
+/**
+ * The definition an undone code derives from its undoable action (spec 0010 task 16): one
+ * companion per undoable code, never listed by hand. It is the audit module's (the undo writes
+ * it), on the same record type, reason `required` (owner question 3), never automatic, never
+ * itself undoable, labelled with the one shared key, with the undo's reason codes when the record
+ * type keeps codes, and proven by the undoable action's own proof file, which must name the
+ * undone code too.
+ */
+export function undoneActionOf(action: AuditActionDefinition): AuditActionDefinition {
+  return {
+    module: 'audit',
+    recordType: action.recordType,
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    ...(action.undoReasonCodes ? { reasonCodes: action.undoReasonCodes } : {}),
+    label: UNDONE_LABEL,
+    proof: action.proof,
+  };
+}
+
+/**
+ * The undoable action an undone code belongs to, or undefined when `code` is not
+ * `<undoable code>_undone` in `registry`. Read live, so a row planted in a test counts.
+ */
+export function auditUndoneParentOf(
+  code: string,
+  registry: Readonly<Record<string, AuditActionDefinition>> = AUDIT_ACTIONS,
+): { code: string; action: AuditActionDefinition } | undefined {
+  if (!code.endsWith(AUDIT_UNDONE_SUFFIX)) return undefined;
+  const parent = code.slice(0, -AUDIT_UNDONE_SUFFIX.length);
+  const action = Object.hasOwn(registry, parent) ? registry[parent] : undefined;
+  return action?.undoable ? { code: parent, action } : undefined;
+}
+
+/**
+ * The registry with every derived undone code added (spec 0010 task 16): what `record` accepts,
+ * the screen labels, and the registry test checks. Pure.
+ */
+export function auditActionsWithUndone(
+  registry: Readonly<Record<string, AuditActionDefinition>> = AUDIT_ACTIONS,
+): Record<string, AuditActionDefinition> {
+  const all: Record<string, AuditActionDefinition> = { ...registry };
+  for (const [code, action] of Object.entries(registry)) {
+    if (action.undoable) all[auditUndoneCodeOf(code)] = undoneActionOf(action);
+  }
+  return all;
+}
+
+/**
+ * The registry entry of a code, the derived one of an undone code, or undefined for an unknown
+ * one. Pure; never throws.
+ */
 export function auditActionOf(code: string): AuditActionDefinition | undefined {
-  return isAuditActionCode(code) ? AUDIT_ACTIONS[code] : undefined;
+  if (isAuditActionCode(code)) return AUDIT_ACTIONS[code];
+  const parent = auditUndoneParentOf(code);
+  return parent ? undoneActionOf(parent.action) : undefined;
 }

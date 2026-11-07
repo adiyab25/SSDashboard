@@ -193,6 +193,7 @@ describe('AuditExportService cost fields', () => {
     actor_hat: 'manager',
     job_id: null,
     action: 'stock_receipt.voided',
+    undo_action: null,
     record_type: 'stock_receipt',
     record_id: USER_ID,
     record_label: 'SR-2026-000001',

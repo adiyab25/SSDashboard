@@ -1135,6 +1135,8 @@ export const en = {
       locationArchived: 'Location archived',
       locationUnarchived: 'Location unarchived',
       auditExported: 'Audit trail exported',
+      // Every undone entry (`<code>_undone`, spec 0010 task 16) shares this label.
+      actionUndone: 'Earlier action undone',
     },
   },
   mail: {

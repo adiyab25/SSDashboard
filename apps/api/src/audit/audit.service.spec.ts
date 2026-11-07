@@ -1,8 +1,8 @@
 import type * as Contracts from '@ssdashboard/contracts';
 import type { AuditActionCode } from '@ssdashboard/contracts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Transaction } from '../database/sql.js';
-import { personActor, systemJobActor } from '@ssdashboard/contracts';
+import { AUDIT_ACTIONS, personActor, systemJobActor } from '@ssdashboard/contracts';
 import {
   AuditCorrelationMismatch,
   AuditPersonalDataRefused,
@@ -75,7 +75,7 @@ function fakeTx() {
 }
 
 /** Bound values per entry row. */
-const COLUMNS = 16;
+const COLUMNS = 17;
 
 const PARAM = {
   correlationId: 0,
@@ -94,6 +94,7 @@ const PARAM = {
   reason: 13,
   undoAction: 14,
   undoArgs: 15,
+  undoesEntryId: 16,
 } as const;
 
 function voidEntry(overrides: Partial<AuditEntryInput> = {}): AuditEntryInput {
@@ -705,3 +706,89 @@ describe('AuditService personal data guard (spec 0010, AC-4)', () => {
     expect(statements[0]?.[PARAM.reason]).toBe('duplicate_contact');
   });
 });
+
+// Spec 0010 milestone 4 task 16 (security review AS5): the undone code is written only by an undo,
+// on its own derived definition (reason required), with `undoes_entry_id`, and returns its id.
+describe('AuditService.recordUndone (spec 0010, AC-14)', () => {
+  const audit = new AuditService();
+  const UNDOABLE = 'sku.scratch_merged';
+  const registry = actualRegistry();
+  const target = '01937f3a-0000-7000-8000-0000000000aa';
+  const sku = '01937f3a-0000-7000-8000-0000000000bb';
+  const undone = {
+    actor: personActor(USER, 'manager'),
+    action: `${UNDOABLE}_undone`,
+    record: { type: 'sku', id: sku },
+    before: { merged: true },
+    after: { merged: false },
+    reason: '  wrong call, ring 01012345678 ',
+    correlationId: 'corr-u',
+  };
+
+  /** A transaction double whose insert returns one id. */
+  function returningTx() {
+    const statements: unknown[][] = [];
+    const execute = vi.fn((query: unknown) => {
+      statements.push(boundValues(query));
+      return Promise.resolve({ rows: [{ id: 'new-entry' }] });
+    });
+    return { tx: { execute } as unknown as Transaction, statements };
+  }
+
+  beforeEach(() => {
+    registry[UNDOABLE] = {
+      ...registry['sku.archived'],
+      undoable: true,
+      undoHandler: 'inventory.scratch_unmerge',
+    } as Contracts.AuditActionDefinition;
+  });
+  afterEach(() => {
+    delete registry[UNDOABLE];
+  });
+
+  it('writes the undone code with undoes_entry_id and a masked reason, and returns its id', async () => {
+    const { tx, statements } = returningTx();
+
+    await expect(audit.recordUndone(tx, target, undone)).resolves.toBe('new-entry');
+
+    const params = statements[0] ?? [];
+    expect(params[PARAM.action]).toBe(`${UNDOABLE}_undone`);
+    expect(params[PARAM.undoesEntryId]).toBe(target);
+    expect(params[PARAM.undoAction]).toBeNull();
+    expect(params[PARAM.reason]).toBe('wrong call, ring [phone]');
+  });
+
+  it('requires a reason on the undone code', async () => {
+    const { tx, statements } = returningTx();
+
+    await expect(
+      audit.recordUndone(tx, target, { ...undone, reason: '  ' }),
+    ).rejects.toBeInstanceOf(AuditReasonRequired);
+    expect(statements).toEqual([]);
+  });
+
+  it('refuses an undone code through record, and a listed code through recordUndone', async () => {
+    const { tx, statements } = returningTx();
+
+    await expect(
+      audit.record(tx, { ...undone, action: `${UNDOABLE}_undone` as AuditActionCode }),
+    ).rejects.toBeInstanceOf(UnknownAuditAction);
+    await expect(
+      audit.recordUndone(tx, target, { ...undone, action: 'sku.archived' }),
+    ).rejects.toBeInstanceOf(UnknownAuditAction);
+    expect(statements).toEqual([]);
+  });
+
+  it('knows no undone code of an action that is not undoable', async () => {
+    const { tx } = returningTx();
+
+    await expect(
+      audit.recordUndone(tx, target, { ...undone, action: 'sku.archived_undone' }),
+    ).rejects.toBeInstanceOf(UnknownAuditAction);
+  });
+});
+
+/** The real, mutable registry behind the mock, for planting a scratch undoable code. */
+function actualRegistry(): Record<string, Contracts.AuditActionDefinition> {
+  return AUDIT_ACTIONS;
+}

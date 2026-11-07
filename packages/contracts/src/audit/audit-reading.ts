@@ -1,14 +1,32 @@
 import { z } from 'zod';
-import { AUDIT_PAGE_DEFAULT, AUDIT_PAGE_MAX, AuditEntryView } from './audit-entries.js';
+import {
+  AUDIT_PAGE_DEFAULT,
+  AUDIT_PAGE_MAX,
+  AuditEntryFilter,
+  AuditEntryView,
+  auditFilterRules,
+} from './audit-entries.js';
+
+/**
+ * How one field changed (spec 0010, AC-12, review M3R12): `added` when only `after` has it (a
+ * creation), `removed` when only `before` has it, `changed` when both have it. It tells an
+ * explicit `null` on a side (`changed` with `before: null`) from a side that has no such field
+ * (`added`, whose `before` is null only because it is absent).
+ */
+export const AuditFieldChangeKind = z.enum(['added', 'removed', 'changed']);
+/** How one field changed. */
+export type AuditFieldChangeKind = z.infer<typeof AuditFieldChangeKind>;
 
 /**
  * One changed field of an entry, as the detail screen shows it (spec 0010, AC-12): the top level
- * field name, its value before and after (null when the side has no such field: a creation has
- * no `before`), and whether it holds personal data the trail masked. A personal field's values are
- * `"[REDACTED]"`; the screen shows "hidden, personal data" instead of them.
+ * field name, `kind` (which sides hold it), its value before and after (null on a side that does
+ * not hold it, so read `kind` before reading a null as a stored null), and whether it holds
+ * personal data the trail masked. A personal field's values are `"[REDACTED]"`; the screen shows
+ * "hidden, personal data" instead of them.
  */
 export const AuditFieldChange = z.object({
   field: z.string(),
+  kind: AuditFieldChangeKind,
   before: z.unknown(),
   after: z.unknown(),
   personal: z.boolean(),
@@ -90,10 +108,6 @@ export const AUDIT_EXPORT_COLUMNS = [
   'entry_id',
 ] as const;
 
-const OperatingDay = z.iso.date().refine((day) => day >= '0001-01-01', {
-  message: 'The day must be in year 1 or later',
-});
-
 const DAY_MS = 86_400_000;
 
 /**
@@ -118,36 +132,37 @@ export const AuditExportReason = z.string().trim().min(1).max(500);
 export type AuditExportReason = z.infer<typeof AuditExportReason>;
 
 /**
- * `GET /api/audit/entries/export` (spec 0010, AC-15): the list filters without paging, with
- * `dayFrom` and `dayTo` required and covering at most 366 days, both ends included
- * (`auditExportDayCount`). The optional reason travels in `AUDIT_REASON_HEADER`, never here. A bad
- * query answers 400 `INVALID_FILTER`.
+ * `GET /api/audit/entries/export` (spec 0010, AC-15): the list's filter (`AuditEntryFilter`,
+ * review M3R11) without paging, with `dayFrom` and `dayTo` required and covering at most 366
+ * days, both ends included (`auditExportDayCount`). The optional reason travels in
+ * `AUDIT_REASON_HEADER`, never here. A bad query answers 400 `INVALID_FILTER`.
  */
-export const AuditExportQuery = z
-  .object({
-    actorUserId: z.uuid().optional(),
-    recordType: z.string().trim().min(1).max(64).optional(),
-    recordId: z.uuid().optional(),
-    action: z
-      .string()
-      .regex(/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/)
-      .optional(),
-    dayFrom: OperatingDay,
-    dayTo: OperatingDay,
-    correlationId: z.uuid().optional(),
-  })
+export const AuditExportQuery = AuditEntryFilter.extend({
+  dayFrom: AuditEntryFilter.shape.dayFrom.unwrap(),
+  dayTo: AuditEntryFilter.shape.dayTo.unwrap(),
+})
   .strict()
-  .refine((query) => !query.recordId || query.recordType, {
-    message: 'recordId needs recordType',
-    path: ['recordId'],
-  })
-  .refine((query) => query.dayFrom <= query.dayTo, {
-    message: 'dayFrom must not be after dayTo',
-    path: ['dayFrom'],
-  })
+  .superRefine(auditFilterRules)
   .refine((query) => auditExportDayCount(query.dayFrom, query.dayTo) <= AUDIT_EXPORT_MAX_DAYS, {
     message: `The day range can be at most ${AUDIT_EXPORT_MAX_DAYS} days`,
     path: ['dayTo'],
   });
 /** The validated export query. */
 export type AuditExportQuery = z.infer<typeof AuditExportQuery>;
+
+/** The longest reason an undo keeps, after trimming (spec 0010, AC-14, API surface). */
+export const AUDIT_UNDO_REASON_MAX = 500;
+
+/**
+ * `POST /api/audit/entries/:id/undo` (spec 0010, AC-14, owner question 3): the typed reason the
+ * undo needs, trimmed, 1 to 500 characters. A missing or blank reason answers 422
+ * `REASON_REQUIRED`, a longer one 422 `REASON_TOO_LONG`, any other body 400 `INVALID_INPUT`. On a
+ * record type that keeps reason codes (`AUDIT_RECORD_TYPES`, `reason: 'code'`) the reason must be
+ * one of the action's `undoReasonCodes`, else 422 `REASON_INVALID`. The answer is the new
+ * undone entry as an `AuditEntryView`.
+ */
+export const AuditUndoRequest = z
+  .object({ reason: z.string().trim().min(1).max(AUDIT_UNDO_REASON_MAX) })
+  .strict();
+/** The validated undo request. */
+export type AuditUndoRequest = z.infer<typeof AuditUndoRequest>;

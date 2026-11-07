@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { APP_ROLE, runMigrations } from '../src/index.js';
@@ -116,7 +117,7 @@ describe('audit entries are append only (spec 0010)', () => {
   });
 
   // Review AR8: information_schema.triggers never lists TRUNCATE triggers, so read pg_trigger.
-  it('has exactly its five guards and stamps', async () => {
+  it('has exactly its six guards and stamps', async () => {
     const { rows } = await owner.query<{ trigger: string }>(
       `SELECT t.tgname AS trigger FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
        WHERE c.relname = 'audit_entries' AND NOT t.tgisinternal AND t.tgenabled = 'O'
@@ -128,6 +129,7 @@ describe('audit entries are append only (spec 0010)', () => {
       'audit_entries_append_only',
       'audit_entries_no_truncate',
       'audit_entries_stamp_operating_day',
+      'audit_entries_undo_matches',
     ]);
   });
 
@@ -222,18 +224,111 @@ describe('audit entries are append only (spec 0010)', () => {
     await expect(insert('stock_receipt.voided', null, '[1]')).rejects.toThrow(/audit_json_objects/);
   });
 
+  /** An undoable entry of one SKU, written by the app role; returns its id and record id. */
+  async function undoableEntry(userId: string): Promise<{ id: string; recordId: string }> {
+    const { rows } = await app.query<{ id: string; record_id: string }>(
+      `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_hat, action,
+                                  record_type, record_id, after, undo_action, undo_args)
+       VALUES (gen_random_uuid(), 'person', $1, 'manager', 'sku.archived', 'sku',
+               gen_random_uuid(), '{"archived":true}', 'inventory.sku_unarchive', '{}')
+       RETURNING id, record_id`,
+      [userId],
+    );
+    const row = rows[0];
+    if (!row) throw new Error('no entry');
+    return { id: row.id, recordId: row.record_id };
+  }
+
+  /** Inserts an undo of `target` as the app role, with the given fields. */
+  function undoOf(
+    userId: string,
+    target: string | null,
+    fields: { action?: string; recordType?: string; recordId: string; reason?: string | null },
+  ) {
+    return app.query(
+      `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_hat, action,
+                                  record_type, record_id, reason, undoes_entry_id)
+       VALUES (gen_random_uuid(), 'person', $1, 'manager', $2, $3, $4, $5, $6)`,
+      [
+        userId,
+        fields.action ?? 'sku.archived_undone',
+        fields.recordType ?? 'sku',
+        fields.recordId,
+        fields.reason === undefined ? 'Wrong SKU' : fields.reason,
+        target,
+      ],
+    );
+  }
+
   it('lets an entry be undone at most once', async () => {
     const user = await makeUser('undo@example.test');
-    const target = await appEntry(user);
-    const undo = () =>
-      app.query(
-        `INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_hat, action,
-                                    record_type, record_id, reason, undoes_entry_id)
-         VALUES (gen_random_uuid(), 'person', $1, 'admin', 'stock_receipt.voided_undone',
-                 'stock_receipt', gen_random_uuid(), 'Wrong call', $2)`,
-        [user, target],
-      );
-    await undo();
-    await expect(undo()).rejects.toThrow(/audit_entries_undoes_entry_unique/);
+    const target = await undoableEntry(user);
+
+    await undoOf(user, target.id, { recordId: target.recordId });
+    await expect(undoOf(user, target.id, { recordId: target.recordId })).rejects.toThrow(
+      /audit_entries_undoes_entry_unique/,
+    );
+  });
+
+  // Security review AS5: an undo row must truly undo its target, so nobody can claim an entry
+  // first and block its real undo; and an undone code always names its target.
+  it.each([
+    ['another record', { recordId: 'other' }],
+    ['another record type', { recordType: 'location' }],
+    ['an action that is not the target action undone', { action: 'sku.unarchived_undone' }],
+    ['a code without the undone suffix', { action: 'sku.unarchived' }],
+    ['no reason', { reason: null }],
+  ])('refuses an undo naming %s', async (_case, change) => {
+    const user = await makeUser(`as5-${Math.random().toString(36).slice(2)}@example.test`);
+    const target = await undoableEntry(user);
+    const recordId = 'recordId' in change ? randomUUID() : target.recordId;
+
+    await expect(undoOf(user, target.id, { ...change, recordId })).rejects.toThrow(
+      /audit_entries_undo_matches/,
+    );
+    // The real undo still goes through afterwards.
+    await undoOf(user, target.id, { recordId: target.recordId });
+  });
+
+  it('refuses an undo of an entry that is not undoable, and an undone code with no target', async () => {
+    const user = await makeUser('final@example.test');
+    const final = await appEntry(user);
+    const { rows } = await app.query<{ record_id: string }>(
+      'SELECT record_id FROM audit_entries WHERE id = $1',
+      [final],
+    );
+    const recordId = rows[0]?.record_id ?? '';
+
+    await expect(
+      undoOf(user, final, {
+        action: 'stock_receipt.voided_undone',
+        recordType: 'stock_receipt',
+        recordId,
+      }),
+    ).rejects.toThrow(/audit_entries_undo_matches/);
+    await expect(
+      undoOf(user, null, {
+        action: 'stock_receipt.voided_undone',
+        recordType: 'stock_receipt',
+        recordId,
+      }),
+    ).rejects.toThrow(/audit_entries_undo_matches/);
+  });
+
+  it('refuses an undo of an undone entry, which is never itself undoable', async () => {
+    const user = await makeUser('twice@example.test');
+    const target = await undoableEntry(user);
+    await undoOf(user, target.id, { recordId: target.recordId });
+    const { rows } = await app.query<{ id: string }>(
+      'SELECT id FROM audit_entries WHERE undoes_entry_id = $1',
+      [target.id],
+    );
+
+    await expect(
+      undoOf(user, rows[0]?.id ?? null, {
+        action: 'sku.archived_undone_undone',
+        recordId: target.recordId,
+      }),
+    ).rejects.toThrow(/audit_entries_undo_matches/);
   });
 });

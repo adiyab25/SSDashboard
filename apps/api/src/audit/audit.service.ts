@@ -5,6 +5,7 @@ import {
   AuditActor,
   auditActionOf,
   auditRecordTypeOf,
+  auditUndoneParentOf,
   ReasonCode,
   type AuditActionCode,
 } from '@ssdashboard/contracts';
@@ -61,6 +62,20 @@ export interface AuditEntryInput {
   undo?: { action: string; args: JsonObject };
 }
 
+/**
+ * The undone entry an undo writes (spec 0010, AC-14, task 16): an entry of the undone code
+ * `<action>_undone` on the undone entry's own record, with the reason the undo needs and no undo
+ * of its own. Only `AuditUndoService` writes one, through `AuditService.recordUndone`.
+ */
+export interface AuditUndoneEntryInput extends Omit<AuditEntryInput, 'action' | 'undo'> {
+  /** The undone code, `auditUndoneCodeOf(<the undone entry's action>)`. */
+  action: string;
+  reason: string;
+}
+
+/** What `entryValues` checks: an entry of a listed code, or an undone entry. */
+type WritableEntry = Omit<AuditEntryInput, 'action'> & { action: string };
+
 /** The actor columns of `audit_entries`, one shape per actor kind (AC-3). */
 interface ActorColumns {
   kind: AuditActor['kind'];
@@ -88,12 +103,20 @@ function actorColumns(actor: AuditActor): ActorColumns {
   }
 }
 
+/** The column list every entry insert names, in `entryValues` order. */
+const INSERT_ENTRIES = sql`
+  INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
+                             actor_hat, action, record_type, record_id, record_label,
+                             before, after, personal_fields, reason, undo_action, undo_args,
+                             undoes_entry_id)`;
+
 const json = (value: Readonly<Record<string, unknown>> | undefined): string | null =>
   value === undefined ? null : JSON.stringify(value);
 
 /**
  * Checks one entry in the spec's order and returns its VALUES tuple. Throws before anything is
- * written: an unknown code (`UnknownAuditAction`), a record type the registry does not give the
+ * written: an unknown code, or an undone code outside an undo (or a listed code inside one)
+ * (`UnknownAuditAction`), a record type the registry does not give the
  * code or one the audit trail does not know (`AuditRecordTypeMismatch`), a malformed actor (a
  * `ZodError`, security review AS19), a missing required reason (`AuditReasonRequired`), a reason
  * over 500 characters (`AuditReasonTooLong`), a typed note where the record type takes a reason
@@ -102,9 +125,12 @@ const json = (value: Readonly<Record<string, unknown>> | undefined): string | nu
  * with the record type's own personal keys, and phones and emails in a free text reason. Never
  * touches the database.
  */
-function entryValues(entry: AuditEntryInput): SQL {
+function entryValues(entry: WritableEntry, undoesEntryId: string | null): SQL {
   const definition = auditActionOf(entry.action);
   if (!definition) throw new UnknownAuditAction(entry.action);
+  // An undone code (`<action>_undone`) is written only by an undo, and an undo writes only one.
+  const undone = auditUndoneParentOf(entry.action) !== undefined;
+  if (undone !== (undoesEntryId !== null)) throw new UnknownAuditAction(entry.action);
   const recordType = auditRecordTypeOf(entry.record.type);
   if (entry.record.type !== definition.recordType || !recordType) {
     throw new AuditRecordTypeMismatch(entry.action, entry.record.type);
@@ -170,7 +196,7 @@ function entryValues(entry: AuditEntryInput): SQL {
               ${entry.record.id}, ${label}, ${json(before?.masked)}::jsonb,
               ${json(after?.masked)}::jsonb,
               ${pgArray(personalFields)}::text[], ${reason}, ${entry.undo?.action ?? null},
-              ${json(entry.undo?.args)}::jsonb)`;
+              ${json(entry.undo?.args)}::jsonb, ${undoesEntryId}::uuid)`;
 }
 
 /**
@@ -210,12 +236,28 @@ export class AuditService {
     if (first && entries.some((entry) => entry.correlationId !== first.correlationId)) {
       throw new AuditCorrelationMismatch();
     }
-    const rows = entries.map(entryValues);
-    await tx.execute(sql`
-      INSERT INTO audit_entries (correlation_id, actor_kind, actor_user_id, actor_ref, job_id,
-                                 actor_hat, action, record_type, record_id, record_label,
-                                 before, after, personal_fields, reason, undo_action, undo_args)
-      VALUES ${sql.join(rows, sql`, `)}`);
+    const rows = entries.map((entry) => entryValues(entry, null));
+    await tx.execute(sql`${INSERT_ENTRIES} VALUES ${sql.join(rows, sql`, `)}`);
+  }
+
+  /**
+   * Writes the undone entry of one undo through `tx` and returns its id (spec 0010, AC-14, task
+   * 16). Called only by `AuditUndoService`, inside the undo's transaction, after the owner's
+   * handler has reversed its change; never by an owning module. Runs every check of `record`
+   * (the undone code's reason policy is `required`), and the table's `audit_entries_undo_matches`
+   * trigger refuses a target that is not an undoable entry of the same record.
+   */
+  async recordUndone(
+    tx: Transaction,
+    undoesEntryId: string,
+    entry: AuditUndoneEntryInput,
+  ): Promise<string> {
+    const { rows } = await tx.execute<{ id: string }>(
+      sql`${INSERT_ENTRIES} VALUES ${entryValues(entry, undoesEntryId)} RETURNING id`,
+    );
+    const id = rows[0]?.id;
+    if (!id) throw new Error('The undone entry was not written');
+    return id;
   }
 
   /**

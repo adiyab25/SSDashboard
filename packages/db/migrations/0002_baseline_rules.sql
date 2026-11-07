@@ -233,6 +233,39 @@ END;
 $$;--> statement-breakpoint
 CREATE TRIGGER "customer_merges_undo_matches" BEFORE INSERT ON "customer_merges" FOR EACH ROW EXECUTE FUNCTION "customer_merges_reject_mismatched_undo"();--> statement-breakpoint
 
+-- An audit undo names a real, undoable entry of the same record (spec 0010 AC-14, security review
+-- AS5): an entry with undoes_entry_id carries a reason, and its target has the same tenant, record
+-- type, and record id, an undo_action (the registry marked it undoable when it was written), and
+-- the action that this entry's code undoes (`<target action>_undone`). So no insert can claim an
+-- entry it does not undo and block the real undo forever (the unique index lets each entry be
+-- undone once). An entry whose code ends in _undone must name its target. A target this statement
+-- cannot see is refused here, not left to the foreign key.
+CREATE FUNCTION "audit_entries_reject_mismatched_undo"() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NEW.undoes_entry_id IS NULL THEN
+    RAISE EXCEPTION 'audit_entries_undo_matches: an undone entry (%) must name the entry it undoes', NEW.action
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'audit_entries_undo_matches';
+  END IF;
+  IF NEW.reason IS NULL THEN
+    RAISE EXCEPTION 'audit_entries_undo_matches: an undo of entry % must carry a reason', NEW.undoes_entry_id
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'audit_entries_undo_matches';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.audit_entries t
+     WHERE t.id = NEW.undoes_entry_id
+       AND t.tenant_id = NEW.tenant_id
+       AND t.record_type = NEW.record_type AND t.record_id = NEW.record_id
+       AND t.undo_action IS NOT NULL
+       AND NEW.action = t.action || '_undone'
+  ) THEN
+    RAISE EXCEPTION 'audit_entries_undo_matches: entry % is not an undoable entry of the same record whose action this undo names', NEW.undoes_entry_id
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'audit_entries_undo_matches';
+  END IF;
+  RETURN NEW;
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER "audit_entries_undo_matches" BEFORE INSERT ON "audit_entries" FOR EACH ROW WHEN (NEW."undoes_entry_id" IS NOT NULL OR right(NEW."action", 7) = '_undone') EXECUTE FUNCTION "audit_entries_reject_mismatched_undo"();--> statement-breakpoint
+
 -- A credit reversal can never itself be reversed (spec 0002, customers child), like movement groups.
 -- An original this statement cannot see is refused here, not left to the foreign key (S6, above).
 -- This trigger runs before credit_entries_reversal_mirrors_original (name order), so the mirror

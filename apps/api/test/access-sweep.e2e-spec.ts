@@ -237,6 +237,13 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['audit.export'],
       path: () => `/audit/entries/export?dayFrom=${ids.auditDay}&dayTo=${ids.auditDay}`,
     },
+    // Spec 0010 AC-14: `audit.undo`. The planted entry is not undoable, so an allowed caller gets
+    // 409 NOT_UNDOABLE and nothing changes, however often the sweep calls it.
+    'POST /audit/entries/:id/undo': {
+      needs: ['audit.undo'],
+      path: () => `/audit/entries/${ids.auditEntry}/undo`,
+      body: () => ({ reason: 'sweep' }),
+    },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
       needs: PEOPLE_MANAGE,

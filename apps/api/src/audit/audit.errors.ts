@@ -9,7 +9,13 @@ export type AuditErrorCode =
   | 'AuditPersonalDataRefused'
   | 'AuditReadForbidden'
   | 'AuditEntryNotFound'
-  | 'AuditExportTooLarge';
+  | 'AuditExportTooLarge'
+  | 'NotUndoable'
+  | 'AlreadyUndone'
+  | 'UndoNotPossible'
+  | 'AuditUndoHandlerMissing'
+  | 'AuditUndoHandlerDuplicate'
+  | 'AuditUndoRecordMismatch';
 
 /**
  * Base of every typed audit domain error (spec 0010, API surface). Domain code throws these; the
@@ -132,5 +138,81 @@ export class AuditExportTooLarge extends AuditError {
   /** Builds the error with the row limit the caller passed. */
   constructor(readonly limit: number) {
     super('AuditExportTooLarge', `An export holds at most ${limit} rows. Choose a shorter range.`);
+  }
+}
+
+/**
+ * The entry cannot be undone (spec 0010, AC-14): it carries no `undo_action`, its action is not
+ * undoable in the registry (any more), or it names another handler than the registry's. The api
+ * answers 409 `NOT_UNDOABLE`.
+ */
+export class NotUndoable extends AuditError {
+  /** Builds the error; the entry id is not carried. */
+  constructor() {
+    super('NotUndoable', 'This entry cannot be undone');
+  }
+}
+
+/**
+ * An entry already undoes this one (spec 0010, AC-14): an entry is undone at most once. The api
+ * answers 409 `ALREADY_UNDONE`.
+ */
+export class AlreadyUndone extends AuditError {
+  /** Builds the error; the entry id is not carried. */
+  constructor() {
+    super('AlreadyUndone', 'This entry has already been undone');
+  }
+}
+
+/** The shape of the code an owner's handler gives `UndoNotPossible`: upper snake case. */
+const UNDO_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+/**
+ * Thrown by an owning module's undo handler when it cannot restore its change (spec 0010, AC-14):
+ * a later change got in the way, for example a merge that is no longer the latest. `undoCode` is
+ * the owner's stable upper snake case code (`MERGE_NOT_LATEST`); a code of another shape becomes
+ * `UNDO_NOT_POSSIBLE`, so no value ever reaches the answer. Everything the handler wrote rolls
+ * back; the api answers 409 `UNDO_NOT_POSSIBLE` with `undoCode`.
+ */
+export class UndoNotPossible extends AuditError {
+  /** The owner's code, safe to show and log. */
+  readonly undoCode: string;
+
+  /** Takes the owner's code and a message safe to show and log (never a record's values). */
+  constructor(undoCode: string, message = 'This change can no longer be undone') {
+    super('UndoNotPossible', message);
+    this.undoCode = UNDO_CODE.test(undoCode) ? undoCode : 'UNDO_NOT_POSSIBLE';
+  }
+}
+
+/**
+ * An undoable code names an undo handler that no module registered (spec 0010, Key invariants):
+ * thrown when the app starts, so a missing handler stops the process instead of failing a
+ * manager's click later. A programming error; names the handler codes, never data.
+ */
+export class AuditUndoHandlerMissing extends AuditError {
+  /** Takes the handler codes no module registered. */
+  constructor(readonly handlers: readonly string[]) {
+    super('AuditUndoHandlerMissing', `No undo handler registered for ${handlers.join(', ')}`);
+  }
+}
+
+/** Two modules registered one undo handler code: a programming error, thrown at start. */
+export class AuditUndoHandlerDuplicate extends AuditError {
+  /** Takes the handler code registered twice. */
+  constructor(readonly handler: string) {
+    super('AuditUndoHandlerDuplicate', `The undo handler ${handler} is registered twice`);
+  }
+}
+
+/**
+ * An undo handler returned another record than the entry it undid (spec 0010, AC-14, security
+ * review AS5): the undone entry is always written on the undone entry's own record. A programming
+ * error; the undo rolls back.
+ */
+export class AuditUndoRecordMismatch extends AuditError {
+  /** Takes the handler code that returned the wrong record. */
+  constructor(readonly handler: string) {
+    super('AuditUndoRecordMismatch', `The undo handler ${handler} returned another record`);
   }
 }

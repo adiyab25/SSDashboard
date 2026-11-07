@@ -227,8 +227,14 @@ describe('AuditView (AC-12, AC-18)', () => {
     api.getAuditEntry.mockResolvedValue({
       ...entry(1),
       changes: [
-        { field: 'status', before: 'posted', after: 'voided', personal: false },
-        { field: 'phone', before: '[REDACTED]', after: '[REDACTED]', personal: true },
+        { field: 'status', kind: 'changed', before: 'posted', after: 'voided', personal: false },
+        {
+          field: 'phone',
+          kind: 'changed',
+          before: '[REDACTED]',
+          after: '[REDACTED]',
+          personal: true,
+        },
       ],
     });
     api.listRecordHistory.mockResolvedValue({ items: [entry(1)], nextCursor: null });

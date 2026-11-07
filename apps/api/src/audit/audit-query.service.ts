@@ -15,6 +15,7 @@ import { StaffDirectory } from '../identity/staff/staff-directory.js';
 import type { Access } from '../platform/access/access.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
 import { serializeAuditPage } from './audit-cost-fields.js';
+import { isUndoableEntry } from './audit-undo.registry.js';
 import { AuditEntryNotFound, AuditReadForbidden } from './audit.errors.js';
 
 const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
@@ -50,6 +51,8 @@ export type EntryRow = {
   after: Record<string, unknown> | null;
   personal_fields: string[];
   reason: string | null;
+  /** The owner's undo handler code, or null for an entry that cannot be undone. */
+  undo_action: string | null;
 };
 
 /** The columns every reader selects, `recorded_at` as the microsecond UTC text the cursor uses. */
@@ -57,7 +60,7 @@ const ENTRY_COLUMNS = sql`
   id, to_char(recorded_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS recorded_at,
   to_char(operating_day, 'YYYY-MM-DD') AS operating_day, correlation_id, actor_kind,
   actor_user_id, actor_ref, actor_hat, job_id, action, record_type, record_id,
-  record_label, before, after, personal_fields, reason`;
+  record_label, before, after, personal_fields, reason, undo_action`;
 
 /** A position in the keyset order: an entry's `recorded_at` (microsecond UTC text) and id. */
 export interface AuditKey {
@@ -68,6 +71,11 @@ export interface AuditKey {
 /** The keyset condition "this entry or an older one". */
 function atOrBelow(key: AuditKey): SQL {
   return sql`(recorded_at, id) <= (${key.at}::timestamptz, ${key.id}::uuid)`;
+}
+
+/** Whether a viewer may undo entries: they hold `audit.undo` (the manager hat by default). */
+export function canUndoAudit(viewer: Pick<Access, 'has'>): boolean {
+  return viewer.has('audit.undo');
 }
 
 /** The filters of a list or export query, as SQL conditions (no cursor). */
@@ -85,23 +93,33 @@ function filtersOf(query: Omit<Partial<AuditEntryListQuery>, 'cursor' | 'limit'>
 
 /**
  * The field by field diff of an entry (spec 0010, AC-12): every top level field of `before` and
- * `after`, in stored order, with the values on each side (null when absent) and whether the trail
- * masked it as personal (its path, or a path under it, is in `personal_fields`).
+ * `after`, in stored order, with `kind` (`added` when only `after` holds it, `removed` when only
+ * `before` does, `changed` when both do, review M3R12), the values on each side (null on a side
+ * that does not hold the field, and a stored null kept as null on a side that does), and whether
+ * the trail masked it as personal (its path, or a path under it, is in `personal_fields`).
  */
 export function fieldChanges(row: EntryRow): AuditFieldChange[] {
-  const fields = [...new Set([...Object.keys(row.before ?? {}), ...Object.keys(row.after ?? {})])];
-  return fields.map((field) => ({
-    field,
-    before: row.before?.[field] ?? null,
-    after: row.after?.[field] ?? null,
-    personal: row.personal_fields.some((path) => path === field || path.startsWith(`${field}.`)),
-  }));
+  const before = row.before ?? {};
+  const after = row.after ?? {};
+  const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  return fields.map((field) => {
+    const inBefore = Object.hasOwn(before, field);
+    const inAfter = Object.hasOwn(after, field);
+    return {
+      field,
+      kind: inBefore && inAfter ? 'changed' : inBefore ? 'removed' : 'added',
+      before: inBefore ? before[field] : null,
+      after: inAfter ? after[field] : null,
+      personal: row.personal_fields.some((path) => path === field || path.startsWith(`${field}.`)),
+    };
+  });
 }
 
 /**
  * The only reader of `audit_entries` (spec 0010, AC-9, AC-12). Other modules read history through
  * it, never through the table. Person names come from the staff directory by id, never from a
- * join. `list`, `get`, and the export reads are guarded by their controller
+ * join. Each entry view says whether the viewer may undo it now (`canUndo`, AC-14), so every
+ * reader takes the viewer. `list`, `get`, and the export reads are guarded by their controller
  * (`@Permission('audit.read')` or `@Permission('audit.export')`), which also strips cost fields
  * for a reader without `cost.view`; `forRecord`, which other modules may reach, takes the viewer,
  * refuses without the read permission itself (review AR3), and strips cost fields itself. It never
@@ -118,10 +136,14 @@ export class AuditQueryService {
   /**
    * Entries newest first (`recorded_at`, then id), filtered by person, record, action, operating
    * day range, and correlation id, one keyset page at a time. A cursor this endpoint did not issue
-   * throws `InvalidCursorError` from the keyset helper.
+   * throws `InvalidCursorError` from the keyset helper. `canUndo` follows the viewer's
+   * `audit.undo`.
    */
-  async list(query: AuditEntryListQuery): Promise<AuditEntryListResponse> {
-    return this.page(filtersOf(query), query.cursor, query.limit);
+  async list(
+    query: AuditEntryListQuery,
+    viewer: Pick<Access, 'has'>,
+  ): Promise<AuditEntryListResponse> {
+    return this.page(filtersOf(query), query.cursor, query.limit, viewer);
   }
 
   /**
@@ -142,19 +164,40 @@ export class AuditQueryService {
       [sql`record_type = ${type}`, sql`record_id = ${id}`],
       cursor,
       limit,
+      viewer,
     );
     return serializeAuditPage(page, viewer);
   }
 
-  /** One entry with its field diff (spec 0010, AC-12), or `AuditEntryNotFound`. */
-  async get(id: string): Promise<AuditEntryDetail> {
+  /**
+   * One entry with its field diff (spec 0010, AC-12), or `AuditEntryNotFound`. `canUndo` follows
+   * the viewer's `audit.undo`.
+   */
+  async get(id: string, viewer: Pick<Access, 'has'>): Promise<AuditEntryDetail> {
+    const { row, view } = await this.one(id, viewer);
+    return { ...view, changes: fieldChanges(row) };
+  }
+
+  /**
+   * One entry as the list shows it, without the field diff (the answer of an undo, spec 0010
+   * AC-14), or `AuditEntryNotFound`.
+   */
+  async view(id: string, viewer: Pick<Access, 'has'>): Promise<AuditEntryView> {
+    return (await this.one(id, viewer)).view;
+  }
+
+  /** One row and its view, or `AuditEntryNotFound`. */
+  private async one(
+    id: string,
+    viewer: Pick<Access, 'has'>,
+  ): Promise<{ row: EntryRow; view: AuditEntryView }> {
     const { rows } = await this.connection.db.execute<EntryRow>(sql`
       SELECT ${ENTRY_COLUMNS} FROM audit_entries WHERE id = ${id}`);
     const row = rows[0];
     if (!row) throw new AuditEntryNotFound();
-    const [view] = await this.views([row]);
+    const [view] = await this.views([row], viewer);
     if (!view) throw new AuditEntryNotFound();
-    return { ...view, changes: fieldChanges(row) };
+    return { row, view };
   }
 
   /**
@@ -232,6 +275,7 @@ export class AuditQueryService {
     filters: SQL[],
     cursor: string | undefined,
     limit: number,
+    viewer: Pick<Access, 'has'>,
   ): Promise<AuditEntryListResponse> {
     const conditions = [...filters];
     if (cursor) {
@@ -248,14 +292,20 @@ export class AuditQueryService {
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
-      items: await this.views(page),
+      items: await this.views(page, viewer),
       nextCursor: rows.length > limit && last ? encodeKeyset([last.recorded_at, last.id]) : null,
     };
   }
 
-  /** The screen's view of rows: actor names, and whether a later entry undid each. */
-  private async views(rows: EntryRow[]): Promise<AuditEntryView[]> {
+  /**
+   * The screen's view of rows: actor names, whether a later entry undid each (one extra query on
+   * the page's ids, spec 0010 State), and whether this viewer may undo each now (`canUndo`: the
+   * registry marks the action undoable and the entry names its handler, it is not undone yet,
+   * and the viewer holds `audit.undo`).
+   */
+  private async views(rows: EntryRow[], viewer: Pick<Access, 'has'>): Promise<AuditEntryView[]> {
     const undone = await this.undoneAmong(rows.map((row) => row.id));
+    const mayUndo = canUndoAudit(viewer);
     const names = await this.staff.namesByIds(
       rows.flatMap((row) => (row.actor_user_id ? [row.actor_user_id] : [])),
     );
@@ -279,8 +329,7 @@ export class AuditQueryService {
       personalFields: row.personal_fields,
       reason: row.reason,
       undone: undone.has(row.id),
-      // The undo arrives with milestone 4 (AuditUndoService); until then nothing is undoable.
-      canUndo: false,
+      canUndo: mayUndo && !undone.has(row.id) && isUndoableEntry(row.action, row.undo_action),
     }));
   }
 

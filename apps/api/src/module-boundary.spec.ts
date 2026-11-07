@@ -576,3 +576,88 @@ describe('identity import wall (spec 0005, AC-27)', () => {
     ).toEqual([]);
   });
 });
+
+// Spec 0010, AC-9 and AC-14 (milestone 4 task 17): the audit module reaches an owner's undo only
+// through the handler the owner registered in `AuditUndoRegistry`, so no file under
+// apps/api/src/audit/ imports a business module. It may import its own files, the shared
+// plumbing (database, config, platform: access, audience, keyset paging, the time zone the export
+// passes on), and identity's public staff directory for person names.
+
+/** The folders under apps/api/src an audit file may import from: plumbing, never an owner. */
+const AUDIT_MAY_IMPORT_FOLDERS: ReadonlySet<string> = new Set([
+  'audit',
+  'database',
+  'config',
+  'platform',
+]);
+
+/** Single files of another module an audit file may import, each with why. */
+const AUDIT_MAY_IMPORT_FILES: Readonly<Record<string, string>> = {
+  'apps/api/src/identity/staff/staff-directory.ts':
+    'person names by id for the actor column (spec 0010 AC-9: names from the identity service)',
+};
+
+/** Every import from an audit file into a business module it may not reach. */
+function auditImportBreaches(files: readonly SourceFile[]): ImportBreach[] {
+  return files.flatMap((file) => {
+    if (!file.path.startsWith('apps/api/src/audit/')) return [];
+    return relativeImports(file)
+      .map(({ specifier, line }) => ({
+        file: file.path,
+        line,
+        target: resolveSource(file.path, specifier),
+      }))
+      .filter(({ target }) => {
+        const folder = /^apps\/api\/src\/([^/]+)\/.+/.exec(target)?.[1];
+        return (
+          folder !== undefined &&
+          !AUDIT_MAY_IMPORT_FOLDERS.has(folder) &&
+          !Object.hasOwn(AUDIT_MAY_IMPORT_FILES, target)
+        );
+      });
+  });
+}
+
+describe('audit imports no owning module (spec 0010, AC-9, AC-14)', () => {
+  const files = sourceFiles(join(API_SRC, 'audit')).map((path) => ({
+    path: toRepoPath(path),
+    text: readFileSync(path, 'utf8'),
+  }));
+
+  it('finds the audit source, the undo registry and service included', () => {
+    const paths = files.map((file) => file.path);
+
+    expect(paths).toContain('apps/api/src/audit/audit-undo.registry.ts');
+    expect(paths).toContain('apps/api/src/audit/audit-undo.service.ts');
+  });
+
+  it('keeps every audit file to its own folder, the plumbing, and the staff directory', () => {
+    expect(
+      auditImportBreaches(files).map((b) => `${b.file}:${b.line} imports ${b.target}`),
+    ).toEqual([]);
+  });
+
+  it('reports a planted import of an owning module, its service, or another identity file', () => {
+    const planted: SourceFile[] = [
+      {
+        path: 'apps/api/src/audit/undo-shortcut.ts',
+        text: [
+          "import { InventoryModule } from '../inventory/inventory.module.js';",
+          "import type { ReceiptsService } from '../inventory/receipts/receipts.service.js';",
+          "import { CatalogService } from '../catalog/catalog.service.js';",
+          "import { HatService } from '../identity/hats/hat.service.js';",
+          "import { StaffDirectory } from '../identity/staff/staff-directory.js';",
+          "import { Permission } from '../platform/access/permission.decorator.js';",
+          "import { AuditUndoRegistry } from './audit-undo.registry.js';",
+        ].join('\n'),
+      },
+    ];
+
+    expect(auditImportBreaches(planted).map((b) => `${b.line} ${b.target}`)).toEqual([
+      '1 apps/api/src/inventory/inventory.module.ts',
+      '2 apps/api/src/inventory/receipts/receipts.service.ts',
+      '3 apps/api/src/catalog/catalog.service.ts',
+      '4 apps/api/src/identity/hats/hat.service.ts',
+    ]);
+  });
+});

@@ -4,6 +4,7 @@ import {
   AUDIT_EXPORT_COLUMNS,
   AuditEntryDetail,
   AuditEntryListResponse,
+  AuditEntryView,
   personActor,
   SkuDetail,
   type AuditActionCode,
@@ -11,10 +12,19 @@ import {
   StockReceiptDetail,
   StockReceiptListResponse,
 } from '@ssdashboard/contracts';
-import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
+import {
+  APP_ROLE,
+  createDatabase,
+  runMigrations,
+  sql,
+  type DatabaseConnection,
+} from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AuditReasonInvalid } from '../src/audit/audit.errors.js';
+import { AuditUndoRegistry } from '../src/audit/audit-undo.registry.js';
+import { AuditReasonInvalid, UndoNotPossible } from '../src/audit/audit.errors.js';
 import { AuditService } from '../src/audit/audit.service.js';
+import { DATABASE } from '../src/database/database.module.js';
+import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import {
   createScratchDatabase,
   dropScratchDatabase,
@@ -862,5 +872,262 @@ describe('audit writer against PostgreSQL (spec 0010, milestone 2)', { timeout: 
     );
     expect(rows[0]?.reason).toBe('asked by [email] on [phone]');
     expect(await columnsOf(recordId)).not.toMatch(/sentinel|2345/);
+  });
+});
+
+// Spec 0010, milestone 4 tasks 16 and 17 (AC-14): the one step undo, end to end, through
+// POST /api/audit/entries/:id/undo, with a fixture handler and a scratch undoable registry row (no
+// real action is undoable yet). The fixture owns one scratch table, so "everything unchanged" is
+// checked on the owner's data as well as on the trail.
+describe('audit undo api (spec 0010, milestone 4)', { timeout: 240_000 }, () => {
+  // A scratch undoable code and its derived undone code, `sku.scratch_relabelled_undone`.
+  const UNDOABLE = 'sku.scratch_relabelled';
+  const UNDONE = 'sku.scratch_relabelled_undone';
+  const HANDLER = 'fixture.relabel_undo';
+  const registry = AUDIT_ACTIONS as Record<string, AuditActionDefinition>;
+  let api: InProcessApi;
+  let audit: AuditService;
+  let connection: DatabaseConnection;
+  let manager: { id: string; cookie: string };
+  let warehouse: string;
+
+  beforeAll(async () => {
+    api = await startInProcessApi();
+    audit = api.app.get(AuditService);
+    connection = api.app.get<symbol, DatabaseConnection>(DATABASE);
+    // The fixture owner's own table: a label per SKU id, readable and writable by the app role.
+    await api.owner.pool.query(
+      `CREATE TABLE undo_fixture_labels (id uuid PRIMARY KEY, label text NOT NULL);
+       GRANT SELECT, INSERT, UPDATE ON undo_fixture_labels TO ${APP_ROLE}`,
+    );
+    // AC-19: a later feature adds one registry row; this run plants it after start, with its
+    // handler registered the way an owner registers it from onModuleInit.
+    registry[UNDOABLE] = {
+      ...AUDIT_ACTIONS['sku.archived'],
+      undoable: true,
+      undoHandler: HANDLER,
+    };
+    api.app.get(AuditUndoRegistry).register(HANDLER, {
+      async undo(tx, { entry }) {
+        const mode = entry.undo.args.mode;
+        if (mode === 'slow') await tx.execute(sql`SELECT pg_sleep(0.3)`);
+        const before = String(entry.before?.label);
+        const after = String(entry.after?.label);
+        await tx.execute(
+          sql`UPDATE undo_fixture_labels SET label = ${before} WHERE id = ${entry.record.id}`,
+        );
+        // A later change got in the way: everything above rolls back with the undo.
+        if (mode === 'refuse') throw new UndoNotPossible('FIXTURE_LATER_CHANGE');
+        return {
+          record: { type: 'sku', id: entry.record.id },
+          before: { label: after },
+          after: { label: before },
+        };
+      },
+    });
+    const person = await api.addPerson(['manager'], { costView: true });
+    manager = { id: person.id, cookie: await api.signIn(person.email) };
+    const keeper = await api.addPerson(['warehouse']);
+    warehouse = await api.signIn(keeper.email);
+  }, 180_000);
+
+  afterAll(async () => {
+    delete registry[UNDOABLE];
+    await api?.close();
+  });
+
+  /** A relabelled SKU (in the fixture table) and its undoable entry. */
+  async function relabelled(mode: 'normal' | 'slow' | 'refuse' = 'normal') {
+    const skuId = randomUUID();
+    await api.owner.pool.query(
+      `INSERT INTO undo_fixture_labels (id, label) VALUES ($1, 'NEW-LABEL')`,
+      [skuId],
+    );
+    await connection.db.transaction((tx) =>
+      audit.record(tx, {
+        actor: personActor(manager.id, 'manager'),
+        action: UNDOABLE as AuditActionCode,
+        record: { type: 'sku', id: skuId },
+        before: { label: 'OLD-LABEL' },
+        after: { label: 'NEW-LABEL' },
+        correlationId: audit.newCorrelationId(),
+        undo: { action: HANDLER, args: { mode } },
+      }),
+    );
+    const { rows } = await api.owner.pool.query<{ id: string }>(
+      'SELECT id FROM audit_entries WHERE record_id = $1',
+      [skuId],
+    );
+    return { skuId, entryId: rows[0]?.id ?? '' };
+  }
+
+  /**
+   * Calls the undo as the manager with a good reason, unless told otherwise. An explicit
+   * `undefined` body or cookie is sent as such (no body, no session), never replaced by a default.
+   */
+  const undo = (entryId: string, options: { body?: unknown; cookie?: string | undefined } = {}) =>
+    api.call(
+      'cookie' in options ? options.cookie : manager.cookie,
+      'POST',
+      `/api/audit/entries/${entryId}/undo`,
+      'body' in options ? options.body : { reason: 'Wrong label' },
+    );
+
+  /** The fixture label and the number of entries undoing one entry, read as the owner. */
+  async function stateOf(skuId: string, entryId: string) {
+    const label = await api.owner.pool.query<{ label: string }>(
+      'SELECT label FROM undo_fixture_labels WHERE id = $1',
+      [skuId],
+    );
+    const undone = await api.owner.pool.query<{ count: number }>(
+      'SELECT count(*)::int AS count FROM audit_entries WHERE undoes_entry_id = $1',
+      [entryId],
+    );
+    return { label: label.rows[0]?.label, undone: undone.rows[0]?.count };
+  }
+
+  it('undoes once: the owner reverses its change and the undone entry is written (AC-14)', async () => {
+    const { skuId, entryId } = await relabelled();
+    const history = await api.call(
+      manager.cookie,
+      'GET',
+      `/api/audit/records/sku/${skuId}/entries`,
+    );
+    expect(AuditEntryListResponse.parse(history.body).items[0]).toMatchObject({
+      id: entryId,
+      undone: false,
+      canUndo: true,
+    });
+
+    const reply = await undo(entryId, { body: { reason: '  Wrong label, call 01012345678 ' } });
+
+    expect(reply.status).toBe(200);
+    const entry = AuditEntryView.parse(reply.body);
+    expect(entry).toMatchObject({
+      action: UNDONE,
+      actor: { kind: 'person', userId: manager.id, hat: 'manager' },
+      record: { type: 'sku', id: skuId },
+      before: { label: 'NEW-LABEL' },
+      after: { label: 'OLD-LABEL' },
+      reason: 'Wrong label, call [phone]',
+      undone: false,
+      canUndo: false,
+    });
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'OLD-LABEL', undone: 1 });
+    const { rows } = await api.owner.pool.query<{
+      undoes: string;
+      undo_action: string | null;
+      fresh: boolean;
+    }>(
+      `SELECT u.undoes_entry_id AS undoes, u.undo_action,
+              u.correlation_id <> t.correlation_id AS fresh
+       FROM audit_entries u JOIN audit_entries t ON t.id = u.undoes_entry_id
+       WHERE u.id = $1`,
+      [entry.id],
+    );
+    expect(rows[0]).toEqual({ undoes: entryId, undo_action: null, fresh: true });
+    const detail = await api.call(manager.cookie, 'GET', `/api/audit/entries/${entryId}`);
+    expect(AuditEntryDetail.parse(detail.body)).toMatchObject({ undone: true, canUndo: false });
+  });
+
+  it('answers a second undo 409 ALREADY_UNDONE and changes nothing (AC-14)', async () => {
+    const { skuId, entryId } = await relabelled();
+    expect((await undo(entryId)).status).toBe(200);
+    await api.owner.pool.query("UPDATE undo_fixture_labels SET label = 'MOVED-ON' WHERE id = $1", [
+      skuId,
+    ]);
+
+    const again = await undo(entryId);
+
+    expect(again.status).toBe(409);
+    expect(again.body).toMatchObject({ code: 'ALREADY_UNDONE' });
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'MOVED-ON', undone: 1 });
+  });
+
+  it('answers 409 UNDO_NOT_POSSIBLE with the owner code when the handler refuses, changing nothing (AC-14)', async () => {
+    const { skuId, entryId } = await relabelled('refuse');
+
+    const reply = await undo(entryId);
+
+    expect(reply.status).toBe(409);
+    expect(reply.body).toMatchObject({
+      code: 'UNDO_NOT_POSSIBLE',
+      undoCode: 'FIXTURE_LATER_CHANGE',
+    });
+    // The handler's own write rolled back with the refused undo, and no entry was written.
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'NEW-LABEL', undone: 0 });
+  });
+
+  it('lets exactly one of two parallel undos through (AC-14)', async () => {
+    const { skuId, entryId } = await relabelled('slow');
+
+    const replies = await Promise.all([undo(entryId), undo(entryId)]);
+
+    expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
+    expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
+      code: 'ALREADY_UNDONE',
+    });
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'OLD-LABEL', undone: 1 });
+  });
+
+  it('needs a reason of 1 to 500 characters: 422, and nothing changes (AC-14, owner question 3)', async () => {
+    const { skuId, entryId } = await relabelled();
+    const cases: [unknown, string][] = [
+      [undefined, 'REASON_REQUIRED'],
+      [{}, 'REASON_REQUIRED'],
+      [{ reason: '   ' }, 'REASON_REQUIRED'],
+      [{ reason: 'x'.repeat(501) }, 'REASON_TOO_LONG'],
+    ];
+
+    for (const [body, code] of cases) {
+      const reply = await undo(entryId, { body });
+      expect(reply.status, JSON.stringify(body)).toBe(422);
+      expect(reply.body).toMatchObject({ code });
+    }
+    const extra = await undo(entryId, { body: { reason: 'x', extra: true } });
+    expect(extra.status).toBe(400);
+    expect(extra.body).toMatchObject({ code: 'INVALID_INPUT' });
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'NEW-LABEL', undone: 0 });
+  });
+
+  it('refuses a viewer without audit.undo with 403, and a caller without a session with 401 (AC-13)', async () => {
+    const { skuId, entryId } = await relabelled();
+
+    const reply = await undo(entryId, { cookie: warehouse });
+
+    expect(reply.status).toBe(403);
+    expect(reply.body).toMatchObject({ code: 'FORBIDDEN' });
+    expect((await undo(entryId, { cookie: undefined })).status).toBe(401);
+    expect(await stateOf(skuId, entryId)).toEqual({ label: 'NEW-LABEL', undone: 0 });
+  });
+
+  it('answers 409 NOT_UNDOABLE for a final action and 404 for an unknown entry (AC-14)', async () => {
+    const skuId = randomUUID();
+    await connection.db.transaction((tx) =>
+      audit.record(tx, {
+        actor: personActor(manager.id, 'manager'),
+        action: 'sku.archived',
+        record: { type: 'sku', id: skuId, label: 'FINAL-1' },
+        before: { archived: false },
+        after: { archived: true },
+        correlationId: audit.newCorrelationId(),
+      }),
+    );
+    const { rows } = await api.owner.pool.query<{ id: string }>(
+      'SELECT id FROM audit_entries WHERE record_id = $1',
+      [skuId],
+    );
+    const finalId = rows[0]?.id ?? '';
+
+    const final = await undo(finalId);
+    expect(final.status).toBe(409);
+    expect(final.body).toMatchObject({ code: 'NOT_UNDOABLE' });
+    const detail = await api.call(manager.cookie, 'GET', `/api/audit/entries/${finalId}`);
+    expect(AuditEntryDetail.parse(detail.body).canUndo).toBe(false);
+
+    const unknown = await undo(randomUUID());
+    expect(unknown.status).toBe(404);
+    expect(unknown.body).toMatchObject({ code: 'ENTRY_NOT_FOUND' });
+    expect((await undo('not-a-uuid')).status).toBe(404);
   });
 });

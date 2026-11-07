@@ -64,7 +64,7 @@ export class AuditEntriesController {
     @CurrentAccess() access: Access,
   ): Promise<AuditEntryListResponse> {
     try {
-      return serializeAuditPage(await this.entries.list(query), access);
+      return serializeAuditPage(await this.entries.list(query, access), access);
     } catch (error) {
       throw auditReadError(error);
     }
@@ -80,7 +80,7 @@ export class AuditEntriesController {
     @CurrentAccess() access: Access,
   ): Promise<AuditEntryDetail> {
     try {
-      return serializeAuditDetail(await this.entries.get(id), access);
+      return serializeAuditDetail(await this.entries.get(id, access), access);
     } catch (error) {
       throw auditReadError(error);
     }
