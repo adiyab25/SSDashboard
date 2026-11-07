@@ -1,0 +1,435 @@
+# 0011. Stock ledger and locations: one gated online location, an online stock read for channels, reservations with waiting demand, showroom moves, and manual corrections on the built ledger
+
+**Date**: 2026-11-07 (domain review folded in the same day)
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
+**Feature**: scope feature 11, [Stock ledger & locations](../../scope/confirmation-to-cash.md) (Slice 1a, Core, GA)
+**Depends on**: the built ledger of [spec 0002](../0002-core-data-model/index.md) (AC-1 to AC-13, AC-29, AC-31, AC-36) and [spec 0006](../0006-core-stock-loop/index.md) (receipts, voids, the Stock page, locations management); hats and permissions of [spec 0008](../0008-roles-as-hats/index.md); the audit writer of [spec 0010](../0010-audit-trail/index.md); the platform `DomainEvents` service designed by spec 0013 (its milestone 1, task 1; whichever of the two features is built first builds it to that design). Neighbours in the same wave call this spec's services and never write its tables: orders (spec 0013), the Shopify connector (spec 0015), catalog (spec 0012); they are written in parallel, so they are named here without links.
+**Review**: [domain review](../../reviews/domain-stock-ledger.md) (accept with changes), folded in on 2026-11-07; the finding map is under `## Domain review map`.
+
+## Summary
+
+Most of the stock ledger already exists: every stock change is an unchangeable movement with its quantity, cost, place, and source document, and a correction is always a new movement. This feature adds what the pilot's daily work needs on top of it. Exactly one warehouse feeds online stock, it only goes online through a check that the opening stock is counted and the open orders are held, and a new read tells Shopify how many pieces of each variant may be sold online, never counting a showroom partner's pieces or pieces an order is waiting for. Orders hold stock for their lines in their own transaction; a line that could not be held keeps its demand, and the next piece that comes back fills it before it is offered online again. A parcel the carrier already took is always booked, even when the books say the piece was not there, and the team is told. Pieces go to and come back from showroom partners through a small numbered "send to partner" and "return from partner" posting, with a minimal partner record, which pulls a thin slice of features 38 and 41 into slice 1a. A manager corrects stock with a reason (the warehouse asks for it), receipts can no longer slip a typed or zero cost past the cost rule, and the mismatches the nightly check finds get a screen.
+
+## Requirements
+
+**User stories**:
+
+- As the Shopify connector (spec 0015), I want one call that tells me how many pieces of each variant may be sold online, and which variants changed since my last run, so the store never offers stock we do not have, that sits at a partner, or that an order is already waiting for.
+- As the orders module (spec 0013), I want to hold stock for an order's lines in the same transaction that writes the order, as far as stock allows, keep the rest as waiting demand, and have every carrier shipment booked, so two orders never take the same piece and nothing the carrier took is lost from the books.
+- As a manager, I want the online stock location to go live only when its stock is counted and the open orders are held, and to see at once when Shopify is not being updated.
+- As the warehouse, I want to send pieces to a showroom partner and take them back with a numbered note, so the online figure never counts pieces that are on a partner's floor.
+- As a manager, I want to correct stock with a reason when pieces are found, missing, or damaged, and the warehouse wants to ask me for it in the app, so the numbers stay true between stock counts and every correction is traceable.
+- As a manager, I want to see the mismatches the nightly check found and fix each one, so a drifted balance never sits unnoticed.
+
+**Already built, kept as the contract** (not rebuilt here): spec 0002 AC-1 to AC-13 (the ledger: movements with quantity, unit cost, location, source type and id; append only history; reversal as the only correction; idempotent postings; the reserved stock rule; nightly reconciliation), AC-29 (owner type fixed for life, `LocationPolicyService`, the boundary test, the three way test), AC-31 (opening stock and restocks carry a cost), AC-36 (the 50,000 SKU scale suite); spec 0006 AC-1 to AC-17 (receipts, voids, the Stock page, SKU history, locations management), as amended by this spec where a note says so. This feature's tests must keep every one of their suites green.
+
+**Acceptance criteria**:
+
+- **AC-1** (one online location): A location may have `sellable_online` true only when its `kind` is `warehouse`, `is_sellable` is true, it is not archived, and its owner type's policy has `can_sell_online`; at most one such location exists per brand (owner decision Q-11.2, recommended). The database holds the rule by a check and a partial unique index, so no writer, and no race between two requests, can break it. `sellable_online` changes only through the gated actions of AC-19 (create and edit no longer take it). Archiving the online location turns it off in the same update.
+- **AC-2** (online stock read): `OnlineStockService.forVariants(variantIds)` returns, for each asked variant, `onHand`, `reserved` (open quantity of active reservations), `unfilledDemand` (unfilled quantity of active reservations), `available` (`onHand − reserved`, the meaning of spec 0002 AC-9), and `pushable` (`max(onHand − reserved − unfilledDemand, 0)`) at the online location; a variant with no balance there returns zeros. Stock at any other location (a partner, a wholesale customer, a shop, a second warehouse, transit, scrap) never adds to any of these numbers. With no online location every read raises `NoOnlineLocation` and never answers zeros.
+- **AC-3** (full online list): `OnlineStockService.list({ afterVariantId, limit })` pages every variant with a balance or an active reservation at the online location by variant id, up to 1,000 a page, with the fields of AC-2; a variant absent from every page has `pushable` 0.
+- **AC-4** (changes since a run): `OnlineStockService.changedSince({ since, after, limit })` returns each variant whose balance or reservation (held or unfilled) at the online location changed after `since`, with its current AC-2 numbers, its `changedAt`, the `onlineLocationId`, and a `watermark` (the database time minus 5 minutes). A caller that pages through all rows with `after` and then stores the first page's `watermark` as its next `since` sees every change at least once, including a change whose transaction committed late; seeing a variant twice is allowed. When `onlineLocationId` differs from the one the caller stored, the caller resyncs with AC-3.
+- **AC-5** (hold stock for document lines, in the caller's transaction): `LedgerService.transaction(work)` opens a stock transaction (the ledger's own: READ COMMITTED, the 5 second lock cap per wait, one deadlock retry that reruns `work`) in which the caller writes its own rows and calls `reserveLines(tx, { sourceType, sourceId, shortage, lines })` for 1 to 200 lines, each with its `sourceLineId`, SKU, location, and requested quantity. With `shortage: 'reserve_available'` each line holds as much as is free (lines on the same SKU, location, and lot share it in input order, after older waiting demand), and the rest of its request is stored on its reservation as `unfilled_quantity`; the call never fails for a shortage. With `shortage: 'refuse'` every line is fully held or the call raises `InsufficientStock` listing each short line's index, available, and requested quantity, and writes nothing. Each line answers `reservationId`, `requested`, `held`, `unfilled`, and `short` (`unfilled > 0`). A line that already holds an active reservation on the same SKU, location, and lot is raised toward `requested` (never lowered; any growth that cannot be held becomes unfilled); an active reservation on another SKU or location for the same line raises `DuplicateReservation`. Every reservation function refuses a transaction not opened by `LedgerService.transaction`.
+- **AC-6** (release and read): `releaseLines(tx, { sourceType, sourceLineIds })` and `releaseSource(tx, { sourceType, sourceId })` release the active reservations of those lines or of the whole document, held and unfilled alike, and return them (none gives an empty list); `reservationsFor({ sourceType, sourceId })` reads each line's reservation (`quantity`, `openQuantity`, `unfilledQuantity`, `status`). A shipment that names a reservation fulfils its open quantity first, then its unfilled quantity (AC-22).
+- **AC-7** (the order thread holds together): in one stock transaction write a fixture order row and reserve two lines, one short; a receipt fills the short line before anything counts as pushable (AC-21); ship one line through a carrier fact shipment (AC-22) and release the other with `releaseSource`: on hand, reserved, unfilled demand, and `pushable` are right after each step, `changedSince` reports the variant after each step, a forced deadlock reruns the whole transaction once with one order row and one set of reservations as the result, and a reconciliation run records no discrepancy.
+- **AC-8** (channels never write stock, review m2): no file under `apps/api/src/connectors/` or `apps/api/src/channels/` imports `LedgerService`, `ReconciliationService`, or anything under `apps/api/src/inventory/ledger/`; a static test fails such an import. Inbound channel stock figures can therefore only ever be compared with the ledger, never posted.
+- **AC-9** (manual adjustment): a person holding `stock.correct` posts a stock adjustment (owner decision Q-11.1, recommended) through `POST /api/stock-adjustments` with an `Idempotency-Key` UUID: one active location whose policy says the brand owns its stock and settles it with nobody (`stockOwnedByBrand` true and `settlementOwnerType` null, read from `LocationPolicyService`, never an owner type comparison; else 422 `INVALID_LOCATION`), one reason code for the whole adjustment, 1 to 200 lines (each a different SKU, a non zero whole quantity up to 1,000,000 on the side the reason allows), and a written reason of 1 to 500 characters. One ledger posting dated now carries every line with the reason code: source type `write_off` for `damaged`, `adjustment` for every other reason. The audit entry `stock.adjusted_manually` (reason required) is written in the same transaction. The same key and body answers 200 with the same result to the person who posted it and moves stock once; any other body or person answers 409 `IDEMPOTENCY_CONFLICT`. A removal may take on hand below what orders hold (AC-23) but never below zero unless the location allows negative stock (409 `INSUFFICIENT_STOCK` naming the SKUs, nothing posted).
+- **AC-10** (cost of a found piece): an adjustment line that adds stock takes the balance's average unit cost when that balance exists and its average is above 0, else the style cost from `CostService.costFor(variant, d)` where `d` is the operating day the movement will carry (`ssd_operating_day(now())`, so the cutoff hour counts); with neither, the whole adjustment answers 422 `INVALID_LINES` with `COST_NOT_SET` on that line and posts nothing (owner decision Q-11.5, recommended). A line that removes stock is costed by the ledger's outbound rule. Nobody types a cost.
+- **AC-11** (adjustments are visible): a SKU's movement history shows an adjustment row as "Adjustment" (or "Written off" for `damaged`) with its reason in the reader's language and who posted it; the audit trail shows the entry with the written reason; unit cost and value are shown only with `cost.view` (spec 0008 AC-6), replays included. Every written reason field in this feature carries the helper text "Describe the stock, not a person: no customer names or phone numbers" in both languages.
+- **AC-12** (locations with an owner type): a person holding `catalog.manage` creates a location choosing an owner type and, when that owner type needs one, a party holding the matching role, both from lists the api returns (`GET /api/locations/owner-types`, `GET /api/locations/party-options`); the party picker also offers "New showroom partner" (AC-24) to a person who may create one. The web never names an owner type value (the owner type boundary test of spec 0002 still passes). The edit dialog shows owner type and party read only. The Locations list shows each location's owner type, its party, and an "Online stock" badge on the online location.
+- **AC-13** (location creation is audited): creating a location writes `location.created` (reason optional) with the code as label and `after` holding code, kind, owner type, and party id, in the creating transaction.
+- **AC-14** (mismatches a manager can act on): a person holding `stock.correct` lists the reconciliation's discrepancies (open by default, resolved on request, newest first, 50 a page) with SKU, location, kind, "History says" and "Balance says" (never "expected" and "actual"), when found, and the line "This is a system check, not a stock count; use Adjust stock for pieces missing on the shelf" (owner decision Q-11.3, recommended). A `balance` one can only be rebuilt (reason optional, audit `stock_discrepancy.rebuilt`); a `reservation` or `serial` one can only be dismissed with a written reason (audit `stock_discrepancy.dismissed`), and a reservation one lists the documents holding reservations at that SKU and location. Rebuilding or dismissing a closed one answers 409 `DISCREPANCY_CLOSED`, the wrong action for its kind 422 `NOT_REBUILDABLE` or `NOT_DISMISSABLE`, a lock wait past the cap 503 `BUSY`. When the SKU or location is archived the rebuild dialog warns that stock may reappear there (spec 0006 accepted edge). Every balance drift the reconciliation records is also logged at error level (`stock.balance_drift`, ids only) so the vendor's monitoring sees a software fault. Value fields are shown only with `cost.view`.
+- **AC-15** (fast at 50,000 SKUs): with the spec 0002 scale load plus one online location holding 50,000 balances, 5,000 active reservations, and 500 lines of waiting demand, on the dev PostgreSQL at the 95th percentile: `forVariants` for 250 variants under 50 ms; a `list` page of 1,000 under 150 ms; `changedSince` over a 10 minute window with 1,000 changed variants, one page of 1,000, under 150 ms; the Stock page's first page filtered by one location under 150 ms; `reserveLines` of 10 lines under 100 ms; a single line inbound posting that fills waiting demand under 50 ms. Each read's plan is asserted to use the index this spec names. The budgets are **Assumed** and reset from the first measured run.
+- **AC-16** (screens): the location dialogs and the online gate, the partner create, the send and return form and its detail page, the adjustment form and its request mode, the receipt cost change, and the discrepancies page work in English and Arabic (right to left) with no hard coded text, codes in `LtrText`, quantities and dates through `useFormat()`, exactly one `<h1>` per page, loading, empty, and error states, and full keyboard use (WCAG 2.2 AA, `packages/ui/DESIGN.md`). A page opened without its permission shows the no access state.
+- **AC-17** (routes and permissions): every new route declares `@Audience('staff')` and the one permission in the API surface table below, and has a `FIXTURES` entry in `apps/api/test/access-sweep.e2e-spec.ts`; the sweep passes. No new permission or hat is added.
+- **AC-18** (inventory reads no catalog table): the ledger and the reconciliation lock SKU rows only through `CatalogService.lockForShare` and `lockForUpdate` (taken here from spec 0012's follow up), so `KNOWN_BREACHES` in `apps/api/src/module-boundary.spec.ts` holds no `product_variants` entry for inventory, and the archive, rebuild, and code change races of spec 0006 behave exactly as before.
+- **AC-19** (the online gate, owner decision Q-11.7, recommended): `GET /api/locations/:id/online-gate` reports whether a location may become the online location and what that will do: the location's stock must be confirmed counted (`stock_verified_at` set, by the opening import's verify step of feature 15 or by a manager's "Confirm this location's stock is counted"), and every check other modules registered with `OnlineStockGate` must pass (spec 0013 registers "open orders are imported and held", and the gate screen links that check, when it fails, to its action `POST /api/orders/hold-open-orders`; spec 0015 registers its Shopify checks, see the contract). It shows the counts to confirm: variants with stock there, total on hand, variants that will be pushed as 0, and each registered check's own count. `POST /api/locations/:id/make-online` with the variant count shown and a written reason moves the flag in one transaction (the old online location off, this one on), refusing a failed check with 409 `ONLINE_GATE_FAILED` and a count that no longer matches with 409 `ONLINE_GATE_STALE`; active reservations left at the old location stay there and the dialog shows their count before confirming. `POST /api/locations/online/stop` with a written reason turns online stock off. Both write audit entries (`location.online_moved`, `location.online_stopped`, reason required). The opening figure of a location is physical on hand, never a channel's "available" (named in the contract for feature 15).
+- **AC-20** (Shopify not being updated is visible): while no location feeds online stock, the Stock page and the Locations page show "No location feeds online stock: Shopify is not being updated" with a link to the gate for a person holding `catalog.manage`; `GET /api/stock/online-status` answers the online location or null for every staff page and for the dashboard of feature 24.
+- **AC-21** (waiting demand is filled first, owner decision by the lead, shared with spec 0013): every ledger write that frees stock at a SKU and location (an inbound posting of any source type, a reversal of an outbound, a release) fills that key's waiting demand in the same transaction, oldest reservation first (`created_at`, then `id`), moving `min(unfilled, free)` from `unfilled_quantity` into `quantity` and `open_quantity`, where `free = onHand − reserved` after the write; only what is left after filling counts toward `pushable`. Each fill publishes `ReservationFilled` with the reservation, its document and line, and the quantity filled.
+- **AC-22** (a carrier shipment is never refused, shared with spec 0013): `LedgerService.postCarrierShipment` books an `order_shipment` that a carrier fact reported (spec 0013 `recordCarrierDelivery`, `recordShipmentFact`) with idempotency key `order_shipment:<orderId>`. It is never refused for stock or reservations: each line fulfils its reservation's open quantity, then its unfilled quantity, and the rest takes free stock, then stock other reservations hold, then goes below zero, even in a location that does not allow negative stock. After it, if the active open reserved at that SKU and location exceeds `max(onHand, 0)`, the newest other reservations are shortened by the excess (their held quantity moves to unfilled) and each publishes `ReservationShortened`; if on hand ends below zero it publishes `StockOverdrawn` ("shipped with no stock on the books: count this SKU"), which feature 17 turns into a task for the warehouse hat. Its result carries each line's `sourceLineId`, `unitCost`, and `totalCost`, and a replay returns the stored result.
+- **AC-23** (a damaged or missing reserved piece, owner decision Q-11.8, recommended): an adjustment removal with reason `damaged` or `missing` goes through even when orders hold the piece; after it the newest reservations at that SKU and location are shortened by the excess of reserved over on hand, exactly as in AC-22, each publishing `ReservationShortened` with the cause, which spec 0013 turns into a short line and an attention for support. No other reason may take on hand below reserved.
+- **AC-24** (minimal partner create, owner decision Q-11.4, option (b)): a person holding `partners.manage` creates a showroom partner with a code (the location code pattern) and a name in one dialog, which writes a `parties` row with only the consignment partner role (through `PartnerAccounts.createConsignmentPartner`, the partners module's own service) and the audit entry `partner.created`; a code in use answers 409 `PARTNER_CODE_TAKEN`. Contacts, terms, the partner portal, and settlement stay with features 41 to 43.
+- **AC-25** (send to and return from a partner, owner decision Q-11.6, recommended): a person holding `stock.receive` posts "Send to partner" (from a location the brand owns and settles with nobody, to a location whose policy settles through a partner and keeps the stock the brand's) or "Return from partner" (the reverse) through `POST /api/stock-transfers` with an `Idempotency-Key` UUID, an optional reference (the consignment note, up to 64 characters), and 1 to 200 lines of different SKUs with whole quantities 1 to 1,000,000. One transaction writes a numbered transfer (`TR-YYYY-NNNNNN`) and one ledger posting of source type `transfer_out` with, per line, the units out of the source at the ledger's outbound cost and the same units into the destination at the source balance's average unit cost. A removal may not take the source below what orders hold there or below zero (409 `INSUFFICIENT_STOCK` naming the SKUs); the replay and conflict rules of AC-9 apply. The SKU history labels both rows "Sent to partner TR-…" or "Returned from partner TR-…", linked to the transfer page. No transit leg, no scan, no counts. This pulls a thin slice of features 38 and 41 forward into slice 1a.
+- **AC-26** (receipt cost, review M6): a stock receipt line's unit cost defaults to `CostService.costFor(variant, the receipt's operating day)` when the line sends none; a line that sends a cost of 0, or any cost other than that default, needs `cost.view` (422 `INVALID_LINES` with `COST_NEEDS_PERMISSION` on that line otherwise); a line with no cost and no style cost answers `COST_NOT_SET`. The receipt form hides the cost field from a person without `cost.view`.
+- **AC-27** (ask for an adjustment, review M8): a person holding `stock.receive` sends the same form as a request (`POST /api/stock-adjustment-requests`: location, reason code, lines, written reason), which posts nothing, writes the audit entry `stock.adjustment_requested`, and publishes `StockAdjustmentRequested` with the request for feature 17 to open a task for the manager hat; until feature 17 is built the audit trail is where the manager finds it.
+- **AC-28** (a returned parcel is not a found piece, review M7): a `found` adjustment line on a variant that has an order line returned to origin and not yet restocked at that location (asked of every provider registered with `ReturnsAwaitingRestock`; spec 0013 or feature 21 registers one) is refused with `RETURN_AWAITING_RESTOCK` on that line, naming the order with its store, and the form points to the restock by scan of feature 21. The `found` label reads "Found on the shelf, not from a parcel".
+
+## Decision
+
+**Chosen option**: Option 1: thin additions on the built ledger. A read service for online stock with a time window change feed, reservations that keep their waiting demand and are filled before anything is offered, carrier shipments that are always booked, one gated online location held by the database, a minimal showroom move with its partner record, and manager correction tools, with one new table (`stock_transfers`).
+
+The ledger's costing and locking rules do not change; two posting rules are added on purpose and only for named callers: a carrier fact shipment and a `damaged` or `missing` removal may take on hand below what orders hold (AC-22, AC-23), and every write that frees stock fills waiting demand first (AC-21). New behaviour lives in `apps/api/src/inventory/` and two small additions to `catalog` and `partners`.
+
+**Owner decisions** (made here as recommended, each changeable; see `## Questions for the owner`): Q-11.1 manual adjustments ship in this feature, manager only, with a request path for the warehouse; Q-11.2 exactly one online location per brand; Q-11.3 the discrepancy screen ships in this feature; Q-11.4 option (b), a minimal partner create now; Q-11.5 a found piece is costed at the balance average, then the style cost, else refused; Q-11.6 a minimal send and return posting now; Q-11.7 a gate before a location first goes online; Q-11.8 a damaged or missing reserved piece goes through and shortens the newest reservation. The carrier shipment and waiting demand rules (AC-21, AC-22) were decided by the lead for both this spec and spec 0013.
+
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `tanstack-query` (`.claude/skills/tanstack-query/`) · `react-hook-form-zod` (`.claude/skills/react-hook-form-zod/`) · `shadcn` (`.claude/skills/shadcn/`) · `playwright-best-practices` (`.claude/skills/playwright-best-practices/`)
+
+## Rationale
+
+Reasoning and options: see [rationale.md](rationale.md).
+
+## Feature design
+
+### What is already built, and what this feature adds
+
+| Scope "done when" | Built today | Added here |
+|---|---|---|
+| Every stock change is a new movement with quantity, unit cost, location, and source document | `LedgerService.post` and `reverse` (spec 0002 AC-3), receipts (spec 0006) | Adjustments, write offs, showroom moves, carrier shipments post through the same service (AC-9, AC-22, AC-25); channels can never post (AC-8) |
+| A correction is a new movement, never an edit | append only tables, revokes, triggers (spec 0002 AC-2); receipt void (spec 0006 AC-8) | Manual adjustment with a request path (AC-9, AC-10, AC-27, AC-28); discrepancy rebuild and dismiss (AC-14); receipts can no longer bypass the cost rule (AC-26) |
+| Partner stock is never offered online | owner type policy `can_sell_online` false for partners, `NotSellableOnline` (spec 0002 AC-29) | One gated online location held by the database (AC-1, AC-19, AC-20); the online read counts only that location and subtracts waiting demand (AC-2 to AC-4, AC-21); pieces sent to a partner leave the online location on the books (AC-24, AC-25); the Shopify side check is a requirement on spec 0015 |
+| On hand per variant and location reads fast at 50,000 SKUs | `getAvailable` for one SKU under 50 ms (spec 0002 AC-36) | Batch online read, change feed, Stock page by location, `reserveLines`, filling budgets (AC-15) |
+| Locations carry an owner type and a sellable online flag | columns, trigger, policy table, api create with owner type and party (spec 0002 A13) | The screens for owner type and party, a minimal partner create, `location.created` audit (AC-12, AC-13, AC-24) |
+| Bins stay flat | `bins` table, unused | Nothing: no bin screen, no posting names a bin |
+
+Transfers with transit and scanning stay with features 38 and 55, counts with feature 54, partner contacts, terms, and consignment notes as documents with feature 41, restocks of returned pieces with feature 21 (they post through the existing `post`, and fill waiting demand by AC-21).
+
+### Where it lives
+
+- `apps/api/src/inventory/online-stock/`: `OnlineStockService` (exported), `OnlineStockError` (`NoOnlineLocation`), `OnlineStockGate` (exported registry: `register(check)` from other modules at `onModuleInit`, `evaluate(locationId)`), and `online-status.controller.ts` (`GET /api/stock/online-status`).
+- `apps/api/src/inventory/ledger/`: `transaction` (exported runner over `ledgerTransaction`, handing out a branded `StockTransaction`), `reserveLines`, `releaseLines`, `releaseSource`, `reservationsFor`, `postCarrierShipment`, the demand filling step and the reservation shortening step inside `apply` and the release functions, `updated_at` on every reservation write; `dismiss` in `reconciliation.service.ts` and the `stock.balance_drift` log line in its `insertFound`.
+- `apps/api/src/inventory/adjustments/`: `AdjustmentsController`, `AdjustmentsService` (adjustments and requests), `ReturnsAwaitingRestock` (exported registry).
+- `apps/api/src/inventory/transfers/`: `TransfersController`, `TransfersService` (send and return, numbered, `post` with `within`).
+- `apps/api/src/inventory/discrepancies/`: `DiscrepanciesController`, `DiscrepanciesService`.
+- `apps/api/src/inventory/receipts/`: the cost default and the `cost.view` rule (AC-26).
+- `apps/api/src/inventory/locations/`: the gate actions, the confirm stock action, the two list routes, `LocationPolicyService.describeOwnerTypes()` and `LocationPolicyService.stockRole(locationId)` (`brand_settles_alone`, `partner_consigned`, or `other`, derived from the policy attributes inside the policy service, never in a caller).
+- `apps/api/src/inventory/inventory.events.ts`: `ReservationShortened`, `ReservationFilled`, `StockOverdrawn`, `StockAdjustmentRequested`, published with `DomainEvents.publish(tx, event)`; payloads hold ids, codes, and quantities only.
+- `apps/api/src/partners/`: `PartnerAccounts.listHolding(role)`, `namesByIds(ids)`, `createConsignmentPartner(tx, { code, name }, actor)`, and `PartnersController` (`POST /api/partners`), so inventory never reads or writes `parties`.
+- `apps/api/src/catalog/`: `CatalogService.lockForShare` and `lockForUpdate` on variant rows (AC-18).
+- `packages/contracts/src/`: `online-stock.ts`, `stock-adjustments.ts` (with `StockAdjustmentReason`), `stock-transfers.ts`, `stock-discrepancies.ts`, `partners.ts`, the location list and gate shapes in `locations.ts`, the reservation and carrier shipment inputs in `inventory.ts`, the optional receipt `unitCost` in `stock-receipts.ts`; audit codes and record types in `audit/`.
+- `apps/web/src/inventory/`: the location dialogs, the online gate dialog and banner, `transfer-form-page.tsx` (`/stock-transfers/new`), `transfer-detail-page.tsx` (`/stock-transfers/[id]`), `adjustment-form-page.tsx` (`/stock-adjustments/new`, with a request mode), `discrepancies-page.tsx` (`/stock-discrepancies`); `apps/web/src/partners/new-partner-dialog.tsx`.
+
+### Data model
+
+Changes to tables the inventory module owns (`packages/db/src/schema/locations.ts`, `inventory.ts`, new `stock-transfers.ts`):
+
+| Table | Change | Why |
+|---|---|---|
+| `locations` | check `locations_online_needs_warehouse`: `NOT sellable_online OR (kind = 'warehouse' AND is_sellable)` | AC-1 (scope: "only the warehouse sells online") |
+| `locations` | partial unique index `locations_one_online` on (`tenant_id`) `WHERE sellable_online AND archived_at IS NULL` | AC-1: at most one online location, races included (23505 mapped to 409 `ONLINE_GATE_STALE`) |
+| `locations` | `stock_verified_at timestamptz null`, `stock_verified_by uuid null` → `users` restrict, index (`stock_verified_by`) | AC-19: the gate's "stock counted" fact |
+| `reservations` | `unfilled_quantity integer not null default 0`, check `unfilled_quantity >= 0`; `quantity` check relaxed to `quantity >= 0` with check `quantity + unfilled_quantity > 0`; `reservations_open_while_active` becomes `(status = 'active') = (open_quantity > 0 OR unfilled_quantity > 0)` | AC-5, AC-21, AC-22, AC-23: a line's waiting demand lives on its reservation |
+| `reservations` | `updated_at timestamptz not null default now()`; every reservation write sets it to `now()` | AC-4: a reservation change moves `pushable` |
+| `reservations` | index `reservations_location_updated_idx` (`location_id`, `updated_at`); index `reservations_source_idx` (`source_type`, `source_id`); partial index `reservations_waiting_idx` (`variant_id`, `location_id`, `created_at`, `id`) `WHERE status = 'active' AND unfilled_quantity > 0`; partial index `reservations_newest_idx` (`variant_id`, `location_id`, `created_at desc nulls first`, `id desc nulls first`) `WHERE status = 'active' AND open_quantity > 0` | AC-4, AC-6, AC-21 (oldest first), AC-22 and AC-23 (newest first), AC-15 |
+| `stock_levels` | index `stock_levels_location_updated_idx` (`location_id`, `updated_at`) | AC-4, AC-15 |
+| ★ `stock_transfers` (new, append only) | `id uuid pk` (the client's `Idempotency-Key`), `tenant_id`, `number text not null`, `kind` enum `stock_transfer_kind` (`send_to_partner`, `return_from_partner`), `from_location_id uuid not null` → `locations`, `to_location_id uuid not null` → `locations`, `reference text null` (≤ 64), `request_hash text not null`, `movement_group_id uuid not null` → `movement_groups`, `effective_at timestamptz not null`, `posted_by uuid not null` → `users`, `recorded_at timestamptz not null` | unique (`tenant_id`, `number`); unique (`movement_group_id`); check `from_location_id <> to_location_id`; index (`from_location_id`), (`to_location_id`), (`posted_by`), (`recorded_at desc`, `id desc`); listed in `APPEND_ONLY_TABLES` with the `ssd_reject_change` triggers, the app role revoke, and the `ssd_stamp_recorded_at` trigger, like the other append only tables |
+| `settings` seed | `document_prefixes` gains `"stock_transfer": "TR"` (merged, other keys kept) | AC-25 numbering |
+
+`stock_transfers` goes into `TABLE_OWNERSHIP` under inventory. Lines are not stored apart: each line's two movements carry the same `source_line_id` (UUID v5 of `<transfer id>:<position>`, the receipt rule of spec 0006), and the transfer page reads them from the group. The written reason of a dismissal or an online move lives in its audit entry, never on a row.
+
+**Migration.** Before the baseline freeze (ADR 0003: the day the pilot brand's first import runs) the columns, indexes, checks, and the new table are a regeneration of `0001_baseline_tables.sql`, and the triggers, revokes, and the `TR` prefix are a hand edit of `0002_baseline_rules.sql`; developers recreate their database. After the freeze it is one generated forward migration and one `--custom` migration in the same order; the relaxed reservation checks are dropped and recreated (no data moves: every existing row has `unfilled_quantity` 0 and `quantity > 0`). Specs 0012 to 0015 regenerate the same file in this wave, so whichever lands second regenerates on top of the first (Risks).
+
+### Domain events and registries
+
+| Name | Kind | Published or called when | Payload | Who handles it |
+|---|---|---|---|---|
+| `ReservationShortened` | event | AC-22 or AC-23 moves held quantity of a reservation to unfilled | `reservationId`, `sourceType`, `sourceId`, `sourceLineId`, `variantId`, `locationId`, `quantity`, `cause` (`carrier_shipment`, `damaged`, `missing`), `groupId` | spec 0013: a short line and an attention for support |
+| `ReservationFilled` | event | AC-21 fills waiting demand | `reservationId`, `sourceType`, `sourceId`, `sourceLineId`, `quantity`, `stillUnfilled` | spec 0013: clears or lowers "short" |
+| `StockOverdrawn` | event | AC-22 leaves on hand below zero | `variantId`, `locationId`, `onHandAfter`, `groupId` | feature 17: a task "count this SKU" for the warehouse hat |
+| `StockAdjustmentRequested` | event | AC-27 | `requestId`, `locationId`, `reasonCode`, `lines: [{ variantId, quantity }]`, `requestedBy` (the written reason stays in the audit entry) | feature 17: a task for the manager hat |
+| `OnlineStockGate` | registry | AC-19 evaluates a location | a check returns `{ key, label, passed, count, action? }`, where `action` is `{ method, path, label }` of the route that fixes a failed check; keys are owned by the registering module | spec 0013 (`orders.open_orders_held`, action `POST /api/orders/hold-open-orders`), spec 0015 (its Shopify checks) |
+| `ReturnsAwaitingRestock` | registry | AC-28 checks a `found` line | `pendingFor({ variantIds, locationId })` returns `[{ variantId, orderId, label }]` (the label shows the order number with its store) | spec 0013 or feature 21 |
+
+Events are published with `DomainEvents.publish(tx, event)` inside the posting transaction (spec 0002 A6, as designed by spec 0013), so a handler's projection commits or rolls back with the stock change. A registry is filled by the other module at `onModuleInit`, so inventory imports neither orders nor connectors; with nothing registered the gate runs only its own check and the found check passes.
+
+### Contract for neighbours (services other modules call)
+
+`post` and `reverse` run their own `ledgerTransaction` (READ COMMITTED, 5 second lock cap per wait, one deadlock retry, spec 0002) with the spec 0006 `within` callback; so does `postCarrierShipment`. The reservation functions instead run inside a **stock transaction** the caller opens with `LedgerService.transaction(work)`: the same runner, so the same lock cap and the same single deadlock retry, which reruns the caller's whole `work`. One unit of work may write several modules' rows, each through that module's own service (spec 0013 wraps the runner in `OrderTransactions.run`, and features 13, 18, 19, and 21 write their rows inside it), never by naming another module's table; the whole `work` must be safe to rerun, so it keeps no state across the rerun. It calls the reservation functions with the `StockTransaction` it was handed (a branded type; a plain Drizzle transaction does not type check, and the functions also check at run time that the runner opened it, raising `InvalidInput` otherwise). `StockTransaction` is a subtype of the api's `Transaction` (`apps/api/src/database/sql.ts`), so it is accepted wherever a `Transaction` is: `AuditService.record`, `DomainEvents.publish`, `CustomersService.findOrCreate`, `NumberingService.next`, and pg-boss `send` with the `db` option. Calling `LedgerService.transaction` inside a running stock transaction raises `LedgerError('NestedStockTransaction')` and rolls the outer one back; nesting would open a second connection and break both the lock order and the rerun. Lock order inside a stock transaction: the caller's own rows, then the order row (spec 0013), then inventory (the ledger's master `FOR SHARE`, pair locks, reservation rows); a deadlock with a posting that takes them the other way is broken by the single retry. The `ReservationFilled` and `ReservationShortened` handlers of spec 0013 run inside the ledger's transaction (a restock, a carrier shipment, an adjustment) and write `order_lines.short_quantity` without locking the order row first, so they take an order line lock after inventory's locks; a deadlock with an order edit is again broken only by that single retry, and a second deadlock surfaces as `LockTimeout` (503 `BUSY`) for the caller to retry.
+
+**What spec 0013 asks for, and where this spec answers it** (spec 0013, "Contracts with the parallel specs"; an order holds stock from creation, its Q-16.2):
+
+1. *Reserve an order line inside the caller's transaction, answering "short" instead of throwing.* `reserveLines(tx, …)` with `shortage: 'reserve_available'` (AC-5); the shortfall is stored as unfilled demand (AC-21). The order's transaction is opened with `LedgerService.transaction`. The old one line `reserve` stays for existing callers and is not part of this contract.
+2. *Release a line's reservation.* `releaseLines(tx, …)`, and `releaseSource` for a whole order (AC-6).
+3. *Read the reservations for an order.* `reservationsFor({ sourceType, sourceId })` (AC-6).
+4. *Post `order_shipment` with key `order_shipment:<orderId>` and return each line's unit cost.* `postCarrierShipment` (AC-22), never refused for stock; the result's movements carry `sourceLineId`, `unitCost`, and `totalCost`. A line booked as more than one movement has unit cost `round(Σ |totalCost| / Σ |quantity|, 4)`, the ledger's own outbound display rule.
+
+| Caller | Calls | For |
+|---|---|---|
+| Orders (spec 0013) | `transaction`, `reserveLines` with `reserve_available`, `releaseLines`, `releaseSource`, `reservationsFor`, `postCarrierShipment`; handles `ReservationShortened`, `ReservationFilled`; registers `orders.open_orders_held` with `OnlineStockGate` and a provider with `ReturnsAwaitingRestock` (or feature 21 does) | Holding stock from creation, size swaps on an edit (`releaseLines` then `reserveLines` in one stock transaction), cancellation, carrier shipments, short lines and their attention |
+| Shopify connector (spec 0015) | `OnlineStockService.onlineLocation`, `forVariants`, `list`, `changedSince`, and `forCandidate` (for its `shopify.first_push_preview` gate check, before the location is online); registers its checks with `OnlineStockGate` | Pushes `pushable`, stores `watermark` per connection, resyncs with `list` when `onlineLocationId` changes, pushes nothing on `NoOnlineLocation`, never posts stock (AC-8), records inbound inventory levels as drift only (m2). **Requirement (review M2)**: it maps the online location to exactly one Shopify location per store, and its connection setup check (registered with `OnlineStockGate` and shown on the connection) lists every other Shopify location of the store that holds stock or fulfils online orders as a blocking item ("turn off online fulfilment there, or set its stock to 0"); "partner stock is never offered online" holds on Shopify's side only with this check. The gate also asks it for the number of Shopify variants that will change or go to 0 |
+| Onboarding imports (feature 15) | `post` with `opening_balance`, at most 1,000 lines a posting, each with `unitCost` from `CostService.costFor`; `LocationsService.recordStockVerified(tx, locationId, by)` from its verify step | The snapshot per location, partner locations included now that they can exist. **Requirement (review M1)**: the opening quantity is physical on hand (a shelf count, or a channel's "on hand"), never a channel's "available", because the open orders are reserved again on import |
+| Delivery failures (feature 21), exchanges (feature 34) | `post` with `returned_to_origin_restock` or `exchange_return_restock` at the line's frozen unit cost | Restocks, which fill waiting demand (AC-21) |
+| Barcode scanning (feature 20) | the same posting calls as the flow it scans for | Scanning finds a variant (catalog) and calls the restock path |
+| Partners (feature 41) | `PartnerAccounts` (its own module), location create with owner type and party, `LocationPolicyService.policyFor`, the transfer posting of AC-25 | Replaces the minimal partner create with full partner accounts and the send posting with its consignment note document |
+| Tasks (feature 17) | handles `StockOverdrawn`, `StockAdjustmentRequested` | Tasks for the warehouse and the manager |
+
+Functions added to `LedgerService` and `OnlineStockService` (both exported):
+
+| Function | Inputs | Outputs | Errors |
+|---|---|---|---|
+| `ledger.transaction(work)` | `work: (tx: StockTransaction) => Promise<T>` | `T` | `LockTimeout`, `NestedStockTransaction` (called inside a running stock transaction), and whatever `work` throws (the transaction rolls back) |
+| `ledger.reserveLines(tx, input)` | `sourceType: string` (1 to 50), `sourceId: uuid`, `shortage: 'reserve_available' \| 'refuse'`, `lines[]` (1 to 200): `sourceLineId: uuid` (distinct), `variantId`, `locationId`, `quantity: int ≥ 1` (the requested total), `lotId?` | `lines: [{ sourceLineId, reservationId, requested, held, unfilled, short }]` in input order | `InvalidInput`, `UnknownReference`, `Archived`, `NotStockable`, `TrackingMismatch`, `InsufficientStock` (only with `refuse`), `DuplicateReservation`, `LockTimeout` |
+| `ledger.releaseLines(tx, input)` | `sourceType`, `sourceLineIds[]` (1 to 200) | released `Reservation[]` (may be empty) | `InvalidInput`, `LockTimeout` |
+| `ledger.releaseSource(tx, input)` | `sourceType`, `sourceId` | released `Reservation[]` (may be empty) | `InvalidInput`, `LockTimeout` |
+| `ledger.reservationsFor(input)` | `sourceType`, `sourceId` | `[{ sourceLineId, reservationId, variantId, locationId, quantity, openQuantity, unfilledQuantity, status }]` | `InvalidInput` |
+| `ledger.postCarrierShipment(input)` | `orderId: uuid`, `effectiveAt?`, `postedBy?`, `lines[]` (1 to 200): `sourceLineId`, `variantId`, `locationId`, `quantity: int ≥ 1`, `reservationId?` | `PostingOutcome` (spec 0006) | `InvalidInput`, `UnknownReference`, `IdempotencyConflict`, `LockTimeout`; never `InsufficientStock`, `Archived`, `ReservationMismatch`, or `PeriodLocked` |
+| `onlineStock.onlineLocation()` | none | `{ id, code, name }` or `null` | none |
+| `onlineStock.forVariants(variantIds)` | 1 to 1,000 uuids | `OnlineStockRow[]`: `variantId`, `onHand`, `reserved`, `unfilledDemand`, `available`, `pushable` | `NoOnlineLocation`, `InvalidInput` |
+| `onlineStock.forCandidate(locationId, variantIds?)` | an active location (not necessarily online); optional 1 to 1,000 uuids, else every variant with a balance or an active reservation there, keyset paged like `list` (`afterVariantId?`, `limit` 1 to 1,000) | `{ locationId, rows: OnlineStockRow[], nextAfterVariantId }` with `pushable = max(onHand − reserved − unfilledDemand, 0)` at that location, the same rule as AC-2 | `UnknownReference` (no such active location), `InvalidInput`; never `NoOnlineLocation` |
+| `onlineStock.list(query)` | `afterVariantId?`, `limit` (1 to 1,000, default 500) | `{ onlineLocationId, rows, nextAfterVariantId }` | `NoOnlineLocation` |
+| `onlineStock.changedSince(query)` | `since: timestamptz string \| null`, `after?: { changedAt, variantId }`, `limit` (1 to 1,000, default 500) | `{ onlineLocationId, watermark, rows: (OnlineStockRow & { changedAt })[], nextAfter }` | `NoOnlineLocation`, `InvalidInput` |
+
+### API surface (HTTP)
+
+All under `/api`, `@Audience('staff')`, behind the session, audience, and permission guards. Bodies and queries are Zod schemas in `packages/contracts`; errors go through `inventory/ledger-http.ts` (and the partners module's own mapping).
+
+| Endpoint | Method | Key inputs | Key outputs | Permission | Key errors |
+|---|---|---|---|---|---|
+| `/locations/owner-types` | GET | none | `[{ ownerType, needsParty, canSellOnline }]` | `catalog.manage` | 403 |
+| `/locations/party-options` | GET | `ownerType` (req, a value the list above returned) | `[{ id, code, name }]` | `catalog.manage` | 400 `INVALID_QUERY`, 403 |
+| `/locations` | POST (amended) | `code`, `name`, `kind`, `ownerType?`, `partyId?` (no `sellableOnline`) | `LocationDetail` plus `partyId`, `partyName` | `catalog.manage` | as today |
+| `/locations/:id` | PATCH (amended) | as today without `sellableOnline` | `LocationDetail` | `catalog.manage` | as today |
+| `/locations` | GET (amended) | as today | items add `partyId`, `partyName`, `online`, `stockVerifiedAt` | `stock.view` | as today |
+| `/locations/:id/confirm-stock` | POST | `reason?` (≤ 500) | `LocationDetail` | `catalog.manage` | 404; 409 `ALREADY_CONFIRMED` |
+| `/locations/:id/online-gate` | GET | none | `{ canGoOnline, checks: [{ key, label, passed, count, action? }], variantsWithStock, totalOnHand, variantsPushedZero, reservationsAtOldLocation, currentOnlineLocation }` | `catalog.manage` | 404 |
+| `/locations/:id/make-online` | POST | `confirmedVariantCount` (req), `reason` (req, 1 to 500) | `LocationDetail` | `catalog.manage` | 404; 409 `ONLINE_GATE_FAILED` (with the failed keys), `ONLINE_GATE_STALE`; 422 `ONLINE_NEEDS_WAREHOUSE`, `NOT_SELLABLE_ONLINE`, `REASON_REQUIRED` |
+| `/locations/online/stop` | POST | `reason` (req) | `{ onlineLocation: null }` | `catalog.manage` | 409 `NO_ONLINE_LOCATION`; 422 `REASON_REQUIRED` |
+| `/stock/online-status` | GET | none | `{ onlineLocation: { id, code, name } \| null }` | `stock.view` | none |
+| `/partners` | POST | `code` (location code pattern), `name` (1 to 200) | `{ id, code, name }` | `partners.manage` | 409 `PARTNER_CODE_TAKEN`; 400 `INVALID_INPUT` |
+| `/stock-transfers` | POST | header `Idempotency-Key: uuid`; `kind`, `fromLocationId`, `toLocationId`, `reference?`, `lines: [{ skuId, quantity }]` (1 to 200) | 201 (200 on replay) `StockTransferDetail`: `number`, `kind`, `from`, `to`, `reference`, `effectiveAt`, `postedBy`, `lines: [{ sku, quantity, unitCost?, totalCost? }]` | `stock.receive` | 400 `IDEMPOTENCY_KEY_REQUIRED`, `INVALID_INPUT`; 409 `IDEMPOTENCY_CONFLICT`, `INSUFFICIENT_STOCK` (with `skuIds`); 422 `INVALID_LINES` (`UNKNOWN_SKU`, `ARCHIVED`, `NOT_STOCKABLE`, `DUPLICATE_SKU`), `INVALID_LOCATION` (the direction does not fit the two locations' stock roles), `PERIOD_LOCKED`; 503 `BUSY` |
+| `/stock-transfers/:id` | GET | id | `StockTransferDetail` | `stock.view` | 404 |
+| `/stock-adjustments` | POST | header `Idempotency-Key: uuid`; `locationId`, `reasonCode`, `reason` (1 to 500), `lines: [{ skuId, quantity: int ≠ 0 }]` (1 to 200) | 201 (200 on replay) `StockAdjustmentDetail`: `groupId`, `location`, `reasonCode`, `effectiveAt`, `postedBy`, `lines: [{ sku, quantity, unitCost?, totalCost? }]` | `stock.correct` | 400 `IDEMPOTENCY_KEY_REQUIRED`, `INVALID_INPUT`; 409 `IDEMPOTENCY_CONFLICT`, `INSUFFICIENT_STOCK`; 422 `INVALID_LINES` (`UNKNOWN_SKU`, `ARCHIVED`, `NOT_STOCKABLE`, `DUPLICATE_SKU`, `COST_NOT_SET`, `REASON_SIGN_MISMATCH`, `RETURN_AWAITING_RESTOCK`), `INVALID_LOCATION`, `REASON_REQUIRED`, `PERIOD_LOCKED`; 503 `BUSY` |
+| `/stock-adjustment-requests` | POST | `locationId`, `reasonCode`, `reason` (1 to 500), `lines` (as above) | 201 `{ requestId }` | `stock.receive` | 422 `INVALID_LINES`, `INVALID_LOCATION`, `REASON_REQUIRED` |
+| `/stock-receipts` | POST (amended) | lines' `unitCost` optional | as today | `stock.receive` | as today, plus 422 `INVALID_LINES` codes `COST_NOT_SET`, `COST_NEEDS_PERMISSION` |
+| `/stock-discrepancies` | GET | `status?` (`open` default, `resolved`), `cursor?`, `limit?` (≤ 50) | `items: [{ id, kind, sku, location, archivedSku, archivedLocation, historySays, balanceSays, holders?, foundAt, resolvedAt?, resolution?, resolvedBy? }]`, `nextCursor` | `stock.correct` | 400 `INVALID_QUERY`, 403 |
+| `/stock-discrepancies/:id/rebuild` | POST | `reason?` (≤ 500) | the discrepancy, resolved | `stock.correct` | 404; 409 `DISCREPANCY_CLOSED`; 422 `NOT_REBUILDABLE`; 503 `BUSY` |
+| `/stock-discrepancies/:id/dismiss` | POST | `reason` (req, 1 to 500) | the discrepancy, resolved | `stock.correct` | 404; 409 `DISCREPANCY_CLOSED`; 422 `NOT_DISMISSABLE`, `REASON_REQUIRED` |
+
+**Adjustment reason codes** (`StockAdjustmentReason` in contracts, one per adjustment, stored on each movement's `reason_code`, labels in both languages): `found` (adds; "Found on the shelf, not from a parcel"), `missing` (removes), `damaged` (removes, posted as `write_off`), `opening_correction` (either way), `other` (either way). A line on the wrong side answers `REASON_SIGN_MISMATCH`.
+
+**Audit codes added to the registry** (spec 0010 AC-11, each with labels in `packages/i18n` and its proof file; none undoable): `location.created` (o), `location.stock_confirmed` (o), `location.online_moved` (R), `location.online_stopped` (R), all on record type `location`; `partner.created` (o, new record type `partner`, label the partner code); `stock.adjusted_manually` (R, new record type `stock_movement_group`, no label); `stock.adjustment_requested` (R, new record type `stock_adjustment_request`, no label); `stock_discrepancy.rebuilt` (o) and `stock_discrepancy.dismissed` (R) (new record type `stock_discrepancy`, no label). Showroom moves write no audit entry: the transfer row and its movements are their own history (spec 0010 AC-11).
+
+### Value sourcing
+
+| Action | Value | Source |
+|---|---|---|
+| any online read | the online location | `SELECT id FROM locations WHERE sellable_online AND archived_at IS NULL` (at most one); none raises `NoOnlineLocation` |
+| `forVariants`, `list`, `changedSince` | `onHand`, `reserved`, `available` | `buildAvailabilitySql` (spec 0002) for the (variant, online location) pairs, summed over lots; `available = onHand − reserved` |
+| same | `unfilledDemand` | sum of `unfilled_quantity` of `active` reservations at the online location per variant |
+| same | `pushable` | `max(onHand − reserved − unfilledDemand, 0)` |
+| `list` | page order | keyset on `variant_id` over the union of `stock_levels` and active `reservations` rows at the online location (`stock_levels_location_variant_idx`, `reservations_location_idx`) |
+| `changedSince` | `changedAt` | the greatest `updated_at` of that variant's `stock_levels` and `reservations` rows at the online location, over rows with `updated_at > since` (all when `since` is null) |
+| `changedSince` | order, `after`, `nextAfter` | keyset on (`changedAt`, `variantId`) ascending; `nextAfter` the last row's pair when the page is full, else null |
+| `changedSince` | `watermark` | the database's `now()` minus `ONLINE_FEED_LAG` (5 minutes, a code constant); safe because every ledger write stamps its transaction's start and commits within seconds (each lock wait is capped at 5 seconds). Assumed: no ledger transaction stays open 5 minutes |
+| `reserveLines` | free stock per line | after `loadMaster` (`FOR SHARE`) and `lockPairs`: `onHand − reserved` at the key (sellable places, spec 0002 AC-9) minus older waiting demand at the key and minus what the call's earlier lines took, floored at 0 |
+| `reserveLines` | `held`, `unfilled` | `refuse`: the request, or raise; `reserve_available`: `held = min(requested − alreadyHeld, free)` added to what the line holds, `unfilled = requested − totalHeld`; in a location with `allow_negative` the full request is held |
+| `reserveLines` | write | no active reservation: insert `quantity = open_quantity = held`, `unfilled_quantity = unfilled`; an active one on the same key: raise `quantity`, `open_quantity`, `unfilled_quantity` to match; another key: `DuplicateReservation` |
+| fill (AC-21) | which reservations, how much | after any write that raised `onHand − reserved` at a key, inside the same transaction and pair lock: `active` rows with `unfilled_quantity > 0` at that key in (`created_at`, `id`) order (`reservations_waiting_idx`), each taking `min(unfilled, free)` until `free` is 0 |
+| shorten (AC-22, AC-23) | which reservations, how much | after the posting, while open reserved at the key exceeds `max(onHand, 0)`: `active` rows with `open_quantity > 0` in (`created_at desc`, `id desc`) order (`reservations_newest_idx`), excluding the reservations the posting itself fulfilled, each moving `min(open, excess)` from `quantity` and `open_quantity` to `unfilled_quantity` |
+| `postCarrierShipment` | ledger key, type, source | `order_shipment:<orderId>`, `order_shipment`, the order id |
+| `postCarrierShipment` | `effectiveAt` | the input (the carrier's time), except when its operating day is on or before `inventory_lock_date`, then now |
+| `postCarrierShipment` | fulfilment per line | `open_quantity` of the named reservation first, then its `unfilled_quantity`, then the rest unreserved; the reserved stock rule, the zero floor, and the archive check are skipped for this posting only |
+| `postCarrierShipment` | cost | the ledger's outbound rule (below zero at the kept average; never stocked: `cost_unknown`) |
+| any reservation write | `reservations.updated_at` | `now()` |
+| `releaseLines`, `releaseSource` | which reservations | `active` rows by `source_line_id`s or `source_id`, `FOR UPDATE` in id order; set `open_quantity` and `unfilled_quantity` to 0, `released`; then pair locks on the freed keys and the fill step |
+| `reservationsFor` | rows | `reservations` by (`source_type`, `source_id`), `reservations_source_idx` |
+| stock transaction | marker | a module private `WeakSet` of transaction objects the runner opened, and an `AsyncLocalStorage` flag set while `work` runs, so a nested `LedgerService.transaction` is detected and refused (`NestedStockTransaction`); no database setting |
+| gate | stock counted | `locations.stock_verified_at` not null |
+| gate | registered checks | `OnlineStockGate.evaluate(locationId)`: each registered check, in registration order |
+| gate | counts | `variantsWithStock` and `totalOnHand` from `stock_levels` at the location with `on_hand > 0`; `variantsPushedZero` = variants with a balance or reservation at the location whose `pushable` would be 0; `reservationsAtOldLocation` = active reservations at the current online location |
+| make online | stale check | `confirmedVariantCount` equals `variantsWithStock` recomputed inside the transaction, else `ONLINE_GATE_STALE` |
+| make online | the move | one transaction: `FOR UPDATE` on both location rows (id order), the old one `sellable_online = false`, the new one `true`, the policy check (`assertCanSellOnline`), the audit entry |
+| confirm stock | `stock_verified_at`, `stock_verified_by` | `now()`, the session user (or feature 15's verify step through `recordStockVerified`) |
+| partner create | party row | `PartnerAccounts.createConsignmentPartner`: `code`, `name`, `is_consignment_partner = true`, every other role false |
+| transfer | allowed direction | `LocationPolicyService.stockRole` of each location: `send_to_partner` needs from `brand_settles_alone` and to `partner_consigned`; `return_from_partner` the reverse; both locations active, kind `warehouse` or `shop` |
+| transfer | `number` | `numbering.next(tx, 'stock_transfer', effectiveAt)` inside `within`, last; prefix `document_prefixes.stock_transfer` (`TR`) |
+| transfer | in line `unitCost` | the source balance's `avg_unit_cost` from `ledger.getLevels` read just before the posting; the out line is costed by the outbound rule, so the value in can differ from the value out by rounding cents (Consequences) |
+| transfer | ledger key, type, source | `stock_transfer:<id>`, `transfer_out`, the transfer id |
+| transfer | `effectiveAt` | now |
+| adjustment | location allowed | `LocationPolicyService.stockRole(locationId) = 'brand_settles_alone'`, kind `warehouse` or `shop`, not archived |
+| adjustment | source type | `write_off` for `damaged`, else `adjustment` |
+| adjustment | line checks | `CatalogService.checkStockable` and duplicates, all faults at once with indexes |
+| adjustment | `unitCost` of an adding line | `ledger.getLevels({ variantId, locationId })` average when above 0; else `CostService.costFor(variantId, d)` with `d` = `SELECT ssd_operating_day(now())` |
+| adjustment | `found` check | `ReturnsAwaitingRestock.pendingFor({ variantIds, locationId })` |
+| adjustment | ledger key, source | `stock_adjustment:<Idempotency-Key>`, the `Idempotency-Key` UUID |
+| adjustment | audit entry | `AuditService.record` inside `within`: `stock.adjusted_manually`, record (`stock_movement_group`, group id), `after` `{ locationId, reasonCode, lines: [{ skuId, quantity }] }` (no cost), `reason` the written reason |
+| adjustment request | `requestId` | `uuidv7()` from the database; no row is stored besides the audit entry |
+| receipt | default `unitCost` | `CostService.costFor(variant, ssd_operating_day(receipt effective_at))` |
+| receipt | cost allowed | omitted: the default (or `COST_NOT_SET`); given and equal to the default to 4 decimals: allowed; given and 0 or different: only with `access.has('cost.view')` |
+| SKU history | labels | `adjustment` → "Adjustment" with the reason; `write_off` → "Written off"; `transfer_out` with a `stock_transfers` row → "Sent to partner" or "Returned from partner" with its number; `order_shipment` from `postCarrierShipment` as today |
+| discrepancy list | `historySays`, `balanceSays` | the row's `expected` and `actual`; value fields removed without `cost.view` |
+| discrepancy list | `holders` (reservation kind) | active reservations at that SKU and location: `source_type`, `source_id`, `open_quantity` |
+| discrepancy list | SKU code and name | `CatalogService.getSkus(ids)` for the page |
+| rebuild | corrected values | `ReconciliationService.rebuildLevel` (spec 0002), `resolvedBy` the session user |
+| dismiss | resolution | `resolved_at = now()`, `resolved_by`, `resolution = 'dismissed'`, under `FOR UPDATE`; only kinds `reservation` and `serial` |
+| any cost field | present or not | `access.has('cost.view')` |
+
+### Key invariants
+
+- `LedgerService` stays the only writer of `stock_levels`, `reservations`, movements, and `stock_transfers` writes happen only inside its `within`; `OnlineStockService` only reads. Both read only inventory tables (catalog rows through `CatalogService`, AC-18).
+- Every reservation write happens inside a stock transaction or a ledger posting, after `loadMaster` and `lockPairs`, so the lock cap and the deadlock retry always apply. Filling and shortening run under the same pair lock as the write that caused them.
+- Waiting demand is never offered online: `pushable` subtracts it, and a freed piece fills it before the transaction commits.
+- Only a carrier fact shipment and a `damaged` or `missing` removal may take on hand below what orders hold; only a carrier fact shipment may take it below zero in a location that does not allow negative stock. Every such case is announced by an event in the same transaction.
+- At most one active online location exists, it is a sellable warehouse whose owner type may sell online, and it changes only through the gate's actions.
+- No module under `connectors/` or `channels/` can post, reverse, or reserve stock (AC-8).
+- The online read never answers zeros for a missing online location; it raises.
+- Nobody without `cost.view` sets a cost: adjustments never take a typed cost, receipts take the style cost unless a person with `cost.view` types another.
+- A dismissal changes no stock; a rebuild changes only the balance it names and never a movement.
+
+### Security model
+
+- Every new route is staff audience with one permission from the spec 0008 matrix: `catalog.manage` (manager) for the location lists and the gate actions; `stock.receive` (operations, warehouse, manager) for showroom moves and adjustment requests; `stock.correct` (manager) for adjustments and discrepancies; `partners.manage` (operations, manager) for the partner create; `stock.view` for reads. No new permission, no new hat.
+- Cost stays behind `cost.view` in every response, replays included; a receipt cost other than the default needs it too (AC-26).
+- An adjustment or transfer replay answers only the person who posted it.
+- Party options and the partner create return id, code, and name only, never contact details.
+- Written reasons go to audit entries (phones and emails masked, spec 0010 AC-5) with the helper text of AC-11; movement rows carry only codes; event payloads carry ids, codes, and quantities only.
+- Log lines: `stock_adjustment.posted`, `stock_transfer.posted`, `stock_discrepancy.resolved`, `online_location.moved` (ids and counts), and the error level `stock.balance_drift`; never cost values, never reason text.
+
+### Configuration required
+
+None. `ONLINE_FEED_LAG` is a code constant; the `TR` prefix is a seeded setting. The settings this feature reads already exist: `inventory_lock_date`, `timezone`, `operating_day_cutoff_hour`, `document_prefixes` (spec 0002, in spec 0009's registry).
+
+### Critical test scenarios
+
+- Online location rules: a shop or a partner location cannot go online; two parallel moves give one success and one 409; archiving the empty online location clears the flag and `onlineLocation()` answers null, verifies **AC-1**
+- Gate: a warehouse with no confirmed stock fails the gate; after "Confirm stock" it passes with the counts shown; a registered failing fixture check blocks `make-online` with its key; a stock posting between the gate read and the move gives `ONLINE_GATE_STALE`; moving from A to B leaves A's reservations in place and the dialog showed their count; `stop` leaves no online location and both pages show the "Shopify is not being updated" line, verifies **AC-19**, **AC-20**
+- Partner stock never online: 10 pieces at the online warehouse, 30 at a partner, 5 at a shop: `forVariants` answers on hand 10; with 3 held and 2 unfilled, `pushable` 5; with no online location every read raises, verifies **AC-2**, **AC-3**
+- Late commit: a posting held open after its `now()` is not in one `changedSince` run and is in the next; a run with more than a page pages through with `after`, verifies **AC-4**
+- Reserve lines: two lines of 6 and 5 with 10 free: `refuse` raises and writes nothing; `reserve_available` holds 6 and 4 with 1 unfilled; a repeat writes nothing; a `work` that throws rolls back its row and the reservations; a plain transaction is refused; a nested `LedgerService.transaction` raises `NestedStockTransaction` and rolls the outer one back; `AuditService.record` and `DomainEvents.publish` accept the stock transaction; a size swap leaves M held when the whole transaction fails, verifies **AC-5**, **AC-6**
+- Waiting demand: order A short by 1, order B short by 1 later; a restock of 1 fills A in the same transaction, `pushable` stays 0, `ReservationFilled` names A; a cancel of another order frees 1 and fills B, verifies **AC-21**
+- Carrier shipment: a short line shipped by a carrier fact posts and the balance goes to −1 in a location that does not allow negative stock, `StockOverdrawn` is published; a shipment of a piece another order holds shortens that order's reservation and publishes `ReservationShortened`; a replay returns the stored result; reconciliation records nothing, verifies **AC-22**, **AC-7**
+- Damaged reserved piece: 1 on hand, 1 held by an order; `damaged −1` posts as `write_off`, the reservation is held 0 and unfilled 1, `ReservationShortened` with cause `damaged`; `other −1` in the same state answers 409, verifies **AC-23**, **AC-9**
+- Concurrency: 20 parallel `reserveLines` with `refuse` of 1 unit against 10 give exactly 10 successes; with `reserve_available` exactly 10 hold 1; opposite line orders 100 times in parallel give no deadlock error to the caller, verifies **AC-5**
+- Channels: a planted ledger import under `connectors/` fails the static test, verifies **AC-8**
+- Catalog locks: the spec 0006 races pass with `CatalogService` locks and the module wall lists no inventory `product_variants` breach, verifies **AC-18**
+- Partner and showroom: create partner `NILE` and its consignment shop; send 120 pieces from the online warehouse (`TR-…-000001`): the warehouse loses 120 at its outbound cost, the shop gains 120 at the warehouse average, `pushable` drops by 120; return 8: the reverse; sending a piece an order holds answers 409; sending from the shop to another partner answers `INVALID_LOCATION`, verifies **AC-24**, **AC-25**
+- Adjustment: found pieces at the balance average, a never stocked SKU at its style cost on the movement's operating day (a posting at 01:00 with cutoff 3 uses the previous day's cost), `COST_NOT_SET` without either; an adjustment at a partner location answers `INVALID_LOCATION`; `found` on a variant a fixture provider reports as awaiting restock answers `RETURN_AWAITING_RESTOCK` naming the order; replay rules; a warehouse hat gets 403 on adjustments and 201 on a request, which writes `stock.adjustment_requested` and publishes `StockAdjustmentRequested`, verifies **AC-9**, **AC-10**, **AC-11**, **AC-27**, **AC-28**, **AC-17**
+- Receipt cost: a warehouse hat's receipt with no cost takes the style cost; with 0 or another cost answers `COST_NEEDS_PERMISSION`; a style with no cost answers `COST_NOT_SET`; a manager with `cost.view` may type 0, verifies **AC-26**
+- Locations screen: create a partner location from the lists, with the partner created inline; the boundary test still passes; `location.created` and `partner.created` are in the audit trail, verifies **AC-12**, **AC-13**, **AC-24**
+- Discrepancies: a balance drift is rebuildable only and logs `stock.balance_drift`; a reservation drift lists its holders and is dismissable only; a second action answers 409, verifies **AC-14**
+- Scale: every AC-15 budget holds and each plan uses its index, verifies **AC-15**
+- Screens: Playwright in English and Arabic, keyboard only, axe clean for every new page and dialog, verifies **AC-16**
+
+## Build plan
+
+Tracer Bullet, the project default ([AGENTS.md](../../../AGENTS.md)). Milestone 1 is the thinnest real thread of the scope's "partner stock is never offered online": one online location that goes live only through the gate, read by the real `OnlineStockService`, proven against a partner location's stock, with the "not being updated" state on screen. Each later milestone thickens one segment end to end. Milestones 1 and 2 come first because specs 0013 and 0015 build on them; milestone 3 must land before the pilot's first showroom move. One commit per milestone.
+
+**Milestone 1: The gated online location and the online stock read, end to end**
+
+1. Schema for the whole feature in one regeneration (locations columns, check, unique index; reservations columns, relaxed checks, indexes; `stock_levels` index; `stock_transfers` with its rules file triggers and revoke; the `TR` prefix), satisfies **AC-1**, **AC-4**, **AC-21**, **AC-25**
+2. `OnlineStockService` (`onlineLocation`, `forVariants`, `list`, `changedSince`, `forCandidate` for a location not yet online, `pushable` with unfilled demand), `NoOnlineLocation`, `GET /api/stock/online-status`; `apps/api/test/online-stock.e2e-spec.ts`, satisfies **AC-2**, **AC-3**, **AC-4**, **AC-20**
+3. `OnlineStockGate`, `confirm-stock`, `online-gate`, `make-online`, `online/stop` with their audit codes; create and edit drop `sellableOnline`; archive clears it; `ledger-http.ts` mappings, satisfies **AC-1**, **AC-19**
+4. Static test `apps/api/src/inventory/ledger-callers.spec.ts` with a planted failing case, satisfies **AC-8**
+5. Web: the gate dialog with its counts, each failed check linked to its `action` (for example `POST /api/orders/hold-open-orders`), and the move confirmation, the "Online stock" badge, the "Shopify is not being updated" line on Stock and Locations, both languages; `FIXTURES` entries, satisfies **AC-19**, **AC-20**, **AC-12**, **AC-16**, **AC-17**
+
+**Done when** `pnpm build && pnpm --filter @ssdashboard/api test:e2e` passes including `online-stock.e2e-spec.ts`, the access sweep, and every existing ledger, location, and receipt suite; `pnpm --filter @ssdashboard/api test` passes including `ledger-callers.spec.ts`; `pnpm --filter @ssdashboard/db test:e2e` passes with `stock_transfers` in the append only checks; and `pnpm --filter @ssdashboard/web test` passes.
+
+**Milestone 2: Reservations, waiting demand, carrier shipments, and catalog locks**
+
+6. `LedgerService.transaction` (a `StockTransaction` usable wherever a `Transaction` is, nested calls refused with `NestedStockTransaction`), `reserveLines`, `releaseLines`, `releaseSource`, `reservationsFor`; the fill step in `apply` and the releases; the contracts, satisfies **AC-5**, **AC-6**, **AC-21**
+7. `postCarrierShipment` with the overdraw mode and the shortening step; `inventory.events.ts` published through `DomainEvents` (built to spec 0013's design if it does not exist yet); `apps/api/test/ledger-reservations.e2e-spec.ts` with the concurrency, deadlock, fill, carrier, and order thread cases, satisfies **AC-7**, **AC-21**, **AC-22**
+8. `CatalogService.lockForShare` and `lockForUpdate`; `loadMaster`, `lockForArchive`, `rebuildLevel` on them; both `product_variants` entries out of `KNOWN_BREACHES`, satisfies **AC-18**
+9. The contract tables of this spec copied into `apps/api/src/inventory/README.md` (Owns), satisfies **AC-5**, **AC-22**
+
+**Done when** `pnpm build && pnpm --filter @ssdashboard/api test:e2e` passes including `ledger-reservations.e2e-spec.ts` and `master-data.e2e-spec.ts`, and the drift check after every ledger test stays green; `pnpm --filter @ssdashboard/api test` passes `module-boundary.spec.ts` with no inventory `product_variants` entry.
+
+**Milestone 3: Partners, owner type screens, and showroom moves**
+
+10. `PartnerAccounts.createConsignmentPartner`, `listHolding`, `namesByIds`, `PartnersController` (`POST /api/partners`) and `partner.created` (partners README updated); `LocationPolicyService.describeOwnerTypes()` and `stockRole()`; the two location list routes; `location.created`, satisfies **AC-12**, **AC-13**, **AC-24**
+11. `TransfersService` and `TransfersController` (send and return, numbered, idempotent, `post` with `within`), SKU history labels; `apps/api/test/stock-transfers.e2e-spec.ts`, satisfies **AC-25**
+12. Web: owner type and party pickers with "New showroom partner", the transfer form and detail page, "Send to partner" and "Return from partner" on the Stock page; Playwright in both languages; `FIXTURES` entries, satisfies **AC-12**, **AC-16**, **AC-17**, **AC-24**, **AC-25**
+
+**Done when** `pnpm --filter @ssdashboard/api test` passes including `owner-type-boundary.spec.ts`; `pnpm --filter @ssdashboard/api test:e2e` passes including `stock-transfers.e2e-spec.ts`, `location-owner-types.e2e-spec.ts`, `audit-inventory.e2e-spec.ts`, and the access sweep; and the Playwright partner and transfer cases pass.
+
+**Milestone 4: Corrections: adjustments, requests, and the receipt cost rule**
+
+13. `AdjustmentsService` and controller: one reason per adjustment, `write_off` for `damaged`, the policy location check, the cost rule on the operating day, the removal overdraw with shortening, `ReturnsAwaitingRestock`, audit; requests with `StockAdjustmentRequested`; `apps/api/test/stock-adjustments.e2e-spec.ts`, satisfies **AC-9**, **AC-10**, **AC-11**, **AC-23**, **AC-27**, **AC-28**
+14. Receipts: the default cost and the `cost.view` rule, the contract made optional, the form hiding the cost field; the receipt suites updated, satisfies **AC-26**
+15. Web: `/stock-adjustments/new` with its request mode for `stock.receive`, the helper text, the parcel question that points to the restock by scan; Playwright; `FIXTURES` entries, satisfies **AC-9**, **AC-11**, **AC-16**, **AC-17**, **AC-27**, **AC-28**
+
+**Done when** `pnpm --filter @ssdashboard/api test:e2e` passes including `stock-adjustments.e2e-spec.ts`, `stock-receipts.e2e-spec.ts`, and the access sweep; `pnpm --filter @ssdashboard/contracts test` passes with every new audit code; and the Playwright adjustment and receipt cases pass in both languages.
+
+**Milestone 5: Discrepancies a manager can act on, and the scale budgets**
+
+16. `ReconciliationService.dismiss` and the `stock.balance_drift` log line; `DiscrepanciesService` and controller with the kind rules and holders; the two audit codes; `FIXTURES` entries, satisfies **AC-14**, **AC-17**
+17. Web: `/stock-discrepancies` with "History says / Balance says", the system check line, the archived warning; Playwright, satisfies **AC-14**, **AC-16**
+18. `apps/api/test/scale.e2e-spec.ts`: one online location over the seed's balances, 5,000 reservations and 500 waiting lines, one budget row per AC-15 read with its plan assertion; measured values in `verify.md`, satisfies **AC-15**
+
+**Done when** `pnpm --filter @ssdashboard/api test:e2e` passes including `stock-discrepancies.e2e-spec.ts`; `pnpm build && pnpm --filter @ssdashboard/api test:scale` passes with every AC-15 budget; `pnpm lint && pnpm typecheck && pnpm format:check` are clean.
+
+## Consequences
+
+**Positive**:
+
+- Orders and the Shopify connector get stable, tested stock calls before they are built, so neither invents its own stock rule or reads ledger tables.
+- "Partner stock is never offered online" holds in the database (one gated online location), in the read (one location, minus waiting demand), and in the books (pieces sent to a partner leave the warehouse); Shopify's side is a named requirement on spec 0015.
+- Nothing the carrier took is lost from the books, and nothing that happens to a promised piece is silent: each case raises an event that becomes a task or a short line.
+- The pilot can move stock to showrooms, fix stock with a reason, ask for a fix, and see drift without SQL or WhatsApp.
+
+**Negative / tradeoffs**:
+
+- Slice 1a grows: a minimal partner record and a send and return posting arrive before features 38 and 41, and those features must replace them without breaking the movements already posted (the movements stay; only the screens and the document change).
+- The ledger gains two deliberate exceptions to its reserved stock rule (carrier shipments, damaged or missing removals) and an automatic fill step; the posting transaction does a little more work and the rules are harder to explain.
+- A carrier shipment can leave a balance below zero in a location that never allows it; the reconciliation still matches (movements and balance agree), but the Stock page shows negative rows until someone counts.
+- A showroom move's value in can differ from its value out by rounding cents, because the in line is costed at the source average read just before the posting.
+- One online location: a brand that ships online orders from two warehouses cannot until an allocation rule is designed (Q-11.2).
+- The feed repeats each changed variant for about 5 minutes; the connector pushes only when the value differs from what it last sent.
+- Adjustments are manager only; the warehouse's request is a task, not a posting, so the online figure stays high until the manager acts (the hold of the review's M8 option is a follow up).
+- The events need `DomainEvents`; if spec 0013 is built later, this feature builds it to spec 0013's design, and the two must not diverge.
+
+**Neutral**:
+
+- Nine audit codes (eight new, plus the detail of the existing `stock.adjusted_manually`) and three new record types (`partner`, `stock_adjustment_request`, `stock_discrepancy`) join the registry, with labels in both languages (spec 0010, amended 2026-11-07).
+- One new append only table, one seeded prefix; the baseline is regenerated again and developers recreate their database.
+- Two registries (`OnlineStockGate`, `ReturnsAwaitingRestock`) follow the `AuditUndoRegistry` pattern, so inventory imports neither orders nor connectors.
+
+## Follow-up
+
+- [ ] Spec 0013: open order writes with `LedgerService.transaction`, call `reserveLines` with `reserve_available`, handle `ReservationShortened` and `ReservationFilled`, book carrier shipments with `postCarrierShipment`, register `orders.open_orders_held` with `OnlineStockGate`, and register (or leave to feature 21) a `ReturnsAwaitingRestock` provider.
+- [ ] Spec 0015: everything in its contract row, including the review M2 setup check and the gate's Shopify counts.
+- [ ] Feature 15: the opening figure is physical on hand; its verify step calls `recordStockVerified`; partner floor stock can now be loaded (and the brand's answer to question 7 decides negative rows).
+- [ ] Feature 17: tasks from `StockOverdrawn` (warehouse) and `StockAdjustmentRequested` (manager, posting or rejecting the request in one step).
+- [ ] Features 38 and 41: replace the minimal send and return posting and the minimal partner create; keep `stock_transfers` rows readable.
+- [ ] Feature 25 (review m4): the daily report gives yesterday's adjustment and write off count and value by reason; consider a confirmation step with on hand before and after on the adjustment form.
+- [ ] Feature 20 (review m7): the adjustment and transfer SKU pickers take a keyboard wedge scan now and the camera scan once feature 20 lands, adding a line or 1 to an existing line.
+- [ ] Spec 0013 or feature 21 (review m8): a `pick_error` reason with an order reference, and how an order line's variant is corrected after shipment.
+- [ ] Optional (review M8): let an adjustment request hold the pieces as a reservation of source type `adjustment_request`, released when the manager decides.
+- [ ] Spec 0013 builds `DomainEvents`; the ledger may later emit `StockMoved` for in process readers; the feed of AC-4 stays the durable path for the connector.
+- [ ] Features 24 and 25: show the number of open discrepancies and the "Shopify is not being updated" state to the manager.
+- [ ] An allocation rule for several online locations, if a brand needs it (Q-11.2).
+- [ ] `/sync` after the build: `apps/api/src/inventory/AGENTS.md` (dismiss exists; the two overdraw exceptions; filling; the stock transaction), `apps/api/src/inventory/README.md`, `apps/api/AGENTS.md` key files, spec 0008's route mapping table gains the new routes.
+
+## Domain review map
+
+Where each finding of [the domain review](../../reviews/domain-stock-ledger.md) landed.
+
+| Finding | Where |
+|---|---|
+| B1 showroom stock | Q-11.6 and Q-11.4 (b) decided; AC-24, AC-25, `stock_transfers`, milestone 3 |
+| M1 the online switch | Q-11.7; AC-1, AC-19, AC-20; feature 15 contract row (physical on hand) |
+| M2 Shopify's other locations | requirement in the spec 0015 contract row and its gate check |
+| M3 the waiting order loses the piece | AC-2 `pushable`, AC-5, AC-21, `unfilled_quantity`, `ReservationFilled` |
+| M4 a damaged reserved piece | Q-11.8; AC-23, `ReservationShortened` |
+| M5 a carrier fact the ledger refused | AC-22, `postCarrierShipment`, `StockOverdrawn` |
+| M6 receipts as the side door | AC-26; spec 0006 amendment note beside AC-5 and AC-11 |
+| M7 a returned parcel is not found | AC-28, `ReturnsAwaitingRestock` |
+| M8 the warehouse cannot ask | AC-27, `StockAdjustmentRequested`; the hold is a follow up |
+| m1 adjustments at a partner | AC-9 policy check through `stockRole` |
+| m2 damaged as `write_off` | AC-9, AC-11 |
+| m3 discrepancy wording and kinds | AC-14 |
+| m4, m7, m8 | Follow-up (features 25, 20, spec 0013 or feature 21) |
+| m5 operating day | AC-10, AC-26 value sourcing |
+| m6 names in reasons | AC-11 helper text |
+| Brand questions 1 to 7 | `## Questions for the owner`, "Ask the pilot brand" |
+
+## Questions for the owner
+
+Each is decided here as recommended, so the build can start; the owner can change any of them, and the "if changed" line says what moves.
+
+1. **Q-11.1 Manual stock adjustments in this feature?** Options: (a) yes, manager only through `stock.correct`, with a reason, and a request path for the warehouse (recommended); (b) yes, posting also for the warehouse hat; (c) no, wait for full counts (feature 54). Why: the pilot finds, loses, and damages pieces long before counts exist; a removal can hide theft, so posting stays with the manager and the warehouse asks in the app. If changed: (b) adds the permission to the warehouse hat in spec 0008; (c) drops most of milestone 4.
+2. **Q-11.2 How many online locations?** Options: (a) exactly one, a sellable warehouse (recommended); (b) several, summed, with an allocation rule; (c) any own location, shops included. Why: the scope says only the warehouse sells online, and one location makes the push, the reservation location, and the Shopify mapping obvious. If changed: (b) drops the unique index and needs an allocation rule in spec 0013 and a per location push in 0015.
+3. **Q-11.3 The discrepancy screen in this feature?** Options: (a) yes (recommended); (b) list only; (c) later. Why: the nightly check already records drift, and at GA it must be visible and fixable without SQL. If changed: milestone 5 shrinks or moves.
+4. **Q-11.4 Partner locations in slice 1a?** Decided: (b) a minimal partner create (code and name) now, with the location screen. Other options: (a) the screen only, parties with feature 41; (c) no owner types on screen until feature 41. Why: the review's B1 shows weekly showroom moves during the pilot, and a partner location needs a party. If changed: (a) or (c) also undo Q-11.6.
+5. **Q-11.5 Cost of a found piece?** Options: (a) the balance average, else the style cost, else refused (recommended); (b) always the style cost; (c) typed by a person with `cost.view`. Why: the average keeps the value per piece, the style cost covers a never stocked SKU, refusing beats a silent zero. If changed: only the adjustment cost line and its test.
+6. **Q-11.6 How does stock move between the warehouse and the showrooms before feature 38?** Options: (a) a minimal numbered send to partner and return from partner posting at the moved stock's average cost, no counts, no portal, no settlement (recommended); (b) pull feature 38 (scan, transit) into slice 1a; (c) record handovers as adjustments. Why: (a) keeps the online figure true from the first move at the least cost; (c) pollutes shrinkage and loses partner stock. If changed: (b) replaces milestone 3's transfer work with feature 38's design; (c) drops it and adds a reason.
+7. **Q-11.7 What must be true before a location first goes online?** Options: (a) its stock confirmed counted and every registered check passed (open orders held, Shopify ready), with the counts confirmed (recommended); (b) a warning only; (c) a separate "start stock push" switch in spec 0015. Why: going online overwrites every variant in Shopify; a gate is the only point where a wrong figure can still be stopped. If changed: (b) keeps the counts and drops the refusals; (c) moves the gate to spec 0015.
+8. **Q-11.8 When a reserved piece is damaged or missing, who loses it?** Options: (a) the removal goes through and the newest reservation is shortened, with an attention for support (recommended); (b) the removal is refused until support edits the order; (c) the manager picks the order on the form. Why: the piece is gone whatever the books say; refusing keeps a phantom piece in stock and online. If changed: (b) restores the 409 for those reasons; (c) adds an order picker to the form.
+
+**Ask the pilot brand** (from the domain review; the answers tune the decisions above, none blocks the build):
+
+1. Between mid March and early May, how often do pieces go to each showroom and come back, how many per move, and does the brand ever pull a piece back from a showroom to fill an online order?
+2. How many Shopify locations does each store have, which hold stock, and which have online fulfilment on? Are showrooms set up as Shopify locations today?
+3. Do both Shopify stores sell from the same warehouse, and do they share any variants?
+4. What happens to a damaged piece: back to the factory for repair, a sample sale, or thrown away? Is it charged to anyone?
+5. How many damaged or missing pieces a week does the warehouse find in season, and who records them today?
+6. At go live, will the warehouse be counted on the shelf, or will the snapshot be read from Shopify? If from Shopify, which figure, available or on hand?
+7. One showroom's stock file had negative rows. When partner stock is imported, should a negative row be refused, imported as 0, or opened as a task?

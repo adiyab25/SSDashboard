@@ -4,36 +4,85 @@ The walking skeleton, target about month three: a real Shopify order confirmed i
 
 **Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece of that week is restocked by scan with both shipping legs on its order, and one month of the real Bosta settlement is matched line by line including refunds, negative lines, and at least one partial delivery, with unmatched lines listed.
 
-### 11. Stock ledger & locations · GA · needs a decision
+### 11. Stock ledger & locations · GA
 The single writer of stock movements, and the locations it moves stock between. Locations carry an owner type (own warehouse or shop, consignment partner, wholesale customer) and a sellable online flag; only the warehouse sells online. Bins stay flat for now.
 **Done when:** every stock change is a new movement with quantity, unit cost, location, and source document; a correction is a new movement, never an edit; partner stock is never offered online; on hand per variant and location reads fast at 50,000 SKUs.
-- [ ] Design it (spec): `/architect stock ledger & locations`
+Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner decision Q-11.6): a minimal consignment partner record and numbered send to and return from a showroom, so partner stock leaves the online count from the first move.
+- [x] Design it (spec): `/architect stock ledger & locations`
+- [ ] Build it: `/develop stock ledger & locations`
+  - [ ] The gated online location and the online stock read
+  - [ ] Reservations, waiting demand, carrier shipments, and catalog locks
+  - [ ] Partners, owner type screens, and showroom moves
+  - [ ] Adjustments, adjustment requests, and the receipt cost rule
+  - [ ] Discrepancies a manager can act on, and the scale budgets
+- [ ] Verify it: `/check verify stock ledger & locations`
+- [ ] Test it: `/test stock ledger & locations`
+- [ ] Review it (fresh model): `/check review stock ledger & locations`
+- [ ] Document it: `/document stock ledger & locations`
+Spec [0011](../specs/0011-stock-ledger-locations/index.md) (Accepted 2026-11-07; domain review [domain-stock-ledger](../reviews/domain-stock-ledger.md): accept with changes, folded in)
 
-### 12. Catalog, styles & variants · needs a decision
+### 12. Catalog, styles & variants
 Products as the brand thinks of them: style, season, product group, and variants by size and color, mostly arriving from Shopify, searchable at warehouse scale.
 **Done when:** staff can find any variant by name, SKU, or barcode in Arabic or English in well under a second at 10,000 SKUs (tested at 50,000), see its style, season, and group, and every variant inherits its style's cost unless overridden.
-- [ ] Design it (spec): `/architect catalog, styles & variants`
+- [x] Design it (spec): `/architect catalog, styles & variants`
+- [ ] Build it: `/develop catalog, styles & variants`
+  - [ ] Arabic and English search through every layer
+  - [ ] Seasons, product groups, and styles
+  - [ ] Inherited cost, visible and recordable
+  - [ ] The channel upsert contract
+- [ ] Verify it: `/check verify catalog, styles & variants`
+- [ ] Test it: `/test catalog, styles & variants`
+Spec [0012](../specs/0012-catalog-styles-variants/index.md) (Accepted 2026-11-07)
 
-### 13. Shopify connector · GA · needs a decision
+### 13. Shopify connector · GA
 The reference connector that sets the pattern for every channel: orders, products, and customers from one or several stores of one brand, by webhooks plus a scheduled backfill, with stock pushed back to Shopify.
 **Done when:** webhooks are signature verified, a backfill catches anything missed, order edit pairs (a positive and a negative line of the same order, variant, day, and value) are netted before anything counts them, stock pushes never echo back as changes, each field has one owner, rate limits hold, and recorded fixtures replay green with no live call.
 Also from spec 0007: one store per Shopify connection, order numbers unique per store and shown with the store everywhere; a failed write back opens a task and blocks packing that order.
-- [ ] Design it (spec): `/architect shopify connector`
+- [x] Design it (spec): `/architect shopify connector`
+- [ ] Build it: `/develop shopify connector`
+  - [ ] Recorded fixtures and one order through a signed webhook
+  - [ ] Catalog, orders in full, go live, backfill, and the sweep
+  - [ ] The outbound door and the stock push
+  - [ ] The connection screen, health, and the runbook
+- [ ] Verify it: `/check verify shopify connector`
+- [ ] Test it: `/test shopify connector`
+- [ ] Review it (fresh model): `/check review shopify connector`
+- [ ] Document it: `/document shopify connector`
+Spec [0015](../specs/0015-shopify-connector/index.md) (Accepted 2026-11-07; domain review [domain-shopify-connector](../reviews/domain-shopify-connector.md): accept with changes, folded in)
 
-### 14. Customers by phone · needs a decision
+### 14. Customers by phone
 One customer record keyed on a normalized Egyptian phone number, holding many phones and channel ids, with merge as routine daily work and one timeline per customer.
 **Done when:** 010, 0010, +2010, and Arabic digit forms normalize to one number; one customer holds several phones and Shopify ids across stores; merge is a fast audited screen that can be undone; a repeat returner flag shows on the record; the timeline reads the same records through each role's lens.
-- [ ] Design it (spec): `/architect customers by phone`
+- [x] Design it (spec): `/architect customers by phone`
+- [ ] Build it: `/develop customers by phone`
+  - [ ] One phone, one customer, end to end
+  - [ ] Merge and undo as daily work
+  - [ ] The repeat returner flag
+  - [ ] One timeline through each lens
+- [ ] Verify it: `/check verify customers by phone`
+- [ ] Test it: `/test customers by phone`
+Spec [0014](../specs/0014-customers-by-phone/index.md) (Accepted 2026-11-07)
 
 ### 15. Onboarding imports · GA · needs a decision
 Day one data from the brand's spreadsheets: a stock snapshot per location, cost per style and season from factory invoices, customers, and the existing blacklist.
 **Done when:** each import previews before it applies and lists rejected rows with reasons; the brand verifies the stock snapshot, after which the ledger takes over; imported cost lands per style and season; the blacklist sets the repeat returner flag.
 - [ ] Design it (spec): `/architect onboarding imports`
 
-### 16. Orders & their state machines · GA · needs a decision
+### 16. Orders & their state machines · GA
 The order at the heart of cash on delivery: a fulfillment state machine, a cash state machine, its store, channel, and source, its type, and one derived outcome.
 **Done when:** fulfillment moves through new, confirmed, packed, shipped, delivered, partially delivered, failed attempt, returned to origin, exchanged, refused; cash moves through unpaid, collected by carrier, remitted, reconciled, with the COD fee and shipping fee as their own lines and partial amounts allowed; gifted orders stay out of revenue and return rates; the order is editable until pickup is created, with every edit audited.
-- [ ] Design it (spec): `/architect orders & their state machines`
+- [x] Design it (spec): `/architect orders & their state machines`
+- [ ] Build it: `/develop orders & their state machines`
+  - [ ] One manual order through every layer
+  - [ ] Editing, confirming, cancelling, packing, and the hold
+  - [ ] The channel intake contract for feature 13
+  - [ ] Stock: holds at creation, short lines, and carrier shipments
+  - [ ] Carrier and cash moves, the shipment posting, and scale
+- [ ] Verify it: `/check verify orders & their state machines`
+- [ ] Test it: `/test orders & their state machines`
+- [ ] Review it (fresh model): `/check review orders & their state machines`
+- [ ] Document it: `/document orders & their state machines`
+Spec [0013](../specs/0013-orders-state-machines/index.md) (Accepted 2026-11-07; domain review [domain-orders](../reviews/domain-orders.md): accept with changes, folded in)
 
 ### 17. Tasks & My work inbox · needs a decision
 One task primitive (type, linked record, owner, due time, outcome code) that every process creates as it moves, and one inbox that shows each person their work.

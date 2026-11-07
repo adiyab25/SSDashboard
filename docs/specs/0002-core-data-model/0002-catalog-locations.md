@@ -21,9 +21,13 @@ A product is a style: it carries a style code, a season, and a product group, an
 | ★ `barcodes`, `uoms` (amended) | unchanged columns | unique (`tenant_id`, `code`) |
 | ★ `cost_records` (new, append only) | `id`, `product_id fk` (the style), `variant_id null`, `season_id fk not null`, `cost_basis` enum (`factory_invoice`, `production_run`, `purchase_landed`, `estimate`), `unit_cost numeric(14,4) >= 0` (EGP per base unit, landed cost included, frozen at the rate on the day materials were paid, final plan 6.10), `effective_from date`, `source text` (an invoice number or import batch), `recorded_at default now()`, `recorded_by fk users null` | composite fk (`variant_id`, `product_id`) to `product_variants (id, product_id)` (an override always belongs to its style); index (`product_id`, `effective_from desc`, `recorded_at desc`); partial index (`variant_id`, `effective_from desc`, `recorded_at desc`) where `variant_id` is not null |
 
+> Amended 2026-11-07 by spec 0012: the trigram expression index on `products` and the trigram index on `sku` are replaced by one normalized `product_variants.search_text` column (kept by triggers) and its trigram index, so `product_variants` and `barcodes` gain columns and `seasons` and `product_groups` gain timestamps ([spec 0012](../0012-catalog-styles-variants/index.md), Data model sketch).
+
 **Cost lookup**, `CostService.costFor(variantId, onDate)` in the catalog module: among the cost records for that variant (`variant_id = variantId`) and for its style (`product_id = style, variant_id IS NULL`) with `effective_from <= onDate`, take the latest `effective_from`; on a tie, a variant override beats a style record; then the latest `recorded_at`; then the greatest `id` (uuidv7, so two records written in one transaction still order the same way every time). It returns the unit cost with its `cost_basis`, so a margin built on an `estimate` is labelled "estimate". No record gives `NotSet` (the type `{ status: 'not_set' }`), never 0. So a new season's style cost supersedes last season's override from its effective date, and a corrected record (same `effective_from`, later `recorded_at`) replaces a mistyped one without editing it. Cost entered at receipt is frozen on the movement (`stock_movements.unit_cost`); a later record never changes a past movement.
 
 **Style versus a separate styles table.** One product per style matches the reference brand's schema (`style_costs.style` references `products(style)`). A brand that lists one style as several Shopify products (one per color) maps those Shopify products to variants of one canonical product through `connection_external_ids` (feature 13), so cost stays per style. See [rationale](rationale.md#amendment-2026-11-05).
+
+> Amended 2026-11-07 by spec 0012: one Shopify product is one style; several Shopify products are not grouped into one style (owner decision Q-12.4, recommended), matching the reference brand, whose style already carries one color. Shopify upserts go through `CatalogChannelSync` ([spec 0012](../0012-catalog-styles-variants/index.md), AC-14).
 
 ## Per order cost rules
 
@@ -58,6 +62,7 @@ Seeded policy rows (final plan 6.5):
 - **Owner type is fixed for a location's life** (decides carried m4). A showroom that closes, or a partner that becomes a wholesale customer, gets a new location; the old one is archived. Archiving a location is refused while any balance there has `on_hand <> 0` or an active reservation exists (the existing spec 0006 rule, 409 `STOCK_ON_HAND`), so remaining stock moves out first by a transfer (or, to a wholesale location, a handover that is a sale). Movements and settlement lines recorded at a location therefore always join to the owner type they were recorded under, without date logic. See [rationale](rationale.md#amendment-2026-11-05) for effective dating, the runner up.
 - **The three way test** (`apps/api/test/location-owner-types.e2e-spec.ts`) runs one scenario three times, once per seeded owner type, changing only which location it uses: hand over 5 pieces (a transfer, or a sale when `handover_is_sale`), record one sale at the moment `sale_recorded_at` names, ask who refunds a normal and a defective piece, which tax document applies, and which settlement owner type the sale settles through, and assert the answers equal the seeded row. Then it tries to archive the location with stock left (refused), moves the stock out, and archives it. The test body branches only on policy attributes, never on the owner type. The full order to refund to settlement run of spec 0007 section 8 is carried to features 35 and 43, which build refunds and partner settlement.
 - **Online availability** for the portal and Shopify (feature 11 and 13) counts only locations with `sellable_online`; `ledger.getAvailable` keeps its original meaning (sellable locations).
+  > Amended 2026-11-07 by spec 0011: at most one active location has `sellable_online`, and it must be a sellable warehouse (check `locations_online_needs_warehouse`, partial unique index `locations_one_online`); archiving it turns the flag off; online stock is read only through `OnlineStockService`, which counts that one location ([spec 0011](../0011-stock-ledger-locations/index.md) AC-1 to AC-4).
 
 ## Stock ledger changes
 
@@ -76,6 +81,8 @@ The existing `apps/api/test/scale.e2e-spec.ts` and `scale-seed.ts` change to spe
 **It runs as its own CI job, never in the default e2e job** (gate review fix 6): seeding this load would push the e2e job well past its current length, so `.github/workflows/ci.yml` gets a `scale` job that runs on a nightly schedule and on pull requests carrying a `scale` label, and the default `test:e2e` excludes `test/scale.e2e-spec.ts`. The audit trail's 5,000,000 entry check (spec 0010 AC-17) lives in the same file and runs in the same job.
 
 Budgets, p95 over at least 50 runs on the dev Postgres, **Assumed** and reset from the first measured run (spec 0007 section 11). *Measured 2026-11-06 ([verify](verify.md)): every read is far under its budget, so the budgets are kept as written; each read's plan is asserted to use the index named here, except the SKU name branch (no index yet, carried to feature 12).*
+
+> Amended 2026-11-07 by spec 0012: the SKU search row relies on `product_variants_search_trgm_idx`, `product_variants_sku_c_idx`, and `barcodes_code_unique`, asserted by the scale suite ([spec 0012](../0012-catalog-styles-variants/index.md) AC-5).
 
 | Read or write | Budget | Index it relies on |
 |---|---|---|
@@ -108,6 +115,8 @@ Every foreign key column above has its own index or leads one (PostgreSQL does n
 | create location | `sellable_online` allowed? | `location_owner_policies.can_sell_online` |
 | any owner type question | answer | `LocationPolicyService.policyFor(locationId)` |
 | archive location | allowed? | no balance with `on_hand <> 0` and no active reservation there (spec 0006's `usage`) |
+
+> Amended 2026-11-07 by spec 0011: `sellable_online` is allowed only when the policy allows it, the location is a sellable warehouse, and no other active location has it, and it is set only through the gated make online action (stock confirmed counted, registered checks passed); archiving a location sets it to false ([spec 0011](../0011-stock-ledger-locations/index.md) AC-1, AC-19).
 
 ## Critical test scenarios
 

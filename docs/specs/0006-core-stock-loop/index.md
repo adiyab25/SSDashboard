@@ -17,11 +17,14 @@ This is the walking skeleton (the first thin path through every layer): a signed
 
 **Acceptance criteria**:
 - **AC-1**: Any signed in person can create a SKU: a name (English and/or Arabic, at least one), a SKU code, and an optional price (0 or more, 2 decimals). The code is trimmed and uppercased, then must match `^[A-Z0-9._-]{1,64}$`. It creates one active product with one variant of kind `stocked`, tracking `none`, base unit `pc`. A code already in use answers 409 `SKU_TAKEN`.
+  > Amended 2026-11-07 by spec 0012: `POST /api/products` also takes an optional style code, season, and product group, and further variants are added to a style through `POST /api/styles/:id/variants` ([spec 0012](../0012-catalog-styles-variants/index.md) AC-10).
 - **AC-2**: Any signed in person can edit a SKU's name and price. Only an admin can change a SKU's code, and only while no stock balance row exists for it (it has never been posted); after that the api answers 409 `CODE_LOCKED` and the field is read only with a hint. An edit sent with an `updatedAt` other than the stored one answers 409 `STALE_RECORD` and changes nothing.
 - **AC-3**: Only an admin can archive, unarchive, or delete a SKU. Archive fails with 409 `STOCK_ON_HAND` while any balance of that SKU has on hand other than 0 or any active reservation is open, and a receipt posting at the same moment either lands before the archive (which then fails) or fails with `ARCHIVED`, never both succeeding. An archived SKU leaves search, pickers, and the default list, and shows under an Archived filter; its history stays. Delete works only for a SKU nothing references (409 `IN_USE` otherwise) and removes its product too.
+  > Amended 2026-11-07 by spec 0012: archiving a SKU archives its style (product) only when no other active SKU of that style remains, and unarchiving a SKU unarchives its style ([spec 0012](../0012-catalog-styles-variants/index.md) AC-11).
 - **AC-4**: Only an admin can create, edit, archive, unarchive, or delete locations. A location has a code (trimmed, uppercased, `^[A-Z0-9._-]{1,16}$`, unique, 409 `LOCATION_CODE_TAKEN`), a name (at least one language), and a type of warehouse or showroom. Code edits, stale edits, archive, and delete follow the same rules as AC-2 and AC-3 (a location with bins cannot be deleted). The seeded transit and virtual locations never appear in these screens or pickers, and their ids answer 404 on location management endpoints.
   > Amended 2026-11-05: a location now has a `kind` (`warehouse`, `shop`, `transit`, `virtual`) and an `owner_type` defaulting to `own`, not a `type` of warehouse or showroom; a showroom becomes `shop` (spec 0002, Amendment A13, [catalog child](../0002-core-data-model/0002-catalog-locations.md#locations-and-the-owner-type-policy)).
 - **AC-5**: Any signed in person can post a stock receipt: one active warehouse or showroom location, a receipt date (defaults to now; may be an earlier day; never in the future), an optional reference (up to 64 characters) and note (up to 500), and 1 to 200 lines. Each line names a different SKU, a whole quantity from 1 to 1,000,000, and a required unit cost from 0 to 9,999,999,999.9999 with at most 4 decimals, and quantity times unit cost may not exceed 9,999,999,999.99 (422 `LINE_TOTAL_TOO_LARGE`). One transaction writes the receipt, its lines, its number (`SR-YYYY-NNNNNN`, year taken from the receipt date in the install time zone), and one ledger group of source type `stock_receipt` with one inbound movement per line at that line's unit cost, linked by `source_line_id`, posted by the session user. If any part fails, nothing is stored and no number is used.
+  > Amended 2026-11-07 by spec 0011 (domain review M6): a line's unit cost is no longer required; when a line sends none it defaults to `CostService.costFor(variant, the receipt's operating day)` (`COST_NOT_SET` when there is none), and a line that sends 0 or any cost other than that default needs `cost.view` (422 `INVALID_LINES` with `COST_NEEDS_PERMISSION`) ([spec 0011](../0011-stock-ledger-locations/index.md) AC-26).
 - **AC-6**: A receipt post requires an `Idempotency-Key` header holding a UUID, which becomes the receipt's id. The same key with the same body answers 200 with the same receipt and moves stock once. The same key with any field different (location, date, reference, note, or lines) answers 409 `IDEMPOTENCY_CONFLICT`. A missing or malformed key answers 400 `IDEMPOTENCY_KEY_REQUIRED`.
   > Amended 2026-11-06 (spec 0008 security review M1): the replay answers 200 only to the person who posted the receipt; anyone else gets 409 `IDEMPOTENCY_CONFLICT` whatever the body, so a replay cannot confirm a guessed cost.
 - **AC-7**: A receipt with an unknown, archived, or not stockable SKU, a SKU listed twice, an unknown, archived, or system location, a future date, or a date on or before the inventory lock date is rejected with a stable code and posts nothing. Line faults are all reported at once, each with its line index.
@@ -31,8 +34,10 @@ This is the walking skeleton (the first thin path through every layer): a signed
 - **AC-11**: Unit cost, line totals, receipt reference value, average unit cost, and stock value are returned only to admins. For staff the api leaves those fields out of every response, replays included, and the screens hide those columns. Staff still enter unit cost on receipts.
   > Amended 2026-11-06 (spec 0008, AC-6): "admins" reads "people holding the `cost.view` grant". The api strips the fields per caller through `access.has('cost.view')`, and an idempotent replay answers only the person who posted the receipt, so a replay can never confirm a guessed cost.
   > Amended 2026-11-05: cost and value are returned only to people holding the `cost.view` grant, not to admins ([spec 0008](../0008-roles-as-hats/index.md) AC-6).
+  > Amended 2026-11-07 by spec 0011: "Staff still enter unit cost on receipts" no longer holds: a person without `cost.view` sends no cost and the style cost is used ([spec 0011](../0011-stock-ledger-locations/index.md) AC-26).
 - **AC-12**: The receipt list shows receipts newest first with number, date, location, reference, line count, status (voided ones badged), and who posted. It filters by the shell's current location (or all) and a search box matching number or reference (contains, ignoring case), and pages 50 at a time.
 - **AC-13**: SKU search (`q`) matches a SKU code starting with `q` (uppercased) or an English or Arabic name containing `q` (ignoring case). The receipt line picker shows up to 20 active SKUs; the SKU list pages 50 at a time and can show archived ones.
+  > Amended 2026-11-07 by spec 0012: search matches an exact barcode, a code prefix, or every word of the normalized query inside the variant's `search_text` (style names, codes, option values, Arabic normalized), and filters by season, group, and style ([spec 0012](../0012-catalog-styles-variants/index.md) AC-3, AC-4).
 - **AC-14**: When a post or void hits the ledger's lock cap, the api answers 503 `BUSY` with `Retry-After: 2`. The web retries once with the same request after that delay, then shows a busy message with a Retry button and keeps the form filled.
 - **AC-15**: Every endpoint needs a signed in session (401 otherwise). An admin only action called by staff answers 403 `FORBIDDEN`. The Locations page is in the navigation for admins only.
   > Amended 2026-11-07 ([spec 0008](../0008-roles-as-hats/index.md) AC-5, AC-11): "admin only" reads "needs the route's permission" (`catalog.manage` for SKU code changes, archive, delete and location writes, `stock.correct` for a receipt void); a person without it gets 403 `FORBIDDEN`, and a page opened by its address shows the no access state. The Locations item is in the navigation for people holding `catalog.manage`.
@@ -92,6 +97,8 @@ One migration (`0008_*`, generated with `pnpm db:generate` so drizzle kit writes
 
 Relationships: location 1:N receipts; receipt 1:N lines; receipt 1:1 posting group; receipt 0..1:1 void group; line 1:1 movement in the posting group, plus one in the void group after a void (both carry `source_line_id = line.id`; tell them apart by `group_id`); product 1:1 variant for now (1:N from feature 8).
 
+> Amended 2026-11-07 by spec 0012: a product (style) has 1 to N variants ([spec 0012](../0012-catalog-styles-variants/index.md) AC-10).
+
 After the revoke the application role holds INSERT and SELECT on `stock_receipt_lines` (write once, like movements) and INSERT, SELECT, UPDATE on `stock_receipts` (the void columns).
 
 ### State transitions
@@ -127,6 +134,8 @@ All paths are under `/api`, behind the session guard. Bodies and queries are Zod
 | `/stock` | inventory | GET | `locationId?`, `skuId?`, `includeZero?` (default false), `cursor?`, `limit?` (≤ 50) | `items: [{ sku, location, onHand, negative, avgUnitCost?, totalValue?, lastMovedAt }]`, `nextCursor` | signed in | 400 |
 
 > Amended 2026-11-05: the `POST /locations` and `PATCH /locations/:id` rows take `kind` (`warehouse` | `shop`) and an `owner_type` defaulting to `own` instead of `type` (`warehouse` | `showroom`) (spec 0002, Amendment A13; build plan milestone 2).
+
+> Amended 2026-11-07 by spec 0011: `POST` and `PATCH /locations` no longer take `sellableOnline`; the online location changes only through the gated `POST /locations/:id/make-online` and `POST /locations/online/stop` (one online location, a sellable warehouse); archive turns `sellable_online` off; `GET /locations` items add `partyId`, `partyName`, `online`, and `stockVerifiedAt` ([spec 0011](../0011-stock-ledger-locations/index.md) AC-1, AC-12, AC-19).
 
 **Error mapping** (one function, `inventory/ledger-http.ts`, used by every inventory controller; it also sets the `Retry-After` header):
 
@@ -212,6 +221,8 @@ All paths are under `/api`, behind the session guard. Bodies and queries are Zod
 | busy retry | delay | response header `Retry-After` (2 seconds), set by `ledger-http.ts` |
 
 > Amended 2026-11-05: the receipt location check reads `kind` `warehouse` or `shop` instead of `type` `warehouse` or `showroom` (spec 0002, Amendment A13).
+
+> Amended 2026-11-07 by spec 0012: the SKU search row above is replaced by spec 0012's three branch search over `product_variants.search_text` ([spec 0012](../0012-catalog-styles-variants/index.md), Search).
 
 ### Key invariants
 
@@ -311,6 +322,7 @@ Tracer Bullet: Milestone 1 is the whole scope "done when" thread, thin but real 
 - `FOR SHARE` on master rows during every posting adds a little lock traffic; an archive waits behind in flight postings.
 - Decision (amended 2026-11-04): `lockForArchive` no longer takes per pair advisory locks. They exhausted the shared lock table on a location with about 10,000 balance rows and added nothing, because the row `FOR UPDATE` already excludes every posting and reservation (see Key invariants). `rebuildLevel` now reads the SKU and location rows `FOR SHARE` first, so it joins the same exclusion.
 - SKU name search is a plain scan; at full catalog size it is near the 500 ms budget until feature 9 adds real search.
+  > Amended 2026-11-07 by spec 0012: no longer true once spec 0012 milestone 1 is built: name search uses a trigram index.
 - The Stock page orders by last movement, not by SKU code, because inventory may not join catalog tables. Users find a SKU with the SKU filter.
 - A void removes value at the current average, not the receipt's own value, so a void after other movements shifts the remaining average. This is the ledger's costing model, not a bug, but users may ask.
 - Hiding cost by role is coarse: a warehouse lead who should see cost must be made an admin until feature 13.
@@ -330,8 +342,11 @@ Tracer Bullet: Milestone 1 is the whole scope "done when" thread, thin but real 
 - [ ] `apps/api/AGENTS.md`: add the new `src/catalog/` module and `src/inventory/sku-lifecycle/` to Key files. `/sync` owns the edit.
 - [x] Decided (2026-11-04): `rebuildLevel` reads the SKU and location rows `FOR SHARE` first (id order, as `loadMaster`), before `lockPairs`, so it joins the archive exclusion. Built in 14a.
 - [ ] Feature 25 (discrepancy UI): warn before rebuilding a discrepancy onto an archived SKU or location, since the rebuild can restore on hand there (see Key invariants, accepted edge). Offer unarchive as the fix.
+  > Amended 2026-11-07 by spec 0011: owned by [spec 0011](../0011-stock-ledger-locations/index.md) AC-14 (the warning is part of its rebuild dialog).
 - [ ] Feature 8: lift the one variant limit on `POST /products`, add unit conversion on receipt lines (`uom_id` and factor).
+  > Amended 2026-11-07 by spec 0012: variants are added through `POST /api/styles/:id/variants` (AC-10); unit conversion stays open.
 - [ ] Feature 9: replace the name contains scan with indexed search; revisit Stock page ordering by SKU code.
+  > Amended 2026-11-07 by spec 0012: indexed search is taken by spec 0012 milestone 1; Stock page ordering stays open.
 - [ ] Feature 10: group several bins (and lots, feature 18) into one Stock page row per SKU and location without losing the 200 ms budget.
 - [ ] Feature 13: replace the admin check for cost fields with a cost permission.
 - [ ] Feature 14: master data change history for SKUs and locations.

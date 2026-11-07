@@ -52,6 +52,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `orders.gift` | Create a gifted order (spec 0002, owner question 8) | | | | | ✓ | | |
 | `customers.view` | See customer profiles, phones, and history | P | ✓ | ✓ | | ✓ | | |
 | `customers.merge` | Merge customers and undo a merge | P | ✓ | ✓ | | ✓ | | |
+| `customers.flag` | Set and clear a customer's flag (amended 2026-11-07 by spec 0014, designed, not built) | P | ✓ | ✓ | | ✓ | | |
 | `exchanges.handle` | Open exchanges and returns for a customer, work the review desk | P | ✓ | ✓ | | ✓ | | |
 | `refunds.approve` | Approve refunds and post credit by hand | P | | ✓ | | ✓ | | |
 | `fulfillment.work` | Pick, pack, ship, scan returns, restock | P | | ✓ | ✓ | ✓ | | |
@@ -79,6 +80,10 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `cost.view` | See unit cost, stock value, cost of goods, and margin | | extra grant only, for any internal hat or media buyer (AC-7) | | | | | never |
 
 > Amended 2026-11-06 (gate ruling, spec 0010 AC-13): the single `audit.view` became `audit.read`, `audit.undo` and `audit.export`, all on the manager hat only and marked personal, because an entry's before and after can carry customer data and costs.
+
+> Amended 2026-11-07 by spec 0014 (designed, not built; the build of feature 14 registers it in `packages/contracts/src/access.ts`): the new permission `customers.flag` (owner decision Q-14.3) lets a person set and clear a customer's flag, clearing needing a reason code. It reaches personal data (`P`), so it is on `support`, `operations`, and `manager` only and never on an external hat (AC-8).
+
+> Amended 2026-11-07 by spec 0012 (designed, not built; the build of feature 12 changes the matrix text): `catalog.manage` now also covers managing seasons and product groups (create, edit, archive, unarchive, delete) and changing style codes, in addition to what the row above says. It stays on the `manager` hat only.
 
 **Location scoping**: none. Every permission applies to every location of the brand. The shell's location switcher stays a view filter, not a wall (owner question 5).
 
@@ -110,6 +115,62 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `CostRulesController` | `GET /api/platform/cost-rules` | `cost.view` (added by spec 0009) |
 | `CostRulesController` | `POST /api/platform/cost-rules` | `settings.manage`, `cost.view` (both required; added by spec 0009) |
 | `OwnerPoliciesController` | `GET /api/inventory/owner-policies`, `PUT /api/inventory/owner-policies/:ownerType` | `settings.manage` (class; added by spec 0009) |
+
+> Amended 2026-11-07 by specs 0011, 0012, 0013, 0014, and 0015 (designed, not built; each owning feature's build adds its rows to the declarations and to the access sweep `FIXTURES` in `apps/api/test/access-sweep.e2e-spec.ts`). Every row below is copied from the API section of the named spec; "amended" means the route exists today and the spec changes its behavior, not its permission, except where noted. All paths are under `/api`, all staff audience unless marked.
+
+| Spec and controller | Route | Declaration |
+|---|---|---|
+| 0011 locations | `GET /api/locations/owner-types` | `catalog.manage` |
+| 0011 locations | `GET /api/locations/party-options` | `catalog.manage` |
+| 0011 locations | `POST /api/locations` (amended), `PATCH /api/locations/:id` (amended) | `catalog.manage` |
+| 0011 locations | `GET /api/locations` (amended: adds party, online, and stock verified fields) | `stock.view` (and `catalog.manage` for `status=archived`, as above) |
+| 0011 locations | `POST /api/locations/:id/confirm-stock` | `catalog.manage` |
+| 0011 locations | `GET /api/locations/:id/online-gate` | `catalog.manage` |
+| 0011 locations | `POST /api/locations/:id/make-online` | `catalog.manage` |
+| 0011 locations | `POST /api/locations/online/stop` | `catalog.manage` |
+| 0011 stock | `GET /api/stock/online-status` | `stock.view` |
+| 0011 partners | `POST /api/partners` | `partners.manage` |
+| 0011 transfers | `POST /api/stock-transfers` | `stock.receive` |
+| 0011 transfers | `GET /api/stock-transfers/:id` | `stock.view` |
+| 0011 adjustments | `POST /api/stock-adjustments` | `stock.correct` |
+| 0011 adjustments | `POST /api/stock-adjustment-requests` | `stock.receive` |
+| 0011 receipts | `POST /api/stock-receipts` (amended: optional line `unitCost`; a cost needs `cost.view`, 422 `COST_NEEDS_PERMISSION`) | `stock.receive` |
+| 0011 discrepancies | `GET /api/stock-discrepancies` | `stock.correct` |
+| 0011 discrepancies | `POST /api/stock-discrepancies/:id/rebuild`, `POST /api/stock-discrepancies/:id/dismiss` | `stock.correct` |
+| 0012 catalog | `GET /api/skus` (amended: new filters and fields), `GET /api/skus/:id` (amended) | `stock.view` |
+| 0012 catalog | `PATCH /api/skus/:id` (amended: `FIELD_OWNED_BY_CHANNEL`) | `catalog.edit` |
+| 0012 catalog | `POST /api/skus/:id/barcodes`, `DELETE /api/skus/:id/barcodes/:barcodeId` | `catalog.edit` |
+| 0012 catalog | `POST /api/products` (amended: `styleCode`, `seasonId`, `productGroupId`) | `catalog.edit` |
+| 0012 styles | `GET /api/styles`, `GET /api/styles/:id` | `stock.view` (variant `cost` only with `cost.view`) |
+| 0012 styles | `PATCH /api/styles/:id`, `POST /api/styles/assign`, `POST /api/styles/:id/variants` | `catalog.edit` |
+| 0012 styles | `PATCH /api/styles/:id/code` | `catalog.manage` |
+| 0012 styles | `GET /api/styles/:id/cost-records` | `stock.view` and `cost.view` |
+| 0012 styles | `POST /api/styles/:id/cost-records` | `catalog.edit` and `cost.view` |
+| 0012 seasons, product groups | `GET /api/seasons`, `GET /api/product-groups` | `stock.view` |
+| 0012 seasons, product groups | `POST /api/seasons`, `POST /api/product-groups` | `catalog.manage` |
+| 0012 seasons, product groups | `PATCH /api/seasons/:id`, `PATCH /api/product-groups/:id` | `catalog.manage` |
+| 0012 seasons, product groups | `POST /api/seasons/:id/archive`, `POST /api/seasons/:id/unarchive`, and the same two for `/api/product-groups/:id` | `catalog.manage` |
+| 0012 seasons, product groups | `DELETE /api/seasons/:id`, `DELETE /api/product-groups/:id` | `catalog.manage` |
+| 0013 orders | `GET /api/orders`, `POST /api/orders/search`, `GET /api/orders/:id` | `orders.view` |
+| 0013 orders | `GET /api/orders/options` | `orders.confirm` |
+| 0013 orders | `POST /api/orders` | `orders.confirm` |
+| 0013 orders | `POST /api/orders/gifted` | `orders.gift` |
+| 0013 orders | `POST /api/orders/:id/edits` | `orders.confirm` (line and shipping operations on a gifted order also need `orders.gift`) |
+| 0013 orders | `POST /api/orders/:id/confirm`, `POST /api/orders/:id/cancel` | `orders.confirm` |
+| 0013 orders | `POST /api/orders/:id/pack`, `POST /api/orders/:id/unpack` | `fulfillment.work` |
+| 0013 orders | `POST /api/orders/hold-open-orders` | `catalog.manage` |
+| 0014 customers | `POST /api/customers/search`, `GET /api/customers/:id` | `customers.view` |
+| 0014 customers | `GET /api/customers/:id/timeline` | `customers.view`, then a further permission per timeline kind (the lens table of spec 0014) |
+| 0014 customers | `POST /api/customers/merges`, `POST /api/customers/merges/:id/undo` | `customers.merge` |
+| 0014 customers | `GET /api/customers/merge-suggestions` | `customers.view` |
+| 0014 customers | `POST /api/customers/merge-suggestions/:id/dismiss` | `customers.merge` |
+| 0014 customers | `PUT /api/customers/:id/flag`, `POST /api/customers/:id/flag/clear` | `customers.flag` |
+| 0015 connections | `GET /api/connections`, `POST /api/connections/shopify`, `GET` and `PATCH /api/connections/:id`, `PUT /api/connections/:id/credentials`, `POST /api/connections/:id/check`, `/gateway-scan`, `/backfill`, `/stock-preview`, `/stock-push/confirm`, `/pause`, `/resume`, `/archive`, `GET /api/connections/:id/sync-runs`, `/unmapped-variants`, `/failed-events`, `POST /api/connections/:id/failed-events/:eventId/retry` | `settings.manage` (class, `@RequiresModule('connectors')`) |
+| 0015 connections | `GET /api/connections/freshness` | `orders.view` |
+| 0015 hook | `POST /api/hooks/shopify/:connectionId` | none (`@Audience('hook')`, proves itself by signature) |
+| 0015 stock | `GET /api/stock/shopify-differences` | `stock.view` |
+| 0015 stock | `POST /api/stock/shopify-differences/:id/acknowledge` | `stock.receive` |
+| 0015 outbound commands | `GET /api/outbound-commands`, `POST /api/outbound-commands/:id/retry`, `POST /api/outbound-commands/:id/resolve` | `@AnyHat()`, with a per linked type check in the handler through `Access` (403 `FORBIDDEN`): `order` needs `orders.view` to list and `orders.confirm` to retry or resolve; `connection` needs `settings.manage` |
 
 ## Decision
 

@@ -19,6 +19,8 @@ A customer is a normalized Egyptian phone number. One customer holds many phones
 | ★ `customer_external_ids` | `id`, `customer_id fk`, `kind` enum (`shopify_customer`, `partner_reference`, `whatsapp_contact`), `connection_id fk null` (an id issued by a connected account, for example one Shopify store), `channel_id fk null` (an id issued by a channel without a connection, for example a partner's own customer reference), `external_id text` | check exactly one of `connection_id`, `channel_id` is set; unique (`tenant_id`, `kind`, `connection_id`, `channel_id`, `external_id`) `NULLS NOT DISTINCT`; index (`customer_id`) |
 | ★ `customer_merges` (append only) | `id`, `action` enum (`merge`, `undo`), `survivor_id fk`, `merged_id fk`, `repointed_ids uuid[]` (customers whose `merged_into_id` pointed at `merged_id` and were moved to `survivor_id`, so an undo can move them back), `undoes_merge_id fk null` (self), `reason text null` (a code, never a typed note: `customer_merges_reason_shape`, security review S4), `actor_id fk users`, `recorded_at` (set by the database at insert, security review S1) | unique (`undoes_merge_id`) (a merge is undone at most once); check `action = 'undo'` exactly when `undoes_merge_id IS NOT NULL`; index (`survivor_id`), (`merged_id`) |
 
+> Amended 2026-11-07 by spec 0014: `customers` gains `risk_flag_set_at` and `risk_flag_set_by` (who set the flag and when), a trigram index on `name`, and the module gains the mutable table `customer_merge_suggestions` (one row per pair of customers, ever). See [spec 0014](../0014-customers-by-phone/index.md), *Data model*.
+
 ### Phone normalization at the edge
 
 One value object, `EgyptianPhone.parse(raw: string)` in `packages/contracts/src/customers/egyptian-phone.ts`, used by every input edge (Shopify import, portal lookup, confirmation queue, imports, staff forms). It returns `{ e164, kind }` or throws `InvalidPhone`. Steps, in order:
@@ -44,6 +46,8 @@ One value object, `EgyptianPhone.parse(raw: string)` in `packages/contracts/src/
 5. An Egyptian mobile result must match `^\+201[0125][0-9]{8}$` (the four mobile prefixes 010, 011, 012, 015), else `InvalidPhone`.
 
 The doubled zero row looks like the North American country code `+1`, but a North American number always has 11 digits after the `+`, so a 10 digit form never collides with one. The rows are tried top to bottom and the first match wins. The raw input is never stored on the customer. The order keeps the normalized `ship_to_phone` and `ship_to_phone_alt` (the second number Egyptian COD forms carry, used by the confirmation agent and the courier); an order whose phone does not parse imports with `customer_id` null, the raw text in `orders.contact_phone_raw` (personal data, redacted, cleared when a person fixes it), and a data quality task (feature 14 owns the queue). Only the main phone creates or finds the customer; the second phone is added to the customer's phones when the agent confirms it.
+
+> Amended 2026-11-07 by spec 0014: feature 14 owns the linking rule, not a queue screen. An order linked to no customer is fixed in the confirmation queue (feature 18), where the agent types the right number and the orders module links it again through `CustomersService.findOrCreate`. Only the main phone creates a customer, but a known channel customer id (a Shopify customer id) may also find one, when the phone is new or did not parse. See [spec 0014](../0014-customers-by-phone/index.md) AC-1.
 
 ### Merge and undo
 
@@ -116,7 +120,7 @@ A reversal has the original's `kind` and `funding`, the negated amount, and `rev
 | Action | Value | Source |
 |---|---|---|
 | any phone input | `phone_e164`, `kind` | `EgyptianPhone.parse` |
-| order import | customer | `findOrCreateByPhone`: the phone row's customer, resolved to canonical; else a new customer with that phone |
+| order import | customer | `findOrCreateByPhone`: the phone row's customer, resolved to canonical; else a new customer with that phone (amended 2026-11-07 by spec 0014: the method is `CustomersService.findOrCreate`, taking the phone and the channel customer id, rules in spec 0014 AC-1) |
 | Shopify import | external id | (`connection_id`, Shopify customer id), kind `shopify_customer` |
 | merge | `repointed_ids` | customers with `merged_into_id = merged_id`, read under the customer locks |
 | any read | canonical customer | `merged_into_id`, one hop |

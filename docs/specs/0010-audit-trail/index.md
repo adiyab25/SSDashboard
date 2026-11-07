@@ -194,7 +194,7 @@ The registry starts with these. "Reason" is `required` (R) or `optional` (o). "A
 | `task.assigned`, `task.rescheduled`, `task.closed`, `task.reopened` | `task` | o | no | no | tasks (0002 customers, credit, tasks) |
 | `customer.merged` | `customer` | o | no (suggested merges applied by a person) | yes | feature 14 |
 | `customer.unmerged` | `customer` | R | no | no | feature 14 |
-| `customer.merge_suggested_applied` | `customer` | o | yes | yes | feature 14 |
+| `customer.merge_suggested_applied` | `customer` | o | yes | yes | feature 14 (amended 2026-11-07 by spec 0014, see the note below the table: feature 14 no longer registers it) |
 | `policy.changed` (a `location_owner_policies` or similar policy row) | `policy` | R | no | no | feature 4 follow up, settings screen (feature 9) |
 | `setting.changed` | `setting` | o; R when the key is sensitive (time zone, cutoff hour, cost rules) | no | no | feature 9 |
 | `hat.granted`, `hat.revoked` | `user` | o; R for `hat.revoked` of the manager hat | no | no | feature 8 |
@@ -211,6 +211,30 @@ The registry starts with these. "Reason" is `required` (R) or `optional` (o). "A
 | `export.superseded` | `export_run` | R | no | no | feature 45 |
 | `credit.reversed`, `stock.adjusted_manually` | `credit_entry`, `stock_movement_group` | R | no | no | credit, inventory |
 | `audit.exported`, `<action>_undone` (amended 2026-11-07, AS5: on the undone entry's own record type) | `audit_entry`; the undone entry's record type for `_undone` | R for undone | no | no | this feature |
+| `location.created`, `location.stock_confirmed` (amended 2026-11-07 by spec 0011, designed, not built) | `location` | o | no | no | feature 11 (spec 0011) |
+| `location.online_moved`, `location.online_stopped` (amended 2026-11-07 by spec 0011) | `location` | R | no | no | feature 11 (spec 0011) |
+| `partner.created` (amended 2026-11-07 by spec 0011; new record type `partner`, label the partner code) | `partner` | o | no | no | feature 11 (spec 0011) |
+| `stock.adjustment_requested` (amended 2026-11-07 by spec 0011; new record type `stock_adjustment_request`, no label) | `stock_adjustment_request` | R | no | no | feature 11 (spec 0011) |
+| `stock_discrepancy.rebuilt` (amended 2026-11-07 by spec 0011; new record type `stock_discrepancy`, no label) | `stock_discrepancy` | o | no | no | feature 11 (spec 0011) |
+| `stock_discrepancy.dismissed` (amended 2026-11-07 by spec 0011) | `stock_discrepancy` | R | no | no | feature 11 (spec 0011) |
+| `style.edited`, `style.code_changed`, `style.variant_added` (amended 2026-11-07 by spec 0012, designed, not built; new record type `style`, label the style code; one `style.edited` per style on a bulk assign) | `style` | o | no | no | feature 12 (spec 0012) |
+| `sku.barcode_added`, `sku.barcode_removed` (amended 2026-11-07 by spec 0012) | `sku` | o | no | no | feature 12 (spec 0012) |
+| `cost_record.recorded` (amended 2026-11-07 by spec 0012; the record id is the style) | `style` | o; R when backdated | no | no | feature 12 (spec 0012) |
+| `season.created`, `season.edited`, `season.archived`, `season.unarchived`, `season.deleted` (amended 2026-11-07 by spec 0012; new record type `season`) | `season` | o | no | no | feature 12 (spec 0012) |
+| `product_group.created`, `product_group.edited`, `product_group.archived`, `product_group.unarchived`, `product_group.deleted` (amended 2026-11-07 by spec 0012; new record type `product_group`) | `product_group` | o | no | no | feature 12 (spec 0012) |
+| `style.channel_created`, `style.channel_updated`, `sku.channel_created`, `sku.channel_linked`, `sku.channel_updated` (amended 2026-11-07 by spec 0012; written by the channel sync with the caller's actor) | `style` or `sku` | not applicable (system) | yes | no (Shopify would write it back on the next sync) | feature 12 (spec 0012) |
+| `order.created_manually`, `order.payment_method_rederived` (amended 2026-11-07 by spec 0013, designed, not built; the second has actor `system_job`) | `order` | o | no (spec 0013: none automatic) | no | feature 16 (spec 0013) |
+| `order.collection_recorded_manually` (amended 2026-11-07 by spec 0013) | `order` | R | no | no | feature 16 (spec 0013) |
+| `customer.merge_suggestion_dismissed`, `customer.phone_added`, `customer.flagged` (amended 2026-11-07 by spec 0014, designed, not built) | `customer` | o | no | no | feature 14 (spec 0014) |
+| `customer.unflagged` (amended 2026-11-07 by spec 0014) | `customer` | R | no | no | feature 14 (spec 0014) |
+| `connection.created`, `connection.edited`, `connection.backfill_started`, `inbound_event.retried` (amended 2026-11-07 by spec 0015, designed, not built; new record types `connection`, label the store code, and `inbound_event`, label the Shopify order name) | `connection`; `inbound_event` for `inbound_event.retried` | o | no | no | feature 13 (spec 0015) |
+| `connection.paused`, `connection.resumed`, `connection.credentials_replaced`, `connection.archived`, `connection.stock_push_confirmed` (amended 2026-11-07 by spec 0015; entries never hold credentials) | `connection` | R | no | no | feature 13 (spec 0015) |
+| `outbound_command.retried`, `outbound_command.resolved` (amended 2026-11-07 by spec 0015) | the command's linked record type (**Assumed**: spec 0015 names no record type for these two) | reason code | no | no | feature 13 (spec 0015) |
+| `stock_difference.acknowledged` (amended 2026-11-07 by spec 0015; new record type `connection_stock_level`, label the SKU code) | `connection_stock_level` | reason code | no | no | feature 13 (spec 0015) |
+
+> Amended 2026-11-07 by specs 0011 to 0015 (designed, not built; each owning feature's build registers its codes and labels in `packages/contracts/src/audit/` and `packages/i18n`). Codes the rows above already listed before this note keep their rows and gain their detail from the owning spec: `stock.adjusted_manually` (spec 0011, R, record type `stock_movement_group`, no label), `order.edited` and `order.partial_delivery_split` (spec 0013, optional, reasons kept as codes), `customer.merged` and `customer.unmerged` (spec 0014; the merge undo handler is `customers.merge_undo`). Spec 0011 writes no entry for showroom moves (the transfer row and its movements are their own history). Spec 0013 does not register `order.cancelled_override`: its design has no move that skips the transition table, so the first feature that adds one registers it, and state moves themselves are not audited. Spec 0015 requires a reason on `connection.paused`, `connection.resumed`, `connection.credentials_replaced`, `connection.archived`, and `connection.stock_push_confirmed` (its audit list and API table agree since 2026-11-07).
+
+> Amended 2026-11-07 by spec 0014 (owner decision Q-14.4, designed, not built): the `customer.merge_suggested_applied` row above, and its "feature 14" owner, no longer hold. Feature 14 does not register `customer.merge_suggested_applied`, because a suggested merge is applied by a person, never automatically, and writes `customer.merged` (reason code `suggestion`). The row stays only as history; the first feature that applies a merge automatically registers the code. The "applying a suggested merge" example in "What an automatic action is" below is not true of feature 14 for the same reason.
 
 A reason is required in two situations: the action overrides a rule or reverses something (voids, reversals, revokes, unmerge, supersede, forced import, manual stock adjustment, a sensitive setting), or the system must be told why it was wrong (every undo). An automatic action has no reason (a system has none); the entry records the rule that fired in `after` (for example `{"rule":"exact_match"}`) and its evidence ids. A feature may tighten (`reasonRequired: true` on one call) but never loosen the registry.
 

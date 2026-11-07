@@ -22,6 +22,8 @@ An order belongs to one store and one channel, carries where it came from (campa
 
 A store is where an order is numbered and priced (one per Shopify connection, plus internal stores). A channel is how the order arrived, and the key the export rules matrix and channel code mapping use. A Shopify store's orders arrive on a channel of kind `shopify`; a brand with two Shopify stores has two stores and may use one `shopify` channel or one per store (feature 13 decides; nothing here depends on it).
 
+> Amended 2026-11-07 by spec 0015: decided, one channel of kind `shopify` per Shopify store, with the store's code ([spec 0015](../0015-shopify-connector/index.md), Data model).
+
 **Connectors module** (key columns only; the rest is feature 13 and 19 detail per spec 0007 section 1)
 
 | Table | Fields | Constraints and indexes |
@@ -29,6 +31,8 @@ A store is where an order is numbered and priced (one per Shopify connection, pl
 | ★ `connections` | `id`, `provider` enum (`shopify`, `bosta`, `gateway`, `meta`, `whatsapp`, `telegram`), `label text`, `store_id fk null`, `status` enum (`active`, `paused`, `restricted`, `archived`), `restricted_at null`, `created_at`, `updated_at` | check: `provider <> 'shopify' OR store_id IS NOT NULL`; partial unique (`tenant_id`, `store_id`) where `provider = 'shopify'` (one Shopify connection per store); index (`store_id`). A `bosta` connection with `store_id` null serves every store; one with a store is bound to it (B1). `gateway` exists now so a gateway settlement account later is rows, not a migration (which gateway, for example Paymob, is a label and the adapter's business). Credentials, mode, and health columns: features 13, 19 |
 | ★ `outbound_commands` | `id`, `connection_id fk`, `kind text` (for example `shopify.order_edit`), `linked_type` enum (`order`, `customer`, `variant`, `exchange`, `refund`), `linked_id uuid`, `payload jsonb` (may hold an address: personal data), `idempotency_key text`, `sync_state` enum (`waiting`, `synced`, `failed`, `resolved`), `failure_reason text null`, `attempts int default 0`, `synced_at null`, `resolved_at null`, `resolved_by fk users null`, `resolution` enum null (`retried`, `fixed_in_provider`, `edit_undone`), timestamps | unique (`tenant_id`, `idempotency_key`); partial index (`linked_type`, `linked_id`) where `sync_state in ('waiting', 'failed')`; check `resolution` set exactly when `sync_state = 'resolved'` |
 | ○ `inbound_events`, `connection_external_ids` (feature 13) | spec 0007 section 1 | unique (`tenant_id`, `connection_id`, dedupe key); unique (`tenant_id`, `connection_id`, `entity`, `external_id`) |
+
+> Amended 2026-11-07 by spec 0015: `outbound_commands.linked_type` also takes `connection` (a stock push batch), the table gains `provider_ref` and `last_attempt_at`, and order kind payloads hold ids only, never an address; `connections` gains its Shopify credentials, config, health, and watermark columns; `inbound_events` and `connection_external_ids` are designed there, plus two new connector tables, `connection_stock_levels` and `connection_sync_runs` ([spec 0015](../0015-shopify-connector/index.md), Data model).
 
 **Orders module**
 
@@ -38,6 +42,8 @@ A store is where an order is numbered and priced (one per Shopify connection, pl
 | ★ `order_lines` | `id`, `order_id fk`, `position int`, `variant_id fk null` (null only while an imported line is unmapped), `title text` (the channel's line text, kept for unmapped lines and history), `quantity int > 0`, `unit_price numeric(14,2)`, `discount_amount`, `net_amount`, `tax_rate numeric(5,2)`, `tax_amount`, `gross_amount numeric(14,2)` (the original money shape, VAT inclusive gross after every discount), `prepaid_amount numeric(14,2) default 0` and `credit_applied_amount numeric(14,2) default 0` (this line's share of the order's prepayment and credit, B1), `unit_cost numeric(14,4) null` (frozen from the shipment's ledger movement; null until shipped), `line_state` enum (`open`, `cancelled`, `delivered`, `returned_to_origin`, `returned`, `lost`), `cancel_reason_code text null` (`edit_removal`, `customer_cancelled`, `out_of_stock`, `duplicate`), `split_from_line_id fk null` (self), `channel_line_id text null` (the channel's own line id) | unique (`tenant_id`, `order_id`, `position`); index (`order_id`), (`variant_id`), (`split_from_line_id`); check amounts `>= 0`, `gross_amount = net_amount + tax_amount`, and `prepaid_amount + credit_applied_amount <= gross_amount`; check (`line_state = 'cancelled'`) = (`cancel_reason_code IS NOT NULL`) |
 | ★ `order_events` (append only) | `id`, `order_id fk`, `machine` enum (`fulfillment`, `cash`), `from_state text null` (null for the first event), `to_state text`, `amount numeric(14,2) null` (cash events: the amount the event records), `actor_type` enum (`person`, `carrier`, `system_job`, `import`; the names spec 0010 uses for the same actors), `actor_id fk users null`, `reason_code text null`, `source_type text null` and `source_id uuid null` (the carrier event, settlement match, or exchange that caused it), `occurred_at timestamptz`, `recorded_at timestamptz default now()`, `operating_day date` (stamped from `occurred_at`) | index (`order_id`, `recorded_at`, `id`) (events of one transaction share `recorded_at`, so replay reads `ORDER BY recorded_at, id`; `uuidv7()` is monotonic within a session; clarified at the build, 2026-11-06); index (`operating_day`, `machine`, `to_state`) for "shipped yesterday" style reports; BRIN (`recorded_at`) |
 | ○ `shipments` (feature 19) | `id`, `order_id fk`, `connection_id fk`, `store_id fk`, `tracking_number text`, `business_reference text null`, `delivery_type` enum (`send`, `exchange`, `customer_return_pickup`, `return_to_origin`), `carrier_state_code text`, `cod_amount`, `attempts int`, fee and cash cycle columns from the single delivery read | unique (`tenant_id`, `connection_id`, `tracking_number`); index (`order_id`) |
+
+> Amended 2026-11-07 by spec 0013: `orders` gains `channel_order_ref text null` (the channel's own order id, unique per tenant and store when set, the idempotency key of order intake) and `customer_note text null` (the customer's checkout note, personal data, at most 2,000 characters), plus five list indexes; `order_lines` gains `short_quantity` (the orders module's copy of the line reservation's `unfilled_quantity`, spec 0011) with a partial index; the `order_relation` enum gains `goodwill_for` (a gifted goodwill replacement points at the order it makes good). See [spec 0013](../0013-orders-state-machines/index.md#data-model).
 
 `lines_gross_amount` is the sum of `gross_amount` over lines that are not `cancelled`, so a piece removed at confirmation leaves the order and its COD. `total_amount = lines_gross_amount + shipping_charged_amount`. `shipping_tax_amount` follows the original line rule for VAT inclusive amounts (net = gross / (1 + rate), tax = gross minus net) at the line tax rate setting, so the accounting export and an electronic receipt can split shipping like a line. A variant change at confirmation is never an in place edit of `variant_id`: it cancels the line with `cancel_reason_code = 'edit_removal'` and adds a new line (spec 0007, carried m3), so the metric dictionary can tell an edit from a cancellation. A duplicate cancelled at confirmation points at the order it duplicates (`duplicate_of`); an order a customer reopens the next day points at the cancelled one (`reopened_from`) and keeps its campaign.
 
@@ -49,6 +55,8 @@ A store is where an order is numbered and priced (one per Shopify connection, pl
 - **`cod_expected_amount`** is what the courier was told to collect: `total_amount − prepaid_amount − credit_applied_amount`, recomputed on every edit until `carrier_delivery_created_at` is set, then frozen.
 - **`cod_due_amount` (B2)** is what the customer owes for what she kept: the sum over lines in `open`, `delivered`, or `returned` of `gross_amount − prepaid_amount − credit_applied_amount`, plus the whole `shipping_charged_amount − shipping_prepaid_amount − shipping_credit_applied_amount` while at least one such line remains, never below 0. Before delivery it equals `cod_expected_amount`; a partial delivery lowers it by the returned rows only, because shipping is charged in full on any partial delivery (owner answer, 2026-11-05); a full return to origin or a lost parcel takes it to 0. A refusal moves no line in the built model, so the due amount stays full until the carrier reports the parcel back (Follow-up, feature 19). The credit applied to lines that come back is returned to the customer's balance by the credit module on the `LinesReturnedToOrigin` event, as a `consumption_release` entry (feature 21 and 28); a release never counts in `returned_credit_amount`, so a credit paid order that was partially delivered still derives `kept`.
 - **Reconciliation compares `cod_collected_amount` with `cod_due_amount`**, never with `cod_expected_amount` (gate review fix 5; feature 22 builds the comparison, feature 24 the "cash expected versus remitted" figure). A difference is a real shortfall and opens a task.
+
+> Amended 2026-11-07 by spec 0013 (domain review D3, the cancel half): a whole order cancellation leaves its lines `open` and every total as it was, and `codDue` also reads the fulfillment state and returns 0 for a `cancelled` order, so cash `unpaid` to `nothing_to_collect` fires in the cancel's own transaction. Removing one piece still cancels that line. The refused half stays with feature 19.
 
 ## Fulfillment state machine
 
@@ -69,6 +77,8 @@ Values: `new`, `confirmed`, `packed`, `shipped`, `delivered`, `partially_deliver
 | `shipped`, `failed_attempt`, `refused` | `returned_to_origin` | carrier | the parcel is back with the brand; every `open` line becomes `returned_to_origin` |
 | `shipped`, `failed_attempt`, `refused` | `lost` | carrier or person | the carrier reports the parcel lost (Bosta state 48 or its lost labels, mapped in feature 19), or a person records it with a reason; every `open` line becomes `lost` |
 | `delivered`, `partially_delivered` | `exchanged` | system_job | an exchange on this order completed (feature 34) |
+
+> Amended 2026-11-07 by spec 0013 (domain review [domain-orders](../../reviews/domain-orders.md) X1, owner decision Q-16.4): the `cancelled` row is no longer refused once `carrier_delivery_created_at` is set; a cancel stays possible until pickup (from `new`, `confirmed`, or `packed`), and only the money (`cod_expected_amount`, the prepaid and credit shares) stays frozen from the carrier delivery on, together with every edit. The row also accepts `system_job` with a reason code starting `channel.` (a cancellation from the channel) and `carrier` with a reason code starting `carrier.` (`carrier.terminated_before_pickup`, a delivery cancelled or terminated before any pickup). A cancel by a person or the channel after the delivery exists raises "terminate the delivery in Bosta". The `packed` to `confirmed` row keeps its refusal.
 
 Final states: `delivered` and `partially_delivered` (except to `exchanged`), `returned_to_origin`, `lost`, `exchanged`, `cancelled` (except the carrier fact). Any other pair raises `InvalidTransition` with both states.
 
@@ -97,6 +107,8 @@ Values: `unpaid`, `collected_by_carrier`, `remitted`, `reconciled`, plus `prepai
 | `collected_by_carrier` | `unpaid` | carrier, or person with a reason | the carrier reversed a collection |
 
 Final cash states: `reconciled`, `nothing_to_collect`, and `prepaid` until gateway settlement exists.
+
+> Amended 2026-11-07 by spec 0013 (AC-25, from the Shopify connector review's M6): `system_job` may also move `unpaid` to `prepaid`, `prepaid` to `unpaid`, and `nothing_to_collect` to `unpaid`, only with reason `payment_method_rederived`, only while no carrier delivery exists and nothing was collected, and only to the state `firstCashState` gives for the corrected amounts (a payment method a gateway mapping got wrong).
 
 ## Partial delivery splits lines
 
@@ -139,7 +151,7 @@ An order is editable (address, added line, a variant change as cancel plus add) 
 | create order | `channel_id` | the connector or entry point (feature 13, 18, 53) |
 | create order | `order_number` | Shopify's order name for Shopify stores; `numbering.next` for internal stores (feature 16 sets the document type) |
 | create order | `operating_day` | trigger from `placed_at` |
-| create order | `customer_id` | `CustomersService.findOrCreateByPhone(ship_to_phone)` ([customers child](0002-customers-credit-tasks.md)); null when the phone does not parse, and the raw phone is kept in `contact_phone_raw` |
+| create order | `customer_id` | `CustomersService.findOrCreateByPhone(ship_to_phone)` ([customers child](0002-customers-credit-tasks.md)); null when the phone does not parse, and the raw phone is kept in `contact_phone_raw` (amended 2026-11-07 by spec 0014: the call is `CustomersService.findOrCreate(tx, { phone, channelCustomer, name, seenAt })`; a known Shopify customer id still links an order whose phone did not parse, [spec 0014](../0014-customers-by-phone/index.md) AC-1) |
 | create order | `ship_to_phone_alt` | the second phone on the COD form or Shopify address, through `EgyptianPhone.parse`; null when absent or unparseable |
 | create order | `discount_code` | the channel's order (Shopify gives the codes used); the first code when several |
 | create order | line `discount_amount` | the channel's own discount allocation per line (Shopify gives one); for manual orders an order discount is spread over lines by `gross` share, the last line taking the rest |
@@ -161,6 +173,8 @@ An order is editable (address, added line, a variant change as cancel plus add) 
 | command events | `write_back_state` | `OutboundCommand*` events (connectors module) |
 | shipment | line `unit_cost` | the `order_shipment` movement's `unit_cost` for that line (`source_line_id` = the order line id) |
 | reconciliation (feature 22) | expected cash | `cod_due_amount` |
+
+> Amended 2026-11-07 by spec 0013: internal store order numbers use the document type `SO` (`SO-2026-000123`, prefix from `document_prefixes`); `cod_due_amount` is `codDue` with the order's fulfillment state as well as its lines.
 
 ## Critical test scenarios
 
