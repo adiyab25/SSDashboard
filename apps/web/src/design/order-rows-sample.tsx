@@ -12,7 +12,8 @@ import {
 import { FreshnessStrip } from '@ssdashboard/ui/status/freshness-strip';
 import { ProvisionalValue } from '@ssdashboard/ui/status/provisional-value';
 import { StatusChip } from '@ssdashboard/ui/status/status-chip';
-import { StatusChipOverflow } from '@ssdashboard/ui/status/status-chip-overflow';
+
+import { OverflowStatusesSample } from './overflow-statuses-sample';
 
 type OrderRowsSampleProps = {
   /** Reading direction of this copy, to check the table mirrors. */
@@ -35,6 +36,8 @@ const COPY = {
     none: 'None',
     provisional: 'Provisional',
     more: '2 more statuses',
+    hiddenFailed: 'Courier unreachable',
+    hiddenNotYet: 'Awaiting call',
     money: ['790 EGP', '1,240 EGP', '560 EGP'],
   },
   rtl: {
@@ -52,6 +55,8 @@ const COPY = {
     none: 'لا شيء',
     provisional: 'مبدئي',
     more: 'حالتان أخريان',
+    hiddenFailed: 'المندوب لا يرد',
+    hiddenNotYet: 'بانتظار الاتصال',
     money: ['٧٩٠ جنيه', '١٬٢٤٠ جنيه', '٥٦٠ جنيه'],
   },
 } as const;
@@ -123,7 +128,13 @@ export function OrderRowsSample({ dir }: OrderRowsSampleProps) {
             <TableCell>
               <div className="flex items-center gap-1">
                 <StatusChip meaning="owed" label={t.customer} />
-                <StatusChipOverflow count={2} label={t.more} />
+                <OverflowStatusesSample
+                  label={t.more}
+                  statuses={[
+                    { meaning: 'failed', label: t.hiddenFailed },
+                    { meaning: 'provisional', label: t.hiddenNotYet },
+                  ]}
+                />
               </div>
             </TableCell>
           </TableRow>

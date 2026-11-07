@@ -1,7 +1,7 @@
 # 0010. Audit trail: one append only log of who did what, when, and why, written in the same transaction as the change
 
 **Date**: 2026-11-05
-**Status**: Proposed
+**Status**: In Progress
 **Depends on**: the feature 4 baseline ([spec 0002 amendment](../0002-core-data-model/index.md#amendment-2026-11-05), [tenancy child](../0002-core-data-model/0002-tenancy-platform.md): `tenant_id`, `ssd_reject_change()`, `ssd_stamp_operating_day()`, the append only list, the table ownership map). Milestone 1 starts only after that baseline migration has landed. Hats (spec 0008, written in parallel) and settings (spec 0009) are consumers of this shape, not prerequisites.
 
 ## Summary
@@ -29,9 +29,12 @@ Every edit, merge, override, confirmation, export, and automatic action writes o
 - **AC-8** (nothing edits or deletes): the app role has `INSERT` and `SELECT` on `audit_entries` and nothing else; `UPDATE`, `DELETE`, and `TRUNCATE` fail with permission denied. As the owner they fail with "append only" from the row trigger (`UPDATE`, `DELETE`) and the statement trigger (`TRUNCATE`). The guard test also plants a failure: it grants `UPDATE` to the app role in a scratch database and shows the trigger still rejects the change. The test fails the build if `audit_entries` is missing from the append only list.
 - **AC-9** (module walls): only the `audit` module names `audit_entries`. Every other module records through the exported `AuditService`, and reads history through the exported `AuditQueryService`. The audit module reads no other module's table: record labels come from the caller, person names from the exported identity service. The boundary test of the tenancy child (A5) passes, and `audit_entries` is in `packages/db/src/table-ownership.ts` under `audit`.
 - **AC-10** (registry): every action code is an entry in one registry in `packages/contracts/src/audit/audit-actions.ts` with: the code, the owning module, the record type, `reason` (`required` or `optional`), `automatic` (true when the system decides in place of a person), `undoable`, English and Arabic labels, and `proof` (the path of the test that shows the action writes its entry). `record` rejects an unknown code with `UnknownAuditAction`. A unit test fails when an entry lacks a field, a label in either language, or a proof file that exists and contains the code.
+  > Amended 2026-11-06 (review AR10): the registry's label is a message key (`label`, for example `audit.actions.stockReceiptVoided`) into the English and Arabic catalogs of `packages/i18n`, never label text; the catalog parity test holds both languages. The registry test is `packages/contracts/test/audit.spec.ts`.
 - **AC-11** (what is recorded): the registry and the build cover the actions named in "Actions" below. This feature wires the ones whose code exists today (void of a stock receipt, SKU archive and unarchive, location edit and archive, staff account create, disable, and enable); every later feature adds its own codes in the same change that builds the action, and its build task names this AC. Ledger rows (stock movements, credit entries, settlement lines, order events) stay their own history; an audit entry is added for voids, reversals, overrides, and every automatic action.
 - **AC-12** (manager screen and api): `GET /api/audit/entries` filters by person (`actorUserId`), record (`recordType` and `recordId`), `action`, operating day range (`dayFrom`, `dayTo`, inclusive), and `correlationId`, newest first, with keyset paging (an opaque cursor over `recorded_at` and `id`, `limit` default 50, at most 200). It never uses offset paging and never counts all rows. The back office page `/audit` offers the same filters, a "load more" control, and a per entry detail with the field by field before and after.
+  > Known property, 2026-11-06 (review AR14): the keyset runs on insert time (`recorded_at`), not commit time, so an entry of a long transaction that commits after a reader paged past its instant does not show on that reader's "load more"; a fresh list shows it. Accepted; paging inside one snapshot is the fix if it ever matters.
 - **AC-13** (who may read): the list, the detail, the record history, and the export need the `audit.read` permission, given to the manager hat and nobody else by default (until hats land, to the existing `admin` role). Others get 403 `FORBIDDEN`. The controllers carry `@Audience('staff')`; partner and portal audiences have no audit route. Person names come from the identity service, not a join.
+  > 2026-11-06: hats have landed (spec 0008): `audit.read`, `audit.undo` and `audit.export` are in the permission matrix on the manager hat only.
 - **AC-14** (undo in one step): an entry of an action the registry marks `undoable` carries `undo_action` (the code of a handler registered by the owning module) and `undo_args` (ids and non personal values only; a value the redaction list marks personal is refused at write time). `POST /api/audit/entries/:id/undo` with a `reason` runs the owning module's handler inside one transaction, then writes a new entry (`<action>.undone`, `undoes_entry_id` set, a reason, never itself undoable). An entry is undone at most once (a unique index on `undoes_entry_id`): a second call answers 409 `ALREADY_UNDONE`. A handler that cannot restore (a later change got in the way) throws, and the call answers 409 `UNDO_NOT_POSSIBLE` with the handler's code, changing nothing. The audit module imports no owning module's table or service; it holds a registry of handlers that owners fill in.
 - **AC-15** (export): `GET /api/audit/entries/export` streams the current filter as CSV (UTF 8 with a byte order mark so Arabic opens right in Excel), in keyset batches of 1,000, at most 200,000 rows a file (413 `EXPORT_TOO_LARGE` asks for a narrower range) and only with a day range of at most 366 days. It needs `audit.export` (the manager hat by default). Each export writes its own entry (`audit.exported`, the filter in `after`). The file carries no personal data because the table holds none.
 - **AC-16** (personal data and retention): no code path deletes or rewrites an entry. Entries are kept for the life of the install; there is no age limit because they hold no personal data (**Assumed**, owner question 4). The module README states this and the one allowed way to remove old rows if a lawyer ever requires it: the owner role, in a reviewed migration, never the app.
@@ -212,8 +215,10 @@ None for an entry (immutable). Derived "undone" is `EXISTS (undoes_entry_id = id
 |---|---|---|---|---|---|
 | `/api/audit/entries` | GET | `actorUserId?`, `recordType?`, `recordId?`, `action?`, `dayFrom?`, `dayTo?`, `correlationId?`, `cursor?`, `limit?` (1 to 200, default 50) | `items[]` (entry view with `actorName`, `undone`, `canUndo`), `nextCursor` or null | staff, `audit.read` | 400 `INVALID_FILTER`, 400 `INVALID_CURSOR`, 403 |
 | `/api/audit/entries/:id` | GET | id | one entry view with the field diff | staff, `audit.read` | 404 `ENTRY_NOT_FOUND`, 403 |
-| `/api/audit/entries/:id/undo` | POST | `reason` (1 to 500) | the new `.undone` entry | staff, `audit.undo` | 404, 409 `ALREADY_UNDONE`, 409 `UNDO_NOT_POSSIBLE` (with `code`), 409 `NOT_UNDOABLE`, 422 `REASON_REQUIRED` |
+| `/api/audit/entries/:id/undo` | POST | `reason` (1 to 500) | the new `.undone` entry | staff, `audit.undo` | 404, 409 `ALREADY_UNDONE`, 409 `UNDO_NOT_POSSIBLE` (with `code`), 409 `NOT_UNDOABLE`, 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG` |
 | `/api/audit/entries/export` | GET | the list filters but `dayFrom` and `dayTo` required, range at most 366 days | `text/csv` stream | staff, `audit.export` | 400, 413 `EXPORT_TOO_LARGE`, 403 |
+
+> Amended 2026-11-06 (review AR7): `AuditService.record` throws `AuditReasonTooLong` for a reason over 500 characters after trimming, answered 422 `REASON_TOO_LONG` by `auditHttpError`. A route whose contract already caps its reason (the receipt void, 400 `INVALID_INPUT`) never reaches it.
 
 All shapes are Zod schemas in `packages/contracts/src/audit/`; the api validates with them and the web parses each answer with them. The person filter's picker uses the identity module's existing staff list. Errors are NestJS exceptions with these stable codes; domain code throws `AuditReasonRequired`, `UnknownAuditAction`, `AuditPersonalDataRefused`, `AlreadyUndone`, `NotUndoable`, `UndoNotPossible`, mapped at the edge.
 
@@ -279,13 +284,20 @@ None. Limits (200,000 export rows, 366 days, 500 character reason) are constants
 Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milestone 1 is the whole scope "done when" thread, thin but real through every layer: one real action that already exists (voiding a stock receipt, spec 0006 AC-8) writes an entry in its own transaction, a manager reads it on a page, and the table refuses edits. Later milestones thicken one segment each, end to end. Depends on the feature 4 baseline migration (see the header); if it has not landed, milestone 1 waits for it.
 
 **Milestone 1: The thin thread (void a receipt, see the entry, cannot change it)**
-1. [ ] Drizzle schema `packages/db/src/schema/audit.ts` and the migration after the baseline: the table, checks, the seven indexes, the revoke, the three triggers, and `audit_entries` in `table-ownership.ts` under `audit`, in the append only schema test list, and in the stamped list of the operating day test, satisfies **AC-1**, **AC-3**, **AC-7**, **AC-8**
-2. [ ] `packages/contracts/src/audit/`: the actor union, the entry view, the filter and cursor schemas, and a registry holding the first code `stock_receipt.voided` (labels in both languages), satisfies **AC-1**, **AC-10**
-3. [ ] `audit` module: `AuditService.record` with the registry check, the reason policy, personal masking, and the typed errors; module README, satisfies **AC-2**, **AC-4**, **AC-5**
-4. [ ] Wire the receipt void (`apps/api/src/inventory/receipts/`) to call `record` inside the void's transaction with the reason, the receipt number as label, and `before` and `after` of the status, satisfies **AC-2**, **AC-11**
-5. [ ] `GET /api/audit/entries` with the record and day filters, keyset paging, and the manager check (`admin` until hats), `@Audience('staff')`, satisfies **AC-12**, **AC-13**
-6. [ ] Web: `/audit` page in `(backoffice)` showing the list with actor, time, action label, record, and reason, in English and Arabic, satisfies **AC-12**, **AC-18**
-7. [ ] Tests: `packages/db/test/audit-append-only.e2e-spec.ts` (the app role and owner cases and the planted grant), `apps/api/test/audit.e2e-spec.ts` (thread, rollback both ways, 422 without a reason, 403), `apps/web/e2e/audit.spec.ts` (void a receipt, then find the entry), satisfies **AC-2**, **AC-5**, **AC-8**, **AC-12**
+1. [x] Drizzle schema `packages/db/src/schema/audit.ts` and the migration after the baseline: the table, checks, the seven indexes, the revoke, the three triggers, and `audit_entries` in `table-ownership.ts` under `audit`, in the append only schema test list, and in the stamped list of the operating day test, satisfies **AC-1**, **AC-3**, **AC-7**, **AC-8**
+  > Amended 2026-11-06: the tables go in the baseline, not a migration after it, because the pilot import has not run ([ADR 0003](../../adr/0003-reset-migrations-to-one-baseline.md): the baseline freezes the day the pilot brand's first import runs). `audit_entries` is in the Drizzle schema, so `packages/db/migrations/0001_baseline_tables.sql` and its `meta` snapshots are regenerated from it (the partial unique index on `undoes_entry_id` and the BRIN index are expressed in Drizzle); the revoke from the app role, the `ssd_reject_change` row and truncate triggers, and the `ssd_stamp_operating_day('recorded_at')` trigger are hand written in `0002_baseline_rules.sql`. Developers recreate their dev database once (ADR 0003).
+  > Amended 2026-11-06 (security review AS1): a fourth trigger, `audit_entries_recorded_now` (BEFORE INSERT, fires before the stamp by name), sets `recorded_at := clock_timestamp()` and `id := uuidv7()`, so no writer can backdate or forward date an entry or choose its keyset position.
+  > Amended 2026-11-06 (merge with the feature 4 close, security review S1 of spec 0002): `audit_entries_recorded_now` is replaced by two triggers that keep its effect, so `audit_entries` follows the one rule every append only table with `recorded_at` follows: `audit_entries_0_stamp_recorded_at` (the shared `ssd_stamp_recorded_at('statement')`, `recorded_at := clock_timestamp()`) and `audit_entries_1_stamp_id` (`id := uuidv7()`), both firing before `audit_entries_stamp_operating_day` by name. A test that plants instants disables them as the owner around the insert.
+2. [x] `packages/contracts/src/audit/`: the actor union, the entry view, the filter and cursor schemas, and a registry holding the first code `stock_receipt.voided` (labels in both languages), satisfies **AC-1**, **AC-10**
+3. [x] `audit` module: `AuditService.record` with the registry check, the reason policy, personal masking, and the typed errors; module README, satisfies **AC-2**, **AC-4**, **AC-5**
+  > 2026-11-06 (reviews AR1, AR2, AS8): `AuditEntryInput` also has `reasonRequired?: true` (tighten only), `before`, `after`, and `undo.args` are JSON values (`JsonObject`, so a bigint fails typecheck), `record` refuses a record type other than the registry's (`AuditRecordTypeMismatch`), and `recordMany(tx, entries)` is built (one multi row insert, every entry checked first).
+4. [x] Wire the receipt void (`apps/api/src/inventory/receipts/`) to call `record` inside the void's transaction with the reason, the receipt number as label, and `before` and `after` of the status, satisfies **AC-2**, **AC-11**
+5. [x] `GET /api/audit/entries` with the record and day filters, keyset paging, and the manager check (`admin` until hats), `@Audience('staff')`, satisfies **AC-12**, **AC-13**
+  > 2026-11-06 (review AR3): in milestone 1 the read permission is checked by the caller, the controller (`@Roles('admin')` until hats). The built reader is `AuditQueryService.list(query: AuditEntryListQuery)`, the cursor and limit inside the query. `forRecord` (milestone 3) takes the viewer and refuses without `audit.read`, because other modules call it directly.
+  > 2026-11-06 (identity, spec 0008 merged with this milestone): hats landed; the audit list declares `@Permission('audit.read')` and strips cost fields from `before` and `after` without `cost.view` (`apps/api/src/audit/audit-cost-fields.ts`).
+6. [x] Web: `/audit` page in `(backoffice)` showing the list with actor, time, action label, record, and reason, in English and Arabic, satisfies **AC-12**, **AC-18**
+7. [x] Tests: `packages/db/test/audit-append-only.e2e-spec.ts` (the app role and owner cases and the planted grant), `apps/api/test/audit.e2e-spec.ts` (thread, rollback both ways, 422 without a reason, 403), `apps/web/e2e/audit.spec.ts` (void a receipt, then find the entry), satisfies **AC-2**, **AC-5**, **AC-8**, **AC-12**
+  > 2026-11-06: the database and api suites are built and pass; the web suite comes with task 6.
 
 **Done when:**
 - `pnpm build && pnpm typecheck && pnpm lint` pass, and `pnpm format:check` passes.
@@ -295,12 +307,16 @@ Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milesto
 
 **Milestone 2: Everything is recorded, safely**
 8. [ ] All six actor kinds with constructor helpers, `recordMany`, `newCorrelationId`, and the shared correlation rule; tests for each actor shape and the table refusing wrong ones, satisfies **AC-3**, **AC-6**
+  > 2026-11-06: `recordMany` and `newCorrelationId` were built in the milestone 1 fix pass (review AR2); this task keeps the six actor constructor helpers, the shared correlation rule, and their tests.
 9. [ ] Personal data guard: masking with `personal_fields`, refusal in `undo_args` and `record_label`, phone masking in `reason`; the sentinel test over every column, satisfies **AC-4**, **AC-16**
+  > 2026-11-06, from the security review of milestone 1 (must land before any customer facing action is wired): AS2 record type aware masking, because a changed fields diff has no marker keys, so a bare `name`, `email`, `reason`, or `payload` is not masked today (extend the sentinel test with them); AS3 an allowlist shape and a length limit for `record_label`, and `undo_args` holding only ids, codes, and numbers; AS4 phone shaped object keys and phone length numbers masked or refused; AS9 no false `personal_fields` entry from a JSON looking string that `redact` re parses.
 10. [ ] The rest of the registry for today's code: SKU archive, unarchive, code change; location edit, archive, unarchive; staff user create, disable, enable, password reset; each wired in its transaction with its reason policy, satisfies **AC-5**, **AC-11**
+  > 2026-11-06: the staff user part is built by identity (`staff_user.created`, `.disabled`, `.enabled`, `.password_reset`, plus `hat.granted` and `hat.revoked`), on spec 0008's branch; partner logins reuse `staff_user.*` with record type `user`.
 11. [ ] Registry unit test (fields, both labels, proof file contains the code, undoable has a handler), unknown code refused, module boundary test with `audit_entries` named only inside `audit`, and the extension test, satisfies **AC-9**, **AC-10**, **AC-19**
 
 **Done when:**
 - `pnpm --filter @ssdashboard/api test` passes, including `src/audit/audit-registry.spec.ts` and `src/module-boundary.spec.ts` (the planted import of the audit schema in another module fails it).
+  > 2026-11-06 (review AR10): the registry test is `packages/contracts/test/audit.spec.ts` (`pnpm --filter @ssdashboard/contracts test`); it already checks fields, both labels, and the proof file; task 11 adds the undoable handler check.
 - `pnpm --filter @ssdashboard/api test:e2e -- test/audit.e2e-spec.ts` passes: the sentinel phone and address appear in no column, a reason with a phone is stored masked, one correlation id on a two record action, the operating day case with cutoff 2.
 - `pnpm --filter @ssdashboard/db test:e2e` passes (table ownership and append only suites included).
 
@@ -317,9 +333,11 @@ Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milesto
 
 **Milestone 4: Undo and scale**
 16. [ ] `AuditUndoRegistry` and `AuditUndoService` (advisory lock on the entry, handler call, the `.undone` entry, the unique index), `POST /api/audit/entries/:id/undo` with `audit.undo`, the undo dialog with the reason on the screen and the detail, satisfies **AC-14**, **AC-18**
+  > 2026-11-06 (security review AS5): the undo code must satisfy `audit_action_format`, so it is `<noun>.<verb>_undone` (for example `stock_receipt.voided_undone`), not `<action>.undone`. An undo integrity trigger lands with this task: an insert with `undoes_entry_id` must name a target of the same record, with an undoable action, and carry a reason, so no insert can block a real undo by claiming its target first.
 17. [ ] Undo tests with a fixture handler (once, twice, handler refusal, two parallel calls) and the boundary test proving the audit module imports no owning module, satisfies **AC-9**, **AC-14**
 18. [ ] Scale check in `apps/api/test/scale.e2e-spec.ts`: seed 5,000,000 entries, then p95 per filter and for `record`; if the BRIN day filter misses, switch to the btree named above, satisfies **AC-17**
   > Amended 2026-11-05: this check runs in the same separate CI `scale` job as the spec 0002 scale suite, never in the default e2e job.
+  > 2026-11-06 (review AR12): add a `recordType` only filter (no `recordId`) to the measured cases; the record index leads with type then id, so that filter sorts every entry of the type. If it misses the budget, require `recordId` or add a (`record_type`, `recorded_at` desc, `id` desc) index.
 19. [ ] Module README final (Owns, Never touches, How to test, Governing spec, Decisions, Retention and who may read), `docs/specs/0010-audit-trail/verify.md` ticked, satisfies **AC-16**
 
 **Done when:**
@@ -344,18 +362,20 @@ Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milesto
 - Undo depends on each owner writing a correct handler; a stale undo is refused, never forced.
 
 **Neutral**:
-- One migration after the baseline, one table, one module. No new environment setting and no new dependency.
+- One table in the migration baseline (amended 2026-11-06, see build plan task 1), one module. No new environment setting and no new dependency.
 - `order_events`, `credit_entries`, `stock_movements`, and `settlement_lines` stay their own histories; audit adds entries for voids, reversals, overrides, and automatic actions.
 
 ## Follow-up
 
-- [ ] Spec 0002 tenancy child (`docs/specs/0002-core-data-model/0002-tenancy-platform.md`, A3 stamped list): add `audit_entries` (`recorded_at`) to the list of operating day tables; A4 and A5 already list it. Owner of that file: the architect, via Igris.
+- [x] Spec 0002 tenancy child (`docs/specs/0002-core-data-model/0002-tenancy-platform.md`, A3 stamped list): add `audit_entries` (`recorded_at`) to the list of operating day tables; A4 and A5 already list it. Owner of that file: the architect, via Igris. (2026-11-06: the A3 list already names it; nothing to add.)
 - [ ] Spec 0008 (hats): adopt the permission names `audit.read`, `audit.undo`, `audit.export` for the manager hat, add `hat.granted` and `hat.revoked` to the registry, and decide whether `actor_hat` stores the hat code.
 - [ ] Spec 0009 (settings): add `setting.changed` and the list of sensitive setting keys that need a reason.
 - [ ] Align names: `order_events.actor_type` uses `system`, this spec uses `system_job`; the order and credit specs map one to the other, or the orders build renames. Tell the orders build.
 - [ ] Features 14, 34, 45, orders, tasks, credit, settlement, channels: each build task names AC-11 and AC-19 and adds its registry entries and proof tests.
 - [ ] Scope `docs/scope/foundations.md` feature 10: link this spec and add the milestones as sub tasks (the scope owner, after approval). Not done here.
 - [ ] A tamper evident hash chain and partitioning are revisit items (50,000,000 rows, or a client who asks for proof against a database administrator).
+- [ ] Feature 26 (security review AS10): the app role can set `tenant_id` and `list` does not filter by it; harmless with one database per brand. Add a tenant check or row level security when installs share a database.
+- [ ] First partner session build (security review AS11): add the AC-13 test that a partner session gets 403 `WRONG_AUDIENCE` on `/api/audit/entries`.
 
 ## Questions for the owner
 

@@ -26,6 +26,7 @@ export const en = {
         receipts: 'Stock receipts',
         skus: 'SKUs',
         locations: 'Locations',
+        audit: 'Audit trail',
       },
     },
     sidebar: {
@@ -924,6 +925,40 @@ export const en = {
       },
     },
   },
+  audit: {
+    title: 'Audit trail',
+    description: 'Who changed what, newest first. Entries cannot be edited or removed.',
+    tableLabel: 'Audit entries',
+    columns: { time: 'When', actor: 'Who', action: 'What', record: 'Record', reason: 'Reason' },
+    empty: 'No entries match',
+    noReason: 'No reason given',
+    loadError: 'The audit entries could not be loaded.',
+    retry: 'Try again',
+    loadMore: 'Load more',
+    endOfList: 'End of the audit trail',
+    loadMoreError: 'The next entries could not be loaded.',
+    forbidden: 'Your hats do not include the audit trail. Ask a manager if you need it.',
+    unknownPerson: 'Unknown person',
+    actorKinds: {
+      person: 'Person',
+      partnerUser: 'Partner user',
+      systemJob: 'System job',
+      carrier: 'Carrier',
+      import: 'Import',
+      portalCustomer: 'Customer',
+    },
+    recordTypes: { stockReceipt: 'Stock receipt', user: 'Person' },
+    // Action labels of the audit registry (spec 0010, AC-10), keyed from AUDIT_ACTIONS.
+    actions: {
+      stockReceiptVoided: 'Stock receipt voided',
+      hatGranted: 'Hats or cost access given',
+      hatRevoked: 'Hats or cost access taken away',
+      staffUserCreated: 'Staff account created',
+      staffUserDisabled: 'Staff account disabled',
+      staffUserEnabled: 'Staff account enabled',
+      staffUserPasswordReset: 'Staff password reset',
+    },
+  },
   mail: {
     reset: {
       subject: 'Reset your {{clientName}} password',
@@ -943,5 +978,68 @@ export const en = {
       ignore: 'If you did not expect this, you can ignore this email.',
     },
     fallbackName: 'there',
+  },
+  help: {
+    common: {
+      open: 'Help',
+      close: 'Close help',
+      stepsHeading: 'How it works',
+      glossaryHeading: 'What the outcomes mean',
+      settingsHeading: 'Settings that change this screen',
+      checklistShow: 'Show the first steps again',
+      checklistTitle: 'Your first steps',
+      checklistProgress: '{{done}} of {{total}}',
+      checklistDone: 'Done',
+      checklistTodo: 'To do',
+      checklistDismiss: 'Hide the first steps',
+    },
+    confirmationQueue: {
+      title: 'How the confirmation queue works',
+      description: 'One order at a time. Call the customer, then record what happened.',
+      steps: {
+        '1': 'Read the order: the customer, the items, the total, and the area.',
+        '2': 'Call the customer on the number shown.',
+        '3': 'Press the button for what happened, or its number key from 1 to 4.',
+        '4': 'The next order opens by itself.',
+      },
+      glossary: {
+        confirmed: {
+          chip: 'Confirmed',
+          description: 'The customer agreed to the order. It goes on to the warehouse.',
+        },
+        noAnswer: {
+          chip: 'No answer',
+          description:
+            'The customer did not pick up. It comes back to your queue, and {{limit}} no answers close the order.',
+        },
+        callBack: {
+          chip: 'Call back',
+          description: 'The customer asked to be called later. The order returns after the delay.',
+        },
+        cancelled: {
+          chip: 'Cancelled',
+          description: 'The customer does not want the order. It closes and the stock is released.',
+        },
+      },
+      settings: {
+        noAnswerLimit: 'No answers before the order closes',
+      },
+      hint: {
+        phone: {
+          label: 'Help: customer phone',
+          body: 'Call this number. A no answer counts only after a real call.',
+        },
+        noAnswer: {
+          label: 'Help: no answer',
+          body: '{{limit}} no answers close the order, so record one only after you called.',
+        },
+      },
+      checklist: {
+        openQueue: 'Open the confirmation queue',
+        confirmFirst: 'Confirm your first order',
+        recordNoAnswer: 'Record a no answer',
+        scheduleCallBack: 'Set a call back',
+      },
+    },
   },
 } as const;

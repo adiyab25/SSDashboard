@@ -44,13 +44,13 @@ Spec [0002](../specs/0002-core-data-model/index.md) (amendment of 2026-11-05, Pr
 Visual language, layout primitives, and base components, shaped with the Impeccable skill, so every screen feels like one product in Arabic and English.
 **Done when:** `design.md` covers type, color, spacing, and components; base components handle focus, keyboard, and right to left; there is a phone first pattern for the manager dashboard and a pattern for in screen help.
 - [x] Design it (spec): `/architect design system & UI foundation`
-- [ ] Build it: `/develop design system & UI foundation`
+- [x] Build it: `/develop design system & UI foundation`
   - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
   - [x] Status chips, provisional values, the freshness strip, and the floor density scope
   - [x] Portal and partner frames with per brand theming
-  - [ ] Phone first dashboard pattern and in screen help
-- [ ] Verify it: `/check verify design system & UI foundation`
-- [ ] Test it: `/test design system & UI foundation`
+  - [x] Phone first dashboard pattern and in screen help
+- [x] Verify it: `/check verify design system & UI foundation`
+- [x] Test it: `/test design system & UI foundation`
 Spec [0003](../specs/0003-design-system-ui-foundation/index.md) (amendment of 2026-11-05, Proposed; the owner chose direction B, Daftar, with the floor density scope, 2026-11-05)
 
 ### 6. Localization (Arabic & English)
@@ -118,7 +118,7 @@ Agent accountability: who did what, when, and why, across edits, merges, overrid
 **Done when:** each of those actions writes an audit entry with actor, time, before and after, and reason where one is required; managers can filter it by person and record; nothing can edit or delete an entry.
 - [x] Design it (spec): `/architect audit trail`
 - [ ] Build it: `/develop audit trail`
-  - [ ] The thin thread: void a receipt, see the entry, cannot change it
+  - [x] The thin thread: void a receipt, see the entry, cannot change it
   - [ ] Every action recorded, with no raw personal data
   - [ ] The manager screen and the export
   - [ ] One step undo and scale

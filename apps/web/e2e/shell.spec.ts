@@ -115,6 +115,8 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Design system',
       // The suite signs in as an administrator, who also has the Staff page (spec 0005, AC-25).
       'Staff',
+      // Audit trail is admin only too (spec 0010, AC-18).
+      'Audit trail',
       // The inventory group (spec 0006).
       'Stock on hand',
       'Stock receipts',

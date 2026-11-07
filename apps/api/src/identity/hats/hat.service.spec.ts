@@ -159,6 +159,29 @@ describe('HatService.replaceStaffAccess (spec 0008, AC-12, AC-13)', () => {
     });
   });
 
+  it('tightens the audit reason policy only when the manager hat is taken away', async () => {
+    const managerTaken = setup({ hats: ['manager'], cost_view: true });
+    await managerTaken.service.replaceStaffAccess(
+      TARGET,
+      change(['support'], true, 'Stepped down'),
+      MANAGER_WITH_COST,
+    );
+    const otherTaken = setup({ hats: ['support', 'warehouse'] });
+    await otherTaken.service.replaceStaffAccess(
+      TARGET,
+      change(['support'], false),
+      MANAGER_WITH_COST,
+    );
+
+    expect(managerTaken.entries[0]?.entry).toMatchObject({
+      action: 'hat.revoked',
+      reason: 'Stepped down',
+      reasonRequired: true,
+    });
+    expect(otherTaken.entries[0]?.entry.action).toBe('hat.revoked');
+    expect(otherTaken.entries[0]?.entry).not.toHaveProperty('reasonRequired');
+  });
+
   it('writes nothing, records nothing and announces nothing for the same set', async () => {
     const { service, entries, hatsChanged } = setup({ hats: ['warehouse'] });
 

@@ -1,4 +1,4 @@
-import { HAT_PERMISSIONS, type Permission } from '@ssdashboard/contracts';
+import type { Permission } from '@ssdashboard/contracts';
 import { Access } from '../../platform/access/access.js';
 import { forbidden } from '../../platform/access/permission.guard.js';
 import type { IdentityAuditActor } from '../audit-port/identity-audit.js';
@@ -38,7 +38,5 @@ export function actorOf(request: AuthenticatedRequest): Actor {
  * Falls back to the first hat they wear, which the route's permission guard makes unreachable.
  */
 export function auditActorOf(actor: Actor, permission: Permission): IdentityAuditActor {
-  const hats = actor.access.hats;
-  const hat = hats.find((held) => HAT_PERMISSIONS[held].includes(permission)) ?? hats[0] ?? 'none';
-  return { kind: 'person', userId: actor.id, hat };
+  return { kind: 'person', userId: actor.id, hat: actor.access.actingHat(permission) };
 }

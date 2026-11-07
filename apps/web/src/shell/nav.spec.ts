@@ -51,4 +51,10 @@ describe('visibleNavItems (spec 0008, AC-11)', () => {
   it('follows the union of every hat a person wears', () => {
     expect(ids(['support', 'manager'])).toEqual(ids(['manager']));
   });
+
+  it('shows Audit trail to a manager only (audit.read)', () => {
+    expect(ids(['manager'])).toContain('audit');
+    expect(ids(['support', 'operations', 'warehouse'])).not.toContain('audit');
+    expect(ids()).not.toContain('audit');
+  });
 });

@@ -169,6 +169,9 @@ export class HatService {
         before: { ...before },
         after: { ...after },
         ...(change.reason !== undefined && { reason: change.reason }),
+        // The registry says `optional` for `hat.revoked`; the manager hat's revoke tightens it, so
+        // the audit trail refuses it too, behind `requireReasonForManagerRemoval` above.
+        ...(diff.removed.includes('manager') && { reasonRequired: true as const }),
         correlationId: this.audit.newCorrelationId(),
       });
       return { before, after, diff };

@@ -68,4 +68,15 @@ describe('Access', () => {
     expect(Object.isFrozen(access.permissions)).toBe(true);
     expect(() => (access.permissions as string[]).push('cost.view')).toThrow();
   });
+
+  it('names the first hat in catalog order that holds a permission as the acting hat', () => {
+    const access = (hats: string[], grants: string[] = []) =>
+      new Access({ userId: USER, hats, grants, partnerAccountId: null });
+
+    expect(access(['manager', 'support']).actingHat('people.manage')).toBe('manager');
+    expect(access(['warehouse', 'manager']).actingHat('stock.view')).toBe('warehouse');
+    // Held only through a grant: the first hat worn; no hat at all: `none`.
+    expect(access(['warehouse'], ['cost.view']).actingHat('cost.view')).toBe('warehouse');
+    expect(access([]).actingHat('audit.read')).toBe('none');
+  });
 });

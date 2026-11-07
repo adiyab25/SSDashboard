@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { maskPhones } from '@ssdashboard/config/redaction';
 import {
   CreateStockReceiptRequest,
   Money,
@@ -14,6 +15,7 @@ import {
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
+import { AuditService } from '../../audit/audit.service.js';
 import { CatalogService, escapeLike } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import type { Access } from '../../platform/access/access.js';
@@ -45,7 +47,8 @@ export type ReceiptErrorCode =
   | 'InvalidLocation'
   | 'FutureDate'
   | 'AlreadyVoided'
-  | 'InsufficientStock';
+  | 'InsufficientStock'
+  | 'ReasonRequired';
 
 /** A receipt rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class ReceiptError extends Error {
@@ -65,10 +68,13 @@ export class ReceiptError extends Error {
   }
 }
 
-/** Who is asking: the posting user, and what they may see (cost fields need `cost.view`, AC-11). */
+/**
+ * Who is asking: the posting user, what they may see (cost fields need `cost.view`, AC-11), and
+ * the hat a void's audit entry names (`actingHat`).
+ */
 export interface ReceiptCaller {
   id: string;
-  access: Pick<Access, 'has'>;
+  access: Pick<Access, 'has' | 'actingHat'>;
 }
 
 /** A stored receipt with every field, before the cost serializer. */
@@ -118,7 +124,10 @@ export function serializeReceipt(
 export class ReceiptsService {
   private readonly logger = new Logger('StockReceipts');
 
-  /** Takes the app database connection, the ledger, catalog, numbering and settings services. */
+  /**
+   * Takes the app database connection, the ledger, catalog, numbering, settings, and audit
+   * services, and the staff directory.
+   */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LedgerService) private readonly ledger: LedgerService,
@@ -126,6 +135,7 @@ export class ReceiptsService {
     @Inject(NumberingService) private readonly numbering: NumberingService,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(StaffDirectory) private readonly staff: StaffDirectory,
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   /**
@@ -297,7 +307,9 @@ export class ReceiptsService {
   /**
    * Voids a posted receipt with a ledger reversal dated now (AC-8). The value removed follows the
    * ledger's average cost rules. Two voids at once: the second waits on the reversal's
-   * idempotency key, then finds the receipt voided and answers `AlreadyVoided`.
+   * idempotency key, then finds the receipt voided and answers `AlreadyVoided`. The void writes
+   * its `stock_receipt.voided` audit entry in the same transaction (spec 0010, AC-2, AC-11): a
+   * blank reason throws `AuditReasonRequired` and rolls the whole void back.
    */
   async void(id: string, reason: string, caller: ReceiptCaller): Promise<StockReceiptDetail> {
     const current = (
@@ -310,6 +322,8 @@ export class ReceiptsService {
       throw new ReceiptError('AlreadyVoided', 'This receipt is already voided');
     }
 
+    // One business action, one id, reused if the ledger retries the transaction.
+    const correlationId = this.audit.newCorrelationId();
     let outcome;
     try {
       outcome = await this.ledger.reverse(
@@ -323,17 +337,37 @@ export class ReceiptsService {
           // Reruns whole on the ledger's deadlock retry; it keeps no state.
           within: async (tx, result) => {
             const locked = (
-              await tx.execute<{ status: 'posted' | 'voided' }>(
-                sql`SELECT status FROM stock_receipts WHERE id = ${id} FOR UPDATE`,
+              await tx.execute<{ status: 'posted' | 'voided'; number: string }>(
+                sql`SELECT status, number FROM stock_receipts WHERE id = ${id} FOR UPDATE`,
               )
             ).rows[0];
-            if (locked?.status !== 'posted') {
+            if (!locked || locked.status !== 'posted') {
               throw new ReceiptError('AlreadyVoided', 'This receipt is already voided');
             }
+            // Recorded before the update, so a missing reason fails on the audit policy (422)
+            // rather than on the void_reason check; either way the void rolls back whole.
+            await this.audit.record(tx, {
+              actor: {
+                kind: 'person',
+                userId: caller.id,
+                hat: caller.access.actingHat('stock.correct'),
+              },
+              action: 'stock_receipt.voided',
+              record: { type: 'stock_receipt', id, label: locked.number },
+              before: { status: 'posted' },
+              after: { status: 'voided' },
+              reason,
+              correlationId,
+            });
+            // The registry makes the reason required, so record refused a blank one above. If
+            // that policy is ever loosened, the void still needs one (review AR6): same 422.
+            const kept = maskPhones(reason.trim());
+            if (!kept) throw new ReceiptError('ReasonRequired', 'A reason is required to void');
+            // The stored void reason masks phones like the audit entry (security review AS6).
             await tx.execute(sql`
               UPDATE stock_receipts
               SET status = 'voided', voided_at = now(), voided_by = ${caller.id},
-                  void_reason = ${reason}, void_group_id = ${result.groupId}, updated_at = now()
+                  void_reason = ${kept}, void_group_id = ${result.groupId}, updated_at = now()
               WHERE id = ${id}`);
           },
         },

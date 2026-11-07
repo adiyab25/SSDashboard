@@ -7,6 +7,52 @@ import { wearHats } from './accounts';
 import { E2E_ADMIN, STORAGE_STATE, ownerDatabaseUrl } from './auth';
 
 /**
+ * The routes `next dev` must compile one at a time before any test runs.
+ *
+ * Why: on a cold `.next/dev`, `/design` loads six iframes of development only preview pages at
+ * once. Their concurrent first compiles corrupt a Next manifest (`SyntaxError: Unexpected
+ * non-whitespace character after JSON`, seen for `/[lang]/returns/preview/rejected` in the dev
+ * server log) and from then on the dev server answers 500, failing whole suites. CI also starts
+ * from a cold `next dev`, so this protects it too. Requesting each route alone first avoids the
+ * race. A production server answers 404 for the development only paths, which is fine here.
+ */
+const WARM_UP_PATHS = [
+  '/en/returns/preview/brand',
+  '/en/returns/preview/rejected',
+  '/en/partner/preview',
+  '/ar/returns/preview/brand',
+  '/ar/returns/preview/rejected',
+  '/ar/partner/preview',
+  '/design',
+  '/design/phone-dashboard',
+];
+
+/**
+ * Requests each warm up path sequentially, signed in, and fails naming the first route that
+ * answers 5xx. Redirects are followed; any non 5xx status counts as compiled.
+ */
+async function warmUpDevRoutes(baseURL: string, cookie: string) {
+  for (const path of WARM_UP_PATHS) {
+    let status: number;
+    try {
+      const response = await fetch(new URL(path, baseURL), {
+        headers: { cookie },
+        signal: AbortSignal.timeout(180_000),
+      });
+      status = response.status;
+      await response.arrayBuffer();
+    } catch (error) {
+      throw new Error(`Warm up of ${path} failed: ${String(error)}`, { cause: error });
+    }
+    if (status >= 500) {
+      throw new Error(
+        `Warm up of ${path} answered ${status}. The dev server may have a corrupt .next/dev: stop it, delete apps/web/.next/dev, and rerun.`,
+      );
+    }
+  }
+}
+
+/**
  * Seeds one admin in the dev database and signs it in through the api, once, so every shell
  * test starts signed in (spec 0005). The saved cookie file is what the config hands to the
  * desktop and mobile projects. The sign in tests opt out of it.
@@ -63,6 +109,8 @@ export default async function globalSetup(config: FullConfig) {
   const cookie = response.headers.getSetCookie().find((value) => value.includes('session_token'));
   const [name, ...rest] = (cookie?.split(';')[0] ?? '').split('=');
   if (!name) throw new Error('The sign in answer carried no session cookie.');
+
+  await warmUpDevRoutes(baseURL, `${name}=${rest.join('=')}`);
 
   mkdirSync(dirname(STORAGE_STATE), { recursive: true });
   writeFileSync(

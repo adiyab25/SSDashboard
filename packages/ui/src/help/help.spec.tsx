@@ -164,6 +164,26 @@ describe('HelpPanel with useHelpShortcut', () => {
   });
 });
 
+describe('HelpPanel scroll region', () => {
+  it('is keyboard reachable and axe clean with no focusable content in the body', async () => {
+    const user = userEvent.setup();
+    render(
+      <HelpPanel
+        open
+        onOpenChange={() => {}}
+        title="How this screen works"
+        closeLabel="Close"
+        steps={{ heading: 'Steps', items: ['Call the customer'] }}
+      />,
+    );
+    const region = screen.getByRole('region', { name: 'How this screen works' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    await user.tab();
+    await user.tab();
+    await expectNoAxeViolations(document.body);
+  });
+});
+
 describe('FirstRunChecklist', () => {
   const items = [
     { label: 'Confirm your first order', done: true },
