@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
-import { renderWithQuery } from '@/inventory/render-with-query';
+import { renderWithQuery } from '@/shared/render-with-query';
 import { SettingsView } from './settings-view';
 
 const api = vi.hoisted(() => ({ listSettings: vi.fn(), putSetting: vi.fn() }));

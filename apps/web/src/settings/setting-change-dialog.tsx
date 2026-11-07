@@ -22,7 +22,7 @@ import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/client';
-import { useReturnFocus } from '@/inventory/use-return-focus';
+import { useReturnFocus } from '@/shared/use-return-focus';
 import { SettingValueField } from './setting-value-field';
 import { putSetting, settingsKeys } from './settings-api';
 import { useSettingWords } from './use-setting-words';
