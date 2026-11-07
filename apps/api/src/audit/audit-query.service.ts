@@ -78,15 +78,38 @@ export function canUndoAudit(viewer: Pick<Access, 'has'>): boolean {
   return viewer.has('audit.undo');
 }
 
-/** The filters of a list or export query, as SQL conditions (no cursor). */
+/**
+ * The filters of a list or export query, as SQL conditions (no cursor).
+ *
+ * A day bound also bounds `recorded_at` (spec 0010 task 18, AC-17). Without it the planner reads
+ * the newest first index and filters on `operating_day`, expecting matches to be spread through
+ * time; for a day years back it walked about 4,900,000 of 5,000,000 entries (about 800 ms). The
+ * instant bound gives that index a range to start from (3 to 15 ms). It is a superset, so it never
+ * changes which entries match: operating day D covers the local instants [D + cutoff,
+ * D + 1 day + cutoff) with a cutoff of 0 to 23 hours, and a UTC offset of -12 to +14 hours puts
+ * them in [D - 14 hours, D + 2 days + 11 hours) UTC, inside [D - 2 days, D + 3 days). That holds
+ * for any time zone and cutoff, so a day stamped under an earlier time zone setting stays inside
+ * too. The bound is midnight UTC (`AT TIME ZONE 'UTC'`), never the connection's `TimeZone`. The
+ * `operating_day` conditions stay and decide the match.
+ */
 function filtersOf(query: Omit<Partial<AuditEntryListQuery>, 'cursor' | 'limit'>): SQL[] {
   const filters: SQL[] = [];
   if (query.actorUserId) filters.push(sql`actor_user_id = ${query.actorUserId}`);
   if (query.recordType) filters.push(sql`record_type = ${query.recordType}`);
   if (query.recordId) filters.push(sql`record_id = ${query.recordId}`);
   if (query.action) filters.push(sql`action = ${query.action}`);
-  if (query.dayFrom) filters.push(sql`operating_day >= ${query.dayFrom}::date`);
-  if (query.dayTo) filters.push(sql`operating_day <= ${query.dayTo}::date`);
+  if (query.dayFrom) {
+    filters.push(sql`operating_day >= ${query.dayFrom}::date`);
+    filters.push(
+      sql`audit_entries.recorded_at >= ((${query.dayFrom}::date - 2)::timestamp AT TIME ZONE 'UTC')`,
+    );
+  }
+  if (query.dayTo) {
+    filters.push(sql`operating_day <= ${query.dayTo}::date`);
+    filters.push(
+      sql`audit_entries.recorded_at < ((${query.dayTo}::date + 3)::timestamp AT TIME ZONE 'UTC')`,
+    );
+  }
   if (query.correlationId) filters.push(sql`correlation_id = ${query.correlationId}`);
   return filters;
 }
@@ -210,7 +233,7 @@ export class AuditQueryService {
     const { rows } = await this.connection.db.execute<{ at: string; id: string }>(sql`
       SELECT to_char(recorded_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS at, id
       FROM audit_entries WHERE ${sql.join(filtersOf(query), sql` AND `)}
-      ORDER BY recorded_at DESC, id DESC
+      ORDER BY audit_entries.recorded_at DESC, audit_entries.id DESC
       LIMIT 1`);
     return rows[0] ?? null;
   }
@@ -252,7 +275,7 @@ export class AuditQueryService {
         SELECT ${ENTRY_COLUMNS},
                to_char(recorded_at AT TIME ZONE ${timezone}, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS local_at
         FROM audit_entries WHERE ${sql.join([...filters, keyset], sql` AND `)}
-        ORDER BY recorded_at DESC, id DESC
+        ORDER BY audit_entries.recorded_at DESC, audit_entries.id DESC
         LIMIT ${Math.min(batch, left)}`);
       if (!rows.length) return;
       const names = await this.staff.namesByIds(
@@ -287,7 +310,7 @@ export class AuditQueryService {
       SELECT ${ENTRY_COLUMNS}
       FROM audit_entries
       ${where}
-      ORDER BY recorded_at DESC, id DESC
+      ORDER BY audit_entries.recorded_at DESC, audit_entries.id DESC
       LIMIT ${limit + 1}`);
     const page = rows.slice(0, limit);
     const last = page.at(-1);

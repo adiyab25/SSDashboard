@@ -1,8 +1,15 @@
-import { sql, type DatabaseConnection } from '@ssdashboard/db';
+import { randomUUID } from 'node:crypto';
+import { AuditEntryListQuery, personActor } from '@ssdashboard/contracts';
+import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuditQueryService } from '../src/audit/audit-query.service.js';
+import { AuditService } from '../src/audit/audit.service.js';
 import { buildSkuListSql } from '../src/catalog/catalog.service.js';
+import { StaffDirectory } from '../src/identity/staff/staff-directory.js';
 import { buildAvailabilitySql } from '../src/inventory/ledger/ledger.service.js';
+import { encodeKeyset } from '../src/platform/keyset-cursor.js';
 import { ledgerHarness, posting, type LedgerHarness } from './ledger.js';
+import { auditActionSpread, AUDIT_SCALE, seedAuditScale } from './scale-audit-seed.js';
 import { randomScaleKeys, seedScale, SPEC_SCALE, type SeedStep } from './scale-seed.js';
 
 // Spec 0002 "Scale suite": the budgets of the table, p95 over RUNS timed runs after a warm up, on
@@ -21,6 +28,9 @@ const BUDGET_ORDERS_OF_DAY_MS = 150;
 const BUDGET_MY_WORK_MS = 150;
 const BUDGET_UNMATCHED_LINES_MS = 150;
 const BUDGET_ORDER_TIMELINE_MS = 50;
+// Spec 0010 AC-17, also Assumed and reset from the first measured run.
+const BUDGET_AUDIT_PAGE_MS = 150;
+const BUDGET_AUDIT_RECORD_MS = 10;
 
 const WARMUP = 20;
 const RUNS = 60;
@@ -35,10 +45,17 @@ interface RowResult {
   runs: number;
 }
 
-/** One SQL read of a budget row: how to explain it and how to run it for the n-th input. */
+/**
+ * One SQL read of a budget row: how to explain it and how to run it for the n-th input. The plan
+ * must use every index in `indexes`, and at least one of `anyOf` when it is given (a filter the
+ * planner may serve from either of two indexes, by how common the value is), and its text must
+ * match `shows` when it is given (a condition the plan must carry).
+ */
 interface Read {
   label: string;
   indexes: string[];
+  anyOf?: string[];
+  shows?: RegExp;
   explain: (n: number) => Promise<string>;
   run: (n: number) => Promise<unknown>;
 }
@@ -130,6 +147,15 @@ ${plan}`);
       for (const index of read.indexes) {
         expect(planUses(plan, index), `${row} (${read.label}) must use ${index}`).toBe(true);
       }
+      if (read.shows) {
+        expect(plan, `${row} (${read.label}) must show ${String(read.shows)}`).toMatch(read.shows);
+      }
+      if (read.anyOf) {
+        expect(
+          read.anyOf.some((index) => planUses(plan, index)),
+          `${row} (${read.label}) must use one of ${read.anyOf.join(', ')}`,
+        ).toBe(true);
+      }
       await timed(0, WARMUP, read.run);
       const samples = await timed(WARMUP, INPUTS, read.run);
       timings.push(p95(samples));
@@ -143,6 +169,7 @@ ${plan}`);
     h = await ledgerHarness();
     const started = performance.now();
     seedSteps = await seedScale(h.owner, SPEC_SCALE);
+    seedSteps.push(...(await seedAuditScale(h.owner, AUDIT_SCALE)));
     seedSeconds = (performance.now() - started) / 1000;
     keys = await randomScaleKeys(h.owner, INPUTS);
   }, 3_600_000);
@@ -489,5 +516,298 @@ ${plan}`);
     ]);
   });
 
-  it.todo('audit trail at 5,000,000 entries (spec 0010 AC-17): feature 10 adds audit_entries');
+  describe('the audit trail at 5,000,000 entries (spec 0010 AC-17)', () => {
+    // The reads go through the real AuditQueryService.list (the page, the undone lookup, and the
+    // staff names), as the app role. Its connection records the statements the service issues,
+    // so each plan check explains exactly the SQL the service ran, never a copy of it.
+    let issued: SQL[] | null = null;
+    let query: AuditQueryService;
+    const viewer = { has: () => true };
+
+    beforeAll(() => {
+      const execute: Database['execute'] = (statement) => {
+        if (issued && typeof statement !== 'string') issued.push(statement.getSQL());
+        return h.app.db.execute(statement);
+      };
+      const db = Object.assign(Object.create(h.app.db) as Database, { execute });
+      query = new AuditQueryService({ ...h.app, db }, new StaffDirectory(h.app));
+    });
+
+    async function explainSql(statement: SQL): Promise<string> {
+      const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
+        sql`EXPLAIN (COSTS OFF) ${statement}`,
+      );
+      return plan.map((row) => row['QUERY PLAN']).join('\n');
+    }
+
+    /** A list read: one parsed list query per input, timed through `AuditQueryService.list`. */
+    function listRead(
+      label: string,
+      indexes: string[],
+      inputs: Record<string, unknown>[],
+      anyOf?: string[],
+    ): Read {
+      const queries = inputs.map((input) => AuditEntryListQuery.parse(input));
+      const at = (n: number) => {
+        const picked = queries[n % queries.length];
+        if (!picked) throw new Error(`${label}: no inputs`);
+        return picked;
+      };
+      return {
+        label,
+        indexes,
+        anyOf,
+        async explain(n) {
+          const statements: SQL[] = [];
+          issued = statements;
+          try {
+            await query.list(at(n), viewer);
+          } finally {
+            issued = null;
+          }
+          // The page and the undone lookup; the staff names are identity's query.
+          return (await Promise.all(statements.map(explainSql))).join('\n--\n');
+        },
+        run: (n) => query.list(at(n), viewer),
+      };
+    }
+
+    const repeat = <T>(items: T[]): T[] =>
+      Array.from({ length: INPUTS }, (_, n) => items[n % items.length] as T);
+
+    /** A uniform sample of entries, for record, correlation, and cursor inputs. */
+    async function sampleEntries() {
+      return rows<{
+        record_type: string;
+        record_id: string;
+        correlation_id: string;
+        at: string;
+        id: string;
+      }>(
+        `SELECT record_type, record_id, correlation_id, id,
+                to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at
+         FROM audit_entries TABLESAMPLE BERNOULLI (0.05) ORDER BY random() LIMIT ${INPUTS}`,
+      );
+    }
+
+    it('holds the audit load', async () => {
+      const [counts] = await rows<Record<string, number | string>>(`
+        SELECT (SELECT count(*) FROM audit_entries)::int AS entries,
+               (SELECT count(DISTINCT operating_day) FROM audit_entries)::int AS operating_days,
+               (SELECT count(DISTINCT actor_user_id) FROM audit_entries)::int AS people,
+               (SELECT count(DISTINCT action) FROM audit_entries)::int AS actions,
+               (SELECT count(DISTINCT correlation_id) FROM audit_entries)::int AS correlations,
+               (SELECT count(*) FROM (SELECT DISTINCT record_type, record_id FROM audit_entries) r)::int AS records,
+               pg_size_pretty(pg_total_relation_size('audit_entries')) AS total_size`);
+      report(table([counts ?? {}]));
+      report(
+        table(
+          await rows(
+            `SELECT actor_kind, count(*)::int AS entries FROM audit_entries GROUP BY 1 ORDER BY 2 DESC`,
+          ),
+        ),
+      );
+      report(
+        table(
+          await rows(
+            `SELECT action, record_type, count(*)::int AS entries FROM audit_entries
+             GROUP BY 1, 2 ORDER BY 3 DESC`,
+          ),
+        ),
+      );
+      const [triggers] = await rows<{ disabled: number }>(
+        `SELECT count(*)::int AS disabled FROM pg_trigger
+         WHERE tgrelid = 'audit_entries'::regclass AND NOT tgisinternal AND tgenabled = 'D'`,
+      );
+
+      expect(counts).toMatchObject({
+        entries: AUDIT_SCALE.entries,
+        people: AUDIT_SCALE.people,
+        actions: auditActionSpread().length,
+      });
+      expect(counts?.operating_days).toBeGreaterThanOrEqual(AUDIT_SCALE.operatingDays - 2);
+      // Both stamp triggers are back on after the seed.
+      expect(triggers?.disabled).toBe(0);
+    });
+
+    it(`pages the unfiltered list (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const cursors = (await sampleEntries()).map((row) => ({
+        cursor: encodeKeyset([row.at, row.id]),
+      }));
+
+      await checkRow('Audit page, unfiltered', BUDGET_AUDIT_PAGE_MS, [
+        listRead(
+          'first page',
+          ['audit_entries_recorded_idx', 'audit_entries_undoes_entry_unique'],
+          [{}],
+        ),
+        listRead('next page by keyset', ['audit_entries_recorded_idx'], cursors),
+      ]);
+    });
+
+    it(`pages one person's entries (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const people = await rows<{ id: string }>(
+        `SELECT id FROM users WHERE email LIKE 'scale-auditor-%' ORDER BY random()`,
+      );
+
+      await checkRow('Audit page by person', BUDGET_AUDIT_PAGE_MS, [
+        listRead(
+          'person',
+          ['audit_entries_actor_recorded_idx'],
+          repeat(people).map((row) => ({ actorUserId: row.id })),
+        ),
+      ]);
+    });
+
+    it(`pages one record's entries (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const sample = await sampleEntries();
+
+      await checkRow('Audit page by record', BUDGET_AUDIT_PAGE_MS, [
+        listRead(
+          'record type and id',
+          ['audit_entries_record_recorded_idx'],
+          sample.map((row) => ({ recordType: row.record_type, recordId: row.record_id })),
+        ),
+      ]);
+    });
+
+    // Review AR12: a record type alone (no record id). The record index leads with type then id,
+    // so it cannot give this filter its order; a common type is served by the newest first index
+    // and a rare one by the record index and a sort. Every seeded type is measured, rarest too.
+    it(`pages one record type's entries (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const types = await rows<{ record_type: string; entries: number }>(
+        `SELECT record_type, count(*)::int AS entries FROM audit_entries GROUP BY 1 ORDER BY 2 DESC`,
+      );
+
+      await checkRow(
+        'Audit page by record type',
+        BUDGET_AUDIT_PAGE_MS,
+        types.map((type) =>
+          listRead(
+            `${type.record_type}, ${type.entries} entries`,
+            [],
+            [{ recordType: type.record_type }],
+            ['audit_entries_recorded_idx', 'audit_entries_record_recorded_idx'],
+          ),
+        ),
+      );
+    });
+
+    it(`pages one action's entries (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const actions = await rows<{ action: string; entries: number }>(
+        `SELECT action, count(*)::int AS entries FROM audit_entries GROUP BY 1 ORDER BY 2 DESC`,
+      );
+      const common = actions[0];
+      const rare = actions.at(-1);
+      if (!common || !rare) throw new Error('no seeded actions');
+
+      // A code on most entries is cheapest through the newest first index with a filter (the
+      // first 50 rows are nearly all its own), so its plan may take either index; a rare code
+      // must use the action index, or the page would walk past most of the table.
+      const either = ['audit_entries_action_recorded_idx', 'audit_entries_recorded_idx'];
+      await checkRow('Audit page by action', BUDGET_AUDIT_PAGE_MS, [
+        listRead(`most common, ${common.action}`, [], [{ action: common.action }], either),
+        listRead(
+          `rarest, ${rare.action}`,
+          ['audit_entries_action_recorded_idx'],
+          [{ action: rare.action }],
+        ),
+        listRead(
+          'every action in turn',
+          [],
+          repeat(actions).map((row) => ({ action: row.action })),
+          either,
+        ),
+      ]);
+    });
+
+    it(`pages an operating day range (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const days = await rows<{ day: string }>(
+        `SELECT d::date::text AS day
+         FROM generate_series((SELECT min(operating_day) FROM audit_entries),
+                              (SELECT max(operating_day) FROM audit_entries) - 31,
+                              interval '1 day') d
+         ORDER BY random() LIMIT ${INPUTS}`,
+      );
+      const [first] = await rows<{ day: string }>(
+        `SELECT min(operating_day)::text AS day FROM audit_entries`,
+      );
+      const oldest = first?.day ?? '';
+      // Spec 0010 task 18: the day filter also bounds `recorded_at` (`filtersOf`), so the plan
+      // reads the BRIN index, the newest first index from that instant, or both, never the
+      // newest first index with only a filter (which walked most of the table for an old day).
+      const dayRead = (label: string, inputs: Record<string, unknown>[]): Read => ({
+        ...listRead(label, [], inputs, [
+          'audit_entries_operating_day_brin',
+          'audit_entries_recorded_idx',
+        ]),
+        shows:
+          /Index Cond: \(+recorded_at >= |Bitmap Index Scan on audit_entries_operating_day_brin/,
+      });
+      const range = (width: number) =>
+        days.map((row) => {
+          const to = new Date(`${row.day}T00:00:00Z`);
+          to.setUTCDate(to.getUTCDate() + width - 1);
+          return { dayFrom: row.day, dayTo: to.toISOString().slice(0, 10) };
+        });
+
+      await checkRow('Audit page by day range', BUDGET_AUDIT_PAGE_MS, [
+        dayRead('one day', range(1)),
+        dayRead('seven days', range(7)),
+        dayRead('thirty one days', range(31)),
+        dayRead('one day, the oldest', [{ dayFrom: oldest, dayTo: oldest }]),
+      ]);
+    });
+
+    it(`pages one correlation (${BUDGET_AUDIT_PAGE_MS} ms budget)`, async () => {
+      const sample = await sampleEntries();
+
+      await checkRow('Audit page by correlation', BUDGET_AUDIT_PAGE_MS, [
+        listRead(
+          'correlation id',
+          ['audit_entries_correlation_idx'],
+          sample.map((row) => ({ correlationId: row.correlation_id })),
+        ),
+      ]);
+    });
+
+    // AC-17: one `record` call through the real AuditService, timed inside the caller's
+    // transaction (the BEGIN before it and the COMMIT after it are the caller's, not the call's).
+    it(`records one entry (${BUDGET_AUDIT_RECORD_MS} ms budget)`, async () => {
+      const audit = new AuditService();
+      const [person] = await rows<{ id: string }>(
+        `SELECT id FROM users WHERE email LIKE 'scale-auditor-%' ORDER BY email LIMIT 1`,
+      );
+      if (!person) throw new Error('no seeded person');
+      const sample = async (): Promise<number> => {
+        let ms = Number.POSITIVE_INFINITY;
+        await h.app.db.transaction(async (tx) => {
+          const started = performance.now();
+          await audit.record(tx, {
+            actor: personActor(person.id, 'manager'),
+            action: 'location.archived',
+            record: { type: 'location', id: randomUUID() },
+            before: { status: 'active' },
+            after: { status: 'archived' },
+            reason: 'Scale check',
+            correlationId: audit.newCorrelationId(),
+          });
+          ms = performance.now() - started;
+        });
+        return ms;
+      };
+      for (let n = 0; n < WARMUP; n += 1) await sample();
+      const samples: number[] = [];
+      for (let n = 0; n < RUNS; n += 1) samples.push(await sample());
+      const value = p95(samples);
+
+      results.push({
+        row: 'Audit record, one entry',
+        budgetMs: BUDGET_AUDIT_RECORD_MS,
+        p95Ms: Number(value.toFixed(1)),
+        runs: RUNS,
+      });
+      expect(value).toBeLessThan(BUDGET_AUDIT_RECORD_MS);
+    });
+  });
 });

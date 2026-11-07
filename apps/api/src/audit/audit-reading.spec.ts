@@ -1,6 +1,7 @@
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { describe, expect, it, vi } from 'vitest';
 import type { StaffDirectory } from '../identity/staff/staff-directory.js';
+import { encodeKeyset } from '../platform/keyset-cursor.js';
 import { AuditReadForbidden } from './audit.errors.js';
 import { csvCell, csvLine, exportCells, exportFileName } from './audit-export.service.js';
 import { AuditQueryService, fieldChanges, type EntryRow } from './audit-query.service.js';
@@ -154,5 +155,151 @@ describe('audit reading (spec 0010, milestone 3)', () => {
     );
     expect(system[3]).toBe('bosta');
     expect(system[6]).toBe('x.y');
+  });
+});
+
+/**
+ * The SQL text of a Drizzle SQL object, nested SQL included, each bound string written as
+ * `'<value>'` and any other bound value as `?`.
+ */
+function sqlText(query: unknown): string {
+  const chunks = (query as { queryChunks?: unknown[] }).queryChunks ?? [];
+  return chunks
+    .map((chunk): string => {
+      if (typeof chunk === 'object' && chunk !== null) {
+        const value = (chunk as { value?: unknown }).value;
+        // Literal SQL is a chunk with a `value` array of strings; a nested sql`...` has chunks.
+        if (Array.isArray(value)) return value.join('');
+        if (Array.isArray((chunk as { queryChunks?: unknown }).queryChunks)) return sqlText(chunk);
+      }
+      return typeof chunk === 'string' ? `'${chunk}'` : '?';
+    })
+    .join('');
+}
+
+// Spec 0010 task 18 (AC-17): every reader selects `recorded_at` as text under the same name, and
+// PostgreSQL resolves a bare `ORDER BY recorded_at` to that output column, so the page sorted the
+// text and no index could serve it (a full scan and sort of 5,000,000 entries). Each reader must
+// order by the table's own columns.
+describe('audit reading order (spec 0010, AC-17)', () => {
+  const KEYSET_ORDER = 'ORDER BY audit_entries.recorded_at DESC, audit_entries.id DESC';
+
+  function reader() {
+    const statements: string[] = [];
+    const execute = vi.fn((query: unknown) => {
+      statements.push(sqlText(query).replace(/\s+/g, ' '));
+      return Promise.resolve({ rows: [] });
+    });
+    const service = new AuditQueryService(
+      { db: { execute } } as unknown as DatabaseConnection,
+      { namesByIds: vi.fn(() => Promise.resolve(new Map())) } as unknown as StaffDirectory,
+    );
+    return { service, statements };
+  }
+
+  /** The statements among `statements` that order rows, each of which must name the table. */
+  function orderings(statements: string[]): string[] {
+    const ordered = statements.filter((text) => text.includes('ORDER BY'));
+    expect(ordered.length).toBeGreaterThan(0);
+    return ordered;
+  }
+
+  it('orders the list, the next page, and the record history by the table columns', async () => {
+    const { service, statements } = reader();
+    const viewer = { userId: ID, has: () => true, actingHat: () => 'manager' };
+    await service.list({ limit: 50 }, viewer);
+    await service.list({ actorUserId: ID, limit: 50 }, viewer);
+    const cursor = encodeKeyset(['2026-11-07T10:00:00.000001Z', ID]);
+    await service.list({ actorUserId: ID, cursor, limit: 50 }, viewer);
+    await service.forRecord(viewer, 'sku', ID, undefined, 50);
+
+    for (const text of orderings(statements)) expect(text).toContain(KEYSET_ORDER);
+    expect(statements.join('\n')).not.toMatch(/ORDER BY (?!audit_entries\.)/);
+  });
+
+  it('orders the export bound and its batches by the table columns', async () => {
+    const { service, statements } = reader();
+    const query = { dayFrom: '2026-11-01', dayTo: '2026-11-07' };
+    await service.exportBound(query);
+    const batches = service.exportBatches(
+      query,
+      'Africa/Cairo',
+      { at: '2026-11-07T10:00:00.000001Z', id: ID },
+      1_000,
+      10,
+    );
+    for await (const batch of batches) expect(batch).toEqual([]);
+
+    expect(orderings(statements)).toHaveLength(2);
+    for (const text of orderings(statements)) expect(text).toContain(KEYSET_ORDER);
+  });
+});
+
+// Spec 0010 task 18 (AC-17): a day bound also bounds `recorded_at` from midnight UTC two days
+// before `dayFrom` to midnight UTC three days after `dayTo`, so the newest first index has a range
+// to start from; the `operating_day` conditions still decide the match.
+describe('audit day range bound (spec 0010, AC-17)', () => {
+  const FROM =
+    "audit_entries.recorded_at >= (('2026-11-01'::date - 2)::timestamp AT TIME ZONE 'UTC')";
+  const TO = "audit_entries.recorded_at < (('2026-11-07'::date + 3)::timestamp AT TIME ZONE 'UTC')";
+
+  function reader() {
+    const statements: string[] = [];
+    const execute = vi.fn((query: unknown) => {
+      statements.push(sqlText(query).replace(/\s+/g, ' '));
+      return Promise.resolve({ rows: [] });
+    });
+    const service = new AuditQueryService(
+      { db: { execute } } as unknown as DatabaseConnection,
+      { namesByIds: vi.fn(() => Promise.resolve(new Map())) } as unknown as StaffDirectory,
+    );
+    return { service, statements };
+  }
+
+  it('bounds the list by instant beside the operating day, in UTC', async () => {
+    const { service, statements } = reader();
+    await service.list(
+      { dayFrom: '2026-11-01', dayTo: '2026-11-07', limit: 50 },
+      { has: () => true },
+    );
+
+    const [page] = statements;
+    expect(page).toContain("operating_day >= '2026-11-01'::date");
+    expect(page).toContain("operating_day <= '2026-11-07'::date");
+    expect(page).toContain(FROM);
+    expect(page).toContain(TO);
+  });
+
+  it('bounds each side alone, and adds no instant bound without a day', async () => {
+    const { service, statements } = reader();
+    await service.list({ dayFrom: '2026-11-01', limit: 50 }, { has: () => true });
+    await service.list({ dayTo: '2026-11-07', limit: 50 }, { has: () => true });
+    await service.list({ action: 'sku.archived', limit: 50 }, { has: () => true });
+
+    const pages = statements.filter((text) => text.includes('ORDER BY'));
+    expect(pages).toHaveLength(3);
+    expect(pages[0]).toContain(FROM);
+    expect(pages[0]).not.toContain('audit_entries.recorded_at <');
+    expect(pages[1]).toContain(TO);
+    expect(pages[1]).not.toContain('audit_entries.recorded_at >=');
+    expect(pages[2]).not.toContain('audit_entries.recorded_at >=');
+    expect(pages[2]).not.toContain('audit_entries.recorded_at <');
+  });
+
+  it('bounds the export bound, its size, and its batches the same way', async () => {
+    const { service, statements } = reader();
+    const query = { dayFrom: '2026-11-01', dayTo: '2026-11-07' };
+    const key = { at: '2026-11-07T10:00:00.000001Z', id: ID };
+    await service.exportBound(query);
+    await service.exportSize(query, key, 200_001);
+    for await (const batch of service.exportBatches(query, 'Africa/Cairo', key, 1_000, 10)) {
+      expect(batch).toEqual([]);
+    }
+
+    expect(statements).toHaveLength(3);
+    for (const text of statements) {
+      expect(text).toContain(FROM);
+      expect(text).toContain(TO);
+    }
   });
 });

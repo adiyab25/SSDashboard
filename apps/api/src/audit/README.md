@@ -34,7 +34,11 @@ pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts t
 pnpm --filter @ssdashboard/db exec vitest run --config ./vitest.config.e2e.ts test/audit-append-only.e2e-spec.ts
 ```
 
-The e2e suites need the dev Postgres (`deploy/compose.dev.yaml`); each makes its own scratch database.
+```bash
+pnpm --filter @ssdashboard/api test:scale   # spec 0010 AC-17 at 5,000,000 entries, with the spec 0002 load (several minutes)
+```
+
+The e2e suites need the dev Postgres (`deploy/compose.dev.yaml`); each makes its own scratch database. The scale suite (`test/scale.e2e-spec.ts`, seeded by `test/scale-audit-seed.ts`) checks that each list filter's plan uses its index, then prints the p95 of every row against its budget; it runs in the `scale` CI job, never in `test:e2e`.
 
 ## Governing spec
 
@@ -46,6 +50,7 @@ The e2e suites need the dev Postgres (`deploy/compose.dev.yaml`); each makes its
 No ADRs yet. Record non obvious decisions as ADRs in docs/adr/ and link them here.
 
 - The registry (`AUDIT_ACTIONS`) stores catalog keys (`audit.actions.stockReceiptVoided`), not label text: the screen translates them in the viewer's language, and the i18n parity test keeps English and Arabic in step (spec 0010, AC-10).
+- Every reader orders by the table's own columns (`audit_entries.recorded_at DESC, audit_entries.id DESC`), never a bare `recorded_at`: the readers select `recorded_at` as text under the same name, and a bare `ORDER BY` name means the output column, which no index serves (spec 0010 task 18, guarded by `audit-reading.spec.ts`). A day filter also bounds `recorded_at` by a UTC superset window (`filtersOf`), so an old day range starts at the right place in the newest first index instead of walking the table; the BRIN index on `operating_day` stays.
 - Undone codes are derived, never listed (spec 0010 task 16, security review AS5): each undoable code `X` brings `X_undone`, reason required, final, with the one shared label `audit.actions.actionUndone`, proven by `X`'s own proof file. `record` refuses an undone code; only `recordUndone` writes one.
 
 ## Retention
