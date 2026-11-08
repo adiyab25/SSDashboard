@@ -138,6 +138,7 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     accountB: '',
     auditEntry: '',
     auditDay: '',
+    customer: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -185,6 +186,11 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'GET /stock': { needs: ['stock.view'] },
     'GET /skus/:id/stock': { needs: ['stock.view'], path: () => `/skus/${ids.sku}/stock` },
     'GET /skus/:id/movements': { needs: ['stock.view'], path: () => `/skus/${ids.sku}/movements` },
+    'POST /customers/search': {
+      needs: ['customers.view'],
+      body: () => ({ phone: '01001234567' }),
+    },
+    'GET /customers/:id': { needs: ['customers.view'], path: () => `/customers/${ids.customer}` },
     'GET /locations': { needs: ['stock.view'] },
     'POST /locations': {
       needs: ['catalog.manage'],
@@ -472,6 +478,14 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     ids.skuToArchive = await sku();
     ids.receipt = await receipt();
     ids.receiptToVoid = await receipt();
+    // A customer with a phone, so the customer read answers 200 to everyone the matrix allows.
+    const customer = await api.owner.pool.query<{ id: string }>(
+      `WITH made AS (INSERT INTO customers (name) VALUES ('Sweep Customer') RETURNING id),
+            phone AS (INSERT INTO customer_phones (customer_id, phone_e164, kind, is_primary)
+                      SELECT id, '+201001234567', 'mobile', true FROM made)
+       SELECT id FROM made`,
+    );
+    ids.customer = customer.rows[0]?.id ?? '';
     ids.staffTarget = (await api.addPerson(['support'])).id;
     ids.partnerTarget = (await api.addPerson(['partner'], { partnerAccountId: ids.accountA })).id;
     // An entry of the planted receipt whose diff carries cost fields, written as the owner (the

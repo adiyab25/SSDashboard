@@ -56,7 +56,7 @@ One customer record keyed on a normalized Egyptian phone number, holding many ph
 **Done when:** 010, 0010, +2010, and Arabic digit forms normalize to one number; one customer holds several phones and Shopify ids across stores; merge is a fast audited screen that can be undone; a repeat returner flag shows on the record; the timeline reads the same records through each role's lens.
 - [x] Design it (spec): `/architect customers by phone`
 - [ ] Build it: `/develop customers by phone`
-  - [ ] One phone, one customer, end to end
+  - [x] One phone, one customer, end to end
   - [ ] Merge and undo as daily work
   - [ ] The repeat returner flag
   - [ ] One timeline through each lens

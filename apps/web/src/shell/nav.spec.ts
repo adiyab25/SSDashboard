@@ -39,6 +39,15 @@ describe('visibleNavItems (spec 0008, AC-11)', () => {
     expect(ids(['warehouse'])).toEqual(expect.arrayContaining(['stock', 'receipts', 'skus']));
   });
 
+  it('shows Customers to customers.view holders only (spec 0014, AC-18)', () => {
+    for (const hat of ['support', 'operations', 'manager'] as const) {
+      expect(ids([hat])).toContain('customers');
+    }
+    for (const hat of ['warehouse', 'media_buyer'] as const) {
+      expect(ids([hat])).not.toContain('customers');
+    }
+  });
+
   it('shows a media buyer only the pages open to every hat', () => {
     expect(HAT_PERMISSIONS.media_buyer).not.toContain('stock.view');
     expect(ids(['media_buyer'])).toEqual(['home', 'design']);
