@@ -18,6 +18,7 @@ import { Audience } from '../platform/audience/audience.decorator.js';
 import { serializeAuditEntry } from './audit-cost-fields.js';
 import { auditHttpError } from './audit-http.js';
 import { AuditUndoService } from './audit-undo.service.js';
+import { RequiresModule } from '../platform/modules/requires-module.decorator.js';
 
 /**
  * The undo body (spec 0010, AC-14, API surface): `AuditUndoRequest`. A missing, empty, or blank
@@ -64,6 +65,7 @@ const entryId = () =>
  */
 @Audience('staff')
 @Permission('audit.undo')
+@RequiresModule('audit')
 @Controller('audit/entries')
 export class AuditUndoController {
   /** Takes the undo service. */

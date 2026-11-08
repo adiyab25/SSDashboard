@@ -35,6 +35,7 @@ import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { ReceiptError, ReceiptsService, type ReceiptCaller } from './receipts.service.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 const IdempotencyKey = z.uuid();
 
@@ -118,6 +119,7 @@ const callerOf = (request: AuthenticatedRequest, access: Access): ReceiptCaller 
  * `stock.correct` (spec 0008 route mapping); cost fields only reach a caller with `cost.view`.
  */
 @Audience('staff')
+@RequiresModule('inventory')
 @Controller('stock-receipts')
 export class ReceiptsController {
   /** Takes the receipts service. */

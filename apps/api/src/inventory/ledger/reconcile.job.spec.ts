@@ -1,112 +1,60 @@
 import { Logger } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../../config/env.js';
-import { JOB_SCHEMA } from '../../platform/job-schema.js';
-import type { SettingsService } from '../../platform/settings/settings.service.js';
-import { RECONCILE_EXPIRY_SECONDS, RECONCILE_QUEUE, ReconcileJob } from './reconcile.job.js';
+import { JobRegistry } from '../../platform/jobs/job-registry.js';
+import { ModuleRegistry } from '../../platform/modules/module-registry.js';
+import {
+  RECONCILE_EXPIRY_SECONDS,
+  RECONCILE_QUEUE,
+  RECONCILE_SCHEDULE_KEY,
+  ReconcileJob,
+} from './reconcile.job.js';
 import type { ReconciliationService } from './reconciliation.service.js';
 
-// pg-boss is the boundary: a fake records what the job asks of it.
-const boss = vi.hoisted(() => ({
-  constructed: [] as unknown[],
-  on: vi.fn(),
-  start: vi.fn(),
-  stop: vi.fn(),
-  createQueue: vi.fn(),
-  schedule: vi.fn(),
-  work: vi.fn(),
-}));
-
-vi.mock('pg-boss', () => ({
-  PgBoss: vi.fn(function (this: unknown, options: unknown) {
-    boss.constructed.push(options);
-    return boss;
-  }),
-}));
-
-const env = {
-  DATABASE_URL: 'postgres://ssdashboard_app:pw@db:5432/ssdashboard',
-  LEDGER_RECONCILE_CRON: '30 3 * * *',
-} as Env;
+const env = { LEDGER_RECONCILE_CRON: '30 3 * * *' } as Env;
 
 function makeJob(found = 0) {
   const reconcile = vi.fn().mockResolvedValue(found);
-  const settings = { read: vi.fn().mockResolvedValue({ timezone: 'Africa/Cairo' }) };
-  const job = new ReconcileJob(
-    env,
-    settings as unknown as SettingsService,
-    { reconcile } as unknown as ReconciliationService,
-  );
-  return { job, reconcile, settings };
+  const jobs = new JobRegistry(new ModuleRegistry());
+  const job = new ReconcileJob(env, jobs, { reconcile } as unknown as ReconciliationService);
+  return { job, reconcile, jobs };
 }
 
-// Spec 0002, AC-11: the nightly reconciliation runs in the worker on LEDGER_RECONCILE_CRON.
+// Spec 0002, AC-11: the nightly reconciliation runs in the worker on LEDGER_RECONCILE_CRON; spec
+// 0009, AC-10: declared through the JobRegistry with the capability inventory.reconcile.
 describe('ReconcileJob', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    boss.start.mockResolvedValue(boss);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
   });
 
-  it('connects as the application role into its own schema, without creating it', async () => {
-    await makeJob().job.onApplicationBootstrap();
+  it('declares one reconciliation at a time on LEDGER_RECONCILE_CRON (covers: AC-11)', () => {
+    const { job, jobs } = makeJob();
+    job.onModuleInit();
 
-    expect(boss.constructed.at(-1)).toEqual({
-      connectionString: env.DATABASE_URL,
-      schema: JOB_SCHEMA,
-      createSchema: false,
+    expect(jobs.queue(RECONCILE_QUEUE)).toEqual({
+      name: RECONCILE_QUEUE,
+      capability: 'inventory.reconcile',
+      options: { policy: 'singleton', expireInSeconds: RECONCILE_EXPIRY_SECONDS },
     });
-    expect(boss.start).toHaveBeenCalledOnce();
-  });
-
-  it('runs one reconciliation at a time (covers: AC-11)', async () => {
-    await makeJob().job.onApplicationBootstrap();
-
-    expect(boss.createQueue).toHaveBeenCalledWith(RECONCILE_QUEUE, {
-      policy: 'singleton',
-      expireInSeconds: RECONCILE_EXPIRY_SECONDS,
-    });
-  });
-
-  it('schedules the job on LEDGER_RECONCILE_CRON in the install time zone (covers: AC-11)', async () => {
-    await makeJob().job.onApplicationBootstrap();
-
-    expect(boss.schedule).toHaveBeenCalledWith(RECONCILE_QUEUE, '30 3 * * *', null, {
-      tz: 'Africa/Cairo',
-    });
+    expect(jobs.schedulesOf(RECONCILE_QUEUE)).toEqual([
+      {
+        queue: RECONCILE_QUEUE,
+        key: RECONCILE_SCHEDULE_KEY,
+        capability: 'inventory.reconcile',
+        cron: '30 3 * * *',
+      },
+    ]);
   });
 
   it('reconciles when a job arrives and returns how many it found (covers: AC-11)', async () => {
-    const { job, reconcile } = makeJob(3);
-    await job.onApplicationBootstrap();
-    const handler = boss.work.mock.calls[0]?.[1] as () => Promise<unknown>;
+    const { job, jobs, reconcile } = makeJob(3);
+    job.onModuleInit();
+    const handler = jobs.handlerFor(RECONCILE_QUEUE, 'inventory.reconcile');
 
-    const output = await handler();
+    const output = await handler?.handle({ id: 'j', data: {} } as never, { before: null });
 
-    expect(boss.work.mock.calls[0]?.[0]).toBe(RECONCILE_QUEUE);
     expect(reconcile).toHaveBeenCalledOnce();
     expect(output).toEqual({ found: 3 });
-  });
-
-  it('logs queue errors instead of crashing the worker', async () => {
-    const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
-    await makeJob().job.onApplicationBootstrap();
-    const [event, listener] = boss.on.mock.calls[0] as [string, (error: Error) => void];
-
-    listener(new Error('connection lost'));
-
-    expect(event).toBe('error');
-    expect(log).toHaveBeenCalledWith('Job queue error: connection lost', expect.any(String));
-  });
-
-  it('stops the queue gracefully on shutdown, and does nothing if it never started', async () => {
-    const idle = makeJob().job;
-    await idle.onApplicationShutdown();
-    expect(boss.stop).not.toHaveBeenCalled();
-
-    const { job } = makeJob();
-    await job.onApplicationBootstrap();
-    await job.onApplicationShutdown();
-    expect(boss.stop).toHaveBeenCalledWith({ graceful: true });
   });
 });

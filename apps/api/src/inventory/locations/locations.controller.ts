@@ -41,6 +41,7 @@ import {
   LocationsService,
   type LocationCaller,
 } from './locations.service.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /** The signed in person and their `Access`, as the location service records the actor. */
 const callerOf = (request: AuthenticatedRequest, access: Access): LocationCaller => ({
@@ -101,6 +102,7 @@ const locationId = () =>
  * transit and virtual locations never appear and answer 404 here.
  */
 @Audience('staff')
+@RequiresModule('inventory')
 @Controller('locations')
 export class LocationsController {
   /** Takes the locations service. */

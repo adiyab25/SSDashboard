@@ -1,12 +1,7 @@
-import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
-import { PgBoss } from 'pg-boss';
-import { ENV } from '../config/config.module.js';
-import type { Env } from '../config/env.js';
-import { JOB_SCHEMA } from '../platform/job-schema.js';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { defineQueue } from '../platform/jobs/job-declarations.js';
+import { JobSender } from '../platform/jobs/job-sender.js';
 import type { MailKind } from './mail-templates.js';
-
-/** The pg-boss queue that carries one job per email to send. */
-export const MAIL_QUEUE = 'mail.send';
 
 /**
  * The job holds only these ids (spec 0005, AC-11). The worker reads the token from
@@ -37,61 +32,42 @@ export const MAIL_QUEUE_OPTIONS = {
   deleteAfterSeconds: 86_400,
 } as const;
 
-/** Creates the queue if it is missing. Safe to call from the api and the worker alike. */
-export async function ensureMailQueue(boss: PgBoss): Promise<void> {
-  await boss.createQueue(MAIL_QUEUE, { ...MAIL_QUEUE_OPTIONS });
-}
+/**
+ * The queue of one job per email, owned by the core capability `mail.send` (spec 0009, *Module
+ * registry*).
+ */
+export const MAIL_JOB = defineQueue({
+  name: 'mail.send',
+  capability: 'mail.send',
+  options: { ...MAIL_QUEUE_OPTIONS },
+});
+
+/** The pg-boss queue that carries one job per email to send. */
+export const MAIL_QUEUE = MAIL_JOB.name;
 
 /**
- * Puts mail jobs on the queue from the api. It is a send only pg-boss client with a pool of 2
- * connections: no scheduling and no maintenance, which stay with the worker. A failure to
- * enqueue is logged and swallowed, so a mail problem never fails the request that caused it.
+ * Puts mail jobs on the queue from the api, through the api's one send only pg-boss client
+ * (`JobSender`, a pool of 2: no scheduling and no maintenance, which stay with the worker). A
+ * failure to enqueue is logged and swallowed, so a mail problem never fails the request that
+ * caused it.
  */
 @Injectable()
-export class MailProducer implements OnApplicationShutdown {
+export class MailProducer {
   private readonly logger = new Logger('Mail');
-  private started: Promise<PgBoss> | undefined;
 
-  /** Takes the env for the database URL the send only client connects to. */
-  constructor(@Inject(ENV) private readonly env: Env) {}
+  /** Takes the process's job sender. */
+  constructor(@Inject(JobSender) private readonly jobs: JobSender) {}
 
   /** True when the job is queued. */
   async enqueue(job: MailJob): Promise<boolean> {
     try {
-      const boss = await this.boss();
-      const id = await boss.send(MAIL_QUEUE, job);
+      const id = await this.jobs.send(MAIL_JOB, job);
       if (id === null) throw new Error('the queue did not accept the job');
       return true;
     } catch (error) {
       // The job data holds ids only, so it is safe to name; there is no link to leak.
       this.logger.error(`Could not queue a ${job.kind} email for ${job.userId}: ${String(error)}`);
-      // A failed start is retried on the next request instead of being cached for good.
-      this.started = undefined;
       return false;
     }
-  }
-
-  private boss(): Promise<PgBoss> {
-    this.started ??= (async () => {
-      const boss = new PgBoss({
-        connectionString: this.env.DATABASE_URL,
-        schema: JOB_SCHEMA,
-        createSchema: false,
-        max: 2,
-        supervise: false,
-        schedule: false,
-      });
-      boss.on('error', (error: Error) => this.logger.error(`Job queue error: ${error.message}`));
-      await boss.start();
-      await ensureMailQueue(boss);
-      return boss;
-    })();
-    return this.started;
-  }
-
-  /** Stops the send client if it was ever started, ignoring a start that failed. */
-  async onApplicationShutdown(): Promise<void> {
-    const boss = await this.started?.catch(() => undefined);
-    await boss?.stop({ graceful: true });
   }
 }

@@ -67,6 +67,7 @@ export class PlatformChangesListener implements OnApplicationBootstrap, OnApplic
   private retryTimer: NodeJS.Timeout | undefined;
   private failures = 0;
   private stopping = false;
+  private readonly subscribers = new Set<(payload: string | undefined) => void>();
 
   /** Takes the env for the database URL, the cache it keeps fresh, and the reconnect delays. */
   constructor(
@@ -78,6 +79,18 @@ export class PlatformChangesListener implements OnApplicationBootstrap, OnApplic
   /** True while the listening connection is up. */
   get listening(): boolean {
     return this.connection !== undefined;
+  }
+
+  /**
+   * Calls `onChange` after each notification, with its payload (a settings key, or `license`
+   * after a license phase moved), and with `undefined` after the connection is back, since
+   * notifications sent meanwhile were missed. The worker's module job supervisor reconciles on it
+   * (spec 0009, AC-10, AC-12). Returns the unsubscribe function. A subscriber that throws is
+   * ignored; it must not log the payload.
+   */
+  subscribe(onChange: (payload: string | undefined) => void): () => void {
+    this.subscribers.add(onChange);
+    return () => this.subscribers.delete(onChange);
   }
 
   /**
@@ -111,7 +124,10 @@ export class PlatformChangesListener implements OnApplicationBootstrap, OnApplic
       connection = await this.pool.connect();
       connection.on('error', () => this.lost(connection));
       connection.on('end', () => this.lost(connection));
-      connection.on('notification', (message) => this.cache.drop(message.payload || undefined));
+      connection.on('notification', (message) => {
+        this.cache.drop(message.payload || undefined);
+        this.tell(message.payload || undefined);
+      });
       await connection.query(`SET application_name = '${PLATFORM_LISTENER_NAME}'`);
       await connection.query(`LISTEN ${PLATFORM_CHANGED_CHANNEL}`);
     } catch (error) {
@@ -124,10 +140,22 @@ export class PlatformChangesListener implements OnApplicationBootstrap, OnApplic
       return;
     }
     this.connection = connection;
-    if (this.failures > 0) this.logger.log('Listening for platform changes again');
+    const reconnected = this.failures > 0;
+    if (reconnected) this.logger.log('Listening for platform changes again');
     this.failures = 0;
     // Anything that changed while no connection listened was missed.
     this.cache.drop();
+    if (reconnected) this.tell(undefined);
+  }
+
+  private tell(payload: string | undefined): void {
+    for (const subscriber of this.subscribers) {
+      try {
+        subscriber(payload);
+      } catch {
+        // a subscriber's failure is its own
+      }
+    }
   }
 
   private lost(connection: ListenConnection | undefined): void {

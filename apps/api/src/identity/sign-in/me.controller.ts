@@ -8,6 +8,7 @@ import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import type { AuthenticatedRequest, CurrentStaff } from './current-staff.js';
 import { ProfileService } from './profile.service.js';
 import { WhoAmI } from './who-am-i.decorator.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /**
  * The "who am I" answer: the person the guard read, plus their hats, their effective permissions
@@ -29,6 +30,7 @@ function meOf(staff: CurrentStaff, access: Access): MeResponse {
  */
 @Audience('staff')
 @AnyHat()
+@RequiresModule('identity')
 @Controller('me')
 export class MeController {
   /** Takes the profile service that saves the person's own details. */

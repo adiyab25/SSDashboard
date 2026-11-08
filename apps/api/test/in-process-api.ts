@@ -1,3 +1,4 @@
+import type { ModuleMetadata } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
@@ -69,17 +70,31 @@ export interface InProcessApi {
  * `LICENSE_FILE` is set here too, blank (`none_configured`) unless `options.licenseFile` names
  * a file, so no suite depends on the license the root `.env` points at (the dev bootstrap
  * license, which this production mode refuses). A worker booted after the api reads the same env.
+ * `options.imports` adds modules beside `AppModule` (the fixture module of spec 0009 task 19);
+ * `options.connectionOptions` adds `-c` settings to the app role's connections (a non ISO
+ * `DateStyle` in the license suite); `options.prepare` runs on the migrated scratch database, as its
+ * owner, before the app starts (a suite writes its license file there, so the api start check
+ * records it).
  */
 export async function startInProcessApi(
   configure?: (builder: ReturnType<typeof Test.createTestingModule>) => void,
-  options: { licenseFile?: string } = {},
+  options: {
+    licenseFile?: string;
+    imports?: NonNullable<ModuleMetadata['imports']>;
+    connectionOptions?: string;
+    prepare?: (owner: DatabaseConnection) => Promise<void>;
+  } = {},
 ): Promise<InProcessApi> {
   const savedEnv = { ...process.env };
   const scratch = await createScratchDatabase();
   await runMigrations(scratch.url);
   const owner = createDatabase(scratch.url, { max: 3 });
+  await options.prepare?.(owner);
   const appUrl = new URL(scratch.url);
-  appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
+  appUrl.searchParams.set(
+    'options',
+    [`-c role=${APP_ROLE}`, options.connectionOptions].filter(Boolean).join(' '),
+  );
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   Object.assign(process.env, {
@@ -91,7 +106,9 @@ export async function startInProcessApi(
     PORT: String(port),
     LICENSE_FILE: options.licenseFile ?? '',
   });
-  const builder = Test.createTestingModule({ imports: [AppModule] });
+  const builder = Test.createTestingModule({
+    imports: [AppModule, ...(options.imports ?? [])],
+  });
   configure?.(builder);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({

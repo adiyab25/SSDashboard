@@ -30,6 +30,37 @@ export const en = {
         settings: 'Settings',
       },
     },
+    modules: {
+      listSeparator: ', ',
+      noticeLabel: 'Module notice',
+      since: 'Since {{date}}.',
+      states: { on: 'On', limited: 'Finishing only', read_only: 'Read only', off: 'Off' },
+      reasons: {
+        not_licensed: 'This install is not licensed for it.',
+        lapsed: 'Its license has ended.',
+        toggled_off: 'It was switched off in Settings.',
+        step_off: 'The step that does this work is switched off.',
+        requires_off: 'A module it needs is not on.',
+        no_stock_out_source:
+          'It waits for the app to see online orders leave stock: the Bosta connection (Operations plan) or packing in the app.',
+      },
+      readOnly:
+        'Read only since {{date}}. You can look at the history, but nothing can be added or changed. Ask a person who manages settings.',
+      readOnlyNoDate:
+        'Read only. You can look at the history, but nothing can be added or changed. Ask a person who manages settings.',
+      limited:
+        'Only records from before {{date}} can be finished here. Ask a person who manages settings.',
+      limitedNoDate:
+        'Only records opened before it stopped can be finished here. Ask a person who manages settings.',
+      notAvailable: {
+        title: 'Not available on this install',
+        description: 'This part of the app is not switched on for this brand.',
+      },
+      staffNotice: {
+        label: 'Notice about work that stops',
+        stops: 'From {{date}} this stops: {{what}}. Ask your manager.',
+      },
+    },
     sidebar: {
       toggle: 'Toggle sidebar',
       mobileLabel: 'Navigation',
@@ -294,6 +325,8 @@ export const en = {
       add: 'Add partner login',
       search: 'Search partner logins',
       searchHint: 'Name or email',
+      addBlocked:
+        'The partner portal is switched off, so new partner logins cannot be added. Existing ones can still be managed.',
       account: {
         label: 'Partner account',
         all: 'All partner accounts',
@@ -1247,7 +1280,51 @@ export const en = {
     description: 'The brand’s own choices. Every change is recorded in the audit trail.',
     loadError: 'The settings could not be loaded. Try again.',
     retry: 'Try again',
-    sections: { brand: 'Brand', license: 'Modules and license', policies: 'Policies' },
+    sections: {
+      brand: 'Brand',
+      modules: 'Module switches',
+      license: 'Modules and license',
+      policies: 'Policies',
+    },
+    modules: {
+      description:
+        'Turn a module off or on. Turning one off shows what it will stop first, and needs a reason.',
+      requires: 'It cannot be turned on yet: it needs {{names}}. Turn those on first.',
+      row: {
+        turnOff: 'Turn off',
+        turnOn: 'Turn on',
+        turnOffNamed: 'Turn off {{name}}',
+        turnOnNamed: 'Turn on {{name}}',
+      },
+      off: {
+        title: 'Turn off {{name}}',
+        description:
+          'Check what this stops before you go on. Work already in motion can still be finished.',
+        confirm: 'Turn off',
+        confirmHint: 'This moves other things, so type the name of the module to go on.',
+        requiredBy: 'It cannot be turned off yet. It is needed by {{names}}. Turn those off first.',
+        done: '{{name}} is turned off.',
+      },
+      impact: {
+        loadError: 'What this would stop could not be loaded, so it cannot be turned off yet.',
+        unavailable:
+          'What this would stop cannot be worked out right now, so it cannot be turned off yet. Try again in a moment.',
+        nothing: 'Nothing is waiting or in progress, so turning it off stops nothing right now.',
+        waitingHeading: 'Waiting requests that will fail',
+        waitingHint: 'These are queued to go out and will be marked failed.',
+        inFlightHeading: 'Work in progress that can still be finished',
+        inFlightHint: 'These stay open and can be completed after the switch is off.',
+        partnerHeading: 'Stock held by partners',
+        partnerHint: 'These pieces stay with each partner. Plan what happens to them.',
+        partnerPieces_one: '{{pieces}} piece.',
+        partnerPieces_other: '{{pieces}} pieces.',
+        partnerValue: 'Value at cost: {{value}}.',
+        confirmedDay: 'Last confirmed sales day: {{date}}.',
+        noConfirmedDay: 'No sales day confirmed yet.',
+        kinds: {},
+        areas: {},
+      },
+    },
     license: {
       description:
         'What this install is licensed for. Core is always on. Warehouse and Operations follow the license files recorded here.',
@@ -1422,6 +1499,34 @@ export const en = {
     messages: {
       saved: 'Saved: {{name}}.',
       unchanged: 'Nothing changed: that is already the value.',
+    },
+  },
+  // The module registry of spec 0009 (AC-6): each module's and capability's name, keyed from
+  // MODULE_REGISTRY; a toggleable module's label and description are its toggle's.
+  modules: {
+    platform: {
+      label: 'Platform',
+      description: 'Settings, module switches, the license, and document numbers.',
+    },
+    audit: { label: 'Audit trail', description: 'The record of who changed what, and why.' },
+    identity: {
+      label: 'People and sign in',
+      description: 'Staff and partner sign in, hats, and accounts.',
+    },
+    catalog: { label: 'Catalog', description: 'Products and their SKUs.' },
+    inventory: {
+      label: 'Stock',
+      description: 'The stock ledger, locations, receipts, and showroom sends and returns.',
+    },
+    partners: { label: 'Partners', description: 'The record of each showroom partner.' },
+    mail: { label: 'Email', description: 'The emails the app sends.' },
+    health: { label: 'Health checks', description: 'Whether the app is up.' },
+    capabilities: {
+      platformReconcileModules: 'Keeping background jobs in line with the module switches',
+      platformLicenseCheck: 'The daily license check',
+      identityCleanup: 'The nightly sign in cleanup',
+      inventoryReconcile: 'The nightly stock ledger check',
+      mailSend: 'Sending email',
     },
   },
   mail: {

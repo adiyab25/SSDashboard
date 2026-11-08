@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   isCrossChecked,
+  moduleToggleKey,
   nestsDeeperThan,
   SETTING_VALUE_MAX_DEPTH,
   SETTING_WRITE_DEPENDENCIES,
-  settingDefinitionOf,
   settingWriteIssues,
+  type ModuleDefinition,
   type SettingBundle,
   type SettingDefinition,
   type SettingKey,
@@ -15,7 +16,8 @@ import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { createFormatter } from '@ssdashboard/i18n';
 import { AuditService, type JsonValue } from '../../audit/audit.service.js';
 import { DATABASE } from '../../database/database.module.js';
-import { pgArray, type Executor } from '../../database/sql.js';
+import { pgArray, type Executor, type Transaction } from '../../database/sql.js';
+import { ModuleRegistry } from '../modules/module-registry.js';
 import { PLATFORM_CHANGED_CHANNEL } from './platform-changes-listener.js';
 import { ReconcileModulesProducer } from './reconcile-modules.queue.js';
 import { settingRecordId } from './setting-record-id.js';
@@ -60,6 +62,14 @@ export interface SettingWrite {
   licensed: ReadonlySet<SettingBundle>;
 }
 
+/**
+ * The advisory lock every module toggle write takes before it reads any switch (spec 0009, AC-12):
+ * the `MODULE_REQUIRED_BY` check of a turn off and the `MODULE_REQUIRES` check of a turn on read
+ * the other modules' switches under it, so turning a module off and turning on one that requires
+ * it can never both pass alone.
+ */
+export const MODULE_TOGGLES_LOCK = 'ssd.settings.modules';
+
 /** What a write did: the setting as it now stands, and whether anything was written. */
 export interface SettingWriteResult {
   setting: StoredSetting;
@@ -97,7 +107,9 @@ export class SettingsService {
    * Takes the app database connection and the process cache. The audit writer and the reconcile
    * job producer are needed only by `write`. Nest always injects the audit writer; the producer
    * only in the api (`PlatformApiModule`), so in the worker, which never writes a setting, `write`
-   * throws. Tests that only read may construct the service without either.
+   * throws. Tests that only read may construct the service without either. The module registry
+   * adds each toggleable module's switch (`module.<key>.enabled`) to the settings it serves;
+   * without one, the registry of `@ssdashboard/contracts`.
    */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
@@ -106,6 +118,9 @@ export class SettingsService {
     @Optional()
     @Inject(ReconcileModulesProducer)
     private readonly reconcileJobs?: ReconcileModulesProducer,
+    @Optional()
+    @Inject(ModuleRegistry)
+    private readonly registry: ModuleRegistry = new ModuleRegistry(),
   ) {}
 
   /**
@@ -120,7 +135,7 @@ export class SettingsService {
   ): Promise<Pick<SettingValues, K>> {
     const result: Record<string, unknown> = {};
     for (const setting of await this.load(keys, executor)) {
-      const definition = settingDefinitionOf(setting.key);
+      const definition = this.registry.settingDefinition(setting.key);
       if (setting.invalid && definition?.onInvalid === 'refuse') {
         throw new SettingError(
           'SettingUnreadable',
@@ -142,12 +157,14 @@ export class SettingsService {
    * The settings with their row facts (`invalid`, `updatedAt`, `updatedBy`), for the staff read.
    * Through `executor` when given (the staff read passes the database, so it is never stale),
    * else through the cache. Never refuses: an invalid row comes back as the default with
-   * `invalid: true`, so a manager can see and fix it. Business code reads with `read` or `get`.
+   * `invalid: true`, so a manager can see and fix it. Takes registry keys and module toggle keys
+   * (`ModuleRegistry.settingDefinition`); an unknown key throws `SettingUnknown`. Business code
+   * reads with `read` or `get`.
    */
-  async load(keys: readonly SettingKey[], executor?: Executor): Promise<StoredSetting[]> {
+  async load(keys: readonly string[], executor?: Executor): Promise<StoredSetting[]> {
     if (executor) return this.fetch(keys, executor);
     const found = new Map<string, StoredSetting>();
-    const missing: SettingKey[] = [];
+    const missing: string[] = [];
     for (const key of keys) {
       const cached = this.cache.get(key);
       if (cached) found.set(key, cached);
@@ -175,9 +192,15 @@ export class SettingsService {
    * `setting.changed` audit entry (before, after, reason; the entry's reason rule as the
    * tightening flag), `NOTIFY ssd_platform_changed`, and the `platform.reconcile_modules` job. An
    * equal value writes nothing and answers `changed: false`. A throw anywhere rolls back all four.
+   * A module toggle (`module.<key>.enabled`, AC-12) is one more setting of the module's bundle (so
+   * an unlicensed module answers `NotLicensed` either way); under `MODULE_TOGGLES_LOCK`, once the
+   * value is known to change, turning a module off that another `on` module requires throws
+   * `ModuleRequiredBy` with the dependants, turning one on while a module it requires is not `on`
+   * throws `ModuleRequires` with those modules, and turning one back on hands the reconcile job the
+   * gap it was off for (its backfill, AC-11).
    */
   async write(change: SettingWrite): Promise<SettingWriteResult> {
-    const definition = settingDefinitionOf(change.key);
+    const definition = this.registry.settingDefinition(change.key);
     if (!definition) throw new SettingError('SettingUnknown', 'No such setting');
     if (definition.whoMayChange === 'nobody') {
       throw new SettingError('SettingLocked', 'This setting cannot be changed in the app');
@@ -210,7 +233,8 @@ export class SettingsService {
     if (!audit || !reconcileJobs) throw new Error('SettingsService was built without a writer');
 
     const key = definition.key as SettingKey;
-    const next = parsed.data;
+    const next: unknown = parsed.data;
+    const toggled = this.registry.toggledModule(definition.key);
     const correlationId = audit.newCorrelationId();
     const result = await this.connection.db.transaction(async (tx) => {
       if (isCrossChecked(key)) {
@@ -228,6 +252,9 @@ export class SettingsService {
             issues,
           );
         }
+      }
+      if (toggled) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${MODULE_TOGGLES_LOCK}))`);
       }
       const { rows } = await tx.execute<SettingRow & { matches: boolean }>(sql`
         SELECT key, value, ${UPDATED_AT_TEXT} AS updated_at, updated_by,
@@ -247,6 +274,7 @@ export class SettingsService {
       if (canonicalJson(current) === canonicalJson(next)) {
         return { setting: this.decode(definition, row), changed: false };
       }
+      if (toggled) await this.checkToggle(toggled, next === true, change.licensed, tx);
 
       const json = JSON.stringify(next);
       const written = row
@@ -276,7 +304,12 @@ export class SettingsService {
         correlationId,
       });
       await tx.execute(sql`SELECT pg_notify(${PLATFORM_CHANGED_CHANNEL}, ${key})`);
-      await reconcileJobs.enqueueIn(tx);
+      // A module back on: the gap from its last change (the toggle off) to now (AC-11).
+      const resumed =
+        toggled && next === true && row?.value === false
+          ? { key, from: row.updated_at, to: saved.updated_at }
+          : undefined;
+      await reconcileJobs.enqueueIn(tx, resumed);
       return { setting: this.decode(definition, saved), changed: true };
     });
     // This process need not wait for its own notification.
@@ -284,14 +317,78 @@ export class SettingsService {
     return result;
   }
 
-  private async fetch(keys: readonly SettingKey[], executor: Executor): Promise<StoredSetting[]> {
+  /**
+   * The module rules of a toggle write that changes the value (AC-12), with every switch read in
+   * `tx` under `MODULE_TOGGLES_LOCK`: turning `module` off while another `on` module requires it,
+   * directly or through another, throws `ModuleRequiredBy` with those modules; turning it on while a
+   * module it requires is not `on` throws `ModuleRequires` with those modules. A module is `on` here
+   * when its bundle is licensed now (core always), its switch is not off, and every module it
+   * requires is `on`: the licensing and toggle half of `moduleStates`.
+   */
+  private async checkToggle(
+    module: ModuleDefinition,
+    turningOn: boolean,
+    licensed: ReadonlySet<SettingBundle>,
+    tx: Transaction,
+  ): Promise<void> {
+    const modules = this.registry.modules();
+    const switches = new Map(
+      (await this.load(this.registry.toggleKeys(), tx)).map((s) => [s.key, s.value === true]),
+    );
+    const known = new Map<string, boolean>();
+    const isOn = (key: string, seen: ReadonlySet<string> = new Set()): boolean => {
+      const held = known.get(key);
+      if (held !== undefined) return held;
+      const found = this.registry.module(key);
+      const on =
+        found !== undefined &&
+        !seen.has(key) &&
+        licensed.has(found.bundle) &&
+        (!found.toggle || switches.get(moduleToggleKey(found.key)) !== false) &&
+        found.requires.every((required) => isOn(required, new Set([...seen, key])));
+      known.set(key, on);
+      return on;
+    };
+    if (turningOn) {
+      const off = module.requires.filter((required) => !isOn(required));
+      if (off.length > 0) {
+        throw new SettingError('ModuleRequires', 'A module this one requires is not on', [], off);
+      }
+      return;
+    }
+    const seen = new Set([module.key]);
+    const requiring = (target: string): ModuleDefinition[] =>
+      modules
+        .filter((m) => m.requires.includes(target) && !seen.has(m.key))
+        .flatMap((m) => {
+          seen.add(m.key);
+          return [m, ...requiring(m.key)];
+        });
+    const dependants = requiring(module.key)
+      .filter((m) => isOn(m.key))
+      .map((m) => m.key);
+    if (dependants.length > 0) {
+      throw new SettingError(
+        'ModuleRequiredBy',
+        'Another module that is on requires this one',
+        [],
+        dependants,
+      );
+    }
+  }
+
+  private async fetch(keys: readonly string[], executor: Executor): Promise<StoredSetting[]> {
+    const definitions = keys.map((key) => {
+      const definition = this.registry.settingDefinition(key);
+      if (!definition) throw new SettingError('SettingUnknown', 'No such setting');
+      return definition;
+    });
+    if (keys.length === 0) return [];
     const { rows } = await executor.execute<SettingRow>(sql`
       SELECT key, value, ${UPDATED_AT_TEXT} AS updated_at, updated_by
       FROM settings WHERE key = ANY(${pgArray(keys)}::text[])`);
     const byKey = new Map(rows.map((row) => [row.key, row]));
-    return keys.map((key) =>
-      this.decode(settingDefinitionOf(key) as SettingDefinition, byKey.get(key)),
-    );
+    return definitions.map((definition) => this.decode(definition, byKey.get(definition.key)));
   }
 
   /** The setting a row (or its absence) gives, logging an invalid row once without its value. */

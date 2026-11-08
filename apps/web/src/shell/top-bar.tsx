@@ -8,11 +8,13 @@ import { ClientName } from './client-name';
 import { CommandPalette } from './command-palette';
 import { LicenseBanner } from './license-banner';
 import { LocationSwitcher } from './location-switcher';
+import { StaffNoticeBanner } from './staff-notice-banner';
 import { UserMenu } from './user-menu';
 
 /**
  * The sticky top bar: sidebar toggle, client name, location switcher, command palette, user menu,
- * with the manager's license banner under it (it shows only when there is a notice).
+ * with the manager's license banner and the staff lapse notice under it (each shows only when
+ * there is a notice).
  */
 export function TopBar() {
   const { t } = useTranslation();
@@ -45,6 +47,7 @@ export function TopBar() {
         </div>
       </header>
       <LicenseBanner />
+      <StaffNoticeBanner />
     </>
   );
 }

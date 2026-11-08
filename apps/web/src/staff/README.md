@@ -9,7 +9,7 @@ The people page at `/staff` (needs `people.manage`) with two tabs: Staff, to lis
 - The hat checkboxes and the cost switch both dialogs share: [hats-fieldset.tsx](hats-fieldset.tsx)
 - Where the cost switch starts (`COST_VIEW_DEFAULT` for a hat being added, else the stored grant) and the staff hats in catalog order: [cost-prefill.ts](cost-prefill.ts)
 - The Staff and Partner logins tabs (WAI-ARIA tabs on native buttons, arrow keys flip in Arabic): [people-tabs.tsx](people-tabs.tsx)
-- The Partner logins tab: [partner-logins-tab.tsx](partner-logins-tab.tsx), with [partner-user-form-dialog.tsx](partner-user-form-dialog.tsx) (add with the partner account picker, edit details) and [partner-user-move-dialog.tsx](partner-user-move-dialog.tsx) (`PUT /api/partner-users/:id/access`, optional reason, ends their sessions). The confirm and setup dialogs above are reused
+- The Partner logins tab: [partner-logins-tab.tsx](partner-logins-tab.tsx), with [partner-user-form-dialog.tsx](partner-user-form-dialog.tsx) (add with the partner account picker, edit details) and [partner-user-move-dialog.tsx](partner-user-move-dialog.tsx) (`PUT /api/partner-users/:id/access`, optional reason, ends their sessions). While the `consignment` module is `off` the tab stays and every row action works; only Add partner login is disabled (spec 0009, AC-9, W3). The confirm and setup dialogs above are reused
 - Calls to the api: [staff-api.ts](staff-api.ts) (`/api/staff`), [partner-users-api.ts](partner-users-api.ts) (`/api/partner-users`), both on the shared [api-request.ts](api-request.ts)
 - The route: `src/app/(backoffice)/staff/page.tsx`
 

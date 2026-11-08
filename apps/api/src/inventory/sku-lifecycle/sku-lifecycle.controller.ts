@@ -22,6 +22,7 @@ import { Audience } from '../../platform/audience/audience.decorator.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { SkuLifecycleError, SkuLifecycleService, type SkuCaller } from './sku-lifecycle.service.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /** The signed in person and their `Access`, as the lifecycle service records the actor. */
 const callerOf = (request: AuthenticatedRequest, access: Access): SkuCaller => ({
@@ -43,6 +44,7 @@ function lifecycleHttpError(error: unknown, response?: Response): unknown {
 
 /** SKU actions that need stock state (spec 0006). Inventory owns these `/skus` paths. */
 @Audience('staff')
+@RequiresModule('inventory')
 @Controller('skus')
 export class SkuLifecycleController {
   /** Takes the SKU lifecycle service. */

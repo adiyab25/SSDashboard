@@ -1,6 +1,6 @@
 'use client';
 
-import type { SettingEntryView, SettingJson } from '@ssdashboard/contracts';
+import { moduleKeyOfToggle, type SettingEntryView, type SettingJson } from '@ssdashboard/contracts';
 import type { MessageKey } from '@ssdashboard/i18n';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
@@ -22,6 +22,8 @@ import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/client';
+import { moduleKeys } from '@/shell/module-states-api';
+import { useModuleLabel } from './use-module-label';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { SettingValueField } from './setting-value-field';
 import { putSetting, settingsKeys } from './settings-api';
@@ -76,6 +78,8 @@ const knownError = (code: string): KnownError | 'generic' =>
 interface SettingChangeDialogProps {
   /** The entry as the list showed it: its `updatedAt` is sent back as `expectedUpdatedAt`. */
   entry: SettingEntryView;
+  /** The value the input starts with, when it is not the one in force (turning a module on starts at `true`). */
+  initialValue?: SettingJson;
   onClose: () => void;
 }
 
@@ -86,7 +90,7 @@ interface SettingChangeDialogProps {
  * belong to, from the stable code; a stale answer offers a reload. It never validates the value
  * itself: the api's schema decides.
  */
-export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps) {
+export function SettingChangeDialog({ entry, initialValue, onClose }: SettingChangeDialogProps) {
   const { t } = useTranslation();
   const returnFocus = useReturnFocus();
   const queryClient = useQueryClient();
@@ -99,13 +103,18 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
   const confirmId = `${base}-confirm`;
   const reasonId = `${base}-reason`;
 
-  const [draft, setDraft] = useState<SettingDraft>(() => draftOf(entry.value, kind));
+  const [draft, setDraft] = useState<SettingDraft>(() =>
+    draftOf(initialValue ?? entry.value, kind),
+  );
   const [reason, setReason] = useState('');
   const [confirmText, setConfirmText] = useState('');
   const [errors, setErrors] = useState<{ value?: string; reason?: string; confirm?: string }>({});
   // Faults the api placed on one item of the value: a document prefix, by its document type.
   const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<KnownError | 'generic' | null>(null);
+  // 409 MODULE_REQUIRES: the modules that must be on first (turning a module on).
+  const [requires, setRequires] = useState<string[] | null>(null);
+  const moduleLabel = useModuleLabel();
   const valueRef = useRef<HTMLElement | null>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
@@ -119,12 +128,22 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
       }),
     onSuccess: async (answer) => {
       await queryClient.invalidateQueries({ queryKey: settingsKeys.all });
+      // A module switch changes what the shell shows: read the module states again too.
+      if (moduleKeyOfToggle(entry.key) !== undefined) {
+        await queryClient.invalidateQueries({ queryKey: moduleKeys.all });
+      }
       toast.success(
         answer.changed ? t('settings.messages.saved', { name }) : t('settings.messages.unchanged'),
       );
       onClose();
     },
     onError: (error) => {
+      if (error instanceof ApiError && error.code === 'MODULE_REQUIRES') {
+        setRequires(error.body.requires ?? []);
+        setFailure(null);
+        return;
+      }
+      setRequires(null);
       const code = error instanceof ApiError ? knownError(error.code) : 'generic';
       if (code === 'SETTING_INVALID' || code === 'VALIDATION_FAILED') {
         const issues = error instanceof ApiError ? (error.body.issues ?? []) : [];
@@ -235,6 +254,16 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
                     {t('settings.dialog.reload')}
                   </Button>
                 )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {requires && (
+            <Alert variant="destructive" role="alert">
+              <AlertDescription>
+                {t('settings.modules.requires', {
+                  names: requires.map(moduleLabel).join(t('shell.modules.listSeparator')),
+                })}
               </AlertDescription>
             </Alert>
           )}

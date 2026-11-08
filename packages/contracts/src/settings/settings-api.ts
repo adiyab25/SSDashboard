@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MoneyString } from '../money.js';
 import { SettingBundle, SettingGroup, SettingReasonRule } from './setting-definition.js';
 
 /** The deepest nesting a setting value may have (security review S3). */
@@ -111,7 +112,9 @@ export type PutSettingAnswer = z.infer<typeof PutSettingAnswer>;
  * `SETTING_INVALID` (with `issues`), 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, 409
  * `STALE_SETTING`, 409 `SETTING_LOCKED`, 409 `NOT_LICENSED` (the entry's bundle is not licensed
  * now: core always is; Warehouse or Operations while its phase is active, expiring, or grace;
- * security finding S6), and the guard's 403 `FORBIDDEN`. A malformed body is 422
+ * security finding S6), 409 `MODULE_REQUIRED_BY` with `dependants` (turning off a module that
+ * another `on` module requires, AC-12), 409 `MODULE_REQUIRES` with `requires` (turning on a module
+ * while a module it requires is not `on`, AC-12), and the guard's 403 `FORBIDDEN`. A malformed body is 422
  * `VALIDATION_FAILED`.
  */
 export const SettingErrorCode = z.enum([
@@ -122,8 +125,52 @@ export const SettingErrorCode = z.enum([
   'STALE_SETTING',
   'SETTING_LOCKED',
   'NOT_LICENSED',
+  'MODULE_REQUIRED_BY',
+  'MODULE_REQUIRES',
   'FORBIDDEN',
   'VALIDATION_FAILED',
 ]);
 /** The validated shape of `SettingErrorCode`, as the api and web see it after parsing. */
 export type SettingErrorCode = z.infer<typeof SettingErrorCode>;
+
+/** Waiting outbound commands of one kind that turning something off fails (spec 0009, AC-30). */
+export const OffImpactCommands = z.object({ kind: z.string(), count: z.int().min(0) });
+/** One waiting command count. */
+export type OffImpactCommands = z.infer<typeof OffImpactCommands>;
+
+/** Records of one area in flight that stay finishable after the off (AC-28, AC-30). */
+export const OffImpactInFlight = z.object({ area: z.string(), count: z.int().min(0) });
+/** One in flight count. */
+export type OffImpactInFlight = z.infer<typeof OffImpactInFlight>;
+
+/**
+ * The pieces one partner holds when `consignment` turns off (AC-30, wave 1 review W4):
+ * `totalValue` (their value at cost) only for a holder of `cost.view`, else left out; the last
+ * sales day the partner's statement confirmed, or null.
+ */
+export const OffImpactPartnerStock = z.object({
+  partnerId: z.uuid(),
+  partnerName: z.string(),
+  pieces: z.int().min(0),
+  totalValue: MoneyString.optional(),
+  lastConfirmedSalesDay: z.iso.date().nullable(),
+});
+/** One partner's stock line. */
+export type OffImpactPartnerStock = z.infer<typeof OffImpactPartnerStock>;
+
+/**
+ * `GET /api/settings/:key/off-impact` (spec 0009, AC-30), for a module toggle or an executing
+ * step: the waiting outbound commands by kind that turning it off fails with `MODULE_OFF` or
+ * `STEP_OFF`, the in flight records per area that stay finishable, the pieces at each partner
+ * (the `consignment` module only), and whether the off dialog must ask for typed confirmation
+ * (AC-12). The dialog shows it before it asks for the reason. 404 `SETTING_UNKNOWN` for any other
+ * key; 503 `OFF_IMPACT_UNAVAILABLE` when a capability could not say (try again).
+ */
+export const OffImpact = z.object({
+  waitingCommands: z.array(OffImpactCommands),
+  inFlight: z.array(OffImpactInFlight),
+  partnerStock: z.array(OffImpactPartnerStock),
+  typedConfirmation: z.boolean(),
+});
+/** The off impact answer. */
+export type OffImpact = z.infer<typeof OffImpact>;

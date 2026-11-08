@@ -11,6 +11,7 @@ import { Audience } from '../platform/audience/audience.decorator.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { auditReadError } from './audit-entries.controller.js';
 import { AuditQueryService } from './audit-query.service.js';
+import { RequiresModule } from '../platform/modules/requires-module.decorator.js';
 
 /**
  * The history of one record, for the panel other record screens embed (spec 0010, task 13):
@@ -20,6 +21,7 @@ import { AuditQueryService } from './audit-query.service.js';
  * 400 `INVALID_CURSOR`.
  */
 @Audience('staff')
+@RequiresModule('audit')
 @Controller('audit/records')
 export class AuditRecordsController {
   /** Takes the audit reader. */

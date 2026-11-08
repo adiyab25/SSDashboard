@@ -16,6 +16,8 @@ One append only log of who did what, when, and why, written in the same database
 - Reasons follow the record type: customer facing types keep a reason code only, one of the action's `reasonCodes` (422 `REASON_INVALID` for a typed note or an unlisted code), every other type keeps free text with phones and emails masked (spec 0010, AC-5).
 - The action registry, the record types with their labels and personal keys, and the six actor constructors live in contracts: [audit-actions.ts](../../../../packages/contracts/src/audit/audit-actions.ts), [audit-record-types.ts](../../../../packages/contracts/src/audit/audit-record-types.ts), [audit-actor.ts](../../../../packages/contracts/src/audit/audit-actor.ts).
 
+- Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `audit`, core, no toggle. Every controller here declares `@RequiresModule('audit')` (`src/platform/modules/requires-module.spec.ts` fails the build otherwise), so the module gate never answers `MODULE_OFF` for it while the module is core.
+
 ## Never touches
 
 - Any other module's table. Record labels and diffs come from the calling module; person names come from the staff directory by id, never from a join.

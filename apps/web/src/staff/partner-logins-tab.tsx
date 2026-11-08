@@ -20,9 +20,10 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { LoaderCircleIcon, MoreHorizontalIcon, PlusIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
+import { useModuleStates } from '@/shell/use-module-states';
 import { peoplePanelId, peopleTabId } from './people-tabs';
 import { PartnerUserFormDialog } from './partner-user-form-dialog';
 import { PartnerUserMoveDialog } from './partner-user-move-dialog';
@@ -78,6 +79,11 @@ interface Props {
 export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
+  const consignment = useModuleStates().stateOf('consignment');
+  // Spec 0009 (AC-9, W3): the list and every row action stay usable whatever the module state, so
+  // the brand can always stop a former partner's access; only adding a login waits for the module.
+  const addBlocked = consignment?.state === 'off';
+  const addBlockedId = useId();
   const [text, setText] = useState('');
   const [filter, setFilter] = useState<PartnerUserFilter>({
     q: '',
@@ -229,10 +235,25 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
         <p className="max-w-prose text-sm text-muted-foreground">
           {t('staff.partners.description')}
         </p>
-        <Button onClick={() => setDialog({ kind: 'form', editId: null })}>
-          <PlusIcon aria-hidden data-icon="inline-start" />
-          {t('staff.partners.add')}
-        </Button>
+        <div className="flex flex-col gap-1 md:items-end">
+          <Button
+            disabled={addBlocked}
+            aria-describedby={addBlocked ? addBlockedId : undefined}
+            onClick={() => setDialog({ kind: 'form', editId: null })}
+          >
+            <PlusIcon aria-hidden data-icon="inline-start" />
+            {t('staff.partners.add')}
+          </Button>
+          {addBlocked && (
+            <p id={addBlockedId} className="text-sm text-muted-foreground">
+              {t(
+                consignment?.reason === 'not_licensed'
+                  ? 'settings.row.needsOperations'
+                  : 'staff.partners.addBlocked',
+              )}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
