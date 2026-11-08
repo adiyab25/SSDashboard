@@ -336,6 +336,50 @@ describe('redaction of the hat change log line (spec 0008 AC-13)', () => {
 // Security review AS15 (spec 0010, milestone 2): notations the phone rule missed, and emails in
 // free text. Every log sink shares this function, so the codes and instants a log line carries
 // must stay readable.
+describe('redaction of connector secrets (spec 0015 Security model)', () => {
+  it('redacts credentials, a client secret, an access token, and a legacy API secret at any depth', () => {
+    const line = {
+      connectionId: 'x-1',
+      credentials: { kind: 'client_credentials', clientId: 'id', clientSecret: 'fake-secret' },
+      token: { access_token: 'fake-token', expires_in: 86399 },
+      legacy: { accessToken: 'fake-token-2', apiSecret: 'fake-api-secret' },
+      order: { shippingAddress: { address1: '12 Tahrir St' } },
+    };
+
+    assert.deepEqual(redact(line), {
+      connectionId: 'x-1',
+      credentials: REDACTED,
+      token: { access_token: REDACTED, expires_in: 86399 },
+      legacy: { accessToken: REDACTED, apiSecret: REDACTED },
+      order: { shippingAddress: REDACTED },
+    });
+  });
+
+  it('redacts the Shopify access token and signature headers however they are cased', () => {
+    const line = {
+      headers: {
+        'X-Shopify-Access-Token': 'fake-token',
+        'x-shopify-hmac-sha256': 'fake-signature',
+        'x-shopify-topic': 'orders/create',
+      },
+    };
+
+    assert.deepEqual(redact(line), {
+      headers: {
+        'X-Shopify-Access-Token': REDACTED,
+        'x-shopify-hmac-sha256': REDACTED,
+        'x-shopify-topic': 'orders/create',
+      },
+    });
+  });
+
+  it('keeps the stored hint and key version of a connection row readable', () => {
+    const row = { credentialsHint: 'abcd', credentialsKeyVersion: 12, health: 'ok' };
+
+    assert.deepEqual(redact(row), row);
+  });
+});
+
 describe('maskPhones notations', () => {
   const masked = [
     ['a left to right mark and a right to left mark inside', 'call 010‎1234‏5678 now'],

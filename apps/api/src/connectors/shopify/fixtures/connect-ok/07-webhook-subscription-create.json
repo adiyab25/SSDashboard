@@ -1,0 +1,61 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "connect-ok",
+    "step": "ORDERS_CREATE registered (the connect job registers each topic of spec 0015 the same way)",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/webhookSubscriptionCreate",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/input-objects/WebhookSubscriptionInput",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/WebhookSubscriptionFormat"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": "WebhookSubscriptionCreate",
+    "variables": {
+      "topic": "ORDERS_CREATE",
+      "webhookSubscription": {
+        "uri": "https://erp.fixture.example/api/hooks/shopify/00000000-0000-4000-8000-000000000001",
+        "format": "JSON"
+      }
+    },
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "webhookSubscriptionCreate": {
+          "webhookSubscription": {
+            "id": "gid://shopify/WebhookSubscription/3330000000001",
+            "topic": "ORDERS_CREATE",
+            "uri": "https://erp.fixture.example/api/hooks/shopify/00000000-0000-4000-8000-000000000001",
+            "format": "JSON"
+          },
+          "userErrors": []
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 10,
+          "actualQueryCost": 10,
+          "throttleStatus": {
+            "maximumAvailable": 1000,
+            "currentlyAvailable": 979,
+            "restoreRate": 50
+          }
+        }
+      }
+    }
+  }
+}

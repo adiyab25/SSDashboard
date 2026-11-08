@@ -11,6 +11,8 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['test/scale.e2e-spec.ts'],
+    // Spec 0015 AC-26: the refusing fetch, so no test can reach Shopify (test/shopify-fixture-fetch.ts).
+    setupFiles: ['./test/shopify-fixture-setup.ts'],
     // One suite, one seeded database: no parallelism to tune.
     maxWorkers: 1,
     hookTimeout: 90_000,

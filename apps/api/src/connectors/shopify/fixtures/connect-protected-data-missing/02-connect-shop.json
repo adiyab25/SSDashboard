@@ -1,0 +1,51 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "connect-protected-data-missing",
+    "step": "shop name, currency EGP, time zone Africa/Cairo",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Shop",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/shop"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": "ConnectShop",
+    "variables": null,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "shop": {
+          "name": "Fixture Store",
+          "currencyCode": "EGP",
+          "ianaTimezone": "Africa/Cairo",
+          "myshopifyDomain": "fixture-store.myshopify.com"
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 1,
+          "actualQueryCost": 1,
+          "throttleStatus": {
+            "maximumAvailable": 1000,
+            "currentlyAvailable": 999,
+            "restoreRate": 50
+          }
+        }
+      }
+    }
+  }
+}

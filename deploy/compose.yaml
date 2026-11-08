@@ -33,6 +33,12 @@ x-auth-env: &auth-env
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
   POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
 
+# The key that seals each connection's Shopify credentials (spec 0015, AC-2), read by the api and
+# the worker only, never migrate. The previous key is set only during a rotation.
+x-connector-env: &connector-env
+  CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:?set CONNECTOR_SECRET_KEY in .env}
+  CONNECTOR_SECRET_KEY_PREVIOUS: ${CONNECTOR_SECRET_KEY_PREVIOUS:-}
+
 services:
   postgres:
     # One pinned major per release. PostgreSQL 18 keeps its data under /var/lib/postgresql/18.
@@ -75,7 +81,7 @@ services:
   api:
     <<: *app
     environment:
-      <<: [*app-env, *auth-env]
+      <<: [*app-env, *auth-env, *connector-env]
       # Read by the api only: /api/auth/* answers 404 for this host (spec 0005, AC-30).
       PORTAL_ORIGIN: ${PORTAL_ORIGIN:-}
       # The signed license file's path inside the container (spec 0009); empty: none_configured.
@@ -90,7 +96,7 @@ services:
     <<: *app
     command: ["node", "dist/worker.js"]
     environment:
-      <<: [*app-env, *auth-env]
+      <<: [*app-env, *auth-env, *connector-env]
       LEDGER_RECONCILE_CRON: ${LEDGER_RECONCILE_CRON:-0 2 * * *}
       AUTH_CLEANUP_CRON: ${AUTH_CLEANUP_CRON:-0 3 * * *}
       # The signed license file (spec 0009), checked at worker start and daily at the cron below.

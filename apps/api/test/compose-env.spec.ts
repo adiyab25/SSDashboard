@@ -240,17 +240,17 @@ const ENTRY_POINTS = [
   {
     service: 'api',
     file: 'main.ts',
-    required: ['BETTER_AUTH_SECRET', 'DATABASE_URL', 'PUBLIC_URL'],
+    required: ['BETTER_AUTH_SECRET', 'CONNECTOR_SECRET_KEY', 'DATABASE_URL', 'PUBLIC_URL'],
   },
   {
     service: 'api',
     file: 'create-admin.ts',
-    required: ['BETTER_AUTH_SECRET', 'DATABASE_URL', 'PUBLIC_URL'],
+    required: ['BETTER_AUTH_SECRET', 'CONNECTOR_SECRET_KEY', 'DATABASE_URL', 'PUBLIC_URL'],
   },
   {
     service: 'worker',
     file: 'worker.ts',
-    required: ['BETTER_AUTH_SECRET', 'DATABASE_URL', 'PUBLIC_URL'],
+    required: ['BETTER_AUTH_SECRET', 'CONNECTOR_SECRET_KEY', 'DATABASE_URL', 'PUBLIC_URL'],
   },
   { service: 'migrate', file: 'migrate.ts', required: ['MIGRATION_DATABASE_URL'] },
 ];
@@ -310,6 +310,8 @@ describe('deploy/compose.yaml gives each entry point the env it validates', () =
       'BETTER_AUTH_SECRET',
       'SMTP_PASSWORD',
       'POSTMARK_SERVER_TOKEN',
+      'CONNECTOR_SECRET_KEY',
+      'CONNECTOR_SECRET_KEY_PREVIOUS',
     ]) {
       expect(migrate, `migrate must not receive ${name}`).not.toHaveProperty(name);
     }
@@ -320,6 +322,22 @@ describe('deploy/compose.yaml gives each entry point the env it validates', () =
       );
       expect(Object.values(env).join(' ')).not.toContain('POSTGRES_PASSWORD');
     }
+  });
+});
+
+// Why: a rotation comment once held a line break inside quotes, and `docker compose --env-file`
+// refused the file ("unexpected character"). Every line of an env template is a comment, blank, or
+// KEY=VALUE, so a wrapped comment line without its `#` fails here, not on a client install.
+describe.each(['deploy/.env.example', '.env.example'])('%s line shapes', (file) => {
+  it('holds only comments, blank lines, and KEY=VALUE lines', () => {
+    const bad = readFileSync(`${ROOT}${file}`, 'utf8')
+      .split(/\r?\n/)
+      .map((line, index) => ({ line, number: index + 1 }))
+      .filter(
+        ({ line }) => line.trim() !== '' && !/^\s*#/.test(line) && !/^[A-Za-z_]\w*=/.test(line),
+      );
+
+    expect(bad, `bad lines in ${file}`).toEqual([]);
   });
 });
 

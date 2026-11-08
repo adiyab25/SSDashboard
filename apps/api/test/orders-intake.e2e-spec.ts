@@ -27,18 +27,16 @@ import {
 import { OrderAttentionRaised, OrderEdited, OrderPlaced } from '../src/orders/orders.events.js';
 import { OrderTransitions } from '../src/orders/transitions/order-transitions.service.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
-import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import {
-  cancelReasonOf,
-  firstFulfillmentAt,
-  foundStates,
-  goLiveStates,
+  cancelReasonCodeOf,
+  firstActiveFulfillmentOf,
+  mapShopifyOrder,
+  mapShopifyOrderSnapshot,
   replacementInput,
-  shopifyOrderInput,
-  shopifyOrderSnapshot,
   type ShopifyOrderContext,
-  type ShopifyShopContext,
-} from './shopify-order-fixture.js';
+} from '../src/connectors/shopify/order-mapper.js';
+import { startInProcessApi, type InProcessApi } from './in-process-api.js';
+import { readShopifyOrder } from './shopify-order-reader.js';
 
 const CREATED = 'order-created-cod/01-order-read.json';
 const SWAP = 'order-edited-size-swap';
@@ -57,12 +55,50 @@ const GO_LIVE_FULFILLED = 'order-go-live-import/02-order-read.json';
 const GO_LIVE_CANCELLED = 'order-go-live-import/03-order-read.json';
 const SHOP_ONE = 'fixture-store.myshopify.com';
 const SHOP_TWO = 'fixture-store-2.myshopify.com';
+/** The go live instant the fixtures assume (fixtures README, `order-go-live-import`). */
+const GO_LIVE_AT = '2026-11-01T00:00:00Z';
+/** `config.gatewayMethods` of the fixture connection: the fixtures' gateway names. */
+const GATEWAY_METHODS: ShopifyOrderContext['gatewayMethods'] = {
+  'Cash on Delivery (COD)': 'cod',
+  manual: 'cod',
+  'Fixture Card Gateway': 'gateway',
+};
+
+/** Where an order of one fixture shop goes in the test database. */
+interface ShopifyShopContext {
+  readonly storeId: string;
+  readonly channelId: string;
+  readonly connectionId: string;
+}
+
+/** Options of a test mapping. */
+interface MapOptions {
+  /**
+   * Appends a random suffix to the channel ref and the order number (a test side tweak of the
+   * mapped input), so one fixture can create several orders in one store.
+   */
+  readonly unique?: boolean;
+  /** The connection's go live instant; absent means live. */
+  readonly goLiveAt?: string;
+}
+
+const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
+
+/** The mapped input with a random suffix on its channel ref and order number. */
+const withSuffix = (input: ChannelOrderInput): ChannelOrderInput => {
+  const suffix = randomSuffix();
+  return ChannelOrderInput.parse({
+    ...input,
+    channelOrderRef: `${input.channelOrderRef}:${suffix}`,
+    orderNumber: `${input.orderNumber}-${suffix}`,
+  });
+};
 
 // Spec 0013 milestone 3 (AC-11, AC-14, AC-15, AC-18, AC-23, AC-25, B1): the in process channel
 // calls feature 13 makes, run inside `OrderTransactions.run` as the application role on a scratch
 // database. Every input comes from a SYNTHETIC Shopify fixture (apps/api/src/connectors/shopify/
-// fixtures, to be replaced by recordings) through `shopify-order-fixture.ts`, a test only stand in
-// for spec 0015's order mapper; a case overrides a field of the mapped input only where Shopify
+// fixtures, to be replaced by recordings) read by `shopify-order-reader.ts` and mapped by spec
+// 0015's real order mapper (`order-mapper.ts`); a case overrides a field of the mapped input only where Shopify
 // cannot say it (a prepayment by instapay, the first states of an `import` actor, the MAIN store's
 // landing page channel `LP`, which stands in for an internal store's own channel).
 // Reservations and the shipment posting are milestones 4 and 5: the closed order import proves
@@ -105,24 +141,84 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     return `0102${String(1_000_000 + n)}`;
   };
 
-  /** What the fixture mapper needs: the fixture shops, the variant map, the alt phone attribute. */
-  const context = (shops: Record<string, ShopifyShopContext>): ShopifyOrderContext => ({
-    shops,
-    variants: {
-      'gid://shopify/ProductVariant/7770000000101': skuM,
-      'gid://shopify/ProductVariant/7770000000102': skuL,
-    },
-    altPhoneAttribute: 'alt_phone',
-  });
+  /**
+   * What the mapper needs for one fixture shop: its store, channel, and connection, the variant
+   * map, the alt phone attribute, the gateway methods, no gift tags, and the go live instant.
+   */
+  const contextOf = (
+    shopDomain: string,
+    shops: Record<string, ShopifyShopContext>,
+    goLiveAt: string | null = null,
+  ): ShopifyOrderContext => {
+    const shop = shops[shopDomain];
+    if (!shop) throw new Error(`No store in the test context for shop ${shopDomain}`);
+    return {
+      ...shop,
+      variants: new Map([
+        ['gid://shopify/ProductVariant/7770000000101', skuM],
+        ['gid://shopify/ProductVariant/7770000000102', skuL],
+      ]),
+      altPhoneAttribute: 'alt_phone',
+      gatewayMethods: GATEWAY_METHODS,
+      giftTags: {},
+      goLiveAt,
+    };
+  };
   /** Fixture shop one is ESS (Shopify), shop two is MAIN through its landing page channel. */
   const shopsOf = (): Record<string, ShopifyShopContext> => ({
     [SHOP_ONE]: { storeId: essStore, channelId: essChannel, connectionId: connection },
     [SHOP_TWO]: { storeId: mainStore, channelId: lpChannel, connectionId: connection },
   });
+  /** A fixture order mapped to a new order input by the real mapper. */
+  const shopifyOrderInput = (
+    file: string,
+    shops: Record<string, ShopifyShopContext>,
+    options: MapOptions = {},
+  ): ChannelOrderInput => {
+    const { shopDomain, order } = readShopifyOrder(file);
+    const { input } = mapShopifyOrder(order, contextOf(shopDomain, shops, options.goLiveAt));
+    return options.unique ? withSuffix(input) : input;
+  };
+  /** A fixture order mapped to a snapshot by the real mapper. */
+  const shopifyOrderSnapshot = (
+    file: string,
+    shops: Record<string, ShopifyShopContext>,
+  ): ChannelOrderSnapshot => {
+    const { shopDomain, order } = readShopifyOrder(file);
+    return mapShopifyOrderSnapshot(order, contextOf(shopDomain, shops)).snapshot;
+  };
+  /** The go live first states the mapper gives an open order placed before go live. */
+  const goLiveStates = () =>
+    shopifyOrderInput(GO_LIVE_OPEN, shopsOf(), { goLiveAt: GO_LIVE_AT }).firstStates;
+  /** The found first states the mapper gives a closed order placed before go live. */
+  const foundStates = (file: string) =>
+    shopifyOrderInput(file, shopsOf(), { goLiveAt: GO_LIVE_AT }).firstStates;
+  /** The cancel reason code of a fixture order. */
+  const cancelReasonOf = (file: string) => cancelReasonCodeOf(readShopifyOrder(file).order);
+  /** The time of a fixture order's first active fulfillment, or null. */
+  const firstFulfillmentAt = (file: string) =>
+    firstActiveFulfillmentOf(readShopifyOrder(file).order)?.createdAt ?? null;
+  /**
+   * The replacement of an exchange by edit (AC-12): the lines `after` holds that `before` did
+   * not, mapped by the real mapper, with a random suffix.
+   */
+  const replacement = (before: string, after: string, originalOrderId: string, nth: number) => {
+    const knownLineIds = new Set(
+      readShopifyOrder(before).order.lineItems.nodes.map((line) => line.id),
+    );
+    const { shopDomain, order } = readShopifyOrder(after);
+    const mapped = replacementInput(
+      order,
+      { originalOrderId, n: nth, knownLineIds },
+      contextOf(shopDomain, shopsOf()),
+    );
+    if (!mapped) throw new Error('The fixture adds no line');
+    return withSuffix(mapped.input);
+  };
   /** A fixture mapped to an input in ESS, each call a new ref and number, with fields overridden. */
   const fx = (file: string, over: Record<string, unknown> = {}) =>
     ChannelOrderInput.parse({
-      ...shopifyOrderInput(file, context(shopsOf()), { unique: true }),
+      ...shopifyOrderInput(file, shopsOf(), { unique: true }),
       ...over,
     });
   /**
@@ -135,7 +231,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
   const DELIVERY_AT = '2026-11-01T09:00:00.000Z';
   /** The snapshot a fixture holds, with fields overridden. */
   const snap = (file: string, over: Record<string, unknown> = {}) =>
-    ChannelOrderSnapshot.parse({ ...shopifyOrderSnapshot(file, context(shopsOf())), ...over });
+    ChannelOrderSnapshot.parse({ ...shopifyOrderSnapshot(file, shopsOf()), ...over });
 
   /** A store, channel, and connection of their own, for a test that needs a clean store. */
   const newShop = async (code: string): Promise<ShopifyShopContext> => {
@@ -929,14 +1025,9 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
         importRun(),
       );
       const open = await create(fx(EXCHANGE_BEFORE));
-      const shops = context(shopsOf());
 
-      const replacement = await create(
-        replacementInput(EXCHANGE_BEFORE, EXCHANGE_AFTER, original.orderId, shops, 1, {
-          unique: true,
-        }),
-      );
-      const page = await detail(replacement.orderId);
+      const made = await create(replacement(EXCHANGE_BEFORE, EXCHANGE_AFTER, original.orderId, 1));
+      const page = await detail(made.orderId);
 
       expect(page.type).toBe('exchange_replacement');
       expect(page.relatedOrder).toMatchObject({
@@ -948,11 +1039,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       ]);
       expect(page.orderNumber).toContain('#1009-R1');
       await expect(
-        create(
-          replacementInput(EXCHANGE_BEFORE, EXCHANGE_AFTER, open.orderId, shops, 2, {
-            unique: true,
-          }),
-        ),
+        create(replacement(EXCHANGE_BEFORE, EXCHANGE_AFTER, open.orderId, 2)),
       ).rejects.toBeInstanceOf(RelatedOrderState);
     });
   });
@@ -1501,8 +1588,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
   describe('B1: the store beside every number (AC-3, AC-14)', () => {
     it('holds #1001 in two stores, finds both, refuses a second #1001 in the first, and labels the audit COLA/#1001', async () => {
       // Two clean stores, one per fixture shop, so the number is the fixture's own `#1001`.
-      const shops = { [SHOP_ONE]: await newShop('COLA'), [SHOP_TWO]: await newShop('COLB') };
-      const ctx = context(shops);
+      const ctx = { [SHOP_ONE]: await newShop('COLA'), [SHOP_TWO]: await newShop('COLB') };
       const file = (nn: string) => `${COLLISION}/${nn}-order-read.json`;
 
       const inA = await create(shopifyOrderInput(file('01'), ctx));

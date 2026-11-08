@@ -116,6 +116,16 @@ export interface RunningProcess {
   exited: Promise<number | null>;
 }
 
+/**
+ * The connector secret key every spawned or in process api and worker gets in a production env
+ * (spec 0015 AC-2: required in every environment): 32 bytes of plainly fake text, base64.
+ * A test key only; never use it anywhere real.
+ */
+export const TEST_CONNECTOR_SECRET_KEY = Buffer.from(
+  'e2e-connector-key-not-real-0000!',
+  'utf8',
+).toString('base64');
+
 /** Starts a built entry point with exactly the given env (plus PATH), like a container. */
 export function start(entry: string, env: Record<string, string>): RunningProcess {
   const child = spawn(process.execPath, [requireBuild(entry)], {
@@ -126,6 +136,8 @@ export function start(entry: string, env: Record<string, string>): RunningProces
       // Required at startup since spec 0005; suites that test sign in pass their own.
       PUBLIC_URL: 'http://localhost:3000',
       BETTER_AUTH_SECRET: 'e2e-secret-e2e-secret-e2e-secret-e2e',
+      // Required in every environment since spec 0015; a suite may pass its own.
+      CONNECTOR_SECRET_KEY: TEST_CONNECTOR_SECRET_KEY,
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

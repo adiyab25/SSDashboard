@@ -7,7 +7,13 @@ import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from
 import { hashPassword } from 'better-auth/crypto';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
-import { createScratchDatabase, dropScratchDatabase, freePort, giveHats } from './support.js';
+import {
+  TEST_CONNECTOR_SECRET_KEY,
+  createScratchDatabase,
+  dropScratchDatabase,
+  freePort,
+  giveHats,
+} from './support.js';
 
 /** The password every person {@link InProcessApi.addPerson} plants signs in with. */
 export const PLANTED_PASSWORD = 'Correct-Horse-1';
@@ -102,6 +108,7 @@ export async function startInProcessApi(
     DATABASE_URL: appUrl.toString(),
     PUBLIC_URL: base,
     BETTER_AUTH_SECRET: randomBytes(32).toString('base64url'),
+    CONNECTOR_SECRET_KEY: TEST_CONNECTOR_SECRET_KEY,
     MAIL_DRIVER: 'none',
     PORT: String(port),
     LICENSE_FILE: options.licenseFile ?? '',

@@ -279,6 +279,7 @@ describe('audit record types', () => {
       order: 'code',
       exchange: 'code',
       outbound_command: 'code',
+      connection: 'text',
     });
   });
 
@@ -287,6 +288,8 @@ describe('audit record types', () => {
     expect(AUDIT_RECORD_TYPES.sku.labelPattern.test('01012345678')).toBe(true);
     expect(AUDIT_RECORD_TYPES.sku.labelPattern.test('tee-blk-m')).toBe(false);
     expect(AUDIT_RECORD_TYPES.location.labelPattern.test('WH-CAI')).toBe(true);
+    expect(AUDIT_RECORD_TYPES.connection.labelPattern.test('ESS')).toBe(true);
+    expect(AUDIT_RECORD_TYPES.connection.labelPattern.test('Fixture Store')).toBe(false);
     expect(AUDIT_RECORD_TYPES.location.labelPattern.test('x'.repeat(17))).toBe(false);
     expect(AUDIT_RECORD_TYPES.stock_receipt.labelPattern.test('SR-2026-000001')).toBe(true);
     expect(AUDIT_RECORD_TYPES.stock_receipt.labelPattern.test('SR-1')).toBe(false);

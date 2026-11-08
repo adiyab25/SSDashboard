@@ -119,6 +119,16 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   'primaryphone',
   'e164',
   'externalid',
+  // Spec 0015 Security model: a connection's credentials and the Shopify access token never reach a
+  // log, whatever object carries them (`shippingAddress` is listed above). `apiSecret` is the legacy
+  // custom app's webhook secret (`credentials.kind = 'access_token'`).
+  'clientsecret',
+  'accesstoken',
+  'credentials',
+  'apisecret',
+  // Security L9: the Shopify header names, normalized, in case request headers ever reach a log.
+  'xshopifyaccesstoken',
+  'xshopifyhmacsha256',
 ];
 
 /**

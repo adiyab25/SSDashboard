@@ -13,8 +13,9 @@ interface IdentifiedRequest {
   staff?: unknown;
   /** A partner user's session, set by identity's `SessionGuard` on `partner` routes only. */
   partner?: unknown;
-  // Later waves add `portal` (a sealed token) and the hook signature's proof here, and one line
-  // each in `callerAudience`.
+  /** A verified hook delivery's proof, set only by the connectors hook verifier (`mountHooks`). */
+  hook?: unknown;
+  // A later wave adds `portal` (a sealed token) here, and one line in `callerAudience`.
 }
 
 /**
@@ -22,13 +23,15 @@ interface IdentifiedRequest {
  * a partner user's session (`request.partner`), each put there only by identity's audience aware
  * `SessionGuard` (spec 0005, AC-29), which sets one or the other, never both.
  *
- * Portal and hook callers prove nothing yet, so this answers `undefined` for them and their routes
- * are denied. When a portal sealed token or a hook signature lands, its own check sets its own
- * request property and returns its audience here. Never reach for `@Public()` to get around it.
+ * A hook caller proves itself by signature: the connectors hook verifier (spec 0015 AC-4, run by
+ * `mountHooks` before any guard) sets `request.hook` only for a verified delivery. Portal callers
+ * prove nothing yet, so their routes are denied; when a portal sealed token lands, its own check
+ * sets its own request property and returns its audience here. Never reach for `@Public()` to get around it.
  */
 function callerAudience(request: IdentifiedRequest): AudienceName | undefined {
   if (request.staff) return 'staff';
   if (request.partner) return 'partner';
+  if (request.hook) return 'hook';
   return undefined;
 }
 
@@ -41,9 +44,10 @@ function callerAudience(request: IdentifiedRequest): AudienceName | undefined {
  *
  * `SessionGuard` runs first. On `staff` and `partner` routes it demands a live session of that
  * audience, so an anonymous call there is a 401 from it, not from here. On `portal` and `hook`
- * routes it no longer reads anything and lets every request through: until those routes get their
- * own proof (a portal sealed token, a hook signature), this guard is the only block for them.
- * Never let a portal or hook route "just pass" here.
+ * routes it no longer reads anything and lets every request through: a hook route passes here
+ * only with the verifier's `request.hook` (an unverified hook call never gets this far: the
+ * verifier answers 401 first), and a portal route, until it gets its own proof (a sealed token),
+ * is blocked only here. Never let a portal or hook route "just pass" here.
  *
  * It must never infer an audience from the URL, never let a route without one through, and
  * never say in its answer what the correct audience would be.

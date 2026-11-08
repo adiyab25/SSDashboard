@@ -42,7 +42,7 @@ It must print `json-file` or `local`. Any other value (for example `journald`, `
 
 ### 1.2 Fill in `.env`
 
-Create `.env` from the template. It generates fresh values for `POSTGRES_PASSWORD`, `APP_DB_PASSWORD` and `BETTER_AUTH_SECRET`:
+Create `.env` from the template. It generates fresh values for `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `BETTER_AUTH_SECRET` and `CONNECTOR_SECRET_KEY`:
 
 ```bash
 ./bootstrap.sh

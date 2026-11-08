@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { loadEnv, loadMigrateEnv, staffBase, staffOrigin } from './env.js';
+import { randomBytes } from 'node:crypto';
+import { connectorKeyBytes, loadEnv, loadMigrateEnv, staffBase, staffOrigin } from './env.js';
 
 vi.mock('node:fs', () => ({ existsSync: vi.fn(() => false) }));
 
 const VALID_URL = 'postgres://ssdashboard:secret@localhost:5433/ssdashboard';
 const VALID_SECRET = 'x'.repeat(32);
+// Required in every environment (spec 0015, AC-2); a public test value, 32 bytes as hex.
+const VALID_CONNECTOR_KEY = 'ab12'.repeat(16);
 
 describe('loadEnv', () => {
   let exit: ReturnType<typeof vi.spyOn>;
@@ -39,12 +42,16 @@ describe('loadEnv', () => {
       'SMTP_USER',
       'SMTP_PASSWORD',
       'POSTMARK_SERVER_TOKEN',
+      'CONNECTOR_SECRET_KEY',
+      'CONNECTOR_SECRET_KEY_PREVIOUS',
+      'SHOPIFY_MOCK_ORIGIN',
     ]) {
       vi.stubEnv(name, undefined);
     }
     vi.stubEnv('DATABASE_URL', VALID_URL);
     vi.stubEnv('PUBLIC_URL', 'https://erp.example.com');
     vi.stubEnv('BETTER_AUTH_SECRET', VALID_SECRET);
+    vi.stubEnv('CONNECTOR_SECRET_KEY', VALID_CONNECTOR_KEY);
     exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit(${code})`);
     }) as never);
@@ -72,6 +79,7 @@ describe('loadEnv', () => {
         PUBLIC_URL: 'https://erp.example.com',
         STAFF_BASE_PATH: '',
         BETTER_AUTH_SECRET: VALID_SECRET,
+        CONNECTOR_SECRET_KEY: VALID_CONNECTOR_KEY,
         MAIL_DRIVER: 'none',
         SMTP_PORT: 587,
         SMTP_SECURITY: 'starttls',
@@ -356,6 +364,82 @@ describe('loadEnv', () => {
     });
   });
 
+  describe('connector secret keys and the Shopify mock (spec 0015, AC-2, AC-26)', () => {
+    // Generated per run: test keys only.
+    const base64Key = randomBytes(32).toString('base64');
+    const hexKey = randomBytes(32).toString('hex');
+
+    it('accepts a key as 32 bytes of base64, url safe base64, or 64 hex characters', () => {
+      expect(connectorKeyBytes(base64Key)?.length).toBe(32);
+      expect(connectorKeyBytes(randomBytes(32).toString('base64url'))?.length).toBe(32);
+      expect(connectorKeyBytes(hexKey)?.length).toBe(32);
+      vi.stubEnv('CONNECTOR_SECRET_KEY', base64Key);
+      vi.stubEnv('CONNECTOR_SECRET_KEY_PREVIOUS', hexKey);
+
+      expect(loadEnv()).toMatchObject({
+        CONNECTOR_SECRET_KEY: base64Key,
+        CONNECTOR_SECRET_KEY_PREVIOUS: hexKey,
+      });
+    });
+
+    it.each([
+      ['31 bytes', randomBytes(31).toString('base64')],
+      ['33 bytes', randomBytes(33).toString('base64')],
+      ['62 hex characters', randomBytes(31).toString('hex')],
+      ['text that is not base64', 'not a key, not a key, not a key, not a key!'],
+    ])('stops the process for a key of %s, without printing it', (_case, key) => {
+      vi.stubEnv('CONNECTOR_SECRET_KEY', key);
+
+      expect(connectorKeyBytes(key)).toBeUndefined();
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      expect(errorLog.mock.calls[0]?.[0]).toContain('CONNECTOR_SECRET_KEY');
+      expect(errorLog.mock.calls[0]?.[0]).not.toContain(key);
+    });
+
+    it.each(['development', 'test', 'production'])(
+      'requires the key when NODE_ENV is %s, and leaves the previous key unset',
+      (nodeEnv) => {
+        vi.stubEnv('NODE_ENV', nodeEnv);
+        expect(loadEnv().CONNECTOR_SECRET_KEY_PREVIOUS).toBeUndefined();
+
+        vi.stubEnv('CONNECTOR_SECRET_KEY', undefined);
+        expect(() => loadEnv()).toThrow('process.exit(1)');
+        expect(errorLog.mock.calls[0]?.[0]).toContain('CONNECTOR_SECRET_KEY');
+
+        vi.stubEnv('CONNECTOR_SECRET_KEY', base64Key);
+        expect(loadEnv().CONNECTOR_SECRET_KEY).toBe(base64Key);
+      },
+    );
+
+    it('refuses a previous key without a current one, or equal to it in another spelling', () => {
+      vi.stubEnv('CONNECTOR_SECRET_KEY', undefined);
+      vi.stubEnv('CONNECTOR_SECRET_KEY_PREVIOUS', base64Key);
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+
+      vi.stubEnv('CONNECTOR_SECRET_KEY', Buffer.from(base64Key, 'base64').toString('hex'));
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      expect(errorLog.mock.calls[1]?.[0]).toContain('Must differ from CONNECTOR_SECRET_KEY');
+
+      vi.stubEnv('CONNECTOR_SECRET_KEY', hexKey);
+      expect(loadEnv().CONNECTOR_SECRET_KEY_PREVIOUS).toBe(base64Key);
+    });
+
+    it('reads SHOPIFY_MOCK_ORIGIN outside production, dropping a trailing slash', () => {
+      vi.stubEnv('SHOPIFY_MOCK_ORIGIN', 'http://localhost:3935/');
+
+      expect(loadEnv().SHOPIFY_MOCK_ORIGIN).toBe('http://localhost:3935');
+    });
+
+    it('refuses SHOPIFY_MOCK_ORIGIN when NODE_ENV is production', () => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('CONNECTOR_SECRET_KEY', base64Key);
+      vi.stubEnv('SHOPIFY_MOCK_ORIGIN', 'http://localhost:3935');
+
+      expect(() => loadEnv()).toThrow('process.exit(1)');
+      expect(errorLog.mock.calls[0]?.[0]).toContain('SHOPIFY_MOCK_ORIGIN');
+    });
+  });
+
   describe('the one staff origin (spec 0005, AC-30)', () => {
     it('derives the origin from PUBLIC_URL and the base from it plus STAFF_BASE_PATH', () => {
       vi.stubEnv('PUBLIC_URL', 'https://ERP.example.com:8443/');
@@ -449,6 +533,7 @@ describe('loadEnv', () => {
 
     it('is ignored in production, where Compose provides the settings', () => {
       vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('CONNECTOR_SECRET_KEY', 'ab12'.repeat(16));
       vi.mocked(existsSync).mockReturnValue(true);
       const loadEnvFile = vi.spyOn(process, 'loadEnvFile').mockImplementation(() => {});
 
