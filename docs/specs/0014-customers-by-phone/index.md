@@ -272,6 +272,8 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (database, s
 
 **Milestone 4: One timeline through each lens** (needs spec 0013's `OrderQueries.forCustomers` and `countsForCustomers`, and spec 0015's `ChannelsService.storeLabelsByConnection`)
 
+Note: `storeLabelsByConnection` throws `CONNECTION_STORES_NOT_REGISTERED` until connectors registers its `ConnectionStoreSource` (spec 0015 task 6); tests use a stand-in source until then.
+
 17. [ ] `CUSTOMER_TIMELINE_KINDS` and the entry union in contracts, with the unit test over built `Access` sets, satisfies **AC-15**
 18. [ ] `CustomerProfileModule` (leaf, imported only by `AppModule`): the timeline service with the merged keyset, own sources, the order source through `OrderQueries.forCustomers`; move the profile route into it, add `signal` from `OrderQueries.countsForCustomers` with `sinceDay`, the order count from the same call with `sinceDay: null`, and store labels from `ChannelsService.storeLabelsByConnection`, satisfies **AC-13**, **AC-14**, **AC-15**
 19. [ ] Route `GET /api/customers/:id/timeline` with `FIXTURES`; the module wall stays green with no orders table named, satisfies **AC-14**, **AC-16**

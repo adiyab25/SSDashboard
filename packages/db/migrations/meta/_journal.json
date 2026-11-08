@@ -36,6 +36,13 @@
       "when": 1794080967163,
       "tag": "0004_license_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794082906027,
+      "tag": "0005_connector_tables",
+      "breakpoints": true
     }
   ]
 }

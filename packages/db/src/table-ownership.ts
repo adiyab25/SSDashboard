@@ -109,6 +109,8 @@ export const TABLE_OWNERSHIP = {
   outbound_commands: 'connectors',
   inbound_events: 'connectors',
   connection_external_ids: 'connectors',
+  connection_stock_levels: 'connectors',
+  connection_sync_runs: 'connectors',
 
   parties: 'partners',
 

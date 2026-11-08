@@ -134,6 +134,7 @@ describe('customers by phone (AC-27, AC-28)', () => {
       const connection = await insert('connections', {
         provider: 'shopify',
         label: 'Shop',
+        shop_domain: `cx-${counter}.myshopify.com`,
         store_id: store,
       });
       const channel = await insert('channels', {

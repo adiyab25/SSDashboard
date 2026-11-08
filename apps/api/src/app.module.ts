@@ -4,6 +4,7 @@ import { AuditExportModule } from './audit/audit-export.module.js';
 import { AuditUndoModule } from './audit/audit-undo.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
+import { ChannelsModule } from './channels/channels.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -16,7 +17,7 @@ import { PlatformModule } from './platform/platform.module.js';
 
 /**
  * The root module of the `app` entry point (the api process): wires config, database, mail,
- * identity (sign in, staff and partner logins), platform, audit, catalog, inventory and partners.
+ * identity (sign in, staff and partner logins), platform, audit, catalog, channels, inventory and partners.
  * The worker uses its own module so no HTTP code runs there.
  */
 @Module({
@@ -36,6 +37,7 @@ import { PlatformModule } from './platform/platform.module.js';
     // The undo route and its start check: the api only, never the worker (review M4R1).
     AuditUndoModule,
     CatalogModule,
+    ChannelsModule,
     InventoryModule,
     PartnersModule,
   ],
