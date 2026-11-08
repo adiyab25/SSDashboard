@@ -100,11 +100,40 @@ export const locationOwnerPolicies = pgTable(
     canSellOnline: boolean('can_sell_online').notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'restrict' }),
+    /**
+     * When a locked term (stock owner, handover, sale moment, tax document, settling owner) last
+     * changed, or null when never (the seeded rows). An archived location of the type comes back
+     * only while it is not later than its archive (spec 0009 AC-24, D13); the free fields (who
+     * refunds, online selling) never move it.
+     */
+    lockedTermsChangedAt: timestamp('locked_terms_changed_at', { withTimezone: true }),
   },
   (t) => [
     primaryKey({ columns: [t.tenantId, t.ownerType] }),
     // Foreign key index: updated_by (spec 0002 item 19).
     index('location_owner_policies_updated_by_idx').on(t.updatedBy),
+    // Spec 0009 AC-24 (owner ruling 2026-11-08, migration 0011): a row never contradicts itself,
+    // even when written past the api. Handing stock over is the sale exactly when the stock is not
+    // the brand's; the sale counts at the handover exactly when the handover is the sale; and only
+    // the brand's own stock whose sales settle through no partner may be offered online.
+    check(
+      'location_owner_policies_handover_is_sale',
+      sql`${t.handoverIsSale} = NOT ${t.stockOwnedByBrand}`,
+    ),
+    check(
+      'location_owner_policies_sale_at_handover',
+      sql`(${t.saleRecordedAt} = 'at_handover') = ${t.handoverIsSale}`,
+    ),
+    // Owner ruling 2026-11-08 ("Yes, pin it"): the consignment row always settles with its
+    // partner, so the online rule can never be opened up for partner stock by redefining it.
+    check(
+      'location_owner_policies_consignment_settles_with_partner',
+      sql`${t.ownerType} <> 'consignment_partner' OR ${t.settlementOwnerType} IS NOT NULL`,
+    ),
+    check(
+      'location_owner_policies_online_needs_brand_stock',
+      sql`NOT ${t.canSellOnline} OR (${t.stockOwnedByBrand} AND ${t.settlementOwnerType} IS NULL)`,
+    ),
   ],
 );
 

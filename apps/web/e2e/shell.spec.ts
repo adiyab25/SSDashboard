@@ -119,6 +119,9 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Audit trail',
       // Settings needs settings.manage, which the administrator holds (spec 0009, AC-25).
       'Settings',
+      // Cost rules follows Settings in the general group: cost.view, which the suite's
+      // administrator holds as a grant (spec 0009, AC-25, D15).
+      'Cost rules',
       // The orders group (spec 0013); the administrator's manager hat holds orders.view.
       'Orders',
       // The inventory group (spec 0006).

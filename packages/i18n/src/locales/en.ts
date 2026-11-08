@@ -31,6 +31,7 @@ export const en = {
         locations: 'Locations',
         audit: 'Audit trail',
         settings: 'Settings',
+        costRules: 'Cost rules',
         orders: 'Orders',
       },
     },
@@ -46,7 +47,7 @@ export const en = {
         step_off: 'The step that does this work is switched off.',
         requires_off: 'A module it needs is not on.',
         no_stock_out_source:
-          'It waits for the app to see online orders leave stock: the Bosta connection (Operations plan) or packing in the app.',
+          'It waits for the app to see online orders leave stock: the Bosta connection (Operations plan), recording stock out from Shopify fulfillment, or packing in the app.',
       },
       readOnly:
         'Read only since {{date}}. You can look at the history, but nothing can be added or changed. Ask a person who manages settings.',
@@ -60,6 +61,8 @@ export const en = {
         title: 'Not available on this install',
         description: 'This part of the app is not switched on for this brand.',
       },
+      stockOutSource: 'Online sales are not deducted from stock on this install yet.',
+      stockOutSourceLabel: 'Online stock notice',
       staffNotice: {
         label: 'Notice about work that stops',
         stops: 'From {{date}} this stops: {{what}}. Ask your manager.',
@@ -828,6 +831,8 @@ export const en = {
         STOCK_ON_HAND: 'This location still has stock on hand, so it cannot be archived.',
         IN_USE:
           'This location has receipts, movements, balances, or bins, so it cannot be deleted. Archive it instead.',
+        OWNER_POLICY_CHANGED_SINCE_ARCHIVE:
+          'The terms of this location type changed after it was archived, so it cannot come back. Open a new location instead.',
         BUSY: 'Stock is busy with another posting. Try again in a moment.',
         generic: 'That did not work. Check your connection and try again.',
       },
@@ -1635,6 +1640,8 @@ export const en = {
       auditEntry: 'Audit trail export',
       setting: 'Setting',
       license: 'License',
+      policy: 'Location owner type',
+      orderCostRule: 'Per order cost rule',
     },
     filters: {
       title: 'Filters',
@@ -1761,6 +1768,9 @@ export const en = {
       orderPartialDeliverySplit: 'Partial delivery recorded',
       orderCollectionRecordedManually: 'Cash collection entered by hand',
       orderPaymentMethodRederived: 'Order payment method corrected',
+      policyChanged: 'Location owner type policy changed',
+      costRuleRecorded: 'Per order cost rule recorded',
+      costRuleRecordedInLockedPeriod: 'Per order cost rule recorded in a locked period',
     },
   },
   // The settings registry of spec 0009 (AC-1): one label and description per entry, and the
@@ -1818,6 +1828,34 @@ export const en = {
         description:
           'How many days after a lapse a delivery for an order confirmed before it is still followed.',
       },
+      customerRiskSignal: {
+        label: 'Customer risk suggestion',
+        description:
+          'When the customer page suggests flagging a customer: how many refused deliveries or returns within how many days.',
+      },
+      shopifyGiftTags: {
+        label: 'Shopify gift tags',
+        description:
+          'Orders carrying one of these Shopify tags are recorded as gifts with the reason it maps to. Use a category tag (gift, influencer, pr), never a person’s name.',
+      },
+      shopifyStockSafetyBuffer: {
+        label: 'Shopify stock safety buffer',
+        description:
+          'How many pieces of each variant are held back from the quantity sent to Shopify.',
+      },
+      catalogSourceStoreId: {
+        label: 'Catalog source store',
+        description: 'The store whose products the catalog is first built from.',
+      },
+      catalogStoreProductGroups: {
+        label: 'Product group per store',
+        description:
+          'The product group new styles get when they are first created from each store.',
+      },
+      catalogNewStyleSeason: {
+        label: 'Season for new styles',
+        description: 'The season a newly created style gets. Leave it empty to choose each time.',
+      },
     },
     warnings: {
       timezone:
@@ -1828,6 +1866,10 @@ export const en = {
         'Manual order lines, and shipping on orders whose sales channel sends no tax rate, use the new rate. Shopify order lines never use it. Recorded orders keep the rate they were priced with.',
       operatingDayCutoffHour:
         'Days already recorded are never restated, so the day of the change is longer or shorter than usual.',
+      catalogStoreProductGroups:
+        'New styles first created from that store get this group, which decides their accounting export code. Styles that already exist keep their group.',
+      shopifyStockSafetyBuffer:
+        'Every quantity sent to Shopify drops by this many pieces, so variants with this many pieces or fewer show as sold out on Shopify.',
     },
     title: 'Settings',
     description: 'The brand’s own choices. Every change is recorded in the audit trail.',
@@ -1838,6 +1880,9 @@ export const en = {
       modules: 'Module switches',
       license: 'Modules and license',
       policies: 'Policies',
+      catalog: 'Catalog',
+      automations: 'Automations',
+      ownerTypes: 'Location owner types',
     },
     modules: {
       description:
@@ -2016,12 +2061,16 @@ export const en = {
       fixed: 'Set when the app was installed. It cannot be changed here.',
       needsOperations: 'Needs the Operations plan',
       needsWarehouse: 'Needs the Warehouse plan',
+      setElsewhere: 'Changed from its own page once that page is built.',
     },
     values: {
       yes: 'Yes',
       no: 'No',
       notSet: 'Not set',
+      none: 'None',
       hour: '{{hour}}:00',
+      riskSignal:
+        'Refused deliveries: {{refusals}}. Returns: {{returns}}. Window in days: {{days}}.',
     },
     dialog: {
       title: 'Change {{name}}',
@@ -2042,6 +2091,16 @@ export const en = {
       },
       listHint: 'Language codes separated by commas, in switcher order, for example en, ar.',
       clearHint: 'Leave empty to clear it.',
+      riskSignal: {
+        refusalsToSuggest: 'Refused deliveries',
+        returnsToSuggest: 'Returns',
+        windowDays: 'Within how many days',
+        countHint: 'A whole number from 1 to 20.',
+        windowHint: 'Whole days from 30 to 730.',
+        incomplete: 'Enter a whole number in each of the three boxes.',
+        invalidCount: 'Enter a whole number from 1 to 20.',
+        invalidWindow: 'Enter whole days from 30 to 730.',
+      },
       cancel: 'Cancel',
       save: 'Save',
       close: 'Close',
@@ -2072,6 +2131,181 @@ export const en = {
     messages: {
       saved: 'Saved: {{name}}.',
       unchanged: 'Nothing changed: that is already the value.',
+    },
+    automations: {
+      description:
+        'Things the app does for the brand by itself. Each one starts switched off, needs a reason to switch on, and acts only on what happens after it is switched on.',
+      empty:
+        'No automation is available on this install yet. Each one arrives switched off, with the feature that does the work.',
+      on: 'On',
+      off: 'Off',
+      unavailable: 'Not available yet',
+      customerHears: 'The customer hears about this.',
+      customerShopify: 'Shopify will not email the customer.',
+      customerNotHears: 'The customer is not messaged because of this.',
+      notRunning: 'Switched on, but not running now.',
+      confirmHint: 'This moves other things, so type the name of the automation to go on.',
+      preconditions: {
+        NO_STOCK_OUT_SOURCE:
+          'Waits for the app to see online orders leave stock: the Bosta connection (Operations plan), recording stock out from Shopify fulfillment, or packing in the app.',
+        generic: 'It cannot be switched on yet: a check it needs has not passed ({{code}}).',
+      },
+      turnOn: {
+        title: 'Turn on {{name}}',
+        description: 'Read what changes before you go on. You can turn it off again at any time.',
+        startsDoing: 'What the app starts doing',
+        customer: 'Does the customer hear about it?',
+        fromWhen: 'From when',
+        fromNow:
+          'It acts only on what happens from now on. Nothing that happened before is acted on.',
+        factsHeading: 'Checked just now',
+        notRunnable: 'It stays waiting until its work is running again.',
+        confirm: 'Turn on',
+        done: '{{name}} is turned on.',
+        failed: 'It was not turned on. Try again.',
+      },
+    },
+    ownerPolicies: {
+      description:
+        'Each row applies to every location of this type, and only to what happens from now on. Terms agreed with one partner go in that partner’s own agreement.',
+      loadError: 'The location owner types could not be loaded. Try again.',
+      noAccess: 'You do not have permission to see the location owner types.',
+      empty: 'No location owner type is set up on this install.',
+      types: {
+        own: 'The brand’s own locations',
+        consignment_partner: 'Consignment partner',
+        wholesale_customer: 'Wholesale customer',
+      },
+      fields: {
+        stockOwnedByBrand: 'Stock belongs to the brand',
+        handoverIsSale: 'Handing stock over is the sale',
+        saleRecordedAt: 'The sale counts',
+        taxDocument: 'Tax document',
+        settlementOwnerType: 'Settled with',
+        endCustomerRefundBy: 'A customer refund is paid by',
+        defectivePieceRefundBy: 'A defective piece refund is paid by',
+        canSellOnline: 'Can sell online',
+      },
+      saleRecordedAt: {
+        at_shipment: 'When it ships',
+        at_sell_through: 'When the partner sells it',
+        at_handover: 'At the handover',
+      },
+      refundBy: {
+        brand: 'The brand',
+        location_owner: 'The location’s owner',
+      },
+      taxDocument: {
+        b2c_electronic_receipt: 'Electronic receipt to the customer',
+        b2b_electronic_invoice_at_settlement: 'Electronic invoice at settlement',
+        b2b_electronic_invoice_at_handover: 'Electronic invoice at the handover',
+      },
+      settlementOwnerType: {
+        carrier: 'The carrier',
+        consignment_partner: 'The consignment partner',
+        gateway: 'The payment gateway',
+        none: 'Nobody',
+      },
+      locked: 'Locked',
+      lockedNote:
+        'Who owns the stock, when the sale counts, the tax document, and who settles are fixed for the brand’s own locations and for any type with open locations (open now: {{locations}}). Changed terms mean a new location.',
+      edit: 'Edit',
+      editNamed: 'Edit {{name}}',
+      reload: 'Reload owner types',
+      dialog: {
+        title: 'Edit {{name}}',
+        description:
+          'Applies to every location of this type. Only future questions use it: recorded movements and settlements are never reinterpreted.',
+      },
+      rules: {
+        handover_is_sale_means_customer_stock:
+          'Handing stock over is the sale exactly when the stock does not belong to the brand.',
+        sale_at_handover_means_handover_is_sale:
+          'The sale counts at the handover exactly when handing stock over is the sale.',
+        online_needs_brand_stock:
+          'Only stock that belongs to the brand and is settled with nobody can sell online.',
+        consignment_settles_with_partner:
+          'Consignment stock is always settled with the consignment partner.',
+      },
+      errors: {
+        OWNER_POLICY_INCONSISTENT: 'These answers contradict each other. Nothing was saved.',
+        OWNER_POLICY_IN_USE:
+          'These answers are locked while locations of this type are open: {{fields}}. Changed terms mean a new location.',
+        SELLABLE_LOCATIONS_EXIST:
+          'A location of this type still sells online. Stop it selling online first.',
+        STALE_SETTING:
+          'Someone else changed this type while you were looking. Reload to see the current terms.',
+        OWNER_TYPE_UNKNOWN: 'This owner type no longer exists. Reload the page.',
+        FORBIDDEN: 'You do not have permission to change location owner types.',
+        generic: 'The change was not saved. Try again.',
+      },
+    },
+    costRules: {
+      title: 'Cost rules',
+      description:
+        'The per order costs margins are worked out with: carrier and gateway fees, packaging, and returns that cannot be restocked. Each rule applies from its start day; rules are never edited.',
+      loadError: 'The cost rules could not be loaded. Try again.',
+      lockUnset: 'Nothing is locked yet, so a rule can start on any day.',
+      lockSet:
+        'Days up to {{date}} are locked. A rule that starts on or before that day changes margins already closed.',
+      lockInvalid:
+        'The inventory lock date holds a value that is not valid, so no rule can be recorded. Set the lock date again in Settings first.',
+      currentHeading: 'In force today',
+      today: 'Today is {{date}}.',
+      addNeedsSettings: 'Only a person who manages settings can record a new rule.',
+      currentTable: 'Cost rules in force today',
+      historyHeading: 'History',
+      historyTable: 'Every recorded cost rule, newest first',
+      historyEmpty: 'No rule has been recorded yet.',
+      loadMore: 'Show more',
+      kinds: {
+        cod_fee_percent: 'Cash on delivery fee',
+        gateway_fee_percent: 'Payment gateway fee',
+        packaging_per_order: 'Packaging per order',
+        rto_unrestocked_percent: 'Returns not restocked',
+      },
+      notSet: 'Not set',
+      neverSet: 'No rule recorded yet',
+      seeded: 'Set when the app was installed',
+      columns: {
+        kind: 'Cost',
+        rule: 'Rule',
+        from: 'Applies from',
+        recorded: 'Recorded',
+        by: 'By',
+        actions: 'Actions',
+      },
+      add: 'New rule',
+      addNamed: 'New rule for {{name}}',
+      done: 'Recorded: a new rule for {{name}}.',
+      dialog: {
+        title: 'New rule for {{name}}',
+        description: 'Rules are never edited. A new rule takes over from its start day.',
+        status: 'Rule',
+        set: 'Set a value',
+        notSet: 'Not set: margins show this cost as missing',
+        percent: 'Percent',
+        amount: 'Amount per order',
+        percentHint: 'A percent from 0 to 100, with up to 4 decimals.',
+        amountHint: 'An amount of 0 or more, with up to 4 decimals.',
+        effectiveFrom: 'Applies from',
+        effectiveFromHint: 'The first operating day this rule applies to.',
+        save: 'Record rule',
+        overrideSave: 'Record in the locked period',
+        lockedTitle: 'This start day is in a locked period',
+        lockedMonthsIntro: 'It would change the margins of these months:',
+        lockedOverride:
+          'If this is a narrow cost fix, record it in the locked period on purpose. Your reason is saved with it, and the lock date stays where it is.',
+        errors: {
+          valueRequired: 'Enter a value.',
+          valueInvalid: 'Enter a value of 0 or more with at most 4 decimals.',
+          percentTooHigh: 'A percent cannot be more than 100.',
+          dateRequired: 'Choose the first day it applies to.',
+          SETTING_INVALID: 'This rule is not allowed. Check the value and try again.',
+          FORBIDDEN: 'You do not have permission to record cost rules.',
+          generic: 'The rule was not recorded. Try again.',
+        },
+      },
     },
   },
   // The module registry of spec 0009 (AC-6): each module's and capability's name, keyed from

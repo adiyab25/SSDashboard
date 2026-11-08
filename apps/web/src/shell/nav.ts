@@ -1,6 +1,7 @@
 import type { ModuleStateView, Permission } from '@ssdashboard/contracts';
 import {
   BoxesIcon,
+  CoinsIcon,
   HomeIcon,
   MapPinIcon,
   PackagePlusIcon,
@@ -95,6 +96,15 @@ export const navItems: readonly NavItem[] = [
     icon: SettingsIcon,
     group: 'general',
     needs: 'settings.manage',
+    module: 'platform',
+  },
+  {
+    id: 'costRules',
+    labelKey: 'shell.nav.items.costRules',
+    href: '/settings/cost-rules',
+    icon: CoinsIcon,
+    group: 'general',
+    needs: 'cost.view',
     module: 'platform',
   },
   {

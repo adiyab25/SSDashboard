@@ -484,7 +484,13 @@ describe(
             : undefined,
         { what: 'the slow job to start' },
       );
-      const before = new Date().toISOString();
+      // "Before the toggle off" by the database clock, the clock that stamps the toggle's
+      // `updated_at`, so no skew between Node and PostgreSQL can flip the case.
+      const before = (
+        await sql<{ at: string }>(
+          `SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at`,
+        )
+      )[0]?.at as string;
       expect((await toggle(false)).status).toBe(200);
       const offAt = (await entry(TOGGLE)).updatedAt as string;
       await eventually(

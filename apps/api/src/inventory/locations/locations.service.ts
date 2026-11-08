@@ -341,11 +341,19 @@ export class LocationsService {
     });
   }
 
-  /** Brings an archived location back to the switcher and pickers, recording `location.unarchived`. */
+  /**
+   * Brings an archived location back to the switcher and pickers, recording `location.unarchived`;
+   * refused with `PolicyChangedSinceArchive` when a locked term of its owner type's policy changed
+   * after it was archived.
+   */
   async unarchive(id: string, caller: LocationCaller): Promise<LocationDetail> {
     const correlationId = this.audit.newCorrelationId();
     return ledgerTransaction(this.connection.db, async (tx) => {
       if (!(await this.lockWork(tx, id))) throw notFound();
+      // A location back from the archive counts again for the owner type's policy locks, and
+      // never comes back under locked terms changed since it was archived (spec 0009 AC-24, D13).
+      await this.policy.holdOwnerTypeOf(id, tx);
+      await this.policy.assertUnchangedSinceArchive(id, tx);
       const before = await this.findWork(tx, id);
       const location = await this.setArchived(tx, id, false);
       if (before?.archived) await this.recordArchive(tx, location, caller, correlationId);
@@ -368,6 +376,35 @@ export class LocationsService {
       after: { archived: location.archived },
       correlationId,
     });
+  }
+
+  /**
+   * How many locations of an owner type are not archived (spec 0009, AC-24): above zero, the
+   * locked fields of the type's policy cannot change. System locations count too.
+   */
+  async countActiveByOwnerType(
+    ownerType: LocationOwnerType,
+    executor: Executor = this.connection.db,
+  ): Promise<number> {
+    const { rows } = await executor.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM locations
+      WHERE owner_type = ${ownerType}::location_owner_type AND archived_at IS NULL`);
+    return rows[0]?.n ?? 0;
+  }
+
+  /**
+   * How many locations of an owner type sell online, archived or not (spec 0009, AC-24): above
+   * zero, the type's policy cannot turn online selling off. An archived one counts, because
+   * bringing it back does not ask the policy again.
+   */
+  async countSellableOnlineByOwnerType(
+    ownerType: LocationOwnerType,
+    executor: Executor = this.connection.db,
+  ): Promise<number> {
+    const { rows } = await executor.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM locations
+      WHERE owner_type = ${ownerType}::location_owner_type AND sellable_online`);
+    return rows[0]?.n ?? 0;
   }
 
   /**

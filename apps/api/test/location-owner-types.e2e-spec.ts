@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { LocationOwnerType } from '@ssdashboard/contracts';
+import { OwnerPoliciesResponse, type LocationOwnerType } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   LocationPolicyError,
@@ -13,6 +13,7 @@ import {
   type LocationCaller,
 } from '../src/inventory/locations/locations.service.js';
 import { PartnerAccounts } from '../src/partners/partner-accounts.service.js';
+import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import {
   driftedBalances,
   fixtures,
@@ -359,3 +360,68 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
     });
   });
 });
+
+// Spec 0009, AC-24: the owner type policy is the brand's to edit, still with no code branch. A
+// manager edits a refund field of the partner row through the endpoint, and the next `policyFor`
+// of a partner location answers the new value; the scenario above runs unchanged.
+describe(
+  'location owner types: a policy edited through the endpoint (spec 0009, AC-24)',
+  { timeout: 60_000 },
+  () => {
+    let api: InProcessApi;
+    let manager: string;
+
+    beforeAll(async () => {
+      api = await startInProcessApi();
+      manager = await api.signIn((await api.addPerson(['manager'])).email);
+    });
+
+    afterAll(async () => {
+      await api?.close();
+    });
+
+    it('changes the next policyFor answer of a partner location', async () => {
+      const partner = SCENARIOS[1];
+      if (!partner) throw new Error('scenario table changed');
+      const shop = await api.app.get(LocationsService).create({
+        code: 'EDIT-1',
+        name: { en: 'Shop' },
+        kind: 'shop',
+        ownerType: partner.ownerType,
+        partyId: await api.addParty('EDIT-P1', { consignment: true }),
+      });
+      const service = api.app.get(LocationPolicyService);
+      expect(await service.policyFor(shop.id)).toMatchObject(partner.expected);
+
+      const listed = OwnerPoliciesResponse.parse(
+        (await api.call(manager, 'GET', '/api/inventory/owner-policies')).body,
+      ).policies.find((row) => row.ownerType === partner.ownerType);
+      if (!listed) throw new Error('no partner row');
+      const {
+        ownerType: _type,
+        lockedFields: _locked,
+        activeLocations: _n,
+        updatedAt,
+        updatedBy: _by,
+        ...fields
+      } = listed;
+      const reply = await api.call(
+        manager,
+        'PUT',
+        `/api/inventory/owner-policies/${partner.ownerType}`,
+        {
+          ...fields,
+          defectivePieceRefundBy: 'location_owner',
+          reason: 'Partner covers defects now',
+          expectedUpdatedAt: updatedAt,
+        },
+      );
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+
+      expect(await service.policyFor(shop.id)).toMatchObject({
+        ...partner.expected,
+        defectivePieceRefundBy: 'location_owner',
+      });
+    });
+  },
+);

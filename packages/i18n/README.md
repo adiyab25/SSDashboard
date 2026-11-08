@@ -10,7 +10,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 - The typed key list: [message-key.ts](src/message-key.ts), [i18next-types.ts](src/i18next-types.ts)
 - The language registry and direction: [languages.ts](src/languages.ts), [rtl.ts](src/rtl.ts)
 - Catalog checks used by the parity test and by client language files: [catalog.ts](src/catalog.ts), [plural-categories.ts](src/plural-categories.ts)
-- The formatters: [format.ts](src/format.ts) (`createFormatter`: number, quantity, percent, money, date, dateNumeric, dateOnly, time, dateTime in the install's currency and time zone, Western digits), and the only other `Intl` user, [plural-categories.ts](src/plural-categories.ts)
+- The formatters: [format.ts](src/format.ts) (`createFormatter`: number, quantity, percent (2 decimals, or 4 with `{ digits: 4 }`), money, date, dateNumeric, dateOnly, time, dateTime in the install's currency and time zone, Western digits), and the only other `Intl` user, [plural-categories.ts](src/plural-categories.ts)
 - The translators: [translator.ts](src/translator.ts) (`createTranslator`, `createTranslatorSync`), [create-i18n.ts](src/create-i18n.ts)
 - The digit parsers: [digits.ts](src/digits.ts) (`normalizeDigits`, `parseQuantity`, `parseMoney`, `InvalidDigitInputError`), used by the Zod helpers in `packages/contracts` (AC-18)
 

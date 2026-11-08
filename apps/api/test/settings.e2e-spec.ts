@@ -530,6 +530,83 @@ describe('settings read and write (spec 0009)', { timeout: 120_000 }, () => {
     expect(receipt.status, JSON.stringify(receipt.body)).toBe(201);
   });
 
+  // Spec 0009, AC-31: the rows specs 0012 to 0015 request go through the one write path. The
+  // Warehouse buffer is refused while only Operations is licensed; a gift tag of digits only, and
+  // the product group map without a reason, are refused; a sound change of each is written.
+  it('takes the requested rows through the one write path (AC-31)', async () => {
+    const entries = await list();
+    const keys = entries.map((item) => item.key);
+    for (const key of [
+      'customer_risk_signal',
+      'catalog.source_store_id',
+      'catalog.store_product_groups',
+      'catalog.new_style_season',
+      'shopify_gift_tags',
+      'shopify_stock_safety_buffer',
+    ]) {
+      expect(keys).toContain(key);
+    }
+    expect(entries.filter((item) => item.group === 'catalog').map((item) => item.key)).toEqual([
+      'catalog.source_store_id',
+      'catalog.store_product_groups',
+      'catalog.new_style_season',
+    ]);
+    // No requested row is a step; an ordinary entry carries no step facts.
+    expect(entries.every((item) => item.step === null)).toBe(true);
+
+    const buffer = await put('shopify_stock_safety_buffer', {
+      value: 2,
+      reason: 'Hold two back',
+      expectedUpdatedAt: null,
+    });
+    expect(buffer.status, JSON.stringify(buffer.body)).toBe(409);
+    expect(buffer.body).toMatchObject({ code: 'NOT_LICENSED' });
+    expect((await entry('shopify_stock_safety_buffer')).licensed).toBe(false);
+
+    const digits = await put('shopify_gift_tags', {
+      value: { '01012345678': 'gift' },
+      expectedUpdatedAt: null,
+    });
+    expect(digits.status, JSON.stringify(digits.body)).toBe(422);
+    expect(digits.body).toMatchObject({ code: 'SETTING_INVALID' });
+
+    // The seventh row (spec 0013's) needs a reason, through the same path.
+    const rate = await put('sales_tax_rate', {
+      value: '15.00',
+      expectedUpdatedAt: (await entry('sales_tax_rate')).updatedAt,
+    });
+    expect(rate.status, JSON.stringify(rate.body)).toBe(422);
+    expect(rate.body).toMatchObject({ code: 'REASON_REQUIRED' });
+    expect((await entry('sales_tax_rate')).value).toBe('14.00');
+
+    const store = randomUUID();
+    const groups = await put('catalog.store_product_groups', {
+      value: { [store]: 'MAIN' },
+      expectedUpdatedAt: null,
+    });
+    expect(groups.status, JSON.stringify(groups.body)).toBe(422);
+    expect(groups.body).toMatchObject({ code: 'REASON_REQUIRED' });
+
+    const tags = await put('shopify_gift_tags', {
+      value: { gift: 'gift', هدية: 'gift' },
+      expectedUpdatedAt: null,
+    });
+    expect(tags.status, JSON.stringify(tags.body)).toBe(200);
+    expect(PutSettingAnswer.parse(tags.body)).toMatchObject({ changed: true });
+    const risk = await put('customer_risk_signal', {
+      value: { windowDays: 90, refusalsToSuggest: 3, returnsToSuggest: 2 },
+      expectedUpdatedAt: null,
+    });
+    expect(risk.status, JSON.stringify(risk.body)).toBe(200);
+    const withReason = await put('catalog.store_product_groups', {
+      value: { [store]: 'MAIN' },
+      reason: 'The main store feeds the main group',
+      expectedUpdatedAt: null,
+    });
+    expect(withReason.status, JSON.stringify(withReason.body)).toBe(200);
+    expect(await auditCount('catalog.store_product_groups')).toBe(1);
+  });
+
   it('answers 403 to a person without settings.manage (AC-3, AC-26)', async () => {
     const read = await api.call(supportCookie, 'GET', '/api/settings');
     expect(read.status).toBe(403);

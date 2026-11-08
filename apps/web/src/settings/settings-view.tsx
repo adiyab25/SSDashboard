@@ -11,25 +11,31 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NoAccessState } from '@/access/no-access-state';
 import { ApiError } from '@/api/client';
+import { AutomationSection } from './automation-section';
 import { LicenseSection } from './license-section';
 import { ModuleSwitchSection } from './module-switch-section';
+import { OwnerPolicySection } from './owner-policy-section';
 import { SettingChangeDialog } from './setting-change-dialog';
 import { SettingSection } from './setting-section';
 import { listSettings, settingsKeys } from './settings-api';
 
-/** The settings groups this milestone shows, in order; the license section sits between them. */
+/** The settings groups drawn as plain entry lists; the other sections have their own parts. */
 const SECTIONS: readonly { group: SettingGroup; titleKey: MessageKey }[] = [
   { group: 'brand', titleKey: 'settings.sections.brand' },
   { group: 'policies', titleKey: 'settings.sections.policies' },
+  { group: 'catalog', titleKey: 'settings.sections.catalog' },
 ];
 
 /**
- * The settings body (spec 0009, AC-25): the Brand and Policies sections from `GET /api/settings`
- * and the change dialog, with the one Modules and license section between them. That section loads
- * its own license data, so it shows even while the list loads or fails, and holds the module
- * switches (with their off dialog) once the list is in. `enabled` is false until the page knows
- * the person holds `settings.manage`, so nothing is requested early; if the api still answers 403
- * the shared no access state shows instead of a broken list.
+ * The settings body (spec 0009, AC-25), in the spec's order: Brand, Modules and license,
+ * Automations, Policies, Catalog, and Location owner types, with the change dialog. Brand,
+ * Policies, and Catalog come from `GET /api/settings`; Automations draws the executing steps of
+ * the same list (an empty state while none exists). The Modules and license section and the
+ * Location owner types section load their own data, so they show even while the list loads or
+ * fails; the license section holds the module switches (with their off dialog) once the list is
+ * in. `enabled` is false until the page knows the person holds `settings.manage`, so nothing is
+ * requested early; if the api still answers 403 the shared no access state shows instead of a
+ * broken list.
  */
 export function SettingsView({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
@@ -105,7 +111,12 @@ export function SettingsView({ enabled }: { enabled: boolean }) {
           <ModuleSwitchSection entries={entries.filter((entry) => entry.group === 'modules')} />
         )}
       </LicenseSection>
+      {query.data && (
+        <AutomationSection entries={entries.filter((entry) => entry.group === 'automations')} />
+      )}
       {query.data && sectionOf('policies')}
+      {query.data && sectionOf('catalog')}
+      <OwnerPolicySection enabled={enabled} />
 
       {editing && (
         <SettingChangeDialog

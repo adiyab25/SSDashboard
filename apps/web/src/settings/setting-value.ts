@@ -2,10 +2,45 @@ import type { SettingEntryView, SettingJson } from '@ssdashboard/contracts';
 import { parseQuantity } from '@ssdashboard/i18n';
 
 /** The kind of input and display a setting's value needs, read from its default's shape. */
-export type SettingValueKind = 'boolean' | 'hour' | 'number' | 'date' | 'text' | 'list' | 'record';
+export type SettingValueKind =
+  'boolean' | 'hour' | 'number' | 'date' | 'text' | 'list' | 'record' | 'riskSignal';
 
 /** The setting the screen shows as an hour of the day. */
 const HOUR_KEY = 'operating_day_cutoff_hour';
+
+/**
+ * Entries whose default's shape does not say how they read (spec 0009, *Rows requested by specs
+ * 0012 to 0015*): a store id or a season code whose default is null is a code, not a date; the
+ * customer risk signal is three whole numbers with their own inputs.
+ */
+const KEY_KINDS: Readonly<Record<string, SettingValueKind>> = {
+  'catalog.source_store_id': 'text',
+  'catalog.new_style_season': 'text',
+  customer_risk_signal: 'riskSignal',
+};
+
+/**
+ * Entries the settings screen shows with their value and default but does not edit (spec 0009,
+ * *Rows requested by specs 0012 to 0015*): each needs a picker fed by a list (stores, seasons,
+ * product groups, reason codes) that has no route yet, so the feature that owns the list adds the
+ * editor. The row says where they are set instead of offering Change.
+ */
+const EDITED_ELSEWHERE: ReadonlySet<string> = new Set([
+  'catalog.source_store_id',
+  'catalog.store_product_groups',
+  'catalog.new_style_season',
+  'shopify_gift_tags',
+]);
+
+/** Whether the screen shows this entry without a Change action, pointing to where it is set. */
+export function isEditedElsewhere(key: string): boolean {
+  return EDITED_ELSEWHERE.has(key);
+}
+
+/** The three whole numbers of the customer risk signal, in input order. */
+export const RISK_SIGNAL_FIELDS = ['refusalsToSuggest', 'returnsToSuggest', 'windowDays'] as const;
+/** One field of the customer risk signal. */
+export type RiskSignalField = (typeof RISK_SIGNAL_FIELDS)[number];
 
 /**
  * Which input and display an entry needs. The registry holds the type in its schema, which the
@@ -13,6 +48,8 @@ const HOUR_KEY = 'operating_day_cutoff_hour';
  * codes, a record (document prefixes), a calendar date (a null default), or text.
  */
 export function valueKindOf(entry: Pick<SettingEntryView, 'key' | 'default'>): SettingValueKind {
+  const fixed = KEY_KINDS[entry.key];
+  if (fixed !== undefined) return fixed;
   const sample = entry.default;
   if (typeof sample === 'boolean') return 'boolean';
   if (typeof sample === 'number') return entry.key === HOUR_KEY ? 'hour' : 'number';
@@ -35,12 +72,23 @@ export interface SettingWords {
   yes: string;
   no: string;
   notSet: string;
+  /** The word for an empty list or map (no gift tags, no product groups). */
+  none: string;
   /** The hour of the day as a clock time, from a two digit hour. */
   hour: (hour: string) => string;
   /** A whole number in the person's digits (`useFormat().quantity`). */
   number: (value: number) => string;
   /** A calendar date (`YYYY-MM-DD`) in the person's language (`useFormat().dateOnly`). */
   date: (value: string) => string;
+  /** The customer risk signal as a sentence, from its three numbers already formatted. */
+  riskSignal: (counts: { refusals: string; returns: string; days: string }) => string;
+}
+
+/** A whole number field of a value object, or null when it is missing or not a number. */
+function numberField(value: SettingJson, field: string): number | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const item = value[field];
+  return typeof item === 'number' ? item : null;
 }
 
 /** A value as plain text: strings as they are, other shapes as JSON. */
@@ -55,12 +103,25 @@ export function displayValue(
   words: SettingWords,
 ): string {
   if (value === null) return words.notSet;
+  if (kind === 'riskSignal') {
+    const refusals = numberField(value, 'refusalsToSuggest');
+    const returns = numberField(value, 'returnsToSuggest');
+    const days = numberField(value, 'windowDays');
+    if (refusals !== null && returns !== null && days !== null) {
+      return words.riskSignal({
+        refusals: words.number(refusals),
+        returns: words.number(returns),
+        days: words.number(days),
+      });
+    }
+  }
   if (typeof value === 'boolean') return value ? words.yes : words.no;
   if (typeof value === 'number') {
     return kind === 'hour' ? words.hour(String(value).padStart(2, '0')) : words.number(value);
   }
-  if (Array.isArray(value)) return value.map(plain).join(', ');
+  if (Array.isArray(value)) return value.length === 0 ? words.none : value.map(plain).join(', ');
   if (typeof value === 'object') {
+    if (Object.keys(value).length === 0) return words.none;
     return Object.entries(value)
       .map(([name, prefix]) => `${name}: ${plain(prefix)}`)
       .join(', ');
@@ -74,6 +135,14 @@ export type SettingDraft = string | boolean | Record<string, string>;
 /** The draft a dialog starts from: the value in force, as strings. */
 export function draftOf(value: SettingJson, kind: SettingValueKind): SettingDraft {
   if (kind === 'boolean') return value === true;
+  if (kind === 'riskSignal') {
+    return Object.fromEntries(
+      RISK_SIGNAL_FIELDS.map((field) => {
+        const item = numberField(value, field);
+        return [field, item === null ? '' : String(item)];
+      }),
+    );
+  }
   if (kind === 'record' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, plain(item)]));
   }
@@ -92,6 +161,20 @@ export function parseDraft(
   kind: SettingValueKind,
 ): { ok: true; value: SettingJson } | { ok: false } {
   if (kind === 'boolean') return { ok: true, value: draft === true };
+  if (kind === 'riskSignal') {
+    const rows = typeof draft === 'object' ? draft : {};
+    const value: Record<string, number> = {};
+    for (const field of RISK_SIGNAL_FIELDS) {
+      const text = (rows[field] ?? '').trim();
+      if (text === '') return { ok: false };
+      try {
+        value[field] = parseQuantity(text);
+      } catch {
+        return { ok: false };
+      }
+    }
+    return { ok: true, value };
+  }
   if (kind === 'record') return { ok: true, value: typeof draft === 'object' ? draft : {} };
   const text = typeof draft === 'string' ? draft.trim() : '';
   if (kind === 'date') return { ok: true, value: text === '' ? null : text };

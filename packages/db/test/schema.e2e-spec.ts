@@ -931,6 +931,35 @@ describe('core data model schema (spec 0002)', () => {
       ]);
     });
 
+    // Spec 0009 AC-24 (migration 0011): no writer, the owner included, can make a policy row
+    // contradict itself or offer partner or customer stock online.
+    it('refuses a policy row that contradicts itself', async () => {
+      const update = (set: string, ownerType: string) =>
+        owner.query(`UPDATE location_owner_policies SET ${set} WHERE owner_type = $1`, [ownerType]);
+      await expect(update('can_sell_online = true', 'consignment_partner')).rejects.toThrow(
+        /location_owner_policies_online_needs_brand_stock/,
+      );
+      await expect(update('can_sell_online = true', 'wholesale_customer')).rejects.toThrow(
+        /location_owner_policies_online_needs_brand_stock/,
+      );
+      await expect(update("settlement_owner_type = 'carrier'", 'own')).rejects.toThrow(
+        /location_owner_policies_online_needs_brand_stock/,
+      );
+      await expect(update('handover_is_sale = true', 'consignment_partner')).rejects.toThrow(
+        /location_owner_policies_handover_is_sale/,
+      );
+      await expect(update("sale_recorded_at = 'at_handover'", 'own')).rejects.toThrow(
+        /location_owner_policies_sale_at_handover/,
+      );
+      // Owner ruling 2026-11-08: the consignment row always settles with its partner.
+      await expect(update('settlement_owner_type = NULL', 'consignment_partner')).rejects.toThrow(
+        /location_owner_policies_consignment_settles_with_partner/,
+      );
+      // A consistent edit passes: who refunds a defect is free to change.
+      await update("defective_piece_refund_by = 'location_owner'", 'consignment_partner');
+      await update("defective_piece_refund_by = 'brand'", 'consignment_partner');
+    });
+
     it('needs a party exactly when the owner is not the brand', async () => {
       const partner = await party('is_consignment_partner');
       await expect(

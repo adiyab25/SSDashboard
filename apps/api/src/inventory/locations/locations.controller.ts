@@ -81,6 +81,11 @@ export function locationHttpError(error: unknown, response?: Response): unknown 
           code: 'PARTY_ROLE_MISMATCH',
           message: error.message,
         });
+      case 'PolicyChangedSinceArchive':
+        return new ConflictException({
+          code: 'OWNER_POLICY_CHANGED_SINCE_ARCHIVE',
+          message: error.message,
+        });
     }
   }
   if (error instanceof InvalidCursorError) {
@@ -182,7 +187,10 @@ export class LocationsController {
     }
   }
 
-  /** Needs `catalog.manage`: brings an archived location back into the switcher. */
+  /**
+   * Needs `catalog.manage`: brings an archived location back into the switcher; 409
+   * `OWNER_POLICY_CHANGED_SINCE_ARCHIVE` when a locked term of its owner type changed since the archive.
+   */
   @Permission('catalog.manage')
   @Post(':id/unarchive')
   @HttpCode(200)

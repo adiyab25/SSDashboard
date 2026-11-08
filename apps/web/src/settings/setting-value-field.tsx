@@ -6,7 +6,7 @@ import { Label } from '@ssdashboard/ui/components/label';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { RadioGroup, RadioGroupItem } from '@ssdashboard/ui/components/radio-group';
 import { useTranslation } from 'react-i18next';
-import type { SettingDraft, SettingValueKind } from './setting-value';
+import { RISK_SIGNAL_FIELDS, type SettingDraft, type SettingValueKind } from './setting-value';
 
 /** The two answers of a switch, as the catalog's `settings.values` keys. */
 const YES_NO = ['yes', 'no'] as const;
@@ -30,8 +30,9 @@ interface SettingValueFieldProps {
  * The input for the new value, chosen by the value's type: Yes and No for a switch, a text input
  * for a number (typed in Western or Arabic digits, `inputMode` numeric), a date input, a text
  * input for a code or a list of codes, and one input per prefix for the document prefixes. The
- * first control of the field takes `fieldRef` so an error can focus it. The label says the value
- * is required unless it may be cleared.
+ * first control of the field takes `fieldRef` so an error can focus it. The customer risk signal
+ * has one whole number input for each of its three numbers, each with its range as help text.
+ * The label says the value is required unless it may be cleared.
  */
 export function SettingValueField({
   kind,
@@ -90,6 +91,49 @@ export function SettingValueField({
         </RadioGroup>
         {error && <FieldError id={errorId}>{error}</FieldError>}
       </Field>
+    );
+  }
+
+  if (kind === 'riskSignal') {
+    const rows = typeof draft === 'object' ? draft : {};
+    return (
+      <fieldset className="grid gap-3" aria-describedby={error ? errorId : undefined}>
+        <legend className="mb-1 flex gap-1 text-sm font-medium">{name}</legend>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {RISK_SIGNAL_FIELDS.map((field, index) => {
+            const itemError = itemErrors[field];
+            const id = `${idBase}-${field}`;
+            return (
+              <Field key={field} data-invalid={!!error || !!itemError}>
+                <FieldLabel htmlFor={id}>{t(`settings.dialog.riskSignal.${field}`)}</FieldLabel>
+                <Input
+                  id={id}
+                  ref={index === 0 ? (node) => void (fieldRef.current = node) : undefined}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={rows[field] ?? ''}
+                  aria-required
+                  aria-invalid={!!error || !!itemError}
+                  aria-describedby={itemError ? `${id}-error` : `${id}-hint`}
+                  onChange={(event) => onDraft({ ...rows, [field]: event.target.value })}
+                />
+                {itemError ? (
+                  <FieldError id={`${id}-error`}>{itemError}</FieldError>
+                ) : (
+                  <FieldDescription id={`${id}-hint`}>
+                    {t(
+                      field === 'windowDays'
+                        ? 'settings.dialog.riskSignal.windowHint'
+                        : 'settings.dialog.riskSignal.countHint',
+                    )}
+                  </FieldDescription>
+                )}
+              </Field>
+            );
+          })}
+        </div>
+        {error && <FieldError id={errorId}>{error}</FieldError>}
+      </fieldset>
     );
   }
 

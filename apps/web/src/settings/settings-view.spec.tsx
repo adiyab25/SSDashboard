@@ -1,6 +1,10 @@
 import type { SettingEntryView } from '@ssdashboard/contracts';
-import { screen, waitFor, within } from '@testing-library/react';
+import { createI18n } from '@ssdashboard/i18n';
+import { ar } from '@ssdashboard/i18n/ar';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { I18nextProvider } from 'react-i18next';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/shared/render-with-query';
@@ -11,6 +15,12 @@ const api = vi.hoisted(() => ({ listSettings: vi.fn(), putSetting: vi.fn() }));
 vi.mock('./settings-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
+}));
+
+const owners = vi.hoisted(() => ({ listOwnerPolicies: vi.fn() }));
+vi.mock('./owner-policies-api', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  ...owners,
 }));
 
 const license = vi.hoisted(() => ({ getLicense: vi.fn() }));
@@ -62,10 +72,62 @@ const vat = entry({
   updatedBy: { id: '00000000-0000-4000-8000-000000000001', name: 'Nour Admin' },
 });
 const winding = entry({ bundle: 'operations', licensed: false });
+const sourceStore = entry({
+  key: 'catalog.source_store_id',
+  group: 'catalog',
+  label: 'settings.entries.catalogSourceStoreId.label',
+  description: 'settings.entries.catalogSourceStoreId.description',
+  reason: 'optional',
+  value: '00000000-0000-4000-8000-0000000000c1',
+  default: null,
+  isDefault: false,
+});
+const giftTags = entry({
+  key: 'shopify_gift_tags',
+  label: 'settings.entries.shopifyGiftTags.label',
+  description: 'settings.entries.shopifyGiftTags.description',
+  reason: 'optional',
+  value: { influencer: 'GIFT_INFLUENCER' },
+  default: {},
+  isDefault: false,
+});
+const riskSignal = entry({
+  key: 'customer_risk_signal',
+  label: 'settings.entries.customerRiskSignal.label',
+  description: 'settings.entries.customerRiskSignal.description',
+  reason: 'optional',
+  value: { windowDays: 180, refusalsToSuggest: 2, returnsToSuggest: 3 },
+  default: { windowDays: 180, refusalsToSuggest: 2, returnsToSuggest: 2 },
+  isDefault: false,
+  updatedAt: '2026-11-07T10:15:30.123456Z',
+});
+const buffer = entry({
+  key: 'shopify_stock_safety_buffer',
+  bundle: 'warehouse',
+  label: 'settings.entries.shopifyStockSafetyBuffer.label',
+  description: 'settings.entries.shopifyStockSafetyBuffer.description',
+  warning: 'settings.warnings.shopifyStockSafetyBuffer',
+  value: 0,
+  default: 0,
+});
+const taxRate = entry({
+  key: 'sales_tax_rate',
+  group: 'brand',
+  label: 'settings.entries.salesTaxRate.label',
+  description: 'settings.entries.salesTaxRate.description',
+  warning: 'settings.warnings.salesTaxRate',
+  confirm: 'typed',
+  value: '14.00',
+  default: '14.00',
+});
 
-beforeEach(() => license.getLicense.mockResolvedValue(activeSummary));
+beforeEach(() => {
+  license.getLicense.mockResolvedValue(activeSummary);
+  owners.listOwnerPolicies.mockResolvedValue({ policies: [] });
+});
 
 afterEach(() => {
+  owners.listOwnerPolicies.mockReset();
   license.getLicense.mockReset();
   api.listSettings.mockReset();
   api.putSetting.mockReset();
@@ -115,15 +177,22 @@ describe('SettingsView (AC-25)', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Modules and license' })).toBeVisible();
   });
 
-  it('orders the sections Brand, Modules and license, Policies', async () => {
-    api.listSettings.mockResolvedValue({ entries: [currency, vat, winding] });
+  it('orders the sections as the spec lists them, Catalog only when it has entries', async () => {
+    api.listSettings.mockResolvedValue({ entries: [currency, vat, winding, sourceStore] });
     renderWithQuery(<SettingsView enabled />);
     await screen.findByRole('heading', { name: 'Operations' });
 
     const names = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent);
-    expect(names).toEqual(['Brand', 'Modules and license', 'Policies']);
+    expect(names).toEqual([
+      'Brand',
+      'Modules and license',
+      'Automations',
+      'Policies',
+      'Catalog',
+      'Location owner types',
+    ]);
   });
 
   it('shows an error with Try again when the list cannot load', async () => {
@@ -132,7 +201,8 @@ describe('SettingsView (AC-25)', () => {
     expect(await screen.findByText(/could not be loaded/)).toBeVisible();
 
     api.listSettings.mockResolvedValue({ entries: [vat] });
-    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    const alert = screen.getByText(/settings could not be loaded/);
+    await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('heading', { level: 2, name: 'Brand' })).toBeVisible();
   });
 });
@@ -389,5 +459,117 @@ describe('the change dialog (AC-25)', () => {
       ),
     ).toBeVisible();
     expect(screen.getByRole('dialog')).toBeVisible();
+  });
+});
+
+describe('the rows requested by specs 0012 to 0015 (AC-25, AC-31)', () => {
+  it('shows the Catalog keys and the gift tags with value and default, set elsewhere, with no Change', async () => {
+    api.listSettings.mockResolvedValue({ entries: [sourceStore, giftTags] });
+    renderWithQuery(<SettingsView enabled />);
+
+    const catalog = await screen.findByRole('region', { name: 'Catalog' });
+    expect(within(catalog).getByText('Catalog source store')).toBeVisible();
+    expect(within(catalog).getByText('00000000-0000-4000-8000-0000000000c1')).toBeVisible();
+    expect(within(catalog).getByText('Not set')).toBeVisible();
+    expect(
+      within(catalog).getByText('Changed from its own page once that page is built.'),
+    ).toBeVisible();
+    expect(within(catalog).queryByRole('button', { name: /Change/ })).toBeNull();
+
+    const policies = screen.getByRole('region', { name: 'Policies' });
+    expect(within(policies).getByText(/never a person’s name/)).toBeVisible();
+    expect(within(policies).getByText('influencer: GIFT_INFLUENCER')).toBeVisible();
+    // An empty map default reads as a word, never a blank line.
+    expect(within(policies).getByText('None')).toBeVisible();
+    expect(within(policies).queryByRole('button', { name: /Change/ })).toBeNull();
+  });
+
+  it('keeps the sales tax rate in the Brand section', async () => {
+    api.listSettings.mockResolvedValue({ entries: [taxRate] });
+    renderWithQuery(<SettingsView enabled />);
+    const brand = await screen.findByRole('region', { name: 'Brand' });
+    expect(within(brand).getByRole('button', { name: 'Change Sales tax rate (%)' })).toBeEnabled();
+  });
+
+  it('writes the customer risk signal as a sentence and edits it in three number inputs', async () => {
+    api.putSetting.mockResolvedValue({ entry: riskSignal, changed: true });
+    api.listSettings.mockResolvedValue({ entries: [riskSignal] });
+    renderWithQuery(<SettingsView enabled />);
+    expect(
+      await screen.findByText('Refused deliveries: 2. Returns: 3. Window in days: 180.'),
+    ).toBeVisible();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change Customer risk suggestion' }));
+    const dialog = screen.getByRole('dialog');
+    await userEvent.clear(within(dialog).getByLabelText('Within how many days'));
+    await userEvent.type(within(dialog).getByLabelText('Within how many days'), '٩٠');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(api.putSetting).toHaveBeenCalledWith('customer_risk_signal', {
+        value: { refusalsToSuggest: 2, returnsToSuggest: 3, windowDays: 90 },
+        expectedUpdatedAt: '2026-11-07T10:15:30.123456Z',
+      }),
+    );
+  });
+
+  it('refuses an empty risk signal box before sending, and shows the api range on its input', async () => {
+    api.listSettings.mockResolvedValue({ entries: [riskSignal] });
+    renderWithQuery(<SettingsView enabled />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Change Customer risk suggestion' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    await userEvent.clear(within(dialog).getByLabelText('Returns'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(
+      await within(dialog).findByText('Enter a whole number in each of the three boxes.'),
+    ).toBeVisible();
+    expect(api.putSetting).not.toHaveBeenCalled();
+
+    await userEvent.type(within(dialog).getByLabelText('Returns'), '2');
+    await userEvent.clear(within(dialog).getByLabelText('Within how many days'));
+    await userEvent.type(within(dialog).getByLabelText('Within how many days'), '5');
+    api.putSetting.mockRejectedValueOnce(
+      new ApiError(422, {
+        code: 'SETTING_INVALID',
+        issues: [{ path: 'windowDays', message: 'Too small' }],
+      }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await within(dialog).findByText('Enter whole days from 30 to 730.')).toBeVisible();
+    expect(within(dialog).getByLabelText('Within how many days')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+    expect(within(dialog).getByLabelText('Within how many days')).toHaveFocus();
+  });
+
+  it('shows the safety buffer warning about variants that go sold out on Shopify', async () => {
+    api.listSettings.mockResolvedValue({ entries: [buffer] });
+    renderWithQuery(<SettingsView enabled />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Change Shopify stock safety buffer' }),
+    );
+    expect(
+      within(screen.getByRole('dialog')).getByText(/show as sold out on Shopify/),
+    ).toBeVisible();
+  });
+
+  it('reads the Catalog section in Arabic', async () => {
+    api.listSettings.mockResolvedValue({ entries: [sourceStore] });
+    const i18n = createI18n({ language: 'ar', catalogs: { ar } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <I18nextProvider i18n={i18n}>
+          <SettingsView enabled />
+        </I18nextProvider>
+      </QueryClientProvider>,
+    );
+    const catalog = await screen.findByRole('region', { name: 'الكتالوج' });
+    expect(within(catalog).getByText('يُغيَّر من صفحته الخاصة عند بنائها.')).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: 'الأتمتة' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: 'أنواع مالكي المواقع' })).toBeVisible();
   });
 });

@@ -194,7 +194,7 @@ About 20 table rows fit a 1080p screen at 40px.
 
 - Every page renders in `AppShell`: the sidebar, a top bar (`<header>`), and the single `<main id="main-content">`.
 - The skip link is the first focusable element and jumps to `#main-content`.
-- Sidebar entries come from the typed registry in `apps/web/src/shell/nav.ts`, grouped by module. A group with no visible entries is not rendered. The current page gets `aria-current="page"` (exact match for `/`, prefix match for others).
+- Sidebar entries come from the typed registry in `apps/web/src/shell/nav.ts`, grouped by module. A group with no visible entries is not rendered. The current page gets `aria-current="page"` (exact match for `/`; for others the most specific entry whose path prefixes the current one, so `/settings/cost-rules` marks Cost rules, not Settings).
 - 768px and up: the sidebar collapses to an icon rail (Ctrl+B or Cmd+B, or the toggle), and the state persists in the `sidebar_state` cookie. Below 768px it is a sheet from the start edge, opened by the menu button and closed when you pick a page.
 - The top bar holds, in order: menu button (phones), sidebar toggle, client name, location switcher, command palette button, user menu.
 - The command palette (Ctrl+K or Cmd+K, from anywhere) lists the registry. Later features register more groups. Esc closes it and focus goes back where it was.

@@ -3,6 +3,7 @@ import { MODULE_REGISTRY } from '@ssdashboard/contracts';
 import { AuditModule } from '../audit/audit.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { ConfigController } from './config.controller.js';
+import { CostRulesController } from './cost-rules.controller.js';
 import { CostRulesService } from './cost-rules.service.js';
 import { DomainEvents } from './events/domain-events.js';
 import { LICENSE_KEY_SET, LICENSE_KEYS } from './license/license-keys.js';
@@ -16,6 +17,7 @@ import { MODULE_ROWS, ModuleRegistry, STEP_SETTING_ROWS } from './modules/module
 import { ModuleStateService } from './modules/module-state.service.js';
 import { ModulesController } from './modules/modules.controller.js';
 import { OffImpactReader } from './modules/off-impact.js';
+import { StepTurnOnCheck } from './modules/step-turn-on.js';
 import { NumberingService } from './numbering.service.js';
 import {
   DEFAULT_LISTENER_RETRY,
@@ -42,7 +44,13 @@ import { SettingsService } from './settings/settings.service.js';
  */
 @Module({
   imports: [AuditModule, StaffDirectoryModule],
-  controllers: [ConfigController, SettingsController, LicenseController, ModulesController],
+  controllers: [
+    ConfigController,
+    SettingsController,
+    LicenseController,
+    ModulesController,
+    CostRulesController,
+  ],
   providers: [
     { provide: MODULE_ROWS, useValue: MODULE_REGISTRY },
     { provide: STEP_SETTING_ROWS, useValue: [] },
@@ -50,6 +58,7 @@ import { SettingsService } from './settings/settings.service.js';
     CapabilityHooks,
     ModuleStateService,
     OffImpactReader,
+    StepTurnOnCheck,
     SettingsCache,
     { provide: LISTENER_RETRY, useValue: DEFAULT_LISTENER_RETRY },
     PlatformChangesListener,

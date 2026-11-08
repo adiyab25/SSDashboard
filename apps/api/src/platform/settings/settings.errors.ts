@@ -8,7 +8,8 @@ export type SettingErrorKind =
   | 'StaleSetting'
   | 'SettingUnreadable'
   | 'ModuleRequiredBy'
-  | 'ModuleRequires';
+  | 'ModuleRequires'
+  | 'StepPrecondition';
 
 /** One way a value failed its entry's schema: the path inside the value and Zod's message. */
 export interface SettingIssue {
@@ -24,13 +25,15 @@ export class SettingError extends Error {
   /**
    * Takes the stable code, a message safe to log and show, the schema issues if any, and the
    * module keys the rule names: for `ModuleRequiredBy` the `on` modules that require the one being
-   * turned off, for `ModuleRequires` the required modules that are not `on`.
+   * turned off, for `ModuleRequires` the required modules that are not `on`; and for
+   * `StepPrecondition` the code of the step precondition that failed (spec 0009, AC-21).
    */
   constructor(
     readonly kind: SettingErrorKind,
     message: string,
     readonly issues: readonly SettingIssue[] = [],
     readonly modules: readonly string[] = [],
+    readonly precondition?: string,
   ) {
     super(message);
     this.name = kind;

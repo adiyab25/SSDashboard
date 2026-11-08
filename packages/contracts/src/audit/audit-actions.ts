@@ -228,6 +228,40 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.licenseAdded',
     proof: 'apps/api/test/license.e2e-spec.ts',
   },
+  // Spec 0009, AC-24: a holder of `settings.manage` edits a location owner type policy row through
+  // `LocationPolicyService.updatePolicy`. The record id is the owner type's stable uuid
+  // (`ownerPolicyRecordId`), the label the owner type code, the diff the row before and after.
+  'policy.changed': {
+    module: 'inventory',
+    recordType: 'policy',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.policyChanged',
+    proof: 'apps/api/test/owner-policies.e2e-spec.ts',
+  },
+  // Spec 0009, AC-23: a per order cost rule recorded through `CostRulesService.record` (a new
+  // append only `order_cost_rules` row; the record id is its id, the label its kind). A rule from a
+  // day on or before the inventory lock date is recorded only with the explicit override and its
+  // own code (D14), so nobody moves the lock date for a narrow cost fix.
+  'cost_rule.recorded': {
+    module: 'platform',
+    recordType: 'order_cost_rule',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.costRuleRecorded',
+    proof: 'apps/api/test/cost-rules.e2e-spec.ts',
+  },
+  'cost_rule.recorded_in_locked_period': {
+    module: 'platform',
+    recordType: 'order_cost_rule',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.costRuleRecordedInLockedPeriod',
+    proof: 'apps/api/test/cost-rules.e2e-spec.ts',
+  },
   // Spec 0013 (orders): the record id is `orders.id` and the label `<store code>/<order number>`
   // (`ESS/#1001`). Ship to values are masked by the writer and listed in `personal_fields`. State
   // moves are not audited: `order_events` is their history.

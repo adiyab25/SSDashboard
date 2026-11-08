@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { TaxRateString } from '../money.js';
 import { defineSetting } from './setting-definition.js';
 
+/** The shape of an IANA time zone name: letters, digits, `_+-`, and `/` between parts. */
+const TIME_ZONE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_+-]{0,63}(?:\/[A-Za-z0-9_+-]{1,64}){0,3}$/;
+
 /** A language code: two or three lowercase letters. */
 const LanguageCode = z.string().regex(/^[a-z]{2,3}$/);
 
@@ -84,7 +87,12 @@ export const BRAND_SETTINGS = [
   }),
   defineSetting({
     key: 'timezone',
-    schema: z.string().refine(isValidTimeZone, 'Not a time zone name'),
+    // The shape of an IANA zone name first (`Africa/Cairo`, `Etc/GMT+3`, `UTC`), so the free text
+    // rule of the registry holds, then the real list.
+    schema: z
+      .string()
+      .regex(TIME_ZONE_NAME_PATTERN, 'Not a time zone name')
+      .refine(isValidTimeZone, 'Not a time zone name'),
     default: 'Africa/Cairo',
     bundle: 'core',
     group: 'brand',

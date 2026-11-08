@@ -78,6 +78,20 @@
       "when": 1794102934118,
       "tag": "0010_orders_goodwill_relation",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794138200207,
+      "tag": "0011_owner_policy_editing",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794138202431,
+      "tag": "0012_owner_policy_grant",
+      "breakpoints": true
     }
   ]
 }

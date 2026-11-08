@@ -36,7 +36,13 @@ const STATUSES: readonly LocationStatus[] = ['active', 'archived'];
 type Action = 'archive' | 'unarchive' | 'delete';
 
 /** Api error codes with a message of their own. */
-const KNOWN = ['STOCK_ON_HAND', 'IN_USE', 'BUSY'] as const;
+const KNOWN = [
+  'STOCK_ON_HAND',
+  'IN_USE',
+  'BUSY',
+  // Unarchive after the type's policy changed (spec 0009, AC-24): a new location instead.
+  'OWNER_POLICY_CHANGED_SINCE_ARCHIVE',
+] as const;
 /** An api error code the page has its own message for. */
 type KnownCode = (typeof KNOWN)[number];
 

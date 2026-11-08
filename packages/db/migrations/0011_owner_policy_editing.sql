@@ -1,0 +1,5 @@
+ALTER TABLE "location_owner_policies" ADD COLUMN "locked_terms_changed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "location_owner_policies" ADD CONSTRAINT "location_owner_policies_handover_is_sale" CHECK ("location_owner_policies"."handover_is_sale" = NOT "location_owner_policies"."stock_owned_by_brand");--> statement-breakpoint
+ALTER TABLE "location_owner_policies" ADD CONSTRAINT "location_owner_policies_sale_at_handover" CHECK (("location_owner_policies"."sale_recorded_at" = 'at_handover') = "location_owner_policies"."handover_is_sale");--> statement-breakpoint
+ALTER TABLE "location_owner_policies" ADD CONSTRAINT "location_owner_policies_consignment_settles_with_partner" CHECK ("location_owner_policies"."owner_type" <> 'consignment_partner' OR "location_owner_policies"."settlement_owner_type" IS NOT NULL);--> statement-breakpoint
+ALTER TABLE "location_owner_policies" ADD CONSTRAINT "location_owner_policies_online_needs_brand_stock" CHECK (NOT "location_owner_policies"."can_sell_online" OR ("location_owner_policies"."stock_owned_by_brand" AND "location_owner_policies"."settlement_owner_type" IS NULL));

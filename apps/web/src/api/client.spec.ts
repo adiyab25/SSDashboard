@@ -73,4 +73,23 @@ describe('apiRequest error bodies', () => {
     refuse({ code: 'LICENSE_TOO_LARGE' });
     expect((await failure()).body.outcome).toBeUndefined();
   });
+
+  it('keeps the precondition, locked months, broken rules, and touched fields of a refusal', async () => {
+    refuse({ code: 'STEP_PRECONDITION', precondition: 'NO_STOCK_OUT_SOURCE' });
+    expect((await failure()).body.precondition).toBe('NO_STOCK_OUT_SOURCE');
+    refuse({ code: 'COST_RULE_IN_LOCKED_PERIOD', months: ['2026-09', '2026-10'] });
+    expect((await failure()).body.months).toEqual(['2026-09', '2026-10']);
+    refuse({ code: 'OWNER_POLICY_INCONSISTENT', rules: ['online_needs_brand_stock'] });
+    expect((await failure()).body.rules).toEqual(['online_needs_brand_stock']);
+    refuse({ code: 'OWNER_POLICY_IN_USE', fields: ['taxDocument'] });
+    expect((await failure()).body.fields).toEqual(['taxDocument']);
+  });
+
+  it('drops a precondition, months, rules, or fields that are not in their shape', async () => {
+    refuse({ code: 'STEP_PRECONDITION', precondition: 'not a code', months: ['Sept'], rules: [1] });
+    const body = (await failure()).body;
+    expect(body.precondition).toBeUndefined();
+    expect(body.months).toBeUndefined();
+    expect(body.rules).toBeUndefined();
+  });
 });

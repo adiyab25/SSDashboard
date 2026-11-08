@@ -117,6 +117,26 @@ export const AUDIT_RECORD_TYPES = {
     labelPattern: LICENSE_ID_PATTERN,
     labelIsOwnCode: true,
   },
+  policy: {
+    // A location owner type policy row (spec 0009, AC-24): the record id is the owner type's
+    // stable uuid, the label the owner type code itself, the diff the policy
+    // attributes before and after, and the reason the manager's free text. No personal data.
+    label: 'audit.recordTypes.policy',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: AUDIT_RECORD_LABEL_PATTERN,
+    labelIsOwnCode: false,
+  },
+  order_cost_rule: {
+    // A per order cost rule (spec 0009, AC-23): the record id is `order_cost_rules.id`, the label
+    // its kind (`cod_fee_percent`), the diff the rule in force before and the new rule, and the
+    // reason the manager's free text. No personal data.
+    label: 'audit.recordTypes.orderCostRule',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: AUDIT_RECORD_LABEL_PATTERN,
+    labelIsOwnCode: false,
+  },
   audit_entry: {
     // An export of the trail (spec 0010, AC-15): the record id is the export's own id, the filter
     // is in `after`, and there is no label.

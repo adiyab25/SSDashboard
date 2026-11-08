@@ -111,6 +111,19 @@ export async function waitForPageHydration(page: Page) {
   });
 }
 
+/**
+ * Waits until React has taken over one element of the page, found by a CSS selector (for a read
+ * only page with no control of its own, such as the cost rules for a reader, where
+ * `waitForPageHydration` would wait for a button that never comes). React tags every element it
+ * renders with its props, so the tag on a server or first rendered element marks hydration.
+ */
+export async function waitForElementHydration(page: Page, selector: string) {
+  await page.waitForFunction((css) => {
+    const element = document.querySelector(css);
+    return element !== null && Object.keys(element).some((key) => key.startsWith('__reactProps'));
+  }, selector);
+}
+
 /** WCAG 2.2 AA through axe; contrast and target size need a real browser, so they run here. */
 export async function expectNoAxeViolations(page: Page) {
   // Axe measures contrast on what is painted, so let a toast or dialog finish fading in first

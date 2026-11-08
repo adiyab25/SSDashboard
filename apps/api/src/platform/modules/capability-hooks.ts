@@ -1,10 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  BackfillGap,
-  OffImpactCommands,
-  OffImpactInFlight,
-  OffImpactPartnerStock,
-  StopReason,
+import {
+  capabilityOfStep,
+  NO_STOCK_OUT_SOURCE,
+  StepPreconditionCode,
+  type BackfillGap,
+  type OffImpactCommands,
+  type OffImpactInFlight,
+  type OffImpactPartnerStock,
+  type StepFact,
+  type StopReason,
 } from '@ssdashboard/contracts';
 import { ModuleRegistry } from './module-registry.js';
 
@@ -105,6 +109,32 @@ export interface ManagerTaskPort {
   open: (request: PlatformTaskRequest) => Promise<void>;
 }
 
+/**
+ * What one step precondition answers (spec 0009, AC-21): passed, with the facts the turn on dialog
+ * shows (a label key and whole numbers, such as spec 0015's confirmed first push counts), or failed.
+ */
+export type StepPreconditionAnswer =
+  | { readonly ok: true; readonly facts?: readonly StepFact[] }
+  | {
+      readonly ok: false;
+    };
+
+/**
+ * One feature precondition of an executing step (spec 0009, AC-21): its stable code (upper snake
+ * case, answered as 409 `STEP_PRECONDITION` with `precondition: code` when it fails) and the check,
+ * which reads its own module's tables, never calls `ModuleStateService` (the turn on check calls
+ * it while it reads the states), and never puts provider text or personal data in a fact. The
+ * check runs once, at the switch on, outside the feature's own writes: the platform serializes it
+ * only with module toggles (`MODULE_TOGGLES_LOCK`, shared). So a feature precondition must either
+ * be checked again by the step's executor at run time, or take a lock its own writers take (the
+ * write that could break it, such as turning a connection's fulfillment stock out off), so a
+ * concurrent change cannot leave a step on whose precondition no longer holds.
+ */
+export interface StepPrecondition {
+  readonly code: string;
+  readonly check: () => Promise<StepPreconditionAnswer>;
+}
+
 /** Raised at start when a hook names an unknown capability or registers twice. */
 export class CapabilityHookConflict extends Error {
   /** Takes the plain words of what clashed. */
@@ -115,15 +145,16 @@ export class CapabilityHookConflict extends Error {
 }
 
 /**
- * Where capabilities register their hooks, where the connectors module registers the command
- * port, and where the tasks module registers the manager task port (spec 0009, AC-6, AC-10,
- * AC-18, AC-29, AC-30), each from its own `onModuleInit`, in the api and in the
- * worker alike. The supervisor, the module state service, and the off impact read them. It never
+ * Where capabilities register their hooks, where features register their executing steps'
+ * preconditions (AC-21), where the connectors module registers the command port, and where the
+ * tasks module registers the manager task port (spec 0009, AC-6, AC-10, AC-18, AC-21, AC-29,
+ * AC-30), each from its own `onModuleInit`, in the api and in the worker alike. The supervisor, the module state service, and the off impact read them. It never
  * calls a hook on its own and never logs what a hook returns.
  */
 @Injectable()
 export class CapabilityHooks {
   private readonly hooks = new Map<string, CapabilityHookSet>();
+  private readonly preconditions = new Map<string, readonly StepPrecondition[]>();
   private commands: OutboundCommandPort | undefined;
   private tasks: ManagerTaskPort | undefined;
 
@@ -139,6 +170,36 @@ export class CapabilityHooks {
       throw new CapabilityHookConflict(`Hooks for ${capability} are registered twice`);
     }
     this.hooks.set(capability, hooks);
+  }
+
+  /**
+   * Registers an executing step's feature preconditions, in the order the turn on checks them
+   * (spec 0009, AC-21), from the owning feature's `onModuleInit`. Throws `CapabilityHookConflict`
+   * for a step no capability of the registry lists, a second registration, a malformed or repeated
+   * code, or the platform's own `NO_STOCK_OUT_SOURCE`, which the turn on check runs first itself.
+   */
+  registerPreconditions(step: string, preconditions: readonly StepPrecondition[]): void {
+    if (!capabilityOfStep(this.registry.modules(), step)) {
+      throw new CapabilityHookConflict(`Preconditions for ${step}, which no capability lists`);
+    }
+    if (this.preconditions.has(step)) {
+      throw new CapabilityHookConflict(`Preconditions for ${step} are registered twice`);
+    }
+    const codes = preconditions.map((precondition) => precondition.code);
+    for (const code of codes) {
+      if (!StepPreconditionCode.safeParse(code).success || code === NO_STOCK_OUT_SOURCE) {
+        throw new CapabilityHookConflict(`Precondition code ${code} of ${step} is not allowed`);
+      }
+    }
+    if (new Set(codes).size !== codes.length) {
+      throw new CapabilityHookConflict(`Precondition codes of ${step} repeat`);
+    }
+    this.preconditions.set(step, Object.freeze([...preconditions]));
+  }
+
+  /** The feature preconditions of a step, in their declared order; none when nothing registered. */
+  preconditionsOf(step: string): readonly StepPrecondition[] {
+    return this.preconditions.get(step) ?? [];
   }
 
   /** Registers the outbound command port. Throws `CapabilityHookConflict` for a second one. */

@@ -37,6 +37,7 @@ import {
   useLocationSwitcher,
 } from '@/shell/current-location-provider';
 import { useLanguage } from '@/i18n/language-provider';
+import { StockOutSourceNotice } from '@/shell/stock-out-source-notice';
 import { inventoryKeys, listStock } from './inventory-api';
 import { NewLocationDialog } from './new-location-dialog';
 import { SkuPicker, type PickedSku } from './sku-picker';
@@ -182,6 +183,8 @@ export function StockView({ enabled }: { enabled: boolean }) {
           )}
         </div>
       </div>
+
+      {enabled && <StockOutSourceNotice />}
 
       <p className="text-sm text-muted-foreground">
         {t('inventory.stock.scope', { location: scope })}

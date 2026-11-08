@@ -319,6 +319,39 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => '/settings/module.fixtureops.enabled/off-impact',
     },
     'GET /platform/license': { needs: ['settings.manage'] },
+    // Spec 0009 milestone 5: the cost rules (read with cost.view; add with settings.manage and
+    // cost.view, both required). The add has no value for a set rule, so a person allowed gets 422
+    // SETTING_INVALID and no rule is ever recorded.
+    'GET /platform/cost-rules': { needs: ['cost.view'] },
+    'POST /platform/cost-rules': {
+      needs: ['settings.manage', 'cost.view'],
+      body: () => ({
+        kind: 'cod_fee_percent',
+        status: 'set',
+        effectiveFrom: '2026-01-01',
+        reason: 'sweep',
+      }),
+    },
+    // The owner type policies, settings.manage. The edit's reason is blank (the body schema
+    // requires one), so a manager gets 422 REASON_REQUIRED from the service before any row is read,
+    // and no policy ever changes.
+    'GET /inventory/owner-policies': { needs: ['settings.manage'] },
+    'PUT /inventory/owner-policies/:ownerType': {
+      needs: ['settings.manage'],
+      path: () => '/inventory/owner-policies/own',
+      body: () => ({
+        stockOwnedByBrand: true,
+        handoverIsSale: false,
+        saleRecordedAt: 'at_shipment',
+        endCustomerRefundBy: 'brand',
+        defectivePieceRefundBy: 'brand',
+        taxDocument: 'b2c_electronic_receipt',
+        settlementOwnerType: null,
+        canSellOnline: true,
+        reason: '  ',
+        expectedUpdatedAt: STALE,
+      }),
+    },
     'POST /platform/license': {
       needs: ['settings.manage'],
       body: () => ({ envelope: 'not a license' }),

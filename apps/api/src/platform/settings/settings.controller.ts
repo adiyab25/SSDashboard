@@ -6,6 +6,8 @@ import {
   type SettingBundle,
   type SettingDefinition,
   type SettingsListResponse,
+  type SettingStepView,
+  capabilityOfStep,
 } from '@ssdashboard/contracts';
 import { type DatabaseConnection } from '@ssdashboard/db';
 import { auditHttpError } from '../../audit/audit-http.js';
@@ -20,6 +22,8 @@ import { ModuleRegistry } from '../modules/module-registry.js';
 import { OffImpactReader } from '../modules/off-impact.js';
 import { moduleHttpError } from '../modules/module.errors.js';
 import { RequiresModule } from '../modules/requires-module.decorator.js';
+import { StepTurnOnCheck } from '../modules/step-turn-on.js';
+import { SettingError } from './settings.errors.js';
 import { PutSettingBodyPipe } from './put-setting-body.pipe.js';
 import { settingView, type SettingViewContext } from './setting-view.js';
 import type { StoredSetting } from './settings-cache.js';
@@ -40,7 +44,7 @@ export class SettingsController {
   /**
    * Takes the settings service, the database (fresh reads), the staff directory (names), the
    * license service (which bundles are licensed now), the module registry (the entries, module
-   * toggles included), and the off impact reader.
+   * toggles included), the off impact reader, and the step turn on check.
    */
   constructor(
     @Inject(SettingsService) private readonly settings: SettingsService,
@@ -49,6 +53,7 @@ export class SettingsController {
     @Inject(LicenseService) private readonly license: LicenseService,
     @Inject(ModuleRegistry) private readonly registry: ModuleRegistry,
     @Inject(OffImpactReader) private readonly offImpacts: OffImpactReader,
+    @Inject(StepTurnOnCheck) private readonly turnOn: StepTurnOnCheck,
   ) {}
 
   /**
@@ -87,11 +92,12 @@ export class SettingsController {
   }
 
   /**
-   * Changes one setting (AC-3), a module toggle included (AC-12): 404 `SETTING_UNKNOWN`, 422
-   * `SETTING_INVALID`, 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, 409 `STALE_SETTING`, 409
-   * `SETTING_LOCKED`, 409 `NOT_LICENSED` (the entry's bundle is not licensed now, security
-   * finding S6), 409 `MODULE_REQUIRED_BY` with `dependants`, 409 `MODULE_REQUIRES` with
-   * `requires`.
+   * Changes one setting (AC-3), a module toggle (AC-12) or an executing step (AC-21) included: 404
+   * `SETTING_UNKNOWN`, 422 `SETTING_INVALID`, 422 `REASON_REQUIRED`, 422 `REASON_TOO_LONG`, 409
+   * `STALE_SETTING`, 409 `SETTING_LOCKED`, 409 `NOT_LICENSED` (the entry's bundle is not licensed
+   * now, security finding S6), 409 `MODULE_REQUIRED_BY` with `dependants`, 409 `MODULE_REQUIRES`
+   * with `requires`, 409 `STEP_PRECONDITION` with `precondition` (a step switched on while a
+   * precondition fails, in the spec's order after `NOT_LICENSED`).
    */
   @Put(':key')
   async write(
@@ -109,6 +115,18 @@ export class SettingsController {
         expectedUpdatedAt: body.expectedUpdatedAt,
         actor: { userId: access.userId, hat: access.actingHat('settings.manage') },
         licensed,
+        beforeTurningStepOn: async () => {
+          const answer = await this.turnOn.check(key, { fresh: true });
+          if (!answer.ready) {
+            throw new SettingError(
+              'StepPrecondition',
+              'A precondition of this step is not met',
+              [],
+              [],
+              answer.precondition,
+            );
+          }
+        },
       });
       return {
         entry: settingView(
@@ -134,6 +152,23 @@ export class SettingsController {
       licensedBundles: licensed ?? (await this.license.licensedBundles()),
       mayChange: (definition) =>
         definition.whoMayChange === 'settings.manage' && access.has('settings.manage'),
+      steps: await this.steps(stored),
     };
+  }
+
+  /** The step facts of the executing step entries among `stored` (AC-21, AC-25). */
+  private async steps(stored: readonly StoredSetting[]): Promise<Map<string, SettingStepView>> {
+    const views = new Map<string, SettingStepView>();
+    for (const setting of stored) {
+      const definition = this.registry.settingDefinition(setting.key);
+      const gate = capabilityOfStep(this.registry.modules(), setting.key);
+      if (definition?.kind !== 'executing_step' || !gate) continue;
+      views.set(setting.key, {
+        capability: gate.capability.key,
+        notifiesCustomer: definition.notifiesCustomer === true,
+        turnOn: await this.turnOn.check(setting.key),
+      });
+    }
+    return views;
   }
 }

@@ -137,6 +137,22 @@ describe('LocationsPage (AC-4)', () => {
     );
   });
 
+  it('says to open a new location when unarchive is refused after the type changed (spec 0009, AC-24)', async () => {
+    api.listLocations.mockResolvedValue(page([location(9, { archived: true })]));
+    api.setLocationArchived.mockRejectedValue(
+      new ApiError(409, { code: 'OWNER_POLICY_CHANGED_SINCE_ARCHIVE' }),
+    );
+    renderWithQuery(<LocationsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Archived' }));
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Unarchive LOC9' }));
+    const confirm = await screen.findByRole('dialog');
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Unarchive' }));
+    expect(await within(confirm).findByRole('alert')).toHaveTextContent(
+      'Open a new location instead.',
+    );
+  });
+
   it('shows the in use message when delete is refused, and deletes otherwise', async () => {
     api.listLocations.mockResolvedValue(page([location(1)]));
     api.deleteLocation.mockRejectedValueOnce(new ApiError(409, { code: 'IN_USE' }));

@@ -60,13 +60,23 @@ export interface SettingWrite {
    * finding S6). Always includes `core`.
    */
   licensed: ReadonlySet<SettingBundle>;
+  /**
+   * Called inside the write's transaction when it would switch an executing step on (the value
+   * changes to `true`), after the no change check and before anything is written: the caller's
+   * turn on check (`StepTurnOnCheck`, spec 0009 AC-21), which throws `SettingError` with
+   * `StepPrecondition` to refuse. The settings service cannot ask the module states itself (they
+   * read settings), so the controller hands the check in. Required to switch a step on: without
+   * it the write throws (fail closed).
+   */
+  beforeTurningStepOn?: () => Promise<void>;
 }
 
 /**
  * The advisory lock every module toggle write takes before it reads any switch (spec 0009, AC-12):
  * the `MODULE_REQUIRED_BY` check of a turn off and the `MODULE_REQUIRES` check of a turn on read
  * the other modules' switches under it, so turning a module off and turning on one that requires
- * it can never both pass alone.
+ * it can never both pass alone. An executing step write takes it shared (AC-21), so a step's turn
+ * on check and a toggle that removes its capability or stock out source serialize.
  */
 export const MODULE_TOGGLES_LOCK = 'ssd.settings.modules';
 
@@ -127,14 +137,25 @@ export class SettingsService {
    * Reads the given settings, inside the caller's transaction when one is passed. A key whose
    * entry says `onInvalid: 'refuse'` (the inventory lock date) and whose stored row fails its
    * schema throws `SettingError('SettingUnreadable')` instead of reading the default, so the work
-   * that relies on it stops (fail closed, security review S1).
+   * that relies on it stops (fail closed, security review S1). `forShare` (a transaction only)
+   * reads the rows `FOR SHARE`, so a concurrent `write` of them (which locks the row `FOR UPDATE`)
+   * waits for the caller's commit, and the caller's rule holds against the value it read (the cost
+   * rule lock date check, spec 0009 AC-23).
    */
   async read<K extends SettingKey>(
     keys: readonly K[],
     executor?: Executor,
+    options: { forShare?: boolean } = {},
   ): Promise<Pick<SettingValues, K>> {
     const result: Record<string, unknown> = {};
-    for (const setting of await this.load(keys, executor)) {
+    if (options.forShare && !executor) {
+      throw new Error('A FOR SHARE settings read needs the transaction');
+    }
+    const loaded =
+      options.forShare && executor
+        ? await this.fetch(keys, executor, true)
+        : await this.load(keys, executor);
+    for (const setting of loaded) {
       const definition = this.registry.settingDefinition(setting.key);
       if (setting.invalid && definition?.onInvalid === 'refuse') {
         throw new SettingError(
@@ -147,9 +168,16 @@ export class SettingsService {
     return result as Pick<SettingValues, K>;
   }
 
-  /** Reads one setting, inside the caller's transaction when one is passed; refuses like `read`. */
-  async get<K extends SettingKey>(key: K, executor?: Executor): Promise<SettingValues[K]> {
-    const values: Pick<SettingValues, K> = await this.read([key], executor);
+  /**
+   * Reads one setting, inside the caller's transaction when one is passed (`FOR SHARE` with
+   * `forShare`); refuses like `read`.
+   */
+  async get<K extends SettingKey>(
+    key: K,
+    executor?: Executor,
+    options: { forShare?: boolean } = {},
+  ): Promise<SettingValues[K]> {
+    const values: Pick<SettingValues, K> = await this.read([key], executor, options);
     return values[key];
   }
 
@@ -197,7 +225,8 @@ export class SettingsService {
    * value is known to change, turning a module off that another `on` module requires throws
    * `ModuleRequiredBy` with the dependants, turning one on while a module it requires is not `on`
    * throws `ModuleRequires` with those modules, and turning one back on hands the reconcile job the
-   * gap it was off for (its backfill, AC-11).
+   * gap it was off for (its backfill, AC-11). Switching an executing step on runs
+   * `change.beforeTurningStepOn` at the same point (its preconditions, AC-21).
    */
   async write(change: SettingWrite): Promise<SettingWriteResult> {
     const definition = this.registry.settingDefinition(change.key);
@@ -255,6 +284,12 @@ export class SettingsService {
       }
       if (toggled) {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${MODULE_TOGGLES_LOCK}))`);
+      } else if (definition.kind === 'executing_step') {
+        // Shared: a step write and a module toggle that would stop its capability (or its stock
+        // out source) never pass alone; step writes do not wait on each other.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock_shared(hashtext(${MODULE_TOGGLES_LOCK}))`,
+        );
       }
       const { rows } = await tx.execute<SettingRow & { matches: boolean }>(sql`
         SELECT key, value, ${UPDATED_AT_TEXT} AS updated_at, updated_by,
@@ -275,6 +310,13 @@ export class SettingsService {
         return { setting: this.decode(definition, row), changed: false };
       }
       if (toggled) await this.checkToggle(toggled, next === true, change.licensed, tx);
+      if (definition.kind === 'executing_step' && next === true) {
+        // Fail closed: switching a step on without its turn on check is a bug, never a pass.
+        if (!change.beforeTurningStepOn) {
+          throw new Error('An executing step was switched on without its turn on check');
+        }
+        await change.beforeTurningStepOn();
+      }
 
       const json = JSON.stringify(next);
       const written = row
@@ -377,7 +419,11 @@ export class SettingsService {
     }
   }
 
-  private async fetch(keys: readonly string[], executor: Executor): Promise<StoredSetting[]> {
+  private async fetch(
+    keys: readonly string[],
+    executor: Executor,
+    forShare = false,
+  ): Promise<StoredSetting[]> {
     const definitions = keys.map((key) => {
       const definition = this.registry.settingDefinition(key);
       if (!definition) throw new SettingError('SettingUnknown', 'No such setting');
@@ -386,7 +432,7 @@ export class SettingsService {
     if (keys.length === 0) return [];
     const { rows } = await executor.execute<SettingRow>(sql`
       SELECT key, value, ${UPDATED_AT_TEXT} AS updated_at, updated_by
-      FROM settings WHERE key = ANY(${pgArray(keys)}::text[])`);
+      FROM settings WHERE key = ANY(${pgArray(keys)}::text[])${forShare ? sql` FOR SHARE` : sql``}`);
     const byKey = new Map(rows.map((row) => [row.key, row]));
     return definitions.map((definition) => this.decode(definition, byKey.get(definition.key)));
   }
