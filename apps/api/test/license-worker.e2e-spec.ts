@@ -45,10 +45,14 @@ describe('the worker license check (spec 0009 milestone 2)', { timeout: 120_000 
       { trigger: 'worker_start', outcome: 'none_configured' },
     ]);
     const schedules = await api.owner.pool.query(
-      `SELECT cron, timezone FROM pgboss.schedule WHERE name = $1`,
+      `SELECT key, cron, timezone FROM pgboss.schedule WHERE name = $1 ORDER BY key`,
       [LICENSE_CHECK_QUEUE],
     );
-    expect(schedules.rows).toEqual([{ cron: '5 1 * * *', timezone: 'Asia/Dubai' }]);
+    // The daily check and the phase watch (spec 0009 milestone 4, AC-18).
+    expect(schedules.rows).toEqual([
+      { key: 'daily', cron: '5 1 * * *', timezone: 'Asia/Dubai' },
+      { key: 'phase-watch', cron: '*/5 * * * *', timezone: 'Asia/Dubai' },
+    ]);
   });
 
   it('records a daily check when the job runs', async () => {
@@ -69,7 +73,8 @@ describe('the worker license check (spec 0009 milestone 2)', { timeout: 120_000 
     for (let tries = 0; tries < 150 && job?.state !== 'completed'; tries += 1) {
       await pause(200);
       const { rows } = await api.owner.pool.query<{ state: string; output: unknown }>(
-        `SELECT state::text AS state, output FROM pgboss.job WHERE name = $1`,
+        `SELECT state::text AS state, output FROM pgboss.job
+         WHERE name = $1 AND coalesce(data->>'kind', '') <> 'phase_watch'`,
         [LICENSE_CHECK_QUEUE],
       );
       job = rows[0];

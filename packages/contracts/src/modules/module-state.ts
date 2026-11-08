@@ -172,7 +172,9 @@ export function openItemCuts(
  * 5. a module m `requires` is not `on`: `read_only` (`requires_off`), judged from m's
  *    `requires` itself, so it holds for a core capability of a lapsed module too;
  * 6. c has `requiresOneOf` and none of those is `on` (an empty list never is): `read_only`
- *    (`no_stock_out_source`);
+ *    (`no_stock_out_source`), `since` the latest instant a source stopped (its own `since`, or
+ *    its `before` while it only finishes old work), null when no source ever ran (an empty list,
+ *    or sources never licensed): the episode a `stock_out_source_missing` task is keyed on;
  * 7. else `on`, since the later of m's turn on and b's renewal.
  * A step s of capability c: c `off` or `read_only` gives the same; c `limited` gives `read_only`
  * with c's reason (a step never finishes old work); s switched off gives `off` (`step_off`); else
@@ -256,10 +258,17 @@ export function moduleStates(
       return { state: 'read_only', reason: 'requires_off', since: null };
     }
     if (capability.requiresOneOf !== undefined) {
-      const sourced = capability.requiresOneOf.some((source) => {
-        return capabilityState(source).state === 'on';
-      });
-      if (!sourced) return { state: 'read_only', reason: 'no_stock_out_source', since: null };
+      const sources = capability.requiresOneOf.map((source) => capabilityState(source));
+      if (!sources.some((source) => source.state === 'on')) {
+        let stoppedAt: string | null = null;
+        for (const source of sources) {
+          stoppedAt = latest(stoppedAt, source.state === 'limited' ? source.before : null);
+          if (source.state === 'read_only' || source.state === 'off') {
+            stoppedAt = latest(stoppedAt, source.since);
+          }
+        }
+        return { state: 'read_only', reason: 'no_stock_out_source', since: stoppedAt };
+      }
     }
     return {
       state: 'on',

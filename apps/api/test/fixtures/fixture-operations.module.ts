@@ -165,6 +165,12 @@ export const fixtureStore = {
   backfills: [] as { capability: string; from: string; to: string }[],
   handled: [] as { queue: string; capability: string; id: string }[],
   openFinish: 0,
+  /**
+   * The open items of the business date capability (`fixtureops.sales_days`): a stand in for
+   * feature 42's count of unreported or unconfirmed sales days before the cut. Setting it to 0
+   * stands in for those days being reported, or marked settled outside the app.
+   */
+  openSalesDays: 0,
   inFlight: [] as OffImpactInFlight[],
   partnerStock: [] as OffImpactPartnerStock[],
   /** Empties every list and count. */
@@ -174,6 +180,7 @@ export const fixtureStore = {
     this.backfills = [];
     this.handled = [];
     this.openFinish = 0;
+    this.openSalesDays = 0;
     this.inFlight = [];
     this.partnerStock = [];
   },
@@ -208,7 +215,7 @@ export class FixtureHooks implements OnModuleInit {
       openItems: () => Promise.resolve(fixtureStore.openFinish),
     });
     this.hooks.register('fixtureops.sales_days', {
-      openItems: () => Promise.resolve(fixtureStore.openFinish),
+      openItems: () => Promise.resolve(fixtureStore.openSalesDays),
     });
     this.hooks.registerCommands({
       failWaitingCommands: (capability, reason) => {

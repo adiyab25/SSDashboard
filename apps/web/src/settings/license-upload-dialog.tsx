@@ -21,12 +21,13 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
-import { useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/client';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { licenseKeys, uploadLicense } from './license-api';
+import { LicenseResumingSteps } from './license-resuming-steps';
 import { settingsKeys } from './settings-api';
 
 /** The sentence of each refusal outcome a license upload can come back with. */
@@ -60,8 +61,10 @@ interface LicenseUploadDialogProps {
  * The dialog that uploads a license file (spec 0009, AC-20): a file input for the `.json` file,
  * read as text in the browser and refused above 16 KB before anything is sent, and the answer
  * in words: recorded, nothing changed (a license that adds nothing new), or the sentence of the
- * refusal outcome. It never judges a license: the api verifies it. There is no reason field, the
- * contract takes the file only.
+ * refusal outcome. After a renewal out of the wind down or off (`resumingSteps` not empty, AC-19)
+ * it stays open on an answer view that names the steps that resume and that they act only on new
+ * events, as the dialog's accessible description, until the person says Done. It never judges a
+ * license: the api verifies it. There is no reason field, the contract takes the file only.
  */
 export function LicenseUploadDialog({ onClose }: LicenseUploadDialogProps) {
   const { t } = useTranslation();
@@ -76,6 +79,9 @@ export function LicenseUploadDialog({ onClose }: LicenseUploadDialogProps) {
   // True from the click until the file is read and the request starts: a second click waits.
   const [reading, setReading] = useState(false);
   const readingNow = useRef(false);
+  const doneRef = useRef<HTMLButtonElement>(null);
+  // The steps that resume after this upload; while set, the dialog shows the answer, not the form.
+  const [resuming, setResuming] = useState<readonly string[] | null>(null);
 
   /** Shows a sentence on the file field and puts focus there. */
   function refuseFile(key: MessageKey) {
@@ -83,6 +89,11 @@ export function LicenseUploadDialog({ onClose }: LicenseUploadDialogProps) {
     setFailure(null);
     inputRef.current?.focus();
   }
+
+  // The form is gone when the answer shows, so focus goes to its only button.
+  useEffect(() => {
+    if (resuming !== null) doneRef.current?.focus();
+  }, [resuming]);
 
   const mutation = useMutation({
     mutationFn: (envelope: string) => uploadLicense(envelope),
@@ -95,7 +106,9 @@ export function LicenseUploadDialog({ onClose }: LicenseUploadDialogProps) {
           ? t('settings.license.upload.recorded')
           : t('settings.license.upload.unchanged'),
       );
-      onClose();
+      // A manager must read which steps resume, so the dialog stays until they say done.
+      if (answer.resumingSteps.length > 0) setResuming(answer.resumingSteps);
+      else onClose();
     },
     onError: (error) => {
       const code = error instanceof ApiError ? error.code : 'generic';
@@ -157,68 +170,86 @@ export function LicenseUploadDialog({ onClose }: LicenseUploadDialogProps) {
         onCloseAutoFocus={returnFocus}
         className="sm:max-w-lg"
       >
-        <form noValidate className="grid gap-6" onSubmit={(event) => void submit(event)}>
-          <DialogHeader>
-            <DialogTitle>{t('settings.license.upload.title')}</DialogTitle>
-            <DialogDescription>{t('settings.license.upload.description')}</DialogDescription>
-          </DialogHeader>
+        {resuming !== null ? (
+          <div className="grid gap-6">
+            <DialogHeader>
+              <DialogTitle>{t('settings.license.upload.resumedTitle')}</DialogTitle>
+              <DialogDescription asChild>
+                <div>
+                  <LicenseResumingSteps steps={resuming} />
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" ref={doneRef} onClick={onClose}>
+                {t('settings.license.upload.done')}
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form noValidate className="grid gap-6" onSubmit={(event) => void submit(event)}>
+            <DialogHeader>
+              <DialogTitle>{t('settings.license.upload.title')}</DialogTitle>
+              <DialogDescription>{t('settings.license.upload.description')}</DialogDescription>
+            </DialogHeader>
 
-          {failure && (
-            <Alert variant="destructive" role="alert">
-              <AlertDescription>{t(failure)}</AlertDescription>
-            </Alert>
-          )}
-
-          <Field data-invalid={fileError !== null}>
-            <FieldLabel htmlFor={fileId}>{t('settings.license.upload.fileLabel')}</FieldLabel>
-            <Input
-              id={fileId}
-              ref={inputRef}
-              type="file"
-              accept=".json,application/json"
-              aria-invalid={fileError !== null}
-              aria-describedby={fileError ? `${fileId}-error` : `${fileId}-hint`}
-              onChange={choose}
-            />
-            {fileError ? (
-              <FieldError id={`${fileId}-error`}>{t(fileError)}</FieldError>
-            ) : (
-              <FieldDescription id={`${fileId}-hint`}>
-                {t('settings.license.upload.fileHint')}
-              </FieldDescription>
+            {failure && (
+              <Alert variant="destructive" role="alert">
+                <AlertDescription>{t(failure)}</AlertDescription>
+              </Alert>
             )}
-            {file && (
-              <p className="text-sm text-muted-foreground">
-                {t('settings.license.upload.chosen')} <LtrText>{file.name}</LtrText>
-              </p>
-            )}
-          </Field>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={mutation.isPending || reading}
-              onClick={onClose}
-            >
-              {t('settings.license.upload.cancel')}
-            </Button>
-            <Button
-              type="submit"
-              disabled={mutation.isPending || reading}
-              aria-busy={mutation.isPending || reading}
-            >
-              {(mutation.isPending || reading) && (
-                <LoaderCircleIcon
-                  aria-hidden
-                  className="animate-spin motion-reduce:animate-none"
-                  data-icon="inline-start"
-                />
+            <Field data-invalid={fileError !== null}>
+              <FieldLabel htmlFor={fileId}>{t('settings.license.upload.fileLabel')}</FieldLabel>
+              <Input
+                id={fileId}
+                ref={inputRef}
+                type="file"
+                accept=".json,application/json"
+                aria-invalid={fileError !== null}
+                aria-describedby={fileError ? `${fileId}-error` : `${fileId}-hint`}
+                onChange={choose}
+              />
+              {fileError ? (
+                <FieldError id={`${fileId}-error`}>{t(fileError)}</FieldError>
+              ) : (
+                <FieldDescription id={`${fileId}-hint`}>
+                  {t('settings.license.upload.fileHint')}
+                </FieldDescription>
               )}
-              {t('settings.license.upload.submit')}
-            </Button>
-          </DialogFooter>
-        </form>
+              {file && (
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.license.upload.chosen')} <LtrText>{file.name}</LtrText>
+                </p>
+              )}
+            </Field>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={mutation.isPending || reading}
+                onClick={onClose}
+              >
+                {t('settings.license.upload.cancel')}
+              </Button>
+              <Button
+                type="submit"
+                disabled={mutation.isPending || reading}
+                aria-busy={mutation.isPending || reading}
+              >
+                {(mutation.isPending || reading) && (
+                  <LoaderCircleIcon
+                    aria-hidden
+                    className="animate-spin motion-reduce:animate-none"
+                    data-icon="inline-start"
+                  />
+                )}
+                {t('settings.license.upload.submit')}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

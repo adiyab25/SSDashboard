@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import {
+  BackfillCause,
   capabilityOfStep,
   isRunnableState,
   type EffectiveState,
@@ -19,6 +20,7 @@ import type { Job, PgBoss } from 'pg-boss';
 import { DATABASE } from '../../database/database.module.js';
 import { describeError } from '../../database/pg-error.js';
 import { LICENSE_CHANGED } from '../license/license-events.js';
+import { LicenseService } from '../license/license.service.js';
 import { CapabilityHooks } from '../modules/capability-hooks.js';
 import { ModuleRegistry } from '../modules/module-registry.js';
 import { ModuleStateService } from '../modules/module-state.service.js';
@@ -34,14 +36,23 @@ import { JobBoss } from './job-boss.js';
 import { JobRegistry } from './job-registry.js';
 
 /**
- * The platform's backfill queue (spec 0009, AC-11): one job per capability and gap, owned by the
- * core capability `platform.reconcile_modules` and carrying the backfilled capability in
- * `data.capability`, so the gate skips it if that capability stopped again.
+ * How long the backfill queue keeps a finished job (pg-boss `deleteAfterSeconds`, per job, set when
+ * it is sent): 90 days, longer than the 30 day renewal window and the retries.
+ */
+export const BACKFILL_KEEP_SECONDS = 90 * 24 * 60 * 60;
+
+/**
+ * The platform's backfill queue (spec 0009, AC-11, AC-19): one job per capability and gap (a
+ * module turned back on, or a bundle renewed out of a lapse), owned by the core capability
+ * `platform.reconcile_modules` and carrying the backfilled capability in `data.capability`, so the
+ * gate skips it if that capability stopped again.
  */
 export const BACKFILL_JOB = defineQueue({
   name: 'platform.backfill',
   capability: 'platform.reconcile_modules',
-  options: { policy: 'short', retryLimit: 2 },
+  // Finished jobs are kept 90 days, longer than the 30 day renewal window and the retries, so a
+  // backfill is always found by its key and never sent twice for the same gap.
+  options: { policy: 'short', retryLimit: 2, deleteAfterSeconds: BACKFILL_KEEP_SECONDS },
   ownerHandlesAll: true,
 });
 
@@ -50,6 +61,8 @@ const BackfillData = z.object({
   capability: z.string(),
   from: z.iso.datetime({ offset: true }),
   to: z.iso.datetime({ offset: true }),
+  // Jobs sent before renewals had a cause were all a module turned back on.
+  cause: BackfillCause.default('module_resumed'),
 });
 
 /** At most this many queued jobs are read per `findJobs` page when cancelling. */
@@ -95,7 +108,14 @@ export interface ReconcileReport {
  * (a step that stops, `STEP_OFF`) and its `onDisable` hook called with the reason; both run again
  * at a worker start while it stays stopped, so they must be idempotent. A module turned back on
  * gets one backfill job per capability with a `backfill` hook for the gap it was off (singleton
- * key on the gap); nothing cancelled is replayed. Every job runs through the gate: a job of a
+ * key on the gap), and so does every capability of a bundle renewed out of the wind down or `off`
+ * whose state is `on`, for the gap from the lapse instant to the renewing check (AC-19;
+ * `LicenseService.renewalGaps`, looked at on every reconcile for 30 days after the renewal, the
+ * job keyed on the renewing check and looked up by its key first; the backfill queue keeps its
+ * finished jobs 90 days). Each time a capability enters the reason `no_stock_out_source` (AC-29), also at
+ * a worker's first reconcile, it asks for one `stock_out_source_missing` manager task keyed on the
+ * episode (`<capability>:<since>`, the instant the last source stopped, or `never`), so a restart
+ * asks again with the same key and the port opens nothing new. Nothing cancelled is replayed. Every job runs through the gate: a job of a
  * capability (or step) that is not runnable completes with `{ skipped: 'MODULE_OFF' }` (or
  * `STEP_OFF`), never `failed`. Worker only.
  */
@@ -106,12 +126,17 @@ export class ModuleJobSupervisor
   private readonly logger = new Logger('ModuleJobs');
   private readonly working = new Set<string>();
   private readonly lastRunnable = new Map<string, boolean>();
+  /** Whether each capability was last seen stopped for want of a stock out source. */
+  private readonly lastSourceless = new Map<string, boolean>();
   private chain: Promise<unknown> = Promise.resolve();
   private requested: Promise<ReconcileReport | undefined> | undefined;
   private unsubscribe: (() => void) | undefined;
   private stopping = false;
 
-  /** Takes the job client and registry, the module registry and states, settings, hooks, and the listener. */
+  /**
+   * Takes the job client and registry, the module registry and states, settings, hooks, the
+   * listener, the database, and the license (its renewal gaps).
+   */
   constructor(
     @Inject(JobBoss) private readonly jobBoss: JobBoss,
     @Inject(JobRegistry) private readonly jobs: JobRegistry,
@@ -121,6 +146,7 @@ export class ModuleJobSupervisor
     @Inject(CapabilityHooks) private readonly hooks: CapabilityHooks,
     @Inject(PlatformChangesListener) private readonly listener: PlatformChangesListener,
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
+    @Inject(LicenseService) private readonly license: LicenseService,
   ) {}
 
   /** Declares the platform's own queues: the reconcile job and the backfill job. */
@@ -139,11 +165,11 @@ export class ModuleJobSupervisor
       queue: BACKFILL_JOB.name,
       capability: BACKFILL_JOB.capability,
       handle: async (job) => {
-        const { capability, from, to } = BackfillData.parse(job.data);
+        const { capability, from, to, cause } = BackfillData.parse(job.data);
         const backfill = this.hooks.of(capability).backfill;
         if (!backfill) return { skipped: 'NO_BACKFILL' };
-        await backfill({ from, to });
-        return { capability, from, to };
+        await backfill({ from, to, cause });
+        return { capability, from, to, cause };
       },
     });
   }
@@ -156,6 +182,14 @@ export class ModuleJobSupervisor
    */
   async onApplicationBootstrap(): Promise<void> {
     for (const queue of this.jobs.queues()) await this.jobBoss.ensureQueue(queue);
+    // A queue made by an earlier release kept pg-boss's 7 day deletion. A failure here is logged
+    // and never stops the worker from starting: only the retention of new backfills is at stake.
+    try {
+      const boss = await this.jobBoss.start();
+      await boss.updateQueue(BACKFILL_JOB.name, { deleteAfterSeconds: BACKFILL_KEEP_SECONDS });
+    } catch (error) {
+      this.logger.warn(`Setting the backfill queue's retention failed: ${describeError(error)}`);
+    }
     this.unsubscribe = this.listener.subscribe(() => this.request());
     await this.reconcile().catch((error: unknown) => {
       this.logger.error(`Reconciling module jobs at worker start failed: ${describeError(error)}`);
@@ -223,6 +257,7 @@ export class ModuleJobSupervisor
     }
     report.stopped = await this.transitions(states, runnable);
     if (resumed) report.backfills = await this.backfill(boss, resumed, runnable);
+    report.backfills += await this.renewalBackfills(boss, states);
     if (failed.length > 0) throw new Error(`Reconciling ${failed.join(', ')} failed`);
     return report;
   }
@@ -338,6 +373,7 @@ export class ModuleJobSupervisor
         this.logger.error(`Stopping ${key} failed and is tried again: ${describeError(error)}`);
       }
     }
+    await this.sourcelessTasks(states);
     for (const [step, state] of states.steps) {
       const gate = capabilityOfStep(this.registry.modules(), step)?.capability.key;
       const now = isRunnableState(state);
@@ -359,6 +395,37 @@ export class ModuleJobSupervisor
   }
 
   /**
+   * Asks for one `stock_out_source_missing` task each time a capability enters the reason
+   * `no_stock_out_source` (AC-29), from any other state or reason, and at this worker's first
+   * reconcile, keyed on the episode: the state's `since` (the instant its last source stopped), or
+   * `never` when no source ever ran, as on a Warehouse only install. A failed request is logged and
+   * asked again next time.
+   */
+  private async sourcelessTasks(states: ModuleStates): Promise<void> {
+    for (const key of this.registry.capabilityKeys()) {
+      const state = stateIn(states, key);
+      const sourceless = state.state === 'read_only' && state.reason === 'no_stock_out_source';
+      if (!sourceless || this.lastSourceless.get(key) === true) {
+        this.lastSourceless.set(key, sourceless);
+        continue;
+      }
+      try {
+        const episode = state.state === 'read_only' ? (state.since ?? 'never') : 'never';
+        await this.hooks.openTask({
+          kind: 'stock_out_source_missing',
+          key: `${key}:${episode}`,
+          capability: key,
+        });
+        this.lastSourceless.set(key, true);
+      } catch (error) {
+        this.logger.error(
+          `Asking for the stock out source task of ${key} failed: ${describeError(error)}`,
+        );
+      }
+    }
+  }
+
+  /**
    * Enqueues one backfill job for each capability of the resumed module that declares a
    * `backfill` and runs again (AC-11, AC-27), keyed on the gap: a job with that key in any state
    * means it was enqueued before, so a second reconcile adds none.
@@ -372,16 +439,46 @@ export class ModuleJobSupervisor
     let sent = 0;
     for (const capability of module?.capabilities ?? []) {
       if (!this.hooks.of(capability.key).backfill || !runnable(capability.key)) continue;
+      const gap = { from: resumed.from, to: resumed.to, cause: 'module_resumed' as const };
       const key = `${capability.key}:${resumed.from}:${resumed.to}`;
-      if ((await boss.findJobs(BACKFILL_JOB.name, { key, limit: 1 })).length > 0) continue;
-      const id = await boss.send(
-        BACKFILL_JOB.name,
-        { capability: capability.key, from: resumed.from, to: resumed.to },
-        { singletonKey: key },
-      );
-      if (id !== null) sent += 1;
+      if (await this.sendBackfill(boss, key, capability.key, gap)) sent += 1;
     }
     return sent;
+  }
+
+  /**
+   * Enqueues one backfill job for each capability of a bundle renewed out of the wind down or
+   * `off` that declares a `backfill` and is `on` again (AC-19, AC-27; a `limited` one only finishes
+   * old work), for the gap from the lapse instant to the renewing check, keyed on that check
+   * (`renewed:<capability>:<seq>`). From `grace` nothing stopped, so there is no gap.
+   */
+  private async renewalBackfills(boss: PgBoss, states: ModuleStates): Promise<number> {
+    let sent = 0;
+    for (const renewal of await this.license.renewalGaps()) {
+      for (const key of this.registry.capabilityKeys()) {
+        const capability = this.registry.capability(key)?.capability;
+        if (capability?.bundle !== renewal.bundle) continue;
+        if (!this.hooks.of(key).backfill || stateIn(states, key).state !== 'on') continue;
+        const gap = { from: renewal.from, to: renewal.to, cause: 'renewed' as const };
+        if (await this.sendBackfill(boss, `renewed:${key}:${renewal.seq}`, key, gap)) sent += 1;
+      }
+    }
+    return sent;
+  }
+
+  /**
+   * Sends one backfill job under `key`, unless a job with that key exists in any state (it was
+   * enqueued before; the queue keeps finished jobs). True when it sent one.
+   */
+  private async sendBackfill(
+    boss: PgBoss,
+    key: string,
+    capability: string,
+    gap: { from: string; to: string; cause: BackfillCause },
+  ): Promise<boolean> {
+    if ((await boss.findJobs(BACKFILL_JOB.name, { key, limit: 1 })).length > 0) return false;
+    const id = await boss.send(BACKFILL_JOB.name, { capability, ...gap }, { singletonKey: key });
+    return id !== null;
   }
 
   /**

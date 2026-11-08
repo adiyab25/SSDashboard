@@ -136,6 +136,7 @@ function expectedCapability(c: Case, input: ModuleStateInput): EffectiveState {
       ? { state: 'limited', before: TOGGLED, reason: 'toggled_off' }
       : { state: 'read_only', reason: 'toggled_off', since: TOGGLED };
   }
+  // The empty list never had a source, and the `source_off` source was never licensed.
   if (c.source === 'empty' || c.source === 'source_off') {
     return { state: 'read_only', reason: 'no_stock_out_source', since: null };
   }
@@ -399,10 +400,11 @@ describe('moduleStates (AC-7)', () => {
       openItems: { 'sources.finishing': 2 },
     });
     expect(off.capabilities.get('sources.finishing')?.state).toBe('limited');
+    // Since the latest instant a source stopped: the toggle off, for both sources here.
     expect(off.capabilities.get('push.both')).toEqual({
       state: 'read_only',
       reason: 'no_stock_out_source',
-      since: null,
+      since: TOGGLED,
     });
     expect(off.capabilities.get('push.finishing_only')?.state).toBe('read_only');
   });

@@ -40,13 +40,21 @@ const OPS = defineModule({
 const TOGGLED_AT = '2027-05-01T09:00:00.000000Z';
 const active: BundleFacts = { phase: 'active', lapsedAt: null, renewedAt: null };
 
-function setup(options: { enabled?: boolean; openItems?: number | 'throws' } = {}) {
+function setup(
+  options: {
+    enabled?: boolean;
+    openItems?: number | 'throws';
+    operations?: BundleFacts;
+    windDownCut?: { cutAt: string; pickupWindowEndsAt: string } | null;
+  } = {},
+) {
   const registry = new ModuleRegistry([...MODULE_REGISTRY, OPS]);
   const cache = new SettingsCache();
   const bundleFacts = vi.fn(() =>
     Promise.resolve({
-      bundles: { warehouse: active, operations: active },
+      bundles: { warehouse: active, operations: options.operations ?? active },
       notices: [],
+      windDownCut: options.windDownCut ?? null,
     }),
   );
   const load = vi.fn((keys: readonly string[]) =>
@@ -78,7 +86,7 @@ function setup(options: { enabled?: boolean; openItems?: number | 'throws' } = {
     cache,
     hooks,
   );
-  return { service, bundleFacts, load, cache };
+  return { service, bundleFacts, load, cache, hooks };
 }
 
 // Spec 0009, AC-7, AC-13: the module state service.
@@ -140,7 +148,7 @@ describe('ModuleStateService', () => {
       before: TOGGLED_AT,
       reason: 'toggled_off',
     });
-    expect(warn).toHaveBeenCalledWith('Open items of ops.finish could not be counted: Error');
+    expect(warn).toHaveBeenCalledWith('Open items of ops.finish could not be counted');
     warn.mockRestore();
   });
 
@@ -169,6 +177,80 @@ describe('ModuleStateService', () => {
     await expect(
       service.assertMayFinish('ops.finish', '2027-05-01T09:00:00.000000Z'),
     ).rejects.toBeInstanceOf(ModuleLimited);
+  });
+
+  it('acts only on events at or after since (AC-27, the step watermark)', async () => {
+    const { service } = setup({ enabled: true });
+    expect(await service.actsOn('ops.queue', '2027-05-01T08:59:59.999999Z')).toBe(false);
+    expect(await service.actsOn('ops.queue', TOGGLED_AT)).toBe(true);
+    const off = setup({ enabled: false }).service;
+    expect(await off.actsOn('ops.queue', '2030-01-01T00:00:00Z')).toBe(false);
+  });
+
+  it('processes hook events of a limited capability only in scope (AC-18, task 21)', async () => {
+    const { service } = setup({ enabled: false, openItems: 1 });
+    expect(await service.acceptsHook('ops.finish', { openedAt: '2027-05-01T08:00:00Z' })).toBe(
+      'process',
+    );
+    expect(await service.acceptsHook('ops.finish', { openedAt: '2027-05-01T10:00:00Z' })).toBe(
+      'ignored_unlicensed',
+    );
+    // The pickup window belongs to the Operations lapse alone (AC-18): after a toggle off, a
+    // delivery the carrier created before the cut is followed, one created after it is not, even
+    // for an order confirmed before it.
+    const confirmed = '2027-05-01T08:00:00Z';
+    expect(
+      await service.acceptsHook('ops.finish', {
+        carrierCreatedAt: '2027-05-01T08:30:00Z',
+        orderConfirmedAt: confirmed,
+      }),
+    ).toBe('process');
+    expect(
+      await service.acceptsHook('ops.finish', {
+        carrierCreatedAt: '2027-05-01T10:00:00Z',
+        orderConfirmedAt: confirmed,
+      }),
+    ).toBe('ignored_unlicensed');
+    expect(await service.acceptsHook('ops.queue')).toBe('ignored_unlicensed');
+    expect(await setup().service.acceptsHook('ops.queue')).toBe('process');
+  });
+
+  it('fails a hook that asks for a state while they are computed, never waiting on itself', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { service, hooks } = setup({ enabled: false });
+    const asked: string[] = [];
+    hooks.register('ops.finish', {
+      openItems: async () => {
+        asked.push((await service.stateOf('ops.queue')).state);
+        return 0;
+      },
+    });
+    // The call back throws at once, so the hook counts as failed and the work stays finishable.
+    expect(await service.stateOf('ops.finish')).toMatchObject({ state: 'limited' });
+    expect(asked).toEqual([]);
+    expect(warn).toHaveBeenCalledWith('Open items of ops.finish could not be counted');
+    warn.mockRestore();
+  });
+
+  it('hands an until closed hook the pickup window at the Operations lapse (AC-18)', async () => {
+    const cut = {
+      cutAt: '2027-04-14T22:00:00.000000Z',
+      pickupWindowEndsAt: '2027-04-17T22:00:00.000000Z',
+    };
+    const { service, hooks } = setup({
+      operations: { phase: 'off', lapsedAt: cut.cutAt, renewedAt: null },
+      windDownCut: cut,
+    });
+    const openItems = vi.fn(() => Promise.resolve(1));
+    hooks.register('ops.finish', { openItems });
+    expect(await service.stateOf('ops.finish')).toMatchObject({
+      state: 'limited',
+      before: cut.cutAt,
+    });
+    expect(openItems).toHaveBeenCalledWith({
+      before: cut.cutAt,
+      pickupWindowEndsAt: cut.pickupWindowEndsAt,
+    });
   });
 
   it('refuses a key the registry does not list', async () => {

@@ -105,7 +105,7 @@ Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep
   - [x] One setting through every layer
   - [x] The signed license
   - [x] Module gate and toggles with no orphaned jobs
-  - [ ] Lapse, read only wind down, and renewal backfill
+  - [x] Lapse, read only wind down, and renewal backfill
   - [ ] Executing steps, policy knobs, owner type policies, cost rules, and the full settings screen
 - [ ] Verify it: `/check verify settings, module toggles & bundles`
 - [ ] Test it: `/test settings, module toggles & bundles`

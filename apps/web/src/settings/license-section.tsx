@@ -12,11 +12,12 @@ import { getLicense, licenseKeys } from './license-api';
 import { LicenseBundleRow } from './license-bundle-row';
 import { LicenseLastCheck } from './license-last-check';
 import { LicenseRecordedList } from './license-recorded-list';
+import { LicenseResumingSteps } from './license-resuming-steps';
 import { LicenseUploadDialog } from './license-upload-dialog';
 
 /**
  * The Modules and license section of the settings screen (spec 0009, AC-25, AC-26): each plan with
- * its phase and expiry, the last check of the license file, the recorded licenses, and the upload
+ * its phase and expiry, the executing steps waiting for a renewal (`summary.resumingSteps`, AC-19), the last check of the license file, the recorded licenses, and the upload
  * button, and the module switches passed as `children` (AC-25: one section). It loads
  * `GET /api/platform/license` itself (`enabled` waits for access), so a failure here never hides the other sections, and it shows loading, an error with Try again, and the
  * empty state of an install with no license recorded. A 403 shows a sentence in place of the body;
@@ -105,6 +106,12 @@ export function LicenseSection({
               ))}
             </ul>
           </div>
+          {summary.resumingSteps && summary.resumingSteps.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold">{t('settings.license.resumingHeading')}</h3>
+              <LicenseResumingSteps steps={summary.resumingSteps} waiting />
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('settings.license.lastCheckHeading')}</h3>
             <LicenseLastCheck check={summary.lastCheck} recordedCount={summary.licenses.length} />

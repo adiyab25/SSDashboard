@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   type OnApplicationBootstrap,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -28,11 +29,33 @@ export const LICENSE_CHECK_QUEUE = LICENSE_CHECK_JOB.name;
 /** The key of its daily schedule. */
 export const LICENSE_CHECK_SCHEDULE_KEY = 'daily';
 
+/** The key of the phase watch schedule. */
+export const PHASE_WATCH_SCHEDULE_KEY = 'phase-watch';
+
+/**
+ * How often the phase watch runs (spec 0009, AC-18): a check is recorded within this long of the
+ * lapse instant, of the wind down's end by its length, and of its early end, so the supervisor
+ * follows within minutes.
+ */
+export const PHASE_WATCH_CRON = '*/5 * * * *';
+
+/**
+ * The injection token of the phase watch's cron: `PHASE_WATCH_CRON` in the worker. A suite that
+ * moves a fixed platform clock overrides it with a cron that never fires during the run, so no wall
+ * clock boundary records a check in the middle of a case.
+ */
+export const PHASE_WATCH_CRON_TOKEN = Symbol('PHASE_WATCH_CRON');
+
+/** The data the phase watch's jobs carry, telling them from the daily check. */
+const PHASE_WATCH_DATA = { kind: 'phase_watch' } as const;
+
 /**
  * The worker's license checks (spec 0009, AC-14): one at worker start, then daily at
- * `LICENSE_CHECK_CRON`, declared through the platform `JobRegistry` (AC-10), whose supervisor
- * registers the schedule in the current `timezone` setting and re registers it when the setting
- * changes. A failed check is logged; the worker keeps running (AC-16).
+ * `LICENSE_CHECK_CRON`, and the phase watch every 5 minutes (`PHASE_WATCH_CRON`, AC-18), which
+ * records a check only when the phase a check would record differs from the latest recorded one
+ * (`LicenseService.checkIfMoved`). Both are declared through the platform `JobRegistry` (AC-10),
+ * whose supervisor registers the schedules in the current `timezone` setting and re registers them
+ * when the setting changes. A failed check is logged; the worker keeps running (AC-16).
  */
 @Injectable()
 export class LicenseCheckJob implements OnModuleInit, OnApplicationBootstrap {
@@ -43,6 +66,9 @@ export class LicenseCheckJob implements OnModuleInit, OnApplicationBootstrap {
     @Inject(ENV) private readonly env: Env,
     @Inject(JobRegistry) private readonly jobs: JobRegistry,
     @Inject(LicenseService) private readonly license: LicenseService,
+    @Optional()
+    @Inject(PHASE_WATCH_CRON_TOKEN)
+    private readonly watchCron: string = PHASE_WATCH_CRON,
   ) {}
 
   /** Declares the queue, the daily schedule, and the handler. */
@@ -54,11 +80,31 @@ export class LicenseCheckJob implements OnModuleInit, OnApplicationBootstrap {
       capability: LICENSE_CHECK_JOB.capability,
       cron: this.env.LICENSE_CHECK_CRON,
     });
+    this.jobs.declareSchedule({
+      queue: LICENSE_CHECK_QUEUE,
+      key: PHASE_WATCH_SCHEDULE_KEY,
+      capability: LICENSE_CHECK_JOB.capability,
+      cron: this.watchCron,
+      data: PHASE_WATCH_DATA,
+    });
     this.jobs.declareHandler({
       queue: LICENSE_CHECK_QUEUE,
       capability: LICENSE_CHECK_JOB.capability,
-      handle: (job) => this.daily(job.id),
+      handle: (job) =>
+        (job.data as { kind?: unknown } | null)?.kind === PHASE_WATCH_DATA.kind
+          ? this.watch(job.id)
+          : this.daily(job.id),
     });
+  }
+
+  /** The phase watch of the pg-boss job `jobId`: a check only when a phase moved. */
+  async watch(jobId: string): Promise<{ moved: boolean }> {
+    try {
+      return { moved: (await this.license.checkIfMoved(jobId)) !== null };
+    } catch (error) {
+      this.logger.error(`The license phase watch failed: ${describeError(error)}`);
+      throw new Error('The license phase watch failed');
+    }
   }
 
   /** Runs the `worker_start` check; never throws. */

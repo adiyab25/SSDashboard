@@ -46,7 +46,8 @@ const LicenseInstant = z.iso.datetime({ offset: true });
 /**
  * How loud a license notice is (spec 0009, AC-17): `info` while expiring with more than 7 days to
  * expiry, `warning` in the last 7 days before expiry and through grace, `critical` from the lapse
- * (wind down or off). Milestone 4 adds the daily report levels and the staff notice.
+ * (wind down or off). Whether the daily report carries a notice is `noticeInDailyReport`, and the
+ * staff notice is `staffNotices` (`modules-api.ts`).
  */
 export const LicenseNoticeLevel = z.enum(['info', 'warning', 'critical']);
 /** One notice level. */
@@ -137,13 +138,20 @@ export type RecordedLicenseView = z.infer<typeof RecordedLicenseView>;
 /**
  * `GET /api/platform/license` (spec 0009, AC-26), `settings.manage` only: per bundle (Warehouse
  * then Operations) its phase from the latest check, its expiry or perpetual, and the days left;
- * the latest file check; every recorded license, newest first; and the manager's notices.
+ * the latest file check; every recorded license, newest first; the manager's notices; and the
+ * switched on steps a renewal would resume.
  */
 export const LicenseSummary = z.object({
   bundles: z.array(LicenseBundleView),
   lastCheck: LicenseCheckView.nullable(),
   licenses: z.array(RecordedLicenseView),
   notices: z.array(LicenseNotice),
+  /**
+   * The executing steps switched on that cannot run now because their bundle is in its wind down
+   * or `off` (AC-19): what a renewal would resume, acting only on new events. Optional so an older
+   * answer still parses; the api always sends it, empty when nothing waits.
+   */
+  resumingSteps: z.array(z.string()).optional(),
 });
 /** The license summary. */
 export type LicenseSummary = z.infer<typeof LicenseSummary>;
@@ -151,7 +159,9 @@ export type LicenseSummary = z.infer<typeof LicenseSummary>;
 /**
  * The answer of `POST /api/platform/license` (spec 0009, AC-20): the summary after the upload,
  * `changed: false` when the license verified but granted nothing new (an older or identical one),
- * and the executing steps that resume (empty until milestone 4 brings renewals out of a lapse).
+ * and the executing steps that resume: the steps switched on that could not run before the upload
+ * and run after it (a renewal out of the wind down or `off`), which act only on new events (AC-19,
+ * AC-27).
  */
 export const PostLicenseAnswer = z.object({
   summary: LicenseSummary,
