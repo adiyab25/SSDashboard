@@ -332,9 +332,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         reason: 'sweep',
       }),
     },
-    // The owner type policies, settings.manage. The edit's reason is blank (the body schema
-    // requires one), so a manager gets 422 REASON_REQUIRED from the service before any row is read,
-    // and no policy ever changes.
+    // The owner type policies, settings.manage. The edit's reason is blank, so a manager gets 422
+    // REASON_REQUIRED from the service before any row is read, and no policy ever changes.
     'GET /inventory/owner-policies': { needs: ['settings.manage'] },
     'PUT /inventory/owner-policies/:ownerType': {
       needs: ['settings.manage'],

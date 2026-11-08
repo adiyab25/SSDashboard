@@ -122,7 +122,7 @@ export class OwnerPoliciesController {
         {
           ownerType: ownerType.data,
           fields,
-          reason,
+          ...(reason !== undefined && { reason }),
           expectedUpdatedAt,
           actor: { userId: access.userId, hat: access.actingHat('settings.manage') },
         },

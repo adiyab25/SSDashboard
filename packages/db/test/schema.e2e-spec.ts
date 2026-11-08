@@ -849,6 +849,38 @@ describe('core data model schema (spec 0002)', () => {
       expect(Number(second.seq)).toBe(Number(first.seq) + 1);
     });
 
+    // Spec 0009 AC-14 and D18 (verify.md, Commands): a Warehouse expiry exists only on a license
+    // that grants Warehouse, and an Operations grant always carries its expiry, so even a row
+    // written past the api cannot claim a term its bundles do not have.
+    it('refuses a Warehouse expiry without a Warehouse grant, and an Operations grant without its expiry (AC-14)', async () => {
+      const insertLicense = (
+        bundles: string,
+        operationsExpiresOn: string | null,
+        warehouseExpiresOn: string | null,
+      ) =>
+        app.query(
+          `INSERT INTO licenses (license_id, key_id, envelope, sha256, payload_sha256, client_code, bundles,
+                                 operations_expires_on, warehouse_expires_on, issued_on, source)
+           VALUES ('LIC-TERM', 'dev-1', '{}', encode(sha256(gen_random_uuid()::text::bytea), 'hex'),
+                   encode(sha256(gen_random_uuid()::text::bytea), 'hex'), 'dev', $1::text[],
+                   $2::date, $3::date, '2026-11-08', 'upload')`,
+          [bundles, operationsExpiresOn, warehouseExpiresOn],
+        );
+
+      await expect(insertLicense('{operations}', '2027-01-01', '2027-01-01')).rejects.toThrow(
+        /licenses_warehouse_expiry/,
+      );
+      await expect(insertLicense('{operations}', null, null)).rejects.toThrow(
+        /licenses_operations_expiry/,
+      );
+      await expect(insertLicense('{warehouse}', '2027-01-01', null)).rejects.toThrow(
+        /licenses_operations_expiry/,
+      );
+      // A pilot license: Warehouse with its expiry is a sound row.
+      const pilot = await insertLicense('{warehouse}', null, '2027-05-31');
+      expect(pilot.rowCount).toBe(1);
+    });
+
     it('keeps the install row read only for the app role', async () => {
       await expect(
         app.query(

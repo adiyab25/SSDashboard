@@ -210,12 +210,14 @@ export type OwnerPoliciesResponse = z.infer<typeof OwnerPoliciesResponse>;
 
 /**
  * Body of `PUT /api/inventory/owner-policies/:ownerType` (spec 0009, AC-24): the whole row, the
- * manager's reason (required: left out, 422 `VALIDATION_FAILED`; blank once trimmed, 422
- * `REASON_REQUIRED`; at most 500 characters), and the
- * `updatedAt` the screen showed (409 `STALE_SETTING` when the row changed since).
+ * manager's reason, and the `updatedAt` the screen showed (409 `STALE_SETTING` when the row changed
+ * since). The reason is required for an edit to succeed, as on the settings and cost rule routes:
+ * left out or blank once trimmed, the service answers 422 `REASON_REQUIRED`; at most 500
+ * characters. It is optional in the schema only so a missing reason reaches that check rather than
+ * the body pipe's generic 422 `VALIDATION_FAILED`.
  */
 export const PutOwnerPolicyBody = OwnerPolicyFields.extend({
-  reason: z.string().trim().max(500),
+  reason: z.string().trim().max(500).optional(),
   expectedUpdatedAt: PolicyInstant,
 });
 /** The validated shape of `PutOwnerPolicyBody`. */

@@ -107,11 +107,11 @@ Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep
   - [x] Module gate and toggles with no orphaned jobs
   - [x] Lapse, read only wind down, and renewal backfill
   - [x] Executing steps, policy knobs, owner type policies, cost rules, and the full settings screen
-- [ ] Verify it: `/check verify settings, module toggles & bundles`
-- [ ] Test it: `/test settings, module toggles & bundles`
-- [ ] Review it: `/check review settings, module toggles & bundles`
-- [ ] Document it: `/document settings, module toggles & bundles`
-Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Accepted 2026-11-07)
+- [x] Verify it: `/check verify settings, module toggles & bundles`
+- [x] Test it: `/test settings, module toggles & bundles`
+- [x] Review it: `/check review settings, module toggles & bundles`
+- [x] Document it: `/document settings, module toggles & bundles`
+Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Built 2026-11-08); verification [docs/reviews/verify-settings-toggles-bundles.md](../reviews/verify-settings-toggles-bundles.md), independent reviews per milestone in `docs/reviews/` (`*-settings-m1` to `m5`), [release note](../releases/settings-modules-bundles.md)
 
 ### 10. Audit trail
 Agent accountability: who did what, when, and why, across edits, merges, overrides, confirmations, exports, and every automatic action.
