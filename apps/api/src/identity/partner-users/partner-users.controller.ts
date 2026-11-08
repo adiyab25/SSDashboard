@@ -32,6 +32,7 @@ import { actorOf } from '../access/actor.js';
 import { InvalidAccountCursorError } from '../accounts/account-actions.js';
 import type { AuthenticatedRequest } from '../sign-in/current-staff.js';
 import { PartnerUserService } from './partner-user.service.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /**
  * The partner logins a manager runs (spec 0008, AC-15): staff audience, every route
@@ -41,6 +42,7 @@ import { PartnerUserService } from './partner-user.service.js';
  */
 @Audience('staff')
 @Permission('people.manage')
+@RequiresModule('identity')
 @Controller('partner-users')
 export class PartnerUsersController {
   /** Takes the partner user service. */

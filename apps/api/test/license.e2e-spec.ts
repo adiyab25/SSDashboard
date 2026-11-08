@@ -9,7 +9,9 @@ import {
   SettingsListResponse,
   type LicensePayload,
 } from '@ssdashboard/contracts';
+import type { DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DATABASE } from '../src/database/database.module.js';
 import { LICENSE_CHANGED, type LicenseChanged } from '../src/platform/license/license-events.js';
 import { signLicense } from '../src/platform/license/license-signing.js';
 import { sha256Hex } from '../src/platform/license/license-verifier.js';
@@ -17,6 +19,11 @@ import { LICENSE_CHECK_LOCK, LicenseService } from '../src/platform/license/lice
 import { PlatformClock } from '../src/platform/license/platform-clock.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { installOf, testVendorKey, trustTestKey } from './license-support.js';
+import { devDatabaseUrl } from './support.js';
+
+// Load the root .env into this process's env before any api saves it: the file starts two apps
+// in turn, and the first one's close restores the env it found.
+devDatabaseUrl();
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -598,5 +605,67 @@ describe('the signed license (spec 0009 milestone 2)', { timeout: 120_000 }, () 
     const again = await upload(renewal);
     expect(PostLicenseAnswer.parse(again.body).changed).toBe(false);
     expect(await latestCheck()).toMatchObject({ outcome: 'already_recorded' });
+  });
+});
+
+// Spec 0009 Follow-up (security third check m2, S1): license dates are read with
+// `to_char(…, 'YYYY-MM-DD')`, so a connection whose DateStyle is not ISO still sees every term
+// equal to its signed payload; with `::text` the license would grant nothing there.
+describe('license dates under a non ISO DateStyle (spec 0009, S1)', { timeout: 120_000 }, () => {
+  let api: InProcessApi;
+  const vendor = testVendorKey();
+
+  beforeAll(async () => {
+    api = await startInProcessApi((builder) => trustTestKey(builder, vendor), {
+      connectionOptions: '-c DateStyle=German',
+    });
+  });
+
+  afterAll(async () => {
+    await api?.close();
+  });
+
+  it('verifies, records, and counts a license whose dates the session prints the German way', async () => {
+    const pool = api.app.get<DatabaseConnection>(DATABASE).pool;
+    const style = await pool.query<{ DateStyle: string }>('SHOW DateStyle');
+    expect(style.rows[0]?.DateStyle).toBe('German, DMY');
+    const printed = await pool.query<{ day: string }>(`SELECT '2099-11-07'::date::text AS day`);
+    expect(printed.rows[0]?.day).toBe('07.11.2099');
+
+    const install = await installOf(api);
+    const manager = await api.addPerson(['manager']);
+    const service = api.app.get(LicenseService);
+    const text = signLicense(
+      {
+        format: 1,
+        licenseId: 'SSD-DATESTYLE-1',
+        clientCode: install.clientCode,
+        tenantId: install.tenantId,
+        bundles: ['operations', 'warehouse'],
+        operationsExpiresOn: '2099-11-07',
+        warehouseExpiresOn: '2098-01-31',
+        issuedOn: '2026-11-07',
+      },
+      'test-1',
+      vendor.privateKey,
+    );
+
+    await expect(service.upload(text, { userId: manager.id, hat: 'manager' })).resolves.toEqual({
+      changed: true,
+    });
+    // Forget the trust this process gave the row it wrote, so the stored row is verified again.
+    (service as unknown as { rowTrust: Map<string, boolean> }).rowTrust.clear();
+
+    const licensed = await service.licensedBundles();
+    expect([...licensed].sort()).toEqual(['core', 'operations', 'warehouse']);
+    const summary = await service.summary();
+    expect(summary.licenses).toEqual([
+      expect.objectContaining({
+        licenseId: 'SSD-DATESTYLE-1',
+        operationsExpiresOn: '2099-11-07',
+        warehouseExpiresOn: '2098-01-31',
+        issuedOn: '2026-11-07',
+      }),
+    ]);
   });
 });

@@ -13,6 +13,7 @@ import { Access } from '../../platform/access/access.js';
 import { CurrentAccess } from '../../platform/access/current-access.decorator.js';
 import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 import { OrderEditing } from '../editing/order-editing.service.js';
 import type { OrderActor } from '../order-actor.js';
 import { OrderTransactions, type OrderTransaction } from '../order-transactions.js';
@@ -26,11 +27,12 @@ import { OrderTransitions } from '../transitions/order-transitions.service.js';
  * and cancel (`orders.confirm`), pack and unpack (`fulfillment.work`), all `@Audience('staff')`
  * with one `@Permission` each. Every route takes `expectedUpdatedAt`, opens one
  * `OrderTransactions.run`, and answers the order page read in that transaction through the cost
- * serializer, `Cache-Control: no-store`. They take `@RequiresModule('orders')` when the module
- * registry of spec 0009 lands. Logs carry the order id and the person's id only, never a ship to
+ * serializer, `Cache-Control: no-store`. The controller declares `@RequiresModule('orders')` (core, so
+ * the module gate never refuses it). Logs carry the order id and the person's id only, never a ship to
  * field.
  */
 @Audience('staff')
+@RequiresModule('orders')
 @Controller('orders')
 export class OrderMovesController {
   private readonly logger = new Logger('Orders');

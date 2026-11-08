@@ -40,6 +40,10 @@ vi.mock('@/auth/use-me', () => ({
 }));
 
 const loadConfig = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
+// The Partner logins tab reads the module states through a query this spec has no client for.
+vi.mock('@/shell/use-module-states', () => ({
+  useModuleStates: () => ({ answer: undefined, ready: false, stateOf: () => null }),
+}));
 vi.mock('@/shell/client-config', () => ({ loadConfig: () => loadConfig() }));
 
 const row = (overrides: Partial<StaffRow> & { id: string; name: string }): StaffRow => ({

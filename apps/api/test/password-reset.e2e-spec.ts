@@ -213,7 +213,14 @@ describe('password reset by mail', { timeout: 240_000 }, () => {
       );
 
       expect(rows).toHaveLength(1);
-      expect(Object.keys(rows[0]?.data ?? {}).sort()).toEqual(['kind', 'tokenId', 'userId']);
+      // Ids only, plus the capability every job is stamped with (spec 0009, AC-10).
+      expect(Object.keys(rows[0]?.data ?? {}).sort()).toEqual([
+        'capability',
+        'kind',
+        'tokenId',
+        'userId',
+      ]);
+      expect(rows[0]?.data.capability).toBe('mail.send');
       expect(JSON.stringify(rows[0]?.data)).not.toContain(tokenOf(mail));
     });
 

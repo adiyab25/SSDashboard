@@ -1,59 +1,49 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnApplicationBootstrap,
-  type OnApplicationShutdown,
-} from '@nestjs/common';
-import { PgBoss, type Job } from 'pg-boss';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import type { Job } from 'pg-boss';
 import { ENV } from '../config/config.module.js';
 import { staffBase, type Env } from '../config/env.js';
 import { MailRecipients } from '../identity/sign-in/mail-recipients.js';
-import { JOB_SCHEMA } from '../platform/job-schema.js';
+import { JobRegistry } from '../platform/jobs/job-registry.js';
 import { SettingsService } from '../platform/settings/settings.service.js';
 import { tokenFromIdentifier, tokenLink } from './mail-links.js';
-import { MAIL_QUEUE, MAIL_RETRY_LIMIT, ensureMailQueue, type MailJob } from './mail-queue.js';
+import { MAIL_JOB, MAIL_RETRY_LIMIT, type MailJob } from './mail-queue.js';
 import { renderMail } from './mail-templates.js';
 import { MAILER } from './mail.tokens.js';
 import type { Mailer } from './mailer.js';
 
-/** Sends the queued emails in the `worker` entry point (spec 0005, AC-11). */
+/**
+ * Sends the queued emails in the `worker` entry point (spec 0005, AC-11). Its queue and handler
+ * are declared through the platform `JobRegistry` (spec 0009, AC-10), so the worker's one pg-boss
+ * client works it behind the module gate. On an install without a mailer nothing is ever queued,
+ * and a job that still arrives is completed unsent.
+ */
 @Injectable()
-export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown {
+export class MailWorker implements OnModuleInit {
   private readonly logger = new Logger('Mail');
-  private boss: PgBoss | undefined;
 
   /**
    * Takes the env, identity's mail recipient reader (the recipient and token rows belong to
-   * identity), the mailer (null when `MAIL_DRIVER` is none) and the settings service.
+   * identity), the mailer (null when `MAIL_DRIVER` is none), the settings service, and the job
+   * registry (absent in unit tests that call `handle` directly).
    */
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(MailRecipients) private readonly recipients: MailRecipients,
     @Inject(MAILER) private readonly mailer: Mailer | null,
     private readonly settings: SettingsService,
+    @Inject(JobRegistry) private readonly jobs?: JobRegistry,
   ) {}
 
-  /**
-   * Starts the queue and the send handler. Does nothing on an install without a mailer, because
-   * nothing is ever queued there.
-   */
-  async onApplicationBootstrap(): Promise<void> {
-    // No mail on this install: nothing is queued, so there is nothing to work.
-    if (!this.mailer) return;
-    const boss = new PgBoss({
-      connectionString: this.env.DATABASE_URL,
-      schema: JOB_SCHEMA,
-      createSchema: false,
-      // It sends one email at a time; the default pool of 10 would be wasted connections.
-      max: 4,
-    });
-    boss.on('error', (error: Error) => this.logger.error(`Job queue error: ${error.message}`));
-    await boss.start();
-    this.boss = boss;
-    await ensureMailQueue(boss);
-    await boss.work<MailJob>(MAIL_QUEUE, async (jobs) => {
-      for (const job of jobs) await this.handle(job);
+  /** Declares the mail queue and its send handler. */
+  onModuleInit(): void {
+    this.jobs?.declareQueue(MAIL_JOB);
+    this.jobs?.declareHandler({
+      queue: MAIL_JOB.name,
+      capability: MAIL_JOB.capability,
+      handle: async (job) => {
+        await this.handle(job as Job<MailJob>);
+        return undefined;
+      },
     });
   }
 
@@ -112,10 +102,5 @@ export class MailWorker implements OnApplicationBootstrap, OnApplicationShutdown
     } catch {
       return 'en';
     }
-  }
-
-  /** Stops the queue after letting a send in progress finish. */
-  async onApplicationShutdown(): Promise<void> {
-    await this.boss?.stop({ graceful: true });
   }
 }

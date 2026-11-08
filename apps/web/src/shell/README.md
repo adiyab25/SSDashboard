@@ -6,6 +6,7 @@ The frame every staff back office page renders inside: sidebar, user menu, comma
 
 - The frame: [app-shell.tsx](app-shell.tsx), [app-sidebar.tsx](app-sidebar.tsx), [skip-link.tsx](skip-link.tsx)
 - The navigation list (add a page here to join the sidebar and palette): [nav.ts](nav.ts)
+- The module aware shell (spec 0009, AC-9, AC-17): [module-states-api.ts](module-states-api.ts) and [use-module-states.ts](use-module-states.ts) read `GET /api/platform/modules` once (again on window focus, every 60 seconds, and at once when `apiFetch` sees a 404 `MODULE_OFF` or 409 `MODULE_LIMITED`, wired in `Providers`); [nav.ts](nav.ts) entries name their `module` and `visibleNavItems` hides an `off` one (and an `action` entry while `read_only`); [module-page-gate.tsx](module-page-gate.tsx) wraps the page body in `AppShell` and shows [module-not-available-state.tsx](module-not-available-state.tsx) for an off page or [module-notice.tsx](module-notice.tsx) above a read only or limited one; [staff-notice-banner.tsx](staff-notice-banner.tsx) (with [staff-notice-row.tsx](staff-notice-row.tsx)) is the neutral lapse notice for internal hats; [module-reason-text.ts](module-reason-text.ts) words each stop reason; [module-fixtures.ts](module-fixtures.ts) feeds specs
 - The command palette: [command-palette.tsx](command-palette.tsx)
 - The user menu: [user-menu.tsx](user-menu.tsx)
 - The manager's license banner under the top bar (only for `settings.manage`, only when a plan is within 30 days of lapsing or past it, or the license file check failed): [license-banner.tsx](license-banner.tsx), [license-notice-row.tsx](license-notice-row.tsx), [license-problem-row.tsx](license-problem-row.tsx), [license-level-look.ts](license-level-look.ts); it reads `GET /api/platform/license` through `@/settings/license-api`
@@ -26,7 +27,7 @@ pnpm --filter @ssdashboard/web test -- src/shell
 pnpm --filter @ssdashboard/web test:e2e -- e2e/shell.spec.ts
 ```
 
-Other Playwright specs: `e2e/menus.spec.ts`, `e2e/license.spec.ts` (the banner).
+Other Playwright specs: `e2e/menus.spec.ts`, `e2e/license.spec.ts` (the banner), `e2e/modules.spec.ts` (off and read only entries and pages, route mocked).
 
 ## Governing spec
 

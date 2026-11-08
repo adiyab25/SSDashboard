@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { AuthCleanupJob } from '../src/identity/sign-in/auth-cleanup.job.js';
 import type { Env } from '../src/config/env.js';
-import { SettingsService } from '../src/platform/settings/settings.service.js';
+import type { JobRegistry } from '../src/platform/jobs/job-registry.js';
 import { ledgerHarness, type LedgerHarness } from './ledger.js';
 
 // Spec 0005, AC-22: the nightly cleanup removes expired rows and leaves live ones, on PostgreSQL.
@@ -21,7 +21,7 @@ describe('auth cleanup', { timeout: 60_000 }, () => {
     h = await ledgerHarness();
     owner = h.owner;
     // Acts as the application role, so a missing DELETE grant would fail here.
-    job = new AuthCleanupJob({} as Env, h.app, new SettingsService(h.app));
+    job = new AuthCleanupJob({} as Env, h.app, {} as JobRegistry);
 
     const user = (
       await run(

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
 import { CloseSheetOnNavigate } from './close-sheet-on-navigate';
 import { CurrentNavLinks } from './current-nav-links';
+import { useModuleStates } from './use-module-states';
 import { NavLinks } from './nav-links';
 import { visibleNavItems } from './nav';
 
@@ -13,7 +14,8 @@ import { visibleNavItems } from './nav';
 export function AppSidebar() {
   const { t } = useTranslation();
   const { permissions } = useAccess();
-  const items = visibleNavItems(permissions);
+  const { stateOf } = useModuleStates();
+  const items = visibleNavItems(permissions, stateOf);
 
   // The close leaf sits outside the sidebar: on phones the sheet's content mounts only while
   // it is open, and an effect mounting with it would close it straight away.

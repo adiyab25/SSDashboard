@@ -3,11 +3,13 @@ import type { CustomerProfile } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 import { customerIdPipe, customersHttpError } from '../customers-http.js';
 import { CustomerProfileService } from './customer-profile.service.js';
 
 /** `GET /api/customers/:id` (`customers.view`, spec 0014 AC-4). */
 @Audience('staff')
+@RequiresModule('customers')
 @Controller('customers')
 export class CustomerProfileController {
   /** Takes the profile service. */

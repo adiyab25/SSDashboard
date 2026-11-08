@@ -1,3 +1,4 @@
+import { ModuleRequiredByError, ModuleRequiresError } from '@ssdashboard/contracts';
 import { apiFetch } from '@/auth/api-fetch';
 
 /** The api's error body: a stable `code`, plus whatever detail that code carries. */
@@ -12,6 +13,10 @@ export interface ApiErrorBody {
   issues?: { path: string; message: string }[];
   /** `LICENSE_INVALID`: the check outcome that refused the upload, such as `bad_signature`. */
   outcome?: string;
+  /** `MODULE_REQUIRED_BY`: the keys of the `on` modules that need the one being turned off. */
+  dependants?: string[];
+  /** `MODULE_REQUIRES`: the keys of the modules that must be on before this one can be turned on. */
+  requires?: string[];
 }
 
 /** A failed call. `status` 0 means the request never got an answer. */
@@ -63,8 +68,18 @@ function errorBody(json: unknown): ApiErrorBody {
         })
       : undefined;
   const outcome = 'outcome' in json && typeof json.outcome === 'string' ? json.outcome : undefined;
+  const dependants =
+    'dependants' in json
+      ? ModuleRequiredByError.shape.dependants.safeParse(json.dependants).data
+      : undefined;
+  const requires =
+    'requires' in json
+      ? ModuleRequiresError.shape.requires.safeParse(json.requires).data
+      : undefined;
   return {
     code,
+    ...(requires && { requires }),
+    ...(dependants && { dependants }),
     ...(lineErrors && { lineErrors }),
     ...(skuIds && { skuIds }),
     ...(undoCode && { undoCode }),

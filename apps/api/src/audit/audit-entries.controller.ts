@@ -20,6 +20,7 @@ import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { auditHttpError } from './audit-http.js';
 import { AuditQueryService } from './audit-query.service.js';
+import { RequiresModule } from '../platform/modules/requires-module.decorator.js';
 
 /** Maps a reader's error to its HTTP answer: audit domain errors, then a forged cursor. */
 export function auditReadError(error: unknown): unknown {
@@ -48,6 +49,7 @@ const entryId = () =>
  */
 @Audience('staff')
 @Permission('audit.read')
+@RequiresModule('audit')
 @Controller('audit/entries')
 export class AuditEntriesController {
   /** Takes the audit reader. */

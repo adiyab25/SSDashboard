@@ -20,8 +20,8 @@ import { OrderWriter } from './writer/order-writer.js';
 /**
  * The orders module (spec 0013): the only writer of `orders`, `order_lines`, and `order_events`.
  * Other features move an order only through the exported write paths inside one
- * `OrderTransactions.run`, and read it through `OrderQueries`. Core, no toggle (its routes take
- * `@RequiresModule('orders')` when spec 0009's module registry lands). Milestones 1 and 2 hold the
+ * `OrderTransactions.run`, and read it through `OrderQueries`. Core, no toggle (every controller
+ * declares `@RequiresModule('orders')`, spec 0009). Milestones 1 and 2 hold the
  * manual, gifted, reopened, and replacement order, the list and search, the order page, editing
  * (`OrderEditing`), confirm, cancel, pack, and unpack (`OrderTransitions`), and the write back
  * projection; channel intake, stock, and the carrier and cash moves follow in later milestones.

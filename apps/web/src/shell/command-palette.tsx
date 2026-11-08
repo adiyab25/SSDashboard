@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
 import { navGroups, visibleNavItems } from './nav';
+import { useModuleStates } from './use-module-states';
 
 /** The palette shortcut as drawn on the key: not text to translate. */
 const SHORTCUT = { apple: '⌘ K', other: 'Ctrl K' } as const;
@@ -36,7 +37,8 @@ export function CommandPalette() {
   // "Ctrl K" on the server and first paint, "⌘ K" after mount on Apple platforms.
   const apple = useSyncExternalStore(noSubscribe, isApplePlatform, () => false);
   const { permissions } = useAccess();
-  const items = visibleNavItems(permissions);
+  const { stateOf } = useModuleStates();
+  const items = visibleNavItems(permissions, stateOf);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

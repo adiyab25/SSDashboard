@@ -32,6 +32,7 @@ import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { StaffService } from './staff.service.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /**
  * Staff administration (spec 0005, AC-12 to AC-18). Every route needs `people.manage` (spec 0008
@@ -40,6 +41,7 @@ import { StaffService } from './staff.service.js';
  */
 @Audience('staff')
 @Permission('people.manage')
+@RequiresModule('identity')
 @Controller('staff')
 export class StaffController {
   /** Takes the staff service and the hat service, the one writer of hats and the cost grant. */

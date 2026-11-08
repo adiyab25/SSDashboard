@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { NoAccessState } from '@/access/no-access-state';
 import { ApiError } from '@/api/client';
 import { LicenseSection } from './license-section';
+import { ModuleSwitchSection } from './module-switch-section';
 import { SettingChangeDialog } from './setting-change-dialog';
 import { SettingSection } from './setting-section';
 import { listSettings, settingsKeys } from './settings-api';
@@ -24,10 +25,11 @@ const SECTIONS: readonly { group: SettingGroup; titleKey: MessageKey }[] = [
 
 /**
  * The settings body (spec 0009, AC-25): the Brand and Policies sections from `GET /api/settings`
- * and the change dialog, with the Modules and license section between them (it loads its own
- * data, so it shows even while the list loads or fails). `enabled` is false until the page knows the person holds
- * `settings.manage`, so nothing is requested early; if the api still answers 403 the shared no
- * access state shows instead of a broken list.
+ * and the change dialog, with the one Modules and license section between them. That section loads
+ * its own license data, so it shows even while the list loads or fails, and holds the module
+ * switches (with their off dialog) once the list is in. `enabled` is false until the page knows
+ * the person holds `settings.manage`, so nothing is requested early; if the api still answers 403
+ * the shared no access state shows instead of a broken list.
  */
 export function SettingsView({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
@@ -98,7 +100,11 @@ export function SettingsView({ enabled }: { enabled: boolean }) {
         sectionOf('brand')
       )}
 
-      <LicenseSection enabled={enabled} />
+      <LicenseSection enabled={enabled}>
+        {query.data && (
+          <ModuleSwitchSection entries={entries.filter((entry) => entry.group === 'modules')} />
+        )}
+      </LicenseSection>
       {query.data && sectionOf('policies')}
 
       {editing && (

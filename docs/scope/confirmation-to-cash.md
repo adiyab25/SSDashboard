@@ -38,12 +38,15 @@ Spec [0012](../specs/0012-catalog-styles-variants/index.md) (Accepted 2026-11-07
 The reference connector that sets the pattern for every channel: orders, products, and customers from one or several stores of one brand, by webhooks plus a scheduled backfill, with stock pushed back to Shopify.
 **Done when:** webhooks are signature verified, a backfill catches anything missed, order edit pairs (a positive and a negative line of the same order, variant, day, and value) are netted before anything counts them, stock pushes never echo back as changes, each field has one owner, rate limits hold, and recorded fixtures replay green with no live call.
 Also from spec 0007: one store per Shopify connection, order numbers unique per store and shown with the store everywhere; a failed write back opens a task and blocks packing that order.
+Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out from Shopify fulfillment (`connectors.shopify.fulfillment_stock_out`) as a task of spec 0015, the Warehouse only stock out source the stock push waits for; and before go live the gift tag pattern (`shopify_gift_tags`) is compared with the pilot brand's real Shopify tags ("Accept, check with brand").
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
   - [ ] Recorded fixtures and one order through a signed webhook
   - [ ] Catalog, orders in full, go live, backfill, and the sweep
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
+  - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)
+  - [ ] Check the gift tag pattern against the pilot brand's real Shopify tags before go live (owner: "Accept, check with brand")
   - [ ] Re-record fixtures from a Shopify dev store (owner ruling 2026-11-07: the fixtures are synthetic until then, written to the shopify.dev shapes of the pinned API version; this feature is not done until this box is ticked)
 - [ ] Verify it: `/check verify shopify connector`
 - [ ] Test it: `/test shopify connector`

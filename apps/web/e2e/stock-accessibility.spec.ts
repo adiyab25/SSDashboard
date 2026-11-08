@@ -43,9 +43,24 @@ async function expectOneH1(page: Page) {
   await expect(page.locator('h1')).toHaveCount(1);
 }
 
+/**
+ * The SKU filter starts disabled until the access check answers, and the button fades from its
+ * disabled opacity with `transition-all`: axe measures contrast on what is painted, so when the
+ * filter is on the page wait until it is enabled and its fade has ended.
+ */
+async function settleSkuFilter(page: Page) {
+  const filter = page.locator('#stock-sku-filter');
+  if ((await filter.count()) === 0) return;
+  await expect(filter).toBeEnabled();
+  await expect
+    .poll(() => filter.evaluate((element) => getComputedStyle(element).opacity))
+    .toBe('1');
+}
+
 /** The page is clean as it stands: one h1, no axe violations. */
 async function expectClean(page: Page) {
   await expectOneH1(page);
+  await settleSkuFilter(page);
   await settle(page);
   await expectNoAxeViolations(page);
 }

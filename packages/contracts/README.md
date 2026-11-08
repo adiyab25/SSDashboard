@@ -7,7 +7,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 ## Owns
 
 - One file per area of shapes, re-exported from [src/index.ts](src/index.ts): [auth](src/auth.ts), [catalog](src/catalog.ts), [inventory](src/inventory.ts), [locations](src/locations.ts), [platform](src/platform.ts), [staff](src/staff.ts), [stock](src/stock.ts), [stock-receipts](src/stock-receipts.ts), [health](src/health.ts)
-- Six folders of pure modules, each re-exported from [src/index.ts](src/index.ts). Nothing in them reads a database, a clock, or the network:
+- Eleven folders of pure modules, each re-exported from [src/index.ts](src/index.ts). Nothing in them reads a database, a clock, or the network:
   - [customers/](src/customers/): [egyptian-phone.ts](src/customers/egyptian-phone.ts) turns phone text into one E.164 number and its kind (`EgyptianPhone.parse`), and defines `InvalidPhone`; [customer-enums.ts](src/customers/customer-enums.ts) (flag, flag source, external id kind, merge suggestion, and `findOrCreate` outcome enums), [customer-reason-codes.ts](src/customers/customer-reason-codes.ts), [customer-views.ts](src/customers/customer-views.ts) (`CustomerBrief`, `CustomerProfile`), and [customer-search.ts](src/customers/customer-search.ts) (`CustomerSearchRequest`: exactly one of phone, name fragment, or flagged).
   - [orders/](src/orders/): [order-states.ts](src/orders/order-states.ts) holds the fulfillment and cash state machines, their transition table, `nextState`, `firstCashState`, and `replayStates`.
   - [orders/](src/orders/): [order-outcome.ts](src/orders/order-outcome.ts) holds `deriveOrderOutcome`, the only place an order's outcome is computed, plus `refundedAmountOf` and `deliveredAmountOf`.
@@ -18,6 +18,11 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
   - [settlement/](src/settlement/): [settlement-enums.ts](src/settlement/settlement-enums.ts) holds the settlement enums; [settlement-states.ts](src/settlement/settlement-states.ts) holds `lineMatchState` (follows the supersede chain, throws `InvalidMatchChain` on a fork) and `settlementPeriodStatus`.
   - [tasks/](src/tasks/): [task-enums.ts](src/tasks/task-enums.ts) holds the task enums.
   - [platform/](src/platform/): [cost-rules.ts](src/platform/cost-rules.ts) holds the order cost rule enums and the `CostRule` result type.
+  - [audit/](src/audit/): the actor union and its constructors ([audit-actor.ts](src/audit/audit-actor.ts)), the entry and list shapes ([audit-entries.ts](src/audit/audit-entries.ts), [audit-reading.ts](src/audit/audit-reading.ts)), the `AUDIT_ACTIONS` registry ([audit-actions.ts](src/audit/audit-actions.ts)), and `AUDIT_RECORD_TYPES` ([audit-record-types.ts](src/audit/audit-record-types.ts)) (spec 0010).
+  - [connectors/](src/connectors/): [connector-enums.ts](src/connectors/connector-enums.ts) holds the connector enums (spec 0015).
+  - [license/](src/license/): the signed envelope and the strict payload ([license-envelope.ts](src/license/license-envelope.ts)), `bundlePhase` and the union rule per bundle ([license-phase.ts](src/license/license-phase.ts)), and the license API shapes ([license-api.ts](src/license/license-api.ts)) (spec 0009).
+  - [settings/](src/settings/): the settings registry ([registry.ts](src/settings/registry.ts), one file per screen group such as [brand-settings.ts](src/settings/brand-settings.ts)), `PUBLIC_CONFIG_FIELDS` ([public-config.ts](src/settings/public-config.ts)), the rules across settings ([write-checks.ts](src/settings/write-checks.ts)), and the settings API shapes ([settings-api.ts](src/settings/settings-api.ts)) (spec 0009).
+  - [modules/](src/modules/): the module registry ([module-registry.ts](src/modules/module-registry.ts), its rules in [module-registry-checks.ts](src/modules/module-registry-checks.ts)), module toggles ([module-toggles.ts](src/modules/module-toggles.ts)), the pure `moduleStates` ([module-state.ts](src/modules/module-state.ts)), and the modules API and error shapes ([modules-api.ts](src/modules/modules-api.ts)) (spec 0009).
 - Money rules: [src/money.ts](src/money.ts) (`Money`, `UnitCost`, `LineAmounts`)
 - Localized text: [src/localized-text.ts](src/localized-text.ts)
 

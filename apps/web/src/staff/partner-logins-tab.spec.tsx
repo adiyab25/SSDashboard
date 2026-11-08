@@ -20,6 +20,18 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('./partner-users-api', () => api);
 
+// The module states come from the shell's query; this spec drives them directly.
+const consignment = vi.hoisted(() => ({
+  view: null as null | { state: string; reason: string | null },
+}));
+vi.mock('@/shell/use-module-states', () => ({
+  useModuleStates: () => ({
+    answer: undefined,
+    ready: true,
+    stateOf: (key: string) => (key === 'consignment' ? consignment.view : null),
+  }),
+}));
+
 const NILE = '0190c0de-0000-7000-8000-00000000a001';
 const DELTA = '0190c0de-0000-7000-8000-00000000a002';
 const ACCOUNTS: PartnerAccount[] = [
@@ -65,6 +77,32 @@ describe('PartnerLoginsTab (spec 0008, AC-15, AC-18)', () => {
   });
   afterEach(() => {
     for (const mock of Object.values(api)) mock.mockReset();
+    consignment.view = null;
+  });
+
+  it('keeps the list and the row actions while consignment is off, and disables only Add (W3)', async () => {
+    consignment.view = { state: 'off', reason: 'toggled_off' };
+    render(<PartnerLoginsTab mailEnabled languages={['en']} />);
+
+    const add = await screen.findByRole('button', { name: 'Add partner login' });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAccessibleDescription(/partner portal is switched off/);
+    await userEvent.click(await screen.findByRole('button', { name: 'Actions for Ola Partner' }));
+    expect(await screen.findByRole('menuitem', { name: /Disable/ })).toBeEnabled();
+  });
+
+  it('names the Operations plan on Add when consignment is off for want of a license', async () => {
+    consignment.view = { state: 'off', reason: 'not_licensed' };
+    render(<PartnerLoginsTab mailEnabled languages={['en']} />);
+
+    expect(await screen.findByRole('button', { name: 'Add partner login' })).toBeDisabled();
+    expect(screen.getByText('Needs the Operations plan')).toBeVisible();
+  });
+
+  it('leaves Add active while consignment is read only, limited, or unknown', async () => {
+    consignment.view = { state: 'read_only', reason: 'lapsed' };
+    render(<PartnerLoginsTab mailEnabled languages={['en']} />);
+    expect(await screen.findByRole('button', { name: 'Add partner login' })).toBeEnabled();
   });
 
   it('lists partner logins with their partner account, status, last sign in and two factor', async () => {

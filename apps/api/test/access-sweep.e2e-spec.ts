@@ -13,6 +13,8 @@ import {
 } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module.js';
+import { MODULE_ROWS } from '../src/platform/modules/module-registry.js';
+import { FIXTURE_MODULE_ROWS } from './fixtures/fixture-operations.module.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { routeCatalog, routesOf, type ControllerClass, type RouteEntry } from './route-catalog.js';
 
@@ -308,6 +310,14 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     // Spec 0009 milestone 2: the license, `settings.manage`. The upload is not a license, so a
     // manager gets 422 LICENSE_INVALID (`bad_format`): one refused check row, no license, no phase
     // change, however often the sweep calls it.
+    // Spec 0009 milestone 3: what runs on this install (any staff hat; the license notices inside
+    // only for settings.manage), and the off dialog's impact of the fixture module's toggle (read
+    // only: it changes nothing).
+    'GET /platform/modules': { needs: 'any_hat' },
+    'GET /settings/:key/off-impact': {
+      needs: ['settings.manage'],
+      path: () => '/settings/module.fixtureops.enabled/off-impact',
+    },
     'GET /platform/license': { needs: ['settings.manage'] },
     'POST /platform/license': {
       needs: ['settings.manage'],
@@ -413,7 +423,11 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
   const keyOf = (route: RouteEntry) => `${route.method} ${route.path}`;
 
   beforeAll(async () => {
-    api = await startInProcessApi();
+    // The fixture module rows give the off impact route a module toggle to read (no module of
+    // today has one); their controllers are not loaded, so the route list is the app's own.
+    api = await startInProcessApi((builder) =>
+      builder.overrideProvider(MODULE_ROWS).useValue(FIXTURE_MODULE_ROWS),
+    );
     // Every route the running app serves, from its own module graph.
     const controllers = [...api.app.get(ModulesContainer).values()].flatMap((module) =>
       [...module.controllers.values()]
@@ -662,10 +676,11 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     }
 
     expect(problems, problems.join('\n')).toEqual([]);
-    // The media buyer reaches only the who am I routes and the open ones today (no campaigns.view
-    // route exists yet), and the partner user only the partner who am I routes and the open ones.
+    // The media buyer reaches only the who am I routes, what runs on the install (any staff hat,
+    // spec 0009 AC-26, no license notice), and the open ones today (no campaigns.view route exists
+    // yet), and the partner user only the partner who am I routes and the open ones.
     expect(reached.get('media_buyer')?.sort()).toEqual(
-      ['GET /config', 'GET /health', 'GET /me', 'PATCH /me'].sort(),
+      ['GET /config', 'GET /health', 'GET /me', 'PATCH /me', 'GET /platform/modules'].sort(),
     );
     expect(reached.get('partner')?.sort()).toEqual(
       ['GET /config', 'GET /health', 'GET /partner/me', 'PATCH /partner/me'].sort(),

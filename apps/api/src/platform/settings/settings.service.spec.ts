@@ -92,7 +92,7 @@ describe('SettingsService.read', () => {
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const fresh = new SettingsService({ db: executorWith([]) } as unknown as DatabaseConnection);
 
-    const [setting] = await fresh.load([key as 'currency'], executorWith([{ key, value }]));
+    const [setting] = await fresh.load([key], executorWith([{ key, value }]));
 
     expect(setting?.invalid).toBe(true);
     if (fallback !== undefined) expect(setting?.value).toEqual(fallback);

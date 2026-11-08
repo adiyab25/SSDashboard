@@ -9,21 +9,11 @@ The brand's stores (where an order is numbered and priced) and channels (how an 
   - `stores(ids, executor?)` and `channels(ids, executor?)`: code, names, kind, and for a channel its default store. Archived ones are answered, because an order keeps pointing at what it was made in.
   - `listStores({ kind? })` and `listChannels({ kinds? })`: the ones not archived, ordered by code, for forms.
   - `storeLabelsByConnection(connectionIds, executor?)`: `{ connectionId, storeId, storeCode, storeName }` per requested connection (an answer for an id not asked is dropped), ordered by store code then connection id, for the customer profile (spec 0014). The connection to store link comes from a `ConnectionStoreSource` the connectors module registers with `registerConnectionStores` (see Decisions); without one it throws `CONNECTION_STORES_NOT_REGISTERED`.
-  - `createShopifyStore(tx, input)`: a store of kind `shopify` and its own channel (kind `shopify`, same code and name, default store this store) in the caller's transaction. Only the connectors module calls it, from the connect route. A code in use throws `STORE_CODE_TAKEN`; a code outside `^[A-Z0-9][A-Z0-9_-]{0,31}# Channels
-
-The brand's stores (where an order is numbered and priced) and channels (how an order arrived), read and created through one service so orders, customers, and the Shopify connector never touch the tables.
-
-## Owns
-
-- The `stores` and `channels` tables (defined in [packages/db](../../../../packages/db/src/schema/channels.ts)), owned by `channels` in [table-ownership.ts](../../../../packages/db/src/table-ownership.ts). Only this module reads or writes them. The seeds (the internal store `MAIN`, the channel `manual`) are in the baseline rules migration.
-- `ChannelsService` ([channels.service.ts](channels.service.ts)), the one exported service:
-  - `stores(ids, executor?)` and `channels(ids, executor?)`: code, names, kind, and for a channel its default store. Archived ones are answered, because an order keeps pointing at what it was made in.
-  - `listStores({ kind? })` and `listChannels({ kinds? })`: the ones not archived, ordered by code, for forms.
-  - `storeLabelsByConnection(connectionIds, executor?)`: `{ connectionId, storeId, storeCode, storeName }` per connection, for the customer profile (spec 0014). The connection to store link comes from a `ConnectionStoreSource` the connectors module registers with `registerConnectionStores` (see Decisions); without one it throws `CONNECTION_STORES_NOT_REGISTERED`.
-  - `createShopifyStore(tx, input)`: a store of kind `shopify` and its own channel (kind `shopify`, same code and name, default store this store) in the caller's transaction. Only the connectors module calls it, from the connect route.  or a name with no language throws `INVALID_STORE_INPUT`. Names are trimmed and only `en` and `ar` are kept.
+  - `createShopifyStore(tx, input)`: a store of kind `shopify` and its own channel (kind `shopify`, same code and name, default store this store) in the caller's transaction. Only the connectors module calls it, from the connect route. A code in use throws `STORE_CODE_TAKEN`; a code outside `^[A-Z0-9][A-Z0-9_-]{0,31}$` or a name with no language throws `INVALID_STORE_INPUT`. Names are trimmed and only `en` and `ar` are kept.
   - `renameStore(tx, storeId, { name, publicName? })`: sets the names of a Shopify store (and its channel's name) so the connect job can fill them from the shop name; the code never changes, and an unknown or internal store throws `STORE_NOT_FOUND`.
 - `ChannelsError` ([channels.errors.ts](channels.errors.ts)): the typed domain errors.
 - The module wiring: [channels.module.ts](channels.module.ts) exports `ChannelsService`. Core, no toggle, no routes.
+- Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `channels`, core, no toggle; it has no controller yet (a controller added here declares `@RequiresModule('channels')`, or `src/platform/modules/requires-module.spec.ts` fails the build).
 
 ## Never touches
 
