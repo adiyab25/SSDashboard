@@ -12,7 +12,7 @@ export const SHOPIFY_ORDER_TOPICS: readonly string[] = [
   'orders/cancelled',
 ];
 
-/** The app topic milestone 1 processes: health `failing` with `APP_NOT_INSTALLED`. */
+/** The app topic milestone 1 processes: confirmed by the inbox job, then health `failing` (L1). */
 export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 
 /**

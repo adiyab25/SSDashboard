@@ -355,6 +355,24 @@ describe('redaction of connector secrets (spec 0015 Security model)', () => {
     });
   });
 
+  it('redacts the Shopify access token and signature headers however they are cased', () => {
+    const line = {
+      headers: {
+        'X-Shopify-Access-Token': 'fake-token',
+        'x-shopify-hmac-sha256': 'fake-signature',
+        'x-shopify-topic': 'orders/create',
+      },
+    };
+
+    assert.deepEqual(redact(line), {
+      headers: {
+        'X-Shopify-Access-Token': REDACTED,
+        'x-shopify-hmac-sha256': REDACTED,
+        'x-shopify-topic': 'orders/create',
+      },
+    });
+  });
+
   it('keeps the stored hint and key version of a connection row readable', () => {
     const row = { credentialsHint: 'abcd', credentialsKeyVersion: 12, health: 'ok' };
 

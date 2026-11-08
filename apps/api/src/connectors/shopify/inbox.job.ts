@@ -28,9 +28,12 @@ import {
   SHOPIFY_APP_UNINSTALLED_TOPIC,
   SHOPIFY_ORDER_TOPICS,
 } from '../hooks/shopify-hook-payload.js';
+import { ConnectorClock } from './connector-clock.js';
+import { CONNECTOR_SHOPIFY_RETRY } from './connector-shopify.queue.js';
 import {
   mapShopifyOrder,
   parseShopifyOrder,
+  shopifyOrderName,
   ShopifyOrderMappingError,
   type ShopifyOrder,
   type ShopifyOrderContext,
@@ -40,6 +43,7 @@ import {
   ShopifyRejectedError,
   ShopifyTransientError,
   type ShopifyConnectionAccess,
+  type ShopifyWarning,
 } from './shopify-client.js';
 import { ORDER_READ, ORDER_READ_OPERATION } from './shopify-queries.js';
 
@@ -47,7 +51,10 @@ import { ORDER_READ, ORDER_READ_OPERATION } from './shopify-queries.js';
 export const INBOX_JOB_NAME = 'connectors.shopify.inbox';
 
 /** Transient read failures on a connection for this long set `degraded` `READS_FAILING` (AC-8). */
-const READS_FAILING_AFTER = sql`interval '3 hours'`;
+export const READS_FAILING_AFTER_MS = 3 * 60 * 60_000;
+
+/** The API version warning the inbox job keeps on the connection while Shopify answers newer. */
+const FELL_FORWARD: ShopifyWarning = 'API_VERSION_FELL_FORWARD';
 
 /** The token refusals that end a connection `failing` with their own code (as the connect job). */
 const TOKEN_REFUSALS: readonly ConnectionHealthReason[] = [
@@ -64,6 +71,8 @@ interface EventRow extends Record<string, unknown> {
   subject_type: InboundSubject;
   subject_external_id: string | null;
   status: string;
+  /** When this run first read the event (before the read back), exact to the microsecond. */
+  read_started_at: string;
 }
 
 /** The connection columns the job reads; the ciphertext stays a buffer in memory only. */
@@ -101,9 +110,12 @@ interface EventEnd {
   readonly outcome: string | null;
 }
 
-/** A Shopify order name as `subject_label` keeps it: at most 64 characters, never personal. */
-function labelOf(order: ShopifyOrder): string {
-  return order.name.trim().slice(0, 64);
+/**
+ * A Shopify order name as `subject_label` keeps it: cleaned of control and direction characters,
+ * at most 64 characters (never splitting a pair), never personal; null when nothing is left.
+ */
+function labelOf(order: ShopifyOrder): string | null {
+  return shopifyOrderName(order) || null;
 }
 
 /** `OrderNumberTaken` as the inbox's upper case failure code `ORDER_NUMBER_TAKEN`. */
@@ -138,12 +150,26 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *
  * - It skips unless the event is still `received`. A paused (or otherwise not active) connection
  *   leaves the event `received` and completes: resume is task 16.
- * - `app/uninstalled` sets health `failing` with `APP_NOT_INSTALLED` (D9).
- * - An order topic reads the order back with `ORDER_READ` through the one `ShopifyClient`, before
- *   any unit of work. A transient error counts an attempt on the event and throws, so pg-boss
- *   retries with backoff and the event stays `received`; once an event of the connection has
- *   waited unread for 3 hours, health turns `degraded` with `READS_FAILING`, cleared by the next
- *   successful read. A token refusal ends the connection `failing` with its code.
+ * - `app/uninstalled` (D9) is confirmed first (security review L1: the topic header is not
+ *   signed): one token exchange, or a shop read for a legacy token. Only `APP_NOT_INSTALLED`,
+ *   `CREDENTIALS_REJECTED`, or `APP_ORGANIZATION_MISMATCH` confirms it: health `failing` with that
+ *   code, the event `processed`. Shopify accepting ends the event `ignored`
+ *   `uninstall_not_confirmed`; a transient error retries.
+ * - An order topic needs a valid connection `config` (else the event fails
+ *   `CONNECTION_CONFIG_INVALID`), then reads the order back with `ORDER_READ` through the one
+ *   `ShopifyClient`, before any unit of work. A transient error counts an attempt on the event and
+ *   throws, so pg-boss retries by `CONNECTOR_SHOPIFY_RETRY` (over 3 h 15 min) and the event stays
+ *   `received`. Health turns `degraded` `READS_FAILING` once an event of the connection with a
+ *   failed attempt has waited 3 hours since it was received (by `ConnectorClock`), and always when
+ *   the last retry fails; the next successful read clears it. After the last retry the event is
+ *   left `received` with no job: the scheduled sweep of task 12 sends it again (milestone 1 limit).
+ *   A token refusal (`APP_NOT_INSTALLED`, `APP_ORGANIZATION_MISMATCH`, `CREDENTIALS_REJECTED`)
+ *   sets health `failing` with its code and leaves the event `received` (the connection carries
+ *   the problem; a passed connect check and the sweep recover it); any other refusal fails the
+ *   event with its code. A successful read keeps `API_VERSION_FELL_FORWARD` in the connection's
+ *   `health_warnings` while Shopify answers with another version, and clears it when they match.
+ * - A read back whose order id is not the event's gid fails the event `READ_BACK_MISMATCH`
+ *   (security review L2).
  * - Then, inside `OrderTransactions.run` (rerunnable, no provider call), it locks the event and the
  *   order mapping again and decides: a test order is `ignored` `test_order`; a known order (a
  *   mapping exists) is `ignored` `stale` when the snapshot is not newer than `external_version`,
@@ -152,10 +178,12 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *   mapping first (`appliedLineIds`, `unmappedLines`, `discountCodes`, `unmappedGateways`), then
  *   `OrderIntake.createFromChannel` (actor `system_job`, or `import` as the mapper names for a
  *   closed order before go live), the mapping's `local_id`, and `last_order_at`. An empty read
- *   back is `ignored` `not_visible`. Every other `received` event of the same order is marked
- *   `processed` `coalesced` in the same transaction.
+ *   back is `ignored` `not_visible`. Every other `received` event of the same order that arrived
+ *   before this run's read back is marked `processed` `coalesced` in the same transaction; a later
+ *   one waits for its own job (code review m1).
  * - A mapping error or an orders domain error rolls the unit back, and a separate transaction marks
- *   the event `failed` with its upper case code and publishes `InboundEventFailed` in it.
+ *   the event `failed` with its upper case code and publishes `InboundEventFailed` in it. Any other
+ *   error (a crash) rolls the unit back and throws, leaving the event `received` for the retry.
  *
  * Variant mappings come from `connection_external_ids`; none exist before task 8, so lines stay
  * unmapped and are listed in the mapping's `state.unmappedLines` (the product read before mapping,
@@ -166,7 +194,7 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
 export class InboxJob {
   private readonly logger = new Logger('ShopifyInbox');
 
-  /** Takes the database, secrets, the Shopify client, channels, settings, orders, and events. */
+  /** Takes the database, secrets, the Shopify client, channels, settings, orders, events, clock. */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(ConnectionSecrets) private readonly secrets: ConnectionSecrets,
@@ -176,13 +204,23 @@ export class InboxJob {
     @Inject(OrderTransactions) private readonly orderTransactions: OrderTransactions,
     @Inject(OrderIntake) private readonly intake: OrderIntake,
     @Inject(DomainEvents) private readonly events: DomainEvents,
+    @Inject(ConnectorClock) private readonly clock: ConnectorClock,
   ) {}
 
-  /** Runs one inbox event (see the class). `jobId` names the job in the order's actor. */
-  async run(data: { connectionId: string; eventId: string }, jobId: string): Promise<InboxOutcome> {
+  /**
+   * Runs one inbox event (see the class). `jobId` names the job in the order's actor;
+   * `retryCount` is the pg-boss attempt (0 first), so the last retry is known.
+   */
+  async run(
+    data: { connectionId: string; eventId: string },
+    jobId: string,
+    retryCount = 0,
+  ): Promise<InboxOutcome> {
     const event = (
       await this.connection.db.execute<EventRow>(sql`
-        SELECT id, connection_id, topic, subject_type, subject_external_id, status
+        SELECT id, connection_id, topic, subject_type, subject_external_id, status,
+               to_char(clock_timestamp() AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_started_at
         FROM inbound_events
         WHERE id = ${data.eventId}::uuid AND connection_id = ${data.connectionId}::uuid`)
     ).rows[0];
@@ -199,9 +237,12 @@ export class InboxJob {
     if (connection.status === 'paused') return { skipped: 'CONNECTION_PAUSED' };
     if (connection.status !== 'active') return { skipped: 'CONNECTION_NOT_LIVE' };
 
-    if (event.topic === SHOPIFY_APP_UNINSTALLED_TOPIC) return this.appUninstalled(event);
+    const uninstalled = event.topic === SHOPIFY_APP_UNINSTALLED_TOPIC;
     const gid = event.subject_external_id;
-    if (event.subject_type !== 'order' || !gid || !SHOPIFY_ORDER_TOPICS.includes(event.topic)) {
+    if (
+      !uninstalled &&
+      (event.subject_type !== 'order' || !gid || !SHOPIFY_ORDER_TOPICS.includes(event.topic))
+    ) {
       return { skipped: 'TOPIC_NOT_PROCESSED' };
     }
     if (
@@ -236,6 +277,12 @@ export class InboxJob {
       shopDomain: connection.shop_domain,
       credentials,
     };
+    if (uninstalled) return this.appUninstalled(event, access, retryCount);
+    if (!gid) return { skipped: 'TOPIC_NOT_PROCESSED' };
+
+    // A config that does not parse would map orders on defaults (code review m6): refused.
+    const config = ShopifyConnectionConfig.partial().safeParse(connection.config);
+    if (!config.success) return this.fail(event, 'CONNECTION_CONFIG_INVALID', null);
 
     // The read back, before any unit of work (AC-7): nothing inside the unit calls Shopify.
     let readData: unknown;
@@ -246,22 +293,24 @@ export class InboxJob {
         variables: { id: gid },
       });
       readData = answer.data;
+      await this.readSucceeded(connection.id, answer.warnings);
     } catch (error) {
       if (error instanceof ShopifyTransientError) {
-        await this.readFailed(event);
-        this.logger.warn(`inbox event=${event.id} connection=${connection.id} retry=${error.code}`);
+        await this.readFailed(event, retryCount);
         throw error;
       }
       if (error instanceof ShopifyRejectedError) {
         const reason = error.code as ConnectionHealthReason;
         if (TOKEN_REFUSALS.includes(reason)) {
+          // The connection carries the problem; the event waits `received` (code review m2).
           await this.setHealth(this.connection.db, connection.id, 'failing', reason);
+          this.logger.warn(`inbox event=${event.id} connection=${connection.id} skipped=${reason}`);
+          return { skipped: reason };
         }
         return this.fail(event, error.code, null);
       }
       throw error;
     }
-    await this.readSucceeded(connection.id);
 
     const read =
       typeof readData === 'object' && readData !== null
@@ -279,8 +328,9 @@ export class InboxJob {
       if (!(error instanceof ShopifyOrderMappingError)) throw error;
       return this.fail(event, error.code, null);
     }
+    // The mapping is keyed on the event's gid, the order on the read id: they must agree (L2).
+    if (order.id !== gid) return this.fail(event, 'READ_BACK_MISMATCH', null);
 
-    const config = ShopifyConnectionConfig.partial().safeParse(connection.config);
     const settings = await this.settings.read(['sales_tax_rate', 'shopify_gift_tags']);
     const storeId = connection.store_id;
     const channel = (await this.channels.listChannels({ kinds: ['shopify'] })).find(
@@ -291,8 +341,8 @@ export class InboxJob {
       // A store without its own channel cannot take orders: the contract refuses an empty id.
       channelId: channel?.id ?? '',
       connectionId: connection.id,
-      altPhoneAttribute: config.success ? (config.data.altPhoneAttribute ?? null) : null,
-      gatewayMethods: config.success ? (config.data.gatewayMethods ?? {}) : {},
+      altPhoneAttribute: config.data.altPhoneAttribute ?? null,
+      gatewayMethods: config.data.gatewayMethods ?? {},
       giftTags: settings.shopify_gift_tags,
       goLiveAt: connection.go_live_at,
       defaultTaxRate: settings.sales_tax_rate,
@@ -423,7 +473,9 @@ export class InboxJob {
 
   /**
    * Ends the event and coalesces: the event takes its status, outcome, label, and processed time,
-   * and every other `received` event of the same order is `processed` `coalesced` (AC-7).
+   * and every other `received` order topic event of the same order received before this run's
+   * read back started is `processed` `coalesced` (AC-7). A later event (a change after the read)
+   * and other topics of the order (refunds, which wait for their own task) are left alone.
    */
   private async end(
     tx: Executor,
@@ -443,6 +495,8 @@ export class InboxJob {
             subject_label = coalesce(${label}, subject_label), processed_at = now()
         WHERE connection_id = ${event.connection_id}::uuid AND subject_type = 'order'
           AND subject_external_id = ${event.subject_external_id}
+          AND topic = ANY(${pgArray([...SHOPIFY_ORDER_TOPICS])}::text[])
+          AND received_at <= ${event.read_started_at}::timestamptz
           AND status = 'received' AND id <> ${event.id}::uuid`);
     }
     return { status: end.status, code: end.outcome };
@@ -480,18 +534,46 @@ export class InboxJob {
     return moved ? { status: 'failed', code } : { skipped: 'NOT_RECEIVED' };
   }
 
-  /** `app/uninstalled` (D9): health `failing` `APP_NOT_INSTALLED`, the event `processed`. */
-  private async appUninstalled(event: EventRow): Promise<InboxOutcome> {
+  /**
+   * `app/uninstalled` (D9), confirmed before health moves (security review L1, see the class):
+   * one access check; a token refusal confirms (health `failing` with its code, the event
+   * `processed`), Shopify accepting ends the event `ignored` `uninstall_not_confirmed`, any other
+   * refusal too, and a transient error counts an attempt and throws for the retry.
+   */
+  private async appUninstalled(
+    event: EventRow,
+    access: ShopifyConnectionAccess,
+    retryCount: number,
+  ): Promise<InboxOutcome> {
+    let confirmed: ConnectionHealthReason | null = null;
+    try {
+      await this.shopify.confirmAccess(access);
+    } catch (error) {
+      if (error instanceof ShopifyTransientError) {
+        await this.readFailed(event, retryCount);
+        throw error;
+      }
+      if (!(error instanceof ShopifyRejectedError)) throw error;
+      const reason = error.code as ConnectionHealthReason;
+      if (TOKEN_REFUSALS.includes(reason)) confirmed = reason;
+    }
     const outcome = await this.connection.db.transaction(async (tx) => {
       const { rows } = await tx.execute<{ id: string }>(sql`
-        UPDATE inbound_events SET status = 'processed', processed_at = now()
+        UPDATE inbound_events
+        SET status = ${confirmed ? 'processed' : 'ignored'}::inbound_status,
+            outcome = ${confirmed ? null : 'uninstall_not_confirmed'}, processed_at = now()
         WHERE id = ${event.id}::uuid AND status = 'received' RETURNING id`);
       if (!rows[0]) return { skipped: 'NOT_RECEIVED' } satisfies InboxOutcome;
-      await this.setHealth(tx, event.connection_id, 'failing', 'APP_NOT_INSTALLED');
+      if (!confirmed) {
+        return { status: 'ignored', code: 'uninstall_not_confirmed' } satisfies InboxOutcome;
+      }
+      await this.setHealth(tx, event.connection_id, 'failing', confirmed);
       return { status: 'processed', code: null } satisfies InboxOutcome;
     });
-    this.shopify.forgetConnection(event.connection_id);
-    this.logger.warn(`inbox event=${event.id} connection=${event.connection_id} app_uninstalled`);
+    if (confirmed) this.shopify.forgetConnection(event.connection_id);
+    this.logger.warn(
+      `inbox event=${event.id} connection=${event.connection_id} app_uninstalled=${confirmed ?? 'not_confirmed'}`,
+    );
     return outcome;
   }
 
@@ -514,11 +596,15 @@ export class InboxJob {
   }
 
   /**
-   * A transient read failure (AC-8): one attempt more on the event, and health `degraded`
-   * `READS_FAILING` once an event of the connection has waited unread for 3 hours with at least
-   * one failed attempt (reads have then failed for that long), while health is `ok`.
+   * A transient read failure (AC-8, code review M1): one attempt more on the event, and health
+   * `degraded` `READS_FAILING` while health is `ok`, when an event of the connection with a failed
+   * attempt was received 3 hours or more ago by `ConnectorClock` (reads have then failed for that
+   * long), or when this was the last pg-boss retry (`CONNECTOR_SHOPIFY_RETRY.retryLimit`): the
+   * event then stays `received` with no job until the sweep of task 12 sends it again.
    */
-  private async readFailed(event: EventRow): Promise<void> {
+  private async readFailed(event: EventRow, retryCount: number): Promise<void> {
+    const lastRetry = retryCount >= CONNECTOR_SHOPIFY_RETRY.retryLimit;
+    const cutoff = new Date(this.clock.now().getTime() - READS_FAILING_AFTER_MS).toISOString();
     await this.connection.db.transaction(async (tx) => {
       await tx.execute(sql`
         UPDATE inbound_events SET attempts = attempts + 1
@@ -528,18 +614,38 @@ export class InboxJob {
         SET health = 'degraded', health_reason = 'READS_FAILING', health_changed_at = now(),
             updated_at = now()
         WHERE id = ${event.connection_id}::uuid AND health = 'ok'
-          AND EXISTS (SELECT 1 FROM inbound_events e
-                      WHERE e.connection_id = ${event.connection_id}::uuid
-                        AND e.status = 'received' AND e.attempts > 0
-                        AND e.received_at <= now() - ${READS_FAILING_AFTER})`);
+          AND (${lastRetry}::boolean
+               OR EXISTS (SELECT 1 FROM inbound_events e
+                          WHERE e.connection_id = ${event.connection_id}::uuid
+                            AND e.status = 'received' AND e.attempts > 0
+                            AND e.received_at <= ${cutoff}::timestamptz))`);
     });
+    this.logger.warn(
+      `inbox event=${event.id} connection=${event.connection_id} read_failed retry=${retryCount}${lastRetry ? ' last_retry=left_received' : ''}`,
+    );
   }
 
-  /** A successful read clears `READS_FAILING` (AC-8). */
-  private async readSucceeded(connectionId: string): Promise<void> {
+  /**
+   * A successful read: clears `READS_FAILING` (AC-8), and keeps `API_VERSION_FELL_FORWARD` in the
+   * connection's `health_warnings` exactly while the answer carried it (AC-25, code review m3).
+   * Writes only when something changes.
+   */
+  private async readSucceeded(
+    connectionId: string,
+    warnings: readonly ShopifyWarning[],
+  ): Promise<void> {
+    const fellForward = warnings.includes(FELL_FORWARD);
     await this.connection.db.execute(sql`
       UPDATE connections
       SET health = 'ok', health_reason = NULL, health_changed_at = now(), updated_at = now()
       WHERE id = ${connectionId}::uuid AND health = 'degraded' AND health_reason = 'READS_FAILING'`);
+    await this.connection.db.execute(sql`
+      UPDATE connections
+      SET health_warnings = CASE WHEN ${fellForward}::boolean
+                              THEN array_append(health_warnings, ${FELL_FORWARD}::text)
+                              ELSE array_remove(health_warnings, ${FELL_FORWARD}::text) END,
+          updated_at = now()
+      WHERE id = ${connectionId}::uuid
+        AND (${FELL_FORWARD}::text = ANY(health_warnings)) IS DISTINCT FROM ${fellForward}::boolean`);
   }
 }

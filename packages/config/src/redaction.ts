@@ -126,6 +126,9 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   'accesstoken',
   'credentials',
   'apisecret',
+  // Security L9: the Shopify header names, normalized, in case request headers ever reach a log.
+  'xshopifyaccesstoken',
+  'xshopifyhmacsha256',
 ];
 
 /**

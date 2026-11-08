@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   UnrecordedRequest,
+  createShopifyFixtureFetch,
   remainingShopifyExchanges,
   useShopifyScenarios,
 } from '../../../test/shopify-fixture-fetch.js';
 import type { ConnectionCredentials } from '../connections/connection-secrets.js';
 import {
+  MAX_RESPONSE_BYTES,
+  MAX_RETRY_AFTER_MS,
   REQUEST_TIMEOUT_MS,
   SHOPIFY_API_VERSION,
   ShopifyClient,
@@ -503,5 +506,139 @@ describe('ShopifyClient failures', () => {
     expect(everything).not.toContain(SECRET_SENTINEL);
     expect(everything).not.toContain(TOKEN_SENTINEL);
     expect(everything).not.toContain('fake-client-id');
+  });
+});
+
+describe('ShopifyClient limits (security review L3, L4)', () => {
+  it('never follows a redirect: redirect error on every request, a 3xx or a refused redirect is REQUEST_REJECTED', async () => {
+    const fake = fakeFetch(() => json(200, { data: SHOP_DATA }));
+    const { shopify } = client({ fetch: fake.fetchImpl });
+    await shopify.request(access(), SHOP_OP);
+    expect(fake.calls.map((call) => call.init?.redirect)).toEqual(['error', 'error']);
+
+    const moved = fakeFetch(
+      () =>
+        new Response(null, { status: 307, headers: { Location: 'https://elsewhere.example/' } }),
+    );
+    const third = client({ fetch: moved.fetchImpl });
+    const tokenMoved = await failure(third.shopify.request(access(), SHOP_OP));
+    expect([tokenMoved.kind, tokenMoved.code, tokenMoved.status]).toEqual([
+      'rejected',
+      'REQUEST_REJECTED',
+      307,
+    ]);
+
+    // What undici throws under `redirect: 'error'` when the server answers a redirect.
+    const refused = fakeFetch(() =>
+      Promise.reject(new TypeError('fetch failed', { cause: new Error('unexpected redirect') })),
+    );
+    const fourth = client({ fetch: refused.fetchImpl });
+    expect((await failure(fourth.shopify.request(access(), SHOP_OP))).code).toBe(
+      'REQUEST_REJECTED',
+    );
+  });
+
+  it('does not sleep a Retry-After above 60 seconds: a transient RATE_LIMITED at once', async () => {
+    const fake = fakeFetch(() => json(429, {}, { 'Retry-After': '3600' }));
+    const { shopify, clock } = client({ fetch: fake.fetchImpl });
+
+    const error = await failure(shopify.request(access(), SHOP_OP));
+
+    expect(MAX_RETRY_AFTER_MS).toBe(60_000);
+    expect([error.kind, error.code]).toEqual(['transient', 'RATE_LIMITED']);
+    expect(clock.time.waits).toEqual([]);
+  });
+
+  it('refuses an answer above 10 MB, by Content-Length or while reading, with RESPONSE_TOO_LARGE', async () => {
+    const declared = fakeFetch(
+      () =>
+        new Response('{}', {
+          status: 200,
+          headers: { 'Content-Length': String(MAX_RESPONSE_BYTES + 1) },
+        }),
+    );
+    const first = client({ fetch: declared.fetchImpl });
+    const byHeader = await failure(first.shopify.request(access(), SHOP_OP));
+    expect([byHeader.kind, byHeader.code]).toEqual(['rejected', 'RESPONSE_TOO_LARGE']);
+
+    let pulled = 0;
+    const megabyte = new Uint8Array(1024 * 1024).fill(0x20);
+    const streamed = fakeFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              pulled += 1;
+              controller.enqueue(megabyte);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const second = client({ fetch: streamed.fetchImpl });
+    const byRead = await failure(second.shopify.request(access(), SHOP_OP));
+    expect(byRead.code).toBe('RESPONSE_TOO_LARGE');
+    // It stopped reading just past the cap instead of draining an endless body.
+    expect(pulled).toBeLessThanOrEqual(MAX_RESPONSE_BYTES / megabyte.byteLength + 2);
+  });
+});
+
+describe('ShopifyClient.confirmAccess (security review L1)', () => {
+  it('makes one fresh token exchange for client credentials, even with a cached token', async () => {
+    const fake = fakeFetch(() => json(200, { data: SHOP_DATA }));
+    const { shopify } = client({ fetch: fake.fetchImpl });
+    await shopify.request(access(), SHOP_OP);
+
+    await shopify.confirmAccess(access());
+
+    expect(fake.tokenCalls()).toHaveLength(2);
+    expect(fake.calls).toHaveLength(3);
+  });
+
+  it('throws the token refusal code that confirms an uninstall', async () => {
+    const fake = fakeFetch(
+      () => json(200, { data: SHOP_DATA }),
+      () => json(400, { error: 'app_not_installed' }),
+    );
+    const { shopify } = client({ fetch: fake.fetchImpl });
+
+    const error = await failure(shopify.confirmAccess(access()));
+
+    expect([error.kind, error.code]).toEqual(['rejected', 'APP_NOT_INSTALLED']);
+  });
+
+  it('reads the shop once for a legacy access token', async () => {
+    const fake = fakeFetch(() => json(401, { errors: 'Invalid API key or access token' }));
+    const { shopify } = client({ fetch: fake.fetchImpl });
+
+    const error = await failure(
+      shopify.confirmAccess({
+        connectionId: 'legacy',
+        shopDomain: SHOP,
+        credentials: { kind: 'access_token', accessToken: 'fake-legacy-token', apiSecret: 'x' },
+      }),
+    );
+
+    expect(error.code).toBe('CREDENTIALS_REJECTED');
+    expect(fake.tokenCalls()).toHaveLength(0);
+    expect(fake.calls).toHaveLength(1);
+  });
+});
+
+describe('the refusing test fetch (security review L10)', () => {
+  it('passes a loopback request through without following a redirect', async () => {
+    const seen: (RequestInit | undefined)[] = [];
+    const passThrough = ((_input: string | URL | Request, init?: RequestInit) => {
+      seen.push(init);
+      return Promise.resolve(
+        new Response(null, { status: 302, headers: { Location: 'https://example.com/' } }),
+      );
+    }) as typeof fetch;
+    const refusing = createShopifyFixtureFetch(passThrough);
+
+    const answer = await refusing.fetch('http://127.0.0.1:3931/api/health');
+
+    expect(answer.status).toBe(302);
+    expect(seen.map((init) => init?.redirect)).toEqual(['manual']);
   });
 });

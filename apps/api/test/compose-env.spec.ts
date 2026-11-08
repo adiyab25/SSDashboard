@@ -325,6 +325,22 @@ describe('deploy/compose.yaml gives each entry point the env it validates', () =
   });
 });
 
+// Why: a rotation comment once held a line break inside quotes, and `docker compose --env-file`
+// refused the file ("unexpected character"). Every line of an env template is a comment, blank, or
+// KEY=VALUE, so a wrapped comment line without its `#` fails here, not on a client install.
+describe.each(['deploy/.env.example', '.env.example'])('%s line shapes', (file) => {
+  it('holds only comments, blank lines, and KEY=VALUE lines', () => {
+    const bad = readFileSync(`${ROOT}${file}`, 'utf8')
+      .split(/\r?\n/)
+      .map((line, index) => ({ line, number: index + 1 }))
+      .filter(
+        ({ line }) => line.trim() !== '' && !/^\s*#/.test(line) && !/^[A-Za-z_]\w*=/.test(line),
+      );
+
+    expect(bad, `bad lines in ${file}`).toEqual([]);
+  });
+});
+
 describe('the compose env reader', () => {
   const base = (service: string) => `x-a: &a\n  A: one\nservices:\n${service}`;
 

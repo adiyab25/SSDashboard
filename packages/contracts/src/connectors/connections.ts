@@ -15,6 +15,13 @@ import {
  * of the client id (AC-2).
  */
 
+/**
+ * C0 and C1 control characters and the bidirectional marks, embeddings, overrides, and isolates
+ * (ALM, LRM, RLM, LRE to RLO, LRI to PDI) a typed label must not carry (security review L11): shown
+ * in the list, the detail, and the audit trail, they could reorder or hide text.
+ */
+export const CONTROL_OR_BIDI_PATTERN = /[\p{Cc}؜‎‏‪-‮⁦-⁩]/u;
+
 /** A Shopify shop domain (`<name>.myshopify.com`), the `connections_shop_domain_shape` check. */
 export const SHOPIFY_SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 
@@ -55,21 +62,35 @@ export const ConnectionHealthReason = z.enum([
 export type ConnectionHealthReason = z.infer<typeof ConnectionHealthReason>;
 
 /**
- * Warnings that keep health `ok` but show on the connection (AC-1): the shop's time zone is not
- * the install's `timezone` setting, or the Shopify app is owned by a person's account.
+ * Warnings that keep health `ok` but show on the connection (AC-1, AC-25): the shop's time zone
+ * is not the install's `timezone` setting, the Shopify app is owned by a person's account, or
+ * Shopify answered with a newer API version than the pinned one (set and cleared by the connect
+ * and inbox jobs).
  */
-export const ConnectionWarning = z.enum(['SHOP_TIMEZONE_DIFFERS', 'APP_OWNED_BY_PERSON']);
+export const ConnectionWarning = z.enum([
+  'SHOP_TIMEZONE_DIFFERS',
+  'APP_OWNED_BY_PERSON',
+  'API_VERSION_FELL_FORWARD',
+]);
 /** One ConnectionWarning value. */
 export type ConnectionWarning = z.infer<typeof ConnectionWarning>;
 
 /**
  * `POST /api/connections/shopify` (`settings.manage`, AC-1). The shop domain is trimmed and lower
  * cased before its shape is checked; a domain of the wrong shape answers 422
- * `INVALID_SHOP_DOMAIN`, any other bad field 422 `INVALID_BODY`. The client id and secret are typed
+ * `INVALID_SHOP_DOMAIN`, any other bad field 422 `INVALID_BODY` (a label with a control or direction
+ * character included). The client id and secret are typed
  * by the owner (Q-13.8) and never come back in any answer.
  */
 export const ConnectShopifyBody = z.strictObject({
-  label: z.string().trim().min(1).max(80),
+  label: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .refine((label) => !CONTROL_OR_BIDI_PATTERN.test(label), {
+      message: 'The label has a control or direction character',
+    }),
   storeCode: z.string().trim().regex(STORE_CODE_PATTERN),
   shopDomain: z.string().trim().toLowerCase().max(255).regex(SHOPIFY_SHOP_DOMAIN_PATTERN),
   clientId: z.string().trim().min(1).max(255),

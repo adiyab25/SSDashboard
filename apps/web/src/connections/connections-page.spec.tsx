@@ -73,7 +73,13 @@ describe('ConnectionsPage (spec 0015, AC-1, AC-27)', () => {
                   healthReason: 'APP_NOT_INSTALLED',
                   status: 'paused',
                 }),
-                connection(2, { healthWarnings: ['SHOP_TIMEZONE_DIFFERS', 'APP_OWNED_BY_PERSON'] }),
+                connection(2, {
+                  healthWarnings: [
+                    'SHOP_TIMEZONE_DIFFERS',
+                    'APP_OWNED_BY_PERSON',
+                    'API_VERSION_FELL_FORWARD',
+                  ],
+                }),
               ],
               'next',
             ),
@@ -95,6 +101,7 @@ describe('ConnectionsPage (spec 0015, AC-1, AC-27)', () => {
     ).toBeVisible();
     expect(within(table).getByText(/time zone of this install/)).toBeVisible();
     expect(within(table).getByText(/belongs to a person/)).toBeVisible();
+    expect(within(table).getByText(/newer API version than the app is pinned to/)).toBeVisible();
     expect(screen.getByRole('link', { name: 'Connect a Shopify store' })).toHaveAttribute(
       'href',
       '/connections/new',

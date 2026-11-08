@@ -1,13 +1,18 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { connect as netConnect } from 'node:net';
 import type { LoggerService } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { OrderListResponse } from '@ssdashboard/contracts';
 import { sql } from '@ssdashboard/db';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ConnectionSecrets } from '../src/connectors/connections/connection-secrets.js';
 import { InboundEventFailed } from '../src/connectors/connectors.events.js';
 import { HOOK_BODY_LIMIT_BYTES } from '../src/connectors/hooks/mount-hooks.js';
+import { ConnectorClock } from '../src/connectors/shopify/connector-clock.js';
+import { CONNECTOR_SHOPIFY_RETRY } from '../src/connectors/shopify/connector-shopify.queue.js';
 import { InboxJob } from '../src/connectors/shopify/inbox.job.js';
+import { ShopifyClient } from '../src/connectors/shopify/shopify-client.js';
+import { OrderIntake } from '../src/orders/intake/order-intake.service.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { WorkerModule } from '../src/worker.module.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
@@ -29,6 +34,17 @@ import { devDatabaseUrl, eventually } from './support.js';
 
 // Load the root .env before the api saves the environment (the worker reads it after).
 devDatabaseUrl();
+
+// A key rotation in progress (AC-2, code review m9a): both processes hold this as
+// CONNECTOR_SECRET_KEY_PREVIOUS, so a connection sealed under it still verifies. A test key only.
+const PREVIOUS_KEY = randomBytes(32).toString('base64');
+process.env['CONNECTOR_SECRET_KEY_PREVIOUS'] = PREVIOUS_KEY;
+
+/** The worker's clock (`ConnectorClock`): a test moves it instead of backdating rows. */
+const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
+
+/** Three hours and a minute: past the READS_FAILING rule. */
+const PAST_THREE_HOURS_MS = (3 * 60 + 1) * 60_000;
 
 /** The webhook secret (the client secret) of every connection here; it must never come back out. */
 const SENTINEL_SECRET = `sentinel-hook-secret-${randomUUID()}`;
@@ -82,7 +98,13 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
 
   /** Plants a Shopify store, its channel, and a connection sealed with the sentinel secret. */
   const plant = async (
-    options: { status?: string; health?: string; health_reason?: string | null } = {},
+    options: {
+      status?: string;
+      health?: string;
+      health_reason?: string | null;
+      config?: string;
+      sealWith?: ConnectionSecrets;
+    } = {},
   ): Promise<Planted> => {
     const t = tag();
     const storeCode = `HK${t.toUpperCase()}`;
@@ -99,18 +121,17 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
        VALUES ($1, '{"en":"Hook store"}', 'shopify', $2::uuid)`,
       [storeCode, storeId],
     );
-    const sealed = api.app
-      .get(ConnectionSecrets)
-      .seal(
-        { kind: 'client_credentials', clientId: `client-${t}-WXYZ`, clientSecret: SENTINEL_SECRET },
-        id,
-      );
+    const sealer: ConnectionSecrets = options.sealWith ?? api.app.get(ConnectionSecrets);
+    const sealed = sealer.seal(
+      { kind: 'client_credentials', clientId: `client-${t}-WXYZ`, clientSecret: SENTINEL_SECRET },
+      id,
+    );
     await api.owner.pool.query(
       `INSERT INTO connections (id, provider, label, store_id, status, shop_domain,
                                 credentials_ciphertext, credentials_key_version, credentials_hint,
                                 credentials_updated_at, config, health, health_reason)
        VALUES ($1::uuid, 'shopify', 'Hook store', $2::uuid, $3, $4, $5, $6, 'WXYZ', now(),
-               '{"appOwner":"organization","altPhoneAttribute":"alt_phone"}'::jsonb, $7, $8)`,
+               $9::jsonb, $7, $8)`,
       [
         id,
         storeId,
@@ -120,6 +141,7 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
         sealed.keyVersion,
         options.health ?? 'ok',
         options.health_reason ?? null,
+        options.config ?? '{"appOwner":"organization","altPhoneAttribute":"alt_phone"}',
       ],
     );
     return { id, shopDomain, storeCode, storeId };
@@ -147,7 +169,7 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
       webhookId?: string;
       raw?: Buffer;
       tamper?: boolean;
-      shop?: string;
+      shop?: string | null;
       signature?: string | null;
       path?: string;
     } = {},
@@ -162,11 +184,13 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       'x-shopify-topic': topic,
-      'x-shopify-shop-domain': options.shop ?? connection.shopDomain,
       'x-shopify-webhook-id': webhookId,
       'x-shopify-api-version': '2026-10',
       'x-shopify-triggered-at': new Date().toISOString(),
     };
+    if (options.shop !== null) {
+      headers['x-shopify-shop-domain'] = options.shop ?? connection.shopDomain;
+    }
     if (options.signature !== null)
       headers['x-shopify-hmac-sha256'] = options.signature ?? signature;
     const response = await fetch(
@@ -204,6 +228,18 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     return row;
   };
 
+  const eventById = async (id: string): Promise<EventRow> => {
+    const { rows } = await api.owner.pool.query<EventRow>(
+      `SELECT id, status, outcome, failure_code, attempts, subject_label, subject_external_id,
+              payload
+       FROM inbound_events WHERE id = $1::uuid`,
+      [id],
+    );
+    const row = rows[0];
+    if (!row) throw new Error('no inbox row with that id');
+    return row;
+  };
+
   /** Waits until the event left `received`. */
   const settled = (connectionId: string, webhookId: string) =>
     eventually(
@@ -222,10 +258,146 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
       )
     ).rows[0];
 
+  const warnings = async (id: string) =>
+    (
+      await api.owner.pool.query<{ health_warnings: string[] }>(
+        'SELECT health_warnings FROM connections WHERE id = $1::uuid',
+        [id],
+      )
+    ).rows[0]?.health_warnings;
+
+  /** Waits until every pg-boss job of these events completed. */
+  const jobsCompleted = (eventIds: string[]) =>
+    eventually(
+      async () =>
+        (await count(
+          `SELECT count(*) AS n FROM pgboss.job
+           WHERE name = 'connector-shopify' AND data->>'eventId' = ANY($1) AND state = 'completed'`,
+          [eventIds],
+        )) === eventIds.length
+          ? true
+          : undefined,
+      { timeoutMs: 60_000, what: 'the jobs to complete' },
+    );
+
+  /**
+   * Plants a paused connection, delivers each topic for `gid` (each job meets the pause and leaves
+   * its event received), then turns it active, so the test runs `InboxJob` itself.
+   */
+  const pausedThenActive = async (gid: string, topics: string[] = ['orders/create']) => {
+    const c = await plant({ status: 'paused' });
+    const events: EventRow[] = [];
+    for (const topic of topics) {
+      const reply = await deliver(c, topic, orderBody(gid));
+      expect(reply.status).toBe(200);
+      events.push(await eventOf(c.id, reply.webhookId));
+    }
+    await jobsCompleted(events.map((event) => event.id));
+    await api.owner.pool.query(`UPDATE connections SET status = 'active' WHERE id = $1::uuid`, [
+      c.id,
+    ]);
+    return { c, events };
+  };
+
+  /** What a raw HTTP exchange saw: the status line's code, the body, and who closed. */
+  interface RawReply {
+    status: number;
+    body: string;
+    closedByServer: boolean;
+    ms: number;
+    /** Body bytes written before the exchange ended. */
+    sent: number;
+  }
+
+  /**
+   * One HTTP/1.1 request over a plain socket, so a test controls exactly how many body bytes go
+   * out and when (fetch cannot send a short body or keep reading after a reset). `body` is sent
+   * at once; `stream` keeps sending chunks until the server answers or closes.
+   */
+  const rawExchange = (
+    path: string,
+    headers: Record<string, string>,
+    options: { body?: Buffer; stream?: { chunk: Buffer; max: number } } = {},
+  ): Promise<RawReply> =>
+    new Promise((resolve, reject) => {
+      const started = Date.now();
+      const { hostname, port } = new URL(api.base);
+      const socket = netConnect({ host: hostname, port: Number(port) });
+      const received: Buffer[] = [];
+      let answered = false;
+      let closedByServer = false;
+      let sent = 0;
+      const guard = setTimeout(() => {
+        socket.destroy();
+        reject(new Error('raw exchange timed out'));
+      }, 30_000);
+      socket.on('data', (data: Buffer) => {
+        answered = true;
+        received.push(data);
+      });
+      socket.on('end', () => {
+        closedByServer = true;
+      });
+      // A reset after the answer is the server closing on a sender it refused.
+      socket.on('error', () => {
+        closedByServer = true;
+      });
+      socket.on('close', () => {
+        clearTimeout(guard);
+        const text = Buffer.concat(received).toString('latin1');
+        const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(text)?.[1] ?? 0);
+        const body = text.split('\r\n\r\n').slice(1).join('\r\n\r\n');
+        resolve({ status, body, closedByServer, ms: Date.now() - started, sent });
+      });
+      socket.on('connect', () => {
+        const head = [
+          `POST ${path} HTTP/1.1`,
+          `Host: ${hostname}:${port}`,
+          ...Object.entries(headers).map(([key, value]) => `${key}: ${value}`),
+          '',
+          '',
+        ].join('\r\n');
+        socket.write(head);
+        if (options.body) {
+          sent += options.body.length;
+          socket.write(options.body);
+        }
+        const stream = options.stream;
+        if (stream) {
+          const next = () => {
+            if (answered || socket.destroyed || sent >= stream.max) return;
+            sent += stream.chunk.length;
+            const size = stream.chunk.length.toString(16);
+            socket.write(
+              Buffer.concat([Buffer.from(`${size}\r\n`), stream.chunk, Buffer.from('\r\n')]),
+              () => setImmediate(next),
+            );
+          };
+          next();
+        }
+      });
+    });
+
+  /** The headers of a well formed delivery to `connection`, signed over nothing in particular. */
+  const rawHeaders = (connection: { shopDomain: string }, extra: Record<string, string>) => ({
+    'Content-Type': 'application/json',
+    'X-Shopify-Topic': 'orders/updated',
+    'X-Shopify-Shop-Domain': connection.shopDomain,
+    'X-Shopify-Hmac-SHA256': 'AAAA',
+    'X-Shopify-Webhook-Id': randomUUID(),
+    ...extra,
+  });
+
+  /** The token exchange answer the stand in gives: a recorded grant or refusal. */
+  let tokenFixture = 'connect-ok/01-access-token.json';
+
   beforeAll(async () => {
     api = await startInProcessApi();
     api.app.useLogger(capture);
-    worker = await Test.createTestingModule({ imports: [WorkerModule] }).compile();
+    worker = await Test.createTestingModule({ imports: [WorkerModule] })
+      .overrideProvider(ConnectorClock)
+      .useValue(clock)
+      .compile();
     worker.useLogger(capture);
 
     // `InboundEventFailed` is published in the transaction that marks the event failed: inside the
@@ -250,13 +422,13 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     await worker.init();
 
     // The token exchange of a client credentials connection is answered from the recorded
-    // `connect-ok` grant (the token is cached per connection, so once per connection); every
-    // other request goes to the refusing fetch.
-    const grant = readShopifyFixture('connect-ok/01-access-token.json').response;
+    // `connect-ok` grant (the token is cached per connection, so once per connection), or the
+    // recording a test names in `tokenFixture`; every other request goes to the refusing fetch.
     refusingFetch = globalThis.fetch;
     globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       if (url.pathname === '/admin/oauth/access_token') {
+        const grant = readShopifyFixture(tokenFixture).response;
         return new Response(JSON.stringify(grant.body), {
           status: grant.status,
           headers: grant.headers,
@@ -274,6 +446,7 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     if (refusingFetch) globalThis.fetch = refusingFetch;
     await worker?.close();
     await api?.close();
+    delete process.env['CONNECTOR_SECRET_KEY_PREVIOUS'];
   });
 
   it('turns a signed orders/create into an order in the orders list (the tracer bullet)', async () => {
@@ -303,8 +476,14 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     });
     // One read back, one job (the repeat sent none), with ids only in its data.
     expect(remainingShopifyExchanges()).toEqual([]);
-    const jobs = await api.owner.pool.query<{ data: unknown }>(
-      `SELECT data FROM pgboss.job WHERE name = 'connector-shopify' AND data->>'eventId' = $1`,
+    const jobs = await api.owner.pool.query<{
+      data: unknown;
+      group_id: string;
+      retry_limit: number;
+      retry_delay_max: number;
+    }>(
+      `SELECT data, group_id, retry_limit, retry_delay_max
+       FROM pgboss.job WHERE name = 'connector-shopify' AND data->>'eventId' = $1`,
       [event.id],
     );
     expect(jobs.rows.map((row) => row.data)).toEqual([
@@ -315,6 +494,13 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
         capability: 'connectors.shopify.sync',
       },
     ]);
+    // In its connection's group (group concurrency 1: one job per connection at a time, enforced
+    // by pg-boss's fetch across workers) with the 3 h 15 min retry policy (code review M1, m9c).
+    expect(jobs.rows[0]).toMatchObject({
+      group_id: a.id,
+      retry_limit: CONNECTOR_SHOPIFY_RETRY.retryLimit,
+      retry_delay_max: CONNECTOR_SHOPIFY_RETRY.retryDelayMax,
+    });
 
     // The order shows in the list with its store.
     const list = await api.call(manager, 'GET', `/api/orders?storeId=${a.storeId}`);
@@ -392,7 +578,24 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
       await deliver({ id: randomUUID(), shopDomain: a.shopDomain }, 'orders/updated', body),
       await deliver(a, 'orders/updated', body, { path: '/api/hooks/shopify/not-a-uuid' }),
       await deliver(archived, 'orders/updated', body),
+      // Security M1 and L7, code review m7: decided before any body byte is read.
+      await deliver(a, 'orders/updated', body, { shop: null }),
+      await deliver(a, 'orders/updated', body, { path: '/api/hooks/shopify/%E0' }),
+      await deliver(a, 'orders/updated', body, {
+        path: `/api/hooks/Shopify/${a.id}`,
+        signature: null,
+      }),
+      await deliver(a, 'orders/updated', body, {
+        path: `/api/hooks/Shopify/${a.id}`,
+        tamper: true,
+      }),
+      await deliver(a, 'orders/updated', body, { path: `/api/hooks/other/${a.id}` }),
+      await deliver(a, 'orders/updated', body, { path: `/api/hooks/shopify/${a.id}/extra` }),
     ];
+    const read = await fetch(`${api.base}/api/hooks/shopify/${a.id}`, {
+      headers: { 'x-shopify-shop-domain': a.shopDomain, 'x-shopify-hmac-sha256': 'AAAA' },
+    });
+    refusals.push({ status: read.status, text: await read.text(), webhookId: '' });
     for (const refusal of refusals) {
       expect(refusal.status).toBe(401);
       expect(refusal.text).toBe('');
@@ -407,13 +610,72 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect(failures.rows[0]).toEqual({ n: 1, at: true });
   });
 
-  it('answers 413 to 2 MB and one byte, with no row', async () => {
+  it('answers 413 to 2 MB and one byte, declared or streamed, and closes the socket without draining, with no row', async () => {
     const before = await count('SELECT count(*) AS n FROM inbound_events');
-    const raw = Buffer.alloc(HOOK_BODY_LIMIT_BYTES + 1, 0x20);
-    const reply = await deliver(a, 'orders/updated', null, { raw });
-    expect(reply.status).toBe(413);
-    expect(reply.text).toBe('');
+    const path = `/api/hooks/shopify/${a.id}`;
+    // Declared: refused on the header, before a body byte is read (only 10 bytes are sent).
+    const declared = await rawExchange(
+      path,
+      rawHeaders(a, { 'Content-Length': String(HOOK_BODY_LIMIT_BYTES + 1) }),
+      { body: Buffer.from('{"id":1234') },
+    );
+    expect([declared.status, declared.body, declared.closedByServer]).toEqual([413, '', true]);
+    // Streamed without a length: refused once the bytes pass the cap, the socket closed while
+    // the sender still had more to send.
+    const streamed = await rawExchange(path, rawHeaders(a, { 'Transfer-Encoding': 'chunked' }), {
+      stream: { chunk: Buffer.alloc(64 * 1024, 0x20), max: HOOK_BODY_LIMIT_BYTES * 4 },
+    });
+    // The 413 is written, then the socket is shut and destroyed while the sender still pushes
+    // bytes, so TCP may reset the connection before the sender reads the answer: either way the
+    // server stopped it just past the cap instead of draining everything it would send.
+    expect([413, 0]).toContain(streamed.status);
+    expect([streamed.body, streamed.closedByServer]).toEqual(['', true]);
+    expect(streamed.sent).toBeLessThan(HOOK_BODY_LIMIT_BYTES * 2);
     expect(await count('SELECT count(*) AS n FROM inbound_events')).toBe(before);
+  });
+
+  it('refuses an unknown connection before reading the body, and answers 408 to a body slower than 10 seconds', async () => {
+    // A declared body that never comes: an unknown connection is refused at once, never waited on.
+    const unknown = await rawExchange(
+      `/api/hooks/shopify/${randomUUID()}`,
+      rawHeaders(a, { 'Content-Length': '1000' }),
+    );
+    expect([unknown.status, unknown.body, unknown.closedByServer]).toEqual([401, '', true]);
+    expect(unknown.ms).toBeLessThan(5_000);
+
+    // A live connection's body that stops arriving: 408 at the deadline, the socket closed.
+    const slow = await rawExchange(
+      `/api/hooks/shopify/${a.id}`,
+      rawHeaders(a, { 'Content-Length': '1000' }),
+      { body: Buffer.from('{"id":') },
+    );
+    expect([slow.status, slow.body, slow.closedByServer]).toEqual([408, '', true]);
+    expect(slow.ms).toBeGreaterThanOrEqual(9_500);
+  });
+
+  it('verifies a connection sealed under the previous key while CONNECTOR_SECRET_KEY_PREVIOUS is set (AC-2)', async () => {
+    const rotating = await plant({
+      sealWith: new ConnectionSecrets({ CONNECTOR_SECRET_KEY: PREVIOUS_KEY }),
+    });
+    const sealedUnder = await api.owner.pool.query<{ version: number }>(
+      'SELECT credentials_key_version AS version FROM connections WHERE id = $1::uuid',
+      [rotating.id],
+    );
+    const current = await api.owner.pool.query<{ version: number }>(
+      'SELECT credentials_key_version AS version FROM connections WHERE id = $1::uuid',
+      [a.id],
+    );
+    expect(sealedUnder.rows[0]?.version).not.toBe(current.rows[0]?.version);
+    const product = {
+      id: 7770000000101,
+      admin_graphql_api_id: 'gid://shopify/Product/7770000000101',
+      updated_at: '2026-11-02T09:00:00Z',
+    };
+    const reply = await deliver(rotating, 'products/update', product);
+    expect(reply.status).toBe(200);
+    expect((await eventOf(rotating.id, reply.webhookId)).status).toBe('received');
+    const tampered = await deliver(rotating, 'products/update', product, { tamper: true });
+    expect([tampered.status, tampered.text]).toEqual([401, '']);
   });
 
   it('records a known order with a newer snapshot as update_deferred, changing nothing, and a snapshot not newer as stale', async () => {
@@ -599,55 +861,234 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     ).toBe(1);
   });
 
-  it('sets READS_FAILING after three hours of failed reads, cleared by the next good read', async () => {
-    // Paused while it is planted, so the hook's own job leaves the event alone.
-    const c = await plant({ status: 'paused' });
+  it('sets READS_FAILING once a failed read has waited three hours by the clock, cleared by the next good read', async () => {
     const gid = 'gid://shopify/Order/5550000010001';
-    const reply = await deliver(c, 'orders/create', orderBody(gid));
-    const event = await eventOf(c.id, reply.webhookId);
-    await eventually(
-      async () =>
-        (await count(
-          `SELECT count(*) AS n FROM pgboss.job WHERE data->>'eventId' = $1 AND state = 'completed'`,
-          [event.id],
-        )) === 1
-          ? true
-          : undefined,
-      { timeoutMs: 60_000, what: 'the paused job to complete' },
-    );
-    // The event arrived over three hours ago; its first read fails now.
-    await api.owner.pool.query(
-      `UPDATE inbound_events SET received_at = now() - interval '3 hours 1 minute' WHERE id = $1::uuid`,
-      [event.id],
-    );
-    await api.owner.pool.query(`UPDATE connections SET status = 'active' WHERE id = $1::uuid`, [
-      c.id,
-    ]);
+    const { c, events } = await pausedThenActive(gid);
+    const event = events[0] as EventRow;
     useShopifyScenarios('order-read-server-error');
     const inbox = worker.get(InboxJob);
-    await expect(
-      inbox.run({ connectionId: c.id, eventId: event.id }, 'retry-stand-in'),
-    ).rejects.toMatchObject({ code: 'SERVER_ERROR' });
-    expect(await eventOf(c.id, reply.webhookId)).toMatchObject({ status: 'received', attempts: 1 });
+    // The clock, not the row, moves: the event was received three hours ago by the worker's clock.
+    clock.offsetMs = PAST_THREE_HOURS_MS;
+    try {
+      await expect(
+        inbox.run({ connectionId: c.id, eventId: event.id }, 'retry-stand-in', 3),
+      ).rejects.toMatchObject({ code: 'SERVER_ERROR' });
+    } finally {
+      clock.offsetMs = 0;
+    }
+    expect(await eventById(event.id)).toMatchObject({
+      status: 'received',
+      attempts: 1,
+    });
     expect(await health(c.id)).toEqual({ health: 'degraded', health_reason: 'READS_FAILING' });
-    await inbox.run({ connectionId: c.id, eventId: event.id }, 'retry-stand-in');
+    await inbox.run({ connectionId: c.id, eventId: event.id }, 'retry-stand-in', 4);
     expect(await health(c.id)).toEqual({ health: 'ok', health_reason: null });
   });
 
-  it('sets health failing APP_NOT_INSTALLED on app/uninstalled', async () => {
-    const c = await plant();
-    const reply = await deliver(c, 'app/uninstalled', {
-      id: 1,
-      name: 'Fixture Store',
-      email: 'owner@example.com',
-      domain: c.shopDomain,
+  it('sets READS_FAILING when the last retry fails, leaving the event received for the sweep', async () => {
+    const gid = 'gid://shopify/Order/5550000010001';
+    const { c, events } = await pausedThenActive(gid);
+    const event = events[0] as EventRow;
+    useShopifyScenarios('order-read-server-error');
+    // Minutes old by the clock, but pg-boss has no retry left after this one.
+    await expect(
+      worker
+        .get(InboxJob)
+        .run(
+          { connectionId: c.id, eventId: event.id },
+          'last-retry-stand-in',
+          CONNECTOR_SHOPIFY_RETRY.retryLimit,
+        ),
+    ).rejects.toMatchObject({ code: 'SERVER_ERROR' });
+    expect(await eventById(event.id)).toMatchObject({
+      status: 'received',
+      attempts: 1,
+      failure_code: null,
     });
+    expect(await health(c.id)).toEqual({ health: 'degraded', health_reason: 'READS_FAILING' });
+  });
+
+  it('confirms app/uninstalled before health turns failing: a refused token exchange confirms it', async () => {
+    const c = await plant();
+    tokenFixture = 'connect-app-not-installed/01-access-token.json';
+    try {
+      const reply = await deliver(c, 'app/uninstalled', {
+        id: 1,
+        name: 'Fixture Store',
+        email: 'owner@example.com',
+        domain: c.shopDomain,
+      });
+      expect(reply.status).toBe(200);
+      expect(await settled(c.id, reply.webhookId)).toMatchObject({
+        status: 'processed',
+        outcome: null,
+        payload: { topic: 'app/uninstalled', id: null, updatedAt: null },
+      });
+    } finally {
+      tokenFixture = 'connect-ok/01-access-token.json';
+    }
+    expect(await health(c.id)).toEqual({ health: 'failing', health_reason: 'APP_NOT_INSTALLED' });
+  });
+
+  it('records an app/uninstalled that Shopify does not confirm as ignored uninstall_not_confirmed, health unchanged', async () => {
+    const c = await plant();
+    const reply = await deliver(c, 'app/uninstalled', { id: 1, domain: c.shopDomain });
     expect(reply.status).toBe(200);
     expect(await settled(c.id, reply.webhookId)).toMatchObject({
-      status: 'processed',
-      payload: { topic: 'app/uninstalled', id: null, updatedAt: null },
+      status: 'ignored',
+      outcome: 'uninstall_not_confirmed',
     });
-    expect(await health(c.id)).toEqual({ health: 'failing', health_reason: 'APP_NOT_INSTALLED' });
+    expect(await health(c.id)).toEqual({ health: 'ok', health_reason: null });
+  });
+
+  it('leaves order events received on a token refusal, the connection carrying the problem', async () => {
+    const c = await plant();
+    tokenFixture = 'connect-credentials-rejected/01-access-token.json';
+    let event: EventRow;
+    try {
+      const reply = await deliver(
+        c,
+        'orders/create',
+        orderBody('gid://shopify/Order/5550000001001'),
+      );
+      event = await eventOf(c.id, reply.webhookId);
+      await jobsCompleted([event.id]);
+    } finally {
+      tokenFixture = 'connect-ok/01-access-token.json';
+    }
+    expect(await eventById(event.id)).toMatchObject({
+      status: 'received',
+      failure_code: null,
+    });
+    expect(await health(c.id)).toEqual({
+      health: 'failing',
+      health_reason: 'CREDENTIALS_REJECTED',
+    });
+    expect(failedSeen.filter((seen) => seen.eventId === event.id)).toEqual([]);
+  });
+
+  it('fails a read back of another order READ_BACK_MISMATCH, writing nothing', async () => {
+    const c = await plant();
+    useShopifyScenarios('order-read-mismatch');
+    const gid = 'gid://shopify/Order/5550000014001';
+    const reply = await deliver(c, 'orders/create', orderBody(gid));
+    expect(await settled(c.id, reply.webhookId)).toMatchObject({
+      status: 'failed',
+      failure_code: 'READ_BACK_MISMATCH',
+    });
+    expect(remainingShopifyExchanges()).toEqual([]);
+    expect(
+      await count(
+        `SELECT count(*) AS n FROM connection_external_ids WHERE connection_id = $1::uuid`,
+        [c.id],
+      ),
+    ).toBe(0);
+    expect(
+      await count('SELECT count(*) AS n FROM orders WHERE store_id = $1::uuid', [c.storeId]),
+    ).toBe(0);
+  });
+
+  it('fails an order event of a connection whose config does not parse CONNECTION_CONFIG_INVALID, reading nothing', async () => {
+    const c = await plant({ config: '{"gatewayMethods":"not-a-map"}' });
+    const reply = await deliver(c, 'orders/create', orderBody('gid://shopify/Order/5550000001001'));
+    expect(await settled(c.id, reply.webhookId)).toMatchObject({
+      status: 'failed',
+      failure_code: 'CONNECTION_CONFIG_INVALID',
+    });
+  });
+
+  it('keeps API_VERSION_FELL_FORWARD on the connection while reads answer in another version, and clears it', async () => {
+    const c = await plant();
+    useShopifyScenarios('order-version-fell-forward');
+    const gid = 'gid://shopify/Order/5550000015001';
+    const created = await deliver(c, 'orders/create', orderBody(gid));
+    expect((await settled(c.id, created.webhookId)).status).toBe('processed');
+    expect(await warnings(c.id)).toEqual(['API_VERSION_FELL_FORWARD']);
+    const again = await deliver(c, 'orders/updated', orderBody(gid));
+    expect(await settled(c.id, again.webhookId)).toMatchObject({ outcome: 'stale' });
+    expect(await warnings(c.id)).toEqual([]);
+    expect(remainingShopifyExchanges()).toEqual([]);
+  });
+
+  it('leaves the event received when the run crashes after the read back, and the retry creates exactly one order', async () => {
+    const gid = 'gid://shopify/Order/5550000001001';
+    const { c, events } = await pausedThenActive(gid);
+    const event = events[0] as EventRow;
+    useShopifyScenarios('order-created-cod', 'order-created-cod');
+    const intake = worker.get(OrderIntake);
+    const crash = vi
+      .spyOn(intake, 'createFromChannel')
+      .mockRejectedValueOnce(new Error('crash injected after the read back'));
+    const inbox = worker.get(InboxJob);
+    try {
+      await expect(
+        inbox.run({ connectionId: c.id, eventId: event.id }, 'crash-stand-in'),
+      ).rejects.toThrow('crash injected after the read back');
+    } finally {
+      crash.mockRestore();
+    }
+    expect(await eventById(event.id)).toMatchObject({
+      status: 'received',
+      failure_code: null,
+    });
+    expect(
+      await count(
+        `SELECT count(*) AS n FROM connection_external_ids WHERE connection_id = $1::uuid`,
+        [c.id],
+      ),
+    ).toBe(0);
+
+    expect(await inbox.run({ connectionId: c.id, eventId: event.id }, 'retry-stand-in')).toEqual({
+      status: 'processed',
+      code: null,
+    });
+    expect(remainingShopifyExchanges()).toEqual([]);
+    expect(
+      await count('SELECT count(*) AS n FROM orders WHERE store_id = $1::uuid', [c.storeId]),
+    ).toBe(1);
+  });
+
+  it('coalesces only events received before the read back started (code review m1)', async () => {
+    const gid = 'gid://shopify/Order/5550000001001';
+    const { c, events } = await pausedThenActive(gid, ['orders/create', 'orders/updated']);
+    const [first, early] = events as [EventRow, EventRow];
+    useShopifyScenarios('order-created-cod');
+    const shopify = worker.get(ShopifyClient);
+    const original = shopify.request.bind(shopify);
+    let lateId = '';
+    const spy = vi.spyOn(shopify, 'request').mockImplementationOnce(async (access, operation) => {
+      // A change Shopify sends while the read back is in flight.
+      const late = await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,
+                                     subject_external_id, payload)
+         VALUES ($1::uuid, 'webhook', 'orders/updated', $2, 'order', $3, $4::jsonb)
+         RETURNING id`,
+        [
+          c.id,
+          randomUUID(),
+          gid,
+          JSON.stringify({ topic: 'orders/updated', id: gid, updatedAt: null }),
+        ],
+      );
+      lateId = late.rows[0]?.id ?? '';
+      return original(access, operation);
+    });
+    try {
+      expect(
+        await worker.get(InboxJob).run({ connectionId: c.id, eventId: first.id }, 'stand-in'),
+      ).toEqual({ status: 'processed', code: null });
+    } finally {
+      spy.mockRestore();
+    }
+    const statusOf = async (id: string) =>
+      (
+        await api.owner.pool.query<{ status: string; outcome: string | null }>(
+          'SELECT status, outcome FROM inbound_events WHERE id = $1::uuid',
+          [id],
+        )
+      ).rows[0];
+    expect(await statusOf(early.id)).toEqual({ status: 'processed', outcome: 'coalesced' });
+    expect(await statusOf(lateId)).toEqual({ status: 'received', outcome: null });
   });
 
   it('sets PROTECTED_DATA_MISSING when the connect check saw no order and the first order lacks ship to data', async () => {

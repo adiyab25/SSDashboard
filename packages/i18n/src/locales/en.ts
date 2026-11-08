@@ -2428,6 +2428,8 @@ export const en = {
       SHOP_TIMEZONE_DIFFERS: 'The shop’s time zone is not the time zone of this install.',
       APP_OWNED_BY_PERSON:
         'The app belongs to a person’s Shopify account, not the brand’s organization. If that person leaves, the connection stops.',
+      API_VERSION_FELL_FORWARD:
+        'Shopify answered with a newer API version than the app is pinned to. Orders still arrive. Tell the vendor.',
     },
     form: {
       title: 'Connect a Shopify store',

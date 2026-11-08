@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { ConnectionCredentials } from '../connections/connection-secrets.js';
+import { CONNECT_SHOP, CONNECT_SHOP_OPERATION } from './shopify-queries.js';
 
 /**
  * The one Shopify Admin API version the connector speaks (spec 0015, *Shopify app, auth, and API
@@ -23,6 +24,20 @@ export const MAX_THROTTLE_RETRIES = 5;
 /** Shopify's advised backoff when it gives no better figure (HTTP 429 without `Retry-After`). */
 const DEFAULT_BACKOFF_MS = 1_000;
 
+/**
+ * The longest `Retry-After` the client sleeps (security review L4). A longer one is not slept: the
+ * call fails at once with a transient `RATE_LIMITED`, so the job's pg-boss backoff waits instead
+ * of the connection's call chain and the job's expiry.
+ */
+export const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * The most bytes of one answer the client reads (security review L4): 10 MB, far above the
+ * largest order read. A longer answer (by `Content-Length` or while reading) is dropped unread and
+ * refused with `RESPONSE_TOO_LARGE`.
+ */
+export const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
 /** The shop domains a connection may have (the `connections_shop_domain_shape` check). */
 const SHOP_DOMAIN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 
@@ -45,7 +60,8 @@ export type ShopifyRejectedCode =
   | 'GRAPHQL_ERROR'
   | 'QUERY_TOO_COSTLY'
   | 'USER_ERRORS'
-  | 'INVALID_SHOP_DOMAIN';
+  | 'INVALID_SHOP_DOMAIN'
+  | 'RESPONSE_TOO_LARGE';
 
 /** A warning a successful call carries; the caller turns it into a connection health warning. */
 export type ShopifyWarning = 'API_VERSION_FELL_FORWARD';
@@ -202,7 +218,9 @@ interface RawAnswer {
  * `THROTTLED` retried up to 5 times and HTTP 429 after `Retry-After` (or 1 second), a 30 second
  * timeout per request, and at most one call per connection at a time (an in process mutex). An
  * answer whose `X-Shopify-API-Version` differs from `SHOPIFY_API_VERSION` carries
- * `API_VERSION_FELL_FORWARD`.
+ * `API_VERSION_FELL_FORWARD`. It never follows a redirect (the token header and the client secret
+ * must not travel to another address: a 3xx is a `REQUEST_REJECTED`), sleeps a `Retry-After` of at
+ * most 60 seconds, and reads at most 10 MB of an answer.
  *
  * Provide it once per process, for example
  * `{ provide: ShopifyClient, useFactory: (env: Env) => new ShopifyClient({ mockOrigin: env.SHOPIFY_MOCK_ORIGIN }), inject: [ENV] }`.
@@ -232,6 +250,31 @@ export class ShopifyClient {
   request(access: ShopifyConnectionAccess, operation: ShopifyOperation): Promise<ShopifyResponse> {
     const state = this.stateOf(access.connectionId);
     const run = state.tail.then(() => this.run(access, operation, state));
+    state.tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  /**
+   * Proves the connection's access still works with one request, after any earlier call of the
+   * same connection (security review L1: an `app/uninstalled` delivery is confirmed before health
+   * turns failing). Client credentials: one fresh token exchange (the cached token is dropped
+   * first). A legacy access token: one shop read. Resolves when Shopify accepts; throws
+   * `ShopifyRejectedError` (`APP_NOT_INSTALLED`, `CREDENTIALS_REJECTED`, ...) or
+   * `ShopifyTransientError` otherwise.
+   */
+  confirmAccess(access: ShopifyConnectionAccess): Promise<void> {
+    const state = this.stateOf(access.connectionId);
+    const run = state.tail.then(async () => {
+      if (access.credentials.kind === 'client_credentials') {
+        state.token = null;
+        await this.tokenFor(access, state, this.baseUrl(access.shopDomain));
+        return;
+      }
+      await this.run(access, { operationName: CONNECT_SHOP_OPERATION, query: CONNECT_SHOP }, state);
+    });
     state.tail = run.then(
       () => undefined,
       () => undefined,
@@ -412,7 +455,10 @@ export class ShopifyClient {
     return accessToken;
   }
 
-  /** Sends, and on HTTP 429 waits `Retry-After` (or 1 second) and sends again, up to 5 times. */
+  /**
+   * Sends, and on HTTP 429 waits `Retry-After` (or 1 second) and sends again, up to 5 times. A
+   * `Retry-After` above `MAX_RETRY_AFTER_MS` is not slept: a transient `RATE_LIMITED` at once.
+   */
   private async withRateLimitRetry(
     access: ShopifyConnectionAccess,
     operation: Pick<ShopifyOperation, 'operationName'>,
@@ -423,25 +469,43 @@ export class ShopifyClient {
       if (answer.status !== 429) return answer;
       if (attempt >= MAX_THROTTLE_RETRIES) throw new ShopifyTransientError('RATE_LIMITED', 429);
       const wait = retryAfterMs(answer.headers.get('retry-after'));
+      if (wait > MAX_RETRY_AFTER_MS) {
+        this.log('RETRY_AFTER_TOO_LONG', access, operation, { waitMs: wait });
+        throw new ShopifyTransientError('RATE_LIMITED', 429);
+      }
       this.log('RATE_LIMITED_RETRY', access, operation, { attempt: attempt + 1, waitMs: wait });
       await this.sleep(wait);
     }
   }
 
-  /** One HTTP exchange with the timeout around the body read too; network failures are codes. */
+  /**
+   * One HTTP exchange with the timeout around the body read too; network failures are codes.
+   * Redirects are never followed (`redirect: 'error'`; a 3xx a replaced fetch still hands back is
+   * refused too), and the body is read up to `MAX_RESPONSE_BYTES`.
+   */
   private async send(url: string, init: RequestInit): Promise<RawAnswer> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const doFetch = this.options.fetch ?? globalThis.fetch;
-      const response = await doFetch(url, { ...init, signal: controller.signal });
-      const text = await response.text();
+      const response = await doFetch(url, {
+        ...init,
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (response.status >= 300 && response.status < 400) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new ShopifyRejectedError('REQUEST_REJECTED', response.status);
+      }
+      const text = await readCapped(response, MAX_RESPONSE_BYTES);
       return { status: response.status, headers: response.headers, text };
     } catch (error) {
       if (error instanceof ShopifyClientError) throw error;
       if (controller.signal.aborted) throw new ShopifyTransientError('TIMEOUT');
-      // Any other throw of fetch (refused, reset, DNS) is a network failure; its text is dropped.
       if (error instanceof Error && error.name === 'UnrecordedRequest') throw error;
+      // `redirect: 'error'` met a redirect: the address will not change by retrying.
+      if (isRedirectRefusal(error)) throw new ShopifyRejectedError('REQUEST_REJECTED');
+      // Any other throw of fetch (refused, reset, DNS) is a network failure; its text is dropped.
       throw new ShopifyTransientError('NETWORK_ERROR');
     } finally {
       clearTimeout(timer);
@@ -566,6 +630,40 @@ function readCost(body: Record<string, unknown>): ShopifyQueryCost | null {
 function retryAfterMs(header: string | null): number {
   const seconds = header === null ? Number.NaN : Number(header);
   return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1_000) : DEFAULT_BACKOFF_MS;
+}
+
+/**
+ * The body of an answer as text, read with a byte cap: a declared or read length above `limit`
+ * cancels the read and throws `RESPONSE_TOO_LARGE`. The text never leaves the client.
+ */
+async function readCapped(response: Response, limit: number): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new ShopifyRejectedError('RESPONSE_TOO_LARGE', response.status);
+  }
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new ShopifyRejectedError('RESPONSE_TOO_LARGE', response.status);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/** Whether a fetch failure is undici's refusal of a redirect under `redirect: 'error'`. */
+function isRedirectRefusal(error: unknown): boolean {
+  if (!(error instanceof TypeError)) return false;
+  const cause: unknown = error.cause;
+  return cause instanceof Error && cause.message === 'unexpected redirect';
 }
 
 /** JSON text parsed, or undefined; the text itself never leaves this function. */

@@ -2413,6 +2413,8 @@ export const ar: Catalog = {
       SHOP_TIMEZONE_DIFFERS: 'المنطقة الزمنية للمتجر ليست المنطقة الزمنية لهذا التثبيت.',
       APP_OWNED_BY_PERSON:
         'التطبيق مملوك لحساب شخص في Shopify لا لمؤسسة العلامة. إن غادر ذلك الشخص يتوقف الربط.',
+      API_VERSION_FELL_FORWARD:
+        'ردّ Shopify بإصدار API أحدث من الإصدار المثبّت في التطبيق. ما زالت الطلبات تصل. أبلغ مزوّد النظام.',
     },
     form: {
       title: 'ربط متجر Shopify',

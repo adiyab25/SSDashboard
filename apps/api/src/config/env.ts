@@ -221,12 +221,16 @@ const EnvFields = z.object({
    * `ConnectionSecrets` only. Required when `NODE_ENV` is `production`; elsewhere it may be unset,
    * and sealing or opening then throws `ConnectorSecretKeyMissing`. Losing it makes every stored
    * credential unreadable (the owner types the keys again); rotate it with
-   * `CONNECTOR_SECRET_KEY_PREVIOUS`.
+   * `CONNECTOR_SECRET_KEY_PREVIOUS` (the re-encrypt job that moves connections to the new key is
+   * not built yet, spec 0015 task 12).
    */
   CONNECTOR_SECRET_KEY: connectorKey,
   /**
    * Optional, only during a rotation: the key `CONNECTOR_SECRET_KEY` replaced. Credentials sealed
-   * under it still open, and the re-encrypt job moves them to the current key. Must differ from it.
+   * under it still open. The re-encrypt job that moves them to the current key is not built yet
+   * (spec 0015 task 12; `ConnectionSecrets.reencrypt` exists), so keep this set, and never clear it
+   * while any connection is sealed under the old key: those credentials would become unreadable.
+   * Must differ from `CONNECTOR_SECRET_KEY`.
    */
   CONNECTOR_SECRET_KEY_PREVIOUS: connectorKey,
   /**

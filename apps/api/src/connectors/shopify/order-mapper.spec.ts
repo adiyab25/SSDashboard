@@ -9,11 +9,12 @@ import {
   mapShopifyOrderSnapshot,
   parseShopifyOrder,
   replacementInput,
+  shopifyOrderName,
   ShopifyOrderMappingError,
   type ShopifyOrder,
   type ShopifyOrderContext,
 } from './order-mapper.js';
-import { ORDER_READ, ORDER_READ_OPERATION } from './shopify-queries.js';
+import { ORDER_READ, ORDER_READ_OPERATION, ORDER_READ_TAX_LINES_PAGE } from './shopify-queries.js';
 
 // Spec 0015 Inbound processing item 4 and Value sourcing, over the synthetic fixtures (to be
 // replaced by recordings). Every case reads a fixture's `data.order` through the production
@@ -444,6 +445,77 @@ describe('mapShopifyOrder', () => {
       code: 'LINE_ITEMS_TRUNCATED',
     });
     expect(thrown(() => mapShopifyOrder(none, CONTEXT))).toMatchObject({ code: 'NO_OPEN_LINES' });
+  });
+
+  it('refuses truncated discount applications and a full page of tax lines (code review m4, m5)', () => {
+    const discounts = changed(COD, (order) => {
+      order.discountApplications.pageInfo.hasNextPage = true;
+    });
+    const taxes = changed(COD, (order) => {
+      const line = order.lineItems.nodes[0];
+      if (line) {
+        line.taxLines = Array.from({ length: ORDER_READ_TAX_LINES_PAGE }, () => ({
+          rate: 0.01,
+          ratePercentage: 1,
+        }));
+      }
+    });
+    const belowPage = changed(COD, (order) => {
+      const line = order.lineItems.nodes[0];
+      if (line) {
+        line.taxLines = Array.from({ length: ORDER_READ_TAX_LINES_PAGE - 1 }, () => ({
+          rate: 0.07,
+          ratePercentage: 7,
+        }));
+      }
+    });
+
+    expect(thrown(() => mapShopifyOrder(discounts, CONTEXT))).toMatchObject({
+      code: 'DISCOUNT_APPLICATIONS_TRUNCATED',
+    });
+    expect(thrown(() => mapShopifyOrder(taxes, CONTEXT))).toMatchObject({
+      code: 'TAX_LINES_TRUNCATED',
+    });
+    expect(mapShopifyOrder(belowPage, CONTEXT).input.lines[0]?.taxRate).toBe(
+      `${(ORDER_READ_TAX_LINES_PAGE - 1) * 7}.00`,
+    );
+    // A line with three tax lines is an ordinary order, summed, never refused.
+    const three = changed(COD, (order) => {
+      const line = order.lineItems.nodes[0];
+      if (line) {
+        line.taxLines = [
+          { rate: 0.14, ratePercentage: 14 },
+          { rate: 0.01, ratePercentage: 1 },
+          { rate: 0.005, ratePercentage: 0.5 },
+        ];
+      }
+    });
+    expect(ORDER_READ_TAX_LINES_PAGE).toBe(10);
+    expect(mapShopifyOrder(three, CONTEXT).input.lines[0]?.taxRate).toBe('15.50');
+  });
+
+  it('cleans the order name, the discount codes, and unmapped gateway names of control and direction characters (security review L6)', () => {
+    const dirty = changed(COD, (order) => {
+      order.name = '‮#1001\u0007';
+      order.discountCodes = ['WELCOME10‏', '⁦VIP⁩', '\u0007'];
+      order.paymentGatewayNames = ['Fixture‮ Wallet', 'Cash on Delivery (COD)'];
+    });
+
+    const mapped = mapShopifyOrder(dirty, CONTEXT);
+
+    expect(mapped.input.orderNumber).toBe('#1001');
+    expect(mapped.discountCodes).toEqual(['WELCOME10', 'VIP']);
+    expect(mapped.input.discountCode).toBe('WELCOME10');
+    expect(mapped.unmappedGateways).toEqual(['Fixture Wallet']);
+    expect(shopifyOrderName({ name: `#${'9'.repeat(80)}` })).toHaveLength(64);
+    expect(shopifyOrderName({ name: '‮‏' })).toBe('');
+    // A name with nothing left is refused by the contract, never stored blank.
+    const blank = changed(COD, (order) => {
+      order.name = '‮';
+    });
+    expect(thrown(() => mapShopifyOrder(blank, CONTEXT))).toMatchObject({
+      code: 'CONTRACT_REFUSED',
+    });
   });
 });
 

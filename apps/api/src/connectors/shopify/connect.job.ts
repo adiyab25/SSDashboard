@@ -29,6 +29,7 @@ import {
   type ShopifyConnectionAccess,
   type ShopifyOperation,
   type ShopifyResponse,
+  type ShopifyWarning,
 } from './shopify-client.js';
 import {
   hookAddress,
@@ -116,7 +117,8 @@ interface ConnectionRow extends Record<string, unknown> {
 interface ConnectEnd {
   health: 'ok' | 'degraded' | 'failing';
   reason: ConnectionHealthReason | null;
-  warnings: readonly ConnectionWarning[];
+  /** The connect warnings, plus `API_VERSION_FELL_FORWARD` when any answer of the run carried it. */
+  warnings: readonly (ConnectionWarning | ShopifyWarning)[];
   shopName: string | null;
   shopTimezone: string | null;
   apiVersion: string | null;
@@ -154,7 +156,9 @@ function rejectionReason(error: ShopifyRejectedError): ConnectionHealthReason {
  * those already pointing at the connection's address). It fills the store's names from the shop
  * name the first time it reaches the shop (`ChannelsService.renameStore`), stores
  * `config.shopTimezone` and `api_version`, sets health `ok`, `degraded` (`WEBHOOKS_MISSING`), or
- * `failing` with one code, and writes a `connect` sync run with counts and cost points.
+ * `failing` with one code, and writes a `connect` sync run with counts and cost points. A run whose
+ * reads answered in another API version adds `API_VERSION_FELL_FORWARD` to the warnings (AC-25);
+ * the warnings are written whole each run, so a run that matches again clears it.
  *
  * A transient Shopify failure marks the run failed with its code and throws, so pg-boss retries
  * with backoff. The job data holds the connection id only; credentials and the token live in
@@ -196,9 +200,11 @@ export class ConnectJob {
       VALUES (${connectionId}::uuid, 'connect', 'running') RETURNING id`);
     const runId = run.rows[0]?.id as string;
     let cost = 0;
+    const clientWarnings = new Set<ShopifyWarning>();
     const call = async (access: ShopifyConnectionAccess, operation: ShopifyOperation) => {
       const answer = await this.shopify.request(access, operation);
       cost += Math.max(0, Math.round(answer.cost?.actualQueryCost ?? 0));
+      for (const warning of answer.warnings) clientWarnings.add(warning);
       return answer;
     };
 
@@ -239,7 +245,12 @@ export class ConnectJob {
         installCurrency: install.currency,
         installTimezone: install.timezone,
       });
-      return await this.finish(row, runId, cost, end);
+      // AC-25: an answer in another API version than the pinned one sets the warning; a run whose
+      // answers all match clears it (code review m3).
+      return await this.finish(row, runId, cost, {
+        ...end,
+        warnings: [...end.warnings, ...clientWarnings],
+      });
     } catch (error) {
       if (error instanceof ShopifyRejectedError) {
         return this.finish(row, runId, cost, {

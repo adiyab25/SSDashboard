@@ -14,7 +14,11 @@ import {
   type OrderPaymentMethod,
 } from '@ssdashboard/contracts';
 import { z, type ZodType } from 'zod';
-import { ORDER_READ_FULFILLMENTS_PAGE, ORDER_READ_TRANSACTIONS_PAGE } from './shopify-queries.js';
+import {
+  ORDER_READ_FULFILLMENTS_PAGE,
+  ORDER_READ_TAX_LINES_PAGE,
+  ORDER_READ_TRANSACTIONS_PAGE,
+} from './shopify-queries.js';
 
 // ---------------------------------------------------------------------------------------------
 // The Shopify `Order` shape `ORDER_READ` selects (Admin GraphQL `2026-10`)
@@ -135,6 +139,8 @@ export type ShopifyOrderMappingErrorCode =
   | 'LINE_ITEMS_TRUNCATED'
   | 'TRANSACTIONS_TRUNCATED'
   | 'FULFILLMENTS_TRUNCATED'
+  | 'DISCOUNT_APPLICATIONS_TRUNCATED'
+  | 'TAX_LINES_TRUNCATED'
   | 'BAD_AMOUNT'
   | 'BAD_TAX_RATE'
   | 'BAD_REPLACEMENT_NUMBER'
@@ -146,6 +152,9 @@ const ERROR_TEXT: Readonly<Record<ShopifyOrderMappingErrorCode, string>> = {
   LINE_ITEMS_TRUNCATED: 'The Shopify order has more line items than one read returns',
   TRANSACTIONS_TRUNCATED: 'The Shopify order has more transactions than one read returns',
   FULFILLMENTS_TRUNCATED: 'The Shopify order has more fulfillments than one read returns',
+  DISCOUNT_APPLICATIONS_TRUNCATED:
+    'The Shopify order has more discount applications than one read returns',
+  TAX_LINES_TRUNCATED: 'A Shopify line item has more tax lines than one read returns',
   BAD_AMOUNT: 'A Shopify amount is not a decimal number',
   BAD_TAX_RATE: 'A Shopify tax rate is not a finite number',
   BAD_REPLACEMENT_NUMBER: 'A replacement number is a whole number from 1',
@@ -320,6 +329,21 @@ function cleanText(
   return text === '' ? null : text;
 }
 
+/** The longest Shopify order name the app keeps (`ChannelOrderInput.orderNumber`). */
+const ORDER_NAME_MAX = 64;
+
+/** The longest unmapped gateway name listed in a mapping's state. */
+const GATEWAY_NAME_MAX = 100;
+
+/**
+ * A Shopify order name (`#1001`) as the app keeps it: control and direction characters stripped,
+ * trimmed, and cut to `max` characters (security review L6). An empty string when nothing is left,
+ * which the contract refuses. The inbox job's `subject_label` uses it too.
+ */
+export function shopifyOrderName(order: Pick<ShopifyOrder, 'name'>, max = ORDER_NAME_MAX): string {
+  return cleanText(order.name, max) ?? '';
+}
+
 /** The UTM query keys a stored link may keep (spec 0002 Follow-up m5); every other key is dropped. */
 const UTM_ALLOW_LIST: readonly string[] = [
   'utm_source',
@@ -406,8 +430,16 @@ function paymentOf(
       prepaid -= amountOf(transaction.amountSet);
     }
   }
+  // Looked up by the name as Shopify sent it; listed cleaned and capped (security review L6).
   const unmappedGateways = [
-    ...new Set(order.paymentGatewayNames.filter((name) => methodOf(name) === undefined)),
+    ...new Set(
+      order.paymentGatewayNames
+        .filter((name) => methodOf(name) === undefined)
+        .flatMap((name) => {
+          const clean = cleanText(name, GATEWAY_NAME_MAX);
+          return clean === null ? [] : [clean];
+        }),
+    ),
   ];
   const named = order.paymentGatewayNames
     .map(methodOf)
@@ -447,9 +479,15 @@ function giftOf(
 /**
  * The discount code (Value sourcing): the first of `discountCodes` that is not a shipping
  * discount, a shipping discount being a `DiscountCodeApplication` whose `targetType` is
- * `SHIPPING_LINE` (carry-over D6); every code is kept for `state.discountCodes`.
+ * `SHIPPING_LINE` (carry-over D6); every code is kept for `state.discountCodes`, each with the
+ * control and direction clean up and capped at 255 characters (security review L6). Throws
+ * `DISCOUNT_APPLICATIONS_TRUNCATED` when the read did not hold every application (a shipping code
+ * on a later page could otherwise be taken as the discount code).
  */
 function discountOf(order: ShopifyOrder): { discountCode: string | null; discountCodes: string[] } {
+  if (order.discountApplications.pageInfo.hasNextPage) {
+    throw new ShopifyOrderMappingError('DISCOUNT_APPLICATIONS_TRUNCATED');
+  }
   const shipping = new Set(
     order.discountApplications.nodes
       .filter((node) => node.__typename === 'DiscountCodeApplication')
@@ -457,19 +495,31 @@ function discountOf(order: ShopifyOrder): { discountCode: string | null; discoun
       .map((node) => node.code)
       .filter((code): code is string => code !== undefined),
   );
-  const discountCodes = [...new Set(order.discountCodes)];
-  const first = discountCodes.find((code) => !shipping.has(code));
+  const first = [...new Set(order.discountCodes)].find((code) => !shipping.has(code));
+  const discountCodes = [
+    ...new Set(
+      order.discountCodes.flatMap((code) => {
+        const clean = cleanText(code, 255);
+        return clean === null ? [] : [clean];
+      }),
+    ),
+  ];
   return { discountCode: cleanText(first, 255), discountCodes };
 }
 
 /**
  * A line's tax rate in percent with 2 decimals: the sum of its tax lines' percentages; with no tax
- * line, the context's `defaultTaxRate` (the `sales_tax_rate` setting), else 0.
+ * line, the context's `defaultTaxRate` (the `sales_tax_rate` setting), else 0. A full page of tax
+ * lines (`ORDER_READ_TAX_LINES_PAGE`, 10) may hide more, so it throws `TAX_LINES_TRUNCATED` rather
+ * than under sum the rate.
  */
 function taxRateOf(
   taxLines: ShopifyOrder['lineItems']['nodes'][number]['taxLines'],
   defaultTaxRate: string | undefined,
 ): string {
+  if (taxLines.length >= ORDER_READ_TAX_LINES_PAGE) {
+    throw new ShopifyOrderMappingError('TAX_LINES_TRUNCATED');
+  }
   if (taxLines.length === 0 && defaultTaxRate !== undefined) return defaultTaxRate;
   let hundredths = 0;
   for (const line of taxLines) {
@@ -685,7 +735,7 @@ export function mapShopifyOrder(
       storeId: context.storeId,
       channelId: context.channelId,
       channelOrderRef: order.id,
-      orderNumber: order.name,
+      orderNumber: shopifyOrderName(order),
       placedAt: order.createdAt,
       prepaidAmount: payment.prepaidAmount,
       prepaidMethod: payment.prepaidMethod,
@@ -744,7 +794,7 @@ export function replacementInput(
       storeId: context.storeId,
       channelId: context.channelId,
       channelOrderRef: `${order.id}:R${request.n}`,
-      orderNumber: `${order.name}-R${request.n}`,
+      orderNumber: `${shopifyOrderName(order, ORDER_NAME_MAX - `-R${request.n}`.length)}-R${request.n}`,
       placedAt: order.createdAt,
       relatedOrder: { orderId: request.originalOrderId, relation: 'replacement_for' },
       ...fields,

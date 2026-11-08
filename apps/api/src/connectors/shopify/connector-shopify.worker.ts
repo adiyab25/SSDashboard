@@ -9,7 +9,8 @@ import { InboxJob, type InboxOutcome } from './inbox.job.js';
  * The worker side of the `connector-shopify` queue (spec 0015 Inbound processing item 2): declares
  * the queue and its one handler through `JobRegistry`, and runs each job by its kind: `connect`
  * (`ConnectJob`, task 6) or `inbox` (`InboxJob`, task 7). Later tasks add their kinds to
- * `ShopifyJobData` and a case here. Data it cannot read is skipped, never retried.
+ * `ShopifyJobData` and a case here. Data it cannot read is skipped, never retried. The inbox job
+ * gets the pg-boss `retryCount`, so it knows its last retry (code review M1).
  */
 @Injectable()
 export class ConnectorShopifyWorker implements OnModuleInit {
@@ -38,7 +39,7 @@ export class ConnectorShopifyWorker implements OnModuleInit {
       case 'connect':
         return this.connect.connect(data.data.connectionId);
       case 'inbox':
-        return this.inbox.run(data.data, job.id);
+        return this.inbox.run(data.data, job.id, job.retryCount);
     }
   }
 }

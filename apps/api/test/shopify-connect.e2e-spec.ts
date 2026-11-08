@@ -409,7 +409,41 @@ describe('connecting a Shopify store (spec 0015 task 6, AC-1, AC-2)', { timeout:
     });
     expect(missing.status).toBe(422);
     expect(missing.body).toMatchObject({ code: 'INVALID_BODY' });
+    // Security review L11: a label with a direction override or a control character.
+    for (const label of ['Main ‮erots', 'Main\u0007store']) {
+      const spoofed = await api.call(manager, 'POST', '/api/connections/shopify', body({ label }));
+      expect(spoofed.status).toBe(422);
+      expect(spoofed.body).toMatchObject({ code: 'INVALID_BODY' });
+      answers.push(JSON.stringify(spoofed.body));
+    }
     answers.push(JSON.stringify(bad.body), JSON.stringify(missing.body));
+  });
+
+  it('writes API_VERSION_FELL_FORWARD to the health warnings when Shopify answers newer, and a matching check clears it (AC-25)', async () => {
+    const { id, detail: connected } = await connect('connect-version-fell-forward');
+    expect(connected).toMatchObject({ health: 'ok', healthReason: null });
+    const stored = async () =>
+      (
+        await api.owner.pool.query<{ warnings: string[]; api_version: string }>(
+          'SELECT health_warnings AS warnings, api_version FROM connections WHERE id = $1::uuid',
+          [id],
+        )
+      ).rows[0];
+    expect(await stored()).toEqual({
+      warnings: ['API_VERSION_FELL_FORWARD'],
+      api_version: '2027-01',
+    });
+    expect(remainingShopifyExchanges()).toEqual([
+      'connect-version-fell-forward/07-webhook-subscription-create.json',
+    ]);
+
+    useShopifyScenarios('connect-ok');
+    const checked = await api.call(manager, 'POST', `/api/connections/${id}/check`);
+    expect(checked.status, JSON.stringify(checked.body)).toBe(202);
+    await eventually(async () => ((await stored())?.warnings.length === 0 ? true : undefined), {
+      timeoutMs: 60_000,
+      what: 'the warning to clear',
+    });
   });
 
   it('refuses a person without settings.manage with 403', async () => {

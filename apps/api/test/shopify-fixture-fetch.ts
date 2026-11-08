@@ -172,7 +172,11 @@ export function createShopifyFixtureFetch(passThrough?: typeof fetch): ShopifyFi
     init?: RequestInit,
   ): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
-    if (LOOPBACK.has(url.hostname) && passThrough) return passThrough(input, init);
+    // Never followed: a local server's redirect must not carry the request to the internet
+    // (security review L10); the caller sees the 3xx itself.
+    if (LOOPBACK.has(url.hostname) && passThrough) {
+      return passThrough(input, { ...init, redirect: 'manual' });
+    }
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
     let body: string | null = null;
     if (typeof init?.body === 'string') body = init.body;

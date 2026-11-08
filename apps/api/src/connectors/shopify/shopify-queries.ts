@@ -139,10 +139,14 @@ export const ORDER_READ_OPERATION = 'OrderRead';
  * Line items read per order. An order with more makes the mapper refuse with
  * `LINE_ITEMS_TRUNCATED` (never a short snapshot, which would cancel the unread lines).
  */
-export const ORDER_READ_LINE_ITEMS_PAGE = 50;
+export const ORDER_READ_LINE_ITEMS_PAGE = 40;
 
-/** Tax lines read per line item; their percentages are summed into the line's rate. */
-export const ORDER_READ_TAX_LINES_PAGE = 3;
+/**
+ * Tax lines read per line item; their percentages are summed into the line's rate. A full page
+ * makes the mapper refuse with `TAX_LINES_TRUNCATED` (more may exist); 10 is far above any real
+ * line (Egyptian VAT is one tax line), so a valid order is never refused for its tax lines.
+ */
+export const ORDER_READ_TAX_LINES_PAGE = 10;
 
 /** Discount applications read per order, for the shipping discount exclusion. */
 export const ORDER_READ_DISCOUNT_APPLICATIONS_PAGE = 10;
@@ -162,11 +166,14 @@ export const ORDER_READ_TRANSACTIONS_PAGE = 30;
  * `targetType` and `DiscountCodeApplication.code` (D6).
  *
  * Requested cost estimate (objects 1, scalars 0, a connection sized by `first`, shopify.dev
- * "GraphQL Admin API rate limits"): line items 50 x about 10 (the item, its variant, its
- * `MoneyBag`, one discount allocation with its `MoneyBag`, 3 tax lines) = about 500, transactions
- * 30 x 3 = 90, fulfillments 10, discount applications 10, customer, address, journey, and money
- * about 15: about 625, under the 900 budget of the rate policy (AC-25). Task 1's recordings
- * replace the estimate with Shopify's `requestedQueryCost`.
+ * "GraphQL Admin API rate limits", read 2026-11-08; that page gives no rule for a plain list such
+ * as `taxLines`, so each listed tax line is counted as one object, the most it can cost): line
+ * items 40 x 17 (the item 1, its variant 1, its `MoneyBag` and money 2, one discount allocation
+ * with its `MoneyBag` and money 3, 10 tax lines 10) = 680, transactions 30 x 3 = 90, fulfillments
+ * 10, discount applications 10, customer, address, journey, and money about 15: about 805, under
+ * the 900 budget of the rate policy (AC-25). With 10 tax lines, 50 line items would come to about
+ * 975, so the line item page is 40. Task 1's recordings replace the estimate with Shopify's
+ * `requestedQueryCost`.
  */
 export const ORDER_READ = `query OrderRead($id: ID!) {
   order(id: $id) {
