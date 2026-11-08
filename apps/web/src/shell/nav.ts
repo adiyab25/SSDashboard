@@ -7,14 +7,16 @@ import {
   PaletteIcon,
   ScrollTextIcon,
   SettingsIcon,
+  ShoppingBagIcon,
   TagIcon,
   UsersIcon,
+  UsersRoundIcon,
   type LucideIcon,
 } from 'lucide-react';
 import type { MessageKey } from '@ssdashboard/i18n';
 
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
-export type NavGroup = 'general' | 'inventory';
+export type NavGroup = 'general' | 'orders' | 'inventory' | 'customers';
 
 /** One sidebar and palette entry. */
 export interface NavItem {
@@ -96,6 +98,15 @@ export const navItems: readonly NavItem[] = [
     module: 'platform',
   },
   {
+    id: 'orders',
+    labelKey: 'shell.nav.items.orders',
+    href: '/orders',
+    icon: ShoppingBagIcon,
+    group: 'orders',
+    needs: 'orders.view',
+    module: 'orders',
+  },
+  {
     id: 'stock',
     labelKey: 'shell.nav.items.stock',
     href: '/stock',
@@ -131,12 +142,23 @@ export const navItems: readonly NavItem[] = [
     needs: 'catalog.manage',
     module: 'inventory',
   },
+  {
+    id: 'customers',
+    labelKey: 'shell.nav.items.customers',
+    href: '/customers',
+    icon: UsersRoundIcon,
+    group: 'customers',
+    needs: 'customers.view',
+    module: 'customers',
+  },
 ];
 
 /** The groups in display order, with their heading keys. */
 export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
   { id: 'general', labelKey: 'shell.nav.groups.general' },
+  { id: 'orders', labelKey: 'shell.nav.groups.orders' },
   { id: 'inventory', labelKey: 'shell.nav.groups.inventory' },
+  { id: 'customers', labelKey: 'shell.nav.groups.customers' },
 ];
 
 /** What `visibleNavItems` needs to know of the module states: one state per key, null when unknown. */

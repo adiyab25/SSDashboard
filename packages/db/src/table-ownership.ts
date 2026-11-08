@@ -83,6 +83,7 @@ export const TABLE_OWNERSHIP = {
   customer_phones: 'customers',
   customer_external_ids: 'customers',
   customer_merges: 'customers',
+  customer_merge_suggestions: 'customers',
 
   orders: 'orders',
   order_lines: 'orders',
@@ -109,6 +110,8 @@ export const TABLE_OWNERSHIP = {
   outbound_commands: 'connectors',
   inbound_events: 'connectors',
   connection_external_ids: 'connectors',
+  connection_stock_levels: 'connectors',
+  connection_sync_runs: 'connectors',
 
   parties: 'partners',
 

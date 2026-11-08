@@ -93,6 +93,8 @@ export interface MigrateOptions {
   tenantId?: string | undefined;
   /** The application role's name for a new install (`APP_DB_ROLE`). Unset: the stored role, else `APP_ROLE`. */
   appRole?: string | undefined;
+  /** The folder of migrations to apply. Default: this package's own. Only tests give another (an older history). */
+  migrationsFolder?: string | undefined;
 }
 
 /**
@@ -183,7 +185,9 @@ export async function runMigrations(
       // ALTER DATABASE only reaches new sessions, so this one is set by hand.
       await client.query("SELECT set_config('ssd.tenant_id', $1, false)", [tenantId]);
       await client.query("SELECT set_config('ssd.app_role', $1, false)", [appRole]);
-      await migrate(drizzle(client), { migrationsFolder });
+      await migrate(drizzle(client), {
+        migrationsFolder: options.migrationsFolder ?? migrationsFolder,
+      });
       if (!installed) {
         await client.query(
           'INSERT INTO install (id, client_code, name) VALUES ($1, $2, $2) ON CONFLICT (id) DO NOTHING',

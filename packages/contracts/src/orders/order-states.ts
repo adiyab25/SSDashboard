@@ -185,8 +185,28 @@ const FULFILLMENT_RULES: readonly TransitionRule<FulfillmentState>[] = [
       valid: (code) => REASON_CODE_PATTERN.test(code),
       expected: 'a reason code like "duplicate" (a lower case code, not a note)',
     },
-    refuse: (_from, c) =>
-      c.carrierDeliveryCreated ? 'a carrier delivery already exists for the order' : null,
+  },
+  // A channel's own cancel (feature 13 maps the channel's reason to a `channel.` code).
+  {
+    from: ['new', 'confirmed', 'packed'],
+    to: 'cancelled',
+    actors: ['system_job'],
+    reasonShape: {
+      actors: ['system_job'],
+      valid: (code) => REASON_CODE_PATTERN.test(code) && code.startsWith('channel.'),
+      expected: 'a reason code starting with "channel." like "channel.customer"',
+    },
+  },
+  // A delivery the carrier reports cancelled or terminated before any pickup.
+  {
+    from: ['new', 'confirmed', 'packed'],
+    to: 'cancelled',
+    actors: ['carrier'],
+    reasonShape: {
+      actors: ['carrier'],
+      valid: (code) => REASON_CODE_PATTERN.test(code) && code.startsWith('carrier.'),
+      expected: 'a reason code starting with "carrier." like "carrier.terminated_before_pickup"',
+    },
   },
   {
     from: ['confirmed'],
@@ -243,6 +263,15 @@ const FULFILLMENT_RULES: readonly TransitionRule<FulfillmentState>[] = [
   { from: ['delivered', 'partially_delivered'], to: 'exchanged', actors: ['system_job'] },
 ];
 
+/** The reason code of a payment method corrected before the carrier delivery or any collection. */
+export const PAYMENT_METHOD_REDERIVED = 'payment_method_rederived';
+
+const PAYMENT_METHOD_REDERIVED_SHAPE = {
+  actors: ['system_job'],
+  valid: (code: string) => code === PAYMENT_METHOD_REDERIVED,
+  expected: `the reason code "${PAYMENT_METHOD_REDERIVED}"`,
+} as const;
+
 const CASH_RULES: readonly TransitionRule<CashState>[] = [
   {
     from: ['unpaid'],
@@ -259,6 +288,20 @@ const CASH_RULES: readonly TransitionRule<CashState>[] = [
   { from: ['collected_by_carrier'], to: 'remitted', actors: ['system_job'] },
   { from: ['remitted'], to: 'reconciled', actors: ['system_job'] },
   { from: ['unpaid'], to: 'nothing_to_collect', actors: ['system_job'] },
+  // A payment method corrected before anything moved (spec 0013 AC-25 c): these three rows exist
+  // for that one reason code only.
+  {
+    from: ['unpaid'],
+    to: 'prepaid',
+    actors: ['system_job'],
+    reasonShape: PAYMENT_METHOD_REDERIVED_SHAPE,
+  },
+  {
+    from: ['prepaid', 'nothing_to_collect'],
+    to: 'unpaid',
+    actors: ['system_job'],
+    reasonShape: PAYMENT_METHOD_REDERIVED_SHAPE,
+  },
   {
     from: ['nothing_to_collect'],
     to: 'collected_by_carrier',
@@ -318,18 +361,18 @@ function apply<S extends string>(
  * Checks one move against the transition table of its machine and returns the new state plus the
  * tasks a carrier fact opens. Raises `InvalidTransition` naming both states for any pair or actor
  * outside the table, a missing required reason, a `packed` move while a write back is open, or a
- * cancel or un-pack after the carrier delivery exists. Must never refuse a carrier report that the
+ * un-pack after the carrier delivery exists. A cancel is allowed until pickup, delivery or not (spec 0013 AC-8). Must never refuse a carrier report that the
  * table lists (shipped from `new`, shipped during an open write back, shipped after a cancel, late
  * cash): those are facts and open a task instead. Imports never move a state; they set the first.
  *
- * Reason codes: a person cancelling needs a code matching `^[a-z][a-z0-9_.]{0,63}$`; a carrier
+ * Reason codes: a person cancelling needs a code matching `^[a-z][a-z0-9_.]{0,63}$`, `system_job` one starting `channel.`, the carrier one starting `carrier.`; a cash move of `payment_method_rederived` rows needs that code; a carrier
  * `refused` needs a `RefusedReasonCode` (map an unknown carrier reason to `other` before calling).
  *
  * Guards NOT checked here, which the orders service must enforce in its transaction:
  * `unpaid` to `nothing_to_collect` needs fulfillment `cancelled`, `returned_to_origin`, `refused`,
  * or `lost` with `cod_due_amount = 0` and nothing collected; `remitted` needs a settlement
- * statement with a deposit date; order edits lock at `carrier_delivery_created_at` (only the
- * cancel and un-pack moves read that flag here); `confirmed` to `packed` must also ask
+ * statement with a deposit date; order edits and the money freeze lock at `carrier_delivery_created_at` (only the
+ * un-pack move reads that flag here); `confirmed` to `packed` must also ask
  * `ConnectorsService.openCommandsFor('order', id)`, beyond the `writeBackOpen` flag the caller
  * passes; `partially_delivered` needs the line split and `delivered` needs every open line
  * delivered.

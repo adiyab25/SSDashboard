@@ -36,6 +36,9 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   'phones',
   'phonenumber',
   'phonenumbers',
+  // Spec 0013: the second ship to phone of an order (`phoneAlt` in a request, an audit diff, and an
+  // answer), the one phone spelling the generic `phone` entry does not cover.
+  'phonealt',
   'mobile',
   'mobilenumber',
   'telephone',
@@ -106,6 +109,16 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   // bank or InstaPay reference a person typed when accounting a line.
   'partnertext',
   'paymentreference',
+  // Spec 0014 AC-17: the customer search body (`POST /api/customers/search`) carries a name
+  // fragment in `nameContains`. The phone key is covered by `phone`.
+  'namecontains',
+  // Spec 0014 review: the name search cursor names a customer id (never personal data itself), but
+  // a cursor key is redacted everywhere so a future cursor can never carry a name; the customer
+  // answers carry the primary phone, the E.164 form of a phone, and a channel's customer id.
+  'cursor',
+  'primaryphone',
+  'e164',
+  'externalid',
 ];
 
 /**
@@ -140,6 +153,11 @@ export const PERSONAL_DATA_PATHS: readonly string[] = [
   'whatsapp.text',
   'telegram.body',
   'telegram.text',
+  // Spec 0014: the merged record on a profile (`merges[].other.name`) and the merge answer
+  // (`survivor.name`). `items.name` is deliberately not here: any list answer has `items[]`, and
+  // product names must stay readable. Customer search answers are never logged.
+  'other.name',
+  'survivor.name',
 ];
 
 /**

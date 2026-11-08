@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
@@ -49,8 +50,12 @@ const stateOfMachine = (machine: AnyPgColumn, state: AnyPgColumn): SQL =>
 /** A sale, the replacement of an exchange, or a gift (total 0). */
 export const orderType = pgEnum('order_type', ['sale', 'exchange_replacement', 'gifted']);
 
-/** How an order relates to `related_order_id`: a duplicate of it, or reopened from it. */
-export const orderRelation = pgEnum('order_relation', ['duplicate_of', 'reopened_from']);
+/** How an order relates to `related_order_id`: a duplicate of it, reopened from it, or a gifted goodwill replacement making it good. */
+export const orderRelation = pgEnum('order_relation', [
+  'duplicate_of',
+  'reopened_from',
+  'goodwill_for',
+]);
 
 /** The parcel's state machine; the allowed moves live in `packages/contracts/src/orders/order-states.ts`. */
 export const orderFulfillmentState = pgEnum('order_fulfillment_state', [
@@ -198,6 +203,13 @@ export const orders = pgTable(
     /** Set by the first carrier fact about the order; edits, `cod_expected_amount`, and the allocation freeze here. */
     carrierDeliveryCreatedAt: timestamp('carrier_delivery_created_at', { withTimezone: true }),
     giftReasonCode: text('gift_reason_code'),
+    /**
+     * The channel's own id of the order (a Shopify order id, or the manual form's `clientRef`):
+     * the idempotency key of intake, unique per store when set.
+     */
+    channelOrderRef: text('channel_order_ref'),
+    /** The note the customer typed at checkout. Personal data, never logged. */
+    customerNote: text('customer_note'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -262,6 +274,14 @@ export const orders = pgTable(
       'orders_refused_reason_known',
       sql`${t.refusedReasonCode} IS NULL OR ${t.refusedReasonCode} IN ('size', 'changed_mind', 'price', 'not_ordered', 'damaged', 'other')`,
     ),
+    check(
+      'orders_channel_order_ref_length',
+      sql`${t.channelOrderRef} IS NULL OR length(${t.channelOrderRef}) <= 255`,
+    ),
+    check(
+      'orders_customer_note_length',
+      sql`${t.customerNote} IS NULL OR length(${t.customerNote}) <= 2000`,
+    ),
     check('orders_cancel_reason_code_shape', reasonCodeShape(t.cancelReasonCode)),
     check('orders_refused_reason_code_shape', reasonCodeShape(t.refusedReasonCode)),
     check('orders_gift_reason_code_shape', reasonCodeShape(t.giftReasonCode)),
@@ -271,6 +291,26 @@ export const orders = pgTable(
       t.placedAt.desc().nullsFirst(),
       t.id.desc().nullsFirst(),
     ),
+    // One order per channel id per store (the idempotency key of intake).
+    uniqueIndex('orders_store_channel_ref_unique')
+      .on(t.tenantId, t.storeId, t.channelOrderRef)
+      .where(sql`${t.channelOrderRef} IS NOT NULL`),
+    // The all stores list, newest first (the store index above leads with `store_id`).
+    index('orders_placed_idx').on(t.placedAt.desc().nullsFirst(), t.id.desc().nullsFirst()),
+    // The fulfillment state filter, rare states included.
+    index('orders_fulfillment_placed_idx').on(
+      t.fulfillmentState,
+      t.placedAt.desc().nullsFirst(),
+      t.id.desc().nullsFirst(),
+    ),
+    // The search box across stores (the unique key leads with `store_id`).
+    index('orders_order_number_idx').on(t.orderNumber),
+    index('orders_ship_to_phone_idx')
+      .on(t.shipToPhone)
+      .where(sql`${t.shipToPhone} IS NOT NULL`),
+    index('orders_ship_to_phone_alt_idx')
+      .on(t.shipToPhoneAlt)
+      .where(sql`${t.shipToPhoneAlt} IS NOT NULL`),
     // The confirmation queue, oldest first.
     index('orders_confirmation_queue_idx')
       .on(t.placedAt, t.id)
@@ -340,6 +380,8 @@ export const orderLines = pgTable(
     splitFromLineId: uuid('split_from_line_id'),
     /** The channel's own line id. */
     channelLineId: text('channel_line_id'),
+    /** The orders module's copy of the line's unfilled reservation quantity; 0 once the line leaves `open`. */
+    shortQuantity: integer('short_quantity').notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -351,6 +393,14 @@ export const orderLines = pgTable(
     index('order_lines_order_idx').on(t.orderId),
     index('order_lines_variant_idx').on(t.variantId),
     index('order_lines_split_from_idx').on(t.splitFromLineId),
+    // The "short" list filter and flag.
+    index('order_lines_short_idx')
+      .on(t.orderId)
+      .where(sql`${t.shortQuantity} > 0`),
+    check(
+      'order_lines_short_within_quantity',
+      sql`${t.shortQuantity} >= 0 AND ${t.shortQuantity} <= ${t.quantity}`,
+    ),
     check('order_lines_quantity_positive', sql`${t.quantity} > 0`),
     check(
       'order_lines_amounts_not_negative',

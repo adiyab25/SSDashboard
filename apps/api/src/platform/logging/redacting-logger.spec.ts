@@ -190,6 +190,67 @@ describe('personal data redaction (Law 151)', () => {
     expect(out.join('')).toContain('ok');
   });
 
+  it('redacts the customer search body key nameContains (spec 0014 AC-17)', () => {
+    const body = { nameContains: 'Sentinel Customer', limit: 25 };
+
+    const redacted = JSON.stringify(redact(body));
+    new RedactingLogger('Customers').log({ event: 'CustomerSearch', body });
+
+    expect(PERSONAL_DATA_KEYS).toContain('namecontains');
+    expect(redacted).toContain('"nameContains":"[REDACTED]"');
+    expect(redacted).toContain('"limit":25');
+    expect(out.join('')).not.toContain('Sentinel Customer');
+    const without = createRedactor({
+      ...DEFAULT_REDACTION_RULES,
+      keys: PERSONAL_DATA_KEYS.filter((key) => key !== 'namecontains'),
+    });
+    expect(JSON.stringify(without(body))).toContain('Sentinel Customer');
+  });
+
+  it('redacts the customer answer keys and names of spec 0014 (cursor, primaryPhone, e164, externalId, and the name under other and survivor)', () => {
+    const answer = {
+      cursor: 'Zm9v',
+      items: [{ id: 'c1', name: 'Kept Product Name', primaryPhone: '+201001234567' }],
+      merges: [{ mergeId: 'm1', other: { id: 'c2', name: 'Sentinel Other' } }],
+      survivor: { id: 'c3', name: 'Sentinel Survivor' },
+      phones: [{ e164: '+201001234567' }],
+      channelIds: [{ id: 'x1', externalId: 'shopify-77' }],
+    };
+
+    const redacted = JSON.stringify(redact(answer));
+
+    for (const leaked of [
+      'Zm9v',
+      'Sentinel Other',
+      'Sentinel Survivor',
+      '+201001234567',
+      'shopify-77',
+    ]) {
+      expect(redacted, leaked).not.toContain(leaked);
+    }
+    expect(redacted).toContain('"id":"c1"');
+    // A bare `items[].name` stays readable: product names must not be hidden in logs.
+    expect(redacted).toContain('Kept Product Name');
+    expect(redacted).toContain('"mergeId":"m1"');
+    for (const key of ['cursor', 'primaryphone', 'e164', 'externalid']) {
+      expect(PERSONAL_DATA_KEYS).toContain(key);
+    }
+  });
+
+  // Spec 0013 (security L2): the second ship to phone of an order, in any spelling of the key.
+  it('redacts the second ship to phone of an order under every spelling of its key', () => {
+    expect(PERSONAL_DATA_KEYS).toContain('phonealt');
+    const redacted = JSON.stringify(
+      createRedactor(DEFAULT_REDACTION_RULES)({
+        phoneAlt: 'second-phone-sentinel',
+        phone_alt: 'second-phone-sentinel',
+        edit: { operations: [{ kind: 'ship_to', 'phone-alt': 'second-phone-sentinel' }] },
+      }),
+    );
+
+    expect(redacted).not.toContain('second-phone-sentinel');
+  });
+
   it('leaks when the list is emptied (proof the list is what protects)', () => {
     const empty = createRedactor({
       ...DEFAULT_REDACTION_RULES,

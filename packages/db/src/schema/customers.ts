@@ -52,6 +52,10 @@ export const customers = pgTable(
     riskFlagSource: customerRiskFlagSource('risk_flag_source'),
     /** Free text: personal data, redacted from logs. */
     riskFlagNote: text('risk_flag_note'),
+    /** When the flag was set (spec 0014); null exactly when there is no flag. */
+    riskFlagSetAt: timestamp('risk_flag_set_at', { withTimezone: true }),
+    /** The person who set a `manual` flag; null for an import or rule flag. */
+    riskFlagSetBy: uuid('risk_flag_set_by').references(() => users.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -65,6 +69,23 @@ export const customers = pgTable(
       'customers_risk_flag_has_source',
       sql`(${t.riskFlag} IS NULL) = (${t.riskFlagSource} IS NULL)`,
     ),
+    check(
+      'customers_risk_flag_has_set_at',
+      sql`(${t.riskFlag} IS NULL) = (${t.riskFlagSetAt} IS NULL)`,
+    ),
+    check(
+      'customers_risk_flag_set_by_is_manual',
+      sql`${t.riskFlagSetBy} IS NULL OR ${t.riskFlagSource} = 'manual'`,
+    ),
+    index('customers_risk_flag_set_by_idx')
+      .on(t.riskFlagSetBy)
+      .where(sql`${t.riskFlagSetBy} IS NOT NULL`),
+    // The flagged list (spec 0014 AC-5): canonical flagged customers, most recently flagged first.
+    index('customers_flagged_idx')
+      .on(t.riskFlagSetAt.desc().nullsFirst(), t.id.desc().nullsFirst())
+      .where(sql`${t.riskFlag} IS NOT NULL AND ${t.mergedIntoId} IS NULL`),
+    // The name search (spec 0014 AC-5): `ILIKE '%text%'` through the trigram index.
+    index('customers_name_trgm_idx').using('gin', t.name.op('gin_trgm_ops')),
   ],
 );
 
@@ -187,5 +208,93 @@ export const customerMerges = pgTable(
     index('customer_merges_survivor_idx').on(t.survivorId),
     index('customer_merges_merged_idx').on(t.mergedId),
     index('customer_merges_actor_idx').on(t.actorId),
+  ],
+);
+
+/** Why two customers are suggested for a merge. */
+export const mergeSuggestionReason = pgEnum('merge_suggestion_reason', [
+  'channel_id_conflict',
+  'second_phone_conflict',
+]);
+
+/** Where a merge suggestion stands: waiting for a person, merged, or dismissed. */
+export const mergeSuggestionStatus = pgEnum('merge_suggestion_status', [
+  'open',
+  'applied',
+  'dismissed',
+]);
+
+/**
+ * A pair of customers that are probably one person (spec 0014 AC-9). One row per pair, ever: a
+ * dismissed pair is never suggested again. The pair is stored as the two canonical ids at opening
+ * time, `customerLowId` below `customerHighId`. Mutable (status moves once); carries ids and codes
+ * only, never a name or phone.
+ */
+export const customerMergeSuggestions = pgTable(
+  'customer_merge_suggestions',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    customerLowId: uuid('customer_low_id')
+      .notNull()
+      .references(() => customers.id, { onDelete: 'restrict' }),
+    customerHighId: uuid('customer_high_id')
+      .notNull()
+      .references(() => customers.id, { onDelete: 'restrict' }),
+    reason: mergeSuggestionReason('reason').notNull(),
+    evidenceExternalIdId: uuid('evidence_external_id_id').references(() => customerExternalIds.id, {
+      onDelete: 'restrict',
+    }),
+    evidencePhoneId: uuid('evidence_phone_id').references(() => customerPhones.id, {
+      onDelete: 'restrict',
+    }),
+    status: mergeSuggestionStatus('status').notNull().default('open'),
+    mergeId: uuid('merge_id').references(() => customerMerges.id, { onDelete: 'restrict' }),
+    decidedBy: uuid('decided_by').references(() => users.id, { onDelete: 'restrict' }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    /** A reason code for a dismissal (`reasonCodeShape`), never a note. */
+    dismissReason: text('dismiss_reason'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique('customer_merge_suggestions_pair_unique').on(t.customerLowId, t.customerHighId),
+    check('customer_merge_suggestions_ordered', sql`${t.customerLowId} < ${t.customerHighId}`),
+    check(
+      'customer_merge_suggestions_channel_evidence',
+      sql`(${t.reason} = 'channel_id_conflict') = (${t.evidenceExternalIdId} IS NOT NULL)`,
+    ),
+    check(
+      'customer_merge_suggestions_phone_evidence',
+      sql`(${t.reason} = 'second_phone_conflict') = (${t.evidencePhoneId} IS NOT NULL)`,
+    ),
+    check(
+      'customer_merge_suggestions_applied_has_merge',
+      sql`(${t.status} = 'applied') = (${t.mergeId} IS NOT NULL)`,
+    ),
+    check(
+      'customer_merge_suggestions_open_is_undecided',
+      sql`(${t.status} = 'open') = (${t.decidedAt} IS NULL)`,
+    ),
+    check(
+      'customer_merge_suggestions_dismiss_reason',
+      sql`(${t.dismissReason} IS NULL OR ${t.status} = 'dismissed') AND (${reasonCodeShape(t.dismissReason)})`,
+    ),
+    index('customer_merge_suggestions_open_idx')
+      .on(t.createdAt, t.id)
+      .where(sql`${t.status} = 'open'`),
+    index('customer_merge_suggestions_high_idx').on(t.customerHighId),
+    index('customer_merge_suggestions_evidence_external_idx')
+      .on(t.evidenceExternalIdId)
+      .where(sql`${t.evidenceExternalIdId} IS NOT NULL`),
+    index('customer_merge_suggestions_evidence_phone_idx')
+      .on(t.evidencePhoneId)
+      .where(sql`${t.evidencePhoneId} IS NOT NULL`),
+    index('customer_merge_suggestions_merge_idx')
+      .on(t.mergeId)
+      .where(sql`${t.mergeId} IS NOT NULL`),
+    index('customer_merge_suggestions_decided_by_idx')
+      .on(t.decidedBy)
+      .where(sql`${t.decidedBy} IS NOT NULL`),
   ],
 );

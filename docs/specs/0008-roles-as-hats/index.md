@@ -39,7 +39,7 @@ A person wears one or more hats (support, operations, warehouse, manager, and th
 - **AC-15**: A person with `people.manage` lists, creates, edits, disables, enables, resets the password and two factor of, resends the invite to, and revokes the sessions of partner users through `/api/partner-users`, reusing the invite, reset, and lockout mechanics of spec 0005 unchanged. Partner users never appear in `/api/staff`. An unknown partner account, or a party that is not a consignment partner, answers 422 `UNKNOWN_PARTNER_ACCOUNT`.
 - **AC-16**: The migration maps today's roles: `admin` becomes `manager` plus `cost.view`; `staff` becomes `support`, `operations`, and `warehouse` (exactly what staff could do before, still without cost). After the mapping every `users.role` is `user`, the check becomes `role = 'user'`, and Better Auth's admin plugin is configured with `defaultRole: 'user'`. The tables and the mapping go into the feature 4 baseline when it has not shipped, else into a forward migration (see the migration plan).
 - **AC-17**: `tasks.owner_hat` holds only internal hats: `packages/contracts` exports `InternalHat`, and the baseline check on `tasks.owner_hat` lists exactly `support`, `operations`, `warehouse`, `manager`. External hats never own a task.
-- **AC-18**: The people screen (`/staff`) shows each person's hats and whether they see cost, edits them in one dialog (a checkbox per hat with its plain description, the cost switch, an optional reason), and has a Partner logins tab for partner users; all of it in English and Arabic, right to left, by keyboard alone, and to WCAG 2.2 AA, with one `<h1>`.
+- **AC-18**: The people screen (`/staff`) shows each person's hats and whether they see cost, edits them in one dialog (a checkbox per hat with its plain description, the cost switch, an optional reason), and has a Partner logins tab for partner users; all of it in English and Arabic, right to left, by keyboard alone, and to WCAG 2.2 AA, with one `<h1>`. Amended 2026-11-08 by [spec 0009](../0009-settings-toggles-bundles/index.md) AC-9 (wave 1 review W3): the Partner logins tab stays for existing logins, with its list and row actions (disable, enable, end sessions, reset) usable whatever the module state; only "Add partner login" is disabled while the `consignment` module is `off`. Nothing else in this spec changes.
 
 ### Permission matrix
 
@@ -152,6 +152,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | 0012 seasons, product groups | `POST /api/seasons/:id/archive`, `POST /api/seasons/:id/unarchive`, and the same two for `/api/product-groups/:id` | `catalog.manage` |
 | 0012 seasons, product groups | `DELETE /api/seasons/:id`, `DELETE /api/product-groups/:id` | `catalog.manage` |
 | 0013 orders | `GET /api/orders`, `POST /api/orders/search`, `GET /api/orders/:id` | `orders.view` |
+| 0013 orders | `GET /api/orders/filter-options` | `orders.view` |
 | 0013 orders | `GET /api/orders/options` | `orders.confirm` |
 | 0013 orders | `POST /api/orders` | `orders.confirm` |
 | 0013 orders | `POST /api/orders/gifted` | `orders.gift` |

@@ -388,7 +388,9 @@ describe('inventory ledger: posting core', { timeout: 60_000 }, () => {
           'PeriodLocked',
         );
         const today = await h.ledger.post(
-          posting([line], { effectiveAt: await cairo('today', '00:30') }),
+          // The first second of today's Cairo day is always in the past: 00:30 was a future time (so
+          // a FutureDate refusal) for the first half hour after midnight Cairo.
+          posting([line], { effectiveAt: await cairo('today', '00:00:01') }),
         );
         expect(today.movements).toHaveLength(1);
         await rejects(

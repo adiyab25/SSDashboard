@@ -4,6 +4,7 @@ import { AuditModule } from '../audit/audit.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { ConfigController } from './config.controller.js';
 import { CostRulesService } from './cost-rules.service.js';
+import { DomainEvents } from './events/domain-events.js';
 import { LICENSE_KEY_SET, LICENSE_KEYS } from './license/license-keys.js';
 import { LicenseVerifier } from './license/license-verifier.js';
 import { LicenseController } from './license/license.controller.js';
@@ -30,7 +31,9 @@ import { SettingsService } from './settings/settings.service.js';
  * with the keys built into the image, the platform clock, and `LicenseService`), document
  * numbering, the per order cost rules, and the module registry with its states and capability
  * hooks (`ModuleStateService`, `CapabilityHooks`; the rows come from `MODULE_ROWS`, which tests may
- * override with fixture modules). It writes `setting.changed` and `license.added` audit
+ * override with fixture modules), and `DomainEvents`, the in transaction domain events (its
+ * handlers run whatever their owner module's state; see spec 0009's Follow-ups before a toggleable
+ * module subscribes). It writes `setting.changed` and `license.added` audit
  * entries through `AuditService` and reads names through the staff directory, never another
  * module's tables. The reconcile job producer a settings write needs, and the license check at api
  * start, come from `PlatformApiModule`, which only the api imports; the worker's license checks
@@ -55,6 +58,7 @@ import { SettingsService } from './settings/settings.service.js';
     LicenseService,
     NumberingService,
     CostRulesService,
+    DomainEvents,
   ],
   exports: [
     SettingsService,
@@ -66,6 +70,7 @@ import { SettingsService } from './settings/settings.service.js';
     ModuleRegistry,
     CapabilityHooks,
     ModuleStateService,
+    DomainEvents,
   ],
 })
 export class PlatformModule {}

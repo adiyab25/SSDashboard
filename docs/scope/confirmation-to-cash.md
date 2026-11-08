@@ -38,12 +38,16 @@ Spec [0012](../specs/0012-catalog-styles-variants/index.md) (Accepted 2026-11-07
 The reference connector that sets the pattern for every channel: orders, products, and customers from one or several stores of one brand, by webhooks plus a scheduled backfill, with stock pushed back to Shopify.
 **Done when:** webhooks are signature verified, a backfill catches anything missed, order edit pairs (a positive and a negative line of the same order, variant, day, and value) are netted before anything counts them, stock pushes never echo back as changes, each field has one owner, rate limits hold, and recorded fixtures replay green with no live call.
 Also from spec 0007: one store per Shopify connection, order numbers unique per store and shown with the store everywhere; a failed write back opens a task and blocks packing that order.
+Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out from Shopify fulfillment (`connectors.shopify.fulfillment_stock_out`) as a task of spec 0015, the Warehouse only stock out source the stock push waits for; and before go live the gift tag pattern (`shopify_gift_tags`) is compared with the pilot brand's real Shopify tags ("Accept, check with brand").
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
   - [ ] Recorded fixtures and one order through a signed webhook
   - [ ] Catalog, orders in full, go live, backfill, and the sweep
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
+  - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)
+  - [ ] Check the gift tag pattern against the pilot brand's real Shopify tags before go live (owner: "Accept, check with brand")
+  - [ ] Re-record fixtures from a Shopify dev store (owner ruling 2026-11-07: the fixtures are synthetic until then, written to the shopify.dev shapes of the pinned API version; this feature is not done until this box is ticked)
 - [ ] Verify it: `/check verify shopify connector`
 - [ ] Test it: `/test shopify connector`
 - [ ] Review it (fresh model): `/check review shopify connector`
@@ -55,7 +59,7 @@ One customer record keyed on a normalized Egyptian phone number, holding many ph
 **Done when:** 010, 0010, +2010, and Arabic digit forms normalize to one number; one customer holds several phones and Shopify ids across stores; merge is a fast audited screen that can be undone; a repeat returner flag shows on the record; the timeline reads the same records through each role's lens.
 - [x] Design it (spec): `/architect customers by phone`
 - [ ] Build it: `/develop customers by phone`
-  - [ ] One phone, one customer, end to end
+  - [x] One phone, one customer, end to end
   - [ ] Merge and undo as daily work
   - [ ] The repeat returner flag
   - [ ] One timeline through each lens
@@ -73,7 +77,7 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
 **Done when:** fulfillment moves through new, confirmed, packed, shipped, delivered, partially delivered, failed attempt, returned to origin, exchanged, refused; cash moves through unpaid, collected by carrier, remitted, reconciled, with the COD fee and shipping fee as their own lines and partial amounts allowed; gifted orders stay out of revenue and return rates; the order is editable until pickup is created, with every edit audited.
 - [x] Design it (spec): `/architect orders & their state machines`
 - [ ] Build it: `/develop orders & their state machines`
-  - [ ] One manual order through every layer
+  - [x] One manual order through every layer
   - [ ] Editing, confirming, cancelling, packing, and the hold
   - [ ] The channel intake contract for feature 13
   - [ ] Stock: holds at creation, short lines, and carrier shipments

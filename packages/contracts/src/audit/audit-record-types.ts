@@ -137,7 +137,8 @@ export const AUDIT_RECORD_TYPES = {
   },
   order: {
     label: 'audit.recordTypes.order',
-    personalKeys: ['name', 'email'],
+    // The ship to person and her second phone, bare in the edit operations a diff can carry.
+    personalKeys: ['name', 'email', 'phone', 'phonealt', 'address'],
     reason: 'code',
     labelPattern: AUDIT_RECORD_LABEL_PATTERN,
     labelIsOwnCode: false,

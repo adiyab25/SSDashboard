@@ -20,7 +20,7 @@ type Rule<S extends string> = readonly [from: readonly S[], to: S, actors: reado
 /** The fulfillment transition table of spec 0002 orders, written out independently of the code. */
 const FULFILLMENT_RULES: readonly Rule<Fulfillment>[] = [
   [['new'], 'confirmed', ['person']],
-  [['new', 'confirmed', 'packed'], 'cancelled', ['person']],
+  [['new', 'confirmed', 'packed'], 'cancelled', ['person', 'system_job', 'carrier']],
   [['confirmed'], 'packed', ['person']],
   [['packed'], 'confirmed', ['person']],
   [['new', 'confirmed', 'packed'], 'shipped', ['carrier']],
@@ -41,12 +41,25 @@ const CASH_RULES: readonly Rule<Cash>[] = [
   [['collected_by_carrier'], 'remitted', ['system_job']],
   [['remitted'], 'reconciled', ['system_job']],
   [['unpaid'], 'nothing_to_collect', ['system_job']],
+  [['unpaid'], 'prepaid', ['system_job']],
+  [['prepaid', 'nothing_to_collect'], 'unpaid', ['system_job']],
   [['nothing_to_collect'], 'collected_by_carrier', ['carrier']],
   [['prepaid'], 'reconciled', ['system_job', 'person']],
   [['reconciled'], 'remitted', ['system_job']],
   [['remitted'], 'collected_by_carrier', ['system_job']],
   [['collected_by_carrier'], 'unpaid', ['carrier', 'person']],
 ];
+
+/** A reason code each actor can legally give for a move, so the product test isolates the table. */
+function reasonFor(machine: 'fulfillment' | 'cash', to: string, actor: Actor): string {
+  if (machine === 'cash') return actor === 'system_job' ? 'payment_method_rederived' : 'size';
+  if (to === 'cancelled') {
+    if (actor === 'system_job') return 'channel.customer';
+    if (actor === 'carrier') return 'carrier.terminated_before_pickup';
+    return 'duplicate';
+  }
+  return 'size';
+}
 
 function allowed<S extends string>(
   rules: readonly Rule<S>[],
@@ -102,7 +115,13 @@ describe('nextState over the whole enum product', () => {
     for (const from of FulfillmentState.options) {
       for (const to of FulfillmentState.options) {
         for (const actor of OrderActorType.options) {
-          const input = { machine: 'fulfillment', from, to, actor, reasonCode: 'size' } as const;
+          const input = {
+            machine: 'fulfillment',
+            from,
+            to,
+            actor,
+            reasonCode: reasonFor('fulfillment', to, actor),
+          } as const;
           if (allowed(FULFILLMENT_RULES, from, to, actor)) {
             expect(nextState(input).state, `${from} -> ${to} by ${actor}`).toBe(to);
             accepted += 1;
@@ -124,7 +143,13 @@ describe('nextState over the whole enum product', () => {
     for (const from of CashState.options) {
       for (const to of CashState.options) {
         for (const actor of OrderActorType.options) {
-          const input = { machine: 'cash', from, to, actor, reasonCode: 'size' } as const;
+          const input = {
+            machine: 'cash',
+            from,
+            to,
+            actor,
+            reasonCode: reasonFor('cash', to, actor),
+          } as const;
           if (allowed(CASH_RULES, from, to, actor)) {
             expect(nextState(input).state, `${from} -> ${to} by ${actor}`).toBe(to);
             accepted += 1;
@@ -180,7 +205,7 @@ describe('nextState guards and tasks', () => {
     ).toBe('packed');
   });
 
-  it('refuses cancelling without a reason or after the carrier delivery exists', () => {
+  it('refuses cancelling without a reason, and allows it after the carrier delivery exists', () => {
     const cancel = {
       machine: 'fulfillment',
       actor: 'person',
@@ -189,10 +214,40 @@ describe('nextState guards and tasks', () => {
     } as const;
     expect(() => nextState(cancel)).toThrow(InvalidTransition);
     expect(() => nextState({ ...cancel, reasonCode: '  ' })).toThrow(InvalidTransition);
-    expect(() =>
-      nextState({ ...cancel, reasonCode: 'fake', carrierDeliveryCreated: true }),
-    ).toThrow(InvalidTransition);
+    expect(nextState({ ...cancel, reasonCode: 'fake', carrierDeliveryCreated: true }).state).toBe(
+      'cancelled',
+    );
     expect(nextState({ ...cancel, reasonCode: 'fake' }).state).toBe('cancelled');
+  });
+
+  it('shapes the reason of a channel or carrier cancel and of a rederived payment method', () => {
+    const cancel = { machine: 'fulfillment', from: 'packed', to: 'cancelled' } as const;
+    expect(() => nextState({ ...cancel, actor: 'system_job', reasonCode: 'fake' })).toThrow(
+      InvalidTransition,
+    );
+    expect(nextState({ ...cancel, actor: 'system_job', reasonCode: 'channel.fake' }).state).toBe(
+      'cancelled',
+    );
+    expect(() => nextState({ ...cancel, actor: 'carrier', reasonCode: 'channel.fake' })).toThrow(
+      InvalidTransition,
+    );
+    expect(
+      nextState({ ...cancel, actor: 'carrier', reasonCode: 'carrier.terminated_before_pickup' })
+        .state,
+    ).toBe('cancelled');
+    const rederive = { machine: 'cash', actor: 'system_job' } as const;
+    for (const [from, to] of [
+      ['unpaid', 'prepaid'],
+      ['prepaid', 'unpaid'],
+      ['nothing_to_collect', 'unpaid'],
+    ] as const) {
+      expect(() => nextState({ ...rederive, from, to, reasonCode: 'size' })).toThrow(
+        InvalidTransition,
+      );
+      expect(
+        nextState({ ...rederive, from, to, reasonCode: 'payment_method_rederived' }).state,
+      ).toBe(to);
+    }
   });
 
   it('refuses packed to confirmed once the carrier delivery exists', () => {

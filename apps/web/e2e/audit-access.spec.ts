@@ -3,7 +3,7 @@ import { createDatabase } from '@ssdashboard/db';
 import { expect, test, type Page } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { ownerDatabaseUrl } from './auth';
-import { createLocation, createSku, receive, voidReceipt } from './master-data-api';
+import { api, createLocation, createSku, receive, voidReceipt } from './master-data-api';
 
 // Spec 0010 QA, real app: what the audit screen must NOT offer or show (AC-13, AC-14, spec 0008
 // cost.view). Complements `audit.spec.ts`, which proves what it does show.
@@ -96,7 +96,16 @@ test.describe('who may use the audit api, and the Undo control', () => {
     const sku = await createSku(request, `AXS-${tag}`);
     const receipt = await receive(request, location.id, sku.id, 2);
     await voidReceipt(request, receipt.id, `Export proof ${tag}`);
-    const today = new Date().toISOString().slice(0, 10);
+    // The audit screen filters by operating day (Cairo, with the cutoff hour), not by the UTC date,
+    // so take the day the api stamped on the entry; the UTC date is a day behind around midnight Cairo.
+    const { body } = await api(
+      request,
+      'GET',
+      `/audit/entries?recordType=stock_receipt&recordId=${receipt.id}`,
+    );
+    const stamped = (body.items as { operatingDay: string }[])[0];
+    if (!stamped) throw new Error('The void left no audit entry');
+    const today = stamped.operatingDay;
     await page.goto(
       `/audit?dayFrom=${today}&dayTo=${today}&recordType=stock_receipt&recordId=${receipt.id}`,
     );

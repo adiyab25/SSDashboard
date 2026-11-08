@@ -1,5 +1,6 @@
 import { isValidTimeZone } from '@ssdashboard/i18n';
 import { z } from 'zod';
+import { TaxRateString } from '../money.js';
 import { defineSetting } from './setting-definition.js';
 
 /** A language code: two or three lowercase letters. */
@@ -112,6 +113,26 @@ export const BRAND_SETTINGS = [
     description: 'settings.entries.pricesIncludeVat.description',
     warning: 'settings.warnings.pricesIncludeVat',
     confirm: 'typed',
+  }),
+  defineSetting({
+    key: 'sales_tax_rate',
+    /**
+     * The VAT rate in percent as `numeric(5,2)` text, 0 to 100 (spec 0013): the rate of manual
+     * order lines and of every order's `shipping_tax_amount`. A channel order keeps the rate its
+     * channel gave each line.
+     */
+    schema: TaxRateString.refine((rate) => Number(rate) <= 100, 'A rate from 0 to 100'),
+    default: '14.00',
+    bundle: 'core',
+    group: 'brand',
+    whoMayChange: 'settings.manage',
+    reason: 'required',
+    exposure: 'staff',
+    sqlRead: false,
+    kind: 'value',
+    label: 'settings.entries.salesTaxRate.label',
+    description: 'settings.entries.salesTaxRate.description',
+    warning: 'settings.warnings.salesTaxRate',
   }),
   defineSetting({
     key: 'inventory_lock_date',

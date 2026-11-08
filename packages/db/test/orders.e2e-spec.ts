@@ -156,19 +156,149 @@ describe('stores, channels, connections, and orders (AC-18, AC-21, AC-23, AC-35)
   });
 
   describe('connections (AC-18)', () => {
+    /** A Shopify connection row with a fresh shop domain, overridable per test. */
+    function shopify(store: string, overrides: Record<string, unknown> = {}) {
+      return {
+        provider: 'shopify',
+        label: 'Shop',
+        store_id: store,
+        shop_domain: `${next('shop').toLowerCase()}.myshopify.com`,
+        ...overrides,
+      };
+    }
+
     it('refuses a Shopify connection without a store', async () => {
-      await expect(insert('connections', { provider: 'shopify', label: 'Shop' })).rejects.toThrow(
-        /connections_shopify_needs_store/,
-      );
+      await expect(
+        insert('connections', {
+          provider: 'shopify',
+          label: 'Shop',
+          shop_domain: 'no-store.myshopify.com',
+        }),
+      ).rejects.toThrow(/connections_shopify_needs_store/);
+    });
+
+    it('refuses a Shopify connection without a shop domain (spec 0015 AC-1)', async () => {
+      const store = await makeStore();
+      await expect(
+        insert('connections', { provider: 'shopify', label: 'Shop', store_id: store }),
+      ).rejects.toThrow(/connections_shopify_needs_shop_domain/);
+    });
+
+    it('refuses a shop domain that is not <name>.myshopify.com', async () => {
+      const store = await makeStore();
+      await expect(
+        insert('connections', shopify(store, { shop_domain: 'Example.com' })),
+      ).rejects.toThrow(/connections_shop_domain_shape/);
+      await expect(
+        insert('connections', shopify(store, { shop_domain: 'a.myshopify.com.evil.test' })),
+      ).rejects.toThrow(/connections_shop_domain_shape/);
     });
 
     it('refuses a second Shopify connection on one store', async () => {
       const store = await makeStore();
-      await insert('connections', { provider: 'shopify', label: 'Shop', store_id: store });
+      await insert('connections', shopify(store));
+
+      await expect(insert('connections', shopify(store, { label: 'Again' }))).rejects.toThrow(
+        /connections_shopify_store_unique/,
+      );
+    });
+
+    it('refuses a second live connection to one shop, and frees the domain once archived', async () => {
+      const domain = `${next('dup').toLowerCase()}.myshopify.com`;
+      const first = await makeStore();
+      const second = await makeStore();
+      const firstId = await insert('connections', shopify(first, { shop_domain: domain }));
+
+      await expect(insert('connections', shopify(second, { shop_domain: domain }))).rejects.toThrow(
+        /connections_shop_domain_unique/,
+      );
+
+      await owner.query("UPDATE connections SET status = 'archived' WHERE id = $1", [firstId]);
+      await insert('connections', shopify(second, { shop_domain: domain }));
+    });
+
+    it('starts connecting with no warnings, and refuses a health reason that is not a code', async () => {
+      const store = await makeStore();
+      const id = await insert('connections', shopify(store));
+      const row = await one<{ health: string; warnings: string[]; config: unknown }>(
+        'SELECT health, health_warnings AS warnings, config FROM connections WHERE id = $1',
+        [id],
+      );
+      expect(row).toEqual({ health: 'connecting', warnings: [], config: {} });
 
       await expect(
-        insert('connections', { provider: 'shopify', label: 'Again', store_id: store }),
-      ).rejects.toThrow(/connections_shopify_store_unique/);
+        owner.query("UPDATE connections SET health_reason = 'not a code' WHERE id = $1", [id]),
+      ).rejects.toThrow(/connections_health_reason_shape/);
+      await owner.query(
+        "UPDATE connections SET health_reason = 'APP_NOT_INSTALLED' WHERE id = $1",
+        [id],
+      );
+    });
+
+    it('holds the credentials and their key version together', async () => {
+      const store = await makeStore();
+      await expect(
+        insert('connections', shopify(store, { credentials_ciphertext: Buffer.alloc(29) })),
+      ).rejects.toThrow(/connections_credentials_key_version_together/);
+      await insert(
+        'connections',
+        shopify(store, {
+          credentials_ciphertext: Buffer.alloc(29),
+          credentials_key_version: 1,
+        }),
+      );
+    });
+
+    it('refuses a secret key in config, a too small ciphertext, a key version below 1, and a long hint', async () => {
+      const store = await makeStore();
+      const id = await insert('connections', shopify(store));
+      const update = (set: string, value: unknown) =>
+        owner.query(`UPDATE connections SET ${set} WHERE id = $1`, [id, value]);
+
+      for (const key of ['accessToken', 'clientSecret', 'secret', 'token']) {
+        await expect(update('config = $2::jsonb', JSON.stringify({ [key]: 'x' }))).rejects.toThrow(
+          /connections_config_no_secret_keys/,
+        );
+      }
+      await update('config = $2::jsonb', JSON.stringify({ stockLocationId: 'gid://1' }));
+      await expect(
+        owner.query(
+          'UPDATE connections SET credentials_ciphertext = $2, credentials_key_version = 1 WHERE id = $1',
+          [id, Buffer.alloc(28)],
+        ),
+      ).rejects.toThrow(/connections_credentials_ciphertext_size/);
+      await owner.query(
+        'UPDATE connections SET credentials_ciphertext = $2, credentials_key_version = 1 WHERE id = $1',
+        [id, Buffer.alloc(29)],
+      );
+      await expect(update('credentials_key_version = $2', 0)).rejects.toThrow(
+        /connections_credentials_key_version_positive/,
+      );
+      await expect(update('credentials_hint = $2', 'abcde')).rejects.toThrow(
+        /connections_credentials_hint_length/,
+      );
+      await update('credentials_hint = $2', 'abcd');
+    });
+
+    it('holds the stock push confirmation time and person together', async () => {
+      const store = await makeStore();
+      const user = (
+        await one<{ id: string }>(
+          "INSERT INTO users (name, email) VALUES ('Manager', $1) RETURNING id",
+          [`${next('m')}@example.test`],
+        )
+      ).id;
+
+      await expect(
+        insert('connections', shopify(store, { stock_push_confirmed_at: new Date() })),
+      ).rejects.toThrow(/connections_stock_push_confirmed_together/);
+      await expect(
+        insert('connections', shopify(store, { stock_push_confirmed_by: user })),
+      ).rejects.toThrow(/connections_stock_push_confirmed_together/);
+      await insert(
+        'connections',
+        shopify(store, { stock_push_confirmed_at: new Date(), stock_push_confirmed_by: user }),
+      );
     });
 
     it('inserts a Bosta connection with and without a store, and a gateway connection', async () => {
@@ -177,8 +307,254 @@ describe('stores, channels, connections, and orders (AC-18, AC-21, AC-23, AC-35)
       await insert('connections', { provider: 'bosta', label: 'Bosta one store', store_id: store });
       await insert('connections', { provider: 'gateway', label: 'Paymob' });
       // A carrier on a store with a Shopify connection is not a second Shopify connection.
-      await insert('connections', { provider: 'shopify', label: 'Shop', store_id: store });
+      await insert('connections', shopify(store));
       await insert('connections', { provider: 'bosta', label: 'Bosta again', store_id: store });
+    });
+  });
+
+  describe('connector inbox, mappings, stock levels, and runs (spec 0015)', () => {
+    async function connection(): Promise<string> {
+      return insert('connections', {
+        provider: 'shopify',
+        label: 'Shop',
+        store_id: await makeStore(),
+        shop_domain: `${next('c').toLowerCase()}.myshopify.com`,
+      });
+    }
+
+    async function variant(): Promise<string> {
+      const product = await one<{ id: string }>(
+        `INSERT INTO products (style_code, product_group_id, name)
+         VALUES ($1, (SELECT id FROM product_groups WHERE code = 'MAIN'), '{"en": "P"}') RETURNING id`,
+        [next('STYLE')],
+      );
+      const row = await one<{ id: string }>(
+        `INSERT INTO product_variants (product_id, sku, base_uom_id)
+         VALUES ($1, $2, (SELECT id FROM uoms ORDER BY code LIMIT 1)) RETURNING id`,
+        [product.id, next('SKU')],
+      );
+      return row.id;
+    }
+
+    function event(connectionId: string, overrides: Record<string, unknown> = {}) {
+      return {
+        connection_id: connectionId,
+        source: 'webhook',
+        topic: 'orders/create',
+        dedupe_key: next('hook'),
+        subject_type: 'order',
+        ...overrides,
+      };
+    }
+
+    it('keeps one inbox row per connection and dedupe key, and the same key in another connection', async () => {
+      const first = await connection();
+      const second = await connection();
+      const row = event(first, { dedupe_key: 'webhook-1' });
+      await insert('inbound_events', row);
+
+      await expect(insert('inbound_events', row)).rejects.toThrow(/inbound_events_dedupe_unique/);
+      await insert('inbound_events', { ...row, connection_id: second });
+    });
+
+    it('starts an event received with an empty payload, and refuses a bad outcome or failure code', async () => {
+      const id = await insert('inbound_events', event(await connection()));
+      const row = await one<{ status: string; payload: unknown; attempts: number }>(
+        'SELECT status, payload, attempts FROM inbound_events WHERE id = $1',
+        [id],
+      );
+      expect(row).toEqual({ status: 'received', payload: {}, attempts: 0 });
+
+      await expect(
+        owner.query("UPDATE inbound_events SET outcome = 'Not A Code' WHERE id = $1", [id]),
+      ).rejects.toThrow(/inbound_events_outcome_shape/);
+      await expect(
+        owner.query("UPDATE inbound_events SET failure_code = 'lower' WHERE id = $1", [id]),
+      ).rejects.toThrow(/inbound_events_failure_code_shape/);
+      await expect(
+        owner.query('UPDATE inbound_events SET attempts = -1 WHERE id = $1', [id]),
+      ).rejects.toThrow(/inbound_events_attempts_not_negative/);
+    });
+
+    it('lets the app role insert and update the inbox', async () => {
+      const id = await connection();
+      await app.query(
+        `INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type)
+         VALUES ($1, 'webhook', 'orders/create', $2, 'order')`,
+        [id, next('app')],
+      );
+      await app.query("UPDATE inbound_events SET status = 'processed' WHERE connection_id = $1", [
+        id,
+      ]);
+    });
+
+    it('keeps one mapping per connection, entity, and external id', async () => {
+      const id = await connection();
+      const row = {
+        connection_id: id,
+        entity: 'variant',
+        external_id: 'gid://shopify/ProductVariant/1',
+      };
+      await insert('connection_external_ids', row);
+
+      await expect(insert('connection_external_ids', row)).rejects.toThrow(
+        /connection_external_ids_unique/,
+      );
+      await insert('connection_external_ids', { ...row, entity: 'order' });
+    });
+
+    it('keeps one stock level per connection and variant', async () => {
+      const level = {
+        connection_id: await connection(),
+        variant_id: await variant(),
+        inventory_item_id: 'gid://shopify/InventoryItem/1',
+      };
+      await insert('connection_stock_levels', level);
+
+      await expect(insert('connection_stock_levels', level)).rejects.toThrow(
+        /connection_stock_levels_connection_variant_unique/,
+      );
+    });
+
+    it('holds a difference together, and a lower hold only below the target', async () => {
+      const level = {
+        connection_id: await connection(),
+        variant_id: await variant(),
+        inventory_item_id: 'gid://shopify/InventoryItem/2',
+      };
+
+      await expect(
+        insert('connection_stock_levels', { ...level, difference_shopify_quantity: 3 }),
+      ).rejects.toThrow(/connection_stock_levels_difference_together/);
+      await expect(
+        insert('connection_stock_levels', {
+          ...level,
+          held_lower: true,
+          difference_shopify_quantity: 9,
+          difference_target_quantity: 5,
+          difference_seen_at: new Date(),
+        }),
+      ).rejects.toThrow(/connection_stock_levels_held_lower_is_lower/);
+      await insert('connection_stock_levels', {
+        ...level,
+        held_lower: true,
+        difference_shopify_quantity: 2,
+        difference_target_quantity: 5,
+        difference_seen_at: new Date(),
+      });
+    });
+
+    it('refuses a lower hold with no recorded figures, a half recorded difference, and half an acknowledgement', async () => {
+      const level = {
+        connection_id: await connection(),
+        variant_id: await variant(),
+        inventory_item_id: 'gid://shopify/InventoryItem/3',
+      };
+
+      await expect(
+        insert('connection_stock_levels', { ...level, held_lower: true }),
+      ).rejects.toThrow(/connection_stock_levels_held_lower_is_lower/);
+      await expect(
+        insert('connection_stock_levels', {
+          ...level,
+          held_lower: true,
+          difference_seen_at: new Date(),
+          difference_shopify_quantity: 1,
+        }),
+      ).rejects.toThrow(/connection_stock_levels_difference_together/);
+      await expect(
+        insert('connection_stock_levels', { ...level, difference_target_quantity: 4 }),
+      ).rejects.toThrow(/connection_stock_levels_difference_together/);
+      await expect(
+        insert('connection_stock_levels', { ...level, difference_acknowledged_at: new Date() }),
+      ).rejects.toThrow(/connection_stock_levels_acknowledged_together/);
+    });
+
+    it('refuses an error code that is not an upper case code on a stock level and a sync run', async () => {
+      const connectionId = await connection();
+      const level = await insert('connection_stock_levels', {
+        connection_id: connectionId,
+        variant_id: await variant(),
+        inventory_item_id: 'gid://shopify/InventoryItem/4',
+      });
+      const run = await insert('connection_sync_runs', {
+        connection_id: connectionId,
+        kind: 'stock_push',
+      });
+
+      await expect(
+        owner.query(
+          "UPDATE connection_stock_levels SET push_error_code = 'bad code' WHERE id = $1",
+          [level],
+        ),
+      ).rejects.toThrow(/connection_stock_levels_push_error_code_shape/);
+      await owner.query(
+        "UPDATE connection_stock_levels SET push_error_code = 'ITEM_UNTRACKED' WHERE id = $1",
+        [level],
+      );
+      await expect(
+        owner.query("UPDATE connection_sync_runs SET error_code = 'bad code' WHERE id = $1", [run]),
+      ).rejects.toThrow(/connection_sync_runs_error_code_shape/);
+      await owner.query(
+        "UPDATE connection_sync_runs SET error_code = 'READS_FAILING' WHERE id = $1",
+        [run],
+      );
+    });
+
+    it('caps the inbox topic, dedupe key, and subject label', async () => {
+      const connectionId = await connection();
+
+      await expect(
+        insert('inbound_events', event(connectionId, { topic: 'x'.repeat(65) })),
+      ).rejects.toThrow(/inbound_events_topic_length/);
+      await expect(
+        insert('inbound_events', event(connectionId, { dedupe_key: 'x'.repeat(129) })),
+      ).rejects.toThrow(/inbound_events_dedupe_key_length/);
+      await expect(
+        insert('inbound_events', event(connectionId, { subject_label: 'x'.repeat(65) })),
+      ).rejects.toThrow(/inbound_events_subject_label_length/);
+      await insert(
+        'inbound_events',
+        event(connectionId, {
+          topic: 'x'.repeat(64),
+          dedupe_key: 'y'.repeat(128),
+          subject_label: 'z'.repeat(64),
+        }),
+      );
+    });
+
+    it('starts a sync run running with no cost, and refuses a negative cost', async () => {
+      const id = await insert('connection_sync_runs', {
+        connection_id: await connection(),
+        kind: 'sweep_orders',
+      });
+      const row = await one<{ status: string; cost_points: number; counts: unknown }>(
+        'SELECT status, cost_points, counts FROM connection_sync_runs WHERE id = $1',
+        [id],
+      );
+      expect(row).toEqual({ status: 'running', cost_points: 0, counts: {} });
+
+      await expect(
+        owner.query('UPDATE connection_sync_runs SET cost_points = -1 WHERE id = $1', [id]),
+      ).rejects.toThrow(/connection_sync_runs_cost_not_negative/);
+    });
+
+    it('accepts the connection linked type and refuses a failure reason that is provider text', async () => {
+      const id = await connection();
+      const command = await insert('outbound_commands', {
+        connection_id: id,
+        kind: 'shopify.inventory_set',
+        linked_type: 'connection',
+        linked_id: id,
+        payload: {},
+        idempotency_key: next('push'),
+      });
+      await expect(
+        owner.query(
+          "UPDATE outbound_commands SET failure_reason = 'provider said no' WHERE id = $1",
+          [command],
+        ),
+      ).rejects.toThrow(/outbound_commands_failure_reason_shape/);
     });
   });
 
@@ -226,7 +602,7 @@ describe('stores, channels, connections, and orders (AC-18, AC-21, AC-23, AC-35)
     });
 
     it('refuses DELETE and TRUNCATE from the application role, which resolves instead', async () => {
-      const id = await command({ sync_state: 'failed', failure_reason: 'timeout' });
+      const id = await command({ sync_state: 'failed', failure_reason: 'TIMEOUT' });
 
       await expect(app.query('DELETE FROM outbound_commands WHERE id = $1', [id])).rejects.toThrow(
         /permission denied/,
@@ -653,6 +1029,82 @@ describe('stores, channels, connections, and orders (AC-18, AC-21, AC-23, AC-35)
         [orderId],
       );
       expect(order.day).toBe('2026-01-15');
+    });
+  });
+  describe('the manual order columns and indexes (spec 0013 milestone 1)', () => {
+    it('holds one order per channel id in a store, any number in another store or without one', async () => {
+      const store = await makeStore();
+      const other = await makeStore();
+      await insert('orders', sale({ store_id: store, channel_order_ref: 'ref-1' }));
+
+      await expect(
+        insert('orders', sale({ store_id: store, channel_order_ref: 'ref-1' })),
+      ).rejects.toThrow(/orders_store_channel_ref_unique/);
+      await insert('orders', sale({ store_id: other, channel_order_ref: 'ref-1' }));
+      await insert('orders', sale({ store_id: store }));
+      await insert('orders', sale({ store_id: store }));
+    });
+
+    it('caps the channel order ref at 255 characters and the customer note at 2000', async () => {
+      await insert(
+        'orders',
+        sale({ channel_order_ref: 'r'.repeat(255), customer_note: 'n'.repeat(2000) }),
+      );
+
+      await expect(insert('orders', sale({ channel_order_ref: 'r'.repeat(256) }))).rejects.toThrow(
+        /orders_channel_order_ref_length/,
+      );
+      await expect(insert('orders', sale({ customer_note: 'n'.repeat(2001) }))).rejects.toThrow(
+        /orders_customer_note_length/,
+      );
+    });
+
+    it('keeps short_quantity between 0 and the line quantity, 0 by default', async () => {
+      const orderId = await insert('orders', sale());
+      const fresh = await insert('order_lines', line(orderId, { quantity: 3 }));
+      const defaulted = await one<{ short_quantity: number }>(
+        'SELECT short_quantity FROM order_lines WHERE id = $1',
+        [fresh],
+      );
+      await owner.query('UPDATE order_lines SET short_quantity = 3 WHERE id = $1', [fresh]);
+
+      expect(defaulted.short_quantity).toBe(0);
+      await expect(
+        owner.query('UPDATE order_lines SET short_quantity = 4 WHERE id = $1', [fresh]),
+      ).rejects.toThrow(/order_lines_short_within_quantity/);
+      await expect(
+        owner.query('UPDATE order_lines SET short_quantity = -1 WHERE id = $1', [fresh]),
+      ).rejects.toThrow(/order_lines_short_within_quantity/);
+    });
+
+    it('accepts goodwill_for as a related order relation', async () => {
+      const original = await insert('orders', sale());
+      const goodwill = await insert(
+        'orders',
+        gift({ related_order_id: original, related_order_relation: 'goodwill_for' }),
+      );
+
+      expect(goodwill).toBeTruthy();
+    });
+
+    it('has the list, search, and short indexes', async () => {
+      const { rows } = await owner.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+         AND indexname = ANY($1::text[])`,
+        [
+          [
+            'orders_placed_idx',
+            'orders_fulfillment_placed_idx',
+            'orders_order_number_idx',
+            'orders_ship_to_phone_idx',
+            'orders_ship_to_phone_alt_idx',
+            'order_lines_short_idx',
+            'orders_store_channel_ref_unique',
+          ],
+        ],
+      );
+
+      expect(rows).toHaveLength(7);
     });
   });
 });

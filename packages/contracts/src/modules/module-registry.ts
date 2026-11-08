@@ -2,10 +2,11 @@ import { defineModule, type ModuleDefinition } from './module-definition.js';
 
 /**
  * Every api module and capability whose code exists today (spec 0009, AC-6, *Module registry*,
- * milestone 3): the eight core modules and the five core job capabilities. A module or capability
- * row lands only with the code that does its work (`channels`, `connectors`, `customers`,
- * `orders`, `consignment`, and the Operations and Warehouse capabilities arrive with their
- * features, exactly as the spec's table names them). The api reads it through `ModuleRegistry`,
+ * milestone 3): the eleven core modules (`channels`, `customers`, and `orders` joined with their
+ * code from specs 0015, 0014, and 0013) and the five core job capabilities. A module or capability
+ * row lands only with the code that does its work (`connectors`, `consignment`, the orders
+ * capabilities, and the Operations and Warehouse capabilities arrive with their features, exactly
+ * as the spec's table names them). The api reads it through `ModuleRegistry`,
  * which tests may extend with fixture rows; `module-registry.spec.ts` and the api's folder check
  * hold it to AC-6. Pure data.
  */
@@ -124,6 +125,33 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = Object.freeze([
     requires: [],
     label: 'modules.health.label',
     description: 'modules.health.description',
+    capabilities: [],
+  }),
+  defineModule({
+    key: 'channels',
+    bundle: 'core',
+    toggle: false,
+    requires: [],
+    label: 'modules.channels.label',
+    description: 'modules.channels.description',
+    capabilities: [],
+  }),
+  defineModule({
+    key: 'customers',
+    bundle: 'core',
+    toggle: false,
+    requires: [],
+    label: 'modules.customers.label',
+    description: 'modules.customers.description',
+    capabilities: [],
+  }),
+  defineModule({
+    key: 'orders',
+    bundle: 'core',
+    toggle: false,
+    requires: [],
+    label: 'modules.orders.label',
+    description: 'modules.orders.description',
     capabilities: [],
   }),
 ]);

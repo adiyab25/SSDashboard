@@ -81,7 +81,7 @@ function changed(key: string, change: (m: ModuleDefinition) => ModuleDefinition)
 
 // Spec 0009, AC-6: the module registry and the rules it keeps.
 describe('the module registry (AC-6)', () => {
-  it('holds the eight modules of today and the five core job capabilities', () => {
+  it('holds the eleven modules of today and the five core job capabilities', () => {
     expect(MODULE_REGISTRY.map((m) => m.key)).toEqual([
       'platform',
       'audit',
@@ -91,6 +91,9 @@ describe('the module registry (AC-6)', () => {
       'partners',
       'mail',
       'health',
+      'channels',
+      'customers',
+      'orders',
     ]);
     expect(MODULE_REGISTRY.flatMap((m) => m.capabilities.map((c) => c.key))).toEqual([
       'platform.reconcile_modules',

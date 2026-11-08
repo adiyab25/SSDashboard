@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runMigrations } from '../src/index.js';
+import { APP_ROLE, runMigrations } from '../src/index.js';
 import { createScratchDatabase, dropScratchDatabase } from './database.js';
 
 // Spec 0002, customers child (build plan item 13): the database guards on customers, their
@@ -60,13 +60,176 @@ describe('customers by phone (AC-27, AC-28)', () => {
     });
 
     it('needs a source exactly when a risk flag is set', async () => {
-      await expect(customer({ risk_flag: 'refuser' })).rejects.toThrow(
-        /customers_risk_flag_has_source/,
-      );
+      await expect(
+        customer({ risk_flag: 'refuser', risk_flag_set_at: new Date() }),
+      ).rejects.toThrow(/customers_risk_flag_has_source/);
       await expect(customer({ risk_flag_source: 'manual' })).rejects.toThrow(
         /customers_risk_flag_has_source/,
       );
-      await customer({ risk_flag: 'fake', risk_flag_source: 'blacklist_import' });
+      await customer({
+        risk_flag: 'fake',
+        risk_flag_source: 'blacklist_import',
+        risk_flag_set_at: new Date(),
+      });
+    });
+
+    it('needs a set time exactly when a risk flag is set (spec 0014 AC-11)', async () => {
+      await expect(customer({ risk_flag: 'refuser', risk_flag_source: 'manual' })).rejects.toThrow(
+        /customers_risk_flag_has_set_at/,
+      );
+      await expect(customer({ risk_flag_set_at: new Date() })).rejects.toThrow(
+        /customers_risk_flag_has_set_at/,
+      );
+    });
+
+    it('names a person only on a manual flag (spec 0014 AC-11)', async () => {
+      const flag = { risk_flag: 'abusive', risk_flag_set_at: new Date() };
+
+      await expect(
+        customer({ ...flag, risk_flag_source: 'blacklist_import', risk_flag_set_by: actor }),
+      ).rejects.toThrow(/customers_risk_flag_set_by_is_manual/);
+      await customer({ ...flag, risk_flag_source: 'manual', risk_flag_set_by: actor });
+      await customer({ ...flag, risk_flag_source: 'rule' });
+    });
+  });
+
+  describe('customer merge suggestions (spec 0014 AC-9)', () => {
+    const suggest = async (row: Record<string, unknown>) =>
+      insert('customer_merge_suggestions', row);
+
+    /** Two customers in id order, and a channel id of the low one as the evidence. */
+    async function pair() {
+      const [low, high] = [await customer(), await customer()].sort();
+      return { low: low as string, high: high as string };
+    }
+
+    async function evidence(customerId: string): Promise<string> {
+      const channelId = await insert('channels', {
+        code: `suggest-${(counter += 1)}`,
+        name: { en: 'Partner' },
+        kind: 'consignment_partner',
+      });
+      return insert('customer_external_ids', {
+        customer_id: customerId,
+        kind: 'partner_reference',
+        channel_id: channelId,
+        external_id: `ref-${counter}`,
+      });
+    }
+
+    it('keeps one suggestion per pair, ever', async () => {
+      const { low, high } = await pair();
+      const external = await evidence(low);
+      const row = {
+        customer_low_id: low,
+        customer_high_id: high,
+        reason: 'channel_id_conflict',
+        evidence_external_id_id: external,
+      };
+      await suggest(row);
+
+      await expect(suggest(row)).rejects.toThrow(/customer_merge_suggestions_pair_unique/);
+    });
+
+    it('orders the pair low then high', async () => {
+      const { low, high } = await pair();
+
+      await expect(
+        suggest({
+          customer_low_id: high,
+          customer_high_id: low,
+          reason: 'channel_id_conflict',
+          evidence_external_id_id: await evidence(low),
+        }),
+      ).rejects.toThrow(/customer_merge_suggestions_ordered/);
+    });
+
+    it('needs the evidence of its reason, and only that evidence', async () => {
+      const { low, high } = await pair();
+      const pairIds = { customer_low_id: low, customer_high_id: high };
+
+      await expect(suggest({ ...pairIds, reason: 'channel_id_conflict' })).rejects.toThrow(
+        /customer_merge_suggestions_channel_evidence/,
+      );
+      await expect(suggest({ ...pairIds, reason: 'second_phone_conflict' })).rejects.toThrow(
+        /customer_merge_suggestions_phone_evidence/,
+      );
+      const phoneId = await insert('customer_phones', {
+        customer_id: low,
+        phone_e164: phone(),
+        kind: 'mobile',
+      });
+      await suggest({ ...pairIds, reason: 'second_phone_conflict', evidence_phone_id: phoneId });
+    });
+
+    it('is applied exactly when it names a merge, open exactly while undecided, and keeps a dismissal as a code', async () => {
+      const { low, high } = await pair();
+      const external = await evidence(low);
+      const base = {
+        customer_low_id: low,
+        customer_high_id: high,
+        reason: 'channel_id_conflict',
+        evidence_external_id_id: external,
+      };
+
+      await expect(suggest({ ...base, status: 'applied', decided_at: new Date() })).rejects.toThrow(
+        /customer_merge_suggestions_applied_has_merge/,
+      );
+      await expect(suggest({ ...base, status: 'dismissed' })).rejects.toThrow(
+        /customer_merge_suggestions_open_is_undecided/,
+      );
+      await expect(suggest({ ...base, dismiss_reason: 'different_people' })).rejects.toThrow(
+        /customer_merge_suggestions_dismiss_reason/,
+      );
+      await expect(
+        suggest({
+          ...base,
+          status: 'dismissed',
+          decided_at: new Date(),
+          dismiss_reason: 'Not the same person, Mona',
+        }),
+      ).rejects.toThrow(/customer_merge_suggestions_dismiss_reason/);
+      await suggest({
+        ...base,
+        status: 'dismissed',
+        decided_at: new Date(),
+        dismiss_reason: 'different_people',
+      });
+    });
+  });
+
+  describe('the application role and customer_merge_suggestions (spec 0014 AC-9)', () => {
+    it('may read, insert, and update a suggestion but never delete or truncate one', async () => {
+      const { rows } = await owner.query<Record<string, boolean>>(
+        `SELECT has_table_privilege($1, 'customer_merge_suggestions', 'SELECT') AS read,
+                has_table_privilege($1, 'customer_merge_suggestions', 'INSERT') AS insert,
+                has_table_privilege($1, 'customer_merge_suggestions', 'UPDATE') AS update,
+                has_table_privilege($1, 'customer_merge_suggestions', 'DELETE') AS remove,
+                has_table_privilege($1, 'customer_merge_suggestions', 'TRUNCATE') AS truncate`,
+        [APP_ROLE],
+      );
+
+      expect(rows[0]).toEqual({
+        read: true,
+        insert: true,
+        update: true,
+        remove: false,
+        truncate: false,
+      });
+    });
+
+    it('refuses a delete and a truncate run as the application role', async () => {
+      await owner.query(`SET ROLE ${APP_ROLE}`);
+      try {
+        await expect(owner.query('DELETE FROM customer_merge_suggestions')).rejects.toThrow(
+          /permission denied/,
+        );
+        await expect(owner.query('TRUNCATE customer_merge_suggestions')).rejects.toThrow(
+          /permission denied/,
+        );
+      } finally {
+        await owner.query('RESET ROLE');
+      }
     });
   });
 
@@ -134,6 +297,7 @@ describe('customers by phone (AC-27, AC-28)', () => {
       const connection = await insert('connections', {
         provider: 'shopify',
         label: 'Shop',
+        shop_domain: `cx-${counter}.myshopify.com`,
         store_id: store,
       });
       const channel = await insert('channels', {

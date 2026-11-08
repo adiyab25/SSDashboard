@@ -1,4 +1,11 @@
 import type { MessageKey } from '@ssdashboard/i18n';
+import {
+  ORDER_COLLECTION_REASONS,
+  ORDER_CREATED_MANUALLY_REASONS,
+  ORDER_EDITED_REASONS,
+  ORDER_PARTIAL_DELIVERY_REASONS,
+  ORDER_PAYMENT_METHOD_REDERIVED_REASONS,
+} from '../orders/order-reasons.js';
 
 /** Whether an action needs a typed reason (spec 0010, AC-5). */
 export type AuditReasonPolicy = 'required' | 'optional';
@@ -53,6 +60,9 @@ export interface AuditActionDefinition {
   /** The repo path of the test that proves the action writes its entry. */
   readonly proof: string;
 }
+
+/** The proof test of the orders actions (spec 0013). */
+const ORDERS_PROOF = 'apps/api/test/orders-audit.e2e-spec.ts';
 
 /** The proof test of the inventory master data actions (SKUs and locations). */
 const INVENTORY_PROOF = 'apps/api/test/audit-inventory.e2e-spec.ts';
@@ -217,6 +227,59 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     label: 'audit.actions.licenseAdded',
     proof: 'apps/api/test/license.e2e-spec.ts',
+  },
+  // Spec 0013 (orders): the record id is `orders.id` and the label `<store code>/<order number>`
+  // (`ESS/#1001`). Ship to values are masked by the writer and listed in `personal_fields`. State
+  // moves are not audited: `order_events` is their history.
+  'order.created_manually': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_CREATED_MANUALLY_REASONS,
+    label: 'audit.actions.orderCreatedManually',
+    proof: ORDERS_PROOF,
+  },
+  'order.edited': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_EDITED_REASONS,
+    label: 'audit.actions.orderEdited',
+    proof: ORDERS_PROOF,
+  },
+  'order.partial_delivery_split': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_PARTIAL_DELIVERY_REASONS,
+    label: 'audit.actions.orderPartialDeliverySplit',
+    proof: ORDERS_PROOF,
+  },
+  'order.collection_recorded_manually': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_COLLECTION_REASONS,
+    label: 'audit.actions.orderCollectionRecordedManually',
+    proof: ORDERS_PROOF,
+  },
+  'order.payment_method_rederived': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_PAYMENT_METHOD_REDERIVED_REASONS,
+    label: 'audit.actions.orderPaymentMethodRederived',
+    proof: ORDERS_PROOF,
   },
 } as const satisfies Record<string, AuditActionDefinition>;
 
