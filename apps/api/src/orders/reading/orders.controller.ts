@@ -30,6 +30,7 @@ import { CurrentAccess } from '../../platform/access/current-access.decorator.js
 import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../../platform/keyset-cursor.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { OrderIntake } from '../intake/order-intake.service.js';
@@ -53,6 +54,7 @@ const INVALID_BODY = { status: 422, code: 'INVALID_BODY' } as const;
  * and the person's id only, never a ship to field, a phone, or a typed search.
  */
 @Audience('staff')
+@RequiresModule('orders')
 @Controller('orders')
 export class OrdersController {
   private readonly logger = new Logger('Orders');

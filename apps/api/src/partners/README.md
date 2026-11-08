@@ -8,6 +8,8 @@ The brand's partner accounts: suppliers, factories, consignment partners and who
 - `PartnerAccounts` ([partner-accounts.service.ts](partner-accounts.service.ts)), the one exported service: `isConsignmentPartner(id, executor)` (a consignment partner that is not archived, read `FOR SHARE` through the caller's transaction so archiving the party waits for the bind), `holdsRole(id, role, executor)` (whether an unarchived party holds a role flag, also `FOR SHARE`; inventory's location rules use it) and `list()` (`{ id, code, name }` of every such partner, ordered by code). Identity uses it for `/api/partner-users` and inventory for the location party role check; neither reads `parties` itself.
 - The module wiring: [partners.module.ts](partners.module.ts) exports `PartnerAccounts`.
 
+- Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `partners`, core, no toggle; it has no controller yet (spec 0011's `PartnersController` declares `@RequiresModule('partners')` when it lands).
+
 ## Never touches
 
 - Other modules' tables, and the ledger.

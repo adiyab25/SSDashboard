@@ -17,13 +17,20 @@ import { LicenseUploadDialog } from './license-upload-dialog';
 /**
  * The Modules and license section of the settings screen (spec 0009, AC-25, AC-26): each plan with
  * its phase and expiry, the last check of the license file, the recorded licenses, and the upload
- * button. It loads `GET /api/platform/license` itself (`enabled` waits for access), so a failure
- * here never hides the other sections, and it shows loading, an error with Try again, and the
+ * button, and the module switches passed as `children` (AC-25: one section). It loads
+ * `GET /api/platform/license` itself (`enabled` waits for access), so a failure here never hides the other sections, and it shows loading, an error with Try again, and the
  * empty state of an install with no license recorded. A 403 shows a sentence in place of the body;
  * the page's own gate decides who reaches the screen. Its anchor is `#license`, which the shell's
  * banner links to.
  */
-export function LicenseSection({ enabled }: { enabled: boolean }) {
+export function LicenseSection({
+  enabled,
+  children,
+}: {
+  enabled: boolean;
+  /** The module switches, drawn under the section's heading before the plans. */
+  children?: React.ReactNode;
+}) {
   const { t } = useTranslation();
   const base = useId();
   const query = useQuery({
@@ -53,6 +60,8 @@ export function LicenseSection({ enabled }: { enabled: boolean }) {
           {t('settings.license.upload.open')}
         </Button>
       </div>
+
+      {children}
 
       {query.isError && !summary ? (
         <Alert variant="destructive">

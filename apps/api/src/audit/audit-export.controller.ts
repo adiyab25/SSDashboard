@@ -19,6 +19,7 @@ import { SettingsService } from '../platform/settings/settings.service.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { auditReadError } from './audit-entries.controller.js';
 import { AuditExportCutOff, AuditExportService } from './audit-export.service.js';
+import { RequiresModule } from '../platform/modules/requires-module.decorator.js';
 
 /** The part of a response the export writes to: a writable that can close under it. */
 export type ExportResponse = Pick<Response, 'write' | 'destroyed' | 'writableEnded'> &
@@ -84,6 +85,7 @@ export function exportReason(header: string | undefined): string | undefined {
  * reader without `cost.view`, like the screen (spec 0008 AC-6).
  */
 @Audience('staff')
+@RequiresModule('audit')
 @Controller('audit/entries')
 export class AuditExportController {
   private readonly logger = new Logger('AuditExport');

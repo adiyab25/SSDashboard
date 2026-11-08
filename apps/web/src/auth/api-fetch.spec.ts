@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch, resetApiFetchForTests } from './api-fetch';
+import { apiFetch, onModuleRefusal, resetApiFetchForTests } from './api-fetch';
 
 const assign = vi.fn();
 
@@ -79,4 +79,49 @@ describe('apiFetch (AC-5)', () => {
       expect(assign).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('onModuleRefusal (spec 0009, AC-9)', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    resetApiFetchForTests();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    fetchMock.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  const answer = (status: number, code: string) =>
+    new Response(JSON.stringify({ code }), { status });
+
+  it('tells the listener on 404 MODULE_OFF and on 409 MODULE_LIMITED, and returns the response', async () => {
+    const listener = vi.fn();
+    const stop = onModuleRefusal(listener);
+    fetchMock.mockResolvedValueOnce(answer(404, 'MODULE_OFF'));
+    const first = await apiFetch('/api/orders');
+    fetchMock.mockResolvedValueOnce(answer(409, 'MODULE_LIMITED'));
+    await apiFetch('/api/orders');
+
+    expect(first.status).toBe(404);
+    expect(await first.json()).toEqual({ code: 'MODULE_OFF' });
+    expect(listener).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('ignores other 404 and 409 answers, and a listener that has stopped', async () => {
+    const listener = vi.fn();
+    const stop = onModuleRefusal(listener);
+    fetchMock.mockResolvedValueOnce(answer(404, 'NOT_FOUND'));
+    await apiFetch('/api/x');
+    fetchMock.mockResolvedValueOnce(answer(409, 'STALE_SETTING'));
+    await apiFetch('/api/x');
+    stop();
+    fetchMock.mockResolvedValueOnce(answer(404, 'MODULE_OFF'));
+    await apiFetch('/api/x');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
 });

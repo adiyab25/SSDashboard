@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MODULE_REGISTRY } from '@ssdashboard/contracts';
 import { AuditModule } from '../audit/audit.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { ConfigController } from './config.controller.js';
@@ -9,6 +10,11 @@ import { LicenseVerifier } from './license/license-verifier.js';
 import { LicenseController } from './license/license.controller.js';
 import { LicenseService } from './license/license.service.js';
 import { PlatformClock } from './license/platform-clock.js';
+import { CapabilityHooks } from './modules/capability-hooks.js';
+import { MODULE_ROWS, ModuleRegistry } from './modules/module-registry.js';
+import { ModuleStateService } from './modules/module-state.service.js';
+import { ModulesController } from './modules/modules.controller.js';
+import { OffImpactReader } from './modules/off-impact.js';
 import { NumberingService } from './numbering.service.js';
 import {
   DEFAULT_LISTENER_RETRY,
@@ -23,7 +29,11 @@ import { SettingsService } from './settings/settings.service.js';
  * Install wide services other modules use, in the api and the worker alike: settings (with their
  * per process cache and the `LISTEN` connection that keeps it fresh), the license (its verifier
  * with the keys built into the image, the platform clock, and `LicenseService`), document
- * numbering, and the per order cost rules. It writes `setting.changed` and `license.added` audit
+ * numbering, the per order cost rules, and the module registry with its states and capability
+ * hooks (`ModuleStateService`, `CapabilityHooks`; the rows come from `MODULE_ROWS`, which tests may
+ * override with fixture modules), and `DomainEvents`, the in transaction domain events (its
+ * handlers run whatever their owner module's state; see spec 0009's Follow-ups before a toggleable
+ * module subscribes). It writes `setting.changed` and `license.added` audit
  * entries through `AuditService` and reads names through the staff directory, never another
  * module's tables. The reconcile job producer a settings write needs, and the license check at api
  * start, come from `PlatformApiModule`, which only the api imports; the worker's license checks
@@ -31,8 +41,13 @@ import { SettingsService } from './settings/settings.service.js';
  */
 @Module({
   imports: [AuditModule, StaffDirectoryModule],
-  controllers: [ConfigController, SettingsController, LicenseController],
+  controllers: [ConfigController, SettingsController, LicenseController, ModulesController],
   providers: [
+    { provide: MODULE_ROWS, useValue: MODULE_REGISTRY },
+    ModuleRegistry,
+    CapabilityHooks,
+    ModuleStateService,
+    OffImpactReader,
     SettingsCache,
     { provide: LISTENER_RETRY, useValue: DEFAULT_LISTENER_RETRY },
     PlatformChangesListener,
@@ -45,6 +60,17 @@ import { SettingsService } from './settings/settings.service.js';
     CostRulesService,
     DomainEvents,
   ],
-  exports: [SettingsService, LicenseService, NumberingService, CostRulesService, DomainEvents],
+  exports: [
+    SettingsService,
+    SettingsCache,
+    PlatformChangesListener,
+    LicenseService,
+    NumberingService,
+    CostRulesService,
+    ModuleRegistry,
+    CapabilityHooks,
+    ModuleStateService,
+    DomainEvents,
+  ],
 })
 export class PlatformModule {}

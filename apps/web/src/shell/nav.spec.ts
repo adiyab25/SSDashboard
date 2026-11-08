@@ -1,6 +1,14 @@
-import { HAT_PERMISSIONS, Permission, permissionsFor, type Hat } from '@ssdashboard/contracts';
+import {
+  HAT_PERMISSIONS,
+  MODULE_REGISTRY,
+  Permission,
+  permissionsFor,
+  type Hat,
+  type ModuleStateView,
+} from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
-import { ANY_HAT, navItems, visibleNavItems } from './nav';
+import { ANY_HAT, navItemFor, navItems, visibleNavItems, type NavItem } from './nav';
+import { stateView } from './module-fixtures';
 
 const ids = (hats?: readonly Hat[], grants: readonly Permission[] = []) =>
   visibleNavItems(hats === undefined ? undefined : permissionsFor(hats, grants)).map(
@@ -71,5 +79,68 @@ describe('visibleNavItems (spec 0008, AC-11)', () => {
     expect(ids(['manager'])).toContain('audit');
     expect(ids(['support', 'operations', 'warehouse'])).not.toContain('audit');
     expect(ids()).not.toContain('audit');
+  });
+});
+
+describe('nav item modules (spec 0009, AC-9)', () => {
+  const keys = new Set(
+    MODULE_REGISTRY.flatMap((module) => [
+      module.key,
+      ...module.capabilities.map((capability) => capability.key),
+    ]),
+  );
+
+  it.each(navItems.map((item) => [item.id, item] as const))(
+    '%s names a module or capability the registry has',
+    (_id, item) => {
+      expect(keys.has(item.module)).toBe(true);
+    },
+  );
+
+  const manager = permissionsFor(['manager'], []);
+  const stateOf =
+    (state: 'off' | 'read_only' | 'limited' | 'on', key: string) =>
+    (asked: string): ModuleStateView | null =>
+      asked === key ? stateView({ key, state, reason: 'toggled_off' }) : null;
+  const shown = (states?: (key: string) => ModuleStateView | null) =>
+    visibleNavItems(manager, states).map((item) => item.id);
+
+  it('hides every entry of an off module and keeps the others', () => {
+    const ids = shown(stateOf('off', 'inventory'));
+    expect(ids).not.toContain('stock');
+    expect(ids).not.toContain('receipts');
+    expect(ids).not.toContain('locations');
+    expect(ids).toEqual(expect.arrayContaining(['home', 'staff', 'skus', 'settings']));
+  });
+
+  it('shows entries of a read only or limited module, and of one whose state is unknown', () => {
+    expect(shown(stateOf('read_only', 'inventory'))).toContain('stock');
+    expect(shown(stateOf('limited', 'inventory'))).toContain('stock');
+    expect(shown(stateOf('on', 'inventory'))).toContain('stock');
+    expect(shown(() => null)).toContain('stock');
+    expect(shown()).toContain('stock');
+  });
+
+  it('hides an action entry while read only, and keeps it while limited', () => {
+    const list = navItems as NavItem[];
+    list.push({
+      ...(navItems[0] as NavItem),
+      id: 'fixture-action',
+      module: 'fixture',
+      action: true,
+    });
+    try {
+      expect(shown(stateOf('read_only', 'fixture'))).not.toContain('fixture-action');
+      expect(shown(stateOf('limited', 'fixture'))).toContain('fixture-action');
+    } finally {
+      list.pop();
+    }
+  });
+
+  it('finds the entry of an address, the longest match first', () => {
+    expect(navItemFor('/stock-receipts')?.id).toBe('receipts');
+    expect(navItemFor('/skus/abc')?.id).toBe('skus');
+    expect(navItemFor('/')?.id).toBe('home');
+    expect(navItemFor('/nowhere')).toBeUndefined();
   });
 });

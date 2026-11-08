@@ -8,6 +8,7 @@ import { DATABASE } from '../database/database.module.js';
 import { MailModule } from '../mail/mail.module.js';
 import { PermissionGuard } from '../platform/access/permission.guard.js';
 import { AudienceGuard } from '../platform/audience/audience.guard.js';
+import { ModuleGate } from '../platform/modules/module.gate.js';
 import { PlatformModule } from '../platform/platform.module.js';
 import { PartnersModule } from '../partners/partners.module.js';
 import { AccessLoader } from './access/access-loader.js';
@@ -83,10 +84,13 @@ import { StaffService } from './staff/staff.service.js';
     },
     // The guards run in this order (spec 0008, guard order): the session guard puts the person
     // and their `Access` on the request, the audience guard denies any route without an audience
-    // or of another audience, and the permission guard checks the route's declaration last.
+    // or of another audience, the permission guard checks the route's declaration, and the module
+    // gate (spec 0009, AC-8) answers 404 MODULE_OFF last, so an anonymous or forbidden caller
+    // still gets 401 or 403.
     { provide: APP_GUARD, useClass: SessionGuard },
     { provide: APP_GUARD, useClass: AudienceGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_GUARD, useClass: ModuleGate },
   ],
 })
 export class IdentityModule {}

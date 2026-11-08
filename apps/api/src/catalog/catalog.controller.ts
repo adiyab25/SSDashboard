@@ -27,6 +27,7 @@ import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { CatalogError, CatalogService } from './catalog.service.js';
+import { RequiresModule } from '../platform/modules/requires-module.decorator.js';
 
 /** Maps catalog errors to the stable codes of spec 0006. */
 export function catalogHttpError(error: unknown): unknown {
@@ -62,6 +63,7 @@ export const notFoundId = () =>
  * dependent SKU actions live in inventory's `sku-lifecycle/`.
  */
 @Audience('staff')
+@RequiresModule('catalog')
 @Controller()
 export class CatalogController {
   /** Takes the catalog service that holds the rules. */

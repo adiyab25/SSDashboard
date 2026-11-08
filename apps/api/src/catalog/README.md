@@ -11,6 +11,8 @@ Products and their SKUs (variants) for the staff back office: create a product, 
 - A product is a style: `style_code` (the SKU code on the create path), a `product_group` (`MAIN` for a one line brand) and an optional season
 - The catalog tables, defined in [packages/db](../../../../packages/db/src/schema/catalog.ts): products, options, variants, barcodes, units of measure and conversions, product groups, seasons, and cost records
 
+- Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `catalog`, core, no toggle. Every controller here declares `@RequiresModule('catalog')` (`src/platform/modules/requires-module.spec.ts` fails the build otherwise), so the module gate never answers `MODULE_OFF` for it while the module is core.
+
 ## Never touches
 
 - Ledger tables (`movement_groups`, `stock_movements`, `movement_serials`, `stock_levels`, `reservations`, `serials`). Stock figures come from the inventory module.

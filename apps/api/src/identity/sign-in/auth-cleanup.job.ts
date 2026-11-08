@@ -1,26 +1,33 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnApplicationBootstrap,
-  type OnApplicationShutdown,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { sql, type Database, type DatabaseConnection } from '@ssdashboard/db';
-import { PgBoss } from 'pg-boss';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
 import { DATABASE } from '../../database/database.module.js';
-import { JOB_SCHEMA } from '../../platform/job-schema.js';
-import { SettingsService } from '../../platform/settings/settings.service.js';
+import { defineQueue } from '../../platform/jobs/job-declarations.js';
+import { JobRegistry } from '../../platform/jobs/job-registry.js';
 import { LOCKOUT } from './sign-in-lockout.js';
 
-/** The pg-boss queue that carries the nightly sign in cleanup job. */
-export const AUTH_CLEANUP_QUEUE = 'auth.cleanup';
 /**
  * How long a cleanup run may take before pg-boss treats it as failed and lets the next one
  * start.
  */
 export const AUTH_CLEANUP_EXPIRY_SECONDS = 600;
+
+/**
+ * The queue of the nightly sign in cleanup, owned by the core capability `identity.cleanup`
+ * (spec 0009, *Module registry*); one run at a time.
+ */
+export const AUTH_CLEANUP_JOB = defineQueue({
+  name: 'auth.cleanup',
+  capability: 'identity.cleanup',
+  options: { policy: 'singleton', expireInSeconds: AUTH_CLEANUP_EXPIRY_SECONDS },
+});
+
+/** The pg-boss queue that carries the nightly sign in cleanup job. */
+export const AUTH_CLEANUP_QUEUE = AUTH_CLEANUP_JOB.name;
+
+/** The key of its nightly schedule. */
+export const AUTH_CLEANUP_SCHEDULE_KEY = 'nightly';
 
 /** Rate limit counters older than this are of no use: Better Auth's windows are far shorter. */
 const RATE_LIMIT_KEEP_MS = 24 * 60 * 60 * 1000;
@@ -34,56 +41,51 @@ export interface AuthCleanupCounts {
   rateLimits: number;
 }
 
-/** Deletes expired sign in rows nightly in the `worker` entry point (spec 0005, AC-22). */
+/**
+ * Deletes expired sign in rows nightly in the `worker` entry point (spec 0005, AC-22). Its queue,
+ * schedule on `AUTH_CLEANUP_CRON`, and handler are declared through the platform `JobRegistry`
+ * (spec 0009, AC-10); the `ModuleJobSupervisor` registers the schedule in the current `timezone`
+ * setting and runs the handler behind the module gate.
+ */
 @Injectable()
-export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShutdown {
+export class AuthCleanupJob implements OnModuleInit {
   private readonly logger = new Logger('AuthCleanup');
   private readonly db: Database;
-  private boss: PgBoss | undefined;
 
-  /**
-   * Takes the env (database URL and cron), the app database connection and the settings service
-   * for the timezone.
-   */
+  /** Takes the env (cron), the app database connection, and the job registry. */
   constructor(
     @Inject(ENV) private readonly env: Env,
     @Inject(DATABASE) connection: DatabaseConnection,
-    @Inject(SettingsService) private readonly settings: SettingsService,
+    @Inject(JobRegistry) private readonly jobs: JobRegistry,
   ) {
     this.db = connection.db;
   }
 
-  /**
-   * Starts the job queue, registers the nightly schedule in the install's timezone, and starts
-   * the handler. Runs only in the `worker` entry point.
-   */
-  async onApplicationBootstrap(): Promise<void> {
-    const boss = new PgBoss({
-      connectionString: this.env.DATABASE_URL,
-      schema: JOB_SCHEMA,
-      createSchema: false,
-      // One short run a night; the default pool of 10 would be wasted connections.
-      max: 2,
+  /** Declares the queue, the nightly schedule, and the handler. */
+  onModuleInit(): void {
+    this.jobs.declareQueue(AUTH_CLEANUP_JOB);
+    this.jobs.declareSchedule({
+      queue: AUTH_CLEANUP_QUEUE,
+      key: AUTH_CLEANUP_SCHEDULE_KEY,
+      capability: AUTH_CLEANUP_JOB.capability,
+      cron: this.env.AUTH_CLEANUP_CRON,
     });
-    boss.on('error', (error: Error) => this.logger.error(`Job queue error: ${error.message}`));
-    await boss.start();
-    this.boss = boss;
-    await boss.createQueue(AUTH_CLEANUP_QUEUE, {
-      policy: 'singleton',
-      expireInSeconds: AUTH_CLEANUP_EXPIRY_SECONDS,
+    this.jobs.declareHandler({
+      queue: AUTH_CLEANUP_QUEUE,
+      capability: AUTH_CLEANUP_JOB.capability,
+      handle: () => this.run(),
     });
-    // Read once at startup: a change to the timezone setting applies after a worker restart.
-    const { timezone } = await this.settings.read(['timezone']);
-    await boss.schedule(AUTH_CLEANUP_QUEUE, this.env.AUTH_CLEANUP_CRON, null, { tz: timezone });
-    await boss.work(AUTH_CLEANUP_QUEUE, async () => {
-      const counts = await this.cleanup();
-      this.logger.log(
-        `Removed ${counts.sessions} sessions, ${counts.verifications} tokens, ` +
-          `${counts.signInAttempts} sign in counters, ${counts.signInSlots} sign in slots, ` +
-          `${counts.rateLimits} rate limit counters.`,
-      );
-      return { ...counts };
-    });
+  }
+
+  /** Cleans up once and logs how many rows went, by table. */
+  async run(): Promise<AuthCleanupCounts> {
+    const counts = await this.cleanup();
+    this.logger.log(
+      `Removed ${counts.sessions} sessions, ${counts.verifications} tokens, ` +
+        `${counts.signInAttempts} sign in counters, ${counts.signInSlots} sign in slots, ` +
+        `${counts.rateLimits} rate limit counters.`,
+    );
+    return { ...counts };
   }
 
   /** Deletes what has expired and keeps everything still live. Safe to run at any time. */
@@ -107,13 +109,5 @@ export class AuthCleanupJob implements OnApplicationBootstrap, OnApplicationShut
       DELETE FROM rate_limits
        WHERE last_request < (extract(epoch FROM now()) * 1000)::bigint - ${RATE_LIMIT_KEEP_MS}::bigint`);
     return { sessions, verifications, signInAttempts, signInSlots, rateLimits };
-  }
-
-  /**
-   * Stops the queue after letting a run in progress finish, so a deploy never cuts a delete in
-   * half.
-   */
-  async onApplicationShutdown(): Promise<void> {
-    await this.boss?.stop({ graceful: true });
   }
 }

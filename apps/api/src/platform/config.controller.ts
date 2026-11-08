@@ -10,6 +10,7 @@ import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { Audience } from './audience/audience.decorator.js';
 import { SettingsService } from './settings/settings.service.js';
+import { RequiresModule } from './modules/requires-module.decorator.js';
 
 const FALLBACK_LANGUAGE = 'en';
 
@@ -20,6 +21,7 @@ const FALLBACK_LANGUAGE = 'en';
  */
 @Audience('public')
 @Public()
+@RequiresModule('platform')
 @Controller('config')
 export class ConfigController {
   private readonly logger = new Logger(ConfigController.name);

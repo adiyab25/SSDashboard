@@ -8,6 +8,7 @@ import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import type { CurrentPartner, PartnerRequest } from './current-staff.js';
 import { ProfileService } from './profile.service.js';
 import { WhoAmI } from './who-am-i.decorator.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /**
  * The partner "who am I" answer, the same `MeResponse` as `GET /api/me` (spec 0008, AC-11): the
@@ -41,6 +42,7 @@ function partnerMeOf(partner: CurrentPartner, access: Access): MeResponse {
  */
 @Audience('partner')
 @AnyHat()
+@RequiresModule('identity')
 @Controller('partner/me')
 export class PartnerMeController {
   /** Takes the profile service that saves the person's own details. */

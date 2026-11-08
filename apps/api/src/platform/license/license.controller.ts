@@ -12,6 +12,7 @@ import { Audience } from '../audience/audience.decorator.js';
 import { ZodBodyPipe } from '../zod-body.pipe.js';
 import { licenseHttpError } from './license-http.js';
 import { LicenseService } from './license.service.js';
+import { RequiresModule } from '../modules/requires-module.decorator.js';
 
 /**
  * The license for the people who manage settings (spec 0009, AC-20, AC-26): what the install is
@@ -21,6 +22,7 @@ import { LicenseService } from './license.service.js';
  */
 @Audience('staff')
 @Permission('settings.manage')
+@RequiresModule('platform')
 @Controller('platform/license')
 export class LicenseController {
   /** Takes the license service. */

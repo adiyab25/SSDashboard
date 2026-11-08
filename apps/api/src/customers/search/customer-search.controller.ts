@@ -19,6 +19,7 @@ import type { z } from 'zod';
 import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
 import { Permission } from '../../platform/access/permission.decorator.js';
 import { Audience } from '../../platform/audience/audience.decorator.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 import { ZodBodyPipe } from '../../platform/zod-body.pipe.js';
 import { customersHttpError } from '../customers-http.js';
 import { CustomerSearchService } from './customer-search.service.js';
@@ -36,6 +37,7 @@ const modeOf = (body: z.output<typeof CustomerSearchRequest>): 'phone' | 'name' 
  * never the typed phone or name.
  */
 @Audience('staff')
+@RequiresModule('customers')
 @Controller('customers')
 export class CustomerSearchController {
   private readonly logger = new Logger('CustomerSearch');

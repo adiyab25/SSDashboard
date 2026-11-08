@@ -4,8 +4,10 @@ import { Toaster } from '@ssdashboard/ui/components/sonner';
 import { TooltipProvider } from '@ssdashboard/ui/components/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '@/api/client';
+import { onModuleRefusal } from '@/auth/api-fetch';
+import { moduleKeys } from '@/shell/module-states-api';
 import { LanguageProvider, type InitialLanguage } from '@/i18n/language-provider';
 
 /** One query client per browser tab. A refused request (4xx) is an answer, never retried. */
@@ -36,6 +38,19 @@ export function Providers({
   initialLanguage?: InitialLanguage;
 }) {
   const [queryClient] = useState(makeQueryClient);
+  // Spec 0009, AC-9: an api answer of 404 MODULE_OFF or 409 MODULE_LIMITED makes the shell read the
+  // module states again at once. `apiFetch` reports it, so every call is covered, in one place.
+  useEffect(
+    () =>
+      onModuleRefusal(() => {
+        void queryClient.invalidateQueries(
+          { queryKey: moduleKeys.all },
+          // A burst of refusals shares the read already running instead of aborting it.
+          { cancelRefetch: false },
+        );
+      }),
+    [queryClient],
+  );
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>

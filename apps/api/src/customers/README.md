@@ -4,6 +4,7 @@ One customer per normalized Egyptian phone number, however the number was typed:
 
 ## Owns
 
+- Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `customers`, core, no toggle. Every controller here declares `@RequiresModule('customers')` (`src/platform/modules/requires-module.spec.ts` fails the build otherwise), so the module gate never answers `MODULE_OFF` for it while the module is core.
 - The customer tables (defined in [packages/db](../../../../packages/db/src/schema/customers.ts)): `customers`, `customer_phones`, `customer_external_ids`, `customer_merges`, and `customer_merge_suggestions`, all owned by `customers` in [table-ownership.ts](../../../../packages/db/src/table-ownership.ts). Only this module reads or writes them.
 - `CustomersService` ([customers.service.ts](customers.service.ts)), the one exported service. Milestone 1 holds:
   - `findOrCreate(tx, { phone, channelCustomer, name, seenAt })`: the six rules of spec 0014 AC-1 ([find-or-create/find-or-create.ts](find-or-create/find-or-create.ts)). It takes the phone lock, then the channel id lock, so parallel calls create one customer; it opens at most one merge suggestion per pair.

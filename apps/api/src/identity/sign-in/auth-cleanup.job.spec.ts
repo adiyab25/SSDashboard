@@ -1,77 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseConnection } from '@ssdashboard/db';
 import type { Env } from '../../config/env.js';
-import { JOB_SCHEMA } from '../../platform/job-schema.js';
-import type { SettingsService } from '../../platform/settings/settings.service.js';
+import { JobRegistry } from '../../platform/jobs/job-registry.js';
+import { ModuleRegistry } from '../../platform/modules/module-registry.js';
 import {
   AUTH_CLEANUP_EXPIRY_SECONDS,
   AUTH_CLEANUP_QUEUE,
+  AUTH_CLEANUP_SCHEDULE_KEY,
   AuthCleanupJob,
 } from './auth-cleanup.job.js';
 
-// pg-boss is the boundary: a fake records what the job asks of it.
-const boss = vi.hoisted(() => ({
-  constructed: [] as unknown[],
-  on: vi.fn(),
-  start: vi.fn(),
-  stop: vi.fn(),
-  createQueue: vi.fn(),
-  schedule: vi.fn(),
-  work: vi.fn(),
-}));
-
-vi.mock('pg-boss', () => ({
-  PgBoss: vi.fn(function (this: unknown, options: unknown) {
-    boss.constructed.push(options);
-    return boss;
-  }),
-}));
-
-const env = {
-  DATABASE_URL: 'postgres://ssdashboard_app:pw@db:5432/ssdashboard',
-  AUTH_CLEANUP_CRON: '15 4 * * *',
-} as Env;
+const env = { AUTH_CLEANUP_CRON: '15 4 * * *' } as Env;
 
 function makeJob(rowCounts: Array<number | null> = [1, 2, 3, 4, 5]) {
   const execute = vi.fn();
   for (const rowCount of rowCounts) execute.mockResolvedValueOnce({ rowCount });
-  const settings = { read: vi.fn().mockResolvedValue({ timezone: 'Africa/Cairo' }) };
-  const job = new AuthCleanupJob(
-    env,
-    { db: { execute } } as unknown as DatabaseConnection,
-    settings as unknown as SettingsService,
-  );
-  return { job, execute };
+  const jobs = new JobRegistry(new ModuleRegistry());
+  const job = new AuthCleanupJob(env, { db: { execute } } as unknown as DatabaseConnection, jobs);
+  return { job, execute, jobs };
 }
 
-// Spec 0005, AC-22: a nightly worker job deletes expired sign in rows.
+// Spec 0005, AC-22: a nightly worker job deletes expired sign in rows; spec 0009, AC-10: its queue,
+// schedule, and handler are declared through the JobRegistry with the capability identity.cleanup.
 describe('AuthCleanupJob', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    boss.start.mockResolvedValue(boss);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it('connects as the application role into its own schema with a small pool', async () => {
-    await makeJob().job.onApplicationBootstrap();
+  it('declares one cleanup at a time on AUTH_CLEANUP_CRON for identity.cleanup (covers: AC-22)', () => {
+    const { job, jobs } = makeJob();
+    job.onModuleInit();
 
-    expect(boss.constructed.at(-1)).toEqual({
-      connectionString: env.DATABASE_URL,
-      schema: JOB_SCHEMA,
-      createSchema: false,
-      max: 2,
+    expect(jobs.queue(AUTH_CLEANUP_QUEUE)).toEqual({
+      name: AUTH_CLEANUP_QUEUE,
+      capability: 'identity.cleanup',
+      options: { policy: 'singleton', expireInSeconds: AUTH_CLEANUP_EXPIRY_SECONDS },
     });
-  });
-
-  it('runs one cleanup at a time on AUTH_CLEANUP_CRON in the install time zone (covers: AC-22)', async () => {
-    await makeJob().job.onApplicationBootstrap();
-
-    expect(boss.createQueue).toHaveBeenCalledWith(AUTH_CLEANUP_QUEUE, {
-      policy: 'singleton',
-      expireInSeconds: AUTH_CLEANUP_EXPIRY_SECONDS,
-    });
-    expect(boss.schedule).toHaveBeenCalledWith(AUTH_CLEANUP_QUEUE, '15 4 * * *', null, {
-      tz: 'Africa/Cairo',
-    });
+    expect(jobs.schedulesOf(AUTH_CLEANUP_QUEUE)).toEqual([
+      {
+        queue: AUTH_CLEANUP_QUEUE,
+        key: AUTH_CLEANUP_SCHEDULE_KEY,
+        capability: 'identity.cleanup',
+        cron: '15 4 * * *',
+      },
+    ]);
   });
 
   it('counts what each of the five deletes removed (covers: AC-22)', async () => {
@@ -100,13 +70,12 @@ describe('AuthCleanupJob', () => {
   });
 
   it('cleans up when a job arrives and returns the counts (covers: AC-22)', async () => {
-    const { job } = makeJob();
-    await job.onApplicationBootstrap();
-    const handler = boss.work.mock.calls[0]?.[1] as () => Promise<unknown>;
+    const { job, jobs } = makeJob();
+    job.onModuleInit();
+    const handler = jobs.handlerFor(AUTH_CLEANUP_QUEUE, 'identity.cleanup');
 
-    const output = await handler();
+    const output = await handler?.handle({ id: 'j', data: {} } as never, { before: null });
 
-    expect(boss.work.mock.calls[0]?.[0]).toBe(AUTH_CLEANUP_QUEUE);
     expect(output).toEqual({
       sessions: 1,
       verifications: 2,
@@ -114,15 +83,5 @@ describe('AuthCleanupJob', () => {
       signInSlots: 4,
       rateLimits: 5,
     });
-  });
-
-  it('stops the queue gracefully on shutdown, and does nothing if it never started', async () => {
-    await makeJob().job.onApplicationShutdown();
-    expect(boss.stop).not.toHaveBeenCalled();
-
-    const { job } = makeJob();
-    await job.onApplicationBootstrap();
-    await job.onApplicationShutdown();
-    expect(boss.stop).toHaveBeenCalledWith({ graceful: true });
   });
 });

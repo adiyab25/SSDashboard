@@ -5,8 +5,9 @@ Outgoing email for sign in and invites. Messages are queued as pg-boss jobs and 
 ## Owns
 
 - The SMTP sender and the `Mailer` interface: [mailer.ts](mailer.ts)
-- Queuing messages: [mail-queue.ts](mail-queue.ts)
-- The worker that sends them and retries on failure: [mail.worker.ts](mail.worker.ts)
+- Queuing messages: [mail-queue.ts](mail-queue.ts) (`MailProducer` sends through the api's one send only pg-boss client, `JobSender`; the queue `mail.send` is `MAIL_JOB`, owned by the core capability `mail.send`, spec 0009 AC-10)
+- The worker that sends them and retries on failure: [mail.worker.ts](mail.worker.ts) (its queue and handler are declared through the platform `JobRegistry` and worked by the worker's one pg-boss client behind the module gate; on an install without a mailer nothing is queued, and a job that still arrives completes unsent)
+- Its registry row (spec 0009, AC-6): `mail`, core, no toggle, with the core capability `mail.send`; it has no controller
 - Message layout: [mail-templates.ts](mail-templates.ts). The words are the `mail.*` keys of the shared catalog (`packages/i18n`, English and Arabic); there is no copy table here
 - Links placed in messages: [mail-links.ts](mail-links.ts), always `PUBLIC_URL` plus `STAFF_BASE_PATH` plus the route
 - Wiring: [mail.module.ts](mail.module.ts), [mail.tokens.ts](mail.tokens.ts)

@@ -14,6 +14,7 @@ import { Audience } from '../../platform/audience/audience.decorator.js';
 import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { ledgerHttpError } from '../ledger-http.js';
 import { StockService } from './stock.service.js';
+import { RequiresModule } from '../../platform/modules/requires-module.decorator.js';
 
 /**
  * Stock on hand (spec 0006), every route `stock.view` (spec 0008 route mapping). Inventory owns
@@ -21,6 +22,7 @@ import { StockService } from './stock.service.js';
  */
 @Audience('staff')
 @Permission('stock.view')
+@RequiresModule('inventory')
 @Controller()
 export class StockController {
   /** Takes the stock service. */

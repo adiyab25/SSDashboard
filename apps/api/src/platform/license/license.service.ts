@@ -13,6 +13,7 @@ import {
   LicenseBundle,
   licenseNoticeLevel,
   type AuditActor,
+  type BundleFacts,
   type BundleStanding,
   type LicenseCheckOutcome,
   type LicenseCheckTrigger,
@@ -63,10 +64,16 @@ const OPEN_NONBLOCK: number = (constants as { O_NONBLOCK?: number }).O_NONBLOCK 
 const instant = (column: string) =>
   sql.raw(`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`);
 
-/** The columns of a `licenses` row every read returns. */
+/**
+ * The columns of a `licenses` row every read returns. Dates go through `to_char(…, 'YYYY-MM-DD')`,
+ * never `::text`, whose form follows the session's `DateStyle`: under a non ISO style every term
+ * would differ from its signed payload and no license would count (security third check m2, S1).
+ */
 const LICENSE_COLUMNS = sql.raw(`id, license_id, key_id, client_code, envelope, payload_sha256,
-  to_json(bundles) AS bundles, operations_expires_on::text AS operations_expires_on,
-  warehouse_expires_on::text AS warehouse_expires_on, issued_on::text AS issued_on, source,
+  to_json(bundles) AS bundles,
+  to_char(operations_expires_on, 'YYYY-MM-DD') AS operations_expires_on,
+  to_char(warehouse_expires_on, 'YYYY-MM-DD') AS warehouse_expires_on,
+  to_char(issued_on, 'YYYY-MM-DD') AS issued_on, source,
   to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS recorded_at`);
 
 /** A `licenses` row as the reads return it. */
@@ -323,6 +330,60 @@ export class LicenseService {
       if (isLicensedNow(standings[bundle].phase)) licensed.add(bundle);
     }
     return licensed;
+  }
+
+  /**
+   * Each bundle's facts for `moduleStates` (spec 0009, AC-7): its live phase (computed like every
+   * other read, never the phase a check recorded), the lapse instant (local 00:00 of expiry plus
+   * 15 in `timezone`, null without an expiry), and the instant of the last check that renewed it
+   * out of `wind_down` or `off` (the `since` watermark of AC-27; null when never).
+   */
+  async bundleFacts(
+    executor: Executor = this.connection.db,
+  ): Promise<Record<LicenseBundle, BundleFacts>> {
+    return this.factsOf(await this.state(executor), executor);
+  }
+
+  /**
+   * `bundleFacts` and today's manager notices (`notice()`) from one reading of the state, for the
+   * module state snapshot, which caches both (security review m3, finding 6).
+   */
+  async moduleFacts(
+    executor: Executor = this.connection.db,
+  ): Promise<{ bundles: Record<LicenseBundle, BundleFacts>; notices: LicenseNotice[] }> {
+    const state = await this.state(executor);
+    return { bundles: await this.factsOf(state, executor), notices: await this.notices(state) };
+  }
+
+  /** Each bundle's facts from one reading of the state. */
+  private async factsOf(
+    state: LicenseState,
+    executor: Executor,
+  ): Promise<Record<LicenseBundle, BundleFacts>> {
+    const { rows } = await executor.execute<{ bundle: LicenseBundle; at: string }>(sql`
+      SELECT bundle, ${instant('max(checked_at)')} AS at
+      FROM (SELECT 'operations' AS bundle, checked_at, operations_phase::text AS phase,
+                   lag(operations_phase::text) OVER (ORDER BY seq) AS prior
+              FROM license_checks
+            UNION ALL
+            SELECT 'warehouse', checked_at, warehouse_phase::text,
+                   lag(warehouse_phase::text) OVER (ORDER BY seq)
+              FROM license_checks) moves
+      WHERE prior IN ('wind_down', 'off') AND phase IN ('active', 'expiring', 'grace')
+      GROUP BY bundle`);
+    const renewed = new Map(rows.map((row) => [row.bundle, row.at]));
+    const facts = {} as Record<LicenseBundle, BundleFacts>;
+    for (const bundle of LicenseBundle.options) {
+      const standing = state.standings[bundle];
+      facts[bundle] = {
+        phase: standing.phase,
+        lapsedAt: standing.lapsesOn
+          ? await this.localMidnight(standing.lapsesOn, state.facts.timezone)
+          : null,
+        renewedAt: renewed.get(bundle) ?? null,
+      };
+    }
+    return facts;
   }
 
   /**
