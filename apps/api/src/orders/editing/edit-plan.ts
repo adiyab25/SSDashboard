@@ -22,6 +22,7 @@ import {
   VariantUnknown,
 } from '../orders.errors.js';
 import { priceLines, totalsOf, type OrderTotals, type PricedLine } from '../writer/order-money.js';
+import type { OrderColumnChanges } from '../writer/order-writer.js';
 
 /** The fulfillment states an order may be edited in (spec 0013 AC-8: until the parcel leaves). */
 export const EDITABLE_STATES: readonly FulfillmentState[] = ['new', 'confirmed', 'packed'];
@@ -74,9 +75,14 @@ export interface PlanOrder {
   lines: readonly PlanLine[];
 }
 
-/** The fields of a line an operation adds; a channel edit may also give its own line id and tax rate. */
+/**
+ * The fields of a line an operation adds; a channel edit may also give its own line id, tax rate,
+ * and title, and add a line whose product is not mapped yet (`variantId` null, title required).
+ */
 interface AddedLineFields {
-  variantId: string;
+  variantId: string | null;
+  /** The channel's line text (a channel edit); else the catalog name of the variant. */
+  title?: string;
   quantity: number;
   unitPrice: string;
   discountAmount: string;
@@ -121,6 +127,15 @@ export interface EditContext {
    * and the plan says `phoneUnparseable` so the caller raises `phone_unparseable`, as on creation.
    */
   unparseablePhone: 'refuse' | 'keep_raw';
+  /**
+   * What a second phone that does not parse does (review N4): `refuse` for a person's edit
+   * (`InvalidPhoneAlt`), `drop` for a channel edit (milestone 3): the text is not stored and the
+   * stored second phone stays as it is (security L9: a valid number is never erased by text that
+   * does not parse); when a stored one was kept, the plan says `phoneAltUnparseable` so the caller
+   * raises `phone_unparseable`. The text is kept nowhere: `contact_phone_raw` holds only a main
+   * phone that does not parse.
+   */
+  unparseablePhoneAlt: 'refuse' | 'drop';
 }
 
 /** The ship to columns an edit may write, by `orders` column meaning. */
@@ -142,7 +157,8 @@ export type ShipToField = 'name' | 'phone' | 'phoneAlt' | 'address' | 'courierNo
 
 /** A line the edit adds, priced, with its allocation shares. */
 export interface PlannedLine extends PricedLine {
-  variantId: string;
+  /** Null for a channel line whose product is not mapped yet. */
+  variantId: string | null;
   title: string;
   channelLineId: string | null;
   prepaidAmount: string;
@@ -169,6 +185,8 @@ export interface PlannedEdit {
   phone: NormalizedPhone | null;
   /** True when a channel edit set a main phone that does not parse (`keep_raw`). */
   phoneUnparseable: boolean;
+  /** True when a channel edit kept the stored second phone because its new text did not parse. */
+  phoneAltUnparseable: boolean;
   shippingChargedAmount: string;
   shippingChanged: boolean;
   /** True when lines or shipping changed, so the money moved. */
@@ -222,6 +240,7 @@ export function planEdit(
   const changedShipToFields = new Set<ShipToField>();
   let phone: NormalizedPhone | null = null;
   let phoneUnparseable = false;
+  let phoneAltUnparseable = false;
   let shippingChargedAmount = Money.of(order.shippingChargedAmount).toString();
 
   const cancel = (lineId: string, cancelReasonCode: string): void => {
@@ -231,7 +250,11 @@ export function planEdit(
     cancelLines.push({ lineId, cancelReasonCode });
   };
   const add = (fields: AddedLineFields): void => {
-    const title = context.titles.get(fields.variantId);
+    const known = fields.variantId === null ? undefined : context.titles.get(fields.variantId);
+    if (fields.variantId !== null && known === undefined && fields.title === undefined) {
+      throw new VariantUnknown();
+    }
+    const title = fields.title ?? known;
     if (title === undefined) throw new VariantUnknown();
     const [priced] = priceLines(
       [
@@ -264,8 +287,9 @@ export function planEdit(
           operation,
           shipToColumns,
           changedShipToFields,
-          context.unparseablePhone,
+          context,
         );
+        if (result.altUnparseable) phoneAltUnparseable = true;
         if (result.phone !== null) {
           phone = result.phone;
           phoneUnparseable = false;
@@ -348,7 +372,7 @@ export function planEdit(
     };
     if (line.id !== null) {
       lineShares.set(line.id, share);
-    } else if (line.variantId !== null && line.title !== null) {
+    } else if (line.title !== null) {
       addLines.push({
         ...line,
         variantId: line.variantId,
@@ -370,6 +394,7 @@ export function planEdit(
     changedShipToFields: SHIP_TO_FIELD_ORDER.filter((field) => changedShipToFields.has(field)),
     phone,
     phoneUnparseable,
+    phoneAltUnparseable,
     shippingChargedAmount,
     shippingChanged,
     moneyChanged,
@@ -399,16 +424,17 @@ function applyShipTo(
   operation: Extract<PlanOperation, { kind: 'ship_to' }>,
   columns: ShipToColumns,
   changed: Set<ShipToField>,
-  unparseablePhone: EditContext['unparseablePhone'],
-): { phone: NormalizedPhone | null; unparseable: boolean } {
+  context: Pick<EditContext, 'unparseablePhone' | 'unparseablePhoneAlt'>,
+): { phone: NormalizedPhone | null; unparseable: boolean; altUnparseable: boolean } {
   let phone: NormalizedPhone | null = null;
   let unparseable = false;
+  let altUnparseable = false;
   if (operation.name !== undefined && operation.name !== current.name) {
     columns.shipToName = operation.name;
     changed.add('name');
   }
   if (operation.phone !== undefined) {
-    const parsed = parseMain(operation.phone, unparseablePhone);
+    const parsed = parseMain(operation.phone, context.unparseablePhone);
     if (parsed === null) {
       const raw = operation.phone.slice(0, RAW_PHONE_LIMIT);
       if (current.phone !== null || current.contactPhoneRaw !== raw) {
@@ -426,8 +452,11 @@ function applyShipTo(
   }
   if (operation.phoneAlt !== undefined) {
     const text = operation.phoneAlt?.trim() ?? '';
-    const alt = text === '' ? null : parseOrRefuse(text, () => new InvalidPhoneAlt()).e164;
-    if (alt !== current.phoneAlt) {
+    const alt = text === '' ? null : parseAlt(text, context.unparseablePhoneAlt);
+    if (alt === undefined) {
+      // Text that does not parse (a channel): the stored phone stays; said only when one is kept.
+      altUnparseable = current.phoneAlt !== null;
+    } else if (alt !== current.phoneAlt) {
       columns.shipToPhoneAlt = alt;
       changed.add('phoneAlt');
     }
@@ -453,7 +482,21 @@ function applyShipTo(
     columns.shipToZoneCode = operation.area?.zoneCode ?? null;
     changed.add('area');
   }
-  return { phone, unparseable };
+  return { phone, unparseable, altUnparseable };
+}
+
+/**
+ * Parses a second phone: refused for a person, or undefined (not stored, the stored one kept) for
+ * a channel, when it does not parse.
+ */
+function parseAlt(text: string, mode: EditContext['unparseablePhoneAlt']): string | undefined {
+  if (mode === 'refuse') return parseOrRefuse(text, () => new InvalidPhoneAlt()).e164;
+  try {
+    return EgyptianPhone.parse(text).e164;
+  } catch (error) {
+    if (error instanceof InvalidPhone) return undefined;
+    throw error;
+  }
 }
 
 /** The longest phone text kept as typed (`orders_contact_phone_raw_length`). */
@@ -560,4 +603,24 @@ export function editAuditDiff(
     };
   }
   return { before, after };
+}
+
+/**
+ * The money columns a planned edit writes when its lines or shipping changed; none for a ship to
+ * only edit. Shared by a person's edit and the channel edit. The outcome is derived by the writer.
+ */
+export function plannedMoneyColumns(plan: PlannedEdit): OrderColumnChanges {
+  if (!plan.moneyChanged) return {};
+  const { totals } = plan;
+  return {
+    linesGrossAmount: totals.linesGrossAmount,
+    shippingChargedAmount: plan.shippingChargedAmount,
+    shippingTaxAmount: totals.shippingTaxAmount,
+    totalAmount: totals.totalAmount,
+    shippingPrepaidAmount: totals.shippingPrepaidAmount,
+    shippingCreditAppliedAmount: totals.shippingCreditAppliedAmount,
+    codExpectedAmount: totals.codExpectedAmount,
+    codDueAmount: totals.codDueAmount,
+    deliveredAmount: totals.deliveredAmount,
+  };
 }

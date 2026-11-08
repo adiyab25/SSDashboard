@@ -26,6 +26,9 @@ export const LINE_ACTIONS = ['keep', 'replace', 'remove', 'add'] as const;
 const Amount = moneyInput(2).pipe(PriceString);
 const Quantity = quantityInput({ min: 1, max: 10_000 });
 
+/** The contract's cap on operations in one edit (`OrderEditBody`); the dialog refuses more before any request. */
+export const MAX_OPERATIONS = 50;
+
 /** A typed amount as a normalized decimal string, else null. */
 function amountOf(text: string): string | null {
   const parsed = Amount.safeParse(text);

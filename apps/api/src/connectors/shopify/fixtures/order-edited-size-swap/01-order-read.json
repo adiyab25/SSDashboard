@@ -1,0 +1,403 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "order-edited-size-swap",
+    "step": "before the edit: lines M and L",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Order",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/LineItem",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/MailingAddress",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ShippingLine",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/TaxLine",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Fulfillment",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/OrderTransaction",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/OrderAgreement",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductSale",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Refund",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/RefundLineItem",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/CustomerJourneySummary",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/CustomerVisit",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/UTMParameters",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/DiscountAllocation",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/MoneyBag",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Attribute",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderCancelReason",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderDisplayFinancialStatus",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderDisplayFulfillmentStatus",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/FulfillmentStatus",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/SaleActionType",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/SaleLineType",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderActionType",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderTransactionKind",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderTransactionStatus",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/RefundLineItemRestockType"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": "OrderRead",
+    "variables": {
+      "id": "gid://shopify/Order/5550000002001"
+    },
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "order": {
+          "id": "gid://shopify/Order/5550000002001",
+          "name": "#1002",
+          "createdAt": "2026-11-02T09:15:00Z",
+          "updatedAt": "2026-11-02T09:15:04Z",
+          "cancelledAt": null,
+          "cancelReason": null,
+          "test": false,
+          "displayFinancialStatus": "PENDING",
+          "displayFulfillmentStatus": "UNFULFILLED",
+          "paymentGatewayNames": ["Cash on Delivery (COD)"],
+          "currencyCode": "EGP",
+          "currentSubtotalPriceSet": {
+            "shopMoney": {
+              "amount": "810.00",
+              "currencyCode": "EGP"
+            },
+            "presentmentMoney": {
+              "amount": "810.00",
+              "currencyCode": "EGP"
+            }
+          },
+          "currentTotalPriceSet": {
+            "shopMoney": {
+              "amount": "860.00",
+              "currencyCode": "EGP"
+            },
+            "presentmentMoney": {
+              "amount": "860.00",
+              "currencyCode": "EGP"
+            }
+          },
+          "totalPriceSet": {
+            "shopMoney": {
+              "amount": "860.00",
+              "currencyCode": "EGP"
+            },
+            "presentmentMoney": {
+              "amount": "860.00",
+              "currencyCode": "EGP"
+            }
+          },
+          "totalShippingPriceSet": {
+            "shopMoney": {
+              "amount": "50.00",
+              "currencyCode": "EGP"
+            },
+            "presentmentMoney": {
+              "amount": "50.00",
+              "currencyCode": "EGP"
+            }
+          },
+          "shippingLines": {
+            "nodes": [
+              {
+                "id": "gid://shopify/ShippingLine/55500000020011",
+                "title": "Fixture Standard Delivery",
+                "code": "standard",
+                "originalPriceSet": {
+                  "shopMoney": {
+                    "amount": "50.00",
+                    "currencyCode": "EGP"
+                  },
+                  "presentmentMoney": {
+                    "amount": "50.00",
+                    "currencyCode": "EGP"
+                  }
+                },
+                "discountedPriceSet": {
+                  "shopMoney": {
+                    "amount": "50.00",
+                    "currencyCode": "EGP"
+                  },
+                  "presentmentMoney": {
+                    "amount": "50.00",
+                    "currencyCode": "EGP"
+                  }
+                },
+                "taxLines": [
+                  {
+                    "title": "VAT",
+                    "rate": 0.14,
+                    "ratePercentage": 14,
+                    "priceSet": {
+                      "shopMoney": {
+                        "amount": "7.00",
+                        "currencyCode": "EGP"
+                      },
+                      "presentmentMoney": {
+                        "amount": "7.00",
+                        "currencyCode": "EGP"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "discountCodes": ["WELCOME10"],
+          "note": null,
+          "tags": [],
+          "sourceName": "web",
+          "customAttributes": [
+            {
+              "key": "alt_phone",
+              "value": "+201000000102"
+            }
+          ],
+          "phone": "+201000000101",
+          "customer": {
+            "id": "gid://shopify/Customer/8880000001001",
+            "phone": "+201000000101"
+          },
+          "shippingAddress": {
+            "name": "مها تجريبية",
+            "phone": "+201000000101",
+            "address1": "12 شارع الاختبار، عمارة 3",
+            "address2": "شقة 4",
+            "city": "مدينة نصر",
+            "province": "Cairo",
+            "provinceCode": "C",
+            "zip": "11000"
+          },
+          "customerJourneySummary": {
+            "ready": true,
+            "firstVisit": {
+              "id": "gid://shopify/CustomerVisit/3330000000001",
+              "occurredAt": "2026-11-02T09:10:00Z",
+              "source": "fixture_social",
+              "referrerUrl": "https://fixture-social.example/",
+              "landingPage": "https://fixture-store.example/products/basic-tee?utm_source=fixture_social&utm_medium=paid&utm_campaign=fixture_launch&email_token=fixture-not-on-the-allow-list",
+              "utmParameters": {
+                "source": "fixture_social",
+                "medium": "paid",
+                "campaign": "fixture_launch",
+                "content": "fixture_video_a",
+                "term": null
+              }
+            },
+            "lastVisit": {
+              "id": "gid://shopify/CustomerVisit/3330000000001",
+              "occurredAt": "2026-11-02T09:10:00Z",
+              "source": "fixture_social",
+              "referrerUrl": "https://fixture-social.example/",
+              "landingPage": "https://fixture-store.example/products/basic-tee?utm_source=fixture_social&utm_medium=paid&utm_campaign=fixture_launch&email_token=fixture-not-on-the-allow-list",
+              "utmParameters": {
+                "source": "fixture_social",
+                "medium": "paid",
+                "campaign": "fixture_launch",
+                "content": "fixture_video_a",
+                "term": null
+              }
+            }
+          },
+          "lineItems": {
+            "nodes": [
+              {
+                "id": "gid://shopify/LineItem/6660000002001",
+                "title": "Fixture Basic Tee",
+                "variantTitle": "M",
+                "sku": "FX-TEE-BLK-M",
+                "quantity": 1,
+                "currentQuantity": 1,
+                "unfulfilledQuantity": 1,
+                "refundableQuantity": 1,
+                "variant": {
+                  "id": "gid://shopify/ProductVariant/7770000000101"
+                },
+                "originalUnitPriceSet": {
+                  "shopMoney": {
+                    "amount": "450.00",
+                    "currencyCode": "EGP"
+                  },
+                  "presentmentMoney": {
+                    "amount": "450.00",
+                    "currencyCode": "EGP"
+                  }
+                },
+                "discountAllocations": [
+                  {
+                    "allocatedAmountSet": {
+                      "shopMoney": {
+                        "amount": "45.00",
+                        "currencyCode": "EGP"
+                      },
+                      "presentmentMoney": {
+                        "amount": "45.00",
+                        "currencyCode": "EGP"
+                      }
+                    },
+                    "discountApplication": {
+                      "__typename": "DiscountCodeApplication",
+                      "code": "WELCOME10"
+                    }
+                  }
+                ],
+                "taxLines": [
+                  {
+                    "title": "VAT",
+                    "rate": 0.14,
+                    "ratePercentage": 14,
+                    "priceSet": {
+                      "shopMoney": {
+                        "amount": "56.70",
+                        "currencyCode": "EGP"
+                      },
+                      "presentmentMoney": {
+                        "amount": "56.70",
+                        "currencyCode": "EGP"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "gid://shopify/LineItem/6660000002002",
+                "title": "Fixture Basic Tee",
+                "variantTitle": "L",
+                "sku": "FX-TEE-BLK-L",
+                "quantity": 1,
+                "currentQuantity": 1,
+                "unfulfilledQuantity": 1,
+                "refundableQuantity": 1,
+                "variant": {
+                  "id": "gid://shopify/ProductVariant/7770000000102"
+                },
+                "originalUnitPriceSet": {
+                  "shopMoney": {
+                    "amount": "450.00",
+                    "currencyCode": "EGP"
+                  },
+                  "presentmentMoney": {
+                    "amount": "450.00",
+                    "currencyCode": "EGP"
+                  }
+                },
+                "discountAllocations": [
+                  {
+                    "allocatedAmountSet": {
+                      "shopMoney": {
+                        "amount": "45.00",
+                        "currencyCode": "EGP"
+                      },
+                      "presentmentMoney": {
+                        "amount": "45.00",
+                        "currencyCode": "EGP"
+                      }
+                    },
+                    "discountApplication": {
+                      "__typename": "DiscountCodeApplication",
+                      "code": "WELCOME10"
+                    }
+                  }
+                ],
+                "taxLines": [
+                  {
+                    "title": "VAT",
+                    "rate": 0.14,
+                    "ratePercentage": 14,
+                    "priceSet": {
+                      "shopMoney": {
+                        "amount": "56.70",
+                        "currencyCode": "EGP"
+                      },
+                      "presentmentMoney": {
+                        "amount": "56.70",
+                        "currencyCode": "EGP"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "fulfillments": [],
+          "transactions": [],
+          "refunds": [],
+          "agreements": {
+            "nodes": [
+              {
+                "id": "gid://shopify/OrderAgreement/4440000002001",
+                "happenedAt": "2026-11-02T09:15:00Z",
+                "reason": "ORDER",
+                "sales": {
+                  "nodes": [
+                    {
+                      "__typename": "ProductSale",
+                      "id": "gid://shopify/ProductSale/5000000002001",
+                      "actionType": "ORDER",
+                      "lineType": "PRODUCT",
+                      "quantity": 1,
+                      "totalAmount": {
+                        "shopMoney": {
+                          "amount": "450.00",
+                          "currencyCode": "EGP"
+                        },
+                        "presentmentMoney": {
+                          "amount": "450.00",
+                          "currencyCode": "EGP"
+                        }
+                      },
+                      "lineItem": {
+                        "id": "gid://shopify/LineItem/6660000002001"
+                      }
+                    },
+                    {
+                      "__typename": "ProductSale",
+                      "id": "gid://shopify/ProductSale/5000000002002",
+                      "actionType": "ORDER",
+                      "lineType": "PRODUCT",
+                      "quantity": 1,
+                      "totalAmount": {
+                        "shopMoney": {
+                          "amount": "450.00",
+                          "currencyCode": "EGP"
+                        },
+                        "presentmentMoney": {
+                          "amount": "450.00",
+                          "currencyCode": "EGP"
+                        }
+                      },
+                      "lineItem": {
+                        "id": "gid://shopify/LineItem/6660000002002"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 72,
+          "actualQueryCost": 41,
+          "throttleStatus": {
+            "maximumAvailable": 1000,
+            "currentlyAvailable": 959,
+            "restoreRate": 50
+          }
+        }
+      }
+    }
+  }
+}

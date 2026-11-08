@@ -18,6 +18,23 @@ export interface EditedLines {
 @Injectable()
 export class OrderStock {
   /**
+   * After an order is created (AC-13: reserve at creation): milestone 4 reserves every line with a
+   * variant at the online location. The caller never calls it for an order created past `packed`
+   * or cancelled (an import in its found states, AC-14). A no op until then.
+   */
+  afterCreate(_tx: OrderTransaction, _orderId: string, _lineIds: readonly string[]): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * After `linkChannelLineVariant` mapped a line of an order still in `new`, `confirmed`, or
+   * `packed` (AC-25 b): milestone 4 reserves that line. A no op until then.
+   */
+  afterLink(_tx: OrderTransaction, _orderId: string, _lineId: string): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
    * After an edit (AC-13): milestone 4 releases the reservations of the cancelled lines and
    * reserves the added ones. A no op until then.
    */

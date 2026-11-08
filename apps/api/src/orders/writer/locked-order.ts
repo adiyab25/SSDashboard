@@ -14,6 +14,8 @@ import { OrderNotFound, OrderStale } from '../orders.errors.js';
 export interface LockedOrder extends PlanOrder {
   id: string;
   storeId: string;
+  /** The channel the order arrived on (the channel calls refuse a manual entry channel). */
+  channelId: string;
   orderNumber: string;
   customerId: string | null;
   placedAt: Date;
@@ -29,6 +31,8 @@ export interface LockedOrder extends PlanOrder {
   shippingPrepaidAmount: string;
   shippingCreditAppliedAmount: string;
   linesGrossAmount: string;
+  /** The note the customer typed at checkout. Personal data, never logged. */
+  customerNote: string | null;
   /** False when the caller's `expectedUpdatedAt` does not match `updated_at`. */
   fresh: boolean;
 }
@@ -36,6 +40,7 @@ export interface LockedOrder extends PlanOrder {
 interface LockedRow extends Record<string, unknown> {
   id: string;
   store_id: string;
+  channel_id: string;
   order_number: string;
   type: OrderType;
   customer_id: string | null;
@@ -69,6 +74,7 @@ interface LockedRow extends Record<string, unknown> {
   ship_to_governorate_code: string | null;
   ship_to_city_code: string | null;
   ship_to_zone_code: string | null;
+  customer_note: string | null;
   fresh: boolean;
 }
 
@@ -105,7 +111,7 @@ export async function lockOrderForChange(
       ? sql`true`
       : sql`coalesce(updated_at = ${expectedUpdatedAt}::timestamptz, false)`;
   const { rows } = await tx.execute<LockedRow>(sql`
-    SELECT id, store_id, order_number, type, customer_id,
+    SELECT id, store_id, channel_id, order_number, type, customer_id,
            to_char(placed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS placed_at,
            fulfillment_state, cash_state, write_back_state,
            carrier_delivery_created_at IS NOT NULL AS carrier_delivery_created,
@@ -115,7 +121,7 @@ export async function lockOrderForChange(
            cod_collected_amount, total_amount, delivered_amount, returned_credit_amount,
            exchange_consumed_amount, ship_to_name, ship_to_phone, ship_to_phone_alt,
            contact_phone_raw, ship_to_address, courier_note, ship_to_area_list,
-           ship_to_governorate_code, ship_to_city_code, ship_to_zone_code,
+           ship_to_governorate_code, ship_to_city_code, ship_to_zone_code, customer_note,
            ${fresh} AS fresh
     FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`);
   const row = rows[0];
@@ -157,6 +163,7 @@ export async function lockOrderForChange(
   return {
     id: row.id,
     storeId: row.store_id,
+    channelId: row.channel_id,
     orderNumber: row.order_number,
     type: row.type,
     customerId: row.customer_id,
@@ -189,6 +196,7 @@ export async function lockOrderForChange(
       courierNote: row.courier_note,
       area,
     },
+    customerNote: row.customer_note,
     lines,
     fresh: row.fresh,
   };

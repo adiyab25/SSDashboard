@@ -42,6 +42,7 @@ import { useReturnFocus } from '@/shared/use-return-focus';
 import { SELECT_CLASS } from './order-field-classes';
 import {
   buildEditBody,
+  MAX_OPERATIONS,
   editDefaultsOf,
   NEW_EDIT_LINE,
   openLinesOf,
@@ -67,9 +68,6 @@ const FIELD_CODES: Record<string, 'phone' | 'phoneAlt' | 'reasonCode'> = {
 
 /** The most rows a person can add in one edit; the whole edit is also checked against `MAX_OPERATIONS`. */
 const MAX_ADDED = 20;
-
-/** The contract's cap on operations in one edit (`OrderEditBody`). */
-const MAX_OPERATIONS = 50;
 
 /**
  * The edit dialog (spec 0013, AC-9, AC-10, AC-2): the ship to fields, every open line (keep it,

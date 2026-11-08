@@ -1,14 +1,35 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as OrderEditFormModule from './order-edit-form';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/shared/render-with-query';
 import { orderDetailOf } from './order-detail-fixture';
 import { OrderEditDialog } from './order-edit-dialog';
 
 const api = vi.hoisted(() => ({ editOrder: vi.fn() }));
+const builder = vi.hoisted(() => ({ operations: 0 }));
+vi.mock('./order-edit-form', async (original) => {
+  const real = await original<typeof OrderEditFormModule>();
+  return {
+    ...real,
+    buildEditBody: (...args: Parameters<typeof real.buildEditBody>) => {
+      const body = real.buildEditBody(...args);
+      return builder.operations === 0
+        ? body
+        : {
+            ...body,
+            operations: Array.from({ length: builder.operations }, () => ({
+              kind: 'shipping' as const,
+              shippingChargedAmount: '1.00',
+            })),
+          };
+    },
+  };
+});
+
 vi.mock('./orders-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
@@ -65,6 +86,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  builder.operations = 0;
   api.editOrder.mockReset();
   skus.searchSkus.mockReset();
   me.current = null;
@@ -429,27 +451,13 @@ describe('OrderEditDialog (AC-9, AC-10, AC-2, AC-20)', () => {
   });
 
   it('refuses an edit of more than 50 changes before any request', async () => {
-    const base = orderDetailOf();
-    const [first] = base.lines;
-    if (!first) throw new Error('no line');
-    const many = Array.from({ length: 51 }, (_, index) => ({
-      ...first,
-      id: `40000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
-      position: index + 1,
-    }));
+    // Building 51 real changes through the form takes seconds, so the body builder is told to
+    // answer with 51 operations; the cap itself is held to the contract in order-edit-form.spec.ts.
+    builder.operations = 51;
     const user = userEvent.setup();
-    renderWithQuery(<OrderEditDialog order={{ ...base, lines: many }} {...handlers()} />);
+    renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...handlers()} />);
     const dialog = await screen.findByRole('dialog');
-    for (let index = 0; index < 51; index += 1) {
-      fireEvent.change(within(dialog).getByLabelText(`What to do with line ${index + 1}`), {
-        target: { value: 'remove' },
-      });
-    }
-    for (let index = 0; index < 51; index += 1) {
-      fireEvent.change(dialog.querySelector(`#edit-line-${index}-removal`) as HTMLElement, {
-        target: { value: 'out_of_stock' },
-      });
-    }
+    await user.type(within(dialog).getByLabelText('Second phone'), '01111111111');
     await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('at most 50 changes');
     expect(api.editOrder).not.toHaveBeenCalled();

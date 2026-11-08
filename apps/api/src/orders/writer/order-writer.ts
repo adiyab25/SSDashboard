@@ -76,6 +76,18 @@ export interface NewOrderRow {
   shipToCityCode: string | null;
   shipToZoneCode: string | null;
   courierNote: string | null;
+  /**
+   * The columns an order created in a later state carries (spec 0013 AC-25 a, the go live import,
+   * and AC-14, the found states of an `import`). Left out, each is null (or 0 for an amount).
+   */
+  confirmedAt?: Date | null;
+  confirmedBy?: string | null;
+  cancelledAt?: Date | null;
+  cancelReasonCode?: string | null;
+  refusedReasonCode?: string | null;
+  carrierDeliveryCreatedAt?: Date | null;
+  codCollectedAmount?: string;
+  remittedAmount?: string;
 }
 
 /** One line of a new order. */
@@ -134,6 +146,10 @@ export interface OrderColumnChanges {
   codExpectedAmount?: string;
   codDueAmount?: string;
   deliveredAmount?: string;
+  /** The payment method, prepayment, and its tender: only `rederivePaymentMethod` passes them (AC-25 c). */
+  paymentMethod?: OrderPaymentMethod;
+  prepaidAmount?: string;
+  prepaidMethod?: OrderPaymentMethod | null;
   confirmedAt?: 'now';
   confirmedBy?: string | null;
   cancelledAt?: 'now';
@@ -151,6 +167,8 @@ export interface OrderColumnChanges {
   shipToGovernorateCode?: string | null;
   shipToCityCode?: string | null;
   shipToZoneCode?: string | null;
+  /** The note the customer typed at checkout (a channel edit may change it). */
+  customerNote?: string | null;
 }
 
 /** The column, and its cast, of each key of {@link OrderColumnChanges}. */
@@ -167,6 +185,9 @@ const ORDER_COLUMNS: Record<keyof OrderColumnChanges, readonly [column: string, 
   codExpectedAmount: ['cod_expected_amount', 'numeric'],
   codDueAmount: ['cod_due_amount', 'numeric'],
   deliveredAmount: ['delivered_amount', 'numeric'],
+  paymentMethod: ['payment_method', 'order_payment_method'],
+  prepaidAmount: ['prepaid_amount', 'numeric'],
+  prepaidMethod: ['prepaid_method', 'order_payment_method'],
   confirmedAt: ['confirmed_at', 'timestamptz'],
   confirmedBy: ['confirmed_by', 'uuid'],
   cancelledAt: ['cancelled_at', 'timestamptz'],
@@ -184,6 +205,7 @@ const ORDER_COLUMNS: Record<keyof OrderColumnChanges, readonly [column: string, 
   shipToGovernorateCode: ['ship_to_governorate_code', 'text'],
   shipToCityCode: ['ship_to_city_code', 'text'],
   shipToZoneCode: ['ship_to_zone_code', 'text'],
+  customerNote: ['customer_note', 'text'],
 };
 
 /** One change of an order unit: its row, its lines, and the event rows of its state moves. */
@@ -197,6 +219,16 @@ export interface OrderChange {
   addLines?: readonly NewLineRow[];
   /** The event rows of every state column this change moves, in order. */
   events?: readonly NewEventRow[];
+  /**
+   * The one exception to the rule that line changes are money moves under the freeze: the partial
+   * delivery split of milestone 5 (`recordPartialDelivery`, AC-16) splits lines of a frozen order
+   * and passes `'partial_delivery_split'`, which lets it cancel and add lines and rewrite their
+   * shares. The split keeps each line's share sum: the split rows together carry exactly the
+   * prepaid and credit shares of the line they came from, so the frozen order totals and
+   * `cod_expected_amount` never move. A frozen column stays refused with it. No other caller
+   * passes it.
+   */
+  freezeAllowance?: 'partial_delivery_split';
 }
 
 /**
@@ -212,6 +244,10 @@ const FROZEN_COLUMNS: readonly (keyof OrderColumnChanges)[] = [
   'totalAmount',
   'shippingChargedAmount',
   'shippingTaxAmount',
+  'prepaidAmount',
+  // How the order is paid moves with the prepayment (security L3).
+  'paymentMethod',
+  'prepaidMethod',
 ];
 
 /** No share changes: the default of {@link OrderChange.lineShares}. */
@@ -289,12 +325,13 @@ export class OrderWriter {
    * order row (the state columns together with their event rows, written right after in the same
    * call), sets `updated_at` to `clock_timestamp()` (the concurrency token), and publishes one
    * `OrderStateChanged` per event row. The caller holds the order row lock (`lockOrderForChange`)
-   * and computed every figure with `totalsOf` or the edit plan; this method never changes
-   * `prepaid_amount` or `credit_applied_amount`.
+   * and computed every figure with `totalsOf` or the edit plan; it never changes
+   * `credit_applied_amount`, and `prepaid_amount` only when `rederivePaymentMethod` passes it.
    *
    * Two rules live here so no caller can skip them: the money freeze (spec 0013 AC-8) refuses a
-   * change of a frozen column or of a line's shares once `carrier_delivery_created_at` is set,
-   * with `OrderLocked`, before anything is written; and `outcome` is derived with
+   * change of a frozen column, a line's shares, a line cancel, or a new line once
+   * `carrier_delivery_created_at` is set, with `OrderLocked`, before anything is written (only the
+   * partial delivery split's `freezeAllowance` lets lines move under it); and `outcome` is derived with
    * `deriveOrderOutcome` from the row as the change leaves it, written only when it differs.
    * Throws `OrderNotFound` for an unknown order.
    */
@@ -308,9 +345,14 @@ export class OrderWriter {
       FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`);
     const current = locked[0];
     if (!current) throw new OrderNotFound();
+    // A cancelled or added line moves the totals as surely as a total does (security N1).
+    const movesLines =
+      (change.lineShares?.size ?? 0) > 0 ||
+      (change.cancelLines?.length ?? 0) > 0 ||
+      (change.addLines?.length ?? 0) > 0;
     const movesMoney =
       FROZEN_COLUMNS.some((key) => change.columns[key] !== undefined) ||
-      (change.lineShares?.size ?? 0) > 0;
+      (movesLines && change.freezeAllowance !== 'partial_delivery_split');
     if (current.frozen && movesMoney) throw new OrderLocked();
     for (const line of change.cancelLines ?? []) {
       await tx.execute(sql`
@@ -388,6 +430,48 @@ export class OrderWriter {
     await tx.execute(sql`
       UPDATE orders SET write_back_state = ${state}::order_write_back_state
       WHERE id = ${orderId}::uuid AND write_back_state <> ${state}::order_write_back_state`);
+  }
+
+  /**
+   * Writes the channel's own ids onto lines of a locked order that have none (spec 0013 AC-14:
+   * `recordChannelLineIds`, and the line match of `applyChannelEdit`). Each id is written only
+   * from null (`channel_line_id IS NULL` in the update, Key invariants); the caller has already
+   * refused a conflicting id. Writes no event and leaves `orders.updated_at` alone, because the
+   * channel's id is not a business change of the order. Answers how many lines took an id.
+   */
+  async setChannelLineIds(
+    tx: OrderTransaction,
+    orderId: string,
+    ids: readonly { lineId: string; channelLineId: string }[],
+  ): Promise<number> {
+    let written = 0;
+    for (const { lineId, channelLineId } of ids) {
+      const { rows } = await tx.execute<{ id: string }>(sql`
+        UPDATE order_lines SET channel_line_id = ${channelLineId}, updated_at = clock_timestamp()
+        WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND channel_line_id IS NULL
+        RETURNING id`);
+      written += rows.length;
+    }
+    return written;
+  }
+
+  /**
+   * Sets the variant of a line that arrived unmapped (spec 0013 AC-25 b, `linkChannelLineVariant`),
+   * only from null (Key invariants: a mapped variant never changes in place). Writes no event and
+   * leaves `orders.updated_at` alone: it counts as no edit. Answers false when the line already
+   * had a variant (nothing written).
+   */
+  async setLineVariant(
+    tx: OrderTransaction,
+    orderId: string,
+    lineId: string,
+    variantId: string,
+  ): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE order_lines SET variant_id = ${variantId}::uuid, updated_at = clock_timestamp()
+      WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND variant_id IS NULL
+      RETURNING id`);
+    return rows.length > 0;
   }
 
   private async insertLine(
@@ -523,6 +607,17 @@ export class OrderWriter {
       ['ship_to_city_code', order.shipToCityCode],
       ['ship_to_zone_code', order.shipToZoneCode],
       ['courier_note', order.courierNote],
+      ['confirmed_at', order.confirmedAt ? iso(order.confirmedAt) : null],
+      ['confirmed_by', order.confirmedBy ?? null],
+      ['cancelled_at', order.cancelledAt ? iso(order.cancelledAt) : null],
+      ['cancel_reason_code', order.cancelReasonCode ?? null],
+      ['refused_reason_code', order.refusedReasonCode ?? null],
+      [
+        'carrier_delivery_created_at',
+        order.carrierDeliveryCreatedAt ? iso(order.carrierDeliveryCreatedAt) : null,
+      ],
+      ['cod_collected_amount', order.codCollectedAmount ?? '0.00'],
+      ['remitted_amount', order.remittedAmount ?? '0.00'],
     ];
     try {
       const { rows } = await tx.execute<{ id: string }>(insertSql('orders', columns));

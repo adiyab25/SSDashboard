@@ -85,6 +85,7 @@ const context = (over: Partial<EditContext> = {}): EditContext => ({
   ]),
   allowZeroNetLines: false,
   unparseablePhone: 'refuse',
+  unparseablePhoneAlt: 'refuse',
   ...over,
 });
 
@@ -514,6 +515,103 @@ describe('planEdit: a main phone that does not parse (review R3)', () => {
 
     expect(plan.phone?.e164).toBe('+201007654321');
     expect(plan.phoneUnparseable).toBe(false);
+  });
+});
+
+describe('planEdit: a second phone that does not parse (review N4)', () => {
+  const withAlt = () => order({ shipTo: { ...order().shipTo, phoneAlt: '+201112223334' } });
+
+  it('is refused for a person; a channel keeps the valid stored one and says so (security L9)', () => {
+    expect(() =>
+      planEdit(withAlt(), [{ kind: 'ship_to', phoneAlt: 'not a phone' }], context()),
+    ).toThrow(InvalidPhoneAlt);
+    const dropped = planEdit(
+      withAlt(),
+      [{ kind: 'ship_to', phoneAlt: 'not a phone' }],
+      context({ unparseablePhone: 'keep_raw', unparseablePhoneAlt: 'drop' }),
+    );
+
+    expect(dropped.phoneAltUnparseable).toBe(true);
+    expect(dropped.shipToColumns).toEqual({});
+    expect(dropped.changed).toBe(false);
+  });
+
+  it('says nothing again when the stored second phone is already empty', () => {
+    const plan = planEdit(
+      order(),
+      [{ kind: 'ship_to', phoneAlt: 'not a phone' }],
+      context({ unparseablePhoneAlt: 'drop' }),
+    );
+
+    expect(plan.changed).toBe(false);
+    expect(plan.phoneAltUnparseable).toBe(false);
+  });
+});
+
+describe('planEdit: channel lines (spec 0013 AC-14)', () => {
+  it('adds an unmapped line with the channel title, its own tax rate, and its channel id', () => {
+    const plan = planEdit(
+      order(),
+      [
+        {
+          kind: 'add_line',
+          variantId: null,
+          title: 'Mystery tee',
+          quantity: 1,
+          unitPrice: '100.00',
+          discountAmount: '0.00',
+          taxRate: '0.00',
+          channelLineId: '13009',
+        },
+      ],
+      context({ allowZeroNetLines: true }),
+    );
+
+    expect(plan.addLines).toHaveLength(1);
+    expect(plan.addLines[0]).toMatchObject({
+      variantId: null,
+      title: 'Mystery tee',
+      channelLineId: '13009',
+      taxRate: '0.00',
+      grossAmount: '100.00',
+    });
+  });
+
+  it('prefers the channel title over the catalog name of a mapped variant', () => {
+    const plan = planEdit(
+      order(),
+      [
+        {
+          kind: 'add_line',
+          variantId: XL,
+          title: 'Shopify tee XL',
+          quantity: 1,
+          unitPrice: '100.00',
+          discountAmount: '0.00',
+        },
+      ],
+      context(),
+    );
+
+    expect(plan.addLines[0]?.title).toBe('Shopify tee XL');
+  });
+
+  it('refuses an unmapped line without a title', () => {
+    expect(() =>
+      planEdit(
+        order(),
+        [
+          {
+            kind: 'add_line',
+            variantId: null,
+            quantity: 1,
+            unitPrice: '1.00',
+            discountAmount: '0.00',
+          },
+        ],
+        context(),
+      ),
+    ).toThrow(VariantUnknown);
   });
 });
 

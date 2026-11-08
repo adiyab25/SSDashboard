@@ -31,8 +31,8 @@ interface OpenCommandRow extends Record<string, unknown> {
 
 /**
  * The connectors module's exported service, as far as spec 0013 milestone 2 needs it: the reads
- * of `outbound_commands` the orders module asks (`openCommandsFor`, `syncStateFor`) and
- * `writeBackAvailable`. A stand-in until spec 0015 task 13 builds the outbound framework
+ * of `outbound_commands` the orders module asks (`openCommandsFor`, `syncStateFor`),
+ * `storeOfConnection`, and `writeBackAvailable`. A stand-in until spec 0015 task 13 builds the outbound framework
  * (`enqueue`, executors, retry and resolve): it never writes a command, never reads a command's
  * payload (it may hold an address), and never logs one.
  */
@@ -80,6 +80,18 @@ export class ConnectorsService {
     executor: Executor = this.connection.db,
   ): Promise<OpenCommand[]> {
     return this.openCommandsFor(linkedType, linkedId, executor);
+  }
+
+  /**
+   * The store a connection belongs to, or null for an unknown connection (or one with no store),
+   * read in the caller's transaction. The orders module asks it before it trusts a channel's
+   * customer id (spec 0013 security L7), until spec 0015 task 13 registers the
+   * `ConnectionStoreSource` that `ChannelsService.storeLabelsByConnection` reads.
+   */
+  async storeOfConnection(connectionId: string, tx: Executor): Promise<string | null> {
+    const { rows } = await tx.execute<{ store_id: string | null }>(sql`
+      SELECT store_id FROM connections WHERE id = ${connectionId}::uuid`);
+    return rows[0]?.store_id ?? null;
   }
 
   /**

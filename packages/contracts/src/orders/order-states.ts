@@ -214,10 +214,12 @@ const FULFILLMENT_RULES: readonly TransitionRule<FulfillmentState>[] = [
     actors: ['person'],
     refuse: (_from, c) => (c.writeBackOpen ? 'an edit has not synced to the channel yet' : null),
   },
+  // A person's edit of a packed order, or a channel edit (`system_job`, spec 0013 AC-14), sends
+  // it back to `confirmed`.
   {
     from: ['packed'],
     to: 'confirmed',
-    actors: ['person'],
+    actors: ['person', 'system_job'],
     refuse: (_from, c) =>
       c.carrierDeliveryCreated ? 'a carrier delivery already exists for the order' : null,
   },
