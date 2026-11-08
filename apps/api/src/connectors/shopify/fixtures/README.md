@@ -54,6 +54,10 @@ Findings and gaps:
 
 `objects/Order`, `objects/LineItem`, `objects/MailingAddress`, `objects/ShippingLine`, `objects/TaxLine`, `objects/Fulfillment`, `objects/OrderTransaction`, `objects/OrderAgreement`, `objects/ProductSale`, `interfaces/Sale`, `interfaces/SalesAgreement`, `objects/Refund`, `objects/RefundLineItem`, `objects/CustomerJourneySummary`, `objects/CustomerVisit`, `objects/UTMParameters`, `objects/DiscountAllocation`, `objects/MoneyBag`, `objects/Attribute`, `objects/Customer`, and under `enums/`: `OrderCancelReason`, `OrderDisplayFinancialStatus`, `OrderDisplayFulfillmentStatus`, `FulfillmentStatus`, `SaleActionType`, `SaleLineType`, `OrderActionType`, `OrderTransactionKind`, `OrderTransactionStatus`, `RefundLineItemRestockType`.
 
+## Who uses them
+
+`apps/api/test/orders-intake.e2e-spec.ts` (spec 0013 milestone 3) reads every scenario through `apps/api/test/shopify-order-fixture.ts`, a test only stand in for spec 0015's `order-mapper.ts` that maps a file to `ChannelOrderInput` and `ChannelOrderSnapshot` and is replaced when spec 0015 tasks 4 to 7 land. A scenario's files are used by number, and the mapper reads only the fields listed in that file's zod subset. The bad phone scenario has its own customer id on purpose, so the order stays unlinked (a known customer id would link it).
+
 ## Not here yet
 
 Product reads, shop and location queries, webhook subscription calls, throttled and error responses (`THROTTLED`, 429 with `Retry-After`, 5xx), and the refusing `fetch` and the replay server (`apps/api/test/`) belong to spec 0015 tasks 1 and 4 to 7. Nothing reads these files yet except the tests that name them.

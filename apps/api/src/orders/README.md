@@ -37,7 +37,7 @@ pnpm --filter @ssdashboard/api build
 pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/orders-intake.e2e-spec.ts test/orders.e2e-spec.ts test/orders-edit.e2e-spec.ts test/orders-audit.e2e-spec.ts test/access-sweep.e2e-spec.ts
 ```
 
-The unit suite needs no database. The e2e suites need Postgres: they run the real routes as the application role on a scratch database. `orders-edit.e2e-spec.ts` uses a fixture connector (an `OrderEdited` handler that inserts an `outbound_commands` row and publishes `OutboundCommandQueued` in the edit's transaction, and a helper that settles a command in its own transaction) until spec 0015 task 13 writes commands. `orders-intake.e2e-spec.ts` calls the channel methods in process with inputs from a small local builder (the recorded Shopify shaped fixtures drive it in a follow up) and plants an open command as the owner.
+The unit suite needs no database. The e2e suites need Postgres: they run the real routes as the application role on a scratch database. `orders-edit.e2e-spec.ts` uses a fixture connector (an `OrderEdited` handler that inserts an `outbound_commands` row and publishes `OutboundCommandQueued` in the edit's transaction, and a helper that settles a command in its own transaction) until spec 0015 task 13 writes commands. `orders-intake.e2e-spec.ts` calls the channel methods in process with inputs mapped from the synthetic Shopify fixtures (`src/connectors/shopify/fixtures`) by `test/shopify-order-fixture.ts`, a test only stand in for spec 0015's order mapper, and plants an open command as the owner.
 
 ## Governing spec
 

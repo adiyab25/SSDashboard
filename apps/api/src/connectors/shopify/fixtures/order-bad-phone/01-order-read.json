@@ -165,7 +165,7 @@
           ],
           "phone": "+201300000101",
           "customer": {
-            "id": "gid://shopify/Customer/8880000001001",
+            "id": "gid://shopify/Customer/8880000004001",
             "phone": "+201300000101"
           },
           "shippingAddress": {
