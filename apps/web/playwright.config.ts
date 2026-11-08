@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { STORAGE_STATE } from './e2e/auth';
 
+// Servers are reused outside CI only: in CI a stale server on a port fails loudly instead of being tested.
 // Default: starts `pnpm dev` (api + web) from the repo root, which needs the dev
 // database running. Set E2E_BASE_URL (e.g. http://localhost for a Compose install
 // behind Caddy) to test an app that is already running instead.
@@ -78,7 +79,7 @@ export default defineConfig({
                     API_INTERNAL_URL: `http://localhost:${apiPort}`,
                     PUBLIC_URL: baseURL,
                   },
-                  reuseExistingServer: true,
+                  reuseExistingServer: !process.env.CI,
                   timeout: 180_000,
                   stdout: 'pipe' as const,
                 },
@@ -86,7 +87,7 @@ export default defineConfig({
                   command: `pnpm exec next dev --port ${webPort}`,
                   url: baseURL,
                   env: { API_INTERNAL_URL: `http://localhost:${apiPort}`, PUBLIC_URL: baseURL },
-                  reuseExistingServer: true,
+                  reuseExistingServer: !process.env.CI,
                   timeout: 180_000,
                   stdout: 'pipe' as const,
                 },
@@ -96,7 +97,7 @@ export default defineConfig({
                   command: 'pnpm dev',
                   cwd: '../..',
                   url: 'http://localhost:3001/api/health',
-                  reuseExistingServer: true,
+                  reuseExistingServer: !process.env.CI,
                   timeout: 180_000,
                   // Show the dev servers' output, so a server that never comes up explains itself.
                   stdout: 'pipe' as const,
@@ -111,7 +112,7 @@ export default defineConfig({
             url: prodBaseURL,
             // With custom ports the session check must reach this run's api, not the default 3001.
             ...(customPorts ? { env: { API_INTERNAL_URL: `http://localhost:${apiPort}` } } : {}),
-            reuseExistingServer: true,
+            reuseExistingServer: !process.env.CI,
             timeout: 120_000,
           },
         ]),
