@@ -215,6 +215,8 @@ for (const language of LANGUAGES) {
       const checklist = page.locator('[data-slot="first-run-checklist"]');
       await expect(checklist).toBeVisible();
 
+      // Hydration can yield between elements, so wait on the button this test clicks itself.
+      await waitForElementHydration(page, '[data-slot="first-run-checklist"] button');
       await checklist.getByRole('button').click();
       await expect(checklist).toHaveCount(0);
 

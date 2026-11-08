@@ -581,12 +581,18 @@ test.describe('as a manager', () => {
     await page.goto('/audit');
     await expect(page.getByText('Choose both days to export.')).toBeVisible();
     await expect(page.getByText(/at most 366 days/)).toBeVisible();
-    await page.getByRole('button', { name: 'Export CSV' }).click({ force: true });
+    // The button is aria-disabled, so the click is forced, which also skips the wait for the button
+    // to stop moving: a mobile run clicked while the page still shifted ("Element is outside of the
+    // viewport", 2026-11-08). Scrolling it into view first waits until it is visible and stable.
+    const exportButton = page.getByRole('button', { name: 'Export CSV' });
+    await exportButton.scrollIntoViewIfNeeded();
+    await exportButton.click({ force: true });
     expect(calls).toBe(0);
 
     await page.goto('/audit?dayFrom=2020-01-01&dayTo=2022-01-01');
     await expect(page.getByText('The day range is more than 366 days.')).toBeVisible();
-    await page.getByRole('button', { name: 'Export CSV' }).click({ force: true });
+    await exportButton.scrollIntoViewIfNeeded();
+    await exportButton.click({ force: true });
     expect(calls).toBe(0);
 
     await page.goto('/audit?dayFrom=2026-01-01&dayTo=2026-02-01');

@@ -238,8 +238,8 @@ for (const { dir, name: languageName } of LANGUAGES) {
 
       // The original's page is reachable from the link.
       await page.goBack();
-      // Back is a client side navigation: it resolves on the URL change while the list (which
-      // also links the original) is still shown, and a click there races the back render.
+      // Back resolves on the URL change while the list (which also links the original) can still
+      // be shown and the gift page has not loaded its data; a click then lands on the wrong page.
       await expect(page.getByRole('heading', { level: 1, name: gift })).toBeVisible();
       await page.getByRole('link', { name: original }).click();
       await expect(page.getByRole('heading', { level: 1, name: original })).toBeVisible();
