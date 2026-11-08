@@ -53,7 +53,6 @@ const WARM_UP_PATHS = [
   '/stock-receipts',
   `/stock-receipts/${PLACEHOLDER_ID}`,
   '/stock-receipts/new',
-  // A signed in visit to a sign in screen may redirect; the redirect target is then warm too.
   '/sign-in',
   '/forgot-password',
   '/reset-password',
@@ -105,6 +104,7 @@ async function recordWarehouseLicense(baseURL: string, cookie: string) {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: new URL(baseURL).origin, cookie },
     body: JSON.stringify({ envelope: await signedWarehouseLicense() }),
+    signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) {
     throw new Error(
