@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import {
   expectNoAxeViolations,
+  openShell,
   textFor,
   useBrowserState,
   waitForFormHydration,
@@ -73,6 +74,21 @@ const POPULATED = {
   nextCursor: null,
 };
 
+/**
+ * Opens the navigation and returns where its links are: the sidebar on desktop, and on a phone the
+ * sheet behind the menu button. The click is retried until the sheet shows, because a tap that comes
+ * before React has taken over the button is lost.
+ */
+async function openNavigation(page: Page, isMobile: boolean, menuName: string) {
+  if (!isMobile) return page.getByRole('navigation').first();
+  const sheet = page.getByRole('dialog');
+  await expect(async () => {
+    await page.getByRole('button', { name: menuName }).click();
+    await expect(sheet).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  return sheet;
+}
+
 /** Answers the list with the populated page, in the browser only. */
 async function mockPopulatedList(page: Page) {
   await page.route(
@@ -129,10 +145,10 @@ for (const { dir, name: languageName } of LANGUAGES) {
       page,
       isMobile,
     }) => {
-      await page.goto('/');
+      await openShell(page);
       await expect(page.locator('html')).toHaveAttribute('dir', dir);
-      if (isMobile) await page.getByRole('button', { name: t('shell.topbar.menu') }).click();
-      const link = page.getByRole('link', { name: t('shell.nav.items.connections') });
+      const nav = await openNavigation(page, isMobile, t('shell.topbar.menu'));
+      const link = nav.getByRole('link', { name: t('shell.nav.items.connections') });
       await expect(link).toBeVisible();
       await link.click();
       await expect(page).toHaveURL('/connections');
@@ -388,11 +404,11 @@ for (const { dir, name: languageName } of LANGUAGES) {
           await page.waitForLoadState('networkidle');
           expect(asked).toEqual([]);
 
-          await page.goto('/');
-          if (isMobile) await page.getByRole('button', { name: t('shell.topbar.menu') }).click();
-          await expect(page.getByRole('navigation').first()).toBeVisible();
+          await openShell(page);
+          const nav = await openNavigation(page, isMobile, t('shell.topbar.menu'));
+          await expect(nav.getByRole('link', { name: t('shell.nav.items.home') })).toBeVisible();
           await expect(
-            page.getByRole('link', { name: t('shell.nav.items.connections'), exact: true }),
+            nav.getByRole('link', { name: t('shell.nav.items.connections'), exact: true }),
           ).toHaveCount(0);
         } finally {
           const seeded = person;
