@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -364,5 +364,94 @@ describe('OrderEditDialog (AC-9, AC-10, AC-2, AC-20)', () => {
     await screen.findByRole('dialog');
     rerender(<div />);
     await waitFor(() => expect(on.onRestoreFocus).toHaveBeenCalled());
+  });
+
+  it('keeps a price the person typed before picking a SKU, but follows an earlier pick', async () => {
+    const user = userEvent.setup();
+    skus.searchSkus.mockResolvedValue({
+      items: [
+        {
+          id: VARIANT_L,
+          productId: '70000000-0000-4000-8000-000000000001',
+          code: 'TEE-RED-L',
+          name: { en: 'Red tee, L' },
+          price: '260.00',
+          archived: false,
+        },
+        {
+          id: '50000000-0000-4000-8000-000000000003',
+          productId: '70000000-0000-4000-8000-000000000001',
+          code: 'TEE-RED-XL',
+          name: { en: 'Red tee, XL' },
+          price: '270.00',
+          archived: false,
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...handlers()} />);
+    const dialog = await screen.findByRole('dialog');
+
+    // A new row: a typed price and discount survive the pick.
+    await user.click(within(dialog).getByRole('button', { name: 'Add line' }));
+    const row = within(dialog).getByRole('listitem', { name: 'New line 1' });
+    await user.type(within(row).getByLabelText('Unit price'), '99');
+    const discount = within(row).getByLabelText('Discount');
+    await user.clear(discount);
+    await user.type(discount, '5');
+    await user.click(within(row).getByRole('combobox', { name: 'SKU' }));
+    await user.click(await screen.findByRole('option', { name: /TEE-RED-L/ }));
+    expect(within(row).getByLabelText('Unit price')).toHaveValue('99');
+    expect(within(row).getByLabelText('Discount')).toHaveValue('5');
+
+    // A second new row: the first pick fills the price, and a second pick replaces it.
+    await user.click(within(dialog).getByRole('button', { name: 'Add line' }));
+    const second = within(dialog).getByRole('listitem', { name: 'New line 2' });
+    await user.click(within(second).getByRole('combobox', { name: 'SKU' }));
+    await user.click(await screen.findByRole('option', { name: /TEE-RED-L/ }));
+    expect(within(second).getByLabelText('Unit price')).toHaveValue('260.00');
+    await user.click(within(second).getByRole('combobox'));
+    await user.click(await screen.findByRole('option', { name: /TEE-RED-XL/ }));
+    expect(within(second).getByLabelText('Unit price')).toHaveValue('270.00');
+  });
+
+  it('keeps a price typed on a replaced line when another SKU is picked', async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...handlers()} />);
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText('What to do with line 1'), 'replace');
+    const price = within(dialog).getByLabelText('Unit price');
+    await user.clear(price);
+    await user.type(price, '199');
+    await user.click(within(dialog).getByRole('combobox', { name: 'SKU' }));
+    await user.click(await screen.findByRole('option', { name: /TEE-RED-L/ }));
+    expect(within(dialog).getByLabelText('Unit price')).toHaveValue('199');
+  });
+
+  it('refuses an edit of more than 50 changes before any request', async () => {
+    const base = orderDetailOf();
+    const [first] = base.lines;
+    if (!first) throw new Error('no line');
+    const many = Array.from({ length: 51 }, (_, index) => ({
+      ...first,
+      id: `40000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      position: index + 1,
+    }));
+    const user = userEvent.setup();
+    renderWithQuery(<OrderEditDialog order={{ ...base, lines: many }} {...handlers()} />);
+    const dialog = await screen.findByRole('dialog');
+    for (let index = 0; index < 51; index += 1) {
+      fireEvent.change(within(dialog).getByLabelText(`What to do with line ${index + 1}`), {
+        target: { value: 'remove' },
+      });
+    }
+    for (let index = 0; index < 51; index += 1) {
+      fireEvent.change(dialog.querySelector(`#edit-line-${index}-removal`) as HTMLElement, {
+        target: { value: 'out_of_stock' },
+      });
+    }
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('at most 50 changes');
+    expect(api.editOrder).not.toHaveBeenCalled();
   });
 });

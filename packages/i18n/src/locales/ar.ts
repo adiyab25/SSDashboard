@@ -1450,7 +1450,7 @@ export const ar: Catalog = {
       label: 'إجراءات الطلب',
       confirm: 'تأكيد',
       pack: 'تعبئة',
-      unpack: 'إعادته إلى «مؤكد»',
+      unpack: 'إعادة إلى «مؤكد»',
       edit: 'تعديل الطلب',
       cancel: 'إلغاء الطلب',
       confirmed: 'تم تأكيد الطلب {{order}}',
@@ -1468,8 +1468,8 @@ export const ar: Catalog = {
     hold: {
       commands: 'تغييرات تنتظر الوصول إلى قناة البيع',
       kind: {
-        'shopify.order_edit': 'تعديل الطلب المُرسَل إلى شوبيفاي',
-        'shopify.order_cancel': 'إلغاء الطلب المُرسَل إلى شوبيفاي',
+        'shopify.order_edit': 'إرسال تعديل الطلب إلى شوبيفاي',
+        'shopify.order_cancel': 'إرسال إلغاء الطلب إلى شوبيفاي',
       },
       state: { waiting: 'في الانتظار', failed: 'فشل' },
       reason: 'رمز الخطأ:',

@@ -2,6 +2,7 @@
 
 import { Field, FieldError, FieldLabel } from '@ssdashboard/ui/components/field';
 import { Input } from '@ssdashboard/ui/components/input';
+import { useRef } from 'react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { SkuPicker } from '@/inventory/sku-picker';
@@ -28,6 +29,8 @@ export function OrderEditLineFields({
   prefix: string;
 }) {
   const { t } = useTranslation();
+  // What the last SKU pick wrote into the price and the discount, so a later pick can tell it from typing.
+  const filled = useRef<{ price?: string; discount?: string }>({});
   const lineErrors = form.formState.errors.lines?.[index];
   const skuError = lineErrors?.sku?.message;
 
@@ -54,10 +57,23 @@ export function OrderEditLineFields({
                 field.onChange(sku);
                 form.clearErrors(`lines.${index}.sku`);
                 // Another SKU starts from its own list price (empty when it has none, so the
-                // old SKU's price is never carried over) and no discount.
+                // old SKU's price is never carried over) and no discount, but only over a value
+                // the person has not typed: the starting value, or what an earlier pick filled.
                 if (changed) {
-                  form.setValue(`lines.${index}.unitPrice`, sku.price ?? '');
-                  form.setValue(`lines.${index}.discountAmount`, '0.00');
+                  const start = form.formState.defaultValues?.lines?.[index];
+                  const price = form.getValues(`lines.${index}.unitPrice`);
+                  if (price === (start?.unitPrice ?? '') || price === filled.current.price) {
+                    filled.current.price = sku.price ?? '';
+                    form.setValue(`lines.${index}.unitPrice`, filled.current.price);
+                  }
+                  const discount = form.getValues(`lines.${index}.discountAmount`);
+                  if (
+                    discount === (start?.discountAmount ?? '0.00') ||
+                    discount === filled.current.discount
+                  ) {
+                    filled.current.discount = '0.00';
+                    form.setValue(`lines.${index}.discountAmount`, '0.00');
+                  }
                 }
               }}
               onBlur={field.onBlur}

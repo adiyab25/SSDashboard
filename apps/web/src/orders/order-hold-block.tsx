@@ -26,7 +26,7 @@ export function OrderHoldBlock({ order }: { order: OrderDetail }) {
   const { t } = useTranslation();
   const format = useFormat();
   if (order.writeBackState === 'none') return null;
-  const commands = order.writeBackCommands ?? [];
+  const commands = order.writeBackCommands;
 
   return (
     <Alert role="status">

@@ -37,7 +37,7 @@ The unit suite needs no database. The e2e suites need Postgres: they run the rea
 
 ## Governing spec
 
-- [0013 Orders and their state machines](../../../../docs/specs/0013-orders-state-machines/index.md) (milestone 1, build plan tasks 1 to 6; milestone 2, tasks 8 to 10 and the api half of 11)
+- [0013 Orders and their state machines](../../../../docs/specs/0013-orders-state-machines/index.md) (milestone 1, build plan tasks 1 to 6; milestone 2, tasks 8, 8a, 9, 10, and the api half of 11)
 - [0002 Core data model, orders child](../../../../docs/specs/0002-core-data-model/0002-orders.md) (the tables, the transition tables, and the money rules)
 - [Scope feature 16](../../../../docs/scope/confirmation-to-cash.md)
 
