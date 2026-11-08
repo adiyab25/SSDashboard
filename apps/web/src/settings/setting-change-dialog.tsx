@@ -35,6 +35,7 @@ import {
   isCodeKind,
   namesSetting,
   parseDraft,
+  RISK_SIGNAL_FIELDS,
   valueKindOf,
   type SettingDraft,
 } from './setting-value';
@@ -164,6 +165,18 @@ export function SettingChangeDialog({
             }
           }
         }
+        if (kind === 'riskSignal') {
+          for (const issue of issues) {
+            const field = RISK_SIGNAL_FIELDS.find((candidate) => candidate === issue.path);
+            if (field !== undefined) {
+              items[field] = t(
+                field === 'windowDays'
+                  ? 'settings.dialog.riskSignal.invalidWindow'
+                  : 'settings.dialog.riskSignal.invalidCount',
+              );
+            }
+          }
+        }
         // A language issue's path is the index of the code in the list: name that code.
         let message: string = t(ERROR_KEYS[code]);
         if (kind === 'list') {
@@ -201,8 +214,13 @@ export function SettingChangeDialog({
     if (mutation.isPending) return;
     const parsed = parseDraft(draft, kind);
     const next: typeof errors = {};
-    if (!parsed.ok) next.value = t('settings.dialog.errors.valueRequired');
-    else if (kind === 'list' && Array.isArray(parsed.value)) {
+    if (!parsed.ok) {
+      next.value = t(
+        kind === 'riskSignal'
+          ? 'settings.dialog.riskSignal.incomplete'
+          : 'settings.dialog.errors.valueRequired',
+      );
+    } else if (kind === 'list' && Array.isArray(parsed.value)) {
       // The same check the api makes, so a repeated code is refused before any request.
       if (new Set(parsed.value).size !== parsed.value.length) {
         next.value = t('settings.dialog.errors.languageRepeated');

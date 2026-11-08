@@ -11,6 +11,7 @@ import { ReceiptDetailPage } from '@/inventory/receipt-detail-page';
 import { ReceiptFormPage } from '@/inventory/receipt-form-page';
 import { ReceiptsPage } from '@/inventory/receipts-page';
 import { StockPage } from '@/inventory/stock-page';
+import { CostRulesPage } from '@/settings/cost-rules-page';
 
 type Person = { id: string; hats: string[]; permissions: string[] };
 type MeAnswer = { status: 'loading' } | { status: 'failed' } | { status: 'ready'; me: Person };
@@ -64,6 +65,13 @@ interface GatedPage {
   /** The request the page makes once allowed; null for the form, which makes none of its own. */
   request: string | null;
 }
+
+/** The cost grant without settings (spec 0009, D15): reads the cost rules page. */
+const COST_READER: Person = {
+  id: 'p',
+  hats: ['support'],
+  permissions: ['stock.view', 'cost.view'],
+};
 
 const PAGES: GatedPage[] = [
   {
@@ -122,6 +130,14 @@ const PAGES: GatedPage[] = [
     denied: SUPPORT,
     allowed: MANAGER,
     request: '/api/audit/entries?',
+  },
+  // A manager without the cost grant: settings.manage alone does not open the cost rules.
+  {
+    name: '/settings/cost-rules',
+    element: <CostRulesPage />,
+    denied: MANAGER,
+    allowed: COST_READER,
+    request: '/api/platform/cost-rules?',
   },
 ];
 

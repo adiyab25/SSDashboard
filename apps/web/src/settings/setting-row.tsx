@@ -5,10 +5,10 @@ import type { MessageKey } from '@ssdashboard/i18n';
 import { Badge } from '@ssdashboard/ui/components/badge';
 import { Button } from '@ssdashboard/ui/components/button';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
-import { LockIcon } from 'lucide-react';
+import { LockIcon, MoveUpRightIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
-import { displayValue, isCodeKind, valueKindOf } from './setting-value';
+import { displayValue, isCodeKind, isEditedElsewhere, valueKindOf } from './setting-value';
 import { useSettingWords } from './use-setting-words';
 
 /** Props of `SettingRow`. */
@@ -24,7 +24,9 @@ interface SettingRowProps {
  * button. An entry that cannot be changed here, or whose bundle is not licensed, has no active
  * button and says why in words. The licensed gate is the screen's alone until the api refuses an
  * unlicensed write too (security review S6, milestone 2 or 3); `canChange` is enforced by the api
- * (409 `SETTING_LOCKED`). It never decides what may change.
+ * (409 `SETTING_LOCKED`). An entry edited by a picker another feature adds (the `catalog.*` keys and
+ * the Shopify gift tags) shows no Change button and says where it is set. It never decides what
+ * may change.
  */
 export function SettingRow({ entry, onChange }: SettingRowProps) {
   const { t } = useTranslation();
@@ -35,7 +37,7 @@ export function SettingRow({ entry, onChange }: SettingRowProps) {
   const codes = isCodeKind(kind);
   const show = (value: SettingEntryView['value']) => {
     const text = displayValue(value, kind, words);
-    return codes && value !== null ? <LtrText>{text}</LtrText> : text;
+    return codes && value !== null && text !== words.none ? <LtrText>{text}</LtrText> : text;
   };
 
   const blocked = !entry.canChange
@@ -48,6 +50,7 @@ export function SettingRow({ entry, onChange }: SettingRowProps) {
         )
       : null;
 
+  const elsewhere = isEditedElsewhere(entry.key);
   const when = entry.updatedAt ? format.dateTime(entry.updatedAt) : null;
   const who = entry.updatedBy ? (entry.updatedBy.name ?? t('settings.row.unknownPerson')) : null;
 
@@ -76,23 +79,30 @@ export function SettingRow({ entry, onChange }: SettingRowProps) {
               : t('settings.row.lastChangedUnknown', { date: when })}
         </p>
       </div>
-      <div className="flex flex-col gap-1 md:items-end">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={blocked !== null}
-          aria-label={t('settings.row.changeNamed', { name })}
-          onClick={() => onChange(entry)}
-        >
-          {t('settings.row.change')}
-        </Button>
-        {blocked && (
-          <p className="flex items-center gap-1 text-sm text-muted-foreground">
-            <LockIcon aria-hidden className="size-3.5" />
-            {blocked}
-          </p>
-        )}
-      </div>
+      {elsewhere ? (
+        <p className="flex items-center gap-1 text-sm text-muted-foreground md:max-w-56 md:text-end">
+          <MoveUpRightIcon aria-hidden className="size-3.5 shrink-0 rtl:-scale-x-100" />
+          {t('settings.row.setElsewhere')}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1 md:items-end">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={blocked !== null}
+            aria-label={t('settings.row.changeNamed', { name })}
+            onClick={() => onChange(entry)}
+          >
+            {t('settings.row.change')}
+          </Button>
+          {blocked && (
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              <LockIcon aria-hidden className="size-3.5" />
+              {blocked}
+            </p>
+          )}
+        </div>
+      )}
     </li>
   );
 }

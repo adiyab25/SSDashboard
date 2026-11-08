@@ -75,6 +75,13 @@ describe('visibleNavItems (spec 0008, AC-11)', () => {
     expect(ids()).not.toContain('settings');
   });
 
+  it('shows Cost rules to whoever holds the cost grant, settings or not (spec 0009, AC-25, D15)', () => {
+    expect(ids(['support'], ['cost.view'])).toContain('costRules');
+    expect(ids(['support'], ['cost.view'])).not.toContain('settings');
+    expect(ids(['manager'])).not.toContain('costRules');
+    expect(ids(['manager'], ['cost.view'])).toContain('costRules');
+  });
+
   it('shows Audit trail to a manager only (audit.read)', () => {
     expect(ids(['manager'])).toContain('audit');
     expect(ids(['support', 'operations', 'warehouse'])).not.toContain('audit');
@@ -142,5 +149,7 @@ describe('nav item modules (spec 0009, AC-9)', () => {
     expect(navItemFor('/skus/abc')?.id).toBe('skus');
     expect(navItemFor('/')?.id).toBe('home');
     expect(navItemFor('/nowhere')).toBeUndefined();
+    expect(navItemFor('/settings/cost-rules')?.id).toBe('costRules');
+    expect(navItemFor('/settings')?.id).toBe('settings');
   });
 });

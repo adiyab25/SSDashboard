@@ -52,14 +52,18 @@ type Failure =
  * then the reason, which is required. `MODULE_REQUIRED_BY` names the modules that need this one
  * by their labels. The save stays unavailable until the impact has loaded, so nobody confirms
  * blind. It decides nothing: the api refuses what may not be done. Turning a module on is the
- * plain change dialog.
+ * plain change dialog. Turning an executing step off uses this dialog too (AC-21, AC-30); turning
+ * one on is `StepOnDialog`.
  */
 export function ModuleOffDialog({
   entry,
   onClose,
+  confirmHintKey = 'settings.modules.off.confirmHint',
 }: {
   entry: SettingEntryView;
   onClose: () => void;
+  /** The hint under the typed confirmation: an executing step names itself as an automation. */
+  confirmHintKey?: MessageKey;
 }) {
   const { t } = useTranslation();
   const returnFocus = useReturnFocus();
@@ -223,9 +227,7 @@ export function ModuleOffDialog({
               {errors.confirm ? (
                 <FieldError id={`${confirmId}-error`}>{errors.confirm}</FieldError>
               ) : (
-                <FieldDescription id={`${confirmId}-hint`}>
-                  {t('settings.modules.off.confirmHint')}
-                </FieldDescription>
+                <FieldDescription id={`${confirmId}-hint`}>{t(confirmHintKey)}</FieldDescription>
               )}
             </Field>
           )}

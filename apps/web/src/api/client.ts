@@ -1,4 +1,9 @@
-import { ModuleRequiredByError, ModuleRequiresError } from '@ssdashboard/contracts';
+import {
+  CostRuleLockedMonths,
+  ModuleRequiredByError,
+  ModuleRequiresError,
+  StepPreconditionCode,
+} from '@ssdashboard/contracts';
 import { apiFetch } from '@/auth/api-fetch';
 
 /** The api's error body: a stable `code`, plus whatever detail that code carries. */
@@ -17,6 +22,21 @@ export interface ApiErrorBody {
   dependants?: string[];
   /** `MODULE_REQUIRES`: the keys of the modules that must be on before this one can be turned on. */
   requires?: string[];
+  /** `STEP_PRECONDITION`: the code of the first precondition that failed, such as `NO_STOCK_OUT_SOURCE`. */
+  precondition?: string;
+  /** `COST_RULE_IN_LOCKED_PERIOD`: the locked months (`YYYY-MM`) whose margins the rule would change. */
+  months?: string[];
+  /** `OWNER_POLICY_INCONSISTENT`: the consistency rules the row breaks. */
+  rules?: string[];
+  /** `OWNER_POLICY_IN_USE`: the locked fields the change touched. */
+  fields?: string[];
+}
+
+/** A list of plain codes from an error body, or undefined when it is not one. */
+function codeList(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? value
+    : undefined;
 }
 
 /** A failed call. `status` 0 means the request never got an answer. */
@@ -76,8 +96,17 @@ function errorBody(json: unknown): ApiErrorBody {
     'requires' in json
       ? ModuleRequiresError.shape.requires.safeParse(json.requires).data
       : undefined;
+  const precondition =
+    'precondition' in json ? StepPreconditionCode.safeParse(json.precondition).data : undefined;
+  const months = 'months' in json ? CostRuleLockedMonths.safeParse(json.months).data : undefined;
+  const rules = 'rules' in json ? codeList(json.rules) : undefined;
+  const fields = 'fields' in json ? codeList(json.fields) : undefined;
   return {
     code,
+    ...(precondition && { precondition }),
+    ...(months && { months }),
+    ...(rules && { rules }),
+    ...(fields && { fields }),
     ...(requires && { requires }),
     ...(dependants && { dependants }),
     ...(lineErrors && { lineErrors }),

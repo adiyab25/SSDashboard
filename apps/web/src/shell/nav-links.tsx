@@ -9,7 +9,7 @@ import {
 } from '@ssdashboard/ui/components/sidebar';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
-import { isActive, navGroups, type NavItem } from './nav';
+import { navGroups, navItemFor, type NavItem } from './nav';
 
 /** Props of `NavLinks`. */
 interface NavLinksProps {
@@ -18,9 +18,13 @@ interface NavLinksProps {
   pathname: string | null;
 }
 
-/** The grouped sidebar links; marks the entry matching `pathname` as the current page. */
+/**
+ * The grouped sidebar links; marks the one entry whose page `pathname` is as the current page (the
+ * longest matching address, so `/settings/cost-rules` marks Cost rules, not Settings too).
+ */
 export function NavLinks({ items, pathname }: NavLinksProps) {
   const { t } = useTranslation();
+  const current = pathname === null ? undefined : navItemFor(pathname);
   return navGroups.map((group) => {
     const groupItems = items.filter((item) => item.group === group.id);
     if (groupItems.length === 0) return null;
@@ -29,7 +33,7 @@ export function NavLinks({ items, pathname }: NavLinksProps) {
         <SidebarGroupLabel>{t(group.labelKey)}</SidebarGroupLabel>
         <SidebarMenu>
           {groupItems.map((item) => {
-            const active = pathname !== null && isActive(pathname, item.href);
+            const active = current?.id === item.id;
             const label = t(item.labelKey);
             return (
               <SidebarMenuItem key={item.id}>

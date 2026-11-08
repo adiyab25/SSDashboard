@@ -3,6 +3,7 @@ import {
   displayValue,
   draftOf,
   isCodeKind,
+  isEditedElsewhere,
   namesSetting,
   parseDraft,
   valueKindOf,
@@ -13,9 +14,11 @@ const words: SettingWords = {
   yes: 'Yes',
   no: 'No',
   notSet: 'Not set',
+  none: 'None',
   hour: (hour) => `${hour}:00`,
   number: (value) => `#${value}`,
   date: (value) => `on ${value}`,
+  riskSignal: ({ refusals, returns, days }) => `${refusals}/${returns} in ${days}`,
 };
 
 describe('valueKindOf', () => {
@@ -41,6 +44,20 @@ describe('displayValue', () => {
     expect(displayValue({ PO: 'PO', stock_receipt: 'SR' }, 'record', words)).toBe(
       'PO: PO, stock_receipt: SR',
     );
+  });
+
+  it('writes an empty list or map as a word, never a blank', () => {
+    expect(displayValue({}, 'record', words)).toBe('None');
+    expect(displayValue([], 'list', words)).toBe('None');
+  });
+
+  it('writes the customer risk signal from its three numbers, and reads a store id as a code', () => {
+    const signal = { windowDays: 180, refusalsToSuggest: 2, returnsToSuggest: 3 };
+    expect(displayValue(signal, 'riskSignal', words)).toBe('#2/#3 in #180');
+    expect(valueKindOf({ key: 'customer_risk_signal', default: signal })).toBe('riskSignal');
+    expect(valueKindOf({ key: 'catalog.source_store_id', default: null })).toBe('text');
+    expect(isEditedElsewhere('shopify_gift_tags')).toBe(true);
+    expect(isEditedElsewhere('customer_risk_signal')).toBe(false);
   });
 });
 

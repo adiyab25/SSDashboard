@@ -35,7 +35,9 @@ import {
   PayoutMethod,
   PhoneKind,
   RefusedReasonCode,
+  RefundBy,
   ReservationStatus,
+  SaleRecordedAt,
   SettlementLineKind,
   SettlementMatchedByType,
   SettlementMatchResult,
@@ -50,6 +52,7 @@ import {
   TaskCreatedByType,
   TaskLinkedType,
   TaskStatus,
+  TaxDocument,
 } from '@ssdashboard/contracts';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -114,6 +117,10 @@ describe('every database enum with a Zod twin matches its contract', () => {
     ['movement_source_type', LedgerSourceType.options],
     ['cost_basis', CostBasis.options],
     ['location_owner_type', LocationOwnerType.options],
+    // Spec 0009 milestone 5 (AC-24): the owner type policy enums the settings screen edits.
+    ['sale_recorded_at', SaleRecordedAt.options],
+    ['refund_by', RefundBy.options],
+    ['tax_document', TaxDocument.options],
     ['reservation_status', ReservationStatus.options],
     ['stock_receipt_status', StockReceiptStatus.options],
     ['connection_health', ConnectionHealth.options],

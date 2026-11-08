@@ -25,6 +25,13 @@ describe('numbers (AC-8)', () => {
     expect(plain(createFormatter(arabic).percent('14.00'))).toBe('14%');
   });
 
+  it('keeps up to 4 decimals of a percent when asked, and rounds to 2 by default', () => {
+    expect(createFormatter(english).percent('2.7525')).toBe('2.75%');
+    expect(createFormatter(english).percent('2.7525', { digits: 4 })).toBe('2.7525%');
+    expect(plain(createFormatter(arabic).percent('2.7525', { digits: 4 }))).toBe('2.7525%');
+    expect(createFormatter(english).percent('2.5000', { digits: 4 })).toBe('2.5%');
+  });
+
   it('works before settings load', () => {
     const format = createFormatter({ language: 'en' });
 

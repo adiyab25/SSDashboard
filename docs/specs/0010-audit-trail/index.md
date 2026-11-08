@@ -195,8 +195,10 @@ The registry starts with these. "Reason" is `required` (R) or `optional` (o). "A
 | `customer.merged` | `customer` | o | no (suggested merges applied by a person) | yes | feature 14 |
 | `customer.unmerged` | `customer` | R | no | no | feature 14 |
 | `customer.merge_suggested_applied` | `customer` | o | yes | yes | feature 14 (amended 2026-11-07 by spec 0014, see the note below the table: feature 14 no longer registers it) |
-| `policy.changed` (a `location_owner_policies` or similar policy row) | `policy` | R | no | no | feature 4 follow up, settings screen (feature 9) |
-| `setting.changed` | `setting` | o; R when the key is sensitive (time zone, cutoff hour, cost rules) | no | no | feature 9 |
+| `policy.changed` (a `location_owner_policies` or similar policy row) | `policy` (the owner type's stable uuid; the label is the owner type code) | R | no | no | feature 4 follow up, settings screen (feature 9, spec 0009 milestone 5) |
+| `cost_rule.recorded` (a per order cost rule recorded, spec 0009 AC-23) | `order_cost_rule` (`order_cost_rules.id`; the label is the rule's kind) | R | no | no | feature 9 (spec 0009 milestone 5) |
+| `cost_rule.recorded_in_locked_period` (a per order cost rule from a day on or before the inventory lock date, recorded with the override, spec 0009 AC-23, D14) | `order_cost_rule` (`order_cost_rules.id`; the label is the rule's kind) | R | no | no | feature 9 (spec 0009 milestone 5) |
+| `setting.changed` | `setting` | o; R when the registry entry says `reason: required` (the time zone and the cutoff hour among them; cost rules have their own `cost_rule.*` codes) | no | no | feature 9 |
 | `hat.granted`, `hat.revoked` | `user` | o; R for `hat.revoked` of the manager hat | no | no | feature 8 |
 | `license.added` (a verified license recorded for the first time, from the file or an upload) | `license` (`licenses.id`; the label is the vendor's license id) | o | no (actor the uploader, or `system_job` for the file) | no | feature 9 (spec 0009 milestone 2) |
 | `confirmation.confirmed` | `confirmation` | o | no | no | period close (spec 0007 section 3) |

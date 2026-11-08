@@ -27,7 +27,11 @@ export interface Formatter {
   readonly failed: boolean;
   number: (value: Decimal) => string;
   quantity: (value: number) => string;
-  percent: (value: Decimal) => string;
+  /**
+   * A percent, with at most `digits` decimals (2 when left out; 4 for a stored `numeric(14,4)`
+   * rate whose third or fourth decimal is not zero, so it is never shown rounded).
+   */
+  percent: (value: Decimal, options?: { digits?: 2 | 4 }) => string;
   money: (value: string, digits: 2 | 4) => string;
   date: (instant: Instant) => string;
   dateNumeric: (instant: Instant) => string;
@@ -130,14 +134,16 @@ export function createFormatter(options: FormatterOptions): Formatter {
         numbers('quantity', { useGrouping: true, maximumFractionDigits: 0 }).format(value),
       ),
 
-    percent: (value) =>
-      guard(String(value), () =>
-        numbers('percent', {
+    percent: (value, options) => {
+      const digits = options?.digits ?? 2;
+      return guard(String(value), () =>
+        numbers(`percent:${digits}`, {
           style: 'unit',
           unit: 'percent',
-          maximumFractionDigits: 2,
+          maximumFractionDigits: digits,
         }).format(numeric(value)),
-      ),
+      );
+    },
 
     money: (value, digits) => {
       if (!currency) return value;

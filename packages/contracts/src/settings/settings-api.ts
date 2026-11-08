@@ -46,6 +46,56 @@ export type SettingJson = z.infer<typeof SettingJson>;
 export const SettingInstant = z.iso.datetime({ offset: true });
 
 /**
+ * A precondition code a step's turn on can fail with (spec 0009, AC-21): the platform's own
+ * `NO_STOCK_OUT_SOURCE` (AC-29), or a feature's (spec 0015's `SHOPIFY_STOCK_PUSH_NOT_READY`), in
+ * upper snake case.
+ */
+export const StepPreconditionCode = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/);
+/** One precondition code. */
+export type StepPreconditionCode = z.infer<typeof StepPreconditionCode>;
+
+/** The platform's own precondition (AC-21, AC-29): a stock out source must be running. */
+export const NO_STOCK_OUT_SOURCE = 'NO_STOCK_OUT_SOURCE';
+
+/**
+ * One fact a passing precondition hands the turn on dialog (spec 0009, AC-21, wave 1 amendment):
+ * a `@ssdashboard/i18n` key (dotted words, never display text) and the whole numbers it interpolates, such as spec 0015's confirmed
+ * first push counts. Never a name, an address, or any other text.
+ */
+export const StepFact = z.object({
+  label: z.string().regex(/^[a-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)+$/),
+  values: z.record(z.string().regex(/^[a-z][A-Za-z0-9]{0,31}$/), z.int()),
+});
+/** One fact. */
+export type StepFact = z.infer<typeof StepFact>;
+
+/**
+ * Whether turning a step on would pass its preconditions now (spec 0009, AC-21): `ready` with the
+ * facts the passing preconditions return, in their declared order, or not ready with the code of
+ * the first precondition that fails (the platform's `NO_STOCK_OUT_SOURCE` first, then each
+ * feature precondition in order). Read when `GET /api/settings` answers; the `PUT` checks again.
+ */
+export const StepTurnOn = z.discriminatedUnion('ready', [
+  z.object({ ready: z.literal(true), facts: z.array(StepFact) }),
+  z.object({ ready: z.literal(false), precondition: StepPreconditionCode }),
+]);
+/** The turn on check of one step. */
+export type StepTurnOn = z.infer<typeof StepTurnOn>;
+
+/**
+ * The step facts of an `executing_step` entry (spec 0009, AC-21, AC-25): the capability it gates,
+ * whether the customer hears about what it does (`notifiesCustomer`, D10: the turn on dialog says
+ * so in plain words), and its turn on check. Null on every other entry.
+ */
+export const SettingStepView = z.object({
+  capability: z.string(),
+  notifiesCustomer: z.boolean(),
+  turnOn: StepTurnOn,
+});
+/** The step facts of one entry. */
+export type SettingStepView = z.infer<typeof SettingStepView>;
+
+/**
  * One entry of `GET /api/settings` and of the `PUT` answer (spec 0009, AC-26): the registry facts
  * the screen needs plus the value in force. `value` is the stored value, or the default when
  * there is no row or the row fails its schema (`invalid: true`). `isDefault` is true when the
@@ -55,7 +105,9 @@ export const SettingInstant = z.iso.datetime({ offset: true });
  * `licensed` says whether the entry's bundle is licensed. They are kept apart so the screen can
  * say why: the web disables an entry when either is false, showing "needs the Warehouse plan" or
  * "needs the Operations plan" for `licensed: false` (AC-25). The api refuses a write of an
- * unlicensed entry with 409 `NOT_LICENSED` (security review S6, decided in milestone 2).
+ * unlicensed entry with 409 `NOT_LICENSED` (security review S6, decided in milestone 2). `step`
+ * carries an executing step's facts (`SettingStepView`); the api sends null on every other entry
+ * (optional in the schema only so an answer from before milestone 5 still parses).
  */
 export const SettingEntryView = z.object({
   key: z.string(),
@@ -74,6 +126,7 @@ export const SettingEntryView = z.object({
   updatedBy: z.object({ id: z.uuid(), name: z.string().nullable() }).nullable(),
   canChange: z.boolean(),
   licensed: z.boolean(),
+  step: SettingStepView.nullable().optional(),
 });
 /** The validated shape of `SettingEntryView`, as the api and web see it after parsing. */
 export type SettingEntryView = z.infer<typeof SettingEntryView>;
@@ -114,7 +167,9 @@ export type PutSettingAnswer = z.infer<typeof PutSettingAnswer>;
  * now: core always is; Warehouse or Operations while its phase is active, expiring, or grace;
  * security finding S6), 409 `MODULE_REQUIRED_BY` with `dependants` (turning off a module that
  * another `on` module requires, AC-12), 409 `MODULE_REQUIRES` with `requires` (turning on a module
- * while a module it requires is not `on`, AC-12), and the guard's 403 `FORBIDDEN`. A malformed body is 422
+ * while a module it requires is not `on`, AC-12), 409 `STEP_PRECONDITION` with `precondition`
+ * (turning an executing step on while a precondition fails, AC-21), and the guard's 403
+ * `FORBIDDEN`. A malformed body is 422
  * `VALIDATION_FAILED`.
  */
 export const SettingErrorCode = z.enum([
@@ -127,6 +182,7 @@ export const SettingErrorCode = z.enum([
   'NOT_LICENSED',
   'MODULE_REQUIRED_BY',
   'MODULE_REQUIRES',
+  'STEP_PRECONDITION',
   'FORBIDDEN',
   'VALIDATION_FAILED',
 ]);

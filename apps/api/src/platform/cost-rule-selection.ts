@@ -60,13 +60,26 @@ export interface CostRuleCandidate {
  * never answers 0 for a rule that is not set (AC-32).
  */
 export function selectCostRule(rows: readonly CostRuleCandidate[], onDay: string): CostRule {
+  const best = winningCostRule(rows, onDay);
+  if (!best || best.status === 'not_set' || best.value === null) return { status: 'not_set' };
+  return { status: 'set', value: best.value };
+}
+
+/**
+ * The row that decides the rule in force on `onDay`, by the order of `selectCostRule` (the latest
+ * `effectiveFrom` not after the day, then the latest `recordedAt`, then the greatest `id`), or
+ * undefined before the first row. The one place that order lives. Pure.
+ */
+export function winningCostRule(
+  rows: readonly CostRuleCandidate[],
+  onDay: string,
+): CostRuleCandidate | undefined {
   let best: CostRuleCandidate | undefined;
   for (const row of rows) {
     if (row.effectiveFrom > onDay) continue;
     if (!best || outranks(row, best)) best = row;
   }
-  if (!best || best.status === 'not_set' || best.value === null) return { status: 'not_set' };
-  return { status: 'set', value: best.value };
+  return best;
 }
 
 function outranks(a: CostRuleCandidate, b: CostRuleCandidate): boolean {

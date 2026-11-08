@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LocalizedText } from './localized-text.js';
+import { SettlementOwnerType } from './settlement/settlement-enums.js';
 
 /** Location lifecycle: active, or archived instead of deleted. */
 export const LocationStatus = z.enum(['active', 'archived']);
@@ -123,3 +124,125 @@ export const UpdateLocationRequest = z
   .strict();
 /** What a caller passes for `UpdateLocationRequest`, before defaults and transforms are applied. */
 export type UpdateLocationRequest = z.input<typeof UpdateLocationRequest>;
+
+/**
+ * The location owner type policy shapes (spec 0002 A13, spec 0009 AC-24): the policy enums, twins
+ * of the database enums of the same names (`packages/db/test/enum-parity.e2e-spec.ts`), and the
+ * `GET` and `PUT /api/inventory/owner-policies` shapes. An instant is UTC with microseconds, the
+ * full precision of `updated_at`, so a client sends it back as `expectedUpdatedAt` exactly.
+ */
+const PolicyInstant = z.iso.datetime({ offset: true });
+
+/** The moment a policy's sale counts. Matches the `sale_recorded_at` database enum. */
+export const SaleRecordedAt = z.enum(['at_shipment', 'at_sell_through', 'at_handover']);
+/** One `SaleRecordedAt` value. */
+export type SaleRecordedAt = z.infer<typeof SaleRecordedAt>;
+
+/** Who refunds: the brand or the location's owner. Matches the `refund_by` enum. */
+export const RefundBy = z.enum(['brand', 'location_owner']);
+/** One `RefundBy` value. */
+export type RefundBy = z.infer<typeof RefundBy>;
+
+/** The tax document a sale needs. Matches the `tax_document` enum. */
+export const TaxDocument = z.enum([
+  'b2c_electronic_receipt',
+  'b2b_electronic_invoice_at_settlement',
+  'b2b_electronic_invoice_at_handover',
+]);
+/** One `TaxDocument` value. */
+export type TaxDocument = z.infer<typeof TaxDocument>;
+
+/**
+ * The fields of a location owner type policy a manager may send (spec 0009, AC-24): every
+ * attribute of the owner type policy row (spec 0002, A13). The five locked fields
+ * (`OWNER_POLICY_LOCKED_FIELDS`) change only on a row with no location that is not archived, and
+ * never on the brand's own row.
+ */
+export const OwnerPolicyFields = z.strictObject({
+  stockOwnedByBrand: z.boolean(),
+  handoverIsSale: z.boolean(),
+  saleRecordedAt: SaleRecordedAt,
+  endCustomerRefundBy: RefundBy,
+  defectivePieceRefundBy: RefundBy,
+  taxDocument: TaxDocument,
+  settlementOwnerType: SettlementOwnerType.nullable(),
+  canSellOnline: z.boolean(),
+});
+/** The validated shape of `OwnerPolicyFields`. */
+export type OwnerPolicyFields = z.infer<typeof OwnerPolicyFields>;
+
+/** A field of a policy row. */
+export type OwnerPolicyField = keyof OwnerPolicyFields;
+
+/**
+ * The fields whose change would reinterpret stock or sales already recorded at a location of the
+ * type (spec 0009, AC-24, D13): locked on the brand's own row always, and on any row with at least
+ * one location that is not archived; changed terms mean a new location.
+ */
+export const OWNER_POLICY_LOCKED_FIELDS = [
+  'stockOwnedByBrand',
+  'handoverIsSale',
+  'saleRecordedAt',
+  'taxDocument',
+  'settlementOwnerType',
+] as const satisfies readonly OwnerPolicyField[];
+
+/**
+ * One location owner type policy as `GET /api/inventory/owner-policies` answers it (spec 0009,
+ * AC-24, AC-25): the owner type, its attributes, the fields locked right now and the count of
+ * locations of the type that are not archived (why they are locked), and when and by whom it last
+ * changed (send `updatedAt` back as `expectedUpdatedAt`).
+ */
+export const OwnerPolicyView = OwnerPolicyFields.extend({
+  ownerType: LocationOwnerType,
+  lockedFields: z.array(z.enum(OWNER_POLICY_LOCKED_FIELDS)),
+  activeLocations: z.int().min(0),
+  updatedAt: PolicyInstant,
+  updatedBy: z.object({ id: z.uuid(), name: z.string().nullable() }).nullable(),
+});
+/** The validated shape of `OwnerPolicyView`. */
+export type OwnerPolicyView = z.infer<typeof OwnerPolicyView>;
+
+/** Answer of `GET /api/inventory/owner-policies`: every owner type's policy, in enum order. */
+export const OwnerPoliciesResponse = z.object({ policies: z.array(OwnerPolicyView) });
+/** The validated shape of `OwnerPoliciesResponse`. */
+export type OwnerPoliciesResponse = z.infer<typeof OwnerPoliciesResponse>;
+
+/**
+ * Body of `PUT /api/inventory/owner-policies/:ownerType` (spec 0009, AC-24): the whole row, the
+ * manager's reason (required: left out, 422 `VALIDATION_FAILED`; blank once trimmed, 422
+ * `REASON_REQUIRED`; at most 500 characters), and the
+ * `updatedAt` the screen showed (409 `STALE_SETTING` when the row changed since).
+ */
+export const PutOwnerPolicyBody = OwnerPolicyFields.extend({
+  reason: z.string().trim().max(500),
+  expectedUpdatedAt: PolicyInstant,
+});
+/** The validated shape of `PutOwnerPolicyBody`. */
+export type PutOwnerPolicyBody = z.infer<typeof PutOwnerPolicyBody>;
+
+/** Answer of the `PUT`: the policy as it now stands, and whether anything was written. */
+export const PutOwnerPolicyAnswer = z.object({ policy: OwnerPolicyView, changed: z.boolean() });
+/** The validated shape of `PutOwnerPolicyAnswer`. */
+export type PutOwnerPolicyAnswer = z.infer<typeof PutOwnerPolicyAnswer>;
+
+/**
+ * The stable error codes of the owner policy routes (spec 0009, AC-24): 404
+ * `OWNER_TYPE_UNKNOWN`, 422 `OWNER_POLICY_INCONSISTENT` (with `rules`, the broken consistency
+ * rules), 409 `OWNER_POLICY_IN_USE` (with `fields`, the locked fields the change touched), 409
+ * `SELLABLE_LOCATIONS_EXIST` (online selling turned off while a location of the type sells
+ * online), 409 `STALE_SETTING`, 422 `REASON_REQUIRED`, 422 `VALIDATION_FAILED` (a malformed body),
+ * and the guard's 403 `FORBIDDEN`.
+ */
+export const OwnerPolicyErrorCode = z.enum([
+  'OWNER_TYPE_UNKNOWN',
+  'OWNER_POLICY_INCONSISTENT',
+  'OWNER_POLICY_IN_USE',
+  'SELLABLE_LOCATIONS_EXIST',
+  'STALE_SETTING',
+  'REASON_REQUIRED',
+  'VALIDATION_FAILED',
+  'FORBIDDEN',
+]);
+/** One owner policy error code. */
+export type OwnerPolicyErrorCode = z.infer<typeof OwnerPolicyErrorCode>;

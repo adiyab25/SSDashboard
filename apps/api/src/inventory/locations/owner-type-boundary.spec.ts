@@ -55,6 +55,10 @@ const POLICY_TABLE_ALLOWED = new Set([
   'packages/db/src/table-ownership.ts',
   'packages/db/migrations/0001_baseline_tables.sql',
   'packages/db/migrations/0002_baseline_rules.sql',
+  // Spec 0009 AC-24: the policy CHECKs and the app role's column grant to edit the rows.
+  'packages/db/migrations/0011_owner_policy_editing.sql',
+  'packages/db/migrations/0012_owner_policy_grant.sql',
+  'packages/db/test/owner-policy-upgrade.e2e-spec.ts',
   'packages/db/test/migrate.e2e-spec.ts',
   'packages/db/test/schema.e2e-spec.ts',
 ]);

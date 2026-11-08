@@ -594,9 +594,34 @@ describe('runMigrations', () => {
           insert_install: false,
           read_policies: true,
           insert_policies: false,
+          // No table wide UPDATE: only the columns 0012 grants (spec 0009 AC-24).
           update_policies: false,
           delete_policies: false,
           owns_pgboss: true,
+        });
+        const columns = await query<{ column_name: string; may_update: boolean }>(
+          url,
+          `SELECT column_name, has_column_privilege('${role}', 'location_owner_policies', column_name, 'UPDATE') AS may_update
+           FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'location_owner_policies'
+           ORDER BY column_name`,
+        );
+        expect(
+          Object.fromEntries(columns.map((column) => [column.column_name, column.may_update])),
+        ).toEqual({
+          can_sell_online: true,
+          defective_piece_refund_by: true,
+          end_customer_refund_by: true,
+          handover_is_sale: true,
+          locked_terms_changed_at: true,
+          owner_type: false,
+          sale_recorded_at: true,
+          settlement_owner_type: true,
+          stock_owned_by_brand: true,
+          tax_document: true,
+          tenant_id: false,
+          updated_at: true,
+          updated_by: true,
         });
       } finally {
         await Promise.all(scratch.splice(0).map(dropScratchDatabase));

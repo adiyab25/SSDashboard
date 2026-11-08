@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import { BRAND_SETTINGS } from './brand-settings.js';
+import { CATALOG_SETTINGS } from './catalog-settings.js';
 import { POLICY_SETTINGS } from './policy-settings.js';
 import type { SettingDefinition } from './setting-definition.js';
 
@@ -8,7 +9,11 @@ import type { SettingDefinition } from './setting-definition.js';
  * validates, and writes by, and the web renders from. A later feature adds its keys to its
  * group's file in its own build; `registry.spec.ts` checks every entry.
  */
-export const SETTING_DEFINITIONS = [...BRAND_SETTINGS, ...POLICY_SETTINGS] as const;
+export const SETTING_DEFINITIONS = [
+  ...BRAND_SETTINGS,
+  ...POLICY_SETTINGS,
+  ...CATALOG_SETTINGS,
+] as const;
 
 type AnySettingDefinition = (typeof SETTING_DEFINITIONS)[number];
 

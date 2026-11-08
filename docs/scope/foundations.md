@@ -101,12 +101,12 @@ Per brand settings and the switches that make one image into a Warehouse install
 **Done when:** a module turns off cleanly without errors or orphaned jobs, a lapsed Operations license switches its connectors off, every executing step defaults to off, and the location owner types are a setting, not three code paths.
 Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep continue for shipments created before the lapse until a final cash state or `operations_wind_down_days`, default 60); expiry warnings at 30, 14, and 7 days in the shell and the daily report; 14 day grace; a renewal starts a backfill sweep.
 - [x] Design it (spec): `/architect settings, module toggles & bundles`
-- [ ] Build it: `/develop settings, module toggles & bundles`
+- [x] Build it: `/develop settings, module toggles & bundles`
   - [x] One setting through every layer
   - [x] The signed license
   - [x] Module gate and toggles with no orphaned jobs
   - [x] Lapse, read only wind down, and renewal backfill
-  - [ ] Executing steps, policy knobs, owner type policies, cost rules, and the full settings screen
+  - [x] Executing steps, policy knobs, owner type policies, cost rules, and the full settings screen
 - [ ] Verify it: `/check verify settings, module toggles & bundles`
 - [ ] Test it: `/test settings, module toggles & bundles`
 - [ ] Review it: `/check review settings, module toggles & bundles`

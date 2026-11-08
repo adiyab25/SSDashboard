@@ -6,8 +6,11 @@ export const SettingBundle = z.enum(['core', 'warehouse', 'operations']);
 /** The validated shape of `SettingBundle`, as the api and web see it after parsing. */
 export type SettingBundle = z.infer<typeof SettingBundle>;
 
-/** The settings screen section an entry shows in (spec 0009, AC-25). */
-export const SettingGroup = z.enum(['brand', 'modules', 'automations', 'policies']);
+/**
+ * The settings screen section an entry shows in (spec 0009, AC-25); `catalog` holds the
+ * `catalog.*` keys spec 0012 requests (AC-31).
+ */
+export const SettingGroup = z.enum(['brand', 'modules', 'automations', 'policies', 'catalog']);
 /** The validated shape of `SettingGroup`, as the api and web see it after parsing. */
 export type SettingGroup = z.infer<typeof SettingGroup>;
 

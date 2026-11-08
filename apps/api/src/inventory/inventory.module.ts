@@ -9,6 +9,7 @@ import { ReconciliationService } from './ledger/reconciliation.service.js';
 import { LocationPolicyService } from './locations/location-policy.service.js';
 import { LocationsController } from './locations/locations.controller.js';
 import { LocationsService } from './locations/locations.service.js';
+import { OwnerPoliciesController } from './locations/owner-policies.controller.js';
 import { ReceiptsController } from './receipts/receipts.controller.js';
 import { ReceiptsService } from './receipts/receipts.service.js';
 import { SkuLifecycleController } from './sku-lifecycle/sku-lifecycle.controller.js';
@@ -20,11 +21,18 @@ import { StockService } from './stock/stock.service.js';
  * Stock: the ledger service is the only writer of movements, balances, serials, and
  * reservations. Imports catalog one way; catalog never imports inventory. Records voids and
  * other audited actions through the audit module's exported `AuditService`. Asks the partners
- * module's `PartnerAccounts` whether a location's party holds the owner type's role.
+ * module's `PartnerAccounts` whether a location's party holds the owner type's role. Serves the
+ * owner type policy edit of the settings screen (spec 0009, AC-24), since it owns that table.
  */
 @Module({
   imports: [PlatformModule, CatalogModule, StaffDirectoryModule, AuditModule, PartnersModule],
-  controllers: [LocationsController, ReceiptsController, StockController, SkuLifecycleController],
+  controllers: [
+    LocationsController,
+    OwnerPoliciesController,
+    ReceiptsController,
+    StockController,
+    SkuLifecycleController,
+  ],
   providers: [
     LedgerService,
     ReconciliationService,

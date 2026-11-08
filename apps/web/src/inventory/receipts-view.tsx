@@ -28,6 +28,7 @@ import {
   useCurrentLocation,
   useLocationSwitcher,
 } from '@/shell/current-location-provider';
+import { StockOutSourceNotice } from '@/shell/stock-out-source-notice';
 import { inventoryKeys, listReceipts } from './inventory-api';
 
 const SEARCH_DELAY_MS = 300;
@@ -89,6 +90,8 @@ export function ReceiptsView({ enabled }: { enabled: boolean }) {
           </Button>
         )}
       </div>
+
+      {enabled && <StockOutSourceNotice />}
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex min-w-52 flex-1 flex-col gap-1.5 sm:max-w-sm">

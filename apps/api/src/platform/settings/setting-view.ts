@@ -1,4 +1,9 @@
-import type { SettingDefinition, SettingEntryView, SettingJson } from '@ssdashboard/contracts';
+import type {
+  SettingDefinition,
+  SettingEntryView,
+  SettingJson,
+  SettingStepView,
+} from '@ssdashboard/contracts';
 import type { StoredSetting } from './settings-cache.js';
 import { canonicalJson } from './settings.service.js';
 
@@ -14,6 +19,8 @@ export interface SettingViewContext {
    * state*). With no license ever recorded, only core (AC-16).
    */
   licensedBundles: ReadonlySet<SettingDefinition['bundle']>;
+  /** The step facts of each `executing_step` entry by key (spec 0009, AC-21); none for others. */
+  steps?: ReadonlyMap<string, SettingStepView>;
 }
 
 /**
@@ -46,5 +53,6 @@ export function settingView(
       : null,
     canChange: definition.whoMayChange !== 'nobody' && context.mayChange(definition),
     licensed: context.licensedBundles.has(definition.bundle),
+    step: context.steps?.get(definition.key) ?? null,
   };
 }
