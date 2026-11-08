@@ -7,7 +7,11 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { ReconcileJob } from './inventory/ledger/reconcile.job.js';
 import { MailWorkerModule } from './mail/mail.module.js';
 import { JobsModule } from './platform/jobs/jobs.module.js';
-import { LicenseCheckJob } from './platform/license/license-check.job.js';
+import {
+  LicenseCheckJob,
+  PHASE_WATCH_CRON,
+  PHASE_WATCH_CRON_TOKEN,
+} from './platform/license/license-check.job.js';
 import { PlatformModule } from './platform/platform.module.js';
 
 /**
@@ -29,6 +33,11 @@ import { PlatformModule } from './platform/platform.module.js';
     InventoryModule,
     MailWorkerModule,
   ],
-  providers: [ReconcileJob, AuthCleanupJob, LicenseCheckJob],
+  providers: [
+    ReconcileJob,
+    AuthCleanupJob,
+    LicenseCheckJob,
+    { provide: PHASE_WATCH_CRON_TOKEN, useValue: PHASE_WATCH_CRON },
+  ],
 })
 export class WorkerModule {}

@@ -10,8 +10,9 @@ import { LicenseVerifier } from './license/license-verifier.js';
 import { LicenseController } from './license/license.controller.js';
 import { LicenseService } from './license/license.service.js';
 import { PlatformClock } from './license/platform-clock.js';
+import { PreLapseItems } from './license/pre-lapse-items.js';
 import { CapabilityHooks } from './modules/capability-hooks.js';
-import { MODULE_ROWS, ModuleRegistry } from './modules/module-registry.js';
+import { MODULE_ROWS, ModuleRegistry, STEP_SETTING_ROWS } from './modules/module-registry.js';
 import { ModuleStateService } from './modules/module-state.service.js';
 import { ModulesController } from './modules/modules.controller.js';
 import { OffImpactReader } from './modules/off-impact.js';
@@ -31,7 +32,7 @@ import { SettingsService } from './settings/settings.service.js';
  * with the keys built into the image, the platform clock, and `LicenseService`), document
  * numbering, the per order cost rules, and the module registry with its states and capability
  * hooks (`ModuleStateService`, `CapabilityHooks`; the rows come from `MODULE_ROWS`, which tests may
- * override with fixture modules), and `DomainEvents`, the in transaction domain events (its
+ * override with fixture modules, and `STEP_SETTING_ROWS`, empty but for a test's fixture step), and `DomainEvents`, the in transaction domain events (its
  * handlers run whatever their owner module's state; see spec 0009's Follow-ups before a toggleable
  * module subscribes). It writes `setting.changed` and `license.added` audit
  * entries through `AuditService` and reads names through the staff directory, never another
@@ -44,6 +45,7 @@ import { SettingsService } from './settings/settings.service.js';
   controllers: [ConfigController, SettingsController, LicenseController, ModulesController],
   providers: [
     { provide: MODULE_ROWS, useValue: MODULE_REGISTRY },
+    { provide: STEP_SETTING_ROWS, useValue: [] },
     ModuleRegistry,
     CapabilityHooks,
     ModuleStateService,
@@ -55,6 +57,7 @@ import { SettingsService } from './settings/settings.service.js';
     { provide: LICENSE_KEY_SET, useValue: LICENSE_KEYS },
     LicenseVerifier,
     PlatformClock,
+    PreLapseItems,
     LicenseService,
     NumberingService,
     CostRulesService,

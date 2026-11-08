@@ -1944,6 +1944,9 @@ export const en = {
         'No plan is licensed yet. Upload the license file you received, or ask whoever looks after the install to fix the file.',
       clockBehind:
         'The server clock was more than a day behind an earlier check. This is for your information only; nothing changes because of it.',
+      resumingHeading: 'Steps waiting for a renewal',
+      waitingIntro:
+        'These steps are switched on and resume when the license is renewed, acting only on new events:',
       upload: {
         open: 'Upload a license file',
         title: 'Upload a license file',
@@ -1974,6 +1977,11 @@ export const en = {
         },
         recorded: 'License recorded.',
         unchanged: 'Nothing changed: this license adds nothing new.',
+        resumedTitle: 'License recorded',
+        resumingIntro: 'These steps will start working again:',
+        resumingNote:
+          'They act only on new events from now on. Nothing that happened while they were stopped is acted on.',
+        done: 'Done',
       },
       banner: {
         label: 'License notice',
@@ -1986,6 +1994,11 @@ export const en = {
           'The {{bundle}} plan lapsed on {{lapse}} and its work has stopped. Cash for shipments already out keeps being followed until {{until}}.',
         off: 'The {{bundle}} plan has lapsed and is off. Record a renewal license to resume.',
         link: 'Open the license settings',
+        stopsAhead: 'On {{lapse}} this stops: {{what}}.',
+        stopsDone: 'Stopped: {{what}}.',
+        continues: 'Still continues: {{what}}.',
+        continuesUntil: '{{name}} (until {{date}})',
+        continuesOpen: '{{name}} (until its open items are closed)',
       },
     },
     row: {

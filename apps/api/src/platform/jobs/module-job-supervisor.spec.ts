@@ -6,6 +6,7 @@ import {
   type ModuleStates,
 } from '@ssdashboard/contracts';
 import type { DatabaseConnection } from '@ssdashboard/db';
+import type { LicenseService, RenewalGap } from '../license/license.service.js';
 import type { Job, PgBoss } from 'pg-boss';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CapabilityHooks } from '../modules/capability-hooks.js';
@@ -64,6 +65,28 @@ const FIXTURES = [
     ],
   }),
 ];
+// A core module holding a Warehouse capability that waits for an Operations source (AC-29).
+FIXTURES.push(
+  defineModule({
+    key: 'stock',
+    bundle: 'core',
+    toggle: false,
+    requires: [],
+    label: 'modules.platform.label',
+    description: 'modules.platform.description',
+    capabilities: [
+      {
+        key: 'stock.push',
+        bundle: 'warehouse',
+        kind: 'write',
+        windDown: 'none',
+        requiresOneOf: [],
+        workOf: [],
+        label: 'modules.capabilities.mailSend',
+      },
+    ],
+  }),
+);
 const OPS_QUEUE = defineQueue({ name: 'ops.work', capability: 'ops.queue', options: {} });
 const SHARED_QUEUE = defineQueue({ name: 'shared.work', capability: 'shared.sync', options: {} });
 
@@ -108,7 +131,8 @@ function fakeBoss() {
       );
       return Promise.resolve({});
     }),
-    send: vi.fn(() => Promise.resolve('sent')),
+    send: vi.fn((..._args: unknown[]) => Promise.resolve('sent')),
+    updateQueue: vi.fn((..._args: unknown[]) => Promise.resolve()),
   };
   return { boss, schedules, queued };
 }
@@ -137,7 +161,14 @@ function setup() {
   const jobs = new JobRegistry(registry);
   const hooks = new CapabilityHooks(registry);
   const onDisable = vi.fn(() => Promise.resolve());
-  hooks.register('ops.queue', { onDisable });
+  const backfill = vi.fn(() => Promise.resolve());
+  hooks.register('ops.queue', { onDisable, backfill });
+  const openTask = vi.fn(() => Promise.resolve());
+  hooks.registerTasks({ open: openTask });
+  const renewals: RenewalGap[] = [];
+  const license = {
+    renewalGaps: vi.fn(() => Promise.resolve([...renewals])),
+  } as unknown as LicenseService;
   const failWaitingCommands = vi.fn(() => Promise.resolve(1));
   hooks.registerCommands({ failWaitingCommands, waitingCommands: () => Promise.resolve([]) });
   const timezone = { value: 'Africa/Cairo' };
@@ -156,6 +187,7 @@ function setup() {
     hooks,
     listener,
     { db: {} } as unknown as DatabaseConnection,
+    license,
   );
   supervisor.onModuleInit();
   const opsHandle = vi.fn(() => Promise.resolve({ done: true }));
@@ -192,6 +224,8 @@ function setup() {
     failWaitingCommands,
     opsHandle,
     timezone,
+    openTask,
+    renewals,
   };
 }
 
@@ -341,6 +375,126 @@ describe('ModuleJobSupervisor', () => {
     await expect(supervisor.reconcile()).rejects.toThrow('Reconciling shared.work failed');
     expect(boss.offWork).toHaveBeenCalledWith('ops.work', { wait: false });
     expect(onDisable).toHaveBeenCalledOnce();
+  });
+
+  it('backfills each capability of a renewed bundle once for its gap (AC-19)', async () => {
+    const { supervisor, boss, renewals } = setup();
+    const gap = { from: '2027-04-14T22:00:00.000000Z', to: '2027-05-20T08:00:00.000000Z' };
+    renewals.push({ bundle: 'operations', seq: '7', ...gap });
+    const sentKeys = new Set<string>();
+    boss.send.mockImplementation((...args: unknown[]) => {
+      sentKeys.add((args[2] as { singletonKey: string }).singletonKey);
+      return Promise.resolve('sent');
+    });
+    const findJobs = boss.findJobs.getMockImplementation() as (
+      name: string,
+      options: { data?: Record<string, unknown> },
+    ) => Promise<{ id: string; data: Record<string, unknown> }[]>;
+    boss.findJobs.mockImplementation((name, options) => {
+      const key = (options as { key?: string }).key;
+      if (name === 'platform.backfill' && key !== undefined && sentKeys.has(key)) {
+        return Promise.resolve([{ id: 'old', data: {} }]);
+      }
+      return findJobs(name, options);
+    });
+
+    const first = await supervisor.reconcile();
+    const second = await supervisor.reconcile();
+
+    expect(first.backfills).toBe(1);
+    expect(second.backfills).toBe(0);
+    expect(boss.send).toHaveBeenCalledWith(
+      'platform.backfill',
+      { capability: 'ops.queue', ...gap, cause: 'renewed' },
+      { singletonKey: 'renewed:ops.queue:7' },
+    );
+  });
+
+  it('backfills no capability of a renewed bundle that is not on (AC-19)', async () => {
+    const { supervisor, boss, renewals, states } = setup();
+    states.set('ops.queue', { state: 'limited', before: '2027-04-14T22:00:00Z', reason: 'lapsed' });
+    renewals.push({
+      bundle: 'operations',
+      seq: '7',
+      from: '2027-04-14T22:00:00Z',
+      to: '2027-05-20T08:00:00Z',
+    });
+    expect((await supervisor.reconcile()).backfills).toBe(0);
+    expect(boss.send).not.toHaveBeenCalled();
+  });
+
+  it('keeps finished backfills 90 days, past the renewal window', async () => {
+    const { supervisor, boss } = setup();
+    await supervisor.onApplicationBootstrap();
+    expect(boss.updateQueue).toHaveBeenCalledWith('platform.backfill', {
+      deleteAfterSeconds: 90 * 24 * 60 * 60,
+    });
+  });
+
+  it('starts even when setting the backfill retention fails', async () => {
+    const { supervisor, boss } = setup();
+    boss.updateQueue.mockRejectedValueOnce(new Error('no such queue'));
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    await expect(supervisor.onApplicationBootstrap()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Setting the backfill queue's retention failed"),
+    );
+    expect(boss.work.mock.calls.map((call) => call[0])).toContain('ops.work');
+  });
+
+  it('asks for one stock out source task per episode of the reason (AC-29)', async () => {
+    const { supervisor, states, openTask } = setup();
+    // A Warehouse only install that never had a source: first seen not licensed, then licensed.
+    states.set('stock.push', { state: 'off', reason: 'not_licensed', since: null });
+    await supervisor.reconcile();
+    expect(openTask).not.toHaveBeenCalled();
+    states.set('stock.push', { state: 'read_only', reason: 'no_stock_out_source', since: null });
+    await supervisor.reconcile();
+    await supervisor.reconcile();
+    expect(openTask).toHaveBeenCalledOnce();
+    expect(openTask).toHaveBeenLastCalledWith({
+      kind: 'stock_out_source_missing',
+      key: 'stock.push:never',
+      capability: 'stock.push',
+    });
+
+    // A source ran, then stopped at a lapse: a new episode, keyed on when it stopped.
+    states.set('stock.push', { state: 'on', since: null });
+    await supervisor.reconcile();
+    const lapsed = '2027-04-14T22:00:00.000000Z';
+    states.set('stock.push', { state: 'read_only', reason: 'no_stock_out_source', since: lapsed });
+    await supervisor.reconcile();
+    expect(openTask).toHaveBeenCalledTimes(2);
+    expect(openTask).toHaveBeenLastCalledWith({
+      kind: 'stock_out_source_missing',
+      key: `stock.push:${lapsed}`,
+      capability: 'stock.push',
+    });
+
+    // From one stop reason to this one counts as an entry too (a Warehouse lapse, then renewal).
+    states.set('stock.push', { state: 'read_only', reason: 'lapsed', since: lapsed });
+    await supervisor.reconcile();
+    states.set('stock.push', { state: 'read_only', reason: 'no_stock_out_source', since: lapsed });
+    await supervisor.reconcile();
+    expect(openTask).toHaveBeenCalledTimes(3);
+  });
+
+  it('asks again with the same key at a worker restart, so the port opens nothing new', async () => {
+    const first = setup();
+    first.states.set('stock.push', {
+      state: 'read_only',
+      reason: 'no_stock_out_source',
+      since: null,
+    });
+    await first.supervisor.reconcile();
+    const restarted = setup();
+    restarted.states.set('stock.push', {
+      state: 'read_only',
+      reason: 'no_stock_out_source',
+      since: null,
+    });
+    await restarted.supervisor.reconcile();
+    expect(first.openTask.mock.calls[0]).toEqual(restarted.openTask.mock.calls[0]);
   });
 
   it('keeps only the capability and the error name on a job whose handler throws', async () => {

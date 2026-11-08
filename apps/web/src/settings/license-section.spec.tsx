@@ -73,6 +73,20 @@ describe('LicenseSection (AC-25, AC-26)', () => {
     expect(within(warehouse as HTMLElement).getByText(/Stopped\. Record a renewal/)).toBeVisible();
   });
 
+  it('names the steps waiting for a renewal, and nothing when none wait', async () => {
+    api.getLicense.mockResolvedValue({ ...activeSummary, resumingSteps: ['currency'] });
+    const view = renderWithQuery(<LicenseSection enabled />);
+    expect(
+      await screen.findByText(/resume when the license is renewed, acting only on new events/),
+    ).toBeVisible();
+    view.unmount();
+
+    api.getLicense.mockResolvedValue({ ...activeSummary, resumingSteps: [] });
+    renderWithQuery(<LicenseSection enabled />);
+    await screen.findByRole('heading', { name: 'Operations' });
+    expect(screen.queryByText(/resume when the license is renewed/)).toBeNull();
+  });
+
   it('lists the recorded licenses with source, dates, and what each grants', async () => {
     api.getLicense.mockResolvedValue(activeSummary);
     renderWithQuery(<LicenseSection enabled />);

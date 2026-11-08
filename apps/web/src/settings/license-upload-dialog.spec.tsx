@@ -53,6 +53,28 @@ describe('LicenseUploadDialog (AC-20)', () => {
     expect(toast.success).toHaveBeenCalledWith('License recorded.');
   });
 
+  it('keeps the dialog open to name the steps that resume after a renewal', async () => {
+    api.uploadLicense.mockResolvedValue({
+      summary: activeSummary,
+      changed: true,
+      resumingSteps: ['currency'],
+    });
+    const onClose = open();
+    await pick(licenseFile());
+    await send();
+
+    expect(await screen.findByText('These steps will start working again:')).toBeVisible();
+    expect(screen.getByText(/They act only on new events/)).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'License recorded' })).toHaveAccessibleDescription(
+      /These steps will start working again:.*Currency.*They act only on new events/,
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    const done = screen.getByRole('button', { name: 'Done' });
+    expect(done).toHaveFocus();
+    await userEvent.click(done);
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('says nothing changed when the license adds nothing new', async () => {
     api.uploadLicense.mockResolvedValue({
       summary: activeSummary,

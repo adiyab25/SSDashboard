@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { InternalHat, type Hat, type Permission } from '../access.js';
 import { LicenseBundle, LicenseDate } from '../license/license-envelope.js';
 import { LicenseNotice } from '../license/license-api.js';
+import { capabilitiesStoppingAt, noticeWindsDown } from '../license/license-notice-work.js';
 import { LICENSE_LAPSE_AFTER_EXPIRY_DAYS } from '../license/license-phase.js';
 import type { ModuleDefinition } from './module-definition.js';
 import { ModuleStateName, StopReason, type EffectiveState } from './module-state.js';
@@ -67,9 +68,9 @@ export const STAFF_NOTICE_DAYS = 7;
 
 /**
  * The staff notices for a caller (spec 0009, AC-17): for each bundle whose manager notice shows a
- * lapse within `STAFF_NOTICE_DAYS` days, or a wind down under way, the capabilities of that bundle
- * that stop at the lapse (`windDown: none`) and whose `workOf` names a permission the caller
- * holds. A caller who wears no internal hat (only `partner` or `media_buyer`) gets none (wave 1
+ * lapse within `STAFF_NOTICE_DAYS` days, or a wind down under way, the capabilities that stop at
+ * that lapse (`capabilitiesStoppingAt`, the rule the manager's day notice uses too) whose `workOf`
+ * names a permission the caller holds. A caller who wears no internal hat (only `partner` or `media_buyer`) gets none (wave 1
  * review W8). Pure.
  */
 export function staffNotices(
@@ -85,15 +86,12 @@ export function staffNotices(
     const soon =
       (notice.phase === 'expiring' || notice.phase === 'grace') && daysToLapse <= STAFF_NOTICE_DAYS;
     if (!soon && notice.phase !== 'wind_down') continue;
-    const stopping = modules.flatMap((module) =>
-      module.capabilities
-        .filter(
-          (capability) =>
-            capability.bundle === notice.bundle &&
-            capability.windDown === 'none' &&
-            capability.workOf.some((permission) => held.has(permission)),
-        )
-        .map((capability) => capability.key),
+    const windsDown = noticeWindsDown(notice);
+    const workOf = new Map(
+      modules.flatMap((module) => module.capabilities).map((c) => [c.key, c.workOf] as const),
+    );
+    const stopping = capabilitiesStoppingAt(modules, notice.bundle, windsDown).filter((key) =>
+      (workOf.get(key) ?? []).some((permission) => held.has(permission)),
     );
     if (stopping.length > 0) {
       found.push({

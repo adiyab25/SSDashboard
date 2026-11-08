@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
 import { LEVEL_LOOK } from './license-level-look';
+import { LicenseNoticeWork } from './license-notice-work';
 
 /** The notice's sentence key: one per phase that can carry a notice. */
 function sentenceKey(notice: LicenseNotice): MessageKey | null {
@@ -29,7 +30,10 @@ function sentenceKey(notice: LicenseNotice): MessageKey | null {
   }
 }
 
-/** One notice: its level in words and an icon, the sentence, and the way to the license section. */
+/**
+ * One notice: its level in words and an icon, the sentence, the way to the license section, and
+ * under them what stops and what continues (`LicenseNoticeWork`, spec 0009, AC-17).
+ */
 export function LicenseNoticeRow({ notice }: { notice: LicenseNotice }) {
   const { t } = useTranslation();
   const format = useFormat();
@@ -65,6 +69,7 @@ export function LicenseNoticeRow({ notice }: { notice: LicenseNotice }) {
       <Link href="/settings#license" className="font-medium underline underline-offset-4">
         {t('settings.license.banner.link')}
       </Link>
+      <LicenseNoticeWork notice={notice} lapse={lapse} />
     </li>
   );
 }

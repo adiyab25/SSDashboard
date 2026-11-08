@@ -12,7 +12,7 @@ import { LicenseProblemRow } from './license-problem-row';
  * The manager's license banner (spec 0009, AC-17), drawn under the top bar for holders of
  * `settings.manage` only: one line per plan with an expiry that is 30 days from lapsing or already
  * past it (grace, wind down, off), each with its level in words, the dates, and a link to
- * `/settings#license`; and one line naming a failed check of the license file (AC-16: every
+ * `/settings#license`, plus what stops and what continues at the lapse; and one line naming a failed check of the license file (AC-16: every
  * problem outcome, `none_configured` only while no license has ever been recorded). Nothing shows while
  * everything is fine, while loading, or when the call fails: the banner is a nudge, never a blocker. It reads the `notices` of
  * `GET /api/platform/license` (the modules route that would also carry them is not built yet) and

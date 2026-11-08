@@ -19,6 +19,7 @@ import { LICENSE_KEY_SET, LICENSE_KEYS } from '../src/platform/license/license-k
 import { signLicense } from '../src/platform/license/license-signing.js';
 import { CapabilityHooks } from '../src/platform/modules/capability-hooks.js';
 import { MODULE_ROWS } from '../src/platform/modules/module-registry.js';
+import { ModuleStateService } from '../src/platform/modules/module-state.service.js';
 import { routeDeclarationOf } from '../src/platform/modules/requires-module.decorator.js';
 import { WorkerModule } from '../src/worker.module.js';
 import {
@@ -386,7 +387,7 @@ describe(
         what: 'the backfill',
       });
       expect(fixtureStore.backfills).toEqual([
-        { capability: 'fixtureops.queue', from: offAt, to: onAt },
+        { capability: 'fixtureops.queue', from: offAt, to: onAt, cause: 'module_resumed' },
       ]);
 
       // A second reconcile adds no backfill; nothing cancelled comes back; the command stays failed.
@@ -432,6 +433,8 @@ describe(
         },
       );
       fixtureStore.openFinish = 1;
+      // Unreported sales days before the cut, and no batch imported (W1, re-check R1).
+      fixtureStore.openSalesDays = 1;
       fixtureStore.inFlight = [{ area: 'fixture_returns', count: 1 }];
       fixtureStore.partnerStock = [
         {
@@ -561,6 +564,38 @@ describe(
           })
         ).status,
       ).toBe(409);
+      expect(errorLines.filter((line) => QUIET.has(line.context))).toEqual([]);
+    });
+
+    it('keeps a business date capability limited while its days are open, then read only (AC-28, W1)', async () => {
+      // Right after the toggle off, with no batch imported, the business date capability stays
+      // limited because its open items count the unreported days (re-check R1, S1).
+      const offAt = (await entry(TOGGLE)).updatedAt as string;
+      expect(await entry(TOGGLE)).toMatchObject({ value: false });
+      expect(await stateOf('fixtureops.sales_days')).toMatchObject({
+        state: 'limited',
+        before: offAt,
+        reason: 'toggled_off',
+      });
+
+      // The days are reported, or marked settled outside the app (feature 42's count reaches
+      // zero): the capability goes read only and the gate refuses new work with 404 MODULE_OFF,
+      // while its read keeps answering. The other finishing capability, still open, stays limited.
+      fixtureStore.openSalesDays = 0;
+      api.app.get(ModuleStateService).licenseChanged();
+      expect(await stateOf('fixtureops.sales_days')).toMatchObject({
+        state: 'read_only',
+        reason: 'toggled_off',
+        since: offAt,
+      });
+      const yesterday = new Date(Date.parse(offAt) - 86_400_000).toISOString().slice(0, 10);
+      const refused = await api.call(manager, 'POST', '/api/fixture-operations/sales-days', {
+        salesDay: yesterday,
+      });
+      expect(refused.status).toBe(404);
+      expect(refused.body).toMatchObject({ code: 'MODULE_OFF' });
+      expect((await api.call(manager, 'GET', '/api/fixture-operations')).status).toBe(200);
+      expect(await stateOf('fixtureops.finish')).toMatchObject({ state: 'limited' });
       expect(errorLines.filter((line) => QUIET.has(line.context))).toEqual([]);
     });
 
