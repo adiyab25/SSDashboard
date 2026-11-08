@@ -186,6 +186,23 @@ describe('owner type policies (spec 0009, AC-24)', { timeout: 120_000 }, () => {
     expect((await api.call(support, 'GET', '/api/inventory/owner-policies')).status).toBe(403);
   });
 
+  // Spec 0009 *API surface* lists 422 REASON_REQUIRED for this route, as the settings and cost
+  // rule routes answer for a missing reason (verify run 2026-11-08, bug 1: a body with no
+  // `reason` key at all answered 422 VALIDATION_FAILED).
+  it('answers REASON_REQUIRED when the body has no reason key at all, and changes nothing (AC-24)', async () => {
+    const before = await policy('consignment_partner');
+
+    const missing = await put(
+      'consignment_partner',
+      { endCustomerRefundBy: 'brand' },
+      { reason: undefined },
+    );
+
+    expect(missing.status, JSON.stringify(missing.body)).toBe(422);
+    expect(missing.body).toMatchObject({ code: 'REASON_REQUIRED' });
+    expect((await policy('consignment_partner')).updatedAt).toBe(before.updatedAt);
+  });
+
   it('refuses a stale edit (409 STALE_SETTING)', async () => {
     const stale = await put(
       'consignment_partner',
