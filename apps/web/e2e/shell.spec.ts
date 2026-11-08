@@ -4,6 +4,7 @@ import {
   expectNoAxeViolations,
   openShell,
   seedLocations,
+  stubLicensedInstall,
   textFor,
   useBrowserState,
   waitForPageHydration,
@@ -102,6 +103,9 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
         },
       }),
     );
+    // The license banner and the module notices add links to the tab order, and the real answers
+    // follow whatever license state earlier specs left in the database.
+    await stubLicensedInstall(page);
     await openShell(page);
     // The Staff entry joins the sidebar once /api/me has told the shell the role.
     await expect(page.getByRole('button', { name: /User menu: E2E Admin/ })).toBeVisible();

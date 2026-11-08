@@ -18,7 +18,8 @@ import {
 //
 // The upload tests write: an upload is append only and permanent, so they upload one license that
 // shrinks nothing (Warehouse with no expiry, id `E2E-NOOP-0001`, see `license-file.ts`), and they
-// run on the desktop project only so two projects never upload at once. The banner tests answer
+// run on the desktop project only so two projects never upload at once. `global-setup.ts` records
+// that license before any test, so here it is always already recorded. The banner tests answer
 // `GET /api/platform/license` from the browser, so they change nothing.
 
 const LANGUAGES = [
@@ -148,8 +149,9 @@ test.describe('as a manager', () => {
       const recorded = textFor(dir, 'settings.license.upload.recorded');
       const unchanged = textFor(dir, 'settings.license.upload.unchanged');
 
-      // First upload: recorded on a fresh install, nothing new where the dev license already
-      // grants Warehouse for ever. The words must follow the api's `changed`.
+      // First upload here: global setup already recorded this license, so it says nothing changed.
+      // The words still follow the api's `changed`; the recorded words of a first upload are covered
+      // by `license-upload-dialog.spec.tsx` and the api's `license.e2e-spec.ts`.
       let dialog = await openUpload(page, dir);
       await chooseFile(dialog, dir, license);
       await expect(dialog.getByText('license.json')).toBeVisible();

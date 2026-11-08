@@ -1,16 +1,17 @@
 import { defineConfig, devices } from '@playwright/test';
 import { STORAGE_STATE } from './e2e/auth';
 
-// Default: starts `pnpm dev` (api + web) from the repo root, which needs the dev
-// database running. Set E2E_BASE_URL (e.g. http://localhost for a Compose install
-// behind Caddy) to test an app that is already running instead.
+// Default: starts the api from its build (`node dist/main.js`, never the `nest start --watch`
+// dev server) and `next dev`, both against the dev database. Set E2E_BASE_URL (e.g.
+// http://localhost for a Compose install behind Caddy) to test an app that is already running
+// instead.
 const externalBaseUrl = process.env.E2E_BASE_URL;
-// A worktree whose ports 3000 and 3001 are taken sets E2E_WEB_PORT and E2E_API_PORT; CI sets neither.
+// Every port the config starts a server on can be moved, for a checkout where the defaults are
+// taken; CI sets none of them.
 const webPort = process.env.E2E_WEB_PORT ?? '3000';
 const apiPort = process.env.E2E_API_PORT ?? '3001';
-const customPorts =
-  process.env.E2E_WEB_PORT !== undefined || process.env.E2E_API_PORT !== undefined;
 const baseURL = externalBaseUrl ?? `http://localhost:${webPort}`;
+const apiURL = `http://localhost:${apiPort}`;
 
 // The production project checks what only a production build does (no /design, no
 // direction switch, real 404 statuses) and also runs the portal language spec. It runs
@@ -66,42 +67,38 @@ export default defineConfig({
     ...(externalBaseUrl
       ? []
       : [
-          ...(customPorts
-            ? [
-                {
-                  // The api on E2E_API_PORT; its Origin check must match the address the tests open.
-                  command: 'pnpm exec turbo run dev --filter=@ssdashboard/api',
-                  cwd: '../..',
-                  url: `http://localhost:${apiPort}/api/health`,
-                  env: {
-                    PORT: apiPort,
-                    API_INTERNAL_URL: `http://localhost:${apiPort}`,
-                    PUBLIC_URL: baseURL,
-                  },
-                  reuseExistingServer: true,
-                  timeout: 180_000,
-                  stdout: 'pipe' as const,
-                },
-                {
-                  command: `pnpm exec next dev --port ${webPort}`,
-                  url: baseURL,
-                  env: { API_INTERNAL_URL: `http://localhost:${apiPort}`, PUBLIC_URL: baseURL },
-                  reuseExistingServer: true,
-                  timeout: 180_000,
-                  stdout: 'pipe' as const,
-                },
-              ]
-            : [
-                {
-                  command: 'pnpm dev',
-                  cwd: '../..',
-                  url: 'http://localhost:3001/api/health',
-                  reuseExistingServer: true,
-                  timeout: 180_000,
-                  // Show the dev servers' output, so a server that never comes up explains itself.
-                  stdout: 'pipe' as const,
-                },
-              ]),
+          {
+            // The api from its build, not the watcher: `nest start --watch` restarted the api up
+            // to 17 times in one run with no file changed (2026-11-08), failing every test in
+            // flight. The turbo build is a cache hit after `pnpm test:e2e` built everything, and
+            // rebuilds a stale `dist` when the suite runs alone. Its Origin check must match the
+            // address the tests open.
+            command:
+              'pnpm exec turbo run build --filter=@ssdashboard/api --output-logs=errors-only && pnpm --filter @ssdashboard/api start',
+            cwd: '../..',
+            url: `${apiURL}/api/health`,
+            // Mail off, as in CI (no `.env` there): the suite checks the mail off flows
+            // (auth-flows.spec.ts), and a local `.env` from `.env.example` turns SMTP on.
+            env: {
+              PORT: apiPort,
+              API_INTERNAL_URL: apiURL,
+              PUBLIC_URL: baseURL,
+              MAIL_DRIVER: 'none',
+            },
+            // CI never reuses one: an api already on the port could be a `pnpm dev` watcher.
+            reuseExistingServer: !process.env.CI,
+            timeout: 180_000,
+            // Show the server's output, so a server that never comes up (or restarts) explains itself.
+            stdout: 'pipe' as const,
+          },
+          {
+            command: `pnpm exec next dev --port ${webPort}`,
+            url: baseURL,
+            env: { API_INTERNAL_URL: apiURL, PUBLIC_URL: baseURL },
+            reuseExistingServer: true,
+            timeout: 180_000,
+            stdout: 'pipe' as const,
+          },
         ]),
     ...(externalProdUrl
       ? []
@@ -109,8 +106,8 @@ export default defineConfig({
           {
             command: `pnpm exec next start --port ${prodPort}`,
             url: prodBaseURL,
-            // With custom ports the session check must reach this run's api, not the default 3001.
-            ...(customPorts ? { env: { API_INTERNAL_URL: `http://localhost:${apiPort}` } } : {}),
+            // The session check must reach this run's api.
+            env: { API_INTERNAL_URL: apiURL },
             reuseExistingServer: true,
             timeout: 120_000,
           },
