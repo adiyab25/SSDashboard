@@ -8,5 +8,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Spec 0015 AC-26: the refusing fetch, so no test can reach Shopify (test/shopify-fixture-fetch.ts).
+    setupFiles: ['./test/shopify-fixture-setup.ts'],
   },
 });

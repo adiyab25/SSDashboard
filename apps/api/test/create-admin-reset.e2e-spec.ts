@@ -11,6 +11,7 @@ import {
   start,
   stop,
   waitForHttp,
+  TEST_CONNECTOR_SECRET_KEY,
   type RunningProcess,
 } from './support.js';
 
@@ -55,6 +56,7 @@ describe('create-admin --reset-password', { timeout: 120_000 }, () => {
         PATH: process.env.PATH ?? '',
         SYSTEMROOT: process.env.SYSTEMROOT ?? '',
         NODE_ENV: 'production',
+        CONNECTOR_SECRET_KEY: TEST_CONNECTOR_SECRET_KEY,
         ...env,
       },
       encoding: 'utf8',

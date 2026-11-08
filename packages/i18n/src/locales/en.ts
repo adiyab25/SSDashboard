@@ -33,6 +33,7 @@ export const en = {
         settings: 'Settings',
         costRules: 'Cost rules',
         orders: 'Orders',
+        connections: 'Connections',
       },
     },
     modules: {
@@ -1642,6 +1643,7 @@ export const en = {
       license: 'License',
       policy: 'Location owner type',
       orderCostRule: 'Per order cost rule',
+      connection: 'Connected account',
     },
     filters: {
       title: 'Filters',
@@ -1768,6 +1770,7 @@ export const en = {
       orderPartialDeliverySplit: 'Partial delivery recorded',
       orderCollectionRecordedManually: 'Cash collection entered by hand',
       orderPaymentMethodRederived: 'Order payment method corrected',
+      connectionCreated: 'Shopify store connected',
       policyChanged: 'Location owner type policy changed',
       costRuleRecorded: 'Per order cost rule recorded',
       costRuleRecordedInLockedPeriod: 'Per order cost rule recorded in a locked period',
@@ -2345,6 +2348,127 @@ export const en = {
       identityCleanup: 'The nightly sign in cleanup',
       inventoryReconcile: 'The nightly stock ledger check',
       mailSend: 'Sending email',
+      connectorsShopifySync: 'Reading orders and products from Shopify',
+    },
+  },
+  // The connections screens of spec 0015 (AC-1, AC-2, AC-27): the list and the Shopify connect
+  // form. A reason is a plain sentence a manager can act on; nothing here names a secret's value.
+  connections: {
+    title: 'Connections',
+    description: 'The outside accounts the app talks to, and whether each one is working.',
+    newConnection: 'Connect a Shopify store',
+    retry: 'Try again',
+    loadMore: 'Load more',
+    loadError: 'The connections could not be loaded.',
+    tableLabel: 'Connections',
+    columns: {
+      label: 'Name',
+      storeCode: 'Store code',
+      provider: 'Provider',
+      status: 'Status',
+      health: 'Health',
+    },
+    noStore: 'None',
+    emptyTitle: 'No connections yet',
+    emptyBody:
+      'Connect a Shopify store so its orders arrive on their own. Do it on the call with the onboarding person.',
+    reasonPrefix: 'Why:',
+    warningsPrefix: 'Heads up:',
+    providers: {
+      shopify: 'Shopify',
+      bosta: 'Bosta',
+      gateway: 'Payment gateway',
+      meta: 'Meta',
+      whatsapp: 'WhatsApp',
+      telegram: 'Telegram',
+    },
+    statuses: {
+      active: 'Active',
+      paused: 'Paused',
+      restricted: 'Restricted',
+      archived: 'Archived',
+    },
+    health: {
+      connecting: 'Connecting',
+      ok: 'Working',
+      degraded: 'Needs attention',
+      failing: 'Not working',
+    },
+    reasons: {
+      APP_NOT_INSTALLED:
+        'The app is not installed on this store, or the app and the store belong to different Shopify organizations. Install it on this store, and check both are in the same organization.',
+      APP_ORGANIZATION_MISMATCH:
+        'Shopify says the app and the store are in different organizations. Create the app in the same Shopify organization as the store.',
+      CREDENTIALS_REJECTED:
+        'Shopify refused the client id or the client secret. Type them again from the app in the Dev Dashboard.',
+      SCOPES_MISSING:
+        'The app has not been given every access it needs. Add the missing access to the app, release a new version, and install it again.',
+      PROTECTED_DATA_MISSING:
+        'Orders arrive without the customer name, phone, or address. Turn on the protected customer fields in the app and release a new version.',
+      CURRENCY_MISMATCH:
+        'The store sells in a different currency from this install. Orders from it cannot be read.',
+      PUBLIC_URL_NOT_HTTPS:
+        'This install is not reachable over HTTPS, so Shopify cannot send it messages. Ask whoever runs the install to fix its public address.',
+      CREDENTIALS_UNREADABLE:
+        'The saved keys can no longer be opened. The owner has to type the client id and secret again.',
+      SHOP_UNAVAILABLE: 'Shopify could not find or reach this shop. Check the shop domain.',
+      ACCESS_DENIED: 'Shopify refused a read the app needs. Check the access given to the app.',
+      CONNECT_REJECTED:
+        'Shopify refused the connection check for a reason the app cannot name. Check the app and try again.',
+      WEBHOOKS_MISSING:
+        'Some of the messages Shopify should send were not registered. Orders still arrive, but later.',
+      SWEEP_LATE: 'The regular check for missed orders is running late.',
+      READS_FAILING: 'Some orders could not be read from Shopify. They are retried.',
+      NO_STOCK_LOCATION: 'No Shopify location is chosen to hold this store’s stock.',
+      STOCK_AT_UNMAPPED_LOCATION:
+        'Another Shopify location holds stock that the app does not track.',
+      API_VERSION_FELL_FORWARD: 'Shopify answered with a newer API version than the app asked for.',
+    },
+    warnings: {
+      SHOP_TIMEZONE_DIFFERS: 'The shop’s time zone is not the time zone of this install.',
+      APP_OWNED_BY_PERSON:
+        'The app belongs to a person’s Shopify account, not the brand’s organization. If that person leaves, the connection stops.',
+    },
+    form: {
+      title: 'Connect a Shopify store',
+      description:
+        'The owner types the client id and secret here, on the call with the onboarding person. Never send them by message.',
+      back: 'Back to connections',
+      required: 'Required',
+      label: 'Name',
+      labelHint: 'How this connection is called in the app, for example the store’s brand.',
+      storeCode: 'Store code',
+      storeCodeHint:
+        'Up to 32 capital letters, digits, dashes or underscores. It starts orders’ numbers.',
+      shopDomain: 'Shop domain',
+      shopDomainHint: 'Ends with .myshopify.com, for example my-brand.myshopify.com.',
+      clientId: 'Client id',
+      clientSecret: 'Client secret',
+      clientSecretHint:
+        'Typed by the owner. It is saved sealed and never shown again, here or anywhere.',
+      appOwner: 'Who owns the Shopify app',
+      appOwnerOrganization: 'The brand’s Shopify organization',
+      appOwnerPerson: 'A person’s own Shopify account',
+      submit: 'Connect',
+      cancel: 'Cancel',
+      checksTitle: 'If the check fails',
+      checksDescription:
+        'After you connect, the app checks the store. The list then shows one of these reasons.',
+      success: 'Connecting {{label}}. The list shows when the check is done.',
+      errors: {
+        labelRequired: 'Type a name of up to 80 characters.',
+        storeCodeInvalid:
+          'Use 1 to 32 capital letters, digits, dashes or underscores, starting with a letter or digit.',
+        shopDomainInvalid: 'Type the shop domain, for example my-brand.myshopify.com.',
+        clientIdRequired: 'Type the client id.',
+        clientSecretRequired: 'Type the client secret.',
+        SHOP_ALREADY_CONNECTED: 'This shop is already connected.',
+        STORE_CODE_TAKEN: 'This store code is already used. Choose another.',
+        INVALID_SHOP_DOMAIN: 'This is not a shop domain. It ends with .myshopify.com.',
+        INVALID_BODY: 'Some of what you typed was not accepted. Check each field.',
+        FORBIDDEN: 'You may not connect stores.',
+        generic: 'The store could not be connected. Try again.',
+      },
     },
   },
   mail: {

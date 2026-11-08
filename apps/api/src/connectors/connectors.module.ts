@@ -1,15 +1,51 @@
-import { Module } from '@nestjs/common';
+import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { AuditModule } from '../audit/audit.module.js';
+import { ChannelsModule } from '../channels/channels.module.js';
+import { ChannelsService } from '../channels/channels.service.js';
+import { PlatformModule } from '../platform/platform.module.js';
+import { ConnectionSecrets } from './connections/connection-secrets.js';
+import { ConnectionStores } from './connections/connection-stores.js';
+import { ConnectionsController } from './connections/connections.controller.js';
+import { ConnectionsService } from './connections/connections.service.js';
 import { ConnectorsService } from './connectors.service.js';
+import { ShopifyHookVerifier } from './hooks/shopify-hook-verifier.js';
+import { ShopifyHooksController } from './hooks/shopify-hooks.controller.js';
+import { ShopifyHooksService } from './hooks/shopify-hooks.service.js';
 
 /**
- * The connectors module (spec 0015), as a stand-in: today only `ConnectorsService` with the
- * outbound command reads and `writeBackAvailable` that spec 0013 milestone 2 needs, plus the four
- * `OutboundCommand*` event classes. It owns the connector tables (`connections`,
- * `outbound_commands`, and the rest in `table-ownership.ts`) and has no routes yet; spec 0015
- * task 13 adds the outbound framework. It must never import the orders module (orders imports it).
+ * The connectors module (spec 0015), in the api and the worker alike: `ConnectorsService` (the
+ * outbound command reads and `writeBackAvailable` spec 0013 needs), the four `OutboundCommand*`
+ * event classes, and from task 6 the connections: `ConnectionsController` (`/api/connections`),
+ * `ConnectionsService`, `ConnectionSecrets` (the only place a stored secret opens), and the
+ * `ConnectionStoreSource` it registers with `ChannelsService` when it starts, so channels never
+ * reads `connections`; from task 7 the Shopify hook (`ShopifyHooksController`,
+ * `POST /api/hooks/shopify/:connectionId`), its signature check (`ShopifyHookVerifier`, run by
+ * `mountHooks` before the guards), and the inbox writer (`ShopifyHooksService`). It owns the
+ * connector tables (`table-ownership.ts`). It must never import the orders module (orders imports
+ * it), and never calls Shopify: only `ConnectorsWorkerModule`'s jobs do.
  */
 @Module({
-  providers: [ConnectorsService],
-  exports: [ConnectorsService],
+  imports: [AuditModule, ChannelsModule, PlatformModule],
+  controllers: [ConnectionsController, ShopifyHooksController],
+  providers: [
+    ConnectorsService,
+    ConnectionsService,
+    ConnectionSecrets,
+    ConnectionStores,
+    ShopifyHookVerifier,
+    ShopifyHooksService,
+  ],
+  exports: [ConnectorsService, ConnectionSecrets, ShopifyHookVerifier],
 })
-export class ConnectorsModule {}
+export class ConnectorsModule implements OnModuleInit {
+  /** Takes the channels service and the store source it registers there. */
+  constructor(
+    @Inject(ChannelsService) private readonly channels: ChannelsService,
+    @Inject(ConnectionStores) private readonly stores: ConnectionStores,
+  ) {}
+
+  /** Registers the connection store source once per process (spec 0015 *Exported services*). */
+  onModuleInit(): void {
+    this.channels.registerConnectionStores(this.stores);
+  }
+}

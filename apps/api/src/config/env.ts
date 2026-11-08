@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { existsSync } from 'node:fs';
 import { z } from 'zod';
 
@@ -70,6 +71,32 @@ const blankIsUnset = <T extends z.ZodType>(schema: T) =>
  */
 const cookieHostname = (url: string): string =>
   new URL(url).hostname.toLowerCase().replace(/\.+$/, '');
+
+/**
+ * The 32 bytes of a connector secret key (spec 0015, AC-2), or undefined when the text is not one.
+ * Two spellings are accepted: base64 (standard or url safe, padding optional) of exactly 32 bytes,
+ * what `pnpm bootstrap` writes, and 64 hex characters, what `deploy/bootstrap.sh` writes for every
+ * install secret. The two never overlap: 32 bytes are 43 or 44 base64 characters. Never logs or
+ * echoes the text; `connection-secrets.ts` is the only other reader.
+ */
+export function connectorKeyBytes(text: string): Buffer | undefined {
+  const value = text.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return Buffer.from(value, 'hex');
+  if (!/^[A-Za-z0-9+/_-]{43}=?$/.test(value)) return undefined;
+  const bytes = Buffer.from(value.replaceAll('-', '+').replaceAll('_', '/'), 'base64');
+  return bytes.length === 32 ? bytes : undefined;
+}
+
+/** A connector secret key: optional and blank as unset here; the cross field rules require it. */
+const connectorKey = blankIsUnset(
+  z
+    .string()
+    .refine(
+      (value) => connectorKeyBytes(value) !== undefined,
+      '32 random bytes, base64 (openssl rand -base64 32) or 64 hex characters',
+    )
+    .optional(),
+);
 
 /**
  * Every variable any entry point reads, without the cross field rules. The api and worker parse
@@ -188,6 +215,35 @@ const EnvFields = z.object({
   SMTP_PASSWORD: optionalText,
   /** The Postmark server token. The sender must be verified in Postmark before the first send. */
   POSTMARK_SERVER_TOKEN: optionalText,
+  /**
+   * Seals each connection's Shopify credentials with AES-256-GCM (spec 0015, AC-2): 32 random
+   * bytes, base64 or hex (`connectorKeyBytes`). Read by the api and the worker through
+   * `ConnectionSecrets` only. Required when `NODE_ENV` is `production`; elsewhere it may be unset,
+   * and sealing or opening then throws `ConnectorSecretKeyMissing`. Losing it makes every stored
+   * credential unreadable (the owner types the keys again); rotate it with
+   * `CONNECTOR_SECRET_KEY_PREVIOUS`.
+   */
+  CONNECTOR_SECRET_KEY: connectorKey,
+  /**
+   * Optional, only during a rotation: the key `CONNECTOR_SECRET_KEY` replaced. Credentials sealed
+   * under it still open, and the re-encrypt job moves them to the current key. Must differ from it.
+   */
+  CONNECTOR_SECRET_KEY_PREVIOUS: connectorKey,
+  /**
+   * Development and test only (spec 0015, AC-26): the origin of the Shopify fixture replay server,
+   * which the Shopify client calls instead of `https://<shop>`. Refused when `NODE_ENV` is
+   * `production`. A trailing slash is dropped.
+   */
+  SHOPIFY_MOCK_ORIGIN: blankIsUnset(
+    z
+      .url({ protocol: /^https?$/ })
+      .transform((value) => value.replace(/\/+$/, ''))
+      .refine(
+        (value) => new URL(value).pathname === '/',
+        'SHOPIFY_MOCK_ORIGIN must not have a path',
+      )
+      .optional(),
+  ),
   /** The release version, set in the app image. */
   APP_VERSION: z.string().default('0.0.0-dev'),
   /** The install's name shown in the back office header. Blank counts as unset. */
@@ -213,6 +269,32 @@ const EnvSchema = EnvFields.superRefine((env, ctx) => {
       !URL.canParse(env.PUBLIC_URL) ||
       cookieHostname(env.PORTAL_ORIGIN) !== cookieHostname(env.PUBLIC_URL),
     'PORTAL_ORIGIN must be a different host name from PUBLIC_URL',
+  );
+  // Spec 0015 AC-2: an install never runs without its credentials key; development and test may.
+  need(
+    'CONNECTOR_SECRET_KEY',
+    env.NODE_ENV !== 'production' || env.CONNECTOR_SECRET_KEY !== undefined,
+    'Required when NODE_ENV is production',
+  );
+  need(
+    'CONNECTOR_SECRET_KEY_PREVIOUS',
+    env.CONNECTOR_SECRET_KEY_PREVIOUS === undefined || env.CONNECTOR_SECRET_KEY !== undefined,
+    'Set only together with CONNECTOR_SECRET_KEY',
+  );
+  need(
+    'CONNECTOR_SECRET_KEY_PREVIOUS',
+    env.CONNECTOR_SECRET_KEY_PREVIOUS === undefined ||
+      env.CONNECTOR_SECRET_KEY === undefined ||
+      !connectorKeyBytes(env.CONNECTOR_SECRET_KEY_PREVIOUS)?.equals(
+        connectorKeyBytes(env.CONNECTOR_SECRET_KEY) ?? Buffer.alloc(0),
+      ),
+    'Must differ from CONNECTOR_SECRET_KEY',
+  );
+  // Spec 0015 AC-26: the replay server never stands in for Shopify on an install.
+  need(
+    'SHOPIFY_MOCK_ORIGIN',
+    env.NODE_ENV !== 'production' || env.SHOPIFY_MOCK_ORIGIN === undefined,
+    'Refused when NODE_ENV is production',
   );
   if (env.MAIL_DRIVER === 'none') return;
   need('MAIL_FROM', env.MAIL_FROM !== undefined, `Required when MAIL_DRIVER is ${env.MAIL_DRIVER}`);

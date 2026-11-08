@@ -240,17 +240,17 @@ const ENTRY_POINTS = [
   {
     service: 'api',
     file: 'main.ts',
-    required: ['BETTER_AUTH_SECRET', 'DATABASE_URL', 'PUBLIC_URL'],
+    required: ['BETTER_AUTH_SECRET', 'CONNECTOR_SECRET_KEY', 'DATABASE_URL', 'PUBLIC_URL'],
   },
   {
     service: 'api',
     file: 'create-admin.ts',
-    required: ['BETTER_AUTH_SECRET', 'DATABASE_URL', 'PUBLIC_URL'],
+    required: ['BETTER_AUTH_SECRET', 'CONNECTOR_SECRET_KEY', 'DATABASE_URL', 'PUBLIC_URL'],
   },
   {
     service: 'worker',
     file: 'worker.ts',
-    required: ['BETTER_AUTH_SECRET', 'DATABASE_URL', 'PUBLIC_URL'],
+    required: ['BETTER_AUTH_SECRET', 'CONNECTOR_SECRET_KEY', 'DATABASE_URL', 'PUBLIC_URL'],
   },
   { service: 'migrate', file: 'migrate.ts', required: ['MIGRATION_DATABASE_URL'] },
 ];
@@ -310,6 +310,8 @@ describe('deploy/compose.yaml gives each entry point the env it validates', () =
       'BETTER_AUTH_SECRET',
       'SMTP_PASSWORD',
       'POSTMARK_SERVER_TOKEN',
+      'CONNECTOR_SECRET_KEY',
+      'CONNECTOR_SECRET_KEY_PREVIOUS',
     ]) {
       expect(migrate, `migrate must not receive ${name}`).not.toHaveProperty(name);
     }

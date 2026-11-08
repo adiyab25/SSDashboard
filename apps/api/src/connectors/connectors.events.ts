@@ -1,4 +1,4 @@
-import type { OutboundLinkedType } from '@ssdashboard/contracts';
+import type { InboundSubject, OutboundLinkedType } from '@ssdashboard/contracts';
 
 /**
  * The public events of the outbound commands (spec 0015 AC-24, its exported service table): one
@@ -32,3 +32,26 @@ export class OutboundCommandFailed extends OutboundCommandEvent {}
 
 /** A person closed a failed command (retried, fixed in the provider, or the edit undone). */
 export class OutboundCommandResolved extends OutboundCommandEvent {}
+
+/**
+ * An inbox event ended `failed` (spec 0015 AC-8, its exported service table): the mapper or the
+ * orders module could not apply what Shopify holds, so nothing of it was written. Published with
+ * `DomainEvents.publish(tx, event)` in the transaction that marks the event failed; feature 17
+ * turns it into one task per order for operations. Ids, the Shopify order name, and a code only,
+ * never a read value or provider text (Law 151).
+ */
+export class InboundEventFailed {
+  /** Takes the connection, the inbox event, its subject, and the failure code. */
+  constructor(
+    readonly connectionId: string,
+    readonly eventId: string,
+    /** The inbox subject type, `order` in milestone 1. */
+    readonly subjectType: InboundSubject,
+    /** The Shopify gid of the subject, or null when the delivery named none. */
+    readonly subjectExternalId: string | null,
+    /** The Shopify order name (`#1001`) when the read back gave one, else null. */
+    readonly subjectLabel: string | null,
+    /** An upper case code (`ORDER_NUMBER_TAKEN`, `ORDER_UNREADABLE`), never provider text. */
+    readonly failureCode: string,
+  ) {}
+}

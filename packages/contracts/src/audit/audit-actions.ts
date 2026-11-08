@@ -315,6 +315,18 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.orderPaymentMethodRederived',
     proof: ORDERS_PROOF,
   },
+  // Spec 0015 AC-1 (task 6): a manager connects a Shopify store. The record id is
+  // `connections.id`, the label the store code; the diff holds the label, store code, shop
+  // domain, and app owner, never a credential or a token (AC-2).
+  'connection.created': {
+    module: 'connectors',
+    recordType: 'connection',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.connectionCreated',
+    proof: 'apps/api/test/shopify-connect.e2e-spec.ts',
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */

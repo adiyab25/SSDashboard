@@ -1,0 +1,59 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "connect-protected-data-missing",
+    "step": "most recent order with ship to name, phone, and address null (protected customer fields not granted); the null shape is not verified on shopify.dev",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/orders",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Order",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/MailingAddress",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderSortKeys"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": "ConnectLatestOrder",
+    "variables": null,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "orders": {
+          "nodes": [
+            {
+              "id": "gid://shopify/Order/5550000000001",
+              "shippingAddress": {
+                "name": null,
+                "phone": null,
+                "address1": null
+              }
+            }
+          ]
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 4,
+          "actualQueryCost": 3,
+          "throttleStatus": {
+            "maximumAvailable": 1000,
+            "currentlyAvailable": 991,
+            "restoreRate": 50
+          }
+        }
+      }
+    }
+  }
+}

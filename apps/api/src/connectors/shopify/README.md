@@ -1,34 +1,75 @@
 # Shopify connector
 
-The adapter between the shared core and a brand's Shopify store (Admin GraphQL API, version `2026-10`). Today only its synthetic fixtures exist; the client, mapper, and jobs arrive with spec 0015 tasks 4 to 7.
+The adapter between the shared core and a brand's Shopify store (Admin GraphQL API, version `2026-10`). Today its synthetic fixtures, the GraphQL client, the query texts, the order mapper, the connect job (spec 0015 task 6), and the inbox job (task 7, with the hook in [../hooks/](../README.md)) exist; the other jobs arrive with task 8 onwards.
 
 ## Owns
 
 - `fixtures/`: hand written, synthetic Shopify Admin GraphQL order recordings for API version `2026-10`, one folder per scenario, to be replaced by recordings from a development store ([fixtures README](fixtures/README.md)).
-- Nothing else yet: no client, no mapper, no job, no table, no controller. Each lands with its spec 0015 task.
+- `shopify-client.ts` (spec 0015 task 5, AC-25): `ShopifyClient`, one per process, with per connection state: the client credentials token cache (fetched again 60 seconds before expiry; a legacy access token used as is), the throttle reading from `extensions.cost.throttleStatus` and a wait before a call whose expected cost exceeds what is available, `THROTTLED` retried up to 5 times and HTTP 429 after `Retry-After` (else 1 second), a 30 second timeout, one call per connection at a time, `API_VERSION_FELL_FORWARD` when `X-Shopify-API-Version` differs from `SHOPIFY_API_VERSION` (`2026-10`), and typed errors (`ShopifyTransientError`, `ShopifyRejectedError`, with `APP_NOT_INSTALLED`, `APP_ORGANIZATION_MISMATCH`, `CREDENTIALS_REJECTED` for a refused token) whose messages and logs carry codes only. Calls go to `https://<shop>` or `SHOPIFY_MOCK_ORIGIN`. Provided once per worker process by `ConnectorsWorkerModule` (`connectors.module.ts`); the api never gets one.
+- `shopify-queries.ts`: every query and mutation text, one constant each with its operation name (connect: shop, access scopes, locations, latest order for the protected data check, webhook subscriptions list and create; the order read back `ORDER_READ`, operation `OrderRead`, variable `id`, with its page sizes and cost estimate).
+- `order-mapper.ts` (spec 0015 Inbound processing item 4, AC-9, AC-10, AC-12, AC-13, _Value sourcing_): the one order mapper, pure (no database, clock, log, or Shopify call). `ShopifyOrder`, the zod schema of exactly what `ORDER_READ` selects, and `parseShopifyOrder` for the inbox job; `mapShopifyOrder` (to spec 0013's `ChannelOrderInput`, with the go live or found first states and the actor kind they need), `mapShopifyOrderSnapshot` (to `ChannelOrderSnapshot`), `foundStatesOf`, `cancelReasonCodeOf` (`channel.` plus the lower case reason, else `channel.other`), `firstActiveFulfillmentOf`, and `replacementInput` (`<name>-R<n>`, `<gid>:R<n>`). Each result also carries the unmapped lines, the unmapped gateway names, every discount code, and the flags `test_order`, `gift_tag_not_free`, and `gift_reason_not_a_gift_code` for the job to record. It throws only `ShopifyOrderMappingError`, a code plus field paths, never a read value (Law 151).
+- `shopify-app.ts` (task 6): `SHOPIFY_REQUIRED_SCOPES` (the 8 slice 1a handles the spec names; the slice 1b refund and return scopes join after task 1 confirms them), `SHOPIFY_WEBHOOK_TOPICS` (the 13 topics), `hookAddress` (`PUBLIC_URL` + `/api/hooks/shopify/<connection id>`), `isHttpsAddress`, and `topicsToCreate` (skips a topic already subscribed to exactly that address).
+- `connect-health.ts` (task 6, AC-1): `decideConnectHealth`, the pure verdict of a connect check: `failing` with the first of `SCOPES_MISSING` (with the missing handles), `PROTECTED_DATA_MISSING` (the latest order lacks a ship to name, phone, or address line; nothing with no order yet), `CURRENCY_MISMATCH` (against the `currency` setting), `PUBLIC_URL_NOT_HTTPS`, else `ok`; the warnings `SHOP_TIMEZONE_DIFFERS` (against the `timezone` setting) and `APP_OWNED_BY_PERSON` never change the health.
+- `connector-shopify.queue.ts` (tasks 6 and 7): `CONNECTOR_SHOPIFY_QUEUE`, the one pg-boss queue `connector-shopify` owned by `connectors.shopify.sync` (retry 5 times with backoff from 30 seconds, expiry 300 seconds, worker `groupConcurrency: 1`), `ShopifyJobData` (the kinds `connect` and `inbox`: the connection id, and for `inbox` the event id, nothing else), `INBOX_JOB_PRIORITY` (20), and `connectionGroup` (`group: { id: connectionId }` on every send).
+- `connector-shopify.worker.ts` (task 7): `ConnectorShopifyWorker`, which declares the queue and its one handler through the worker's `JobRegistry` and runs each job by its kind (`ConnectJob.connect`, `InboxJob.run`).
+- `inbox.job.ts` (task 7, AC-5 to AC-9, Inbound processing item 3): `InboxJob`. It skips unless the event is `received`; a paused connection leaves it `received` and completes (resume is task 16). `app/uninstalled` sets health `failing` `APP_NOT_INSTALLED`. An order topic reads the order back with `ORDER_READ` before any unit of work: a transient error counts an attempt and throws (pg-boss retries; the event stays `received`), and once an event of the connection has waited unread 3 hours with a failed attempt, health turns `degraded` `READS_FAILING`, cleared by the next good read; a token refusal sets health `failing` with its code and the event `failed`. Inside `OrderTransactions.run` it locks the event and the order mapping again: a test order is `ignored` `test_order`; a known order is `ignored` `stale` (snapshot not newer than `external_version`) or `update_deferred` (newer; nothing changes and the version stays, lead decision D1: task 9 applies edits, cancels, and fulfillment); a new order writes its mapping first (`state`: `appliedLineIds`, `discountCodes`, `unmappedGateways`, and `unmappedLines` when any), then `OrderIntake.createFromChannel` (actor `system_job` `connectors.shopify.inbox` with the job id, or `import` with the event id as the run when the mapper says so), the mapping's `local_id`, and `last_order_at`; with a listed gift tag on a paid order the outcome is `gift_tag_not_free`. An empty read back is `ignored` `not_visible`. Every other `received` event of the same order becomes `processed` `coalesced` in the same transaction, and the event takes the order name as `subject_label`. A `ShopifyOrderMappingError` or an orders domain error rolls the unit back, and a separate transaction marks the event `failed` with the upper case code (`ORDER_NUMBER_TAKEN` from `OrderNumberTaken`) and publishes `InboundEventFailed`; any other error is retried. The context comes from the connection (`config.altPhoneAttribute`, `config.gatewayMethods`, `go_live_at`, its store's own channel), the settings `sales_tax_rate` (as `defaultTaxRate`) and `shopify_gift_tags`, and the variant mappings in `connection_external_ids` (none before task 8: lines stay unmapped; the product read before mapping, review M8, waits for task 8). When the latest finished connect run saw no order (`counts.latestOrderChecked` false), the first applied order without a ship to name, phone, or address line sets health `degraded` `PROTECTED_DATA_MISSING` (while health is `ok`).
+- `connect.job.ts` (task 6, AC-1, AC-2): `ConnectJob`, the `connect` kind (run by `ConnectorShopifyWorker`): opens the sealed credentials, gets the token, reads the shop, the scopes (stopping there when one is missing), the locations (counted only: the stock location mapping and the other locations report are later tasks), and the latest order (reduced to present or not at once), decides the health, and when it passes registers the missing webhook subscriptions (a refused one ends `degraded` with `WEBHOOKS_MISSING`). The token answers map to `APP_NOT_INSTALLED`, `APP_ORGANIZATION_MISMATCH`, `CREDENTIALS_REJECTED`; keys that no longer open to `CREDENTIALS_UNREADABLE`; other refusals to `SHOP_UNAVAILABLE`, `ACCESS_DENIED`, or `CONNECT_REJECTED`. It fills the store's names from the shop name through `ChannelsService.renameStore` the first time it reaches the shop (`api_version` still null, so names a manager edited later are kept), stores `config.shopTimezone` and `api_version`, and writes a `connect` sync run (status, counts: locations, online locations, missing scopes, topics subscribed and created; cost points). A transient error marks the run failed with its code and throws, so pg-boss retries.
 
 ## Never touches
 
 - Other modules' tables, the stock ledger, and the owner database role.
-- Anything outside `shopify/` in the connectors module: the stand-in described in [../README.md](../README.md) stays as it is.
+- The connections routes and tables outside its jobs: `connections/` owns them (see [../README.md](../README.md)). A Shopify call never happens outside a job of the `connector-shopify` queue.
 - A real shop domain, token, secret, or customer's data: fixtures use invented people and `fixture-store.myshopify.com` only.
 
 ## How to test
 
-Nothing runs against these files yet. To check them:
-
 ```bash
+pnpm --filter @ssdashboard/api exec vitest run src/connectors/shopify
 pnpm exec prettier --check apps/api/src/connectors/shopify
 ```
 
-and parse every JSON file as the command in the [fixtures README](fixtures/README.md) shows. Spec 0013's orders intake e2e will read them; no test calls Shopify.
+The client tests replay the `connect-*` and `client-*` fixtures through the refusing `fetch` (`apps/api/test/shopify-fixture-fetch.ts`, installed by every api vitest config) and use a fake clock; the cost test reads every recording. No test calls Shopify.
+
+`order-mapper.spec.ts` maps every order fixture through `parseShopifyOrder` (changing an in memory copy where no fixture holds the case: gift tags, a test order, control characters, truncated reads). Spec 0013's orders intake e2e (`apps/api/test/orders-intake.e2e-spec.ts`, build first, needs Postgres) maps the same fixtures with the real mapper through `apps/api/test/shopify-order-reader.ts`:
+
+```bash
+pnpm --filter @ssdashboard/api build
+pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/orders-intake.e2e-spec.ts
+```
+
+and parse every JSON file as the command in the [fixtures README](fixtures/README.md) shows.
+
+`connect-health.spec.ts` holds the health decision and the subscription rules. The connect e2e suite (build first, needs Postgres) connects stores against the `connect-*` fixtures with the real api and worker in process:
+
+```bash
+pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/shopify-connect.e2e-spec.ts
+```
+
+Webhook registrations carry the new connection's id, which no recording can know, so that suite answers `WebhookSubscriptionCreate` from the recorded `connect-ok/07` answer with the request's topic and address put in, and asserts every registration.
+
+The hook suite (build first, needs Postgres) runs the inbox job against the order fixtures and the synthetic inbox scenarios (`order-not-visible`, `order-test-order`, `order-read-server-error`, `order-protected-data-missing`), answering the token exchange from the recorded `connect-ok/01` grant:
+
+```bash
+pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/shopify-hook.e2e-spec.ts
+```
 
 ## Governing spec
 
-- [0015 Shopify connector](../../../../../docs/specs/0015-shopify-connector/index.md) (AC-26 fixtures, the order mapping rows of *Value sourcing*)
+- [0015 Shopify connector](../../../../../docs/specs/0015-shopify-connector/index.md) (AC-26 fixtures, the order mapping rows of _Value sourcing_)
 - [0013 Orders and their state machines](../../../../../docs/specs/0013-orders-state-machines/index.md) (milestone 3, channel intake)
 - [Scope feature 13](../../../../../docs/scope/index.md), the open box "Re-record fixtures from a Shopify dev store"
 
 ## Decisions
 
 - **Synthetic fixtures** (owner ruling 2026-11-07): until a Shopify development store exists, fixtures are hand written and shaped per shopify.dev for `2026-10`; every file says "synthetic, to be replaced by recordings". No ADR yet.
+- **Order mapper choices** (integrations lane, 2026-11-08, no ADR yet): a read that may be short (line items with a next page, a full page of transactions or fulfillments) is refused, never mapped, because a short snapshot would cancel the unread lines; a gift tag matches without regard to case; a gift tag whose setting value is not a `GiftReasonCode` maps as `other` and is flagged; a line without tax lines gets the context's `defaultTaxRate`, which the inbox job fills from the `sales_tax_rate` setting (lead decision D8, 2026-11-08), else `0.00`; an active fulfillment is one not `CANCELLED`, `ERROR`, or `FAILURE`; the found cash of a fulfilled order compares Shopify's `currentTotalPriceSet` with the prepayment.
+
+## Carry-overs
+
+Settled for the order mapper on 2026-11-08 from the `2026-10` reference (`https://shopify.dev/docs/api/admin-graphql/2026-10/`, pages read with WebFetch that day):
+
+- **D4, `Customer.phone` deprecated.** `objects/Customer` marks `phone` (`String`) deprecated and documents `defaultPhoneNumber` (`CustomerPhoneNumber`, "The customer's default phone number"); `objects/CustomerPhoneNumber` documents `phoneNumber: String!`. `ORDER_READ` selects `customer { defaultPhoneNumber { phoneNumber } phone }`; the mapper reads `defaultPhoneNumber.phoneNumber` first and the deprecated `phone` only as a fallback, in one accessor (`customerPhoneOf`). Every fixture customer now carries `defaultPhoneNumber` beside `phone`. Drop `phone` from the query when a pinned version removes it.
+- **D5, `LineItem.fulfillableQuantity` deprecated.** `objects/LineItem` lists it as deprecated, with no replacement named; `unfulfilledQuantity` (`Int!`, "The number of units not yet fulfilled") and `currentQuantity` (`Int!`) are current. `ORDER_READ` selects `unfulfilledQuantity` for task 9a and never `fulfillableQuantity`.
+- **D6, discount applications.** `interfaces/DiscountApplication` documents `targetType: DiscountApplicationTargetType!` (with `allocationMethod`, `index`, `targetSelection`, `value`); `objects/DiscountCodeApplication` implements it with `code: String!`; `enums/DiscountApplicationTargetType` is `LINE_ITEM` or `SHIPPING_LINE`; `connections/DiscountApplicationConnection` has `nodes` and `pageInfo`. `ORDER_READ` selects `discountApplications(first: 10) { nodes { __typename targetType ... on DiscountCodeApplication { code } } pageInfo { hasNextPage } }`, and `discountCode` is the first of `discountCodes` that is not a `SHIPPING_LINE` code application. The fixtures now carry `discountApplications` (each code as `LINE_ITEM`) and `lineItems.pageInfo`.
+- **Also read for the query**: `objects/Order` (every selected field present on `2026-10`, none deprecated), `objects/TaxLine` (`rate` and `ratePercentage` are `Float`), `objects/OrderTransaction` and `enums/OrderTransactionKind`, `enums/OrderTransactionStatus`, `objects/Fulfillment` and `enums/FulfillmentStatus` (`OPEN` and `PENDING` deprecated), `enums/OrderCancelReason`, `objects/CustomerVisit`, `objects/UTMParameters`, `objects/CustomerJourneySummary`, `objects/MailingAddress`, `objects/DiscountAllocation`, `objects/MoneyV2` and `scalars/Decimal` (serialized as a string, may carry 3 decimals: the mapper rounds to cents half away from zero), `connections/LineItemConnection`, `objects/PageInfo`, and the cost rules on `https://shopify.dev/docs/apps/build/apis/graphql-admin/rate-limits` (object 1, scalar 0, connection sized by `first`, at most 1,000 points a query).
+- **Settled by D8** (2026-11-08): a line without tax lines takes the `sales_tax_rate` setting, read by the inbox job and passed as `defaultTaxRate`. **Open**: the shipping tax rate is left null (orders falls back to the setting).

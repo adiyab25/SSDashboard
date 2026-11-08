@@ -1,0 +1,31 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "connect-currency-mismatch",
+    "step": "client credentials grant answered with a token (token value invented)",
+    "shapedFrom": [
+      "https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/client-credentials-grant"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/oauth/access_token",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": null,
+    "variables": null,
+    "headers": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "access_token": "fixture-access-token-not-real-0001",
+      "scope": "read_orders,write_orders,write_order_edits,read_products,read_customers,read_inventory,write_inventory,read_locations",
+      "expires_in": 86399
+    }
+  }
+}

@@ -4,7 +4,8 @@ import { defineModule, type ModuleDefinition } from './module-definition.js';
  * Every api module and capability whose code exists today (spec 0009, AC-6, *Module registry*,
  * milestone 3): the twelve core modules (`channels`, `customers`, and `orders` joined with their
  * code from specs 0015, 0014, and 0013; `connectors` lands as the stand-in module of spec 0013
- * milestone 2, carrying only the outbound command reads, with none of its capabilities yet) and
+ * milestone 2 with the outbound command reads, and gains `connectors.shopify.sync` with spec 0015
+ * task 6's connect job) and
  * the five core job capabilities. A module or capability row lands only with the code that does
  * its work (the `connectors` capabilities with spec 0015, `consignment`, the orders capabilities,
  * and the Operations and Warehouse capabilities arrive with their features, exactly as the spec's
@@ -145,7 +146,20 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = Object.freeze([
     requires: ['channels'],
     label: 'modules.connectors.label',
     description: 'modules.connectors.description',
-    capabilities: [],
+    capabilities: [
+      // Spec 0015 task 6: owns the shared `connector-shopify` queue (the connect job today; the
+      // inbox, sweeps, backfill, and hourly check join it in later tasks) and serves
+      // `ConnectionsController`. Core, so it never stops; its backfill is declared with the
+      // sweep (task 12), never called by the platform.
+      {
+        key: 'connectors.shopify.sync',
+        bundle: 'core',
+        kind: 'read',
+        windDown: 'none',
+        workOf: [],
+        label: 'modules.capabilities.connectorsShopifySync',
+      },
+    ],
   }),
   defineModule({
     key: 'customers',

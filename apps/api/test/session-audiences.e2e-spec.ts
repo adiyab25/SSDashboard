@@ -32,7 +32,12 @@ import {
 } from '../src/identity/sessions/session-audiences.js';
 import { createFirstAdmin } from '../src/identity/sign-in/first-admin.js';
 import { breakGlassReset } from '../src/identity/sign-in/reset-admin.js';
-import { createScratchDatabase, dropScratchDatabase, freePort } from './support.js';
+import {
+  TEST_CONNECTOR_SECRET_KEY,
+  createScratchDatabase,
+  dropScratchDatabase,
+  freePort,
+} from './support.js';
 
 const PASSWORD = 'Correct-Horse-1';
 
@@ -122,6 +127,7 @@ describe('sessions and audiences', { timeout: 300_000 }, () => {
       DATABASE_URL: appUrl.toString(),
       PUBLIC_URL: base,
       BETTER_AUTH_SECRET: randomBytes(32).toString('base64url'),
+      CONNECTOR_SECRET_KEY: TEST_CONNECTOR_SECRET_KEY,
       MAIL_DRIVER: 'none',
       PORT: String(port),
     });

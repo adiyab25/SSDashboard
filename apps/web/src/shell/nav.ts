@@ -6,6 +6,7 @@ import {
   MapPinIcon,
   PackagePlusIcon,
   PaletteIcon,
+  PlugZapIcon,
   ScrollTextIcon,
   SettingsIcon,
   ShoppingBagIcon,
@@ -97,6 +98,15 @@ export const navItems: readonly NavItem[] = [
     group: 'general',
     needs: 'settings.manage',
     module: 'platform',
+  },
+  {
+    id: 'connections',
+    labelKey: 'shell.nav.items.connections',
+    href: '/connections',
+    icon: PlugZapIcon,
+    group: 'general',
+    needs: 'settings.manage',
+    module: 'connectors',
   },
   {
     id: 'costRules',

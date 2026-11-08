@@ -142,6 +142,7 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     auditDay: '',
     customer: '',
     order: '',
+    connection: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -354,6 +355,37 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'POST /platform/license': {
       needs: ['settings.manage'],
       body: () => ({ envelope: 'not a license' }),
+    },
+    // Spec 0015 task 6: the connections, settings.manage. The connect body has a bad shop domain,
+    // so a manager gets 422 INVALID_SHOP_DOMAIN and nothing is created; the read names a planted
+    // connection (200), and the check an unknown one, so a manager gets 404 and no job is sent.
+    'GET /connections': { needs: ['settings.manage'] },
+    'POST /connections/shopify': {
+      needs: ['settings.manage'],
+      body: () => ({
+        label: 'Sweep store',
+        storeCode: unique('SWC').toUpperCase().slice(0, 32),
+        shopDomain: 'not-a-shop.example.com',
+        clientId: 'sweep-client',
+        clientSecret: 'sweep-secret',
+        appOwner: 'organization',
+      }),
+    },
+    'GET /connections/:id': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${ids.connection}`,
+    },
+    'POST /connections/:id/check': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${randomUUID()}/check`,
+    },
+    // Spec 0015 task 7: the Shopify hook, audience `hook` with no permission (spec 0008 route
+    // mapping: "none, proves itself by signature"). A signed in hat without a Shopify signature
+    // gets the hook's own empty 401 (AC-4) before any guard, so nobody "reaches" it.
+    'POST /hooks/shopify/:connectionId': {
+      needs: 'open',
+      path: () => `/hooks/shopify/${randomUUID()}`,
+      body: () => ({ id: 1 }),
     },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
@@ -582,6 +614,16 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     });
     expect(order.status, JSON.stringify(order.body)).toBe(201);
     ids.order = (order.body as { id: string }).id;
+    // A Shopify connection with its store, planted as the owner (no credentials, no job), so the
+    // connection read answers 200 to a manager.
+    const connection = await api.owner.pool.query<{ id: string }>(
+      `WITH store AS (INSERT INTO stores (code, name, public_name, kind)
+                      VALUES ('SWEEPSHOP', '{"en":"Sweep shop"}', '{"en":"Sweep shop"}', 'shopify')
+                      RETURNING id)
+       INSERT INTO connections (provider, label, store_id, shop_domain)
+       SELECT 'shopify', 'Sweep shop', id, 'sweep-shop.myshopify.com' FROM store RETURNING id`,
+    );
+    ids.connection = connection.rows[0]?.id ?? '';
     ids.staffTarget = (await api.addPerson(['support'])).id;
     ids.partnerTarget = (await api.addPerson(['partner'], { partnerAccountId: ids.accountA })).id;
     // An entry of the planted receipt whose diff carries cost fields, written as the owner (the
@@ -663,7 +705,15 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         // What the spec says, never what the code declares: a route whose declaration drifted
         // from the mapping fails here too, not only in `permission.spec.ts`.
         let denied: string | undefined;
-        if (route.audience === 'portal' || route.audience === 'hook') denied = 'WRONG_AUDIENCE';
+        if (route.audience === 'hook') {
+          // A hook proves itself by signature only (spec 0015 AC-4): without one, the same empty
+          // 401 for every caller, a session cookie or not.
+          if (reply.status !== 401 || reply.body !== null) {
+            problems.push(`expected an empty 401 from a hook: ${where}`);
+          }
+          continue;
+        }
+        if (route.audience === 'portal') denied = 'WRONG_AUDIENCE';
         else if (route.audience === 'staff' || route.audience === 'partner') {
           if (route.audience !== personaAudience) denied = 'WRONG_AUDIENCE';
           else if (

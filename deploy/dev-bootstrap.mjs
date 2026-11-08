@@ -1,7 +1,7 @@
 // One command for a working local setup: `pnpm bootstrap` (after `pnpm install`).
 // 1. Creates .env from .env.example if missing, and adds any variable it lacks. It never changes a
 //    value that is already set (except an S3 key that Garage has retired, see step 3); secrets it
-//    generates are random per machine.
+//    generates are random per machine, including CONNECTOR_SECRET_KEY when it is empty.
 // 2. Starts PostgreSQL, Garage (S3), and Mailpit with Docker Compose and waits until healthy.
 // 3. Gives Garage its storage layout, the dev bucket, and the access key, then writes the key to .env.
 // 4. Stops, with the fix, if the database was migrated by the old migration history (ADR 0003).
@@ -120,6 +120,17 @@ function prepareEnv() {
       ? `kept your .env and added the missing variables: ${added.join(', ')}`
       : 'kept your existing .env (nothing missing)',
   );
+}
+
+/**
+ * Generates the development connector key (spec 0015, AC-2: 32 random bytes, base64) into .env when
+ * it is empty or absent, so connecting a store works locally. Never prints the value, and never
+ * replaces a key that is set: credentials sealed under it would become unreadable.
+ */
+function prepareConnectorKey() {
+  if (fillEnv('CONNECTOR_SECRET_KEY', randomBytes(32).toString('base64'))) {
+    say('  generated CONNECTOR_SECRET_KEY in .env');
+  }
 }
 
 function compose(args, options = {}) {
@@ -349,7 +360,10 @@ if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 
   fail('Docker Compose was not found. Install and start Docker Desktop, then run this again.');
 }
 
-step('checking .env', prepareEnv);
+step('checking .env', () => {
+  prepareEnv();
+  prepareConnectorKey();
+});
 step('starting PostgreSQL, Garage, and Mailpit', () => {
   try {
     compose(['up', '-d', '--wait'], { inherit: true });

@@ -1,6 +1,8 @@
 import {
   CashState,
   ConnectionHealth,
+  ConnectionProvider,
+  ConnectionStatus,
   CustomerExternalIdKind,
   CustomerRiskFlag,
   CustomerRiskFlagSource,
@@ -123,6 +125,8 @@ describe('every database enum with a Zod twin matches its contract', () => {
     ['tax_document', TaxDocument.options],
     ['reservation_status', ReservationStatus.options],
     ['stock_receipt_status', StockReceiptStatus.options],
+    ['connection_provider', ConnectionProvider.options],
+    ['connection_status', ConnectionStatus.options],
     ['connection_health', ConnectionHealth.options],
     ['outbound_linked_type', OutboundLinkedType.options],
     ['inbound_source', InboundSource.options],

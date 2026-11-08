@@ -34,6 +34,7 @@ export const ar: Catalog = {
         audit: 'سجل المراجعة',
         settings: 'الإعدادات',
         costRules: 'قواعد التكلفة',
+        connections: 'الربط',
       },
     },
     modules: {
@@ -1643,6 +1644,7 @@ export const ar: Catalog = {
       license: 'الترخيص',
       policy: 'نوع مالك الموقع',
       orderCostRule: 'قاعدة تكلفة لكل طلب',
+      connection: 'حساب مرتبط',
     },
     filters: {
       title: 'عوامل التصفية',
@@ -1771,6 +1773,7 @@ export const ar: Catalog = {
       orderPartialDeliverySplit: 'تسجيل تسليم جزئي',
       orderCollectionRecordedManually: 'إدخال تحصيل نقدي يدويًا',
       orderPaymentMethodRederived: 'تصحيح طريقة دفع الطلب',
+      connectionCreated: 'ربط متجر Shopify',
       policyChanged: 'تغيير سياسة نوع مالك الموقع',
       costRuleRecorded: 'تسجيل قاعدة تكلفة لكل طلب',
       costRuleRecordedInLockedPeriod: 'تسجيل قاعدة تكلفة لكل طلب في فترة مقفلة',
@@ -2333,6 +2336,121 @@ export const ar: Catalog = {
       identityCleanup: 'التنظيف الليلي لبيانات تسجيل الدخول',
       inventoryReconcile: 'المراجعة الليلية لدفتر المخزون',
       mailSend: 'إرسال البريد الإلكتروني',
+      connectorsShopifySync: 'قراءة الطلبات والمنتجات من Shopify',
+    },
+  },
+  // شاشات الربط في المواصفة 0015 (AC-1 وAC-2 وAC-27): القائمة ونموذج ربط متجر Shopify. السبب جملة
+  // واضحة يستطيع المدير أن يتصرف بناءً عليها، ولا شيء هنا يذكر قيمة سر.
+  connections: {
+    title: 'الربط',
+    description: 'الحسابات الخارجية التي يتصل بها التطبيق، وهل كل واحد منها يعمل.',
+    newConnection: 'ربط متجر Shopify',
+    retry: 'حاول مرة أخرى',
+    loadMore: 'عرض المزيد',
+    loadError: 'تعذّر تحميل الروابط.',
+    tableLabel: 'الروابط',
+    columns: {
+      label: 'الاسم',
+      storeCode: 'رمز المتجر',
+      provider: 'المزوّد',
+      status: 'الحالة',
+      health: 'الصحة',
+    },
+    noStore: 'لا يوجد',
+    emptyTitle: 'لا توجد روابط بعد',
+    emptyBody: 'اربط متجر Shopify لتصل طلباته تلقائيًا. افعل ذلك أثناء المكالمة مع مسؤول التهيئة.',
+    reasonPrefix: 'السبب:',
+    warningsPrefix: 'تنبيه:',
+    providers: {
+      shopify: 'Shopify',
+      bosta: 'بوسطة',
+      gateway: 'بوابة الدفع',
+      meta: 'Meta',
+      whatsapp: 'واتساب',
+      telegram: 'تيليجرام',
+    },
+    statuses: {
+      active: 'نشط',
+      paused: 'متوقف مؤقتًا',
+      restricted: 'مقيّد',
+      archived: 'مؤرشف',
+    },
+    health: {
+      connecting: 'جارٍ الربط',
+      ok: 'يعمل',
+      degraded: 'يحتاج إلى انتباه',
+      failing: 'لا يعمل',
+    },
+    reasons: {
+      APP_NOT_INSTALLED:
+        'التطبيق غير مثبّت على هذا المتجر، أو أن التطبيق والمتجر ينتميان إلى مؤسستين مختلفتين في Shopify. ثبّت التطبيق على هذا المتجر وتأكد أن الاثنين في المؤسسة نفسها.',
+      APP_ORGANIZATION_MISMATCH:
+        'يقول Shopify إن التطبيق والمتجر في مؤسستين مختلفتين. أنشئ التطبيق في مؤسسة Shopify نفسها التي فيها المتجر.',
+      CREDENTIALS_REJECTED:
+        'رفض Shopify معرّف العميل أو سرّ العميل. اكتبهما مرة أخرى من التطبيق في لوحة المطورين.',
+      SCOPES_MISSING:
+        'لم تُمنح للتطبيق كل الصلاحيات التي يحتاجها. أضف الصلاحية الناقصة إلى التطبيق وأصدر نسخة جديدة وثبّته مرة أخرى.',
+      PROTECTED_DATA_MISSING:
+        'تصل الطلبات بلا اسم العميل أو هاتفه أو عنوانه. فعّل حقول العميل المحمية في التطبيق وأصدر نسخة جديدة.',
+      CURRENCY_MISMATCH: 'يبيع المتجر بعملة تختلف عن عملة هذا التثبيت، فلا يمكن قراءة طلباته.',
+      PUBLIC_URL_NOT_HTTPS:
+        'لا يمكن الوصول إلى هذا التثبيت عبر HTTPS، فلا يستطيع Shopify إرسال رسائل إليه. اطلب ممّن يشغّل التثبيت أن يصلح عنوانه العام.',
+      CREDENTIALS_UNREADABLE:
+        'لم يعد ممكنًا فتح المفاتيح المحفوظة. على المالك أن يكتب معرّف العميل والسرّ مرة أخرى.',
+      SHOP_UNAVAILABLE: 'تعذّر على Shopify العثور على هذا المتجر أو الوصول إليه. راجع نطاق المتجر.',
+      ACCESS_DENIED: 'رفض Shopify قراءة يحتاجها التطبيق. راجع الصلاحيات الممنوحة للتطبيق.',
+      CONNECT_REJECTED:
+        'رفض Shopify فحص الربط لسبب لا يستطيع التطبيق تسميته. راجع التطبيق وحاول مرة أخرى.',
+      WEBHOOKS_MISSING:
+        'لم تُسجَّل بعض الرسائل التي يجب أن يرسلها Shopify. ما زالت الطلبات تصل لكن متأخرة.',
+      SWEEP_LATE: 'الفحص الدوري للطلبات الفائتة متأخر.',
+      READS_FAILING: 'تعذّرت قراءة بعض الطلبات من Shopify. ستُعاد المحاولة.',
+      NO_STOCK_LOCATION: 'لم يُختر موقع في Shopify ليحمل مخزون هذا المتجر.',
+      STOCK_AT_UNMAPPED_LOCATION: 'موقع آخر في Shopify يحمل مخزونًا لا يتتبعه التطبيق.',
+      API_VERSION_FELL_FORWARD: 'ردّ Shopify بإصدار واجهة أحدث من الذي طلبه التطبيق.',
+    },
+    warnings: {
+      SHOP_TIMEZONE_DIFFERS: 'المنطقة الزمنية للمتجر ليست المنطقة الزمنية لهذا التثبيت.',
+      APP_OWNED_BY_PERSON:
+        'التطبيق مملوك لحساب شخص في Shopify لا لمؤسسة العلامة. إن غادر ذلك الشخص يتوقف الربط.',
+    },
+    form: {
+      title: 'ربط متجر Shopify',
+      description:
+        'يكتب المالك معرّف العميل والسرّ هنا أثناء المكالمة مع مسؤول التهيئة. لا ترسلهما أبدًا في رسالة.',
+      back: 'العودة إلى الروابط',
+      required: 'مطلوب',
+      label: 'الاسم',
+      labelHint: 'الاسم الذي يظهر به هذا الربط في التطبيق، مثل اسم علامة المتجر.',
+      storeCode: 'رمز المتجر',
+      storeCodeHint: 'حتى 32 حرفًا كبيرًا أو رقمًا أو شرطة أو شرطة سفلية. تبدأ به أرقام الطلبات.',
+      shopDomain: 'نطاق المتجر',
+      shopDomainHint: 'ينتهي بـ .myshopify.com مثل my-brand.myshopify.com.',
+      clientId: 'معرّف العميل',
+      clientSecret: 'سرّ العميل',
+      clientSecretHint: 'يكتبه المالك. يُحفظ مختومًا ولا يظهر مرة أخرى، لا هنا ولا في أي مكان.',
+      appOwner: 'من يملك تطبيق Shopify',
+      appOwnerOrganization: 'مؤسسة Shopify الخاصة بالعلامة',
+      appOwnerPerson: 'حساب شخص في Shopify',
+      submit: 'ربط',
+      cancel: 'إلغاء',
+      checksTitle: 'إذا فشل الفحص',
+      checksDescription: 'بعد الربط يفحص التطبيق المتجر. ثم تعرض القائمة أحد هذه الأسباب.',
+      success: 'جارٍ ربط {{label}}. ستظهر النتيجة في القائمة عند انتهاء الفحص.',
+      errors: {
+        labelRequired: 'اكتب اسمًا لا يزيد على 80 حرفًا.',
+        storeCodeInvalid:
+          'استخدم من 1 إلى 32 حرفًا كبيرًا أو رقمًا أو شرطة أو شرطة سفلية، على أن يبدأ بحرف أو رقم.',
+        shopDomainInvalid: 'اكتب نطاق المتجر مثل my-brand.myshopify.com.',
+        clientIdRequired: 'اكتب معرّف العميل.',
+        clientSecretRequired: 'اكتب سرّ العميل.',
+        SHOP_ALREADY_CONNECTED: 'هذا المتجر مربوط بالفعل.',
+        STORE_CODE_TAKEN: 'رمز المتجر هذا مستخدم بالفعل. اختر رمزًا آخر.',
+        INVALID_SHOP_DOMAIN: 'هذا ليس نطاق متجر. النطاق ينتهي بـ .myshopify.com.',
+        INVALID_BODY: 'لم يُقبل بعض ما كتبته. راجع كل حقل.',
+        FORBIDDEN: 'ليست لديك صلاحية ربط المتاجر.',
+        generic: 'تعذّر ربط المتجر. حاول مرة أخرى.',
+      },
     },
   },
   mail: {

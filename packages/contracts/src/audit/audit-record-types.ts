@@ -1,5 +1,6 @@
 import type { MessageKey } from '@ssdashboard/i18n';
 import { SKU_CODE_PATTERN } from '../catalog.js';
+import { STORE_CODE_PATTERN } from '../connectors/connections.js';
 import { LICENSE_ID_PATTERN } from '../license/license-envelope.js';
 import { LOCATION_CODE_PATTERN } from '../locations.js';
 
@@ -177,6 +178,16 @@ export const AUDIT_RECORD_TYPES = {
     reason: 'code',
     labelPattern: AUDIT_RECORD_LABEL_PATTERN,
     labelIsOwnCode: false,
+  },
+  connection: {
+    // A connected outside account (spec 0015): the record id is `connections.id`, the label the
+    // store code (its own code contract), the reason the manager's free text. Entries never hold
+    // credentials or tokens (AC-2); the shop domain and app owner are not personal data.
+    label: 'audit.recordTypes.connection',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: STORE_CODE_PATTERN,
+    labelIsOwnCode: true,
   },
 } as const satisfies Record<string, AuditRecordTypeDefinition>;
 
