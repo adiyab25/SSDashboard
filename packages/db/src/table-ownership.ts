@@ -83,6 +83,7 @@ export const TABLE_OWNERSHIP = {
   customer_phones: 'customers',
   customer_external_ids: 'customers',
   customer_merges: 'customers',
+  customer_merge_suggestions: 'customers',
 
   orders: 'orders',
   order_lines: 'orders',

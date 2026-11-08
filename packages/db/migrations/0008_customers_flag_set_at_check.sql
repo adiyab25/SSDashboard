@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD CONSTRAINT "customers_risk_flag_has_set_at" CHECK (("customers"."risk_flag" IS NULL) = ("customers"."risk_flag_set_at" IS NULL));

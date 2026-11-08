@@ -125,6 +125,8 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'SKUs',
       // Locations is admin only (spec 0006, AC-15); the suite signs in as an administrator.
       'Locations',
+      // The customers group (spec 0014); the administrator's manager hat holds customers.view.
+      'Customers',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

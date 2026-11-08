@@ -9,12 +9,13 @@ import {
   SettingsIcon,
   TagIcon,
   UsersIcon,
+  UsersRoundIcon,
   type LucideIcon,
 } from 'lucide-react';
 import type { MessageKey } from '@ssdashboard/i18n';
 
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
-export type NavGroup = 'general' | 'inventory';
+export type NavGroup = 'general' | 'inventory' | 'customers';
 
 /** One sidebar and palette entry. */
 export interface NavItem {
@@ -111,12 +112,21 @@ export const navItems: readonly NavItem[] = [
     group: 'inventory',
     needs: 'catalog.manage',
   },
+  {
+    id: 'customers',
+    labelKey: 'shell.nav.items.customers',
+    href: '/customers',
+    icon: UsersRoundIcon,
+    group: 'customers',
+    needs: 'customers.view',
+  },
 ];
 
 /** The groups in display order, with their heading keys. */
 export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
   { id: 'general', labelKey: 'shell.nav.groups.general' },
   { id: 'inventory', labelKey: 'shell.nav.groups.inventory' },
+  { id: 'customers', labelKey: 'shell.nav.groups.customers' },
 ];
 
 /**
