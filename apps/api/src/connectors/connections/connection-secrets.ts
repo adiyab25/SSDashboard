@@ -62,7 +62,10 @@ export class ConnectionSecretsError extends Error {
   }
 }
 
-/** Sealing or opening was asked for while `CONNECTOR_SECRET_KEY` is unset (development or test). */
+/**
+ * Sealing or opening was asked for while `CONNECTOR_SECRET_KEY` is unset. `env.ts` requires the key
+ * in every environment, so this is a defensive second line for code that builds the service by hand.
+ */
 export class ConnectorSecretKeyMissing extends ConnectionSecretsError {
   /** Takes no argument: the code says it all. */
   constructor() {
