@@ -140,6 +140,8 @@ const NO_SHARE = { prepaidAmount: '0.00', creditAppliedAmount: '0.00' };
 function notAppliedReasonOf(error: unknown): Exclude<ChannelEditRefusal, 'write_back_open'> | null {
   if (error instanceof EditChangesPayment) return 'changes_payment';
   if (error instanceof EditOverpaid) return 'overpaid';
+  // Unreachable from a snapshot (it holds at least one line, which stays open or is added); kept
+  // so a planner refusal never escapes as an error.
   if (error instanceof OrderNeedsALine) return 'needs_a_line';
   if (error instanceof GiftMustStayFree) return 'gift_must_stay_free';
   if (error instanceof OrderLocked) return 'not_editable';
@@ -885,7 +887,8 @@ export class OrderIntake {
    * duplicating them. An id the line already carries is skipped. Writes no event, no audit entry,
    * and leaves `updated_at` alone. Throws `OrderNotFound`, `InvalidOrderInput` for a line that is
    * not a line of the order, and `ChannelLineIdConflict` when a line already carries another id or
-   * another line of the order already carries that one (nothing is written then).
+   * another line of the order already carries that one (nothing is written then). An order of a
+   * manual entry channel is refused with `InvalidOrderInput` (security R2).
    */
   async recordChannelLineIds(
     tx: OrderTransaction,
@@ -894,6 +897,7 @@ export class OrderIntake {
     _actor: OrderActor,
   ): Promise<{ recorded: number }> {
     const order = await lockOrderForChange(tx, orderId);
+    await this.assertChannelOrder(tx, order.channelId);
     // Only open lines hold an id against another (review R1): a replaced line, cancelled with
     // `edit_removal`, keeps the id Shopify also keeps for the new line.
     const holder = new Map<string, string>();
@@ -1089,8 +1093,9 @@ export class OrderIntake {
    * when it is already `cancelled`, `refused`, `returned_to_origin`, or `lost` (the brand's
    * bookkeeping echo, `already_final`); applies nothing and raises `channel_cancel_after_pickup`
    * while it is `shipped`, `failed_attempt`, `delivered`, `partially_delivered`, or `exchanged`
-   * (`after_pickup`). Throws `OrderNotFound` and `InvalidTransition` for a reason code that does
-   * not start with `channel.`.
+   * (`after_pickup`). Throws `OrderNotFound`, `InvalidOrderInput` for an order of a manual entry
+   * channel (security R2), and `InvalidTransition` for a reason code that does not start with
+   * `channel.`.
    */
   async cancelFromChannel(
     tx: OrderTransaction,
@@ -1099,6 +1104,7 @@ export class OrderIntake {
     actor: ChannelActor,
   ): Promise<ChannelCancelResult> {
     const order = await lockOrderForChange(tx, orderId);
+    await this.assertChannelOrder(tx, order.channelId);
     switch (order.fulfillmentState) {
       case 'new':
       case 'confirmed':

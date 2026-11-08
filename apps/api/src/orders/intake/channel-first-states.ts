@@ -50,7 +50,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The found cash states each found fulfillment state allows (security M1). */
 function allowedCash(fulfillment: FulfillmentState): readonly CashState[] {
   if (HOLDING_STATES.includes(fulfillment)) return FIRST_CASH;
-  if (fulfillment === 'cancelled') return ['unpaid', 'nothing_to_collect'];
+  // A live cancel always moves the cash to `nothing_to_collect` (security R3).
+  if (fulfillment === 'cancelled') return ['nothing_to_collect'];
   return [...FIRST_CASH, ...CASH_PAST_FIRST];
 }
 
@@ -75,7 +76,7 @@ const CARRIER_STATES: readonly FulfillmentState[] = [
  * may send only the go live state (`confirmed`, reason `go_live_import`, `confirmed_at` the
  * placed time); an `import` (whose run id must be a uuid, recorded on the events) may send the states it found, a
  * pair the allow list accepts (a held order only in a first cash state, a cancelled one only
- * `unpaid` or `nothing_to_collect`, collected, remitted, or reconciled cash only once a carrier fact
+ * `nothing_to_collect`, as a live cancel leaves it, collected, remitted, or reconciled cash only once a carrier fact
  * touched the order and with its carrier delivery time), with the lines in the matching state
  * (`delivered` for a delivered or exchanged order, `returned_to_origin` for a refused or returned
  * one, `lost` for a lost one, `open` otherwise, a cancelled order's lines included), the carrier

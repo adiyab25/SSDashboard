@@ -1247,7 +1247,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       expect(shopifyStore.created).toBe(true);
     });
 
-    it('refuses the channel edit and the payment correction on a manual order (security M2)', async () => {
+    it('refuses the channel edit, the payment correction, the channel cancel, and the line id record on a manual order (security M2, R2)', async () => {
       const reply = await api.call(support, 'POST', '/api/orders', {
         clientRef: randomUUID(),
         storeId: mainStore,
@@ -1273,8 +1273,22 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
         ),
       );
 
+      const cancel = await failureOf(
+        run((tx) => intake().cancelFromChannel(tx, orderId, 'channel.customer', job())),
+      );
+      const lineId = (await detail(orderId)).lines[0]?.id as string;
+      const lineIds = await failureOf(
+        run((tx) =>
+          intake().recordChannelLineIds(tx, orderId, [{ lineId, channelLineId: 'cl-x' }], job()),
+        ),
+      );
+
       expect(edit).toBeInstanceOf(InvalidOrderInput);
       expect(payment).toBeInstanceOf(InvalidOrderInput);
+      // Security R2: the channel cancel and the line id record take the same guard.
+      expect(cancel).toBeInstanceOf(InvalidOrderInput);
+      expect(lineIds).toBeInstanceOf(InvalidOrderInput);
+      expect((await detail(orderId)).fulfillmentState).toBe('new');
       expect(await auditOf(orderId)).toHaveLength(1);
     });
 

@@ -1,6 +1,12 @@
+import { OrderEditBody } from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
 import { orderDetailOf } from './order-detail-fixture';
-import { buildEditBody, editDefaultsOf, type OrderEditOutput } from './order-edit-form';
+import {
+  buildEditBody,
+  editDefaultsOf,
+  MAX_OPERATIONS,
+  type OrderEditOutput,
+} from './order-edit-form';
 
 const LINE_ID = '40000000-0000-4000-8000-000000000001';
 const VARIANT_M = '50000000-0000-4000-8000-000000000001';
@@ -74,5 +80,17 @@ describe('buildEditBody (spec 0013, AC-9)', () => {
     expect(buildEditBody(order, form, options).operations).toEqual([
       { kind: 'ship_to', phoneAlt: null, courierNote: null },
     ]);
+  });
+
+  it('holds the dialog cap to the contract: 50 operations pass, one more does not', () => {
+    const body = (count: number) => ({
+      expectedUpdatedAt: '2026-11-03T11:00:00.123456Z',
+      operations: Array.from({ length: count }, () => ({
+        kind: 'shipping' as const,
+        shippingChargedAmount: '1.00',
+      })),
+    });
+    expect(OrderEditBody.safeParse(body(MAX_OPERATIONS)).success).toBe(true);
+    expect(OrderEditBody.safeParse(body(MAX_OPERATIONS + 1)).success).toBe(false);
   });
 });

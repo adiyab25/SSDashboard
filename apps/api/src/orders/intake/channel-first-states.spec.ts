@@ -117,6 +117,8 @@ describe('planFirstStates: the found states allow list (security M1)', () => {
     ['packed', 'reconciled'],
     ['cancelled', 'collected_by_carrier'],
     ['cancelled', 'prepaid'],
+    // A live cancel always leaves nothing to collect (security R3).
+    ['cancelled', 'unpaid'],
   ])('refuses %s with %s', (fulfillment, cash) => {
     const over = fulfillment === 'cancelled' ? { cancelReasonCode: 'channel.customer' } : {};
     expect(() => planFirstStates(found(fulfillment, cash, over), run, placedAt)).toThrow(
