@@ -3,7 +3,7 @@ import { PriceString } from '../catalog.js';
 import { CustomerRiskFlag } from '../customers/customer-enums.js';
 import { moneyInput, quantityInput } from '../digit-input.js';
 import { LocalizedText } from '../localized-text.js';
-import { Money, MoneyString, UnitCostString } from '../money.js';
+import { Money, MoneyString, TaxRateString, UnitCostString } from '../money.js';
 import { OrderOutcome } from './order-outcome.js';
 import {
   CancelReasonCode,
@@ -20,6 +20,8 @@ import {
   OrderActorType,
   OrderLineState,
   OrderMachine,
+  ReasonCode,
+  RefusedReasonCode,
 } from './order-states.js';
 import { OrderPaymentMethod } from './payment-method.js';
 
@@ -567,3 +569,223 @@ export const CancelOrderBody = z
   });
 /** The validated shape of `CancelOrderBody`. */
 export type CancelOrderBody = z.infer<typeof CancelOrderBody>;
+
+// ---------------------------------------------------------------------------------------------
+// Channel intake (spec 0013 AC-14, AC-23, AC-25, Write paths): the shapes feature 13 builds for
+// the in process calls `OrderIntake.createFromChannel` and `applyChannelEdit`. Not routes.
+// ---------------------------------------------------------------------------------------------
+
+/** Where an order's campaign was captured. Matches the `order_source_captured_from` enum. */
+export const OrderSourceCapturedFrom = z.enum([
+  'landing_page',
+  'shopify_journey',
+  'whatsapp_thread',
+  'manual',
+  'none',
+]);
+/** One capture source. */
+export type OrderSourceCapturedFrom = z.infer<typeof OrderSourceCapturedFrom>;
+
+const SourceText = z.string().trim().min(1).max(500).nullable().default(null);
+
+/**
+ * The campaign fields of spec 0002 an order carries from its channel (`orders.source_*`). Every
+ * field defaults to null and `capturedFrom` to `none`, so a channel that knows nothing sends `{}`.
+ */
+export const OrderSourceInput = z.strictObject({
+  capturedFrom: OrderSourceCapturedFrom.default('none'),
+  campaignId: SourceText,
+  adsetId: SourceText,
+  adId: SourceText,
+  utmSource: SourceText,
+  utmMedium: SourceText,
+  utmCampaign: SourceText,
+  utmContent: SourceText,
+  landingPage: SourceText,
+  referrer: SourceText,
+  /** The staff user who bought the ad, when the channel knows her. */
+  mediaBuyerId: z.uuid().nullable().default(null),
+  influencerCode: SourceText,
+});
+/** The validated shape of `OrderSourceInput`. */
+export type OrderSourceInput = z.infer<typeof OrderSourceInput>;
+
+/**
+ * The channel's own id of the customer (spec 0014's `channelCustomer`): a Shopify customer id
+ * issued by one connection. Null when the order has none (a guest checkout).
+ */
+export const ChannelCustomerInput = z.strictObject({
+  kind: z.literal('shopify_customer'),
+  connectionId: z.uuid(),
+  externalId: z.string().trim().min(1).max(255),
+});
+/** The validated shape of `ChannelCustomerInput`. */
+export type ChannelCustomerInput = z.infer<typeof ChannelCustomerInput>;
+
+/**
+ * Where the parcel goes, as the channel sends it. Phones are text and are parsed by the api with
+ * `EgyptianPhone`: a main phone that does not parse is kept as typed in `contact_phone_raw` and
+ * leaves the order unlinked; a second phone that does not parse is not stored (the api raises
+ * `phone_unparseable`). Null means the channel sent nothing; on an edit the stored value is kept.
+ * `area` is sent only when the channel knows the carrier codes; absent or null keeps the stored
+ * codes. Personal data: never echoed in an error or a log line.
+ */
+export const ChannelShipToInput = z.strictObject({
+  name: z.string().trim().min(1).max(200).nullable(),
+  phone: z.string().trim().max(64).nullable(),
+  phoneAlt: z.string().trim().max(64).nullable().default(null),
+  address: z.string().trim().min(1).max(500).nullable(),
+  courierNote: z.string().trim().max(500).nullable().default(null),
+  area: OrderAreaCodes.nullable().optional(),
+});
+/** The validated shape of `ChannelShipToInput`. */
+export type ChannelShipToInput = z.infer<typeof ChannelShipToInput>;
+
+/**
+ * One line as the channel sends it, already netted (spec 0015 AC-9). `variantId` is null while
+ * the channel's product is not mapped to a SKU (`linkChannelLineVariant` maps it later); `title`
+ * is the channel's line text, stored on the line. `taxRate` is the line's own rate.
+ */
+export const ChannelOrderLineInput = z.strictObject({
+  channelLineId: z.string().trim().min(1).max(255),
+  variantId: z.uuid().nullable(),
+  title: z.string().trim().min(1).max(500),
+  quantity: z.number().int().min(1).max(10_000),
+  unitPrice: PriceString,
+  discountAmount: PriceString.default('0.00'),
+  taxRate: TaxRateString,
+});
+/** The validated shape of `ChannelOrderLineInput`. */
+export type ChannelOrderLineInput = z.infer<typeof ChannelOrderLineInput>;
+
+/**
+ * The go live first state (AC-25 a): only a `system_job` actor may send it, for an order placed
+ * before the store's go live moment. The order starts `confirmed` with one event of reason
+ * `go_live_import`.
+ */
+export const GoLiveFirstStates = z.strictObject({
+  fulfillment: z.literal('confirmed'),
+  reasonCode: z.literal('go_live_import'),
+});
+/** The validated shape of `GoLiveFirstStates`. */
+export type GoLiveFirstStates = z.infer<typeof GoLiveFirstStates>;
+
+/**
+ * The states an `import` actor found the order in (AC-14, spec 0015 go live for closed orders):
+ * both machines' first states and when the carrier delivery was made. A `cancelled` order names
+ * its cancel reason and a `refused` one its refusal reason, as the order table requires.
+ */
+export const ImportFirstStates = z
+  .strictObject({
+    fulfillment: FulfillmentState,
+    cash: CashState,
+    carrierDeliveryCreatedAt: Timestamp.nullable().default(null),
+    cancelReasonCode: ReasonCode.optional(),
+    refusedReasonCode: RefusedReasonCode.optional(),
+  })
+  .refine((states) => (states.fulfillment === 'cancelled') === !!states.cancelReasonCode, {
+    message: 'A cancelled order names its cancel reason, and only it does',
+    path: ['cancelReasonCode'],
+  })
+  .refine((states) => (states.fulfillment === 'refused') === !!states.refusedReasonCode, {
+    message: 'A refused order names its refusal reason, and only it does',
+    path: ['refusedReasonCode'],
+  });
+/** The validated shape of `ImportFirstStates`. */
+export type ImportFirstStates = z.infer<typeof ImportFirstStates>;
+
+/** The fields an order and every later snapshot of it share. */
+const channelOrderFields = {
+  type: z.enum(['sale', 'gifted']),
+  giftReasonCode: GiftReasonCode.nullable().default(null),
+  paymentMethod: OrderPaymentMethod,
+  shippingChargedAmount: PriceString,
+  discountCode: z.string().trim().min(1).max(255).nullable().default(null),
+  /** The note the customer typed at checkout; on a snapshot, null keeps the stored note. */
+  customerNote: z.string().trim().max(2000).nullable().default(null),
+  channelCustomer: ChannelCustomerInput.nullable(),
+  source: OrderSourceInput.default(() => OrderSourceInput.parse({})),
+  shipTo: ChannelShipToInput,
+  lines: z.array(ChannelOrderLineInput).min(1).max(250),
+};
+
+/** What the shared refinements read of an order or a snapshot. */
+interface ChannelOrderShape {
+  type: 'sale' | 'gifted';
+  giftReasonCode: string | null;
+  lines: readonly { channelLineId: string }[];
+}
+
+const giftedHasReason = (order: ChannelOrderShape): boolean =>
+  (order.type === 'gifted') === (order.giftReasonCode !== null);
+
+const lineIdsUnique = (order: ChannelOrderShape): boolean =>
+  new Set(order.lines.map((line) => line.channelLineId)).size === order.lines.length;
+
+/**
+ * What feature 13 (and later 15 and 53) hands `OrderIntake.createFromChannel` (spec 0013, Write
+ * paths): the channel's identity of the order (store, channel, its own id, its number, its
+ * creation time), the payment as the channel's gateway mapping reads it (a deposit is stored as
+ * it arrives), and the netted lines. `firstStates` is only for the go live import of a
+ * `system_job` actor or the found states of an `import` actor; the api refuses it from any other
+ * actor (`InvalidOrderInput`). Personal data (ship to, note) is never echoed in an error.
+ */
+export const ChannelOrderInput = z
+  .strictObject({
+    storeId: z.uuid(),
+    channelId: z.uuid(),
+    /** The channel's own id of the order (the Shopify order id): the idempotency key per store. */
+    channelOrderRef: z.string().trim().min(1).max(255),
+    /** The channel's order name, for example `#1001`: unique per store. */
+    orderNumber: z.string().trim().min(1).max(64),
+    placedAt: Timestamp,
+    relatedOrder: RelatedOrderInput.nullable().default(null),
+    prepaidAmount: PriceString.default('0.00'),
+    prepaidMethod: OrderPaymentMethod.nullable().default(null),
+    firstStates: z.union([GoLiveFirstStates, ImportFirstStates]).nullable().default(null),
+    ...channelOrderFields,
+  })
+  .refine(giftedHasReason, {
+    message: 'A gifted order names its gift reason, and only it does',
+    path: ['giftReasonCode'],
+  })
+  .refine((order) => Money.of(order.prepaidAmount).isZero() === (order.prepaidMethod === null), {
+    message: 'A prepayment names its method, and only a prepayment does',
+    path: ['prepaidMethod'],
+  })
+  .refine(lineIdsUnique, { message: 'Each channel line id appears once', path: ['lines'] });
+/** The validated shape of `ChannelOrderInput`. */
+export type ChannelOrderInput = z.infer<typeof ChannelOrderInput>;
+
+/**
+ * What feature 13 hands `OrderIntake.applyChannelEdit`: the order as the channel holds it now,
+ * already netted, without its identity fields and without `prepaidAmount`, `prepaidMethod`,
+ * `relatedOrder`, and `firstStates` (a snapshot never changes them, review M5). Lines are matched
+ * by `channelLineId`.
+ */
+export const ChannelOrderSnapshot = z
+  .strictObject(channelOrderFields)
+  .refine(giftedHasReason, {
+    message: 'A gifted order names its gift reason, and only it does',
+    path: ['giftReasonCode'],
+  })
+  .refine(lineIdsUnique, { message: 'Each channel line id appears once', path: ['lines'] });
+/** The validated shape of `ChannelOrderSnapshot`. */
+export type ChannelOrderSnapshot = z.infer<typeof ChannelOrderSnapshot>;
+
+/**
+ * What `OrderIntake.rederivePaymentMethod` takes (AC-25 c): the payment as a corrected gateway
+ * mapping reads it. A prepayment names its method, and only a prepayment does.
+ */
+export const RederivePaymentMethodInput = z
+  .strictObject({
+    paymentMethod: OrderPaymentMethod,
+    prepaidAmount: PriceString,
+    prepaidMethod: OrderPaymentMethod.nullable(),
+  })
+  .refine((input) => Money.of(input.prepaidAmount).isZero() === (input.prepaidMethod === null), {
+    message: 'A prepayment names its method, and only a prepayment does',
+    path: ['prepaidMethod'],
+  });
+/** The validated shape of `RederivePaymentMethodInput`. */
+export type RederivePaymentMethodInput = z.infer<typeof RederivePaymentMethodInput>;

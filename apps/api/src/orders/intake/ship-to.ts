@@ -39,3 +39,41 @@ export function parsePhones(phone: string, phoneAlt: string | null | undefined):
   }
   return { main, mainRaw: main ? null : phone.slice(0, RAW_PHONE_LIMIT), alt };
 }
+
+/** The channel's ship to phones as the order stores them. */
+export interface ParsedChannelPhones extends ParsedPhones {
+  /** True when the channel sent a second phone that does not parse: it is not stored. */
+  altUnparseable: boolean;
+}
+
+/**
+ * Parses the main and second phone a channel sent as text (spec 0013 AC-14, Value sourcing). A
+ * main phone that does not parse is kept as typed in `contact_phone_raw` (no text, no raw); a
+ * second phone that does not parse is dropped (stored as null) and reported, so the caller raises
+ * `phone_unparseable` instead of refusing an order the customer already placed (review N4). Its
+ * text is kept nowhere: `contact_phone_raw` holds the main phone only. Never echoes a phone.
+ */
+export function parseChannelPhones(
+  phone: string | null,
+  phoneAlt: string | null,
+): ParsedChannelPhones {
+  const mainText = phone?.trim() ?? '';
+  const main = mainText === '' ? null : parseOrNull(mainText);
+  const altText = phoneAlt?.trim() ?? '';
+  const alt = altText === '' ? null : parseOrNull(altText);
+  return {
+    main,
+    mainRaw: main === null && mainText !== '' ? mainText.slice(0, RAW_PHONE_LIMIT) : null,
+    alt: alt?.e164 ?? null,
+    altUnparseable: altText !== '' && alt === null,
+  };
+}
+
+function parseOrNull(text: string): NormalizedPhone | null {
+  try {
+    return EgyptianPhone.parse(text);
+  } catch (error) {
+    if (error instanceof InvalidPhone) return null;
+    throw error;
+  }
+}

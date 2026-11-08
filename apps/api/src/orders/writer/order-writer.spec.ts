@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DomainEvents } from '../../platform/events/domain-events.js';
 import type { OrderTransaction } from '../order-transactions.js';
 import { OrderLocked, OrderNotFound } from '../orders.errors.js';
-import { OrderWriter } from './order-writer.js';
+import { OrderWriter, type NewLineRow } from './order-writer.js';
 
 const ORDER = '01937f3a-0000-7000-8000-000000000001';
 const LINE = '01937f3a-0000-7000-8000-000000000101';
@@ -27,6 +27,22 @@ function scripted(answers: Record<string, unknown>[][]): {
 }
 
 const writer = () => new OrderWriter(new DomainEvents());
+const newLine: NewLineRow = {
+  position: 9,
+  variantId: null,
+  title: 'Tee',
+  quantity: 1,
+  unitPrice: '10.00',
+  discountAmount: '0.00',
+  netAmount: '8.77',
+  taxRate: '14.00',
+  taxAmount: '1.23',
+  grossAmount: '10.00',
+  prepaidAmount: '0.00',
+  creditAppliedAmount: '0.00',
+  lineState: 'open',
+  channelLineId: null,
+};
 const row = (fulfillment: string, outcome: string) => ({
   fulfillment_state: fulfillment,
   delivered_amount: '0.00',
@@ -58,6 +74,42 @@ describe('OrderWriter.applyChange: the money freeze (spec 0013 AC-8, security M1
       OrderLocked,
     );
     expect(calls()).toBe(1);
+  });
+
+  it.each([
+    ['a line cancel alone', { cancelLines: [{ lineId: LINE, cancelReasonCode: 'channel_edit' }] }],
+    ['a new line alone', { addLines: [newLine] }],
+    ['a prepayment change', { columns: { prepaidAmount: '10.00' } }],
+  ])(
+    'counts %s as a money move once the carrier delivery exists (security N1)',
+    async (_name, change) => {
+      const { tx, calls } = scripted([[{ frozen: true }]]);
+
+      await expect(writer().applyChange(tx, ORDER, { columns: {}, ...change })).rejects.toThrow(
+        OrderLocked,
+      );
+      expect(calls()).toBe(1);
+    },
+  );
+
+  it('lets the partial delivery split change lines of a frozen order, never a frozen column', async () => {
+    const split = scripted([[{ frozen: true }], [], [{ id: LINE }], [row('shipped', 'open')]]);
+
+    await writer().applyChange(split.tx, ORDER, {
+      columns: { codDueAmount: '0.00' },
+      cancelLines: [{ lineId: LINE, cancelReasonCode: 'split' }],
+      addLines: [newLine],
+      freezeAllowance: 'partial_delivery_split',
+    });
+    const frozenColumn = scripted([[{ frozen: true }]]);
+
+    expect(split.calls()).toBe(4);
+    await expect(
+      writer().applyChange(frozenColumn.tx, ORDER, {
+        columns: { totalAmount: '1.00' },
+        freezeAllowance: 'partial_delivery_split',
+      }),
+    ).rejects.toThrow(OrderLocked);
   });
 
   it('still lets a frozen order move its state and its amount due (a cancel before pickup)', async () => {

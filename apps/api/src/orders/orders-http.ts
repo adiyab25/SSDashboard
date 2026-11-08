@@ -96,6 +96,14 @@ export function ordersHttpError(error: unknown, response?: Response): unknown {
       return unprocessable('DUPLICATE_TARGET_REQUIRED', error.message);
     case 'InvalidPhoneMain':
       return unprocessable('INVALID_PHONE', error.message);
+    // In process refusals of feature 13's calls (no route raises them today); mapped so a later
+    // route answers a stable code.
+    case 'ChannelLineIdConflict':
+      return new ConflictException({ code: 'CHANNEL_LINE_ID_CONFLICT', message: error.message });
+    case 'LineAlreadyMapped':
+      return new ConflictException({ code: 'LINE_ALREADY_MAPPED', message: error.message });
+    case 'PaymentMethodLocked':
+      return new ConflictException({ code: 'PAYMENT_METHOD_LOCKED', message: error.message });
     case 'OrderStoreMissing':
       logger.error('An order names a store that does not exist');
       return new InternalServerErrorException();

@@ -27,7 +27,10 @@ export type OrdersErrorCode =
   | 'GiftNotAllowed'
   | 'DuplicateTargetRequired'
   | 'InvalidPhoneMain'
-  | 'OrderStoreMissing';
+  | 'OrderStoreMissing'
+  | 'ChannelLineIdConflict'
+  | 'LineAlreadyMapped'
+  | 'PaymentMethodLocked';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -290,5 +293,36 @@ export class OrderStoreMissing extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('OrderStoreMissing', 'The order names a store that does not exist');
+  }
+}
+
+/**
+ * A line already carries another channel line id, or another line of the order already carries
+ * that id (spec 0013 AC-14, `recordChannelLineIds`): a channel id is written once, from null.
+ */
+export class ChannelLineIdConflict extends OrdersError {
+  /** Builds the error; it names no id. */
+  constructor() {
+    super('ChannelLineIdConflict', 'A line already carries another channel line id');
+  }
+}
+
+/** The line already has a variant (spec 0013 AC-25 b): a mapped variant never changes in place. */
+export class LineAlreadyMapped extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('LineAlreadyMapped', 'This line is already mapped to a SKU');
+  }
+}
+
+/**
+ * The payment method can no longer be corrected (spec 0013 AC-25 c): the carrier delivery exists,
+ * something was collected, the cash moved past its first states, or the order left `new`,
+ * `confirmed`, and `packed`. Nothing was applied.
+ */
+export class PaymentMethodLocked extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('PaymentMethodLocked', 'The payment method of this order can no longer be corrected');
   }
 }

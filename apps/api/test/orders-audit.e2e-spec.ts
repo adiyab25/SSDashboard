@@ -1,12 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import { AUDIT_ACTIONS, CreatedOrder, OrderDetail, SkuDetail } from '@ssdashboard/contracts';
+import {
+  AUDIT_ACTIONS,
+  ChannelOrderInput,
+  CreatedOrder,
+  OrderDetail,
+  SkuDetail,
+} from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { OrderIntake } from '../src/orders/intake/order-intake.service.js';
+import { OrderTransactions } from '../src/orders/order-transactions.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 
 // Spec 0013 AC-11 and the Audit table: the orders audit entries and their privacy. Milestone 1
-// proves `order.created_manually` and milestone 2 `order.edited`; the other three codes are
-// written by the moves of milestones 3 and 5 and are listed as todo until then, so this file
-// stays the one proof the registry names.
+// proves `order.created_manually`, milestone 2 `order.edited`, and milestone 3
+// `order.payment_method_rederived`; the other two codes are written by the moves of milestone 5
+// and are listed as todo until then, so this file stays the one proof the registry names.
 describe('orders audit', { timeout: 120_000 }, () => {
   let api: InProcessApi;
   let support = '';
@@ -211,8 +219,92 @@ describe('orders audit', { timeout: 120_000 }, () => {
     expect(allText).not.toContain('+2010099988');
   });
 
-  // Written by the moves that follow (spec 0013 milestones 3 and 5).
-  it.todo('order.payment_method_rederived (milestone 3)');
+  it('writes one order.payment_method_rederived entry by a system job with the payment before and after, and no personal data', async () => {
+    const sentinel = {
+      name: 'Sentinel Rederive Name',
+      phone: '01009998811',
+      address: '33 Sentinel Rederive Road',
+      note: 'Sentinel rederive note',
+    };
+    const intake = api.app.get(OrderIntake);
+    const input = ChannelOrderInput.parse({
+      storeId: mainStore,
+      channelId: manualChannel,
+      channelOrderRef: `gid-${randomUUID()}`,
+      orderNumber: '#9001',
+      placedAt: new Date().toISOString(),
+      type: 'sale',
+      paymentMethod: 'gateway',
+      prepaidAmount: '120.00',
+      prepaidMethod: 'gateway',
+      shippingChargedAmount: '20.00',
+      customerNote: sentinel.note,
+      channelCustomer: null,
+      shipTo: { name: sentinel.name, phone: sentinel.phone, address: sentinel.address },
+      lines: [
+        {
+          channelLineId: 'cl-1',
+          variantId: variant,
+          title: 'Audit tee',
+          quantity: 1,
+          unitPrice: '100.00',
+          taxRate: '14.00',
+        },
+      ],
+    });
+    const job = { type: 'system_job' as const, job: 'shopify.mapping', jobId: randomUUID() };
+    const transactions = api.app.get(OrderTransactions);
+    const { orderId } = await transactions.run((tx) => intake.createFromChannel(tx, input, job));
+
+    await transactions.run((tx) =>
+      intake.rederivePaymentMethod(
+        tx,
+        orderId,
+        { paymentMethod: 'cod', prepaidAmount: '0.00', prepaidMethod: null },
+        job,
+      ),
+    );
+    const { rows } = await api.owner.pool.query<{
+      action: string;
+      record_label: string;
+      reason: string;
+      actor_kind: string;
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+    }>(
+      `SELECT action, record_label, reason, actor_kind, before, after
+       FROM audit_entries WHERE record_id = $1::uuid`,
+      [orderId],
+    );
+    const everything = await api.owner.pool.query<{ text: string }>(
+      `SELECT row_to_json(a)::text AS text FROM audit_entries a`,
+    );
+    const allText = everything.rows.map((r) => r.text).join('\n');
+
+    expect(rows).toEqual([
+      {
+        action: 'order.payment_method_rederived',
+        record_label: 'MAIN/#9001',
+        reason: 'gateway_mapping_changed',
+        actor_kind: 'system_job',
+        before: {
+          paymentMethod: 'gateway',
+          prepaidAmount: '120.00',
+          prepaidMethod: 'gateway',
+          codExpectedAmount: '0.00',
+        },
+        after: {
+          paymentMethod: 'cod',
+          prepaidAmount: '0.00',
+          prepaidMethod: null,
+          codExpectedAmount: '120.00',
+        },
+      },
+    ]);
+    for (const text of Object.values(sentinel)) expect(allText).not.toContain(text);
+  });
+
+  // Written by the moves that follow (spec 0013 milestone 5).
   it.todo('order.partial_delivery_split (milestone 5)');
   it.todo('order.collection_recorded_manually (milestone 5)');
 });

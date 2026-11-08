@@ -14,7 +14,7 @@ import { OrderEdited } from '../orders.events.js';
 import { OrderStock } from '../stock/order-stock.js';
 import { lockOrderForChange } from '../writer/locked-order.js';
 import { OrderWriter, type NewEventRow, type OrderColumnChanges } from '../writer/order-writer.js';
-import { EDITABLE_STATES, editAuditDiff, planEdit, type PlannedEdit } from './edit-plan.js';
+import { EDITABLE_STATES, editAuditDiff, planEdit, plannedMoneyColumns } from './edit-plan.js';
 
 /** What `edit` answers. */
 export interface EditOutcome {
@@ -102,10 +102,11 @@ export class OrderEditing {
       allowZeroNetLines: options.mayGift,
       // A person's edit exists to fix the phone: one that does not parse is refused (review R3).
       unparseablePhone: 'refuse',
+      unparseablePhoneAlt: 'refuse',
     });
     if (!plan.changed) return { orderId, changed: false };
 
-    const columns: OrderColumnChanges = { ...plan.shipToColumns, ...moneyColumns(plan) };
+    const columns: OrderColumnChanges = { ...plan.shipToColumns, ...plannedMoneyColumns(plan) };
     if (plan.phone !== null) {
       const customer = await this.customers.findOrCreate(tx, {
         phone: plan.phone,
@@ -197,24 +198,4 @@ export class OrderEditing {
     );
     return { orderId, changed: true };
   }
-}
-
-/**
- * The money columns an edit writes when its lines or shipping changed; none for a ship to only
- * edit. The outcome is derived by the writer.
- */
-function moneyColumns(plan: PlannedEdit): OrderColumnChanges {
-  if (!plan.moneyChanged) return {};
-  const { totals } = plan;
-  return {
-    linesGrossAmount: totals.linesGrossAmount,
-    shippingChargedAmount: plan.shippingChargedAmount,
-    shippingTaxAmount: totals.shippingTaxAmount,
-    totalAmount: totals.totalAmount,
-    shippingPrepaidAmount: totals.shippingPrepaidAmount,
-    shippingCreditAppliedAmount: totals.shippingCreditAppliedAmount,
-    codExpectedAmount: totals.codExpectedAmount,
-    codDueAmount: totals.codDueAmount,
-    deliveredAmount: totals.deliveredAmount,
-  };
 }

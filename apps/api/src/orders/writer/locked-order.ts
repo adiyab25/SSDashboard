@@ -29,6 +29,8 @@ export interface LockedOrder extends PlanOrder {
   shippingPrepaidAmount: string;
   shippingCreditAppliedAmount: string;
   linesGrossAmount: string;
+  /** The note the customer typed at checkout. Personal data, never logged. */
+  customerNote: string | null;
   /** False when the caller's `expectedUpdatedAt` does not match `updated_at`. */
   fresh: boolean;
 }
@@ -69,6 +71,7 @@ interface LockedRow extends Record<string, unknown> {
   ship_to_governorate_code: string | null;
   ship_to_city_code: string | null;
   ship_to_zone_code: string | null;
+  customer_note: string | null;
   fresh: boolean;
 }
 
@@ -115,7 +118,7 @@ export async function lockOrderForChange(
            cod_collected_amount, total_amount, delivered_amount, returned_credit_amount,
            exchange_consumed_amount, ship_to_name, ship_to_phone, ship_to_phone_alt,
            contact_phone_raw, ship_to_address, courier_note, ship_to_area_list,
-           ship_to_governorate_code, ship_to_city_code, ship_to_zone_code,
+           ship_to_governorate_code, ship_to_city_code, ship_to_zone_code, customer_note,
            ${fresh} AS fresh
     FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`);
   const row = rows[0];
@@ -189,6 +192,7 @@ export async function lockOrderForChange(
       courierNote: row.courier_note,
       area,
     },
+    customerNote: row.customer_note,
     lines,
     fresh: row.fresh,
   };

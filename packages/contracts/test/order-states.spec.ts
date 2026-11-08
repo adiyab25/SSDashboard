@@ -22,7 +22,7 @@ const FULFILLMENT_RULES: readonly Rule<Fulfillment>[] = [
   [['new'], 'confirmed', ['person']],
   [['new', 'confirmed', 'packed'], 'cancelled', ['person', 'system_job', 'carrier']],
   [['confirmed'], 'packed', ['person']],
-  [['packed'], 'confirmed', ['person']],
+  [['packed'], 'confirmed', ['person', 'system_job']],
   [['new', 'confirmed', 'packed'], 'shipped', ['carrier']],
   [['cancelled'], 'shipped', ['carrier']],
   [['shipped', 'failed_attempt'], 'failed_attempt', ['carrier']],
