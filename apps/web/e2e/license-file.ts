@@ -14,8 +14,8 @@ const DEV_KEY = new URL('../../api/src/platform/license/dev-license-key.pem', im
  * Why this one: an upload is append only and permanent in the e2e database, and a recorded
  * license can never be removed. Warehouse for ever shrinks nothing. Where the dev bootstrap
  * license is recorded it already grants Warehouse, so this one adds nothing (`changed: false`).
- * On a fresh database (CI) the first upload licenses Warehouse for good, so a later test that
- * needs Warehouse unlicensed must route mock its list. The fixed id means a rerun adds no
+ * `global-setup.ts` uploads it before every run, so on a fresh database (CI) Warehouse is licensed
+ * for good from the start, and a test that needs Warehouse unlicensed must route mock its list. The fixed id means a rerun adds no
  * `licenses` row (the check rows it records are not licenses).
  */
 export async function signedWarehouseLicense(): Promise<string> {
