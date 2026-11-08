@@ -150,9 +150,9 @@ export const PERSONAL_DATA_PATHS: readonly string[] = [
   'whatsapp.text',
   'telegram.body',
   'telegram.text',
-  // Spec 0014: the customer search answer (`items[].name`), the merged record on a profile
-  // (`merges[].other.name`), and the merge answer (`survivor.name`).
-  'items.name',
+  // Spec 0014: the merged record on a profile (`merges[].other.name`) and the merge answer
+  // (`survivor.name`). `items.name` is deliberately not here: any list answer has `items[]`, and
+  // product names must stay readable. Customer search answers are never logged.
   'other.name',
   'survivor.name',
 ];
