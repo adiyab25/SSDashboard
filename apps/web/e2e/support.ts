@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import type { LicenseSummary, ModuleStatesResponse } from '@ssdashboard/contracts';
 import { createDatabase } from '@ssdashboard/db';
 import type { MessageKey } from '@ssdashboard/i18n';
 import { ar } from '@ssdashboard/i18n/ar';
@@ -72,6 +73,65 @@ export async function stubConfig(
         ...config,
       },
     }),
+  );
+}
+
+/**
+ * Answers the two license dependent shell calls from the browser as a fully licensed install with
+ * no notice: `GET /api/platform/license` (the manager's license banner) and
+ * `GET /api/platform/modules` (every module on, so no entry hides, and no staff or license notice).
+ * Why: the real answers follow the database's license state, which other specs change (a license
+ * upload, a lapse), and a banner or notice adds links to the shell's tab order. Never use it in a
+ * spec that tests the license or the module states themselves.
+ */
+export async function stubLicensedInstall(page: Page) {
+  await page.route('**/api/platform/license', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({
+          json: {
+            bundles: [
+              {
+                bundle: 'warehouse',
+                phase: 'active',
+                perpetual: true,
+                expiresOn: null,
+                daysLeft: null,
+                lapsesAt: null,
+              },
+              {
+                bundle: 'operations',
+                phase: 'active',
+                perpetual: true,
+                expiresOn: null,
+                daysLeft: null,
+                lapsesAt: null,
+              },
+            ],
+            lastCheck: {
+              checkedAt: '2026-11-07T10:00:00.000Z',
+              trigger: 'api_start',
+              outcome: 'valid',
+              clockBehind: false,
+            },
+            licenses: [],
+            notices: [],
+            resumingSteps: [],
+          } satisfies LicenseSummary,
+        })
+      : route.fallback(),
+  );
+  // An empty list means no module reports a state, which the shell reads as on (`nav.ts`).
+  await page.route('**/api/platform/modules', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({
+          json: {
+            modules: [],
+            capabilities: [],
+            staffNotices: [],
+            licenseNotices: null,
+          } satisfies ModuleStatesResponse,
+        })
+      : route.fallback(),
   );
 }
 

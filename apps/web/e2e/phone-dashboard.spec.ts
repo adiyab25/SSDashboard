@@ -1,5 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
-import { expectNoAxeViolations, openShell, setLanguageCookie, type Language } from './support';
+import {
+  expectNoAxeViolations,
+  openShell,
+  setLanguageCookie,
+  waitForElementHydration,
+  type Language,
+} from './support';
 
 // Spec 0003 AC-20 and AC-21 (amendment): the sample phone dashboard and the in screen help on
 // /design, on a 360 by 800 touch screen, in both languages. The dashboard is a development only
@@ -28,6 +34,10 @@ async function overflowsSideways(page: Page): Promise<boolean> {
 async function openIn(page: Page, language: Language, path: string) {
   await setLanguageCookie(page, language);
   await openShell(page, path);
+  // The page streams in behind the session check and hydrates after the shell: a probe on
+  // 2026-11-08 found the gallery's buttons without React props for about 130 ms after
+  // `openShell` returned (same elements, no remount), and a click in that window is lost.
+  await waitForElementHydration(page, 'main h1');
   await expect(page.locator('html')).toHaveAttribute('lang', language);
 }
 
@@ -148,7 +158,8 @@ for (const language of LANGUAGES) {
     }) => {
       await openIn(page, language, '/design');
       const opener = page.locator('button[aria-keyshortcuts="?"]');
-      // The gallery remounts once after the shell loads; retry the whole step if it lands here.
+      // Repeats the step if it lands before the page settles (kept from before `openIn` waited for
+      // hydration; a remount was suspected then, a probe found late hydration instead).
       await expect(async () => {
         await opener.scrollIntoViewIfNeeded({ timeout: 2_000 });
         await opener.focus();
@@ -164,7 +175,7 @@ for (const language of LANGUAGES) {
       await openIn(page, language, '/design');
       const input = page.getByRole('textbox').first();
 
-      // The gallery remounts once after the shell loads; retry the whole step if it lands here.
+      // Repeats the step if it lands before the page settles (see `openIn`).
       await expect(async () => {
         await input.scrollIntoViewIfNeeded({ timeout: 2_000 });
         await input.focus();
@@ -181,7 +192,7 @@ for (const language of LANGUAGES) {
       await expect(hint).toHaveCount(2);
 
       for (const key of ['Enter', 'Space']) {
-        // The gallery remounts once after the shell loads; retry the whole step if it lands here.
+        // Repeats the step if it lands before the page settles (see `openIn`).
         await expect(async () => {
           const first = hint.first();
           await first.scrollIntoViewIfNeeded({ timeout: 2_000 });

@@ -179,6 +179,10 @@ for (const { dir, name: languageName } of LANGUAGES) {
     });
 
     test('records a gifted goodwill order linked to the first order', async ({ page, context }) => {
+      // A whole order journey with several axe sweeps: a passing run took 26.4 s of the 30 s default in
+      // a full parallel run (2026-11-08 trace), so a loaded first attempt crossed it while still
+      // progressing. The budget fits the journey; it waits for nothing that may never come.
+      test.setTimeout(60_000);
       const code = `GIF-${randomUUID().slice(0, 8).toUpperCase()}`;
       await createSku(context.request, code, { en: `Tee ${code}`, ar: `قميص ${code}` }, '300.00');
       const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
@@ -234,6 +238,9 @@ for (const { dir, name: languageName } of LANGUAGES) {
 
       // The original's page is reachable from the link.
       await page.goBack();
+      // Back is a client side navigation: it resolves on the URL change while the list (which
+      // also links the original) is still shown, and a click there races the back render.
+      await expect(page.getByRole('heading', { level: 1, name: gift })).toBeVisible();
       await page.getByRole('link', { name: original }).click();
       await expect(page.getByRole('heading', { level: 1, name: original })).toBeVisible();
       // The original's page lists the gift made from it (AC-23, the reverse link).

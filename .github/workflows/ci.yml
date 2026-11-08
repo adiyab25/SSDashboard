@@ -110,9 +110,12 @@ jobs:
       DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:5433/ssdashboard
       MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:5433/ssdashboard
       APP_DB_PASSWORD: ssdashboard_app
+      # Playwright (apps/web/playwright.config.ts) starts the api from its build (`node dist/main.js`,
+      # never the `nest start --watch` watcher) on E2E_API_PORT (default 3001), `next dev` on
+      # E2E_WEB_PORT (3000), and `next start` on E2E_PROD_PORT (3100), and hands each server the
+      # API_INTERNAL_URL (and the api and `next dev` the PUBLIC_URL) matching them. These two match those defaults for anything else that reads
+      # the env; the api's Origin check for sign in must match the address Playwright opens.
       API_INTERNAL_URL: http://localhost:3001
-      # The address Playwright opens (apps/web/playwright.config.ts); the api's Origin check
-      # for sign in must match it.
       PUBLIC_URL: http://localhost:3000
       # A public, test only value for this throwaway CI database. Never use it anywhere real.
       BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000

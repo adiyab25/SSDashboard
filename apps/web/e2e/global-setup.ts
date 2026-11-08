@@ -15,7 +15,13 @@ import { E2E_ADMIN, STORAGE_STATE, ownerDatabaseUrl } from './auth';
  * server log) and from then on the dev server answers 500, failing whole suites. CI also starts
  * from a cold `next dev`, so this protects it too. Requesting each route alone first avoids the
  * race. A production server answers 404 for the development only paths, which is fine here.
+ *
+ * Every back office page is warmed too: a page's first compile in `next dev` took 3.5 to 4.3 s
+ * when four workers opened `/orders/[orderId]` at once (2026-11-08 traces), and `router.push`
+ * commits the URL only after that, so a 5 s `toHaveURL` right after creating an order failed on a
+ * cold server. A dynamic page compiles with any id; the placeholder answers a not found state.
  */
+const PLACEHOLDER_ID = '00000000-0000-4000-8000-000000000000';
 const WARM_UP_PATHS = [
   '/en/returns/preview/brand',
   '/en/returns/preview/rejected',
@@ -25,6 +31,24 @@ const WARM_UP_PATHS = [
   '/ar/partner/preview',
   '/design',
   '/design/phone-dashboard',
+  '/',
+  '/account',
+  '/audit',
+  '/customers',
+  `/customers/${PLACEHOLDER_ID}`,
+  '/locations',
+  '/orders',
+  `/orders/${PLACEHOLDER_ID}`,
+  '/orders/new',
+  '/settings',
+  '/settings/cost-rules',
+  '/skus',
+  `/skus/${PLACEHOLDER_ID}`,
+  '/staff',
+  '/stock',
+  '/stock-receipts',
+  `/stock-receipts/${PLACEHOLDER_ID}`,
+  '/stock-receipts/new',
 ];
 
 /**

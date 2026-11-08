@@ -56,6 +56,10 @@ for (const { dir, name: languageName } of LANGUAGES) {
       page,
       context,
     }) => {
+      // A whole order journey with several axe sweeps: a passing run took 22.8 s of the 30 s default in
+      // a full parallel run (2026-11-08 trace), so a loaded first attempt crossed it while still
+      // progressing. The budget fits the journey; it waits for nothing that may never come.
+      test.setTimeout(60_000);
       const first = `EDT-${randomUUID().slice(0, 8).toUpperCase()}`;
       const second = `EDT-${randomUUID().slice(0, 8).toUpperCase()}`;
       await createSku(
