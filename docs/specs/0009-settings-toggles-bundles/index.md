@@ -127,7 +127,7 @@ Amended 2026-11-07 (wave 1; owner rulings 1 and 2 of *Wave 1 rulings and where t
 | `mail` | core | no | | outgoing mail | milestone 3 |
 | `health` | core | no | | health checks | milestone 3 |
 | `channels` | core | no | | stores and channels (spec 0015) | milestone 3 (its code is merged) |
-| `connectors` | core | no | `channels` | the inbox, the outbox, the Shopify connector (spec 0015); later Bosta, Meta, WhatsApp | with its code (spec 0015 milestone 1) |
+| `connectors` | core | no | `channels` | the inbox, the outbox, the Shopify connector (spec 0015); later Bosta, Meta, WhatsApp | with its code (spec 0015 milestone 1); 2026-11-08: the row landed with spec 0013 milestone 2's stand-in module (outbound command reads only), its capabilities still arrive with spec 0015 |
 | `customers` | core | no | | customers by phone (spec 0014) | milestone 3 (its code is merged) |
 | `orders` | core | no | | orders and their state machines (spec 0013) | milestone 3 (its code is merged) |
 | `tasks`, `settlement`, `exports`, `reporting` | core | no | | features 17; 22; 45; 24 and 25 | their features |

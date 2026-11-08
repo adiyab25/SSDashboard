@@ -15,7 +15,19 @@ export type OrdersErrorCode =
   | 'TransactionNested'
   | 'InvalidPhoneAlt'
   | 'InvalidOrderInput'
-  | 'LockTimeout';
+  | 'LockTimeout'
+  | 'OrderLocked'
+  | 'OrderStale'
+  | 'OrderNeedsALine'
+  | 'EditChangesPayment'
+  | 'EditOverpaid'
+  | 'EditInShopify'
+  | 'CancelInShopify'
+  | 'WriteBackOpen'
+  | 'GiftNotAllowed'
+  | 'DuplicateTargetRequired'
+  | 'InvalidPhoneMain'
+  | 'OrderStoreMissing';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -122,14 +134,11 @@ export class RelatedOrderOtherCustomer extends OrdersError {
   }
 }
 
-/** The order already has an open reopened order. */
+/** The order was already reopened once, whatever became of that reopened order. */
 export class AlreadyReopened extends OrdersError {
   /** Builds the error. */
   constructor() {
-    super(
-      'AlreadyReopened',
-      'This order has already been reopened and the new order is still open',
-    );
+    super('AlreadyReopened', 'This order has already been reopened; an order is reopened once');
   }
 }
 
@@ -173,5 +182,113 @@ export class OrderLockTimeout extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('LockTimeout', 'Orders are busy with another change. Try again.');
+  }
+}
+
+/**
+ * The order can no longer be edited (spec 0013 AC-8): its carrier delivery exists (the money
+ * freeze), or it has left `new`, `confirmed`, and `packed`. Also an unpack once the delivery exists.
+ */
+export class OrderLocked extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('OrderLocked', 'This order can no longer be changed');
+  }
+}
+
+/** The order changed since the person loaded it (`expectedUpdatedAt` does not match). */
+export class OrderStale extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('OrderStale', 'This order was changed by someone else. Reload it and try again.');
+  }
+}
+
+/** An edit would leave the order without an open line (AC-9): cancel the order instead. */
+export class OrderNeedsALine extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('OrderNeedsALine', 'An order keeps at least one line; cancel the order instead');
+  }
+}
+
+/** An edit would move `cod_expected_amount` between 0 and above 0 (AC-9). */
+export class EditChangesPayment extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super(
+      'EditChangesPayment',
+      'This edit would change how the order is paid: between nothing to collect and cash on delivery',
+    );
+  }
+}
+
+/** An edit would bring the total below what was prepaid and credited (AC-9, review M5). */
+export class EditOverpaid extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('EditOverpaid', 'This edit would bring the total below what the customer already paid');
+  }
+}
+
+/** A Shopify store order is edited in Shopify while its write back is unavailable (AC-10). */
+export class EditInShopify extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('EditInShopify', 'Edit this order in Shopify; the change syncs back here');
+  }
+}
+
+/** A Shopify store order is cancelled in Shopify while its write back is unavailable (AC-7). */
+export class CancelInShopify extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('CancelInShopify', 'Cancel this order in Shopify; the cancel syncs back here');
+  }
+}
+
+/** An outbound command on the order is still open, so it cannot be packed (AC-7, carried B2). */
+export class WriteBackOpen extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('WriteBackOpen', 'An edit of this order has not reached the channel yet');
+  }
+}
+
+/** A line or shipping edit of a gifted order by a person without `orders.gift` (AC-2). */
+export class GiftNotAllowed extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('GiftNotAllowed', 'Changing the lines or shipping of a gifted order needs orders.gift');
+  }
+}
+
+/** A `duplicate` cancel names no order, an unknown one, or the order itself (AC-7). */
+export class DuplicateTargetRequired extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super(
+      'DuplicateTargetRequired',
+      'A duplicate names the other order it duplicates, and that order must exist',
+    );
+  }
+}
+
+/** An edit's new main phone does not parse. Never carries the text. */
+export class InvalidPhoneMain extends OrdersError {
+  /** Builds the error; it carries no phone text. */
+  constructor() {
+    super('InvalidPhoneMain', 'The phone number is not a valid number');
+  }
+}
+
+/**
+ * An order names a store the channels service does not know: broken data, never a caller's
+ * mistake (500 at the edge, logged by order id).
+ */
+export class OrderStoreMissing extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('OrderStoreMissing', 'The order names a store that does not exist');
   }
 }

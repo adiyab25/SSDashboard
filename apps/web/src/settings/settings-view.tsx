@@ -40,6 +40,7 @@ export function SettingsView({ enabled }: { enabled: boolean }) {
   });
   const [editing, setEditing] = useState<SettingEntryView | null>(null);
   const entries = query.data?.entries ?? [];
+  const includesVat = entries.find((entry) => entry.key === 'prices_include_vat')?.value !== false;
   const forbidden = query.error instanceof ApiError && query.error.status === 403;
 
   if (forbidden) return <NoAccessState titleKey="settings.title" />;
@@ -106,7 +107,13 @@ export function SettingsView({ enabled }: { enabled: boolean }) {
       </LicenseSection>
       {query.data && sectionOf('policies')}
 
-      {editing && <SettingChangeDialog entry={editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <SettingChangeDialog
+          entry={editing}
+          pricesIncludeVat={includesVat}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }

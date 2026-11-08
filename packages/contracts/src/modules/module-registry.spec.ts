@@ -81,7 +81,7 @@ function changed(key: string, change: (m: ModuleDefinition) => ModuleDefinition)
 
 // Spec 0009, AC-6: the module registry and the rules it keeps.
 describe('the module registry (AC-6)', () => {
-  it('holds the eleven modules of today and the five core job capabilities', () => {
+  it('holds the twelve modules of today and the five core job capabilities', () => {
     expect(MODULE_REGISTRY.map((m) => m.key)).toEqual([
       'platform',
       'audit',
@@ -92,6 +92,7 @@ describe('the module registry (AC-6)', () => {
       'mail',
       'health',
       'channels',
+      'connectors',
       'customers',
       'orders',
     ]);
@@ -103,7 +104,9 @@ describe('the module registry (AC-6)', () => {
       'mail.send',
     ]);
     for (const module of MODULE_REGISTRY) {
-      expect(module, module.key).toMatchObject({ bundle: 'core', toggle: false, requires: [] });
+      // Spec 0009's table: `connectors` requires `channels`; every other core module, nothing.
+      const requires = module.key === 'connectors' ? ['channels'] : [];
+      expect(module, module.key).toMatchObject({ bundle: 'core', toggle: false, requires });
       for (const capability of module.capabilities) {
         expect(capability, capability.key).toMatchObject({ bundle: 'core', windDown: 'none' });
       }

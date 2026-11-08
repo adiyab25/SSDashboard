@@ -5,7 +5,15 @@ import { moneyInput, quantityInput } from '../digit-input.js';
 import { LocalizedText } from '../localized-text.js';
 import { Money, MoneyString, UnitCostString } from '../money.js';
 import { OrderOutcome } from './order-outcome.js';
-import { GiftReasonCode, OrderRelation, OrderType, RelatedOrderRelation } from './order-reasons.js';
+import {
+  CancelReasonCode,
+  EditReasonCode,
+  GiftReasonCode,
+  LineRemovalReasonCode,
+  OrderRelation,
+  OrderType,
+  RelatedOrderRelation,
+} from './order-reasons.js';
 import {
   CashState,
   FulfillmentState,
@@ -354,11 +362,24 @@ export const OrderSourceView = z.object({
 /** The validated shape of `OrderSourceView`. */
 export type OrderSourceView = z.infer<typeof OrderSourceView>;
 
+/** Where one open write back command of the order stands (spec 0013 AC-5, AC-12). */
+export const OrderWriteBackCommandView = z.object({
+  id: z.uuid(),
+  /** The command kind, for example `shopify.order_edit`. */
+  kind: z.string(),
+  syncState: z.enum(['waiting', 'failed']),
+  /** A provider error code only (`STEP_OFF`), never provider text; null while waiting. */
+  failureReason: z.string().nullable(),
+  queuedAt: Timestamp,
+});
+/** The validated shape of `OrderWriteBackCommandView`. */
+export type OrderWriteBackCommandView = z.infer<typeof OrderWriteBackCommandView>;
+
 /**
  * `GET /api/orders/:id` and the answer of every order move (spec 0013 AC-5): header, links both
- * ways, ship to, note, customer, lines, money, and the event timeline. `updatedAt` is the optimistic
- * concurrency token (`expectedUpdatedAt` of the moves of milestone 2), microsecond text. The
- * write back commands block arrives with milestone 2.
+ * ways, ship to, note, customer, lines, money, the open write back commands, and the event
+ * timeline. `updatedAt` is the optimistic concurrency token (`expectedUpdatedAt` of the moves),
+ * microsecond text.
  */
 export const OrderDetail = z.object({
   id: z.uuid(),
@@ -393,6 +414,11 @@ export const OrderDetail = z.object({
   customer: OrderCustomerView.nullable(),
   lines: z.array(OrderLineView),
   money: OrderMoneyView,
+  /**
+   * The open write back commands of the order, oldest first (AC-12: "Edit not synced, hold" with
+   * each command's state and reason). The api always sends it, an empty list when none is open.
+   */
+  writeBackCommands: z.array(OrderWriteBackCommandView),
   events: z.array(OrderEventView),
   updatedAt: z.string(),
 });
@@ -431,3 +457,113 @@ export const OrderOptions = z.object({
 });
 /** The validated shape of `OrderOptions`. */
 export type OrderOptions = z.infer<typeof OrderOptions>;
+
+/**
+ * The concurrency token every order move sends back (spec 0013 API surface): the `updatedAt` the
+ * page showed, microsecond text in UTC (the spec 0009 pattern). A move answers 409 `ORDER_STALE`
+ * when the order changed since.
+ */
+export const ExpectedUpdatedAt = z.iso.datetime({ offset: true });
+
+/** The ship to fields an edit may change (AC-9); a field left out stays as it is. */
+const shipToEditFields = {
+  name: z.string().trim().min(1).max(200).optional(),
+  phone: z.string().trim().min(1).max(64).optional(),
+  /** Null clears the second phone. */
+  phoneAlt: z.string().trim().max(64).nullable().optional(),
+  address: z.string().trim().min(1).max(500).optional(),
+  /** Null clears the courier note. */
+  courierNote: z.string().trim().max(500).nullable().optional(),
+  /** Null clears the carrier area codes. */
+  area: OrderAreaCodes.nullable().optional(),
+};
+
+/** The fields of a line an edit adds (the same as a new order line). */
+const editLineFields = {
+  variantId: z.uuid(),
+  quantity: quantityInput({ min: 1, max: 10_000 }),
+  unitPrice: Amount,
+  discountAmount: Amount.default('0.00'),
+};
+
+/**
+ * One operation of an order edit (spec 0013 API surface), a union on `kind`: change ship to
+ * fields, add a line, replace a line (the old line is cancelled with `edit_removal` and the new
+ * one added at the next position: a line is never changed in place), remove a line with a reason,
+ * or change the shipping charge.
+ */
+export const OrderEditOperation = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('ship_to'), ...shipToEditFields }),
+  z.strictObject({ kind: z.literal('add_line'), ...editLineFields }),
+  z.strictObject({ kind: z.literal('replace_line'), lineId: z.uuid(), ...editLineFields }),
+  z.strictObject({
+    kind: z.literal('remove_line'),
+    lineId: z.uuid(),
+    cancelReasonCode: LineRemovalReasonCode,
+  }),
+  z.strictObject({ kind: z.literal('shipping'), shippingChargedAmount: Amount }),
+]);
+/** The validated shape of `OrderEditOperation`. */
+export type OrderEditOperation = z.infer<typeof OrderEditOperation>;
+
+/**
+ * `POST /api/orders/:id/edits` (`orders.confirm`, AC-9): one or more operations applied in one
+ * transaction. A `ship_to` operation names at least one field, and a line is named by at most one
+ * replace or remove. Answers the order page (`OrderDetail`).
+ */
+export const OrderEditBody = z
+  .strictObject({
+    expectedUpdatedAt: ExpectedUpdatedAt,
+    reasonCode: EditReasonCode.optional(),
+    operations: z.array(OrderEditOperation).min(1).max(50),
+  })
+  .superRefine((body, context) => {
+    const named = new Set<string>();
+    body.operations.forEach((operation, index) => {
+      if (operation.kind === 'ship_to' && Object.keys(operation).length === 1) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A ship to change names at least one field',
+          path: ['operations', index],
+        });
+      }
+      if (operation.kind === 'replace_line' || operation.kind === 'remove_line') {
+        if (named.has(operation.lineId)) {
+          context.addIssue({
+            code: 'custom',
+            message: 'A line is replaced or removed once per edit',
+            path: ['operations', index, 'lineId'],
+          });
+        }
+        named.add(operation.lineId);
+      }
+    });
+  });
+/** The validated shape of `OrderEditBody`. */
+export type OrderEditBody = z.infer<typeof OrderEditBody>;
+
+/**
+ * `POST /api/orders/:id/confirm`, `/pack`, and `/unpack` (AC-7): only the concurrency token.
+ * Each answers the order page.
+ */
+export const OrderMoveBody = z.strictObject({ expectedUpdatedAt: ExpectedUpdatedAt });
+/** The validated shape of `OrderMoveBody`. */
+export type OrderMoveBody = z.infer<typeof OrderMoveBody>;
+
+/**
+ * `POST /api/orders/:id/cancel` (`orders.confirm`, AC-7): the cancel reason, and for `duplicate`
+ * the order it duplicates (422 `DUPLICATE_TARGET_REQUIRED` without one); no other reason takes a
+ * target. Answers the order page.
+ */
+export const CancelOrderBody = z
+  .strictObject({
+    expectedUpdatedAt: ExpectedUpdatedAt,
+    reasonCode: CancelReasonCode,
+    duplicateOfOrderId: z.uuid().nullable().optional(),
+  })
+  .refine((body) => body.reasonCode === 'duplicate' || !body.duplicateOfOrderId, {
+    message: 'Only a duplicate names the order it duplicates',
+    path: ['duplicateOfOrderId'],
+  });
+/** The validated shape of `CancelOrderBody`. */
+export type CancelOrderBody = z.infer<typeof CancelOrderBody>;

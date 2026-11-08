@@ -542,7 +542,7 @@ describe('orders, milestone 1', { timeout: 240_000 }, () => {
       });
     });
 
-    it('lets only the customer of an order reopen it, and only once while the reopened order is open', async () => {
+    it('lets only the customer of an order reopen it, and only once whatever became of the reopened order', async () => {
       const shipTo = { name: 'Sentinel Name', phone: phone(), address: 'x' };
       const original = await create({ shipTo });
       await setState(original.id, 'cancelled');
@@ -583,7 +583,55 @@ describe('orders, milestone 1', { timeout: 240_000 }, () => {
       expect(first.status).toBe(201);
       expect(second.status).toBe(409);
       expect(second.body).toMatchObject({ code: 'ALREADY_REOPENED' });
-      expect(third.status).toBe(201);
+      // The owner's ruling: one reopen per original, even once that reopened order was cancelled.
+      expect(third.status).toBe(409);
+      expect(third.body).toMatchObject({ code: 'ALREADY_REOPENED' });
+    });
+
+    it('reopens an original once: a second reopen is refused after the first is cancelled or delivered (task 8a)', async () => {
+      const reopenedFrom = async (originalId: string) =>
+        (
+          await owner<{ n: number }>(
+            `SELECT count(*)::int AS n FROM orders
+             WHERE related_order_id = $1::uuid AND related_order_relation = 'reopened_from'`,
+            [originalId],
+          )
+        ).rows[0]?.n;
+      const reopenTwice = async (settle: (reopenId: string) => Promise<void>) => {
+        const shipTo = { name: 'Sentinel Name', phone: phone(), address: 'x' };
+        const original = await create({ shipTo });
+        await setState(original.id, 'cancelled');
+        const link = { orderId: original.id, relation: 'reopened_from' };
+        const reopen = await create({ shipTo, relatedOrder: link });
+        await settle(reopen.id);
+        const again = await api.call(
+          support,
+          'POST',
+          '/api/orders',
+          body({ shipTo, relatedOrder: link }),
+        );
+        return { again, written: await reopenedFrom(original.id) };
+      };
+
+      // The reopen cancelled through the real cancel route.
+      const afterCancel = await reopenTwice(async (reopenId) => {
+        const cancel = await api.call(support, 'POST', `/api/orders/${reopenId}/cancel`, {
+          expectedUpdatedAt: (await detail(reopenId)).updatedAt,
+          reasonCode: 'customer_cancelled',
+        });
+        expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
+      });
+      // Test only setup: the reopen delivered by the owner role, because the carrier facts that
+      // move an order to `delivered` (`recordShipmentFact`) arrive in spec 0013 milestone 5.
+      const afterDelivery = await reopenTwice((reopenId) =>
+        setState(reopenId, 'delivered').then(() => undefined),
+      );
+
+      for (const { again, written } of [afterCancel, afterDelivery]) {
+        expect(again.status).toBe(409);
+        expect(again.body).toMatchObject({ code: 'ALREADY_REOPENED' });
+        expect(written).toBe(1);
+      }
     });
 
     it('lets two parallel reopens of one order make exactly one', async () => {

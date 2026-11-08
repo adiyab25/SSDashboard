@@ -1437,6 +1437,76 @@ export const en = {
         import: 'An import',
       },
     },
+    actions: {
+      label: 'Order actions',
+      confirm: 'Confirm',
+      pack: 'Pack',
+      unpack: 'Back to confirmed',
+      edit: 'Edit order',
+      cancel: 'Cancel order',
+      confirmed: 'Order {{order}} confirmed',
+      packed: 'Order {{order}} packed',
+      unpacked: 'Order {{order}} is back to confirmed',
+      edited: 'Order {{order}} updated',
+      cancelled: 'Order {{order}} cancelled',
+      stale:
+        'This order changed while you were working. The page now shows the latest version; check it and try again.',
+      editInShopify:
+        'This order comes from Shopify. Edit it in Shopify and the change syncs back here.',
+      cancelInShopify:
+        'This order comes from Shopify. Cancel it in Shopify and the cancellation syncs back here.',
+      busy: 'The system is busy. Wait a moment and try again.',
+      forbidden: 'You do not have permission to do this.',
+      generic: 'That did not work. Try again.',
+    },
+    hold: {
+      commands: 'Changes waiting to reach the sales channel',
+      kind: {
+        'shopify.order_edit': 'Order edit to Shopify',
+        'shopify.order_cancel': 'Cancellation to Shopify',
+      },
+      state: { waiting: 'Waiting', failed: 'Failed' },
+      reason: 'Error code:',
+      queued: 'Queued {{when}}',
+    },
+    edit: {
+      title: 'Edit order {{order}}',
+      description:
+        'Change where it ships, its lines, or the shipping charge. Everything you change is saved together and recorded in the history.',
+      close: 'Close',
+      cancel: 'Close without saving',
+      save: 'Save changes',
+      tooMany: 'An edit can hold at most 50 changes. Save some of them now, then edit again.',
+      lineSummary: '{{quantity}} × {{price}}',
+      phoneAsTypedLabel: 'Phone as typed:',
+      reason: 'Why',
+      noReason: 'No reason',
+      nothingChanged: 'Nothing was changed. Change a field, or close this window.',
+      newLine: 'New line',
+      addedLine: 'New line {{number}}',
+      removeAdded: 'Remove new line {{number}}',
+      lineAction: 'What to do with line {{number}}',
+      actions: { keep: 'Keep as it is', replace: 'Replace it', remove: 'Remove it' },
+      removalReason: 'Why remove this line',
+      chooseRemovalReason: 'Choose a reason',
+      removalReasonRequired: 'Choose why this line is removed.',
+      giftLinesNeedPermission:
+        'Only a manager can change the lines or the shipping of a gifted order. You can still fix where it ships.',
+    },
+    cancel: {
+      title: 'Cancel order {{order}}',
+      description: 'The order stops here. Any stock held for it is released.',
+      close: 'Close',
+      reason: 'Why',
+      chooseReason: 'Choose a reason',
+      reasonRequired: 'Choose why this order is cancelled.',
+      duplicateOf: 'The order it duplicates',
+      duplicateRequired: 'Choose the order this one duplicates.',
+      keepsLines:
+        'Its lines and totals stay as they were, so the history still shows what was ordered.',
+      keep: 'Keep the order',
+      confirm: 'Cancel order',
+    },
     new: {
       title: 'New order',
       description: 'Enter an order a customer placed by WhatsApp, Instagram, or phone.',
@@ -1501,7 +1571,29 @@ export const en = {
         RELATED_ORDER_STATE: 'The linked order is not in a state that allows this link.',
         RELATED_ORDER_UNKNOWN: 'The linked order does not exist.',
         RELATED_ORDER_OTHER_CUSTOMER: 'The linked order belongs to a different customer.',
-        ALREADY_REOPENED: 'This order has already been reopened.',
+        ALREADY_REOPENED:
+          'An order can be reopened only once, even if the reopened order was cancelled or changed since.',
+        ORDER_LOCKED:
+          'This order can no longer be changed: the courier has its delivery, or it has moved past packed.',
+        ORDER_NOT_FOUND: 'This order does not exist.',
+        ORDER_NEEDS_A_LINE: 'An order needs at least one open line. Cancel the order instead.',
+        EDIT_CHANGES_PAYMENT:
+          'This change would turn the cash to collect from nothing into something, or the other way round. Cancel the order and enter a new one instead.',
+        EDIT_OVERPAID:
+          'The new total would be lower than what the customer already paid. Refunds are not handled here.',
+        EDIT_IN_SHOPIFY:
+          'This order is edited in Shopify. Make the change there and it syncs back.',
+        CANCEL_IN_SHOPIFY:
+          'This order is cancelled in Shopify. Cancel it there and the cancellation syncs back.',
+        WRITE_BACK_OPEN:
+          'A change to this order has not reached the sales channel yet. Wait for it to sync before packing.',
+        LINE_SHORT: 'A line is short of stock, so the order cannot be packed yet.',
+        GIFT_NOT_ALLOWED: 'Only a manager can change the lines or the shipping of a gifted order.',
+        DUPLICATE_TARGET_REQUIRED:
+          'Choose the order this one duplicates. It must be a different, existing order.',
+        INVALID_PHONE: 'The phone number is not a valid phone number.',
+        INVALID_TRANSITION: 'The order is no longer in a state that allows this. Check its page.',
+        REASON_INVALID: 'Choose a reason from the list.',
         LINE_FULLY_DISCOUNTED:
           'A sale line cannot be discounted to nothing. Enter a gifted order instead.',
         GIFT_MUST_STAY_FREE: 'A gifted order cannot charge for a line or for shipping.',
@@ -1733,7 +1825,7 @@ export const en = {
       pricesIncludeVat:
         'New orders will split net and tax differently from older ones in the same export. It must match the tax setting of every Shopify store.',
       salesTaxRate:
-        'Only new orders use the new rate. Orders already placed keep the tax split they were saved with.',
+        'Manual order lines, and shipping on orders whose sales channel sends no tax rate, use the new rate. Shopify order lines never use it. Recorded orders keep the rate they were priced with.',
       operatingDayCutoffHour:
         'Days already recorded are never restated, so the day of the change is longer or shorter than usual.',
     },
@@ -1928,6 +2020,13 @@ export const en = {
       reasonHint: 'Saved in the audit trail with the change. Up to 500 characters.',
       confirmLabel: 'Type “{{name}}” to confirm',
       confirmHint: 'This change moves other things, so type the name of the setting to go on.',
+      taxSplit: {
+        title: 'Worked example at this rate',
+        included: 'Prices include VAT: a price of {{price}} becomes {{net}} net and {{vat}} VAT.',
+        excluded:
+          'Prices do not include VAT: a price of {{price}} becomes {{total}} with {{vat}} VAT.',
+        invalid: 'Enter a rate from 0 to 100, such as 14.00, to see an example.',
+      },
       listHint: 'Language codes separated by commas, in switcher order, for example en, ar.',
       clearHint: 'Leave empty to clear it.',
       cancel: 'Cancel',
@@ -1985,6 +2084,11 @@ export const en = {
     channels: {
       label: 'Stores and channels',
       description: 'The stores orders are numbered in and the channels they arrive through.',
+    },
+    connectors: {
+      label: 'Connected accounts',
+      description:
+        'The outside accounts the app talks to, like Shopify, and the changes it sends them.',
     },
     customers: { label: 'Customers', description: 'One customer per phone number.' },
     orders: { label: 'Orders', description: 'Orders, their parcels, and their money.' },

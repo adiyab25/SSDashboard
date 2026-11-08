@@ -78,7 +78,7 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
 - [x] Design it (spec): `/architect orders & their state machines`
 - [ ] Build it: `/develop orders & their state machines`
   - [x] One manual order through every layer
-  - [ ] Editing, confirming, cancelling, packing, and the hold
+  - [x] Editing, confirming, cancelling, packing, and the hold
   - [ ] The channel intake contract for feature 13
   - [ ] Stock: holds at creation, short lines, and carrier shipments
   - [ ] Carrier and cash moves, the shipment posting, and scale
