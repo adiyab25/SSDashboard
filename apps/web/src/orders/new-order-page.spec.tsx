@@ -192,7 +192,7 @@ describe('NewOrderPage (AC-1, AC-20)', () => {
   it.each([
     ['LINE_FULLY_DISCOUNTED', 422, 'cannot be discounted to nothing'],
     ['RELATED_ORDER_OTHER_CUSTOMER', 422, 'belongs to a different customer'],
-    ['ALREADY_REOPENED', 409, 'already been reopened'],
+    ['ALREADY_REOPENED', 409, 'can be reopened only once'],
     ['CHANNEL_NOT_ALLOWED', 422, 'on this channel'],
   ])('gives %s its own message', async (code, status, text) => {
     api.createOrder.mockRejectedValue(new ApiError(status, { code }));

@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RecordHistoryPanel } from '@/audit/record-history-panel';
 import { useAccess } from '@/access/use-access';
@@ -16,7 +17,9 @@ import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { CashChip } from './cash-chip';
 import { FulfillmentChip } from './fulfillment-chip';
+import { OrderActions } from './order-actions';
 import { OrderDetailSkeleton } from './order-detail-skeleton';
+import { OrderHoldBlock } from './order-hold-block';
 import { OrderLinesSection } from './order-lines-section';
 import { OrderMoneySection } from './order-money-section';
 import { OrderNumber } from './order-number';
@@ -44,7 +47,8 @@ function isKnownSource(value: string): value is (typeof KNOWN_SOURCES)[number] {
  * both state chips and the outcome, the channel and source, the related order, the placed time in
  * the install's time zone, the linked customer with her risk flag, the ship to block, the lines,
  * the money, and the event timeline; the audit entries follow for a viewer holding `audit.read`.
- * Edits, cancel, confirm, and pack arrive with milestone 2.
+ * The actions (confirm, pack, edit, cancel) and the "Edit not synced, hold" block sit under the
+ * header (spec 0013, AC-7 to AC-12).
  */
 export function OrderDetailView({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
@@ -52,6 +56,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
   const text = useLocalizedText();
   const access = useAccess();
   const { orderId } = useParams<{ orderId: string }>();
+  const heading = useRef<HTMLHeadingElement>(null);
   const query = useQuery({
     queryKey: orderKeys.detail(orderId),
     queryFn: ({ signal }) => getOrder(orderId, signal),
@@ -253,7 +258,11 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
       </Button>
 
       <header className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold">
+        <h1
+          ref={heading}
+          tabIndex={-1}
+          className="rounded-sm text-xl font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
           <OrderNumber order={order} />
         </h1>
         <div className="flex flex-wrap items-center gap-3">
@@ -262,17 +271,9 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
         </div>
       </header>
 
-      {order.writeBackState !== 'none' && (
-        <Alert role="status">
-          <AlertDescription>
-            {t(
-              order.writeBackState === 'failed'
-                ? 'orders.detail.holdFailed'
-                : 'orders.detail.holdWaiting',
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
+      <OrderActions order={order} headingRef={heading} />
+
+      <OrderHoldBlock order={order} />
 
       <dl className="grid gap-x-8 gap-y-1 rounded-lg border p-4 sm:grid-cols-[max-content_1fr]">
         {facts.map((fact) => (

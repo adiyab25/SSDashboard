@@ -5,7 +5,10 @@ import {
   OrderListResponse,
   OrderOptions,
   type CreateGiftedOrderBody,
+  type CancelOrderBody,
   type CreateManualOrderBody,
+  type OrderEditBody,
+  type OrderMoveBody,
 } from '@ssdashboard/contracts';
 import { apiRequest } from '@/api/client';
 import { queryOf, type OrderFilters } from './order-filters';
@@ -68,3 +71,18 @@ export const createOrder = (body: CreateManualOrderBody) =>
 /** `POST /api/orders/gifted` (`orders.gift`). */
 export const createGiftedOrder = (body: CreateGiftedOrderBody) =>
   apiRequest('POST', '/api/orders/gifted', CreatedOrder, { body });
+
+/** `POST /api/orders/:id/edits` (`orders.confirm`): one or more edit operations in one transaction; answers the order page. */
+export const editOrder = (id: string, body: OrderEditBody) =>
+  apiRequest('POST', `/api/orders/${encodeURIComponent(id)}/edits`, OrderDetail, { body });
+
+/** `POST /api/orders/:id/cancel` (`orders.confirm`): a cancel reason, and for `duplicate` the order it duplicates. */
+export const cancelOrder = (id: string, body: CancelOrderBody) =>
+  apiRequest('POST', `/api/orders/${encodeURIComponent(id)}/cancel`, OrderDetail, { body });
+
+/** The moves that carry only the concurrency token. */
+export type OrderMove = 'confirm' | 'pack' | 'unpack';
+
+/** `POST /api/orders/:id/confirm`, `/pack`, or `/unpack`: `orders.confirm` for the first, `fulfillment.work` for the others. */
+export const moveOrder = (id: string, move: OrderMove, body: OrderMoveBody) =>
+  apiRequest('POST', `/api/orders/${encodeURIComponent(id)}/${move}`, OrderDetail, { body });

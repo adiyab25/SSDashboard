@@ -276,3 +276,15 @@ describe('StaffHat and AccessHolding', () => {
     expect(Object.keys(AccessHolding.shape)).toEqual(['hats', 'costView', 'partnerAccountId']);
   });
 });
+
+describe('order moves answer the order page (spec 0013 milestone 2, security review L4)', () => {
+  it('gives orders.view to every hat that holds orders.confirm or fulfillment.work', () => {
+    const missing = Hat.options.filter((hat) => {
+      const held = HAT_PERMISSIONS[hat];
+      const moves = held.includes('orders.confirm') || held.includes('fulfillment.work');
+      return moves && !held.includes('orders.view');
+    });
+
+    expect(missing).toEqual([]);
+  });
+});

@@ -55,3 +55,40 @@ export class OrderAttentionRaised {
     readonly sourceId: string | null,
   ) {}
 }
+
+/**
+ * An edit was applied (spec 0013 AC-10): by a person (`origin: 'person'`, which feature 13 turns
+ * into an outbound command in the same transaction) or from the channel. Field names only, never
+ * their values.
+ */
+export class OrderEdited {
+  /** Takes the order, who edited it, and what changed. */
+  constructor(
+    readonly orderId: string,
+    readonly storeId: string,
+    readonly origin: 'person' | 'channel',
+    readonly addedLineIds: readonly string[],
+    readonly cancelledLineIds: readonly string[],
+    /** The names of the ship to fields that changed (`address`, `phone`), never their values. */
+    readonly changedShipToFields: readonly string[],
+    readonly shippingChanged: boolean,
+    /**
+     * The correlation id of the edit's `order.edited` audit entry (spec 0010), which finds the
+     * entry; `AuditService.record` does not hand back the entry id itself.
+     */
+    readonly auditCorrelationId: string,
+  ) {}
+}
+
+/** An order was cancelled (spec 0013 AC-7): ids and codes only. */
+export class OrderCancelled {
+  /** Takes the order, who cancelled it, why, and whether a carrier delivery already existed. */
+  constructor(
+    readonly orderId: string,
+    readonly storeId: string,
+    readonly origin: 'person' | 'channel' | 'carrier',
+    readonly reasonCode: string,
+    readonly duplicateOfOrderId: string | null,
+    readonly carrierDeliveryExisted: boolean,
+  ) {}
+}

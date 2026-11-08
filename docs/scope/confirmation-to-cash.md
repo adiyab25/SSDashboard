@@ -42,7 +42,7 @@ Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out fr
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
   - [ ] Recorded fixtures and one order through a signed webhook
-  - [ ] Catalog, orders in full, go live, backfill, and the sweep
+  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08)
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
   - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)
@@ -78,7 +78,7 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
 - [x] Design it (spec): `/architect orders & their state machines`
 - [ ] Build it: `/develop orders & their state machines`
   - [x] One manual order through every layer
-  - [ ] Editing, confirming, cancelling, packing, and the hold
+  - [x] Editing, confirming, cancelling, packing, and the hold
   - [ ] The channel intake contract for feature 13
   - [ ] Stock: holds at creation, short lines, and carrier shipments
   - [ ] Carrier and cash moves, the shipment posting, and scale

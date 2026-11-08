@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { AUDIT_ACTIONS, CreatedOrder, SkuDetail } from '@ssdashboard/contracts';
+import { AUDIT_ACTIONS, CreatedOrder, OrderDetail, SkuDetail } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 
 // Spec 0013 AC-11 and the Audit table: the orders audit entries and their privacy. Milestone 1
-// proves `order.created_manually`; the other four codes are written by the moves of milestones 2,
-// 3, and 5 and are listed as todo until then, so this file stays the one proof the registry names.
+// proves `order.created_manually` and milestone 2 `order.edited`; the other three codes are
+// written by the moves of milestones 3 and 5 and are listed as todo until then, so this file
+// stays the one proof the registry names.
 describe('orders audit', { timeout: 120_000 }, () => {
   let api: InProcessApi;
   let support = '';
@@ -90,8 +91,127 @@ describe('orders audit', { timeout: 120_000 }, () => {
     ]);
   });
 
-  // Written by the moves that follow (spec 0013 milestones 2, 3, and 5).
-  it.todo('order.edited writes one entry per edit with redacted ship to values (milestone 2)');
+  it('writes one order.edited entry per edit with the ship to values redacted and listed as personal', async () => {
+    const old = {
+      name: 'Sentinel Before Name',
+      phone: '01009998866',
+      address: '11 Sentinel Before Street',
+      note: 'Sentinel before courier note',
+      phoneAlt: '01009998844',
+      governorate: 'SENTGOVB',
+      city: 'SENTCITYB',
+      zone: 'SENTZONEB',
+    };
+    const fresh = {
+      name: 'Sentinel After Name',
+      phone: '01009998855',
+      address: '22 Sentinel After Street',
+      note: 'Sentinel after courier note',
+      phoneAlt: '01009998833',
+      governorate: 'SENTGOVA',
+      city: 'SENTCITYA',
+      zone: 'SENTZONEA',
+    };
+    const areaOf = (from: typeof old) => ({
+      list: 'bosta',
+      governorateCode: from.governorate,
+      cityCode: from.city,
+      zoneCode: from.zone,
+    });
+    const reply = await api.call(support, 'POST', '/api/orders', {
+      clientRef: randomUUID(),
+      storeId: mainStore,
+      channelId: manualChannel,
+      shipTo: {
+        name: old.name,
+        phone: old.phone,
+        phoneAlt: old.phoneAlt,
+        address: old.address,
+        courierNote: old.note,
+        area: areaOf(old),
+      },
+      lines: [{ variantId: variant, quantity: 1, unitPrice: '100.00' }],
+      shippingChargedAmount: '20.00',
+      paymentMethod: 'cod',
+    });
+    const made = CreatedOrder.parse(reply.body);
+    const page = OrderDetail.parse((await api.call(support, 'GET', `/api/orders/${made.id}`)).body);
+
+    const edit = await api.call(support, 'POST', `/api/orders/${made.id}/edits`, {
+      expectedUpdatedAt: page.updatedAt,
+      reasonCode: 'address_fix',
+      operations: [
+        {
+          kind: 'ship_to',
+          name: fresh.name,
+          phone: fresh.phone,
+          address: fresh.address,
+          courierNote: fresh.note,
+          phoneAlt: fresh.phoneAlt,
+          area: areaOf(fresh),
+        },
+        { kind: 'shipping', shippingChargedAmount: '30.00' },
+      ],
+    });
+    const { rows } = await api.owner.pool.query<{
+      record_label: string;
+      reason: string;
+      actor_kind: string;
+      before: Record<string, unknown>;
+      after: Record<string, unknown>;
+      personal_fields: string[];
+    }>(
+      `SELECT record_label, reason, actor_kind, before, after, personal_fields
+       FROM audit_entries WHERE record_id = $1::uuid AND action = 'order.edited'`,
+      [made.id],
+    );
+    const everything = await api.owner.pool.query<{ text: string }>(
+      `SELECT row_to_json(a)::text AS text FROM audit_entries a`,
+    );
+    const allText = everything.rows.map((r) => r.text).join('\n');
+
+    expect(edit.status, JSON.stringify(edit.body)).toBe(200);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      record_label: `MAIN/${made.orderNumber}`,
+      reason: 'address_fix',
+      actor_kind: 'person',
+      before: {
+        shipToName: '[REDACTED]',
+        shipToPhone: '[REDACTED]',
+        shipToAddress: '[REDACTED]',
+        courierNote: '[REDACTED]',
+        shippingChargedAmount: '20.00',
+        totalAmount: '120.00',
+      },
+      after: {
+        origin: 'person',
+        shipToName: '[REDACTED]',
+        shipToPhone: '[REDACTED]',
+        shipToAddress: '[REDACTED]',
+        courierNote: '[REDACTED]',
+        shippingChargedAmount: '30.00',
+        totalAmount: '130.00',
+      },
+    });
+    // The trail lists each masked field once, by its path inside `before` and `after`.
+    expect([...(rows[0]?.personal_fields ?? [])].sort()).toEqual([
+      'courierNote',
+      'shipToAddress',
+      'shipToCityCode',
+      'shipToGovernorateCode',
+      'shipToName',
+      'shipToPhone',
+      'shipToPhoneAlt',
+      'shipToZoneCode',
+    ]);
+    for (const text of [...Object.values(old), ...Object.values(fresh)]) {
+      expect(allText).not.toContain(text);
+    }
+    expect(allText).not.toContain('+2010099988');
+  });
+
+  // Written by the moves that follow (spec 0013 milestones 3 and 5).
   it.todo('order.payment_method_rederived (milestone 3)');
   it.todo('order.partial_delivery_split (milestone 5)');
   it.todo('order.collection_recorded_manually (milestone 5)');
