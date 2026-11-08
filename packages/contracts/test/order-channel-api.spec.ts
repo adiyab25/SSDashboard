@@ -198,3 +198,21 @@ describe('RederivePaymentMethodInput (AC-25 c)', () => {
     ).toBe(false);
   });
 });
+
+describe('channel tax rates (security L2, review minor 7)', () => {
+  it('caps a line rate and the shipping rate at 100', () => {
+    const line = input().lines[0];
+
+    expect(
+      ChannelOrderInput.safeParse(input({ lines: [{ ...line, taxRate: '100.01' }] })).success,
+    ).toBe(false);
+    expect(ChannelOrderInput.safeParse(input({ shippingTaxRate: '140.00' })).success).toBe(false);
+  });
+
+  it('defaults the shipping rate to null (the sales tax setting applies)', () => {
+    expect(ChannelOrderInput.parse(input()).shippingTaxRate).toBeNull();
+    expect(ChannelOrderInput.parse(input({ shippingTaxRate: '14.00' })).shippingTaxRate).toBe(
+      '14.00',
+    );
+  });
+});

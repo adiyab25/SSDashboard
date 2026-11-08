@@ -14,6 +14,8 @@ import { OrderNotFound, OrderStale } from '../orders.errors.js';
 export interface LockedOrder extends PlanOrder {
   id: string;
   storeId: string;
+  /** The channel the order arrived on (the channel calls refuse a manual entry channel). */
+  channelId: string;
   orderNumber: string;
   customerId: string | null;
   placedAt: Date;
@@ -38,6 +40,7 @@ export interface LockedOrder extends PlanOrder {
 interface LockedRow extends Record<string, unknown> {
   id: string;
   store_id: string;
+  channel_id: string;
   order_number: string;
   type: OrderType;
   customer_id: string | null;
@@ -108,7 +111,7 @@ export async function lockOrderForChange(
       ? sql`true`
       : sql`coalesce(updated_at = ${expectedUpdatedAt}::timestamptz, false)`;
   const { rows } = await tx.execute<LockedRow>(sql`
-    SELECT id, store_id, order_number, type, customer_id,
+    SELECT id, store_id, channel_id, order_number, type, customer_id,
            to_char(placed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS placed_at,
            fulfillment_state, cash_state, write_back_state,
            carrier_delivery_created_at IS NOT NULL AS carrier_delivery_created,
@@ -160,6 +163,7 @@ export async function lockOrderForChange(
   return {
     id: row.id,
     storeId: row.store_id,
+    channelId: row.channel_id,
     orderNumber: row.order_number,
     type: row.type,
     customerId: row.customer_id,

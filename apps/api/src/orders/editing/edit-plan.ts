@@ -129,9 +129,11 @@ export interface EditContext {
   unparseablePhone: 'refuse' | 'keep_raw';
   /**
    * What a second phone that does not parse does (review N4): `refuse` for a person's edit
-   * (`InvalidPhoneAlt`), `drop` for a channel edit (milestone 3): the second phone is stored as
-   * null and the plan says `phoneAltUnparseable` so the caller raises `phone_unparseable`. Its
-   * text is kept nowhere: `contact_phone_raw` holds only a main phone that does not parse.
+   * (`InvalidPhoneAlt`), `drop` for a channel edit (milestone 3): the text is not stored and the
+   * stored second phone stays as it is (security L9: a valid number is never erased by text that
+   * does not parse); when a stored one was kept, the plan says `phoneAltUnparseable` so the caller
+   * raises `phone_unparseable`. The text is kept nowhere: `contact_phone_raw` holds only a main
+   * phone that does not parse.
    */
   unparseablePhoneAlt: 'refuse' | 'drop';
 }
@@ -183,7 +185,7 @@ export interface PlannedEdit {
   phone: NormalizedPhone | null;
   /** True when a channel edit set a main phone that does not parse (`keep_raw`). */
   phoneUnparseable: boolean;
-  /** True when a channel edit dropped a second phone that does not parse (`drop`). */
+  /** True when a channel edit kept the stored second phone because its new text did not parse. */
   phoneAltUnparseable: boolean;
   shippingChargedAmount: string;
   shippingChanged: boolean;
@@ -451,11 +453,12 @@ function applyShipTo(
   if (operation.phoneAlt !== undefined) {
     const text = operation.phoneAlt?.trim() ?? '';
     const alt = text === '' ? null : parseAlt(text, context.unparseablePhoneAlt);
-    if (alt !== current.phoneAlt) {
+    if (alt === undefined) {
+      // Text that does not parse (a channel): the stored phone stays; said only when one is kept.
+      altUnparseable = current.phoneAlt !== null;
+    } else if (alt !== current.phoneAlt) {
       columns.shipToPhoneAlt = alt;
       changed.add('phoneAlt');
-      // Said only when the drop changes the stored phone, so an echo snapshot raises nothing again.
-      if (alt === null && text !== '') altUnparseable = true;
     }
   }
   if (operation.address !== undefined && operation.address !== current.address) {
@@ -482,13 +485,16 @@ function applyShipTo(
   return { phone, unparseable, altUnparseable };
 }
 
-/** Parses a second phone: refused, or null (dropped) for a channel, when it does not parse. */
-function parseAlt(text: string, mode: EditContext['unparseablePhoneAlt']): string | null {
+/**
+ * Parses a second phone: refused for a person, or undefined (not stored, the stored one kept) for
+ * a channel, when it does not parse.
+ */
+function parseAlt(text: string, mode: EditContext['unparseablePhoneAlt']): string | undefined {
   if (mode === 'refuse') return parseOrRefuse(text, () => new InvalidPhoneAlt()).e164;
   try {
     return EgyptianPhone.parse(text).e164;
   } catch (error) {
-    if (error instanceof InvalidPhone) return null;
+    if (error instanceof InvalidPhone) return undefined;
     throw error;
   }
 }

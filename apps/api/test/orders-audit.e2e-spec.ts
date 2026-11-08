@@ -227,9 +227,17 @@ describe('orders audit', { timeout: 120_000 }, () => {
       note: 'Sentinel rederive note',
     };
     const intake = api.app.get(OrderIntake);
+    // A channel order arrives on a channel bound to its store, never a manual entry one.
+    const landingPage = (
+      await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO channels (code, name, kind, default_store_id)
+         VALUES ('AUDLP', '{"en":"Landing page"}', 'landing_page', $1::uuid) RETURNING id`,
+        [mainStore],
+      )
+    ).rows[0]?.id as string;
     const input = ChannelOrderInput.parse({
       storeId: mainStore,
-      channelId: manualChannel,
+      channelId: landingPage,
       channelOrderRef: `gid-${randomUUID()}`,
       orderNumber: '#9001',
       placedAt: new Date().toISOString(),

@@ -110,6 +110,23 @@ describe('diffChannelSnapshot (spec 0013 AC-14)', () => {
     });
   });
 
+  it('keeps the stored variant when it replaces a mapped line the snapshot sends unmapped', () => {
+    const diff = diffChannelSnapshot(
+      [stored(LINE_M, M, 'c-m')],
+      snapshot([line({ variantId: null, quantity: 2 })]),
+    );
+
+    expect(diff.operations[0]).toMatchObject({
+      kind: 'replace_line',
+      lineId: LINE_M,
+      variantId: M,
+    });
+  });
+
+  it('cancels a dropped line with edit_removal, a line cancel reason of spec 0002', () => {
+    expect(CHANNEL_EDIT_REMOVAL).toBe('edit_removal');
+  });
+
   it('adds a line the order does not hold, unmapped included', () => {
     const diff = diffChannelSnapshot(
       [stored(LINE_M, M, 'c-m')],

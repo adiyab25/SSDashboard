@@ -50,4 +50,16 @@ describe('ConnectorsService (stand-in, spec 0015 AC-24)', () => {
     await expect(service.writeBackAvailable(row.id, 'shopify.order_edit')).resolves.toBe(false);
     await expect(service.writeBackAvailable(row.id, 'shopify.order_cancel')).resolves.toBe(false);
   });
+
+  it('answers the store of a connection in the caller transaction', async () => {
+    const service = new ConnectorsService({} as DatabaseConnection);
+    const store = '01937f3a-0000-7000-8000-000000000009';
+    const executor = {
+      execute: () => Promise.resolve({ rows: [{ store_id: store }] }),
+    } as unknown as Executor;
+    const none = { execute: () => Promise.resolve({ rows: [] }) } as unknown as Executor;
+
+    await expect(service.storeOfConnection(row.connection_id, executor)).resolves.toBe(store);
+    await expect(service.storeOfConnection(row.connection_id, none)).resolves.toBeNull();
+  });
 });

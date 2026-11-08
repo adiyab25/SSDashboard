@@ -588,6 +588,11 @@ export type OrderSourceCapturedFrom = z.infer<typeof OrderSourceCapturedFrom>;
 
 const SourceText = z.string().trim().min(1).max(500).nullable().default(null);
 
+/** A tax rate in percent, 0 to 100 (`numeric(5,2)` would hold up to 999.99; security L2). */
+const ChannelTaxRate = TaxRateString.refine((rate) => Number(rate) <= 100, {
+  message: 'A tax rate is at most 100',
+});
+
 /**
  * The campaign fields of spec 0002 an order carries from its channel (`orders.source_*`). Every
  * field defaults to null and `capturedFrom` to `none`, so a channel that knows nothing sends `{}`.
@@ -603,7 +608,10 @@ export const OrderSourceInput = z.strictObject({
   utmContent: SourceText,
   landingPage: SourceText,
   referrer: SourceText,
-  /** The staff user who bought the ad, when the channel knows her. */
+  /**
+   * The staff user who bought the ad, when the channel knows her. The api stores null for a
+   * channel order until it can check the id inside the order transaction (review minor 6).
+   */
   mediaBuyerId: z.uuid().nullable().default(null),
   influencerCode: SourceText,
 });
@@ -653,7 +661,7 @@ export const ChannelOrderLineInput = z.strictObject({
   quantity: z.number().int().min(1).max(10_000),
   unitPrice: PriceString,
   discountAmount: PriceString.default('0.00'),
-  taxRate: TaxRateString,
+  taxRate: ChannelTaxRate,
 });
 /** The validated shape of `ChannelOrderLineInput`. */
 export type ChannelOrderLineInput = z.infer<typeof ChannelOrderLineInput>;
@@ -700,6 +708,11 @@ const channelOrderFields = {
   giftReasonCode: GiftReasonCode.nullable().default(null),
   paymentMethod: OrderPaymentMethod,
   shippingChargedAmount: PriceString,
+  /**
+   * The tax rate of the shipping charge as the channel's shipping tax lines give it (spec 0013
+   * Follow-up, review m8); null falls back to the `sales_tax_rate` setting.
+   */
+  shippingTaxRate: ChannelTaxRate.nullable().default(null),
   discountCode: z.string().trim().min(1).max(255).nullable().default(null),
   /** The note the customer typed at checkout; on a snapshot, null keeps the stored note. */
   customerNote: z.string().trim().max(2000).nullable().default(null),

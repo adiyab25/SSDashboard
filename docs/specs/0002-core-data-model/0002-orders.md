@@ -67,7 +67,7 @@ Values: `new`, `confirmed`, `packed`, `shipped`, `delivered`, `partially_deliver
 | `new` | `confirmed` | person | the confirmation outcome "confirmed" (feature 18) |
 | `new`, `confirmed`, `packed` | `cancelled` | person | reason code required; refused once `carrier_delivery_created_at` is set |
 | `confirmed` | `packed` | person | refused while `write_back_state <> 'none'` or while the connectors service reports an open command on the order (spec 0007 section 1, blocking rule) |
-| `packed` | `confirmed` | person | an edit after packing, before the carrier delivery exists |
+| `packed` | `confirmed` | person, system_job | an edit after packing, before the carrier delivery exists (`system_job`: a channel edit, reason `channel_edit`, added by spec 0013 milestone 3) |
 | `new`, `confirmed`, `packed` | `shipped` | carrier | the carrier reports pickup. A carrier report is a fact and is never refused. From `new` it opens a task "shipped without confirmation"; with `write_back_state <> 'none'` it opens a task "shipped before the edit synced" (mirror mode, where the carrier's own app creates deliveries) |
 | `cancelled` | `shipped` | carrier | a fact that contradicts the cancellation; always opens a task |
 | `shipped`, `failed_attempt` | `failed_attempt` | carrier | each failed attempt is its own event (the attempt count is the number of these events) |

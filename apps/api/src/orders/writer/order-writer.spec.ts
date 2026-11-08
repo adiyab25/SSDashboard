@@ -80,6 +80,8 @@ describe('OrderWriter.applyChange: the money freeze (spec 0013 AC-8, security M1
     ['a line cancel alone', { cancelLines: [{ lineId: LINE, cancelReasonCode: 'channel_edit' }] }],
     ['a new line alone', { addLines: [newLine] }],
     ['a prepayment change', { columns: { prepaidAmount: '10.00' } }],
+    ['a payment method change', { columns: { paymentMethod: 'cod' as const } }],
+    ['a prepaid method change', { columns: { prepaidMethod: null } }],
   ])(
     'counts %s as a money move once the carrier delivery exists (security N1)',
     async (_name, change) => {

@@ -521,7 +521,7 @@ describe('planEdit: a main phone that does not parse (review R3)', () => {
 describe('planEdit: a second phone that does not parse (review N4)', () => {
   const withAlt = () => order({ shipTo: { ...order().shipTo, phoneAlt: '+201112223334' } });
 
-  it('is refused for a person and dropped for a channel, which says so', () => {
+  it('is refused for a person; a channel keeps the valid stored one and says so (security L9)', () => {
     expect(() =>
       planEdit(withAlt(), [{ kind: 'ship_to', phoneAlt: 'not a phone' }], context()),
     ).toThrow(InvalidPhoneAlt);
@@ -532,8 +532,8 @@ describe('planEdit: a second phone that does not parse (review N4)', () => {
     );
 
     expect(dropped.phoneAltUnparseable).toBe(true);
-    expect(dropped.shipToColumns).toEqual({ shipToPhoneAlt: null });
-    expect(dropped.changedShipToFields).toEqual(['phoneAlt']);
+    expect(dropped.shipToColumns).toEqual({});
+    expect(dropped.changed).toBe(false);
   });
 
   it('says nothing again when the stored second phone is already empty', () => {

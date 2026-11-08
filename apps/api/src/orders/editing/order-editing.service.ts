@@ -123,6 +123,7 @@ export class OrderEditing {
         from: 'packed',
         to: 'confirmed',
         actor: 'person',
+        reasonCode: body.reasonCode ?? null,
         carrierDeliveryCreated: order.carrierDeliveryCreated,
       });
       columns.fulfillmentState = 'confirmed';

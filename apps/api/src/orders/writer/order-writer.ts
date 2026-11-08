@@ -223,7 +223,10 @@ export interface OrderChange {
    * The one exception to the rule that line changes are money moves under the freeze: the partial
    * delivery split of milestone 5 (`recordPartialDelivery`, AC-16) splits lines of a frozen order
    * and passes `'partial_delivery_split'`, which lets it cancel and add lines and rewrite their
-   * shares. A frozen column stays refused with it. No other caller passes it.
+   * shares. The split keeps each line's share sum: the split rows together carry exactly the
+   * prepaid and credit shares of the line they came from, so the frozen order totals and
+   * `cod_expected_amount` never move. A frozen column stays refused with it. No other caller
+   * passes it.
    */
   freezeAllowance?: 'partial_delivery_split';
 }
@@ -242,6 +245,9 @@ const FROZEN_COLUMNS: readonly (keyof OrderColumnChanges)[] = [
   'shippingChargedAmount',
   'shippingTaxAmount',
   'prepaidAmount',
+  // How the order is paid moves with the prepayment (security L3).
+  'paymentMethod',
+  'prepaidMethod',
 ];
 
 /** No share changes: the default of {@link OrderChange.lineShares}. */

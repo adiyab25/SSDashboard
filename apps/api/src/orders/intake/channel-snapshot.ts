@@ -3,10 +3,14 @@ import {
   type ChannelOrderLineInput,
   type ChannelOrderSnapshot,
 } from '@ssdashboard/contracts';
-import type { PlanLine, PlanOperation } from '../editing/edit-plan.js';
+import { EDIT_REMOVAL, type PlanLine, type PlanOperation } from '../editing/edit-plan.js';
 
-/** The cancel reason of a line the channel no longer holds (a `ReasonCode`, never a note). */
-export const CHANNEL_EDIT_REMOVAL = 'channel_edit';
+/**
+ * The cancel reason of a line the channel no longer holds: `edit_removal`, one of the line cancel
+ * reasons of spec 0002 (`order_lines.cancel_reason_code`), as for a replaced line. `channel_edit`
+ * is the `order.edited` audit reason, not a line's.
+ */
+export const CHANNEL_EDIT_REMOVAL = EDIT_REMOVAL;
 
 /** What a channel snapshot changes, as the edit plan's operations. */
 export interface ChannelSnapshotDiff {
@@ -28,7 +32,7 @@ export interface ChannelSnapshotDiff {
  * (lowest position first), which takes that id, before anything is added. A matched line whose
  * variant, quantity, unit price, discount, or tax rate differs is replaced (a line is never
  * changed in place); an unmatched snapshot line is added. Every open line the snapshot does not
- * hold is cancelled with `channel_edit`, a line with no channel id included: the snapshot is what
+ * hold is cancelled with `edit_removal`, a line with no channel id included: the snapshot is what
  * the channel holds. A variant never goes back to unmapped, and an unmapped line whose snapshot
  * now names a variant is left to `linkChannelLineVariant` (AC-25 b), so neither is a change. Ship
  * to fields the channel sent as null are left out (kept as stored); the shipping charge is always
@@ -67,7 +71,13 @@ export function diffChannelSnapshot(
     if (sameLine(line, incoming)) {
       if (matched) matchedIds.push({ lineId: line.id, channelLineId: incoming.channelLineId });
     } else {
-      lineOperations.push({ kind: 'replace_line', lineId: line.id, ...addedFields(incoming) });
+      // A replace never unmaps a mapped line (review minor 1).
+      lineOperations.push({
+        kind: 'replace_line',
+        lineId: line.id,
+        ...addedFields(incoming),
+        variantId: incoming.variantId ?? line.variantId,
+      });
     }
   }
   for (const line of open) {

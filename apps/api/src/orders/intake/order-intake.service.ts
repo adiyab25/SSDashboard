@@ -6,6 +6,7 @@ import {
   nextState,
   orderLabelOf,
   type CashState,
+  type ChannelCustomerInput,
   type ChannelOrderInput,
   type ChannelOrderSnapshot,
   type CreateGiftedOrderBody,
@@ -64,7 +65,7 @@ import {
   type OrderColumnChanges,
   type OrderSourceColumns,
 } from '../writer/order-writer.js';
-import { planFirstStates } from './channel-first-states.js';
+import { assertFoundAmounts, planFirstStates } from './channel-first-states.js';
 import { diffChannelSnapshot } from './channel-snapshot.js';
 import { assertNotReopened, planRelatedOrder } from './related-order.js';
 import { parseChannelPhones, parsePhones } from './ship-to.js';
@@ -498,6 +499,17 @@ export class OrderIntake {
     if (!store || store.archived || !channel || channel.archived) {
       throw new InvalidOrderInput('The store or channel is unknown or archived');
     }
+    // Security M2 (lead ruling): a channel order arrives on a channel bound to its store, never
+    // on a manual entry channel, and never takes a number shaped like the store's own numbering.
+    if (channel.defaultStoreId !== store.id) {
+      throw new InvalidOrderInput('The channel does not belong to the store');
+    }
+    if (MANUAL_CHANNEL_KINDS.includes(channel.kind)) {
+      throw new InvalidOrderInput('A manual entry channel takes orders only from the order form');
+    }
+    if (store.kind === 'internal' && (await this.isDocumentNumber(tx, input.orderNumber))) {
+      throw new InvalidOrderInput('An internal store numbers its own orders');
+    }
     const placedAt = new Date(input.placedAt);
     const first = planFirstStates(input.firstStates, actor, placedAt);
     const relation = input.relatedOrder?.relation ?? null;
@@ -506,12 +518,13 @@ export class OrderIntake {
     }
     await this.assertVariantsExist(tx, input.lines);
     const phones = parseChannelPhones(input.shipTo.phone, input.shipTo.phoneAlt);
+    const channelCustomer = await this.boundChannelCustomer(tx, input.channelCustomer, store.id);
 
     // The linked order's row lock comes first (spec 0013, Key invariants), then the customer locks.
     const plan = await planRelatedOrder(tx, input.relatedOrder, input.type);
     const customer = await this.customers.findOrCreate(tx, {
       phone: phones.main,
-      channelCustomer: input.channelCustomer,
+      channelCustomer,
       name: input.shipTo.name,
       seenAt: placedAt,
     });
@@ -545,8 +558,14 @@ export class OrderIntake {
       shippingChargedAmount: input.shippingChargedAmount,
       prepaidAmount: input.prepaidAmount,
       creditAppliedAmount: '0.00',
-      taxRate,
+      // The channel's shipping tax rate when it sends one (review minor 7), else the setting.
+      taxRate: input.shippingTaxRate ?? taxRate,
       fulfillmentState: first.fulfillment,
+    });
+    assertFoundAmounts(first, {
+      codExpectedAmount: totals.codExpectedAmount,
+      codDueAmount: totals.codDueAmount,
+      prepaidAmount: input.prepaidAmount,
     });
     const cash =
       first.cash ??
@@ -554,7 +573,12 @@ export class OrderIntake {
         codExpectedAmount: totals.codExpectedAmount,
         prepaidAmount: input.prepaidAmount,
       });
-    const source: OrderSourceColumns = plan?.copied?.source ?? input.source;
+    // A media buyer id from a channel is not stored until it can be checked in this transaction
+    // (review minor 6): an unknown id would fail the foreign key and poison the webhook.
+    const source: OrderSourceColumns = plan?.copied?.source ?? {
+      ...input.source,
+      mediaBuyerId: null,
+    };
     const type = plan?.type ?? input.type;
     const area = input.shipTo.area ?? null;
     const lines: NewLineRow[] = priced.map((line, index) => ({
@@ -649,8 +673,8 @@ export class OrderIntake {
         amount: null,
         actor,
         reasonCode: first.fulfillmentReason,
-        sourceType: null,
-        sourceId: null,
+        sourceType: first.eventSource?.type ?? null,
+        sourceId: first.eventSource?.id ?? null,
         occurredAt: placedAt,
       },
       {
@@ -660,8 +684,8 @@ export class OrderIntake {
         amount: null,
         actor,
         reasonCode: null,
-        sourceType: null,
-        sourceId: null,
+        sourceType: first.eventSource?.type ?? null,
+        sourceId: first.eventSource?.id ?? null,
         occurredAt: placedAt,
       },
     ]);
@@ -696,6 +720,7 @@ export class OrderIntake {
     actor: ChannelActor,
   ): Promise<ChannelEditResult> {
     const order = await lockOrderForChange(tx, orderId);
+    await this.assertChannelOrder(tx, order.channelId);
     const open = await this.connectors.openCommandsFor('order', orderId, tx);
     if (open.length > 0) return { applied: false, why: 'write_back_open' };
     const [store] = await this.channels.stores([order.storeId], tx);
@@ -704,7 +729,8 @@ export class OrderIntake {
 
     const diff = diffChannelSnapshot(order.lines, snapshot);
     const context: EditContext = {
-      taxRate: await this.settings.get('sales_tax_rate', tx),
+      // Channel lines carry their own rate; this one prices the shipping (review minor 7).
+      taxRate: snapshot.shippingTaxRate ?? (await this.settings.get('sales_tax_rate', tx)),
       pricesIncludeVat: await this.settings.get('prices_include_vat', tx),
       // Every channel line carries its own title, so the plan needs no catalog name.
       titles: new Map(),
@@ -745,6 +771,8 @@ export class OrderIntake {
     }
     if (!plan.changed && !noteChanged) {
       await this.writer.setChannelLineIds(tx, orderId, diff.matchedIds);
+      // A valid stored second phone kept against text that does not parse (security L9).
+      await this.raisePhoneAttentions(tx, orderId, false, plan.phoneAltUnparseable);
       return { applied: true, changed: false };
     }
 
@@ -753,7 +781,11 @@ export class OrderIntake {
     if (plan.phone !== null) {
       const customer = await this.customers.findOrCreate(tx, {
         phone: plan.phone,
-        channelCustomer: snapshot.channelCustomer,
+        channelCustomer: await this.boundChannelCustomer(
+          tx,
+          snapshot.channelCustomer,
+          order.storeId,
+        ),
         name: plan.shipToColumns.shipToName ?? order.shipTo.name,
         seenAt: order.placedAt,
       });
@@ -768,6 +800,7 @@ export class OrderIntake {
         from: 'packed',
         to: 'confirmed',
         actor: 'system_job',
+        reasonCode: CHANNEL_EDIT_REASON,
         carrierDeliveryCreated: order.carrierDeliveryCreated,
       });
       columns.fulfillmentState = 'confirmed';
@@ -861,20 +894,27 @@ export class OrderIntake {
     _actor: OrderActor,
   ): Promise<{ recorded: number }> {
     const order = await lockOrderForChange(tx, orderId);
+    // Only open lines hold an id against another (review R1): a replaced line, cancelled with
+    // `edit_removal`, keeps the id Shopify also keeps for the new line.
     const holder = new Map<string, string>();
     for (const line of order.lines) {
-      if (line.channelLineId !== null) holder.set(line.channelLineId, line.id);
+      if (line.channelLineId !== null && line.lineState === 'open') {
+        holder.set(line.channelLineId, line.id);
+      }
     }
+    const assigned = new Map<string, string>();
     const toWrite: { lineId: string; channelLineId: string }[] = [];
     for (const { lineId, channelLineId } of ids) {
       const line = order.lines.find((candidate) => candidate.id === lineId.toLowerCase());
       if (!line) throw new InvalidOrderInput('A line is not a line of this order');
-      if (line.channelLineId === channelLineId) continue;
+      const current = line.channelLineId ?? assigned.get(line.id) ?? null;
+      if (current === channelLineId) continue;
       const taken = holder.get(channelLineId);
-      if (line.channelLineId !== null || (taken !== undefined && taken !== line.id)) {
+      if (current !== null || (taken !== undefined && taken !== line.id)) {
         throw new ChannelLineIdConflict();
       }
       holder.set(channelLineId, line.id);
+      assigned.set(line.id, channelLineId);
       toWrite.push({ lineId: line.id, channelLineId });
     }
     return { recorded: await this.writer.setChannelLineIds(tx, orderId, toWrite) };
@@ -903,7 +943,8 @@ export class OrderIntake {
     if (!line) throw new InvalidOrderInput('No line of this order carries that channel line id');
     if (line.variantId !== null) throw new LineAlreadyMapped();
     const [sku] = (await this.catalog.getSkus([variantId], tx)).values();
-    if (!sku) throw new VariantUnknown();
+    // A mapping names a SKU still sold (security L6); an order may still carry a retired one.
+    if (!sku || sku.archived) throw new VariantUnknown();
     if (!(await this.writer.setLineVariant(tx, orderId, line.id, variantId))) {
       throw new LineAlreadyMapped();
     }
@@ -941,6 +982,7 @@ export class OrderIntake {
     actor: ChannelActor,
   ): Promise<{ changed: boolean }> {
     const order = await lockOrderForChange(tx, orderId);
+    await this.assertChannelOrder(tx, order.channelId);
     if (
       order.carrierDeliveryCreated ||
       !Money.of(order.codCollectedAmount).isZero() ||
@@ -1117,6 +1159,43 @@ export class OrderIntake {
         new OrderAttentionRaised(orderId, 'phone_unparseable', 'ship_to_phone_alt', orderId),
       );
     }
+  }
+
+  /**
+   * Refuses an order whose channel is a manual entry kind (security M2): the channel edit and the
+   * payment correction belong to channel orders. Read by the channel's kind, never by
+   * `channel_order_ref` (a manual order stores its `clientRef` there).
+   */
+  private async assertChannelOrder(tx: OrderTransaction, channelId: string): Promise<void> {
+    const [channel] = await this.channels.channels([channelId], tx);
+    if (!channel || MANUAL_CHANNEL_KINDS.includes(channel.kind)) {
+      throw new InvalidOrderInput('This call is for orders that came from a channel');
+    }
+  }
+
+  /**
+   * The channel's customer id, kept only when its connection belongs to the order's store
+   * (security L7); otherwise the order links by phone only. Asks `ConnectorsService`, the owner of
+   * `connections`.
+   */
+  private async boundChannelCustomer(
+    tx: OrderTransaction,
+    channelCustomer: ChannelCustomerInput | null,
+    storeId: string,
+  ): Promise<ChannelCustomerInput | null> {
+    if (channelCustomer === null) return null;
+    const owner = await this.connectors.storeOfConnection(channelCustomer.connectionId, tx);
+    return owner === storeId ? channelCustomer : null;
+  }
+
+  /**
+   * True when a number has the shape of this install's own sales order numbers
+   * (`<SO prefix>-<year>-<six or more digits>`, `NumberingService`), which only the order form
+   * may take in an internal store (security M2).
+   */
+  private async isDocumentNumber(tx: OrderTransaction, orderNumber: string): Promise<boolean> {
+    const prefixes = await this.settings.get('document_prefixes', tx);
+    return new RegExp(`^${prefixes.SO}-\\d{4}-\\d{6,}$`).test(orderNumber);
   }
 
   /** Refuses a channel line that names a variant the catalog does not know. */

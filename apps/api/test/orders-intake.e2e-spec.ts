@@ -10,7 +10,11 @@ import {
   replayStates,
 } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { OrderIntake, type ChannelActor } from '../src/orders/intake/order-intake.service.js';
+import {
+  OrderIntake,
+  type ChannelActor,
+  type ChannelCreateActor,
+} from '../src/orders/intake/order-intake.service.js';
 import { OrderTransactions, type OrderTransaction } from '../src/orders/order-transactions.js';
 import {
   InvalidOrderInput,
@@ -18,6 +22,7 @@ import {
   OrderNumberTaken,
   PaymentMethodLocked,
   RelatedOrderState,
+  VariantUnknown,
 } from '../src/orders/orders.errors.js';
 import { OrderAttentionRaised, OrderEdited, OrderPlaced } from '../src/orders/orders.events.js';
 import { OrderTransitions } from '../src/orders/transitions/order-transitions.service.js';
@@ -58,7 +63,8 @@ const SHOP_TWO = 'fixture-store-2.myshopify.com';
 // database. Every input comes from a SYNTHETIC Shopify fixture (apps/api/src/connectors/shopify/
 // fixtures, to be replaced by recordings) through `shopify-order-fixture.ts`, a test only stand in
 // for spec 0015's order mapper; a case overrides a field of the mapped input only where Shopify
-// cannot say it (a prepayment by instapay, the first states of an `import` actor, a MAIN store).
+// cannot say it (a prepayment by instapay, the first states of an `import` actor, the MAIN store's
+// landing page channel `LP`, which stands in for an internal store's own channel).
 // Reservations and the shipment posting are milestones 4 and 5: the closed order import proves
 // only that no order holding path and no shipment job runs for it.
 describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 }, () => {
@@ -66,11 +72,13 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
   let support = '';
   let mainStore = '';
   let manualChannel = '';
+  let lpChannel = '';
   let essStore = '';
   let essChannel = '';
   let connection = '';
   let skuM = '';
   let skuL = '';
+  let skuRetired = '';
   let n = 0;
   const edited: OrderEdited[] = [];
   const attentions: OrderAttentionRaised[] = [];
@@ -106,10 +114,10 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     },
     altPhoneAttribute: 'alt_phone',
   });
-  /** Fixture shop one is ESS (Shopify), shop two is MAIN (the manual channel's store). */
+  /** Fixture shop one is ESS (Shopify), shop two is MAIN through its landing page channel. */
   const shopsOf = (): Record<string, ShopifyShopContext> => ({
     [SHOP_ONE]: { storeId: essStore, channelId: essChannel, connectionId: connection },
-    [SHOP_TWO]: { storeId: mainStore, channelId: manualChannel, connectionId: connection },
+    [SHOP_TWO]: { storeId: mainStore, channelId: lpChannel, connectionId: connection },
   });
   /** A fixture mapped to an input in ESS, each call a new ref and number, with fields overridden. */
   const fx = (file: string, over: Record<string, unknown> = {}) =>
@@ -117,9 +125,14 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       ...shopifyOrderInput(file, context(shopsOf()), { unique: true }),
       ...over,
     });
-  /** The same, in the MAIN store (the manual channel), where a person may edit without write back. */
+  /**
+   * The same, in the internal MAIN store through its landing page channel (security M2: a channel
+   * order never arrives on a manual entry channel), where a person may edit without write back.
+   */
   const fxMain = (file: string, over: Record<string, unknown> = {}) =>
-    fx(file, { storeId: mainStore, channelId: manualChannel, ...over });
+    fx(file, { storeId: mainStore, channelId: lpChannel, ...over });
+  /** A carrier delivery time for found states past a first cash state. */
+  const DELIVERY_AT = '2026-11-01T09:00:00.000Z';
   /** The snapshot a fixture holds, with fields overridden. */
   const snap = (file: string, over: Record<string, unknown> = {}) =>
     ChannelOrderSnapshot.parse({ ...shopifyOrderSnapshot(file, context(shopsOf())), ...over });
@@ -142,10 +155,8 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     return { storeId, channelId, connectionId };
   };
 
-  const create = async (
-    input: ChannelOrderInput,
-    actor: ChannelActor | ReturnType<typeof importRun> = job(),
-  ) => run((tx) => intake().createFromChannel(tx, input, actor));
+  const create = async (input: ChannelOrderInput, actor: ChannelCreateActor = job()) =>
+    run((tx) => intake().createFromChannel(tx, input, actor));
 
   const detail = async (id: string) => {
     const reply = await api.call(support, 'GET', `/api/orders/${id}`);
@@ -242,6 +253,10 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     const one = async (text: string) => (await owner<{ id: string }>(text)).rows[0]?.id as string;
     mainStore = await one(`SELECT id FROM stores WHERE code = 'MAIN'`);
     manualChannel = await one(`SELECT id FROM channels WHERE code = 'manual'`);
+    lpChannel = await one(
+      `INSERT INTO channels (code, name, kind, default_store_id)
+       VALUES ('LP', '{"en":"Landing page"}', 'landing_page', '${mainStore}') RETURNING id`,
+    );
     essStore = await one(
       `INSERT INTO stores (code, name, public_name, kind)
        VALUES ('ESS', '{"en":"Essentials"}', '{"en":"Essentials"}', 'shopify') RETURNING id`,
@@ -264,6 +279,10 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     };
     skuM = await sku('IN-M');
     skuL = await sku('IN-L');
+    skuRetired = await sku('IN-OLD');
+    await owner(`UPDATE product_variants SET archived_at = now() WHERE id = $1::uuid`, [
+      skuRetired,
+    ]);
     const events = api.app.get(DomainEvents);
     events.on(OrderEdited, (_tx, event) => void edited.push(event), 'orders-intake-e2e');
     events.on(
@@ -373,7 +392,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
         page.lines.map((x) => [x.position, x.title, x.quantity, x.lineState, x.cancelReasonCode]),
       ).toEqual([
         [1, 'Fixture Basic Tee M', 1, 'cancelled', 'edit_removal'],
-        [2, 'Fixture Basic Tee L', 1, 'cancelled', 'channel_edit'],
+        [2, 'Fixture Basic Tee L', 1, 'cancelled', 'edit_removal'],
         [3, 'Fixture Basic Tee M', 2, 'open', null],
       ]);
       expect(page.money).toMatchObject({ totalAmount: '860.00', codExpectedAmount: '860.00' });
@@ -415,7 +434,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       expect(swapped).toEqual({ applied: true, changed: true });
       expect(page.lines.map((x) => [x.position, x.title, x.lineState, x.cancelReasonCode])).toEqual(
         [
-          [1, 'Fixture Basic Tee M', 'cancelled', 'channel_edit'],
+          [1, 'Fixture Basic Tee M', 'cancelled', 'edit_removal'],
           [2, 'Fixture Basic Tee L', 'open', null],
           [3, 'Fixture Basic Tee L', 'open', null],
         ],
@@ -586,10 +605,11 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       ).toBe(false);
     });
 
-    it('unlinks the customer when the main phone stops parsing and drops a bad second phone (review N4)', async () => {
+    it('unlinks the customer when the main phone stops parsing and keeps a valid second phone against bad text (review N4, security L9)', async () => {
       const input = fx(CREATED);
       const { orderId } = await create(input);
-      expect((await orderRow(orderId))?.customer_id).not.toBeNull();
+      const before = await orderRow(orderId);
+      expect(before?.customer_id).not.toBeNull();
 
       const result = await run((tx) =>
         intake().applyChannelEdit(
@@ -608,8 +628,9 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
         customer_id: null,
         ship_to_phone: null,
         contact_phone_raw: '01x 9999',
-        ship_to_phone_alt: null,
+        ship_to_phone_alt: before?.ship_to_phone_alt,
       });
+      expect(row?.ship_to_phone_alt).not.toBeNull();
       expect(attentionsOf(orderId)).toEqual([
         ['phone_unparseable', 'order'],
         ['phone_unparseable', 'ship_to_phone_alt'],
@@ -699,7 +720,11 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       // delivery is the app's own fact, so the first states are overridden too.
       const delivered = await create(
         fx(CANCELLED_AFTER, {
-          firstStates: { fulfillment: 'delivered', cash: 'collected_by_carrier' },
+          firstStates: {
+            fulfillment: 'delivered',
+            cash: 'collected_by_carrier',
+            carrierDeliveryCreatedAt: DELIVERY_AT,
+          },
         }),
         importRun(),
       );
@@ -782,7 +807,13 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
         run((tx) => intake().linkChannelLineVariant(tx, orderId, unmappedId, skuL)),
       );
       const shipped = await create(
-        fx(UNMAPPED, { firstStates: { fulfillment: 'delivered', cash: 'collected_by_carrier' } }),
+        fx(UNMAPPED, {
+          firstStates: {
+            fulfillment: 'delivered',
+            cash: 'collected_by_carrier',
+            carrierDeliveryCreatedAt: DELIVERY_AT,
+          },
+        }),
         importRun(),
       );
       const late = await run((tx) =>
@@ -889,7 +920,11 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       // A delivered original is the app's fact (the carrier delivered it), not Shopify's.
       const original = await create(
         fx(EXCHANGE_BEFORE, {
-          firstStates: { fulfillment: 'delivered', cash: 'collected_by_carrier' },
+          firstStates: {
+            fulfillment: 'delivered',
+            cash: 'collected_by_carrier',
+            carrierDeliveryCreatedAt: DELIVERY_AT,
+          },
         }),
         importRun(),
       );
@@ -1003,6 +1038,449 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
 
       expect(await detail(orderId)).toMatchObject({ fulfillmentState: 'new', cashState: 'unpaid' });
       expect((await detail(orderId)).lines.every((x) => x.lineState === 'open')).toBe(true);
+    });
+  });
+
+  describe('the milestone 3 review fixes', () => {
+    it('records a replaced line id on its new line; refuses an id an open line holds and one line named twice (review R1)', async () => {
+      // A MAIN store channel order, so a person may replace the M line in the app.
+      const input = fxMain(CREATED);
+      const { orderId } = await create(input);
+      const before = await detail(orderId);
+      const [mLine, lLine] = before.lines;
+      const mChannelId = input.lines[0]?.channelLineId as string;
+      const replace = await api.call(support, 'POST', `/api/orders/${orderId}/edits`, {
+        expectedUpdatedAt: before.updatedAt,
+        operations: [
+          {
+            kind: 'replace_line',
+            lineId: mLine?.id,
+            variantId: skuM,
+            quantity: 2,
+            unitPrice: '410.00',
+          },
+          { kind: 'add_line', variantId: skuL, quantity: 3, unitPrice: '450.00' },
+        ],
+      });
+      expect(replace.status, JSON.stringify(replace.body)).toBe(200);
+      const replaced = OrderDetail.parse(replace.body).lines;
+      const fresh = replaced.find((x) => x.quantity === 2)?.id as string;
+      const extra = replaced.find((x) => x.quantity === 3)?.id as string;
+
+      const recorded = await run((tx) =>
+        intake().recordChannelLineIds(
+          tx,
+          orderId,
+          [{ lineId: fresh, channelLineId: mChannelId }],
+          job(),
+        ),
+      );
+      const heldByOpen = await failureOf(
+        run((tx) =>
+          intake().recordChannelLineIds(
+            tx,
+            orderId,
+            [{ lineId: extra, channelLineId: mChannelId }],
+            job(),
+          ),
+        ),
+      );
+      const alreadySet = await failureOf(
+        run((tx) =>
+          intake().recordChannelLineIds(
+            tx,
+            orderId,
+            [{ lineId: lLine?.id as string, channelLineId: 'cl-new' }],
+            job(),
+          ),
+        ),
+      );
+      const twice = await failureOf(
+        run((tx) =>
+          intake().recordChannelLineIds(
+            tx,
+            orderId,
+            [
+              { lineId: extra, channelLineId: 'cl-a' },
+              { lineId: extra, channelLineId: 'cl-b' },
+            ],
+            job(),
+          ),
+        ),
+      );
+      const lines = await owner<{ id: string; channel_line_id: string | null }>(
+        `SELECT id, channel_line_id FROM order_lines WHERE order_id = $1::uuid`,
+        [orderId],
+      );
+
+      expect(recorded).toEqual({ recorded: 1 });
+      expect(lines.rows.find((r) => r.id === fresh)?.channel_line_id).toBe(mChannelId);
+      expect(heldByOpen).toMatchObject({ code: 'ChannelLineIdConflict' });
+      expect(alreadySet).toMatchObject({ code: 'ChannelLineIdConflict' });
+      expect(twice).toMatchObject({ code: 'ChannelLineIdConflict' });
+    });
+
+    it('imports found cancelled, refused, collected, and remitted orders through the real insert, with the run on the events (security M1)', async () => {
+      const runActor = importRun();
+      const cancelled = await create(
+        fx(CANCELLED_BEFORE, { firstStates: foundStates(GO_LIVE_CANCELLED) }),
+        runActor,
+      );
+      const refused = await create(
+        fx(CREATED, {
+          firstStates: {
+            fulfillment: 'refused',
+            cash: 'nothing_to_collect',
+            refusedReasonCode: 'size',
+            carrierDeliveryCreatedAt: DELIVERY_AT,
+          },
+        }),
+        importRun(),
+      );
+      const collected = await create(
+        fx(CREATED, {
+          firstStates: {
+            fulfillment: 'delivered',
+            cash: 'collected_by_carrier',
+            carrierDeliveryCreatedAt: DELIVERY_AT,
+          },
+        }),
+        importRun(),
+      );
+      const remitted = await create(
+        fx(CREATED, {
+          firstStates: {
+            fulfillment: 'delivered',
+            cash: 'remitted',
+            carrierDeliveryCreatedAt: DELIVERY_AT,
+          },
+        }),
+        importRun(),
+      );
+      const rows = await owner<{
+        id: string;
+        fulfillment_state: string;
+        cash_state: string;
+        cancel_reason_code: string | null;
+        refused_reason_code: string | null;
+        cod_collected_amount: string;
+        remitted_amount: string;
+        cod_due_amount: string;
+      }>(
+        `SELECT id, fulfillment_state, cash_state, cancel_reason_code, refused_reason_code,
+                cod_collected_amount, remitted_amount, cod_due_amount
+         FROM orders WHERE id = ANY($1::uuid[])`,
+        [[cancelled.orderId, refused.orderId, collected.orderId, remitted.orderId]],
+      );
+      const byId = new Map(rows.rows.map((row) => [row.id, row]));
+      const sources = await owner<{ source_type: string | null; source_id: string | null }>(
+        `SELECT source_type, source_id::text FROM order_events WHERE order_id = $1::uuid`,
+        [cancelled.orderId],
+      );
+
+      expect(byId.get(cancelled.orderId)).toMatchObject({
+        fulfillment_state: 'cancelled',
+        cash_state: 'nothing_to_collect',
+        cancel_reason_code: 'channel.staff',
+        cod_due_amount: '0.00',
+      });
+      expect(byId.get(refused.orderId)).toMatchObject({
+        fulfillment_state: 'refused',
+        refused_reason_code: 'size',
+        cod_due_amount: '0.00',
+      });
+      expect(byId.get(collected.orderId)).toMatchObject({
+        cash_state: 'collected_by_carrier',
+        cod_collected_amount: '860.00',
+        remitted_amount: '0.00',
+      });
+      expect(byId.get(remitted.orderId)).toMatchObject({
+        cash_state: 'remitted',
+        cod_collected_amount: '860.00',
+        remitted_amount: '860.00',
+      });
+      expect(sources.rows).toEqual([
+        { source_type: 'import_run', source_id: runActor.runId },
+        { source_type: 'import_run', source_id: runActor.runId },
+      ]);
+    });
+
+    it.each([
+      ['a held order already remitted', { fulfillment: 'new', cash: 'remitted' }],
+      [
+        'a collection without its carrier delivery time',
+        { fulfillment: 'delivered', cash: 'collected_by_carrier' },
+      ],
+      [
+        'nothing to collect on a cod order still due',
+        { fulfillment: 'new', cash: 'nothing_to_collect' },
+      ],
+      ['prepaid with no prepayment', { fulfillment: 'confirmed', cash: 'prepaid' }],
+    ])('refuses found states that contradict each other: %s', async (_name, firstStates) => {
+      const refused = await failureOf(create(fx(CREATED, { firstStates }), importRun()));
+
+      expect(refused).toBeInstanceOf(InvalidOrderInput);
+    });
+
+    it('refuses an import run id that is not a uuid', async () => {
+      const refused = await failureOf(
+        create(fx(CREATED, { firstStates: { fulfillment: 'new', cash: 'unpaid' } }), {
+          type: 'import',
+          runId: 'run-1',
+        }),
+      );
+
+      expect(refused).toBeInstanceOf(InvalidOrderInput);
+    });
+
+    it('refuses a manual entry channel, a channel of another store, and an SO number on an internal store (security M2)', async () => {
+      const manual = await failureOf(create(fxMain(CREATED, { channelId: manualChannel })));
+      const foreign = await failureOf(create(fx(CREATED, { storeId: mainStore })));
+      const numbered = await failureOf(
+        create(fxMain(CREATED, { orderNumber: `SO-${new Date().getFullYear()}-000777` })),
+      );
+      const shopifyStore = await create(fx(CREATED, { orderNumber: 'SO-2026-000778' }));
+
+      expect(manual).toBeInstanceOf(InvalidOrderInput);
+      expect(foreign).toBeInstanceOf(InvalidOrderInput);
+      expect(numbered).toBeInstanceOf(InvalidOrderInput);
+      expect(shopifyStore.created).toBe(true);
+    });
+
+    it('refuses the channel edit and the payment correction on a manual order (security M2)', async () => {
+      const reply = await api.call(support, 'POST', '/api/orders', {
+        clientRef: randomUUID(),
+        storeId: mainStore,
+        channelId: manualChannel,
+        shipTo: { name: 'Sentinel Name', phone: phone(), address: 'x' },
+        lines: [{ variantId: skuM, quantity: 1, unitPrice: '570.00' }],
+        shippingChargedAmount: '50.00',
+        paymentMethod: 'cod',
+      });
+      const orderId = CreatedOrder.parse(reply.body).id;
+
+      const edit = await failureOf(
+        run((tx) => intake().applyChannelEdit(tx, orderId, snap(CREATED), job())),
+      );
+      const payment = await failureOf(
+        run((tx) =>
+          intake().rederivePaymentMethod(
+            tx,
+            orderId,
+            { paymentMethod: 'gateway', prepaidAmount: '620.00', prepaidMethod: 'gateway' },
+            job(),
+          ),
+        ),
+      );
+
+      expect(edit).toBeInstanceOf(InvalidOrderInput);
+      expect(payment).toBeInstanceOf(InvalidOrderInput);
+      expect(await auditOf(orderId)).toHaveLength(1);
+    });
+
+    it('accepts a retired SKU on a channel order but refuses it as a mapping (security L6)', async () => {
+      const retiredLine = { ...fx(UNMAPPED).lines[0], variantId: skuRetired };
+      const sold = await create(fx(CREATED, { lines: [retiredLine] }));
+      const unmapped = fx(UNMAPPED);
+      const { orderId } = await create(unmapped);
+      const unmappedId = unmapped.lines.find((l) => l.variantId === null)?.channelLineId as string;
+
+      const mapping = await failureOf(
+        run((tx) => intake().linkChannelLineVariant(tx, orderId, unmappedId, skuRetired)),
+      );
+
+      expect((await detail(sold.orderId)).lines[0]?.variantId).toBe(skuRetired);
+      expect(mapping).toBeInstanceOf(VariantUnknown);
+    });
+
+    it('drops a channel customer id whose connection belongs to another store, linking by phone only (security L7)', async () => {
+      const other = await newShop('L7S');
+      const input = fx(CREATED, {
+        channelCustomer: {
+          kind: 'shopify_customer',
+          connectionId: other.connectionId,
+          externalId: `l7-${randomUUID()}`,
+        },
+      });
+
+      const { orderId } = await create(input);
+      const external = await owner<{ count: string }>(
+        `SELECT count(*)::text AS count FROM customer_external_ids WHERE external_id = $1`,
+        [input.channelCustomer?.externalId],
+      );
+
+      expect((await orderRow(orderId))?.customer_id).not.toBeNull();
+      expect(external.rows[0]?.count).toBe('0');
+    });
+
+    it('stores null for a media buyer id from a channel, and prices shipping at the channel rate (review minors 6, 7)', async () => {
+      const input = fx(CREATED, {
+        source: { capturedFrom: 'shopify_journey', mediaBuyerId: randomUUID() },
+        shippingTaxRate: '0.00',
+      });
+
+      const { orderId } = await create(input);
+      const buyer = await owner<{ source_media_buyer_id: string | null }>(
+        `SELECT source_media_buyer_id FROM orders WHERE id = $1::uuid`,
+        [orderId],
+      );
+
+      expect(buyer.rows[0]?.source_media_buyer_id).toBeNull();
+      expect((await detail(orderId)).money.shippingTaxAmount).toBe('0.00');
+    });
+
+    it('answers changes_payment, not_editable, and gift_must_stay_free as attentions (review minor 8)', async () => {
+      const prepaid = await create(fx(PREPAID));
+      const cancelled = await create(fx(CREATED));
+      await run((tx) =>
+        intake().cancelFromChannel(tx, cancelled.orderId, 'channel.customer', job()),
+      );
+      const giftLines = fx(CREATED).lines.map((line) => ({
+        ...line,
+        discountAmount: (Number(line.unitPrice) * line.quantity).toFixed(2),
+      }));
+      const gift = fx(CREATED, {
+        type: 'gifted',
+        giftReasonCode: 'influencer',
+        shippingChargedAmount: '0.00',
+        lines: giftLines,
+      });
+      const gifted = await create(gift);
+
+      const payment = await run((tx) =>
+        intake().applyChannelEdit(
+          tx,
+          prepaid.orderId,
+          snap(PREPAID, {
+            lines: [...fx(PREPAID).lines, { ...fx(CREATED).lines[0], channelLineId: 'cl-more' }],
+          }),
+          job(),
+        ),
+      );
+      const late = await run((tx) =>
+        intake().applyChannelEdit(
+          tx,
+          cancelled.orderId,
+          snap(CREATED, { shippingChargedAmount: '99.00' }),
+          job(),
+        ),
+      );
+      const free = await run((tx) =>
+        intake().applyChannelEdit(
+          tx,
+          gifted.orderId,
+          snap(CREATED, {
+            type: 'gifted',
+            giftReasonCode: 'influencer',
+            shippingChargedAmount: '0.00',
+            lines: [...gift.lines, { ...fx(CREATED).lines[0], channelLineId: 'cl-priced' }],
+          }),
+          job(),
+        ),
+      );
+
+      expect(payment).toEqual({ applied: false, why: 'changes_payment' });
+      expect(late).toEqual({ applied: false, why: 'not_editable' });
+      expect(free).toEqual({ applied: false, why: 'gift_must_stay_free' });
+      for (const id of [prepaid.orderId, cancelled.orderId, gifted.orderId]) {
+        expect(attentionsOf(id)).toContainEqual(['channel_edit_not_applied', 'order']);
+      }
+    });
+
+    it('keeps the ship to and note of a channel edit out of every audit column (review minor 8)', async () => {
+      const input = fx(CREATED);
+      const { orderId } = await create(input);
+      const sentinel = {
+        name: 'Sentinel Channel Name',
+        address: '44 Sentinel Channel Road',
+        courierNote: 'Sentinel channel courier note',
+        note: 'Sentinel channel customer note',
+      };
+
+      await run((tx) =>
+        intake().applyChannelEdit(
+          tx,
+          orderId,
+          snap(CREATED, {
+            customerNote: sentinel.note,
+            shipTo: {
+              ...input.shipTo,
+              name: sentinel.name,
+              address: sentinel.address,
+              courierNote: sentinel.courierNote,
+              phone: '01009997766',
+            },
+          }),
+          job(),
+        ),
+      );
+      const entry = await owner<{ personal_fields: string[]; after: Record<string, unknown> }>(
+        `SELECT personal_fields, after FROM audit_entries
+         WHERE record_id = $1::uuid AND action = 'order.edited'`,
+        [orderId],
+      );
+      const allText = (
+        await owner<{ text: string }>(`SELECT row_to_json(a)::text AS text FROM audit_entries a`)
+      ).rows
+        .map((r) => r.text)
+        .join('\n');
+
+      expect(entry.rows[0]?.after).toMatchObject({
+        origin: 'channel',
+        shipToName: '[REDACTED]',
+        shipToAddress: '[REDACTED]',
+        customerNote: '[REDACTED]',
+      });
+      expect([...(entry.rows[0]?.personal_fields ?? [])].sort()).toEqual(
+        expect.arrayContaining([
+          'courierNote',
+          'customerNote',
+          'shipToAddress',
+          'shipToName',
+          'shipToPhone',
+        ]),
+      );
+      for (const text of Object.values(sentinel)) expect(allText).not.toContain(text);
+      expect(allText).not.toContain('+201009997766');
+    });
+
+    it('links an unmapped line of a packed order with its reservation seam, and a cancelled line without one (review minor 8)', async () => {
+      const unmapped = fxMain(UNMAPPED);
+      const unmappedId = unmapped.lines.find((l) => l.variantId === null)?.channelLineId as string;
+      const packed = await create(unmapped);
+      for (const what of ['confirm', 'pack']) {
+        const { updatedAt } = await detail(packed.orderId);
+        const reply = await api.call(
+          what === 'pack' ? await api.signIn((await api.addPerson(['warehouse'])).email) : support,
+          'POST',
+          `/api/orders/${packed.orderId}/${what}`,
+          { expectedUpdatedAt: updatedAt },
+        );
+        expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      }
+      const dropped = fx(UNMAPPED);
+      const withDropped = await create(dropped);
+      await run((tx) =>
+        intake().applyChannelEdit(
+          tx,
+          withDropped.orderId,
+          snap(UNMAPPED, {
+            lines: dropped.lines.filter((l) => l.channelLineId !== unmappedId),
+          }),
+          job(),
+        ),
+      );
+
+      const onPacked = await run((tx) =>
+        intake().linkChannelLineVariant(tx, packed.orderId, unmappedId, skuL),
+      );
+      const onCancelled = await run((tx) =>
+        intake().linkChannelLineVariant(tx, withDropped.orderId, unmappedId, skuL),
+      );
+
+      expect(onPacked).toMatchObject({ reserved: true });
+      expect(onCancelled).toMatchObject({ reserved: false });
+      expect(attentionsOf(withDropped.orderId)).toEqual([]);
     });
   });
 
