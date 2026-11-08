@@ -139,6 +139,7 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     auditEntry: '',
     auditDay: '',
     customer: '',
+    order: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -191,6 +192,13 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       body: () => ({ phone: '01001234567' }),
     },
     'GET /customers/:id': { needs: ['customers.view'], path: () => `/customers/${ids.customer}` },
+    'GET /orders': { needs: ['orders.view'] },
+    'POST /orders/search': { needs: ['orders.view'], body: () => ({}) },
+    'GET /orders/options': { needs: ['orders.confirm'] },
+    'GET /orders/filter-options': { needs: ['orders.view'] },
+    'GET /orders/:id': { needs: ['orders.view'], path: () => `/orders/${ids.order}` },
+    'POST /orders': { needs: ['orders.confirm'], body: () => ({}) },
+    'POST /orders/gifted': { needs: ['orders.gift'], body: () => ({}) },
     'GET /locations': { needs: ['stock.view'] },
     'POST /locations': {
       needs: ['catalog.manage'],
@@ -486,6 +494,22 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
        SELECT id FROM made`,
     );
     ids.customer = customer.rows[0]?.id ?? '';
+    // An order of the planted SKU, so the order read answers 200 to everyone the matrix allows.
+    const ownerRows = await api.owner.pool.query<{ store: string; channel: string }>(
+      `SELECT (SELECT id FROM stores WHERE code = 'MAIN') AS store,
+              (SELECT id FROM channels WHERE code = 'manual') AS channel`,
+    );
+    const order = await api.call(boss.cookie, 'POST', '/api/orders', {
+      clientRef: randomUUID(),
+      storeId: ownerRows.rows[0]?.store,
+      channelId: ownerRows.rows[0]?.channel,
+      shipTo: { name: 'Sweep Buyer', phone: '01001234599', address: '1 Sweep Street' },
+      lines: [{ variantId: ids.sku, quantity: 1, unitPrice: '9.99' }],
+      shippingChargedAmount: '5.00',
+      paymentMethod: 'cod',
+    });
+    expect(order.status, JSON.stringify(order.body)).toBe(201);
+    ids.order = (order.body as { id: string }).id;
     ids.staffTarget = (await api.addPerson(['support'])).id;
     ids.partnerTarget = (await api.addPerson(['partner'], { partnerAccountId: ids.accountA })).id;
     // An entry of the planted receipt whose diff carries cost fields, written as the owner (the

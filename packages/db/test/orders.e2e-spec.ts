@@ -1031,4 +1031,80 @@ describe('stores, channels, connections, and orders (AC-18, AC-21, AC-23, AC-35)
       expect(order.day).toBe('2026-01-15');
     });
   });
+  describe('the manual order columns and indexes (spec 0013 milestone 1)', () => {
+    it('holds one order per channel id in a store, any number in another store or without one', async () => {
+      const store = await makeStore();
+      const other = await makeStore();
+      await insert('orders', sale({ store_id: store, channel_order_ref: 'ref-1' }));
+
+      await expect(
+        insert('orders', sale({ store_id: store, channel_order_ref: 'ref-1' })),
+      ).rejects.toThrow(/orders_store_channel_ref_unique/);
+      await insert('orders', sale({ store_id: other, channel_order_ref: 'ref-1' }));
+      await insert('orders', sale({ store_id: store }));
+      await insert('orders', sale({ store_id: store }));
+    });
+
+    it('caps the channel order ref at 255 characters and the customer note at 2000', async () => {
+      await insert(
+        'orders',
+        sale({ channel_order_ref: 'r'.repeat(255), customer_note: 'n'.repeat(2000) }),
+      );
+
+      await expect(insert('orders', sale({ channel_order_ref: 'r'.repeat(256) }))).rejects.toThrow(
+        /orders_channel_order_ref_length/,
+      );
+      await expect(insert('orders', sale({ customer_note: 'n'.repeat(2001) }))).rejects.toThrow(
+        /orders_customer_note_length/,
+      );
+    });
+
+    it('keeps short_quantity between 0 and the line quantity, 0 by default', async () => {
+      const orderId = await insert('orders', sale());
+      const fresh = await insert('order_lines', line(orderId, { quantity: 3 }));
+      const defaulted = await one<{ short_quantity: number }>(
+        'SELECT short_quantity FROM order_lines WHERE id = $1',
+        [fresh],
+      );
+      await owner.query('UPDATE order_lines SET short_quantity = 3 WHERE id = $1', [fresh]);
+
+      expect(defaulted.short_quantity).toBe(0);
+      await expect(
+        owner.query('UPDATE order_lines SET short_quantity = 4 WHERE id = $1', [fresh]),
+      ).rejects.toThrow(/order_lines_short_within_quantity/);
+      await expect(
+        owner.query('UPDATE order_lines SET short_quantity = -1 WHERE id = $1', [fresh]),
+      ).rejects.toThrow(/order_lines_short_within_quantity/);
+    });
+
+    it('accepts goodwill_for as a related order relation', async () => {
+      const original = await insert('orders', sale());
+      const goodwill = await insert(
+        'orders',
+        gift({ related_order_id: original, related_order_relation: 'goodwill_for' }),
+      );
+
+      expect(goodwill).toBeTruthy();
+    });
+
+    it('has the list, search, and short indexes', async () => {
+      const { rows } = await owner.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'
+         AND indexname = ANY($1::text[])`,
+        [
+          [
+            'orders_placed_idx',
+            'orders_fulfillment_placed_idx',
+            'orders_order_number_idx',
+            'orders_ship_to_phone_idx',
+            'orders_ship_to_phone_alt_idx',
+            'order_lines_short_idx',
+            'orders_store_channel_ref_unique',
+          ],
+        ],
+      );
+
+      expect(rows).toHaveLength(7);
+    });
+  });
 });

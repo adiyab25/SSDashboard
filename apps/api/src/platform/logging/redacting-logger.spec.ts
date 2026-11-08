@@ -237,6 +237,20 @@ describe('personal data redaction (Law 151)', () => {
     }
   });
 
+  // Spec 0013 (security L2): the second ship to phone of an order, in any spelling of the key.
+  it('redacts the second ship to phone of an order under every spelling of its key', () => {
+    expect(PERSONAL_DATA_KEYS).toContain('phonealt');
+    const redacted = JSON.stringify(
+      createRedactor(DEFAULT_REDACTION_RULES)({
+        phoneAlt: 'second-phone-sentinel',
+        phone_alt: 'second-phone-sentinel',
+        edit: { operations: [{ kind: 'ship_to', 'phone-alt': 'second-phone-sentinel' }] },
+      }),
+    );
+
+    expect(redacted).not.toContain('second-phone-sentinel');
+  });
+
   it('leaks when the list is emptied (proof the list is what protects)', () => {
     const empty = createRedactor({
       ...DEFAULT_REDACTION_RULES,

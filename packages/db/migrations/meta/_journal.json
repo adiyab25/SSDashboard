@@ -64,6 +64,20 @@
       "when": 1794094720597,
       "tag": "0008_customers_flag_set_at_check",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794102927678,
+      "tag": "0009_orders_manual_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794102934118,
+      "tag": "0010_orders_goodwill_relation",
+      "breakpoints": true
     }
   ]
 }

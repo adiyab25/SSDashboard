@@ -152,6 +152,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | 0012 seasons, product groups | `POST /api/seasons/:id/archive`, `POST /api/seasons/:id/unarchive`, and the same two for `/api/product-groups/:id` | `catalog.manage` |
 | 0012 seasons, product groups | `DELETE /api/seasons/:id`, `DELETE /api/product-groups/:id` | `catalog.manage` |
 | 0013 orders | `GET /api/orders`, `POST /api/orders/search`, `GET /api/orders/:id` | `orders.view` |
+| 0013 orders | `GET /api/orders/filter-options` | `orders.view` |
 | 0013 orders | `GET /api/orders/options` | `orders.confirm` |
 | 0013 orders | `POST /api/orders` | `orders.confirm` |
 | 0013 orders | `POST /api/orders/gifted` | `orders.gift` |

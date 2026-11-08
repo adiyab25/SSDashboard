@@ -12,13 +12,14 @@ import { HealthModule } from './health/health.module.js';
 import { IdentityModule } from './identity/identity.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { MailModule } from './mail/mail.module.js';
+import { OrdersModule } from './orders/orders.module.js';
 import { PartnersModule } from './partners/partners.module.js';
 import { PlatformApiModule } from './platform/platform-api.module.js';
 import { PlatformModule } from './platform/platform.module.js';
 
 /**
  * The root module of the `app` entry point (the api process): wires config, database, mail,
- * identity (sign in, staff and partner logins), platform, audit, catalog, channels, customers, inventory and partners.
+ * identity (sign in, staff and partner logins), platform, audit, catalog, channels, customers, inventory, orders and partners.
  * The worker uses its own module so no HTTP code runs there.
  */
 @Module({
@@ -41,6 +42,7 @@ import { PlatformModule } from './platform/platform.module.js';
     ChannelsModule,
     CustomersModule,
     InventoryModule,
+    OrdersModule,
     PartnersModule,
   ],
 })

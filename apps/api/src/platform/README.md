@@ -26,6 +26,7 @@ Services every module shares: brand settings, the signed license, gap free docum
 - Keyset paging cursors: [keyset-cursor.ts](keyset-cursor.ts)
 - Mapping query errors to answers: [query-error.filter.ts](query-error.filter.ts)
 - Auth events other modules can listen to: [events/auth-events.ts](events/auth-events.ts)
+- `DomainEvents` ([events/domain-events.ts](events/domain-events.ts), spec 0002 A6, built by spec 0013): in transaction domain events. A module registers handlers with `on(EventClass, handler, owner)` from `onModuleInit` and the owner of a change calls `publish(tx, event)` inside its own transaction; every handler runs awaited, in registration order, with the publisher's transaction, before the publisher commits, and a handler that throws rolls the whole change back. Payloads carry ids and codes, never personal data
 - The settings, document counter, custom field, order cost rule, and license tables (`licenses` and `license_checks`, both append only; `install` too, written only by `migrate`, which also seeds one `not_set` rule per kind), defined in [packages/db](../../../../packages/db/src/schema/platform.ts)
 
 ## Never touches

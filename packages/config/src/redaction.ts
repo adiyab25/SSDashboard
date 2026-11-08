@@ -36,6 +36,9 @@ export const PERSONAL_DATA_KEYS: readonly string[] = [
   'phones',
   'phonenumber',
   'phonenumbers',
+  // Spec 0013: the second ship to phone of an order (`phoneAlt` in a request, an audit diff, and an
+  // answer), the one phone spelling the generic `phone` entry does not cover.
+  'phonealt',
   'mobile',
   'mobilenumber',
   'telephone',

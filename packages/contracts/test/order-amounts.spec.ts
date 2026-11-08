@@ -370,3 +370,28 @@ describe('codDue', () => {
     ).toBe('0.00');
   });
 });
+
+describe('codDue on a cancelled order', () => {
+  const lines = [
+    {
+      lineState: 'open',
+      grossAmount: '800.00',
+      prepaidAmount: '0.00',
+      creditAppliedAmount: '0.00',
+    },
+  ] as const;
+  const shipping = {
+    shippingChargedAmount: '50.00',
+    shippingPrepaidAmount: '0.00',
+    shippingCreditAppliedAmount: '0.00',
+  };
+
+  it('is 0 once the fulfillment state is cancelled, even with open lines', () => {
+    expect(codDue({ lines, ...shipping, fulfillmentState: 'cancelled' })).toBe('0.00');
+  });
+
+  it('is unchanged for every other state or none', () => {
+    expect(codDue({ lines, ...shipping })).toBe('850.00');
+    expect(codDue({ lines, ...shipping, fulfillmentState: 'confirmed' })).toBe('850.00');
+  });
+});
