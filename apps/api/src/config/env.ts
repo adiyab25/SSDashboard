@@ -218,8 +218,8 @@ const EnvFields = z.object({
   /**
    * Seals each connection's Shopify credentials with AES-256-GCM (spec 0015, AC-2): 32 random
    * bytes, base64 or hex (`connectorKeyBytes`). Read by the api and the worker through
-   * `ConnectionSecrets` only. Required when `NODE_ENV` is `production`; elsewhere it may be unset,
-   * and sealing or opening then throws `ConnectorSecretKeyMissing`. Losing it makes every stored
+   * `ConnectionSecrets` only. Required in every environment (CI supplies a public test key); the
+   * `ConnectorSecretKeyMissing` check in `ConnectionSecrets` stays as a defensive second line. Losing it makes every stored
    * credential unreadable (the owner types the keys again); rotate it with
    * `CONNECTOR_SECRET_KEY_PREVIOUS` (the re-encrypt job that moves connections to the new key is
    * not built yet, spec 0015 task 12).
@@ -274,12 +274,8 @@ const EnvSchema = EnvFields.superRefine((env, ctx) => {
       cookieHostname(env.PORTAL_ORIGIN) !== cookieHostname(env.PUBLIC_URL),
     'PORTAL_ORIGIN must be a different host name from PUBLIC_URL',
   );
-  // Spec 0015 AC-2: an install never runs without its credentials key; development and test may.
-  need(
-    'CONNECTOR_SECRET_KEY',
-    env.NODE_ENV !== 'production' || env.CONNECTOR_SECRET_KEY !== undefined,
-    'Required when NODE_ENV is production',
-  );
+  // Spec 0015 AC-2: the api and worker never run without the credentials key, in any environment.
+  need('CONNECTOR_SECRET_KEY', env.CONNECTOR_SECRET_KEY !== undefined, 'Required');
   need(
     'CONNECTOR_SECRET_KEY_PREVIOUS',
     env.CONNECTOR_SECRET_KEY_PREVIOUS === undefined || env.CONNECTOR_SECRET_KEY !== undefined,

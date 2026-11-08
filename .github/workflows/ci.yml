@@ -119,6 +119,9 @@ jobs:
       PUBLIC_URL: http://localhost:3000
       # A public, test only value for this throwaway CI database. Never use it anywhere real.
       BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
+      # A public, test only 32 byte key (64 hex characters) that seals connection credentials in
+      # these tests. Never use it anywhere real.
+      CONNECTOR_SECRET_KEY: ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -165,6 +168,9 @@ jobs:
       PUBLIC_URL: http://localhost:3000
       # A public, test only value for this throwaway CI database. Never use it anywhere real.
       BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
+      # A public, test only 32 byte key (64 hex characters) that seals connection credentials in
+      # these tests. Never use it anywhere real.
+      CONNECTOR_SECRET_KEY: ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
