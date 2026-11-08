@@ -1,0 +1,1 @@
+ALTER TYPE "public"."order_relation" ADD VALUE 'goodwill_for';

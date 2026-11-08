@@ -3,6 +3,7 @@ import { AuditModule } from '../audit/audit.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { ConfigController } from './config.controller.js';
 import { CostRulesService } from './cost-rules.service.js';
+import { DomainEvents } from './events/domain-events.js';
 import { LICENSE_KEY_SET, LICENSE_KEYS } from './license/license-keys.js';
 import { LicenseVerifier } from './license/license-verifier.js';
 import { LicenseController } from './license/license.controller.js';
@@ -42,7 +43,8 @@ import { SettingsService } from './settings/settings.service.js';
     LicenseService,
     NumberingService,
     CostRulesService,
+    DomainEvents,
   ],
-  exports: [SettingsService, LicenseService, NumberingService, CostRulesService],
+  exports: [SettingsService, LicenseService, NumberingService, CostRulesService, DomainEvents],
 })
 export class PlatformModule {}

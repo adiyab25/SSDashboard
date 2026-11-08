@@ -74,7 +74,7 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
 **Done when:** fulfillment moves through new, confirmed, packed, shipped, delivered, partially delivered, failed attempt, returned to origin, exchanged, refused; cash moves through unpaid, collected by carrier, remitted, reconciled, with the COD fee and shipping fee as their own lines and partial amounts allowed; gifted orders stay out of revenue and return rates; the order is editable until pickup is created, with every edit audited.
 - [x] Design it (spec): `/architect orders & their state machines`
 - [ ] Build it: `/develop orders & their state machines`
-  - [ ] One manual order through every layer
+  - [x] One manual order through every layer
   - [ ] Editing, confirming, cancelling, packing, and the hold
   - [ ] The channel intake contract for feature 13
   - [ ] Stock: holds at creation, short lines, and carrier shipments

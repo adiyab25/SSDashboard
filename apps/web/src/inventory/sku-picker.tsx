@@ -23,6 +23,8 @@ export interface PickedSku {
   id: string;
   code: string;
   name: { en?: string; ar?: string };
+  /** The SKU's list price, when it has one; the order form starts a line's unit price from it. */
+  price?: string | null;
 }
 
 const SEARCH_DELAY_MS = 250;
@@ -144,7 +146,7 @@ export function SkuPicker({
                     value={sku.id}
                     className="coarse:min-h-touch"
                     onSelect={() => {
-                      onChange({ id: sku.id, code: sku.code, name: sku.name });
+                      onChange({ id: sku.id, code: sku.code, name: sku.name, price: sku.price });
                       setOpen(false);
                       onBlur?.();
                     }}

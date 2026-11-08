@@ -7,6 +7,7 @@ import {
   PaletteIcon,
   ScrollTextIcon,
   SettingsIcon,
+  ShoppingBagIcon,
   TagIcon,
   UsersIcon,
   UsersRoundIcon,
@@ -15,7 +16,7 @@ import {
 import type { MessageKey } from '@ssdashboard/i18n';
 
 /** Sidebar and palette groups. Each feature that ships pages adds its own. */
-export type NavGroup = 'general' | 'inventory' | 'customers';
+export type NavGroup = 'general' | 'orders' | 'inventory' | 'customers';
 
 /** One sidebar and palette entry. */
 export interface NavItem {
@@ -81,6 +82,14 @@ export const navItems: readonly NavItem[] = [
     needs: 'settings.manage',
   },
   {
+    id: 'orders',
+    labelKey: 'shell.nav.items.orders',
+    href: '/orders',
+    icon: ShoppingBagIcon,
+    group: 'orders',
+    needs: 'orders.view',
+  },
+  {
     id: 'stock',
     labelKey: 'shell.nav.items.stock',
     href: '/stock',
@@ -125,6 +134,7 @@ export const navItems: readonly NavItem[] = [
 /** The groups in display order, with their heading keys. */
 export const navGroups: readonly { id: NavGroup; labelKey: MessageKey }[] = [
   { id: 'general', labelKey: 'shell.nav.groups.general' },
+  { id: 'orders', labelKey: 'shell.nav.groups.orders' },
   { id: 'inventory', labelKey: 'shell.nav.groups.inventory' },
   { id: 'customers', labelKey: 'shell.nav.groups.customers' },
 ];

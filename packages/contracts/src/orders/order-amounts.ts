@@ -1,5 +1,5 @@
 import { InvalidAmountError, Money } from '../money.js';
-import type { OrderLineState } from './order-states.js';
+import type { FulfillmentState, OrderLineState } from './order-states.js';
 
 /** The part of a line that allocation and totals need. Amounts are `numeric` text in EGP. */
 export interface AmountLine {
@@ -171,7 +171,8 @@ export interface CodDueLine {
  * states only: a partial delivery lowers it by the returned rows (shipping is charged in full), and
  * it reaches 0 once every line is `returned_to_origin`, `lost`, or `cancelled`. A refusal moves no
  * line, so a refused order keeps its full due amount until the carrier reports the parcel back
- * and its lines move (spec 0002 orders child; feature 19 carries the rule). Reconciliation compares
+ * and its lines move (spec 0002 orders child; feature 19 carries the rule). A cancelled order (whole order
+ * cancellation keeps its lines `open`) owes 0. Reconciliation compares
  * collected cash with this, not with `codExpected`.
  */
 export function codDue(input: {
@@ -179,7 +180,10 @@ export function codDue(input: {
   shippingChargedAmount: string;
   shippingPrepaidAmount: string;
   shippingCreditAppliedAmount: string;
+  /** The order's fulfillment state; a `cancelled` order owes nothing (its lines stay `open`). */
+  fulfillmentState?: FulfillmentState;
 }): string {
+  if (input.fulfillmentState === 'cancelled') return Money.zero.toString();
   let due = Money.zero;
   let keptLine = false;
   for (const line of input.lines) {
