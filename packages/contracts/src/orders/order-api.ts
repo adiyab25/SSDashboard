@@ -416,11 +416,9 @@ export const OrderDetail = z.object({
   money: OrderMoneyView,
   /**
    * The open write back commands of the order, oldest first (AC-12: "Edit not synced, hold" with
-   * each command's state and reason). The api always sends it; it is optional in the schema only
-   * so order fixtures written before milestone 2 still type check (the web lane makes it required
-   * when it shows the block).
+   * each command's state and reason). The api always sends it, an empty list when none is open.
    */
-  writeBackCommands: z.array(OrderWriteBackCommandView).optional(),
+  writeBackCommands: z.array(OrderWriteBackCommandView),
   events: z.array(OrderEventView),
   updatedAt: z.string(),
 });

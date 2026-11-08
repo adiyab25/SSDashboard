@@ -50,15 +50,14 @@ export function OrderEditLineFields({
               value={field.value}
               placeholder={t('orders.new.chooseSku')}
               onChange={(sku) => {
+                const changed = field.value?.id !== sku.id;
                 field.onChange(sku);
                 form.clearErrors(`lines.${index}.sku`);
-                const typedPrice = form.getValues(`lines.${index}.unitPrice`);
-                // A list price starts the unit price, until the person types their own.
-                if (
-                  sku.price &&
-                  (typedPrice === '' || !form.getFieldState(`lines.${index}.unitPrice`).isDirty)
-                ) {
-                  form.setValue(`lines.${index}.unitPrice`, sku.price);
+                // Another SKU starts from its own list price (empty when it has none, so the
+                // old SKU's price is never carried over) and no discount.
+                if (changed) {
+                  form.setValue(`lines.${index}.unitPrice`, sku.price ?? '');
+                  form.setValue(`lines.${index}.discountAmount`, '0.00');
                 }
               }}
               onBlur={field.onBlur}

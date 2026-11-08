@@ -41,6 +41,17 @@ export function isCancelInShopify(error: unknown): boolean {
 }
 
 /**
+ * True when the answer says the page is out of date with the order (it is locked, no longer in the
+ * state the button assumed, or gone), so the caller refetches the order and shows the real state.
+ */
+export function isOutOfDate(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    ['ORDER_LOCKED', 'INVALID_TRANSITION', 'ORDER_NOT_FOUND'].includes(error.code)
+  );
+}
+
+/**
  * The catalog key that says what went wrong with an edit, a cancel, or a move, from the api's stable
  * code. A code with no sentence of its own falls back to the generic one; a stale order has its own
  * message because the caller refetches. Never shows the api's text, which may carry names.

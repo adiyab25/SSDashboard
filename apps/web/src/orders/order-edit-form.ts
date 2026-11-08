@@ -72,7 +72,7 @@ export function orderEditFormOf(order: OrderDetail) {
     const issue = (path: (string | number)[], message: string) =>
       context.addIssue({ code: 'custom', path, message });
     for (const field of ['name', 'phone', 'address'] as const) {
-      if (form[field] === '' && (order.shipTo[field] ?? '') !== '') issue([field], 'required');
+      if (form[field] === '' && shown(order.shipTo[field]) !== '') issue([field], 'required');
     }
     if (form.reasonCode !== '' && !EditReasonCode.safeParse(form.reasonCode).success) {
       issue(['reasonCode'], 'reasonInvalid');
@@ -119,14 +119,17 @@ export function openLinesOf(order: OrderDetail) {
   return order.lines.filter((line) => line.lineState === 'open');
 }
 
+/** A stored ship to value as the form holds it: trimmed, empty when the order has none. */
+const shown = (value: string | null): string => (value ?? '').trim();
+
 /** The form's starting values: the order as it stands, every open line set to `keep`. */
 export function editDefaultsOf(order: OrderDetail): OrderEditInput {
   return {
-    name: order.shipTo.name ?? '',
-    phone: order.shipTo.phone ?? '',
-    phoneAlt: order.shipTo.phoneAlt ?? '',
-    address: order.shipTo.address ?? '',
-    courierNote: order.shipTo.courierNote ?? '',
+    name: shown(order.shipTo.name),
+    phone: shown(order.shipTo.phone),
+    phoneAlt: shown(order.shipTo.phoneAlt),
+    address: shown(order.shipTo.address),
+    courierNote: shown(order.shipTo.courierNote),
     shippingChargedAmount: order.money.shippingChargedAmount,
     reasonCode: '',
     lines: openLinesOf(order).map((line) => ({
@@ -150,6 +153,26 @@ function giftDiscountOf(unitPrice: string, quantity: number): string {
 }
 
 /**
+ * True when a replace names the same SKU, quantity, price, and discount as the line it replaces:
+ * sending it would cancel a line and add an identical one, an edit and an audit entry (and, for a
+ * Shopify order, a hold) for no change.
+ */
+function isUnchangedReplace(
+  order: OrderDetail,
+  lineId: string,
+  next: { variantId: string; quantity: number; unitPrice: string; discountAmount: string },
+): boolean {
+  const source = order.lines.find((candidate) => candidate.id === lineId);
+  return (
+    source !== undefined &&
+    source.variantId === next.variantId &&
+    source.quantity === next.quantity &&
+    Money.of(source.unitPrice).equals(Money.of(next.unitPrice)) &&
+    Money.of(source.discountAmount).equals(Money.of(next.discountAmount))
+  );
+}
+
+/**
  * The operations a form asks for, in the contract's shape; only what changed is sent. Ship to
  * fields that differ become one `ship_to` (an emptied second phone or courier note is `null`),
  * each line set to replace, remove, or add becomes its operation, and a shipping charge that
@@ -164,11 +187,11 @@ export function buildEditBody(
 ): OrderEditBody {
   const operations: OrderEditOperation[] = [];
   const original: Record<(typeof SHIP_TO_FIELDS)[number], string> = {
-    name: order.shipTo.name ?? '',
-    phone: order.shipTo.phone ?? '',
-    phoneAlt: order.shipTo.phoneAlt ?? '',
-    address: order.shipTo.address ?? '',
-    courierNote: order.shipTo.courierNote ?? '',
+    name: shown(order.shipTo.name),
+    phone: shown(order.shipTo.phone),
+    phoneAlt: shown(order.shipTo.phoneAlt),
+    address: shown(order.shipTo.address),
+    courierNote: shown(order.shipTo.courierNote),
   };
   const shipTo: Record<string, string | null> = {};
   for (const field of SHIP_TO_FIELDS) {
@@ -197,6 +220,7 @@ export function buildEditBody(
           ? giftDiscountOf(unitPrice, quantity)
           : Amount.parse(line.discountAmount);
         const fields = { variantId: line.sku?.id ?? '', quantity, unitPrice, discountAmount };
+        if (line.action === 'replace' && isUnchangedReplace(order, line.lineId, fields)) continue;
         operations.push(
           line.action === 'replace'
             ? { kind: 'replace_line', lineId: line.lineId, ...fields }

@@ -1466,7 +1466,7 @@ export const en = {
         'shopify.order_cancel': 'Cancellation to Shopify',
       },
       state: { waiting: 'Waiting', failed: 'Failed' },
-      reason: 'Error code',
+      reason: 'Error code:',
       queued: 'Queued {{when}}',
     },
     edit: {
@@ -1474,8 +1474,11 @@ export const en = {
       description:
         'Change where it ships, its lines, or the shipping charge. Everything you change is saved together and recorded in the history.',
       close: 'Close',
-      cancel: 'Cancel',
+      cancel: 'Close without saving',
       save: 'Save changes',
+      tooMany: 'An edit can hold at most 50 changes. Save some of them now, then edit again.',
+      lineSummary: '{{quantity}} × {{price}}',
+      phoneAsTypedLabel: 'Phone as typed:',
       reason: 'Why',
       noReason: 'No reason',
       nothingChanged: 'Nothing was changed. Change a field, or close this window.',
@@ -1572,8 +1575,6 @@ export const en = {
           'An order can be reopened only once, even if the reopened order was cancelled or changed since.',
         ORDER_LOCKED:
           'This order can no longer be changed: the courier has its delivery, or it has moved past packed.',
-        ORDER_STALE:
-          'This order changed while you were working. The page now shows the latest version; check it and try again.',
         ORDER_NOT_FOUND: 'This order does not exist.',
         ORDER_NEEDS_A_LINE: 'An order needs at least one open line. Cancel the order instead.',
         EDIT_CHANGES_PAYMENT:

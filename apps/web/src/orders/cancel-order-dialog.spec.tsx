@@ -1,4 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
@@ -19,6 +21,8 @@ const handlers = () => ({
   onCancelled: vi.fn(),
   onInShopify: vi.fn(),
   onStale: vi.fn(),
+  onOutOfDate: vi.fn(),
+  onRestoreFocus: vi.fn(),
 });
 
 afterEach(() => {
@@ -168,7 +172,69 @@ describe('CancelOrderDialog (AC-7, AC-20)', () => {
     await user.selectOptions(within(dialog).getByLabelText(/^Why/), 'fake');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel order' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('no longer in a state');
+    expect(on.onOutOfDate).toHaveBeenCalled();
     await user.click(within(dialog).getByRole('button', { name: 'Keep the order' }));
     expect(on.onClose).toHaveBeenCalled();
+  });
+
+  it('keeps the order it opened on: a refetch behind it does not give old values a fresh token', async () => {
+    const user = userEvent.setup();
+    const opened = orderDetailOf();
+    api.cancelOrder.mockResolvedValue(opened);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { rerender } = render(<CancelOrderDialog order={opened} {...handlers()} />, { wrapper });
+    const dialog = await screen.findByRole('dialog');
+    rerender(
+      <CancelOrderDialog
+        order={{ ...opened, updatedAt: '2026-11-03T12:00:00.654321Z' }}
+        {...handlers()}
+      />,
+    );
+    await user.selectOptions(within(dialog).getByLabelText(/^Why/), 'fake');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel order' }));
+    await waitFor(() => expect(api.cancelOrder).toHaveBeenCalled());
+    expect(api.cancelOrder.mock.calls[0]?.[1]).toMatchObject({
+      expectedUpdatedAt: opened.updatedAt,
+    });
+  });
+
+  it('never offers the order itself as the order it duplicates', async () => {
+    const user = userEvent.setup();
+    const order = orderDetailOf();
+    api.listOrders.mockResolvedValue({
+      items: [
+        {
+          id: order.id,
+          storeCode: 'ESS',
+          orderNumber: '#1001',
+          placedAt: '2026-11-03T10:00:00.000Z',
+          shipToName: null,
+          channelId: order.channelId,
+          channelName: { en: 'WhatsApp' },
+          totalAmount: '550.00',
+          codDueAmount: '550.00',
+          fulfillmentState: 'confirmed',
+          cashState: 'unpaid',
+          outcome: 'open',
+          type: 'sale',
+          giftReasonCode: null,
+          hold: false,
+          short: false,
+          reopened: false,
+          phoneNeedsFix: false,
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWithQuery(<CancelOrderDialog order={order} {...handlers()} />);
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText(/^Why/), 'duplicate');
+    await user.click(within(dialog).getByRole('combobox', { name: /The order it duplicates/ }));
+    await user.type(screen.getByPlaceholderText('Phone or order number'), '1001');
+    expect(await screen.findByText('No orders found')).toBeVisible();
+    expect(screen.queryByRole('option', { name: /ESS\/#1001/ })).toBeNull();
   });
 });

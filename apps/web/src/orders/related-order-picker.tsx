@@ -31,6 +31,8 @@ interface Props {
   describedBy?: string;
   buttonRef?: Ref<HTMLButtonElement>;
   disabled?: boolean;
+  /** An order the list never offers, such as the order being cancelled as a duplicate of another. */
+  excludeId?: string;
 }
 
 /**
@@ -48,6 +50,7 @@ export function RelatedOrderPicker({
   describedBy,
   buttonRef,
   disabled,
+  excludeId,
 }: Props) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -76,10 +79,13 @@ export function RelatedOrderPicker({
         ? failure?.status === 429
           ? t('orders.new.related.rateLimited')
           : t('orders.new.related.error')
-        : results.data && results.data.items.length === 0
+        : results.data && results.data.items.filter((order) => order.id !== excludeId).length === 0
           ? t('orders.new.related.none')
           : '';
-  const items = pending || q === '' ? [] : (results.data?.items ?? []);
+  const items =
+    pending || q === ''
+      ? []
+      : (results.data?.items ?? []).filter((order) => order.id !== excludeId);
 
   return (
     <Popover

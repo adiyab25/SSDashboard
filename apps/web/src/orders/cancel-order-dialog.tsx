@@ -21,13 +21,19 @@ import {
 import { Field, FieldError, FieldLabel } from '@ssdashboard/ui/components/field';
 import { useMutation } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
+import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { SELECT_CLASS } from './order-field-classes';
-import { isCancelInShopify, isStaleAnswer, orderWriteErrorKey } from './order-write-errors';
+import {
+  isCancelInShopify,
+  isOutOfDate,
+  isStaleAnswer,
+  orderWriteErrorKey,
+} from './order-write-errors';
 import { cancelOrder } from './orders-api';
 import { RelatedOrderPicker } from './related-order-picker';
 
@@ -63,13 +69,15 @@ const TARGET_CODES = new Set(['DUPLICATE_TARGET_REQUIRED']);
  * on close. Never cancels anything itself: the api decides.
  */
 export function CancelOrderDialog({
-  order,
+  order: opened,
   onClose,
   onCancelled,
   onInShopify,
   onStale,
+  onOutOfDate,
+  onRestoreFocus,
 }: {
-  /** The order as the page shows it now. */
+  /** The order as the page showed it when the person opened the dialog; later changes to it are ignored. */
   order: OrderDetail;
   onClose: () => void;
   /** Runs with the answered order once the api says 200. */
@@ -78,8 +86,14 @@ export function CancelOrderDialog({
   onInShopify: () => void;
   /** The order changed since the page loaded. */
   onStale: () => void;
+  /** The order is locked, no longer in the expected state, or gone: refetch it. */
+  onOutOfDate: () => void;
+  /** Puts focus on a control that still exists, when the one that opened the dialog is gone. */
+  onRestoreFocus: () => void;
 }) {
   const { t } = useTranslation();
+  // The dialog keeps the order it opened on, so a refetch behind it cannot give a fresh token.
+  const [order] = useState(opened);
   const returnFocus = useReturnFocus();
   const form = useForm<CancelInput, unknown, CancelOutput>({
     resolver: zodResolver(CancelForm),
@@ -102,6 +116,7 @@ export function CancelOrderDialog({
     onSuccess: onCancelled,
     onError: (error) => {
       if (isStaleAnswer(error)) onStale();
+      else if (isOutOfDate(error)) onOutOfDate();
       else if (isCancelInShopify(error)) onInShopify();
       else if (error instanceof ApiError && REASON_CODES.has(error.code)) {
         form.setFocus('reasonCode');
@@ -133,7 +148,13 @@ export function CancelOrderDialog({
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
       <DialogContent
         closeLabel={t('orders.cancel.close')}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={(event) => {
+          returnFocus(event);
+          if (!event.defaultPrevented) {
+            event.preventDefault();
+            onRestoreFocus();
+          }
+        }}
         className="sm:max-w-lg"
       >
         <form
@@ -193,6 +214,7 @@ export function CancelOrderDialog({
                 render={({ field }) => (
                   <RelatedOrderPicker
                     id="cancel-duplicate-of"
+                    excludeId={order.id}
                     value={field.value}
                     onChange={(picked) => {
                       field.onChange(picked);

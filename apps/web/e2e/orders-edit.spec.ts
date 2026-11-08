@@ -173,5 +173,62 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
       await expectNoAxeViolations(page);
     });
+
+    test('lets support fix a gifted order address but not its lines', async ({
+      page,
+      context,
+      baseURL,
+    }) => {
+      const code = `GFT-${randomUUID().slice(0, 8).toUpperCase()}`;
+      await createSku(context.request, code, { en: `Tee ${code}`, ar: `قميص ${code}` }, '300.00');
+      const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+
+      // A manager gives away one piece.
+      await page.goto('/orders/new');
+      await expect(page.locator('#order-store')).toBeVisible();
+      await waitForPageHydration(page);
+      const store = page.locator('#order-store');
+      await store.selectOption(
+        (await store.locator('option', { hasText: 'MAIN' }).getAttribute('value')) ?? '',
+      );
+      const channel = page.locator('#order-channel');
+      await channel.selectOption(
+        (await channel
+          .locator('option', { hasText: dir === 'rtl' ? 'يدوي' : 'Manual' })
+          .first()
+          .getAttribute('value')) ?? '',
+      );
+      await page.getByRole('radio', { name: t('orders.new.kinds.gifted') }).check();
+      await page.locator('#order-gift-reason').selectOption('influencer');
+      await page.locator('#order-name').fill('Influencer E2E');
+      await page.locator('#order-phone').fill(`011${digits}`);
+      await page.locator('#order-address').fill('1 Old Road, Cairo');
+      await pickSku(page, '#line-0-sku', code, t('inventory.receipt.searchSku'));
+      await page.locator('#line-0-quantity').fill('1');
+      await page.getByRole('button', { name: t('orders.new.submit') }).click();
+      await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
+      const orderUrl = page.url();
+
+      // Support signs in on the same browser and opens the order.
+      const support = await seedAccount({ hats: ['support'], language });
+      try {
+        await signInThroughApi(context, support, baseURL ?? '');
+        await page.goto(orderUrl);
+        const actions = page.getByRole('region', { name: t('orders.actions.label') });
+        await expect(actions).toBeVisible();
+        await waitForPageHydration(page);
+        await actions.getByRole('button', { name: t('orders.actions.edit') }).click();
+        const edit = page.getByRole('dialog');
+        await expect(edit.getByText(t('orders.edit.giftLinesNeedPermission'))).toBeVisible();
+        await expect(edit.getByLabel(numbered('orders.edit.lineAction', 1))).toHaveCount(0);
+        await edit.getByLabel(t('orders.shipTo.address')).fill('2 New Road, Giza');
+        await expectNoAxeViolations(page);
+        await edit.getByRole('button', { name: t('orders.edit.save') }).click();
+        await expect(edit).toHaveCount(0);
+        await expect(page.getByText('2 New Road, Giza')).toBeVisible();
+      } finally {
+        await support.remove().catch(() => undefined);
+      }
+    });
   });
 }

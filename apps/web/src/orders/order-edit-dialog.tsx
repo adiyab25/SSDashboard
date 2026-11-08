@@ -50,7 +50,12 @@ import {
   type OrderEditOutput,
 } from './order-edit-form';
 import { OrderEditLineFields } from './order-edit-line-fields';
-import { isEditInShopify, isStaleAnswer, orderWriteErrorKey } from './order-write-errors';
+import {
+  isEditInShopify,
+  isOutOfDate,
+  isStaleAnswer,
+  orderWriteErrorKey,
+} from './order-write-errors';
 import { editOrder } from './orders-api';
 
 /** Codes whose sentence belongs under a field, not in the alert. */
@@ -60,27 +65,35 @@ const FIELD_CODES: Record<string, 'phone' | 'phoneAlt' | 'reasonCode'> = {
   REASON_INVALID: 'reasonCode',
 };
 
-/** The most rows a person can add in one edit, so the body stays inside the contract's 50 operations. */
+/** The most rows a person can add in one edit; the whole edit is also checked against `MAX_OPERATIONS`. */
 const MAX_ADDED = 20;
+
+/** The contract's cap on operations in one edit (`OrderEditBody`). */
+const MAX_OPERATIONS = 50;
 
 /**
  * The edit dialog (spec 0013, AC-9, AC-10, AC-2): the ship to fields, every open line (keep it,
  * replace it with another SKU, quantity, or price, or remove it with a reason), rows to add, the
  * shipping charge, and an optional reason, all applied in one edit. Only what changed is sent,
- * with the `updatedAt` the page showed. A gifted order's lines and shipping need `orders.gift`
+ * with the `updatedAt` of the order as it was when the dialog opened: the dialog keeps that copy
+ * for its defaults, rows, body, and token, so a refetch behind it can neither change what the
+ * person is editing nor give old values a fresh token (a stale order answers `ORDER_STALE`). A gifted order's lines and shipping need `orders.gift`
  * (without it only the ship to block shows) and its lines keep their price with an equal discount.
  * Errors show from the api's stable code, under the field where one applies; `EDIT_IN_SHOPIFY`
- * and a stale order hand back to the page (`onInShopify`, `onStale`). Focus returns to the Edit
- * button on close. Never decides what an edit may do: the api checks every rule again.
+ * and a stale order hand back to the page (`onInShopify`, `onStale`); a locked, moved, or missing
+ * order asks the page to refetch (`onOutOfDate`). Focus returns to the Edit button on close, or to
+ * `onRestoreFocus` when that button is gone. Never decides what an edit may do: the api checks every rule again.
  */
 export function OrderEditDialog({
-  order,
+  order: opened,
   onClose,
   onEdited,
   onInShopify,
   onStale,
+  onOutOfDate,
+  onRestoreFocus,
 }: {
-  /** The order as the page shows it now. */
+  /** The order as the page showed it when the person opened the dialog; later changes to it are ignored. */
   order: OrderDetail;
   onClose: () => void;
   /** Runs with the answered order once the api says 200. */
@@ -89,8 +102,13 @@ export function OrderEditDialog({
   onInShopify: () => void;
   /** The order changed since the page loaded. */
   onStale: () => void;
+  /** The order is locked, no longer in the expected state, or gone: refetch it. */
+  onOutOfDate: () => void;
+  /** Puts focus on a control that still exists, when the one that opened the dialog is gone. */
+  onRestoreFocus: () => void;
 }) {
   const { t } = useTranslation();
+  const [order] = useState(opened);
   const format = useFormat();
   const text = useLocalizedText();
   const access = useAccess();
@@ -100,6 +118,7 @@ export function OrderEditDialog({
   const open = useMemo(() => openLinesOf(order), [order]);
   const schema = useMemo(() => orderEditFormOf(order), [order]);
   const [nothingChanged, setNothingChanged] = useState(false);
+  const [tooMany, setTooMany] = useState(false);
 
   const form = useForm<OrderEditInput, unknown, OrderEditOutput>({
     resolver: zodResolver(schema),
@@ -124,6 +143,7 @@ export function OrderEditDialog({
     onSuccess: onEdited,
     onError: (error) => {
       if (isStaleAnswer(error)) onStale();
+      else if (isOutOfDate(error)) onOutOfDate();
       else if (isEditInShopify(error)) onInShopify();
       else if (error instanceof ApiError && FIELD_CODES[error.code]) {
         form.setFocus(FIELD_CODES[error.code] ?? 'phone');
@@ -137,7 +157,13 @@ export function OrderEditDialog({
       setNothingChanged(true);
       return;
     }
+    if (body.operations.length > MAX_OPERATIONS) {
+      setNothingChanged(false);
+      setTooMany(true);
+      return;
+    }
     setNothingChanged(false);
+    setTooMany(false);
     mutation.mutate(body);
   }
 
@@ -146,18 +172,26 @@ export function OrderEditDialog({
   const failedField = failedCode ? FIELD_CODES[failedCode] : undefined;
   const fieldProblem = (field: 'phone' | 'phoneAlt' | 'reasonCode') =>
     failedField === field && failed ? t(orderWriteErrorKey(failed)) : null;
-  const alertKey: MessageKey | null = nothingChanged
-    ? 'orders.edit.nothingChanged'
-    : failed && !failedField
-      ? orderWriteErrorKey(failed)
-      : null;
+  const alertKey: MessageKey | null = tooMany
+    ? 'orders.edit.tooMany'
+    : nothingChanged
+      ? 'orders.edit.nothingChanged'
+      : failed && !failedField
+        ? orderWriteErrorKey(failed)
+        : null;
   const requiredText = t('orders.new.errors.required');
 
   return (
     <Dialog open onOpenChange={(next) => !next && !mutation.isPending && onClose()}>
       <DialogContent
         closeLabel={t('orders.edit.close')}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={(event) => {
+          returnFocus(event);
+          if (!event.defaultPrevented) {
+            event.preventDefault();
+            onRestoreFocus();
+          }
+        }}
         className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-3xl"
       >
         <form
@@ -218,7 +252,7 @@ export function OrderEditDialog({
                   <FieldDescription id="edit-phone-hint">
                     {order.shipTo.contactPhoneRaw ? (
                       <>
-                        {t('orders.shipTo.phoneAsTyped')}:{' '}
+                        {t('orders.edit.phoneAsTypedLabel')}{' '}
                         <LtrText>{order.shipTo.contactPhoneRaw}</LtrText>
                       </>
                     ) : (
@@ -322,7 +356,10 @@ export function OrderEditDialog({
                                 {text(source.name ?? {}, source.title)}
                               </bdi>
                               <span className="tabular-nums text-muted-foreground">
-                                {source.quantity} × {format.money(source.unitPrice, 2)}
+                                {t('orders.edit.lineSummary', {
+                                  quantity: format.quantity(source.quantity),
+                                  price: format.money(source.unitPrice, 2),
+                                })}
                               </span>
                             </p>
                             <Field data-invalid={false}>

@@ -1,11 +1,14 @@
 import type { OrderDetail } from '@ssdashboard/contracts';
-import { screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useRef, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/shared/render-with-query';
 import { orderDetailOf } from './order-detail-fixture';
 import { OrderActions } from './order-actions';
+import { orderKeys } from './orders-api';
 
 const api = vi.hoisted(() => ({
   moveOrder: vi.fn(),
@@ -157,5 +160,159 @@ describe('OrderActions (AC-7, AC-8, AC-20)', () => {
     expect(screen.queryByRole('button', { name: 'Edit order' })).toBeNull();
     expect(screen.getByText(/Edit it in Shopify/)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Cancel order' })).toBeVisible();
+  });
+
+  it('says the Shopify cancel note in place of Cancel order, keeping Edit', async () => {
+    const user = userEvent.setup();
+    api.cancelOrder.mockRejectedValue(new ApiError(409, { code: 'CANCEL_IN_SHOPIFY' }));
+    renderWithQuery(<OrderActions order={orderDetailOf({ fulfillmentState: 'confirmed' })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Cancel order' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText(/^Why/), 'fake');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel order' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText(/Cancel it in Shopify/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Cancel order' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Edit order' })).toBeVisible();
+  });
+
+  it('keeps the edit token of the order the dialog opened on when a newer copy arrives', async () => {
+    const user = userEvent.setup();
+    const opened = orderDetailOf({ fulfillmentState: 'confirmed' });
+    api.editOrder.mockResolvedValue(opened);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { rerender } = render(<OrderActions order={opened} />, { wrapper });
+
+    await user.click(screen.getByRole('button', { name: 'Edit order' }));
+    const dialog = await screen.findByRole('dialog');
+    rerender(<OrderActions order={{ ...opened, updatedAt: '2026-11-03T12:00:00.654321Z' }} />);
+    await user.type(within(dialog).getByLabelText('Second phone'), '01111111111');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.editOrder).toHaveBeenCalled());
+    expect(api.editOrder.mock.calls[0]?.[1]).toMatchObject({ expectedUpdatedAt: opened.updatedAt });
+  });
+
+  it('disables Edit and Cancel while a move is on its way', async () => {
+    const user = userEvent.setup();
+    api.moveOrder.mockReturnValue(new Promise(() => undefined));
+    renderWithQuery(<OrderActions order={orderDetailOf({ fulfillmentState: 'new' })} />);
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    expect(screen.getByRole('button', { name: 'Edit order' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel order' })).toBeDisabled();
+  });
+
+  it('clears an earlier failure after a later success', async () => {
+    const user = userEvent.setup();
+    const order = orderDetailOf({ fulfillmentState: 'new' });
+    api.moveOrder.mockRejectedValueOnce(new ApiError(503, { code: 'BUSY' }));
+    api.moveOrder.mockResolvedValueOnce({ ...order, fulfillmentState: 'confirmed' });
+    renderWithQuery(<OrderActions order={order} />);
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('system is busy');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it.each(['ORDER_LOCKED', 'INVALID_TRANSITION', 'ORDER_NOT_FOUND'])(
+    'refetches the order on %s',
+    async (code) => {
+      const user = userEvent.setup();
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const spy = vi.spyOn(client, 'invalidateQueries');
+      api.moveOrder.mockRejectedValue(new ApiError(409, { code }));
+      render(
+        <QueryClientProvider client={client}>
+          <OrderActions order={orderDetailOf({ fulfillmentState: 'new' })} />
+        </QueryClientProvider>,
+      );
+      await user.click(screen.getByRole('button', { name: 'Confirm' }));
+      await screen.findByRole('alert');
+      expect(spy).toHaveBeenCalledWith({ queryKey: orderKeys.all });
+    },
+  );
+});
+
+/** The order page's own shape: the order from the query cache, an h1 to fall back on, and the actions. */
+function Page({ initial, client }: { initial: OrderDetail; client: QueryClient }) {
+  const query = useQuery({
+    queryKey: orderKeys.detail(initial.id),
+    queryFn: () => client.getQueryData<OrderDetail>(orderKeys.detail(initial.id)) ?? initial,
+    initialData: initial,
+    staleTime: Infinity,
+  });
+  const heading = useRef<HTMLHeadingElement>(null);
+  return (
+    <>
+      <h1 ref={heading} tabIndex={-1}>
+        Order page
+      </h1>
+      <OrderActions order={query.data} headingRef={heading} />
+    </>
+  );
+}
+
+describe('OrderActions focus (WCAG 2.4.3)', () => {
+  function renderPage(order: OrderDetail) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <Page initial={order} client={client} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it('moves focus to an action that is left when Confirm goes away', async () => {
+    me.current = { ...SUPPORT, permissions: [...SUPPORT.permissions, 'fulfillment.work'] };
+    const user = userEvent.setup();
+    const order = orderDetailOf({ fulfillmentState: 'new' });
+    api.moveOrder.mockResolvedValue({ ...order, fulfillmentState: 'confirmed' });
+    renderPage(order);
+
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await screen.findByRole('button', { name: 'Pack' });
+    await waitFor(() => expect(document.body).not.toHaveFocus());
+    const region = screen.getByRole('region', { name: 'Order actions' });
+    expect(region).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it('moves focus to the page heading when a cancel leaves no action', async () => {
+    const user = userEvent.setup();
+    const order = orderDetailOf({ fulfillmentState: 'confirmed' });
+    api.cancelOrder.mockResolvedValue({
+      ...order,
+      fulfillmentState: 'cancelled',
+      outcome: 'cancelled_before_shipping',
+    });
+    renderPage(order);
+
+    await user.click(screen.getByRole('button', { name: 'Cancel order' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText(/^Why/), 'fake');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel order' }));
+
+    await waitFor(() => expect(screen.queryByRole('region')).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Order page' })).toHaveFocus(),
+    );
+  });
+
+  it('keeps focus on an action when the Shopify note replaces the button that opened the dialog', async () => {
+    const user = userEvent.setup();
+    api.editOrder.mockRejectedValue(new ApiError(409, { code: 'EDIT_IN_SHOPIFY' }));
+    renderPage(orderDetailOf({ fulfillmentState: 'confirmed' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit order' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Second phone'), '01111111111');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Edit order' })).toBeNull());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel order' })).toHaveFocus());
   });
 });

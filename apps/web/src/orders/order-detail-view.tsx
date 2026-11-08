@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RecordHistoryPanel } from '@/audit/record-history-panel';
 import { useAccess } from '@/access/use-access';
@@ -55,6 +56,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
   const text = useLocalizedText();
   const access = useAccess();
   const { orderId } = useParams<{ orderId: string }>();
+  const heading = useRef<HTMLHeadingElement>(null);
   const query = useQuery({
     queryKey: orderKeys.detail(orderId),
     queryFn: ({ signal }) => getOrder(orderId, signal),
@@ -256,7 +258,11 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
       </Button>
 
       <header className="flex flex-col gap-2">
-        <h1 className="text-xl font-semibold">
+        <h1
+          ref={heading}
+          tabIndex={-1}
+          className="rounded-sm text-xl font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
           <OrderNumber order={order} />
         </h1>
         <div className="flex flex-wrap items-center gap-3">
@@ -265,7 +271,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
         </div>
       </header>
 
-      <OrderActions order={order} />
+      <OrderActions order={order} headingRef={heading} />
 
       <OrderHoldBlock order={order} />
 

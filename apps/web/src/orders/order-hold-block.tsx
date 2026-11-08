@@ -53,7 +53,7 @@ export function OrderHoldBlock({ order }: { order: OrderDetail }) {
                 <span>{t(`orders.hold.state.${command.syncState}`)}</span>
                 {command.failureReason && (
                   <span>
-                    {t('orders.hold.reason')}: <LtrText>{command.failureReason}</LtrText>
+                    {t('orders.hold.reason')} <LtrText>{command.failureReason}</LtrText>
                   </span>
                 )}
                 <span className="text-muted-foreground">

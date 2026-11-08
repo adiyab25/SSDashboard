@@ -1,4 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
@@ -41,6 +43,8 @@ const handlers = () => ({
   onEdited: vi.fn(),
   onInShopify: vi.fn(),
   onStale: vi.fn(),
+  onOutOfDate: vi.fn(),
+  onRestoreFocus: vi.fn(),
 });
 
 beforeEach(() => {
@@ -250,14 +254,115 @@ describe('OrderEditDialog (AC-9, AC-10, AC-2, AC-20)', () => {
     await waitFor(() => expect(on.onInShopify).toHaveBeenCalledTimes(1));
   });
 
-  it('closes with Cancel and has a name, a description, and a labelled close button', async () => {
+  it('closes without saving and has a name, a description, and a labelled close button', async () => {
     const user = userEvent.setup();
     const on = handlers();
     renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...on} />);
     const dialog = await screen.findByRole('dialog', { name: 'Edit order ⁦ESS/#1001⁩' });
     expect(dialog).toHaveAccessibleDescription(/Change where it ships/);
     expect(within(dialog).getByRole('button', { name: 'Close' })).toBeVisible();
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Close without saving' }));
     expect(on.onClose).toHaveBeenCalled();
+  });
+
+  it('keeps the order it opened on: a refetch behind it changes neither the form nor the token', async () => {
+    const user = userEvent.setup();
+    const opened = orderDetailOf();
+    api.editOrder.mockResolvedValue(opened);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { rerender } = render(<OrderEditDialog order={opened} {...handlers()} />, { wrapper });
+    const dialog = await screen.findByRole('dialog');
+
+    // Someone else changed the order: a newer copy with another address and token arrives.
+    rerender(
+      <OrderEditDialog
+        order={{
+          ...opened,
+          updatedAt: '2026-11-03T12:00:00.654321Z',
+          shipTo: { ...opened.shipTo, address: 'Changed by someone else' },
+        }}
+        {...handlers()}
+      />,
+    );
+    expect(within(dialog).getByLabelText('Address')).toHaveValue('12 Nile Street, Cairo');
+
+    await user.type(within(dialog).getByLabelText('Second phone'), '01111111111');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.editOrder).toHaveBeenCalled());
+    expect(sentBody().expectedUpdatedAt).toBe(opened.updatedAt);
+  });
+
+  it('sends nothing for a replace that names the same SKU, quantity, price, and discount', async () => {
+    const user = userEvent.setup();
+    renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...handlers()} />);
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText('What to do with line 1'), 'replace');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Nothing was changed');
+    expect(api.editOrder).not.toHaveBeenCalled();
+  });
+
+  it('clears the price when the new SKU has none, and the discount with it', async () => {
+    const user = userEvent.setup();
+    skus.searchSkus.mockResolvedValue({
+      items: [
+        {
+          id: VARIANT_L,
+          productId: '70000000-0000-4000-8000-000000000001',
+          code: 'TEE-RED-L',
+          name: { en: 'Red tee, L' },
+          price: null,
+          archived: false,
+        },
+      ],
+      nextCursor: null,
+    });
+    renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...handlers()} />);
+    const dialog = await screen.findByRole('dialog');
+    await user.selectOptions(within(dialog).getByLabelText('What to do with line 1'), 'replace');
+    await user.click(within(dialog).getByRole('combobox', { name: 'SKU' }));
+    await user.click(await screen.findByRole('option', { name: /TEE-RED-L/ }));
+
+    expect(within(dialog).getByLabelText('Unit price')).toHaveValue('');
+    expect(within(dialog).getByLabelText('Discount')).toHaveValue('0.00');
+  });
+
+  it('does not send a ship to change for a value that only differs by spaces', async () => {
+    const user = userEvent.setup();
+    const order = orderDetailOf();
+    renderWithQuery(
+      <OrderEditDialog
+        order={{ ...order, shipTo: { ...order.shipTo, address: '  12 Nile Street, Cairo ' } }}
+        {...handlers()}
+      />,
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Nothing was changed');
+  });
+
+  it.each(['ORDER_LOCKED', 'INVALID_TRANSITION', 'ORDER_NOT_FOUND'])(
+    'asks the page to refetch on %s',
+    async (code) => {
+      const user = userEvent.setup();
+      const on = handlers();
+      api.editOrder.mockRejectedValue(new ApiError(409, { code }));
+      renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...on} />);
+      const dialog = await screen.findByRole('dialog');
+      await user.type(within(dialog).getByLabelText('Second phone'), '01111111111');
+      await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+      await waitFor(() => expect(on.onOutOfDate).toHaveBeenCalled());
+    },
+  );
+
+  it('hands focus to onRestoreFocus when nothing that opened it can take focus back', async () => {
+    const on = handlers();
+    const { rerender } = renderWithQuery(<OrderEditDialog order={orderDetailOf()} {...on} />);
+    await screen.findByRole('dialog');
+    rerender(<div />);
+    await waitFor(() => expect(on.onRestoreFocus).toHaveBeenCalled());
   });
 });
