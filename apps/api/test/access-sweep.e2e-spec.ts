@@ -199,6 +199,32 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'GET /orders/:id': { needs: ['orders.view'], path: () => `/orders/${ids.order}` },
     'POST /orders': { needs: ['orders.confirm'], body: () => ({}) },
     'POST /orders/gifted': { needs: ['orders.gift'], body: () => ({}) },
+    // Spec 0013 milestone 2: an empty body is refused with 422 once the permission passes.
+    'POST /orders/:id/edits': {
+      needs: ['orders.confirm'],
+      path: () => `/orders/${ids.order}/edits`,
+      body: () => ({}),
+    },
+    'POST /orders/:id/confirm': {
+      needs: ['orders.confirm'],
+      path: () => `/orders/${ids.order}/confirm`,
+      body: () => ({}),
+    },
+    'POST /orders/:id/cancel': {
+      needs: ['orders.confirm'],
+      path: () => `/orders/${ids.order}/cancel`,
+      body: () => ({}),
+    },
+    'POST /orders/:id/pack': {
+      needs: ['fulfillment.work'],
+      path: () => `/orders/${ids.order}/pack`,
+      body: () => ({}),
+    },
+    'POST /orders/:id/unpack': {
+      needs: ['fulfillment.work'],
+      path: () => `/orders/${ids.order}/unpack`,
+      body: () => ({}),
+    },
     'GET /locations': { needs: ['stock.view'] },
     'POST /locations': {
       needs: ['catalog.manage'],

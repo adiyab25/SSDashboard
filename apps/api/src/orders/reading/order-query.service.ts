@@ -17,6 +17,7 @@ import type {
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { CatalogService } from '../../catalog/catalog.service.js';
 import { ChannelsService } from '../../channels/channels.service.js';
+import { ConnectorsService } from '../../connectors/connectors.service.js';
 import { CustomersService } from '../../customers/customers.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
@@ -238,6 +239,7 @@ export class OrderQueries {
     private readonly catalog: CatalogService,
     private readonly staff: StaffDirectory,
     private readonly settings: SettingsService,
+    private readonly connectors: ConnectorsService,
   ) {}
 
   /** What the new order form offers: internal stores, manual channels, gift reasons, tax settings. */
@@ -337,9 +339,10 @@ export class OrderQueries {
   }
 
   /**
-   * The order page (AC-5): header, links, ship to, customer, lines with SKU codes, money, and the
-   * event timeline with actor names. `unitCost` is filled here and removed by the controller's
-   * cost serializer. Throws `OrderNotFound` for an unknown id. Pass a transaction to read what it wrote.
+   * The order page (AC-5): header, links, ship to, customer, lines with SKU codes, money, the open
+   * write back commands (`ConnectorsService.syncStateFor`), and the event timeline with actor
+   * names. `unitCost` is filled here and removed by the controller's cost serializer. Throws
+   * `OrderNotFound` for an unknown id. Pass a transaction to read what it wrote.
    */
   async detail(orderId: string, executor: Executor = this.connection.db): Promise<OrderDetail> {
     const { rows } = await executor.execute<DetailRow>(sql`
@@ -386,6 +389,7 @@ export class OrderQueries {
     const linkedId = order.related_order_id ?? order.original_order_id;
     const related = linkedId ? await this.relatedView(executor, linkedId, order) : null;
     const linkedFrom = await this.linkedFrom(executor, orderId);
+    const commands = await this.connectors.syncStateFor('order', orderId, executor);
     const area =
       order.ship_to_area_list &&
       order.ship_to_governorate_code &&
@@ -471,6 +475,13 @@ export class OrderQueries {
         codCollectedAmount: order.cod_collected_amount,
         remittedAmount: order.remitted_amount,
       },
+      writeBackCommands: commands.map((command) => ({
+        id: command.id,
+        kind: command.kind,
+        syncState: command.syncState,
+        failureReason: command.failureReason,
+        queuedAt: command.queuedAt,
+      })),
       events: eventRows.rows.map((event) => ({
         id: event.id,
         machine: event.machine,

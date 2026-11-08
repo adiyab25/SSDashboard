@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/client';
 import { useReturnFocus } from '@/shared/use-return-focus';
+import { SalesTaxSplit } from './sales-tax-split';
 import { SettingValueField } from './setting-value-field';
 import { putSetting, settingsKeys } from './settings-api';
 import { useSettingWords } from './use-setting-words';
@@ -77,16 +78,23 @@ interface SettingChangeDialogProps {
   /** The entry as the list showed it: its `updatedAt` is sent back as `expectedUpdatedAt`. */
   entry: SettingEntryView;
   onClose: () => void;
+  /** The current `prices_include_vat`, for the worked split of `sales_tax_rate`; true until known. */
+  pricesIncludeVat?: boolean;
 }
 
 /**
  * The dialog that changes one setting (spec 0009, AC-25): the new value in an input that fits
  * its type, the entry's warning, a typed confirmation where the registry asks for one, and a
- * reason (required where the registry says so). Errors from the api show on the field they
+ * reason (required where the registry says so); the sales tax rate also shows a worked split at
+ * the typed rate. Errors from the api show on the field they
  * belong to, from the stable code; a stale answer offers a reload. It never validates the value
  * itself: the api's schema decides.
  */
-export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps) {
+export function SettingChangeDialog({
+  entry,
+  onClose,
+  pricesIncludeVat = true,
+}: SettingChangeDialogProps) {
   const { t } = useTranslation();
   const returnFocus = useReturnFocus();
   const queryClient = useQueryClient();
@@ -261,6 +269,13 @@ export function SettingChangeDialog({ entry, onClose }: SettingChangeDialogProps
             fieldRef={valueRef}
             clearable={entry.default === null}
           />
+
+          {entry.key === 'sales_tax_rate' && (
+            <SalesTaxSplit
+              rate={typeof draft === 'string' ? draft : ''}
+              includesVat={pricesIncludeVat}
+            />
+          )}
 
           {entry.confirm === 'typed' && (
             <Field data-invalid={!!errors.confirm}>

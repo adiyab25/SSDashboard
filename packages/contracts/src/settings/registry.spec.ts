@@ -167,10 +167,14 @@ describe('the settings registry (spec 0009, AC-1)', () => {
     expect(shared.error?.issues[0]?.path).toEqual(['SO']);
   });
 
-  it('locks the currency and asks a typed confirmation for the time zone and VAT', () => {
+  it('locks the currency and asks a typed confirmation for the time zone, VAT, and the sales tax rate', () => {
     expect(SETTINGS_REGISTRY.currency.whoMayChange).toBe('nobody');
     expect(SETTINGS_REGISTRY.timezone).toMatchObject({ confirm: 'typed', reason: 'required' });
     expect(SETTINGS_REGISTRY.prices_include_vat).toMatchObject({ confirm: 'typed' });
+    expect(SETTINGS_REGISTRY.sales_tax_rate).toMatchObject({
+      confirm: 'typed',
+      reason: 'required',
+    });
   });
 });
 

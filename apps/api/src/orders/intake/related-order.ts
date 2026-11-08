@@ -135,11 +135,12 @@ export async function planRelatedOrder(
 }
 
 /**
- * An order may be reopened once while the reopened order is still open (security S2): refuses
- * with `AlreadyReopened` when a non cancelled order with the `open` outcome already points at
- * `originalOrderId` with `reopened_from`. The caller holds the original's row lock (taken by
- * `planRelatedOrder`), so two reopens at once cannot both pass; `orders_related_order_idx`
- * serves the lookup.
+ * An order may be reopened once, whatever became of the reopened order (security S2 and the
+ * owner's ruling during milestone 2: one reopen per original, whatever its outcome). Refuses
+ * with `AlreadyReopened` when any order already
+ * points at `originalOrderId` with `reopened_from`, in any state and with any outcome, cancelled
+ * included. The caller holds the original's row lock (taken by `planRelatedOrder`), so two
+ * reopens at once cannot both pass; `orders_related_order_idx` serves the lookup.
  */
 export async function assertNotReopened(
   tx: OrderTransaction,
@@ -149,7 +150,6 @@ export async function assertNotReopened(
     SELECT id FROM orders
     WHERE related_order_id = ${originalOrderId}::uuid
       AND related_order_relation = 'reopened_from'
-      AND fulfillment_state <> 'cancelled' AND outcome = 'open'
     LIMIT 1`);
   if (rows.length > 0) throw new AlreadyReopened();
 }

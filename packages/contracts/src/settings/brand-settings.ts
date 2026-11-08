@@ -117,9 +117,11 @@ export const BRAND_SETTINGS = [
   defineSetting({
     key: 'sales_tax_rate',
     /**
-     * The VAT rate in percent as `numeric(5,2)` text, 0 to 100 (spec 0013): the rate of manual
-     * order lines and of every order's `shipping_tax_amount`. A channel order keeps the rate its
-     * channel gave each line.
+     * The VAT rate in percent as `numeric(5,2)` text, 0 to 100 (spec 0013, Configuration
+     * required): the rate of manual order lines, and of the shipping of an order whose channel
+     * sends no tax rate. Shopify order lines never use it (they keep the rate Shopify gave each
+     * line), and a recorded order keeps the rate it was priced with. Typed confirmation, and the
+     * change dialog shows a worked split that follows `prices_include_vat`.
      */
     schema: TaxRateString.refine((rate) => Number(rate) <= 100, 'A rate from 0 to 100'),
     default: '14.00',
@@ -133,6 +135,7 @@ export const BRAND_SETTINGS = [
     label: 'settings.entries.salesTaxRate.label',
     description: 'settings.entries.salesTaxRate.description',
     warning: 'settings.warnings.salesTaxRate',
+    confirm: 'typed',
   }),
   defineSetting({
     key: 'inventory_lock_date',

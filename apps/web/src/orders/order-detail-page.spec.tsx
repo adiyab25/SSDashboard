@@ -1,9 +1,9 @@
-import type { OrderDetail } from '@ssdashboard/contracts';
 import { screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { renderWithQuery } from '@/shared/render-with-query';
 import { OrderDetailPage } from './order-detail-page';
+import { ORDER_ID, orderDetailOf as detail } from './order-detail-fixture';
 
 const api = vi.hoisted(() => ({ getOrder: vi.fn() }));
 vi.mock('./orders-api', async (original) => ({
@@ -11,7 +11,6 @@ vi.mock('./orders-api', async (original) => ({
   ...api,
 }));
 
-const ORDER_ID = '00000000-0000-4000-8000-000000000001';
 vi.mock('next/navigation', () => ({ useParams: () => ({ orderId: ORDER_ID }) }));
 
 // The audit panel has its own spec; here it only has to appear for audit.read holders.
@@ -29,120 +28,6 @@ const me = vi.hoisted(
 vi.mock('@/auth/use-me', () => ({
   useMeState: () => (me.current ? { status: 'ready', me: me.current } : { status: 'loading' }),
 }));
-
-const detail = (overrides: Partial<OrderDetail> = {}): OrderDetail => ({
-  id: ORDER_ID,
-  storeId: '20000000-0000-4000-8000-000000000001',
-  storeCode: 'ESS',
-  storeName: { en: 'Essentials' },
-  channelId: '10000000-0000-4000-8000-000000000001',
-  channelName: { en: 'WhatsApp' },
-  orderNumber: '#1001',
-  type: 'sale',
-  giftReasonCode: null,
-  relatedOrder: {
-    id: '00000000-0000-4000-8000-000000000009',
-    storeCode: 'ESS',
-    orderNumber: '#0999',
-    relation: 'reopened_from',
-  },
-  linkedFrom: [
-    {
-      id: '00000000-0000-4000-8000-000000000011',
-      storeCode: 'MAIN',
-      orderNumber: 'SO-2026-000042',
-      relation: 'goodwill_for',
-    },
-  ],
-  placedAt: '2026-11-03T10:00:00.000Z',
-  operatingDay: '2026-11-03',
-  fulfillmentState: 'confirmed',
-  cashState: 'unpaid',
-  outcome: 'open',
-  writeBackState: 'none',
-  confirmedAt: '2026-11-03T11:00:00.000Z',
-  cancelledAt: null,
-  cancelReasonCode: null,
-  carrierDeliveryCreatedAt: null,
-  source: {
-    capturedFrom: 'whatsapp_thread',
-    campaignId: null,
-    utmSource: null,
-    utmMedium: null,
-    utmCampaign: null,
-    discountCode: 'WELCOME',
-  },
-  shipTo: {
-    name: 'Mona Adel',
-    phone: '+201001234567',
-    phoneAlt: null,
-    contactPhoneRaw: null,
-    address: '12 Nile Street, Cairo',
-    area: null,
-    courierNote: 'Call first',
-  },
-  customerNote: 'Please gift wrap',
-  customer: { id: '30000000-0000-4000-8000-000000000001', name: 'Mona Adel', flagKind: 'refuser' },
-  lines: [
-    {
-      id: '40000000-0000-4000-8000-000000000001',
-      position: 1,
-      variantId: '50000000-0000-4000-8000-000000000001',
-      skuCode: 'TEE-RED-M',
-      title: 'Red tee, M',
-      name: { en: 'Red tee, M', ar: 'تيشيرت أحمر، M' },
-      quantity: 2,
-      unitPrice: '250.00',
-      discountAmount: '0.00',
-      grossAmount: '500.00',
-      prepaidAmount: '0.00',
-      creditAppliedAmount: '0.00',
-      lineState: 'open',
-      cancelReasonCode: null,
-      shortQuantity: 1,
-    },
-  ],
-  money: {
-    linesGrossAmount: '500.00',
-    shippingChargedAmount: '50.00',
-    shippingTaxAmount: '6.14',
-    totalAmount: '550.00',
-    paymentMethod: 'cod',
-    prepaidAmount: '0.00',
-    prepaidMethod: null,
-    creditAppliedAmount: '0.00',
-    codExpectedAmount: '550.00',
-    codDueAmount: '550.00',
-    codCollectedAmount: '0.00',
-    remittedAmount: '0.00',
-  },
-  events: [
-    {
-      id: '60000000-0000-4000-8000-000000000001',
-      machine: 'fulfillment',
-      fromState: null,
-      toState: 'new',
-      amount: null,
-      actorType: 'person',
-      actorName: 'Sara Support',
-      reasonCode: null,
-      occurredAt: '2026-11-03T10:00:00.000Z',
-    },
-    {
-      id: '60000000-0000-4000-8000-000000000002',
-      machine: 'fulfillment',
-      fromState: 'new',
-      toState: 'confirmed',
-      amount: null,
-      actorType: 'person',
-      actorName: null,
-      reasonCode: 'channel.fake',
-      occurredAt: '2026-11-03T11:00:00.000Z',
-    },
-  ],
-  updatedAt: '2026-11-03T11:00:00.123456',
-  ...overrides,
-});
 
 afterEach(() => {
   api.getOrder.mockReset();
@@ -261,6 +146,52 @@ describe('OrderDetailPage (AC-3, AC-5, AC-20)', () => {
     api.getOrder.mockResolvedValue(detail({ writeBackState: 'waiting' }));
     renderWithQuery(<OrderDetailPage />);
     expect(await screen.findByRole('status')).toHaveTextContent('Edit not synced, hold');
+  });
+
+  it('lists each open write back command with its state and the provider error code', async () => {
+    api.getOrder.mockResolvedValue(
+      detail({
+        writeBackState: 'failed',
+        writeBackCommands: [
+          {
+            id: '70000000-0000-4000-8000-000000000001',
+            kind: 'shopify.order_edit',
+            syncState: 'failed',
+            failureReason: 'STEP_OFF',
+            queuedAt: '2026-11-03T12:00:00.000Z',
+          },
+          {
+            id: '70000000-0000-4000-8000-000000000002',
+            kind: 'shopify.order_cancel',
+            syncState: 'waiting',
+            failureReason: null,
+            queuedAt: '2026-11-03T12:05:00.000Z',
+          },
+        ],
+      }),
+    );
+    renderWithQuery(<OrderDetailPage />);
+    const block = await screen.findByRole('status');
+    const commands = within(block).getByRole('list', {
+      name: 'Changes waiting to reach the sales channel',
+    });
+    const [edit, cancel] = within(commands).getAllByRole('listitem');
+    expect(edit).toHaveTextContent('Order edit to Shopify');
+    expect(edit).toHaveTextContent('Failed');
+    expect(
+      within(edit as HTMLElement)
+        .getByText('STEP_OFF')
+        .closest('bdi'),
+    ).toHaveAttribute('dir', 'ltr');
+    expect(cancel).toHaveTextContent('Cancellation to Shopify');
+    expect(cancel).toHaveTextContent('Waiting');
+  });
+
+  it('shows no action to a viewer who may only read', async () => {
+    api.getOrder.mockResolvedValue(detail());
+    renderWithQuery(<OrderDetailPage />);
+    await screen.findByRole('heading', { level: 1, name: 'ESS/#1001' });
+    expect(screen.queryByRole('region', { name: 'Order actions' })).toBeNull();
   });
 
   it('answers an unknown id with a message and a way back, under one h1', async () => {
