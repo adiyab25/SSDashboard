@@ -20,6 +20,13 @@ type Slot = 'first' | 'second';
 
 const SLOTS: readonly Slot[] = ['first', 'second'];
 
+/** The refusals that mean the suggestion is spent or not for this pair, never the pair itself. */
+const SUGGESTION_ERRORS: ReadonlySet<MergeErrorKey> = new Set<MergeErrorKey>([
+  'customers.merge.errors.SUGGESTION_CLOSED',
+  'customers.merge.errors.SUGGESTION_NOT_FOUND',
+  'customers.merge.errors.SUGGESTION_MISMATCH',
+]);
+
 /** A query string value that is a customer id, else null: anything else is ignored. */
 function idParam(value: string | null): string | null {
   const parsed = z.uuid().safeParse(value);
@@ -58,12 +65,14 @@ export function MergeView({ enabled }: { enabled: boolean }) {
   const [justPicked, setJustPicked] = useState<Slot | null>(null);
   const [merging, setMerging] = useState(false);
   const [failure, setFailure] = useState<MergeErrorKey | null>(null);
+  const [merged, setMerged] = useState(false);
+  const [suggestionDropped, setSuggestionDropped] = useState(false);
 
   const first = useSlotCustomer(ids.first, enabled);
   const second = useSlotCustomer(ids.second, enabled);
   const profiles = { first: first.data ?? null, second: second.data ?? null };
   const ready = profiles.first !== null && profiles.second !== null;
-  const same = ready && profiles.first?.id === profiles.second?.id;
+  const same = ready && !merged && profiles.first?.id === profiles.second?.id;
 
   // The older record is the default one to keep; the first slot wins a tie.
   const olderSlot: Slot | null =
@@ -78,6 +87,7 @@ export function MergeView({ enabled }: { enabled: boolean }) {
     setIds((current) => ({ ...current, [slot]: id }));
     setChosenKeep(null);
     setSuggestionId(null);
+    setSuggestionDropped(false);
     setFailure(null);
     setJustPicked(id === null ? null : slot);
   }
@@ -94,9 +104,19 @@ export function MergeView({ enabled }: { enabled: boolean }) {
         mergedId: merged.id,
         ...(suggestionId && { reasonCode: 'suggestion' as const, suggestionId }),
       });
+      // Stay busy and ignore the refetch of the merged record: the page is leaving.
+      setMerged(true);
       router.push(`/customers/${survivor.id}`);
     } catch (error) {
-      setFailure(mergeErrorKey(error));
+      const key = mergeErrorKey(error);
+      if (SUGGESTION_ERRORS.has(key)) {
+        // The suggestion can never apply again: drop it (and its reason) and keep the pair.
+        setSuggestionId(null);
+        setSuggestionDropped(true);
+        setFailure(null);
+      } else {
+        setFailure(key);
+      }
       setMerging(false);
     }
   }
@@ -133,7 +153,11 @@ export function MergeView({ enabled }: { enabled: boolean }) {
               <h2 id={`merge-slot-${slot}`} className="text-sm font-semibold text-muted-foreground">
                 {t(`customers.merge.slot.${slot}`)}
               </h2>
-              <MergeCustomerPicker slot={slot} onPick={(picked) => setSlot(slot, picked)} />
+              <MergeCustomerPicker
+                slot={slot}
+                enabled={enabled}
+                onPick={(picked) => setSlot(slot, picked)}
+              />
             </section>
           ) : (
             <MergeCustomerCard
@@ -163,6 +187,11 @@ export function MergeView({ enabled }: { enabled: boolean }) {
           {failure && (
             <p role="alert" className="text-sm text-destructive">
               {t(failure)}
+            </p>
+          )}
+          {suggestionDropped && (
+            <p role="alert" className="text-sm text-destructive">
+              {t('customers.merge.suggestionDropped')}
             </p>
           )}
           <div className="flex flex-wrap items-center gap-3">

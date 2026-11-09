@@ -1224,6 +1224,7 @@ export const en = {
         nameTooLong: 'Use 100 characters or fewer.',
         loadError: 'Could not search customers. Try again.',
         rateLimited: 'Too many searches. Wait a minute and try again.',
+        searching: 'Searching',
       },
       card: {
         change: 'Choose another',
@@ -1231,8 +1232,7 @@ export const en = {
         phones: 'Phone numbers',
         channelIds: 'Channel ids',
         noChannelIds: 'No channel ids',
-        flag: 'Flag',
-        noFlag: 'No flag',
+        noFlag: 'Flag: none',
         loading: 'Loading the customer',
         loadError: 'Could not load this customer.',
       },
@@ -1245,6 +1245,8 @@ export const en = {
           'The other record is merged into the one you keep: its phone numbers and channel ids move over. You can undo this afterwards.',
         same: 'These two are already the same customer.',
       },
+      suggestionDropped:
+        'That suggestion is no longer open. You can still merge these two without it.',
       submit: 'Merge',
       merging: 'Merging',
       done: 'Customers merged.',

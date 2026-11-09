@@ -1,5 +1,6 @@
 import type { CustomerProfile } from '@ssdashboard/contracts';
-import { screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
@@ -156,6 +157,70 @@ describe('MergePage (AC-7, AC-18)', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('changed while you were looking');
     expect(nav.push).not.toHaveBeenCalled();
+  });
+
+  it('goes to the survivor without a false "already the same customer" when the refresh answers', async () => {
+    nav.search = `a=${OLDER}&b=${NEWER}`;
+    let merged = false;
+    api.getCustomer.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === OLDER || merged
+          ? profile(OLDER, 'Mona Old', '2026-10-01T10:00:00.000Z')
+          : profile(NEWER, 'Mona New', '2026-11-01T10:00:00.000Z'),
+      ),
+    );
+    api.mergeCustomers.mockImplementation(() => {
+      merged = true;
+      return Promise.resolve({ mergeId: MERGE_ID, survivor: {} });
+    });
+    const user = userEvent.setup();
+    renderWithQuery(<MergePage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Merge' }));
+    await waitFor(() => expect(nav.push).toHaveBeenCalledWith(`/customers/${OLDER}`));
+    await waitFor(() => expect(api.getCustomer.mock.calls.length).toBeGreaterThan(2));
+    expect(screen.queryByText(/already the same customer/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['SUGGESTION_CLOSED', 'SUGGESTION_NOT_FOUND', 'SUGGESTION_MISMATCH'])(
+    'drops the suggestion after %s, keeps the pair, and merges without it',
+    async (code) => {
+      nav.search = `a=${OLDER}&b=${NEWER}&s=${SUGGESTION}`;
+      answers();
+      api.mergeCustomers.mockRejectedValueOnce(new ApiError(409, { code }));
+      api.mergeCustomers.mockResolvedValue({ mergeId: MERGE_ID, survivor: {} });
+      const user = userEvent.setup();
+      renderWithQuery(<MergePage />);
+
+      await user.click(await screen.findByRole('button', { name: 'Merge' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('can still merge these two');
+      expect(screen.getAllByRole('radio')).toHaveLength(2);
+
+      await user.click(screen.getByRole('button', { name: 'Merge' }));
+      await waitFor(() => expect(api.mergeCustomers).toHaveBeenCalledTimes(2));
+      expect(api.mergeCustomers).toHaveBeenLastCalledWith({ survivorId: OLDER, mergedId: NEWER });
+    },
+  );
+
+  it('starts over when the address changes to another pair', async () => {
+    nav.search = `a=${OLDER}&b=${NEWER}`;
+    answers();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    // A new element each time: React skips an identical one.
+    const ui = () => (
+      <QueryClientProvider client={client}>
+        <MergePage />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(ui());
+    await screen.findAllByRole('radio');
+
+    nav.search = '';
+    rerender(ui());
+
+    expect(await screen.findAllByRole('searchbox')).toHaveLength(2);
+    expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
 
   it('finds a customer by phone for an empty slot', async () => {

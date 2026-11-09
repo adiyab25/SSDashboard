@@ -10,12 +10,12 @@ import {
   type UseInfiniteQueryResult,
 } from '@tanstack/react-query';
 import { CheckCheckIcon, LoaderCircleIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useFormat } from '@/i18n/use-format';
 import { customerKeys, dismissMergeSuggestion } from './customers-api';
-import { mergeErrorKey } from './merge-error-key';
+import { mergeErrorKey, type MergeErrorKey } from './merge-error-key';
 import { MergeSuggestionsTable } from './merge-suggestions-table';
 
 interface Props {
@@ -36,25 +36,43 @@ export function MergeSuggestionsPanel({ query, canMerge }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
   const queryClient = useQueryClient();
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+  const [errors, setErrors] = useState<Readonly<Record<string, MergeErrorKey>>>({});
   const summary = useRef<HTMLParagraphElement>(null);
 
   const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
   const openCount = query.data?.pages[0]?.openCount ?? 0;
 
-  async function dismiss(id: string) {
-    setBusyId(id);
-    try {
-      await dismissMergeSuggestion(id, {});
-      toast.success(t('customers.review.dismissed'));
-    } catch (error) {
-      toast.error(t(mergeErrorKey(error)));
-    } finally {
-      await queryClient.invalidateQueries({ queryKey: customerKeys.suggestions });
-      setBusyId(null);
-      summary.current?.focus();
-    }
-  }
+  const dismiss = useCallback(
+    async (id: string) => {
+      setBusyIds((current) => new Set(current).add(id));
+      setErrors(({ [id]: _cleared, ...rest }) => rest);
+      try {
+        await dismissMergeSuggestion(id, {});
+        toast.success(t('customers.review.dismissed'));
+      } catch (error) {
+        const key = mergeErrorKey(error);
+        toast.error(t(key));
+        setErrors((current) => ({ ...current, [id]: key }));
+      } finally {
+        await queryClient.invalidateQueries({ queryKey: customerKeys.suggestions });
+        setBusyIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+        summary.current?.focus();
+      }
+    },
+    [t, queryClient],
+  );
+
+  const onDismiss = useCallback(
+    (id: string) => {
+      void dismiss(id);
+    },
+    [dismiss],
+  );
 
   return (
     <>
@@ -103,8 +121,9 @@ export function MergeSuggestionsPanel({ query, canMerge }: Props) {
           <MergeSuggestionsTable
             rows={rows}
             canMerge={canMerge}
-            busyId={busyId}
-            onDismiss={(id) => void dismiss(id)}
+            busyIds={busyIds}
+            errors={errors}
+            onDismiss={onDismiss}
           />
         ))}
 

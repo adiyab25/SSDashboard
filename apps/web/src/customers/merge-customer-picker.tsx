@@ -18,6 +18,8 @@ import { customerKeys, searchCustomers } from './customers-api';
 interface Props {
   /** Which of the two customers this finds: `first` or `second`; it names the form and its field. */
   slot: 'first' | 'second';
+  /** False until the person's access is known and allowed: nothing is searched before. */
+  enabled: boolean;
   /** Called with the id of the customer the person chose. */
   onPick: (customerId: string) => void;
 }
@@ -34,7 +36,7 @@ interface Submitted {
  * the address; the first 25 matches are listed as buttons and choosing one calls `onPick`. A
  * wrong or missing answer reads as a translated message.
  */
-export function MergeCustomerPicker({ slot, onPick }: Props) {
+export function MergeCustomerPicker({ slot, enabled, onPick }: Props) {
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
@@ -50,7 +52,7 @@ export function MergeCustomerPicker({ slot, onPick }: Props) {
         undefined,
         signal,
       ),
-    enabled: submitted !== null,
+    enabled: enabled && submitted !== null,
     retry: false,
   });
 
@@ -129,7 +131,11 @@ export function MergeCustomerPicker({ slot, onPick }: Props) {
         </p>
       )}
 
-      {submitted !== null && query.isPending && (
+      <p role="status" className="sr-only">
+        {query.isFetching ? t('customers.merge.picker.searching') : ''}
+      </p>
+
+      {submitted !== null && query.isPending && query.fetchStatus !== 'idle' && (
         <div className="flex flex-col gap-2" aria-busy aria-hidden>
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-8 w-full" />

@@ -214,6 +214,47 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await expect.poll(() => seeded.mergedIntoOf(seeded.newerId)).toBeNull();
     });
 
+    // WCAG 2.2 SC 2.4.11 Focus Not Obscured (Minimum, AA): on a phone the merge toast stays for
+    // 15 s over the page bottom. No focused element may be entirely hidden behind it.
+    test('the merge toast never hides a focused element on a phone (WCAG 2.4.11)', async ({
+      page,
+      viewport,
+    }) => {
+      test.skip((viewport?.width ?? 0) >= 1000, 'a phone sized screen only');
+      pair = await seedPair(false);
+      const seeded = pair;
+      await page.goto(`/customers/merge?a=${seeded.olderId}&b=${seeded.newerId}`);
+      await waitForPageHydration(page);
+      await expect(
+        page.getByRole('radio', { name: t('customers.merge.compare.keep') }),
+      ).toHaveCount(2);
+      await page.getByRole('button', { name: t('customers.merge.submit'), exact: true }).click();
+      await expect(page).toHaveURL(`/customers/${seeded.olderId}`);
+      await expect(page.getByText(t('customers.merge.done'))).toBeVisible();
+
+      const hidden: string[] = [];
+      await page.locator('body').click({ position: { x: 1, y: 1 } });
+      for (let step = 0; step < 40; step++) {
+        await page.keyboard.press('Tab');
+        const verdict = await page.evaluate(() => {
+          const el = document.activeElement;
+          if (!el || el === document.body) return null;
+          const toast = document.querySelector('[data-sonner-toast]');
+          if (!toast || el.closest('[data-sonner-toast]')) return { name: '', hidden: false };
+          const a = el.getBoundingClientRect();
+          const b = toast.getBoundingClientRect();
+          const covered =
+            a.left >= b.left && a.right <= b.right && a.top >= b.top && a.bottom <= b.bottom;
+          return {
+            name: (el.getAttribute('aria-label') ?? el.textContent ?? el.tagName).slice(0, 40),
+            hidden: covered,
+          };
+        });
+        if (verdict?.hidden) hidden.push(verdict.name);
+      }
+      expect(hidden, 'focused elements entirely behind the toast').toEqual([]);
+    });
+
     test('opens prefilled from the address and undoes from the profile', async ({ page }) => {
       pair = await seedPair(false);
       const seeded = pair;
@@ -308,6 +349,70 @@ for (const { dir, name: languageName } of LANGUAGES) {
       } finally {
         await second.remove();
       }
+    });
+  });
+
+  test.describe(`customer merge undone from the audit screen in ${languageName}`, () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+    let manager: SeededAccount | undefined;
+    let pair: SeededPair | undefined;
+
+    test.beforeEach(async ({ page, context, baseURL }) => {
+      manager = await seedAccount({
+        hats: ['support', 'manager'],
+        language: dir === 'rtl' ? 'ar' : 'en',
+      });
+      await signInThroughApi(context, manager, baseURL ?? '');
+      await useBrowserState(page, { dir });
+    });
+    test.afterEach(async () => {
+      const person = manager;
+      const seeded = pair;
+      manager = undefined;
+      pair = undefined;
+      await seeded?.remove();
+      await person?.remove().catch(() => undefined);
+    });
+
+    // Milestone 2 done when: an undo from /audit of a merge made on /customers/merge restores both
+    // records (spec 0014 AC-8, spec 0010 AC-14).
+    test('undoes a merge made on the merge screen from /audit and restores both records', async ({
+      page,
+    }) => {
+      pair = await seedPair(false);
+      const seeded = pair;
+
+      await page.goto(`/customers/merge?a=${seeded.olderId}&b=${seeded.newerId}`);
+      await waitForPageHydration(page);
+      await expect(
+        page.getByRole('radio', { name: t('customers.merge.compare.keep') }),
+      ).toHaveCount(2);
+      await page.getByRole('button', { name: t('customers.merge.submit'), exact: true }).click();
+      await expect(page).toHaveURL(`/customers/${seeded.olderId}`);
+      expect(await seeded.mergedIntoOf(seeded.newerId)).toBe(seeded.olderId);
+
+      // The merged record's entry carries the undo.
+      await page.goto(`/audit?recordType=customer&recordId=${seeded.newerId}`);
+      const row = page.getByRole('button', { name: new RegExp(t('audit.actions.customerMerged')) });
+      await expect(row.first()).toBeVisible();
+      await row.first().focus();
+      await page.keyboard.press('Enter');
+      const detail = page.getByRole('dialog', { name: t('audit.actions.customerMerged') });
+      const undo = detail.getByRole('button', { name: t('audit.undo.button') });
+      await expect(undo).toBeVisible();
+      await undo.focus();
+      await page.keyboard.press('Enter');
+
+      await page.locator('#undo-reason').selectOption('wrong_merge');
+      await page.getByRole('button', { name: t('audit.undo.confirm'), exact: true }).click();
+      await expect(detail.getByText(t('audit.undo.undoneNotice'))).toBeVisible();
+
+      // Both records are canonical again, and the profile of the merged one opens as itself.
+      expect(await seeded.mergedIntoOf(seeded.newerId)).toBeNull();
+      expect(await seeded.mergedIntoOf(seeded.olderId)).toBeNull();
+      await page.goto(`/customers/${seeded.newerId}`);
+      await expect(page.getByRole('heading', { level: 1, name: seeded.newerName })).toBeVisible();
+      await expect(page).toHaveURL(`/customers/${seeded.newerId}`);
     });
   });
 

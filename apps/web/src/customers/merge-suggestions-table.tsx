@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
+import type { MergeErrorKey } from './merge-error-key';
 import { MergePairCustomer } from './merge-pair-customer';
 import { mergePageHref } from './merge-page-href';
 
@@ -24,8 +25,10 @@ interface Props {
   rows: readonly MergeSuggestionItem[];
   /** True for a holder of `customers.merge`; without it the Actions column is left out. */
   canMerge: boolean;
-  /** The suggestion being dismissed now: its buttons are disabled. */
-  busyId: string | null;
+  /** The suggestions being dismissed now: their buttons are disabled. */
+  busyIds: ReadonlySet<string>;
+  /** The message of a failed dismiss by suggestion id, shown beside that row's buttons. */
+  errors: Readonly<Record<string, MergeErrorKey>>;
   onDismiss: (suggestionId: string) => void;
 }
 
@@ -34,7 +37,7 @@ interface Props {
  * (for `customers.merge`) Merge, which opens the merge page with both records and the suggestion,
  * and Dismiss. Each button name carries both customers so a screen reader can tell the rows apart.
  */
-export function MergeSuggestionsTable({ rows, canMerge, busyId, onDismiss }: Props) {
+export function MergeSuggestionsTable({ rows, canMerge, busyIds, errors, onDismiss }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
 
@@ -73,31 +76,39 @@ export function MergeSuggestionsTable({ rows, canMerge, busyId, onDismiss }: Pro
             first: first.name ?? t('customers.unnamed'),
             second: second.name ?? t('customers.unnamed'),
           };
+          const failure = errors[row.original.id];
           return (
-            <span className="inline-flex flex-wrap items-center gap-2">
-              <Button asChild size="sm">
-                <Link
-                  href={mergePageHref(first.id, second.id, row.original.id)}
-                  aria-label={t('customers.review.mergeLabel', names)}
+            <div className="flex flex-col gap-1">
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <Button asChild size="sm">
+                  <Link
+                    href={mergePageHref(first.id, second.id, row.original.id)}
+                    aria-label={t('customers.review.mergeLabel', names)}
+                  >
+                    {t('customers.review.merge')}
+                  </Link>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busyIds.has(row.original.id)}
+                  aria-label={t('customers.review.dismissLabel', names)}
+                  onClick={() => onDismiss(row.original.id)}
                 >
-                  {t('customers.review.merge')}
-                </Link>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busyId === row.original.id}
-                aria-label={t('customers.review.dismissLabel', names)}
-                onClick={() => onDismiss(row.original.id)}
-              >
-                {t('customers.review.dismiss')}
-              </Button>
-            </span>
+                  {t('customers.review.dismiss')}
+                </Button>
+              </span>
+              {failure && (
+                <p role="alert" className="text-xs text-destructive">
+                  {t(failure)}
+                </p>
+              )}
+            </div>
           );
         },
       },
     ];
-  }, [t, format, canMerge, busyId, onDismiss]);
+  }, [t, format, canMerge, busyIds, errors, onDismiss]);
 
   const table = useTable({
     features,

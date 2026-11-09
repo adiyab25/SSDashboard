@@ -51,10 +51,14 @@ export function MergeCustomerCard({
   const format = useFormat();
   const text = useLocalizedText();
   const heading = useRef<HTMLHeadingElement>(null);
-  const settled = profile !== null;
+  const settled = !loading;
 
   useEffect(() => {
-    if (focusOnMount && settled) heading.current?.focus();
+    if (!focusOnMount || !settled) return;
+    // The picked button is gone, so focus sits on the body. If the person already moved on (typing
+    // in the other slot's search), leave their focus alone: stealing it loses the typed text's Enter.
+    const active = document.activeElement;
+    if (active === null || active === document.body) heading.current?.focus();
   }, [focusOnMount, settled]);
 
   const sourceOf = (item: CustomerChannelIdView): string => {
@@ -116,9 +120,7 @@ export function MergeCustomerCard({
               {t('customers.merge.card.added', { date: format.date(profile.createdAt) })}
             </p>
             {profile.flag === null && (
-              <p className="text-sm text-muted-foreground">
-                {t('customers.merge.card.flag')}: {t('customers.merge.card.noFlag')}
-              </p>
+              <p className="text-sm text-muted-foreground">{t('customers.merge.card.noFlag')}</p>
             )}
           </div>
 

@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
+import type { MergeErrorKey } from './merge-error-key';
 import { useMergeActions } from './use-merge-actions';
 
 /**
@@ -20,12 +21,15 @@ export function CustomerMergesSection({ merges }: { merges: readonly CustomerAbs
   const access = useAccess();
   const actions = useMergeActions();
   const [undoing, setUndoing] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ mergeId: string; key: MergeErrorKey } | null>(null);
   if (merges.length === 0) return null;
   const canUndo = access.can('customers.merge');
 
   async function undo(mergeId: string) {
     setUndoing(mergeId);
-    await actions.undo(mergeId);
+    setFailed(null);
+    const key = await actions.undo(mergeId);
+    if (key) setFailed({ mergeId, key });
     setUndoing(null);
   }
 
@@ -57,6 +61,11 @@ export function CustomerMergesSection({ merges }: { merges: readonly CustomerAbs
               >
                 {t('customers.profile.merges.undo')}
               </Button>
+            )}
+            {failed?.mergeId === merge.mergeId && (
+              <span role="alert" className="basis-full text-destructive">
+                {t(failed.key)}
+              </span>
             )}
           </li>
         ))}
