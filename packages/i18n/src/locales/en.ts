@@ -1788,6 +1788,7 @@ export const en = {
       orderCollectionRecordedManually: 'Cash collection entered by hand',
       orderPaymentMethodRederived: 'Order payment method corrected',
       connectionCreated: 'Shopify store connected',
+      connectionBackfillStarted: 'Shopify backfill started',
       policyChanged: 'Location owner type policy changed',
       costRuleRecorded: 'Per order cost rule recorded',
       costRuleRecordedInLockedPeriod: 'Per order cost rule recorded in a locked period',
@@ -2366,6 +2367,7 @@ export const en = {
       inventoryReconcile: 'The nightly stock ledger check',
       mailSend: 'Sending email',
       connectorsShopifySync: 'Reading orders and products from Shopify',
+      connectorsInbox: 'Clearing old Shopify inbox rows and sync runs',
     },
   },
   // The connections screens of spec 0015 (AC-1, AC-2, AC-27): the list and the Shopify connect

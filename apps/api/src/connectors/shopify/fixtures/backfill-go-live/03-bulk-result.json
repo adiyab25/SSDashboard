@@ -1,0 +1,32 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "backfill-go-live",
+    "step": "one product and its variant",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/usage/bulk-operations/queries",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/bulkOperationRunQuery",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/bulkOperation",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/BulkOperation"
+    ]
+  },
+  "request": {
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    },
+    "shopDomain": "fixture-store.myshopify.com",
+    "method": "GET",
+    "url": "https://storage.fixture.example/bulk/backfill-go-live-products.jsonl",
+    "operationName": null,
+    "variables": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/jsonl"
+    },
+    "body": "{\"id\":\"gid://shopify/Product/2220000031001\",\"updatedAt\":\"2026-11-01T08:00:00Z\"}\n{\"id\":\"gid://shopify/ProductVariant/7770000000101\",\"inventoryItem\":{\"id\":\"gid://shopify/InventoryItem/2230000031001\"},\"__parentId\":\"gid://shopify/Product/2220000031001\"}\n"
+  }
+}

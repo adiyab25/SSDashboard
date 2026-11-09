@@ -159,6 +159,17 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = Object.freeze([
         workOf: [],
         label: 'modules.capabilities.connectorsShopifySync',
       },
+      // Spec 0015 task 12: owns the `connector-inbox-purge` schedule on the shared
+      // `connector-shopify` queue (processed, ignored, and echo inbox rows after 90 days, failed
+      // ones after 180, sync runs after 90). Core, so it never stops.
+      {
+        key: 'connectors.inbox',
+        bundle: 'core',
+        kind: 'write',
+        windDown: 'none',
+        workOf: [],
+        label: 'modules.capabilities.connectorsInbox',
+      },
     ],
   }),
   defineModule({

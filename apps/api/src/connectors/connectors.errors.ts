@@ -4,7 +4,11 @@ export type ConnectionsErrorCode =
   | 'STORE_CODE_TAKEN'
   | 'CONNECTION_ARCHIVED'
   | 'NOT_FOUND'
-  | 'INVALID_CURSOR';
+  | 'INVALID_CURSOR'
+  | 'SCAN_RUNNING'
+  | 'BACKFILL_RUNNING'
+  | 'CONNECTION_NOT_READY'
+  | 'GATEWAYS_UNMAPPED';
 
 /**
  * A typed domain error of the connectors module (spec 0015), never an error string. Its message
@@ -15,6 +19,8 @@ export class ConnectionsError extends Error {
   constructor(
     readonly code: ConnectionsErrorCode,
     message: string,
+    /** For `GATEWAYS_UNMAPPED`: the scanned gateway names with no payment method (not personal). */
+    readonly gateways: readonly string[] = [],
   ) {
     super(message);
     this.name = 'ConnectionsError';
