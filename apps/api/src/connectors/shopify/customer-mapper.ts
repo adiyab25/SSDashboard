@@ -4,13 +4,15 @@
 // (spec 0014 AC-1). Law 151: nothing here logs, and no thrown message carries a read value.
 import { EgyptianPhone, InvalidPhone, type NormalizedPhone } from '@ssdashboard/contracts';
 import { z } from 'zod';
+import { StorableShopifyId, withoutLoneSurrogates } from './storable-text.js';
 
 /**
  * The part of a Shopify `Customer` the mapper reads, field for field what `CUSTOMER_READ`
  * selects (`shopify-queries.ts`, `2026-10`). Unknown keys are stripped.
  */
 export const ShopifyCustomer = z.object({
-  id: z.string().min(1),
+  /** Stored verbatim as the customer's channel id: storable text only (security review N4). */
+  id: StorableShopifyId,
   /** An ISO 8601 instant with its offset (security review L3), else `CUSTOMER_UNREADABLE`. */
   updatedAt: z.iso.datetime({ offset: true }),
   firstName: z.string().nullable(),
@@ -69,7 +71,8 @@ const NAME_MAX = 200;
 /** A typed text without control and direction characters, trimmed, capped, or null when empty. */
 function cleanText(value: string | null, max: number): string | null {
   if (value === null) return null;
-  let text = value.replace(CONTROL, '').trim();
+  // Controls (U+0000 included), then unpaired surrogates: always storable (security review N4).
+  let text = withoutLoneSurrogates(value.replace(CONTROL, '')).trim();
   if (text.length > max) {
     text = text.slice(0, max);
     const last = text.charCodeAt(text.length - 1);

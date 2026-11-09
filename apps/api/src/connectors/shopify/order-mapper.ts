@@ -20,6 +20,7 @@ import {
   ORDER_READ_TAX_LINES_PAGE,
   ORDER_READ_TRANSACTIONS_PAGE,
 } from './shopify-queries.js';
+import { isStorableText, StorableShopifyId, withoutLoneSurrogates } from './storable-text.js';
 
 // ---------------------------------------------------------------------------------------------
 // The Shopify `Order` shape `ORDER_READ` selects (Admin GraphQL `2026-10`)
@@ -58,7 +59,7 @@ const Visit = z
  * value Shopify adds later must not fail the read, the mapper decides what it means.
  */
 export const ShopifyOrder = z.object({
-  id: z.string().min(1),
+  id: StorableShopifyId,
   name: z.string().min(1),
   createdAt: Instant,
   updatedAt: Instant,
@@ -86,7 +87,7 @@ export const ShopifyOrder = z.object({
   customAttributes: z.array(z.object({ key: z.string(), value: z.string().nullable() })),
   customer: z
     .object({
-      id: z.string().min(1),
+      id: StorableShopifyId,
       defaultPhoneNumber: z.object({ phoneNumber: z.string() }).nullable(),
       /** Deprecated on `2026-10` (carry-over D4): read only when `defaultPhoneNumber` is null. */
       phone: z.string().nullable(),
@@ -106,13 +107,13 @@ export const ShopifyOrder = z.object({
   lineItems: z.object({
     nodes: z.array(
       z.object({
-        id: z.string().min(1),
+        id: StorableShopifyId,
         title: z.string(),
         variantTitle: z.string().nullable(),
         currentQuantity: z.number().int(),
         /** Selected for the fulfillment stock out of task 9a (carry-over D5); not read here. */
         unfulfilledQuantity: z.number().int(),
-        variant: z.object({ id: z.string() }).nullable(),
+        variant: z.object({ id: StorableShopifyId }).nullable(),
         originalUnitPriceSet: MoneyBag,
         discountAllocations: z.array(z.object({ allocatedAmountSet: MoneyBag })),
         taxLines: z.array(
@@ -122,11 +123,13 @@ export const ShopifyOrder = z.object({
     ),
     pageInfo: PageInfo,
   }),
-  fulfillments: z.array(z.object({ id: z.string(), status: z.string(), createdAt: Instant })),
+  fulfillments: z.array(
+    z.object({ id: StorableShopifyId, status: z.string(), createdAt: Instant }),
+  ),
   transactions: z.array(
     z.object({
       /** Kept on the mapping at creation (`state.creationTransactionIds`, D10 and D10a). */
-      id: z.string().min(1),
+      id: StorableShopifyId,
       kind: z.string(),
       status: z.string(),
       gateway: z.string().nullable(),
@@ -344,7 +347,11 @@ function cleanText(
   keepBreaks = false,
 ): string | null {
   if (value === null || value === undefined) return null;
-  let text = value.replace(keepBreaks ? CONTROL_KEEPING_BREAKS : CONTROL, '').trim();
+  // Controls (U+0000 included), then unpaired surrogates: the result is always storable in `text`
+  // and `jsonb` (code review R4, security review N4).
+  let text = withoutLoneSurrogates(
+    value.replace(keepBreaks ? CONTROL_KEEPING_BREAKS : CONTROL, ''),
+  ).trim();
   if (text.length > max) {
     text = text.slice(0, max);
     const last = text.charCodeAt(text.length - 1);
@@ -504,14 +511,11 @@ const GATEWAY_KEY_MAX = 200;
  * a name can never be a config key, is treated as unmapped, and is never stored as a key.
  */
 export function gatewayKeyOf(name: string): string | null {
-  if (name.includes('\u0000') || LONE_SURROGATE.test(name)) return null;
+  if (!isStorableText(name)) return null;
   const key = name.slice(0, GATEWAY_KEY_MAX);
   const last = key.charCodeAt(key.length - 1);
   return last >= 0xd800 && last <= 0xdbff ? key.slice(0, -1) : key;
 }
-
-/** An unpaired surrogate, which PostgreSQL `jsonb` refuses beside U+0000. */
-const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** The method `config.gatewayMethods` gives a gateway key, null when unmapped. */
 export function gatewayMethodOf(

@@ -83,6 +83,16 @@ describe('mapShopifyCustomer (AC-15)', () => {
       mapShopifyCustomer({ ...base, firstName: ' ', lastName: '‏' }, CONNECTION).name,
     ).toBeNull();
   });
+
+  it('drops lone surrogates from the name and refuses a customer id that is not storable (security review N4)', () => {
+    const base = fixture('customer-updated-no-phone/01-customer-read.json');
+    expect(
+      mapShopifyCustomer({ ...base, firstName: 'ليلى\uD800', lastName: '\uDC00' }, CONNECTION).name,
+    ).toBe('ليلى');
+    expect(() => parseShopifyCustomer({ ...base, id: 'gid://shopify/Customer/1\uD800' })).toThrow(
+      ShopifyCustomerMappingError,
+    );
+  });
 });
 
 describe('parseShopifyCustomer', () => {

@@ -864,6 +864,29 @@ describe(
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
+    it('creates an order whose gateway name and discount code hold lone surrogates, the whole mapping state stored (code review R4, security review N4)', async () => {
+      useShopifyScenarios('order-lone-surrogate');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000026001';
+      expect(await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      expect(await orderOf(c, gid)).toMatchObject({ payment_method: 'cod' });
+      const mapping = await mappingOf(c, gid);
+      expect(mapping?.state).toMatchObject({
+        creationGateways: {},
+        unmappedGateways: ['Wallet'],
+        discountCodes: ['SAVE', 'WELCOME10'],
+      });
+      const discount = await api.owner.pool.query<{ discount_code: string | null }>(
+        `SELECT discount_code FROM orders WHERE store_id = $1::uuid AND channel_order_ref = $2`,
+        [c.storeId, gid],
+      );
+      expect(discount.rows[0]?.discount_code).toBe('SAVE');
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
     it('applies an edit made before the fulfillment on the read where the fulfillment first appears, then records the carrier delivery (code review m1)', async () => {
       useShopifyScenarios('order-swapped-then-fulfilled');
       const c = await plant();

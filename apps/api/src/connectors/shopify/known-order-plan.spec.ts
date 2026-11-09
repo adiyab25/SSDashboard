@@ -7,6 +7,7 @@ import {
   firstActiveFulfillmentOf,
   gatewayKeyOf,
   gatewayMappingOf,
+  mapShopifyOrder,
   parseShopifyOrder,
   paymentTransactionIdsOf,
   shopifyPaymentOf,
@@ -344,6 +345,38 @@ describe('planKnownOrder: the payment rederive (lead decision D10, spec 0013 AC-
       prepaidAmount: '860.00',
       prepaidMethod: 'gateway',
     });
+  });
+
+  it('keeps the whole mapping state storable: lone surrogates leave gateway names and discount codes (code review R4, security review N4)', () => {
+    const order = structuredClone(fixture('order-created-cod/01-order-read.json'));
+    order.paymentGatewayNames = ['Wallet \uD83D', '\uDCB3Card'];
+    order.discountCodes = ['SAVE\uD800', 'WELCOME10'];
+    const mapped = mapShopifyOrder(order, CONTEXT);
+    const state = createdOrderState(order, CONTEXT, mapped.input.lines, mapped);
+    const json = JSON.stringify(state);
+    expect(json).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
+    expect(state.unmappedGateways).toEqual(['Wallet', 'Card']);
+    expect(state.discountCodes).toEqual(['SAVE', 'WELCOME10']);
+    expect(state.creationGateways).toEqual({});
+  });
+
+  it('refuses an order whose id fields are not storable text as ORDER_UNREADABLE (security review N4)', () => {
+    const json = JSON.parse(
+      readFileSync(`${FIXTURES}order-created-cod/01-order-read.json`, 'utf8'),
+    ) as { response: { body: { data: { order: { lineItems: { nodes: { id: string }[] } } } } } };
+    const order = json.response.body.data.order;
+    const first = order.lineItems.nodes[0];
+    if (!first) throw new Error('fixture line');
+    first.id = 'gid://shopify/LineItem/1\uD800';
+    let error: unknown = null;
+    try {
+      parseShopifyOrder(order);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ShopifyOrderMappingError);
+    expect((error as ShopifyOrderMappingError).code).toBe('ORDER_UNREADABLE');
+    expect((error as ShopifyOrderMappingError).paths).toEqual(['lineItems.nodes.0.id']);
   });
 
   it('gives a key jsonb accepts: no U+0000, no lone surrogate, no pair split at 200 (security review N3)', () => {
