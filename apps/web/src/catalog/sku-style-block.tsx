@@ -2,14 +2,14 @@
 
 import type { SkuDetail } from '@ssdashboard/contracts';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
+import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 
 /**
  * The SKU page's read only block about what the SKU is (spec 0012, AC-4): its style (code and
- * name), season ("No season" when none), product group, option values, and barcodes. The style
- * is plain text until the `/styles/[id]` page exists (spec 0012, milestone 2), then it links
- * there. It must never edit anything.
+ * name, linked to its `/styles/[id]` page, AC-8), season ("No season" when none), product
+ * group, option values, and barcodes. It must never edit anything.
  */
 export function SkuStyleBlock({ sku }: { sku: SkuDetail }) {
   const { t } = useTranslation();
@@ -27,7 +27,12 @@ export function SkuStyleBlock({ sku }: { sku: SkuDetail }) {
         <div className="flex flex-col gap-1">
           <dt className="text-muted-foreground">{t('inventory.skuDetail.styleTitle')}</dt>
           <dd className="font-medium">
-            <LtrText>{sku.style.code}</LtrText> {text(sku.style.name, sku.style.code)}
+            <Link
+              href={`/styles/${sku.style.id}`}
+              className="rounded-sm underline-offset-4 hover:underline focus-ring"
+            >
+              <LtrText>{sku.style.code}</LtrText> {text(sku.style.name, sku.style.code)}
+            </Link>
           </dd>
         </div>
         <div className="flex flex-col gap-1">
