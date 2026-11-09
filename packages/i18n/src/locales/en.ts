@@ -1042,7 +1042,8 @@ export const en = {
       },
       catalog: {
         edit: 'Create SKUs and products, edit names and prices',
-        manage: 'Change SKU codes, archive and delete SKUs, manage locations',
+        manage:
+          'Change SKU and style codes, archive and delete SKUs, manage locations, seasons, and product groups',
       },
       channels: {
         map: 'Map partner and channel codes to variants',
@@ -1661,6 +1662,9 @@ export const en = {
       policy: 'Location owner type',
       orderCostRule: 'Per order cost rule',
       connection: 'Connected account',
+      style: 'Style',
+      season: 'Season',
+      productGroup: 'Product group',
     },
     filters: {
       title: 'Filters',
@@ -1791,6 +1795,21 @@ export const en = {
       policyChanged: 'Location owner type policy changed',
       costRuleRecorded: 'Per order cost rule recorded',
       costRuleRecordedInLockedPeriod: 'Per order cost rule recorded in a locked period',
+      styleEdited: 'Style edited',
+      styleCodeChanged: 'Style code changed',
+      styleVariantAdded: 'Variant added to a style',
+      skuBarcodeAdded: 'Barcode added to a SKU',
+      skuBarcodeRemoved: 'Barcode removed from a SKU',
+      seasonCreated: 'Season created',
+      seasonEdited: 'Season edited',
+      seasonArchived: 'Season archived',
+      seasonUnarchived: 'Season unarchived',
+      seasonDeleted: 'Season deleted',
+      productGroupCreated: 'Product group created',
+      productGroupEdited: 'Product group edited',
+      productGroupArchived: 'Product group archived',
+      productGroupUnarchived: 'Product group unarchived',
+      productGroupDeleted: 'Product group deleted',
     },
   },
   // The settings registry of spec 0009 (AC-1): one label and description per entry, and the

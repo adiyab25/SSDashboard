@@ -60,7 +60,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `stock.receive` | Post receipts, transfers, and counts | | | ✓ | ✓ | ✓ | | |
 | `stock.correct` | Void a receipt and post corrections | | | | | ✓ | | |
 | `catalog.edit` | Create SKUs and products, edit names and prices | | | ✓ | ✓ | ✓ | | |
-| `catalog.manage` | Change SKU codes, archive and delete SKUs, manage locations | | | | | ✓ | | |
+| `catalog.manage` | Change SKU and style codes, archive and delete SKUs, manage locations, seasons, and product groups | | | | | ✓ | | |
 | `channels.map` | Map partner and channel codes to variants | | | ✓ | | ✓ | | |
 | `settlement.work` | Import carrier and partner statements, match lines, enter a partner's statement for them | P | | ✓ | | ✓ | | |
 | `settlement.close` | Close a settlement period and revoke a close | | | ✓ | | ✓ | | |
@@ -83,7 +83,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 
 > Amended 2026-11-07 by spec 0014 (designed, not built; the build of feature 14 registers it in `packages/contracts/src/access.ts`): the new permission `customers.flag` (owner decision Q-14.3) lets a person set and clear a customer's flag, clearing needing a reason code. It reaches personal data (`P`), so it is on `support`, `operations`, and `manager` only and never on an external hat (AC-8).
 
-> Amended 2026-11-07 by spec 0012 (designed, not built; the build of feature 12 changes the matrix text): `catalog.manage` now also covers managing seasons and product groups (create, edit, archive, unarchive, delete) and changing style codes, in addition to what the row above says. It stays on the `manager` hat only.
+> Amended 2026-11-07 by spec 0012 (designed, not built; the build of feature 12 changes the matrix text): `catalog.manage` now also covers managing seasons and product groups (create, edit, archive, unarchive, delete) and changing style codes, in addition to what the row above says. It stays on the `manager` hat only. Built 2026-11-08 by spec 0012 milestone 2: the matrix row above and the permission's label in `packages/i18n` now say so.
 
 **Location scoping**: none. Every permission applies to every location of the brand. The shell's location switcher stays a view filter, not a wall (owner question 5).
 
@@ -139,7 +139,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | 0011 discrepancies | `POST /api/stock-discrepancies/:id/rebuild`, `POST /api/stock-discrepancies/:id/dismiss` | `stock.correct` |
 | 0012 catalog | `GET /api/skus` (amended: new filters and fields), `GET /api/skus/:id` (amended) | `stock.view` |
 | 0012 catalog | `PATCH /api/skus/:id` (amended: `FIELD_OWNED_BY_CHANNEL`) | `catalog.edit` |
-| 0012 catalog | `POST /api/skus/:id/barcodes`, `DELETE /api/skus/:id/barcodes/:barcodeId` | `catalog.edit` |
+| 0012 catalog | `POST /api/skus/:id/barcodes`, `DELETE /api/skus/:id/barcodes/:barcodeId` | `catalog.edit` (built 2026-11-08 by spec 0012 milestone 2, with its access sweep fixtures, as are the `POST /api/products` amendment and every styles, seasons, and product groups row below except the two cost records rows, which land with milestone 3) |
 | 0012 catalog | `POST /api/products` (amended: `styleCode`, `seasonId`, `productGroupId`) | `catalog.edit` |
 | 0012 styles | `GET /api/styles`, `GET /api/styles/:id` | `stock.view` (variant `cost` only with `cost.view`) |
 | 0012 styles | `PATCH /api/styles/:id`, `POST /api/styles/assign`, `POST /api/styles/:id/variants` | `catalog.edit` |

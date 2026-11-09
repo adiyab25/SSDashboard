@@ -67,6 +67,12 @@ const ORDERS_PROOF = 'apps/api/test/orders-audit.e2e-spec.ts';
 /** The proof test of the inventory master data actions (SKUs and locations). */
 const INVENTORY_PROOF = 'apps/api/test/audit-inventory.e2e-spec.ts';
 
+/** The proof test of the style, variant, and barcode actions (spec 0012). */
+const STYLES_PROOF = 'apps/api/test/styles.e2e-spec.ts';
+
+/** The proof test of the season and product group actions (spec 0012). */
+const GROUPINGS_PROOF = 'apps/api/test/seasons-groups.e2e-spec.ts';
+
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
  * adds its code here in the same change that builds the action, with its label keys and its proof
@@ -326,6 +332,145 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     label: 'audit.actions.connectionCreated',
     proof: 'apps/api/test/shopify-connect.e2e-spec.ts',
+  },
+  // Spec 0012 milestone 2 (AC-17): style edits, a style's code, a variant added to a style, a
+  // SKU's barcodes, and every season and product group write, each a person's action in its own
+  // transaction. The record id is the style, SKU, season, or group id; the label its code. A bulk
+  // assign writes one `style.edited` per changed style under one correlation id.
+  'style.edited': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleEdited',
+    proof: STYLES_PROOF,
+  },
+  'style.code_changed': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleCodeChanged',
+    proof: STYLES_PROOF,
+  },
+  'style.variant_added': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleVariantAdded',
+    proof: STYLES_PROOF,
+  },
+  'sku.barcode_added': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuBarcodeAdded',
+    proof: STYLES_PROOF,
+  },
+  'sku.barcode_removed': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuBarcodeRemoved',
+    proof: STYLES_PROOF,
+  },
+  'season.created': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonCreated',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.edited': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonEdited',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.archived': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonArchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.unarchived': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonUnarchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.deleted': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonDeleted',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.created': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupCreated',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.edited': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupEdited',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.archived': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupArchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.unarchived': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupUnarchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.deleted': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupDeleted',
+    proof: GROUPINGS_PROOF,
   },
 } as const satisfies Record<string, AuditActionDefinition>;
 

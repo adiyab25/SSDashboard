@@ -1034,7 +1034,8 @@ export const ar: Catalog = {
       },
       catalog: {
         edit: 'إنشاء الأصناف والمنتجات وتعديل الأسماء والأسعار',
-        manage: 'تغيير رموز الأصناف وأرشفتها وحذفها وإدارة المواقع',
+        manage:
+          'تغيير رموز الأصناف والموديلات، وأرشفة الأصناف وحذفها، وإدارة المواقع والمواسم ومجموعات المنتجات',
       },
       channels: {
         map: 'ربط رموز الشركاء والقنوات بالمتغيرات',
@@ -1662,6 +1663,9 @@ export const ar: Catalog = {
       policy: 'نوع مالك الموقع',
       orderCostRule: 'قاعدة تكلفة لكل طلب',
       connection: 'حساب مرتبط',
+      style: 'موديل',
+      season: 'موسم',
+      productGroup: 'مجموعة منتجات',
     },
     filters: {
       title: 'عوامل التصفية',
@@ -1794,6 +1798,21 @@ export const ar: Catalog = {
       policyChanged: 'تغيير سياسة نوع مالك الموقع',
       costRuleRecorded: 'تسجيل قاعدة تكلفة لكل طلب',
       costRuleRecordedInLockedPeriod: 'تسجيل قاعدة تكلفة لكل طلب في فترة مقفلة',
+      styleEdited: 'تعديل موديل',
+      styleCodeChanged: 'تغيير رمز موديل',
+      styleVariantAdded: 'إضافة صنف إلى موديل',
+      skuBarcodeAdded: 'إضافة باركود إلى صنف',
+      skuBarcodeRemoved: 'حذف باركود من صنف',
+      seasonCreated: 'إنشاء موسم',
+      seasonEdited: 'تعديل موسم',
+      seasonArchived: 'أرشفة موسم',
+      seasonUnarchived: 'إلغاء أرشفة موسم',
+      seasonDeleted: 'حذف موسم',
+      productGroupCreated: 'إنشاء مجموعة منتجات',
+      productGroupEdited: 'تعديل مجموعة منتجات',
+      productGroupArchived: 'أرشفة مجموعة منتجات',
+      productGroupUnarchived: 'إلغاء أرشفة مجموعة منتجات',
+      productGroupDeleted: 'حذف مجموعة منتجات',
     },
   },
   settings: {
