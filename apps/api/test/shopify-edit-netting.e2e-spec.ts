@@ -533,6 +533,65 @@ describe(
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
+    // QA (check verify, spec 0015 task 10): a fulfillment cancelled after an exchange by edit must
+    // never leave the same added piece on two orders (the original's full snapshot and a
+    // replacement), or reserve it twice.
+    const heldCount = async (c: Planted, gid: string, lineGid: string) => {
+      const original = await orderOf(c, gid);
+      const replacement = await orderOf(c, `${gid}:R1`);
+      const state = (await mappingOf(c, gid))?.state ?? {};
+      const originalHas = (await linesOf(original?.id as string)).some(
+        (l) => l.channel_line_id === lineGid && l.line_state === 'open',
+      );
+      const replacementHas =
+        replacement !== undefined &&
+        (await linesOf(replacement.id)).some((l) => l.channel_line_id === lineGid);
+      const waiting = Array.isArray(state['pendingReplacementLines'])
+        ? (state['pendingReplacementLines'] as { channelLineId: string }[]).some(
+            (l) => l.channelLineId === lineGid,
+          )
+        : false;
+      return { originalHas, replacementHas, waiting };
+    };
+
+    it('QA: drops a waiting replacement when the fulfillment is cancelled and the added line reaches the original by edit instead (AC-11, AC-12)', async () => {
+      useShopifyScenarios('order-exchange-fulfillment-cancelled');
+      const c = await plant();
+      const skuL = await sku(`EXQ-${randomUUID().slice(0, 6)}`);
+      await mapVariant(c, 'gid://shopify/ProductVariant/7770000000102', skuL);
+      const gid = 'gid://shopify/Order/5550000047001';
+      await arrive(c, 'orders/create', gid, '2026-11-04T10:00:01Z');
+      expect(await arrive(c, 'orders/edited', gid, '2026-11-07T15:05:00Z')).toMatchObject({
+        outcome: 'replacement_waiting',
+      });
+      await arrive(c, 'orders/updated', gid, '2026-11-08T09:00:00Z');
+      const held = await heldCount(c, gid, line('6660000008002'));
+      // The piece is on exactly one order, or still waiting alone; never on the original and
+      // waiting (or made) at once.
+      expect(
+        [held.originalHas, held.replacementHas, held.waiting].filter(Boolean).length,
+        JSON.stringify(held),
+      ).toBeLessThanOrEqual(1);
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
+    it('QA: does not add a line already made into #R1 to the original when the fulfillment is cancelled (AC-12)', async () => {
+      useShopifyScenarios('order-exchange-fulfillment-cancelled');
+      const c = await plant();
+      const skuL = await sku(`EXR-${randomUUID().slice(0, 6)}`);
+      await mapVariant(c, 'gid://shopify/ProductVariant/7770000000102', skuL);
+      const gid = 'gid://shopify/Order/5550000047001';
+      await arrive(c, 'orders/create', gid, '2026-11-04T10:00:01Z');
+      await deliver((await orderOf(c, gid))?.id as string);
+      await arrive(c, 'orders/edited', gid, '2026-11-07T15:05:00Z');
+      expect(await orderOf(c, `${gid}:R1`)).toBeDefined();
+      await arrive(c, 'orders/updated', gid, '2026-11-08T09:00:00Z');
+      const held = await heldCount(c, gid, line('6660000008002'));
+      expect(held.replacementHas).toBe(true);
+      expect(held.originalHas, JSON.stringify(held)).toBe(false);
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
     it('keeps every netting and refund event free of a name, a phone, or an address (Law 151)', () => {
       const published = JSON.stringify([...netted, ...refunds]);
       expect(netted.length + refunds.length).toBeGreaterThan(0);

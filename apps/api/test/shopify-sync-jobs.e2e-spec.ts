@@ -910,5 +910,78 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(runs.rows.map((r) => r.id)).toEqual([newestOldRun]);
       expect(runs.rows.map((r) => r.id)).not.toContain(oldRun);
     });
+
+    it('QA: keeps rows 1 hour short of 90 and 180 days and purges them 1 hour past, for every closed status', async () => {
+      const c = await plant();
+      const ids = {
+        processedKept: await inboxRow(c, {
+          gidValue: gid(1047),
+          status: 'processed',
+          daysAgo: 89,
+          minutesAgo: 23 * 60,
+        }),
+        processedGone: await inboxRow(c, {
+          gidValue: gid(1047),
+          status: 'processed',
+          daysAgo: 90,
+          minutesAgo: 60,
+        }),
+        ignoredGone: await inboxRow(c, { gidValue: gid(1048), status: 'ignored', daysAgo: 91 }),
+        unlicensedGone: await inboxRow(c, {
+          gidValue: gid(1048),
+          status: 'ignored_unlicensed',
+          daysAgo: 91,
+        }),
+        echoGone: await inboxRow(c, { gidValue: gid(1049), status: 'echo', daysAgo: 91 }),
+        failedKept: await inboxRow(c, {
+          gidValue: gid(1049),
+          status: 'failed',
+          daysAgo: 179,
+          minutesAgo: 23 * 60,
+        }),
+        failedGone: await inboxRow(c, {
+          gidValue: gid(1050),
+          status: 'failed',
+          daysAgo: 180,
+          minutesAgo: 60,
+        }),
+      };
+      await worker.get(InboxPurgeJob).run();
+      const left = (
+        await api.owner.pool.query<{ id: string }>(
+          `SELECT id FROM inbound_events WHERE connection_id = $1::uuid`,
+          [c.id],
+        )
+      ).rows.map((r) => r.id);
+      expect(left.sort()).toEqual([ids.processedKept, ids.failedKept].sort());
+    });
+
+    it('QA: a paused or archived connection is never swept, checked, or backfilled, and starts no run', async () => {
+      for (const status of ['paused', 'archived']) {
+        const c = await plant({
+          status,
+          goLiveAt: '2026-11-01T00:00:00Z',
+          ordersSweptThrough: '2026-11-05T08:00:00Z',
+          productsSweptThrough: '2026-11-05T08:00:00Z',
+        });
+        const swept = await worker.get(SweepJob).sweep('orders', { connectionId: c.id });
+        expect(swept, status).toHaveProperty('skipped');
+        const checked = await worker.get(HourlyCheckJob).check(c.id, randomUUID());
+        expect(checked, status).toHaveProperty('skipped');
+        expect(await runsOf(c, 'sweep_orders'), status).toEqual([]);
+        expect(await runsOf(c, 'hourly_check'), status).toEqual([]);
+        // A paused connection's scan is accepted and then fails in its job; an archived one is
+        // refused at the route.
+        if (status === 'archived') {
+          const scan = await api.call(manager, 'POST', `/api/connections/${c.id}/gateway-scan`);
+          expect(scan.status, status).toBe(409);
+        }
+        const fill = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
+          goLiveAt: GO_LIVE,
+        });
+        expect(fill.status, status).toBe(409);
+        expect(fill.body, status).toMatchObject({ code: 'CONNECTION_NOT_READY' });
+      }
+    });
   });
 });
