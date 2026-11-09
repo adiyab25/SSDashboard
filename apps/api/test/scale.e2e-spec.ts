@@ -1,16 +1,26 @@
 import { randomUUID } from 'node:crypto';
-import { AuditEntryListQuery, personActor } from '@ssdashboard/contracts';
+import { AuditEntryListQuery, personActor, type SkuListQuery } from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditQueryService } from '../src/audit/audit-query.service.js';
 import { AuditService } from '../src/audit/audit.service.js';
-import { buildSkuListSql } from '../src/catalog/catalog.service.js';
+import { buildSkuListSql, searchWords } from '../src/catalog/search/sku-list-sql.js';
 import { StaffDirectory } from '../src/identity/staff/staff-directory.js';
 import { buildAvailabilitySql } from '../src/inventory/ledger/ledger.service.js';
 import { encodeKeyset } from '../src/platform/keyset-cursor.js';
 import { ledgerHarness, posting, type LedgerHarness } from './ledger.js';
 import { auditActionSpread, AUDIT_SCALE, seedAuditScale } from './scale-audit-seed.js';
-import { randomScaleKeys, seedScale, SPEC_SCALE, type SeedStep } from './scale-seed.js';
+import {
+  GARMENTS,
+  MODEL_NAMES,
+  modelName,
+  randomScaleKeys,
+  SCALE_SEASONS,
+  seedScale,
+  SPEC_SCALE,
+  STYLE_WORDS,
+  type SeedStep,
+} from './scale-seed.js';
 
 // Spec 0002 "Scale suite": the budgets of the table, p95 over RUNS timed runs after a warm up, on
 // the dev PostgreSQL. Every budget is Assumed (spec 0007 section 11), reset from the first
@@ -241,34 +251,145 @@ ${plan}`);
     expect(bad?.cancelled).toBeGreaterThan(0);
   });
 
-  it(`searches SKUs by code prefix and name fragment (150 ms budget)`, async () => {
-    const skus = await rows<{ sku: string }>(
-      `SELECT sku FROM product_variants ORDER BY random() LIMIT ${INPUTS}`,
-    );
-    const search = (label: string, indexes: string[], terms: string[]): Read => ({
-      label,
-      indexes,
-      async explain(n) {
-        const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
-          sql`EXPLAIN (COSTS OFF) ${buildSkuListSql({ q: terms[n % terms.length] ?? '', status: 'active', limit: 50 })}`,
-        );
-        return plan.map((row) => row['QUERY PLAN']).join('\n');
-      },
-      run: (n) =>
-        h.app.db.execute(
-          buildSkuListSql({ q: terms[n % terms.length] ?? '', status: 'active', limit: 50 }),
-        ),
-    });
-    const prefixes = skus.map((row) => row.sku.slice(0, 10));
-    const fragments = Array.from(
-      { length: INPUTS },
-      (_, n) => `product ${1 + ((n * 977) % SPEC_SCALE.styles)}`,
-    );
+  // Spec 0012 AC-5: the six SKU searches, each its own budget row, through the same two
+  // statements `CatalogService.list` runs (the words from `ssd_search_normalize`, then the
+  // three branch union). Every input has a word of 3 or more characters, so every plan holds all
+  // three branches: barcode on `barcodes_code_unique`, prefix on `product_variants_sku_c_idx`,
+  // contains on `product_variants_search_trgm_idx`.
+  describe('SKU search (spec 0012, AC-5, 150 ms budget)', () => {
+    const BRANCH_INDEXES = [
+      'barcodes_code_unique',
+      'product_variants_sku_c_idx',
+      'product_variants_search_trgm_idx',
+    ];
+    const withoutHamza = (text: string) => text.replace(/[أإآ]/g, 'ا').toLowerCase();
 
-    await checkRow('SKU search', BUDGET_SKU_SEARCH_MS, [
-      search('code prefix', ['product_variants_sku_c_idx'], prefixes),
-      search('name fragment', [], fragments),
-    ]);
+    function search(label: string, queries: SkuListQuery[]): Read {
+      const queryOf = (n: number): SkuListQuery =>
+        queries[n % queries.length] ?? { status: 'active', limit: 50 };
+      const statement = async (n: number) => {
+        const query = queryOf(n);
+        return buildSkuListSql(query, query.q ? await searchWords(h.app.db, query.q) : []);
+      };
+      return {
+        label,
+        indexes: BRANCH_INDEXES,
+        async explain(n) {
+          const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
+            sql`EXPLAIN (COSTS OFF) ${await statement(n)}`,
+          );
+          return plan.map((row) => row['QUERY PLAN']).join('\n');
+        },
+        run: async (n) => h.app.db.execute(await statement(n)),
+      };
+    }
+
+    const term = (q: string, more: Partial<SkuListQuery> = {}): SkuListQuery => ({
+      q,
+      status: 'active',
+      limit: 50,
+      ...more,
+    });
+
+    it('seeds every style in both languages and every variant with a size, a color, a barcode, and its search text', async () => {
+      const [counts] = await rows<Record<string, number>>(`
+        SELECT (SELECT count(*) FROM products
+                 WHERE style_code LIKE 'SCALE-STYLE-%'
+                   AND (name->>'en' IS NULL OR name->>'ar' IS NULL))::int AS unnamed,
+               (SELECT count(*) FROM product_variants v
+                 WHERE v.sku LIKE 'SCALE-%' AND (SELECT count(*) FROM product_options o
+                   WHERE o.product_id = v.product_id
+                     AND o.values -> ((v.option_values ->> o.position::text)::int) IS NOT NULL) <> 2
+               )::int AS without_size_and_color,
+               (SELECT count(*) FROM product_variants v
+                 WHERE v.sku LIKE 'SCALE-%'
+                   AND (SELECT count(*) FROM barcodes b WHERE b.variant_id = v.id) <> 1)::int
+                 AS without_one_barcode,
+               (SELECT count(*) FROM product_variants
+                 WHERE search_text IS DISTINCT FROM
+                       ssd_variant_search_text(product_id, sku, option_values))::int AS drifted`);
+      expect(counts).toEqual({
+        unnamed: 0,
+        without_size_and_color: 0,
+        without_one_barcode: 0,
+        drifted: 0,
+      });
+    });
+
+    it('by code prefix', async () => {
+      const skus = await rows<{ sku: string }>(
+        `SELECT sku FROM product_variants ORDER BY random() LIMIT ${INPUTS}`,
+      );
+      await checkRow('SKU search: code prefix', BUDGET_SKU_SEARCH_MS, [
+        search(
+          'code prefix',
+          skus.map((row) => term(row.sku.slice(0, 10))),
+        ),
+      ]);
+    });
+
+    it('by an English name fragment', async () => {
+      // The first 5 of a model name's 6 letters ("karim" of "Karimo"), about 100 variants each.
+      const fragments = Array.from({ length: INPUTS }, (_, n) =>
+        modelName((n * 37) % MODEL_NAMES).en.slice(0, 5),
+      );
+      await checkRow('SKU search: English name fragment', BUDGET_SKU_SEARCH_MS, [
+        search(
+          'English fragment',
+          fragments.map((fragment) => term(fragment)),
+        ),
+      ]);
+    });
+
+    it('by an Arabic fragment typed without hamza', async () => {
+      // Arabic model names that carry a hamza, typed without it.
+      const fragments = Array.from({ length: MODEL_NAMES }, (_, m) => modelName(m).ar)
+        .filter((name) => /[أإآ]/.test(name))
+        .filter((_, n) => n % 7 === 0)
+        .map(withoutHamza);
+      await checkRow('SKU search: Arabic fragment without hamza', BUDGET_SKU_SEARCH_MS, [
+        search(
+          'Arabic fragment',
+          fragments.map((fragment) => term(fragment)),
+        ),
+      ]);
+    });
+
+    it('by two words', async () => {
+      const pairs = Array.from({ length: INPUTS }, (_, n) => {
+        const word = STYLE_WORDS[(n * 7) % STYLE_WORDS.length]?.en ?? '';
+        const garment = GARMENTS[(n * 3) % GARMENTS.length]?.en ?? '';
+        return term(`${garment} ${word}`.toLowerCase());
+      });
+      await checkRow('SKU search: two words', BUDGET_SKU_SEARCH_MS, [search('two words', pairs)]);
+    });
+
+    it('by an exact barcode', async () => {
+      const codes = await rows<{ code: string }>(
+        `SELECT code FROM barcodes ORDER BY random() LIMIT ${INPUTS}`,
+      );
+      await checkRow('SKU search: exact barcode', BUDGET_SKU_SEARCH_MS, [
+        search(
+          'barcode',
+          codes.map((row) => term(row.code)),
+        ),
+      ]);
+    });
+
+    it('by a fragment with a season filter', async () => {
+      const seasons = await rows<{ id: string }>(
+        `SELECT id FROM seasons WHERE code LIKE 'SCALE-S%' ORDER BY code`,
+      );
+      expect(seasons).toHaveLength(SCALE_SEASONS);
+      const inputs = Array.from({ length: INPUTS }, (_, n) =>
+        term((GARMENTS[n % GARMENTS.length]?.en ?? '').toLowerCase(), {
+          seasonId: seasons[n % seasons.length]?.id,
+        }),
+      );
+      await checkRow('SKU search: fragment with season filter', BUDGET_SKU_SEARCH_MS, [
+        search('fragment and season', inputs),
+      ]);
+    });
   });
 
   // Review R3: the plan of the exact statement getAvailable runs (buildAvailabilitySql) is checked

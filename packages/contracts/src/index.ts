@@ -1,6 +1,6 @@
 export * from './access.js';
 export * from './auth.js';
-export * from './catalog.js';
+export * from './catalog/index.js';
 export * from './digit-input.js';
 export * from './health.js';
 export * from './inventory.js';

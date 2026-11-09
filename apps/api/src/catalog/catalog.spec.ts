@@ -3,20 +3,7 @@ import { ChangeSkuCodeRequest, SkuListQuery, UpdateSkuRequest } from '@ssdashboa
 import { describe, expect, it } from 'vitest';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
 import { catalogHttpError } from './catalog.controller.js';
-import { CatalogError, escapeLike, type CatalogErrorCode } from './catalog.service.js';
-
-const BACKSLASH = String.fromCharCode(92);
-
-describe('escapeLike', () => {
-  it.each([
-    ['100%', `100${BACKSLASH}%`],
-    ['A_B', `A${BACKSLASH}_B`],
-    [`back${BACKSLASH}slash`, `back${BACKSLASH}${BACKSLASH}slash`],
-    ['plain', 'plain'],
-  ])('makes %s match itself', (input, escaped) => {
-    expect(escapeLike(input)).toBe(escaped);
-  });
-});
+import { CatalogError, type CatalogErrorCode } from './catalog.service.js';
 
 describe('catalogHttpError', () => {
   it.each<[CatalogErrorCode, unknown, string]>([

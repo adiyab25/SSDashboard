@@ -1,7 +1,7 @@
 # 0012. Catalog, styles and variants: one normalized search column, style screens, visible cost, and a channel upsert contract
 
 **Date**: 2026-11-07
-**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; not yet built)
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; milestone 1 built 2026-11-08)
 **Feature**: scope feature 12, [Catalog, styles & variants](../../scope/confirmation-to-cash.md) (Slice 1a, Core, Beta)
 **Depends on**: the built catalog of [spec 0002](../0002-core-data-model/index.md) ([catalog child](../0002-core-data-model/0002-catalog-locations.md): `products` as styles, `seasons`, `product_groups`, `cost_records`, `CostService`) and [spec 0006](../0006-core-stock-loop/index.md) (SKU create, edit, archive, delete, list); permissions of [spec 0008](../0008-roles-as-hats/index.md); `AuditService` of [spec 0010](../0010-audit-trail/index.md); three settings requested from feature 9 ([spec 0009](../0009-settings-toggles-bundles/index.md), see *Settings requested from feature 9*). Neighbours, written in parallel: spec 0015 (the Shopify connector calls `CatalogChannelSync`), spec 0011 (stock ledger and locations), spec 0013 (orders reference variants).
 
@@ -271,11 +271,11 @@ None. No new environment variable; the three settings above come from feature 9.
 Tracer Bullet: milestone 1 runs the search through every layer (SQL function, column, trigger, index, contract, api, screen, scale suite), because "find any variant fast" is the feature's done when. Each later milestone thickens one segment end to end: the master data screens, then cost, then the channel contract that spec 0015 builds on. Each milestone is one commit; schema lands in the milestone that first needs it.
 
 **Milestone 1: Search through every layer**
-1. [ ] Custom migration: `ssd_search_normalize`, `ssd_variant_search_text`, `product_variants.search_text` with the three triggers, the SQL backfill, `product_variants_search_trgm_idx`, and the drop of `products_search_trgm_idx` and `product_variants_sku_trgm_idx`; Drizzle schema updated; `packages/db/test/search-normalize.e2e-spec.ts` with the fixture table and the recomputation test, satisfies **AC-1**, **AC-2**
-2. [ ] Contracts: `SkuListQuery` filters, the wider `SkuSummary` and `SkuDetail`, the move of `catalog.ts` into `catalog/`, satisfies **AC-3**, **AC-4**
-3. [ ] Api `catalog/search/`: the three branch `buildSkuListSql` with filters and the joined row fields, `GET /skus/:id` with barcodes; unit tests of the builder; `test/master-data.e2e-spec.ts` search cases, satisfies **AC-3**, **AC-4**
-4. [ ] Web: `/skus` columns, the "Name, SKU or barcode" search, season and group filters, the SKU page's style block with barcodes (read only), both languages, satisfies **AC-4**, **AC-18**
-5. [ ] Scale: `scale-seed.ts` gives every style English and Arabic names, every variant size and color values and one barcode; `scale.e2e-spec.ts` asserts the six reads and their indexes; measured p95 recorded in `verify.md`, satisfies **AC-5**
+1. [x] Custom migration: `ssd_search_normalize`, `ssd_variant_search_text`, `product_variants.search_text` with the three triggers, the SQL backfill, `product_variants_search_trgm_idx`, and the drop of `products_search_trgm_idx` and `product_variants_sku_trgm_idx`; Drizzle schema updated; `packages/db/test/search-normalize.e2e-spec.ts` with the fixture table and the recomputation test, satisfies **AC-1**, **AC-2**
+2. [x] Contracts: `SkuListQuery` filters, the wider `SkuSummary` and `SkuDetail`, the move of `catalog.ts` into `catalog/`, satisfies **AC-3**, **AC-4**
+3. [x] Api `catalog/search/`: the three branch `buildSkuListSql` with filters and the joined row fields, `GET /skus/:id` with barcodes; unit tests of the builder; `test/master-data.e2e-spec.ts` search cases, satisfies **AC-3**, **AC-4**
+4. [x] Web: `/skus` columns, the "Name, SKU or barcode" search, season and group filters, the SKU page's style block with barcodes (read only), both languages, satisfies **AC-4**, **AC-18**
+5. [x] Scale: `scale-seed.ts` gives every style English and Arabic names, every variant size and color values and one barcode; `scale.e2e-spec.ts` asserts the six reads and their indexes; measured p95 recorded in `verify.md`, satisfies **AC-5**
 
 **Done when** `pnpm build && pnpm typecheck && pnpm test` pass, `pnpm --filter @ssdashboard/db test:e2e -- test/search-normalize.e2e-spec.ts` and `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts` pass, and `pnpm --filter @ssdashboard/api test:scale` shows the six search reads under 150 ms with their plans.
 
@@ -346,4 +346,4 @@ Each is decided in this spec with the recommended answer, so the build can start
 - [ ] Feature 40: channel codes and aliases may join the search as a fourth branch.
 - [ ] Features 24 and 46: the reference brand's `model` grouping (one model across color styles) for reports, as a custom field or a later attribute.
 - [ ] A grouping tool for one style across several Shopify products, if a pilot brand needs it (Q-12.4).
-- [ ] `packages/contracts/src/catalog.ts` TSDoc "One variant for now; feature 8 lifts the limit" becomes false with milestone 2; the build fixes it.
+- [ ] `packages/contracts/src/catalog/skus.ts` (formerly `catalog.ts`) TSDoc "One variant for now; feature 8 lifts the limit" becomes false with milestone 2; the build fixes it.

@@ -1,5 +1,5 @@
 import type { MessageKey } from '@ssdashboard/i18n';
-import { SKU_CODE_PATTERN } from '../catalog.js';
+import { SKU_CODE_PATTERN } from '../catalog/index.js';
 import { STORE_CODE_PATTERN } from '../connectors/connections.js';
 import { LICENSE_ID_PATTERN } from '../license/license-envelope.js';
 import { LOCATION_CODE_PATTERN } from '../locations.js';
