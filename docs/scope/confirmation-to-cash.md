@@ -26,7 +26,7 @@ Products as the brand thinks of them: style, season, product group, and variants
 **Done when:** staff can find any variant by name, SKU, or barcode in Arabic or English in well under a second at 10,000 SKUs (tested at 50,000), see its style, season, and group, and every variant inherits its style's cost unless overridden.
 - [x] Design it (spec): `/architect catalog, styles & variants`
 - [ ] Build it: `/develop catalog, styles & variants`
-  - [ ] Arabic and English search through every layer
+  - [x] Arabic and English search through every layer
   - [ ] Seasons, product groups, and styles
   - [ ] Inherited cost, visible and recordable
   - [ ] The channel upsert contract

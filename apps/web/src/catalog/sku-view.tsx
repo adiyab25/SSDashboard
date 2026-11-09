@@ -15,6 +15,7 @@ import { useLocalizedText } from '@/i18n/use-localized-text';
 import { SkuEditDialog } from './sku-edit-dialog';
 import { SkuHistorySection } from './sku-history-section';
 import { SkuStockSection } from './sku-stock-section';
+import { SkuStyleBlock } from './sku-style-block';
 
 /** The loaded SKU: header, price, stock per location, movement history, and the edit dialog. */
 export function SkuView({ sku }: { sku: SkuDetail }) {
@@ -58,6 +59,8 @@ export function SkuView({ sku }: { sku: SkuDetail }) {
           </dd>
         </div>
       </dl>
+
+      <SkuStyleBlock sku={sku} />
 
       <SkuStockSection skuId={sku.id} />
       <SkuHistorySection skuId={sku.id} />

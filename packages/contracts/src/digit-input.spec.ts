@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Password } from './auth.js';
-import { CreateProductRequest, UpdateSkuRequest } from './catalog.js';
+import { CreateProductRequest, UpdateSkuRequest } from './catalog/index.js';
 import { moneyInput, quantityInput, westernDigits } from './digit-input.js';
 import { CreateStockReceiptRequest } from './stock-receipts.js';
 import { UnitCostString } from './money.js';
