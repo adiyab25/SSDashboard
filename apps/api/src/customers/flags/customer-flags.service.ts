@@ -13,6 +13,7 @@ import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Transaction } from '../../database/sql.js';
 import { StaffDirectory } from '../../identity/staff/staff-directory.js';
 import { utc } from '../customer-briefs.js';
+import { nextStampOf } from '../customer-stamp.js';
 import { CustomersError } from '../customers.errors.js';
 import { CustomersService } from '../customers.service.js';
 import { cleanCustomerName } from '../find-or-create/find-or-create.js';
@@ -125,7 +126,7 @@ export class CustomerFlags {
             UPDATE customers
             SET risk_flag = ${input.kind}, risk_flag_source = 'manual', risk_flag_note = ${note},
                 risk_flag_set_at = now(), risk_flag_set_by = ${actor.userId}::uuid,
-                updated_at = now()
+                updated_at = ${nextStampOf(ids)}
             WHERE id = ${id}::uuid
             RETURNING ${utc('risk_flag_set_at')} AS set_at`)
         ).rows[0];
@@ -197,7 +198,7 @@ export class CustomerFlags {
         await tx.execute(sql`
           UPDATE customers
           SET risk_flag = NULL, risk_flag_source = NULL, risk_flag_note = NULL,
-              risk_flag_set_at = NULL, risk_flag_set_by = NULL, updated_at = now()
+              risk_flag_set_at = NULL, risk_flag_set_by = NULL, updated_at = ${nextStampOf(ids)}
           WHERE id = ANY(${pgArray([...flagged.map((f) => f.id), canonicalId])}::uuid[])`);
 
         const auditActor = personActor(actor.userId, actor.hat);

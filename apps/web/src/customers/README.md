@@ -23,7 +23,7 @@ The customer search and the To review tab at `/customers`, the customer profile 
 
 ```bash
 pnpm --filter @ssdashboard/web test -- src/customers
-pnpm --filter @ssdashboard/web exec playwright test e2e/customers.spec.ts e2e/customers-merge.spec.ts --project=desktop
+pnpm --filter @ssdashboard/web exec playwright test e2e/customers.spec.ts e2e/customers-merge.spec.ts e2e/customers-flag.spec.ts e2e/customers-flag-checks.spec.ts --project=desktop
 ```
 
 ## Governing spec

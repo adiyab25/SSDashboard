@@ -14,21 +14,21 @@ import {
 import { Field, FieldError, FieldLabel } from '@ssdashboard/ui/components/field';
 import { useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { clearCustomerFlag, customerKeys } from './customers-api';
+import { customerSelectClass } from './customer-select-class';
 import { flagErrorKey, type FlagErrorKey } from './flag-error-key';
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30 aria-invalid:border-destructive';
 
 interface Props {
   /** The profile whose flag is cleared: its `updatedAt` is sent back as `expectedUpdatedAt`. */
   profile: CustomerProfile;
   onClose: () => void;
+  /** Where focus goes after a successful clear, because the Clear flag opener is then gone. */
+  focusAfterClear: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -36,7 +36,7 @@ interface Props {
  * failure shows inline with `role="alert"`; a stale record reloads the profile and keeps the
  * dialog open so the person can check and try again.
  */
-export function CustomerClearFlagDialog({ profile, onClose }: Props) {
+export function CustomerClearFlagDialog({ profile, onClose, focusAfterClear }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const returnFocus = useReturnFocus();
@@ -44,6 +44,7 @@ export function CustomerClearFlagDialog({ profile, onClose }: Props) {
   const [reasonMissing, setReasonMissing] = useState(false);
   const [error, setError] = useState<FlagErrorKey | null>(null);
   const [pending, setPending] = useState(false);
+  const cleared = useRef(false);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -61,6 +62,7 @@ export function CustomerClearFlagDialog({ profile, onClose }: Props) {
       });
       toast.success(t('customers.flagging.clear.done'));
       await refetchAfterWrite(queryClient, { queryKey: customerKeys.all });
+      cleared.current = true;
       onClose();
     } catch (failure) {
       setError(flagErrorKey(failure));
@@ -74,7 +76,14 @@ export function CustomerClearFlagDialog({ profile, onClose }: Props) {
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
       <DialogContent
         closeLabel={t('customers.flagging.close')}
-        onCloseAutoFocus={returnFocus}
+        onCloseAutoFocus={(event) => {
+          if (cleared.current && focusAfterClear.current?.isConnected) {
+            event.preventDefault();
+            focusAfterClear.current.focus();
+          } else {
+            returnFocus(event);
+          }
+        }}
         className="sm:max-w-md"
       >
         <DialogHeader>
@@ -86,7 +95,7 @@ export function CustomerClearFlagDialog({ profile, onClose }: Props) {
             <FieldLabel htmlFor="unflag-reason">{t('customers.flagging.clear.reason')}</FieldLabel>
             <select
               id="unflag-reason"
-              className={SELECT}
+              className={customerSelectClass}
               value={reason}
               aria-invalid={reasonMissing || undefined}
               aria-describedby={reasonMissing ? 'unflag-reason-error' : undefined}

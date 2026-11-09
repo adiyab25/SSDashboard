@@ -1,5 +1,5 @@
 import type { CustomerProfile } from '@ssdashboard/contracts';
-import { screen } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
@@ -98,5 +98,84 @@ describe('flag actions on the profile (AC-11)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Clear flag', hidden: false }));
     expect(await screen.findByText('Choose a reason.')).toBeVisible();
     expect(api.clearCustomerFlag).not.toHaveBeenCalled();
+  });
+
+  it('leaves suggestion_applied out of the manual reasons', async () => {
+    api.getCustomer.mockResolvedValue(profile(false));
+    renderWithQuery(<CustomerDetailPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Flag customer' }));
+    const options = within(screen.getByLabelText('Reason')).getAllByRole('option');
+    expect(options.map((option) => option.textContent)).not.toContain('Followed the suggestion');
+    expect(options).toHaveLength(6);
+  });
+
+  it('focuses the first kind and marks the group invalid when the kind is missing', async () => {
+    api.getCustomer.mockResolvedValue(profile(false));
+    renderWithQuery(<CustomerDetailPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Flag customer' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save flag' }));
+    const group = screen.getByRole('radiogroup');
+    expect(group).toHaveAttribute('aria-invalid', 'true');
+    expect(group).toHaveAttribute('aria-describedby', 'flag-kind-error');
+    expect(screen.getAllByRole('radio')[0]).toHaveFocus();
+  });
+
+  it('closes, refetches, and returns focus to the opener after a set', async () => {
+    api.getCustomer.mockResolvedValueOnce(profile(false)).mockResolvedValue(profile(true));
+    api.setCustomerFlag.mockResolvedValue({});
+    renderWithQuery(<CustomerDetailPage />);
+    const opener = await screen.findByRole('button', { name: 'Flag customer' });
+    await userEvent.click(opener);
+    await userEvent.click(screen.getByRole('radio', { name: 'Fake orders' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save flag' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.getCustomer.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('keeps the title it opened with after STALE_RECORD reloads the profile', async () => {
+    api.getCustomer.mockResolvedValueOnce(profile(false)).mockResolvedValue(profile(true));
+    api.setCustomerFlag.mockRejectedValue(new ApiError(409, { code: 'STALE_RECORD' }));
+    renderWithQuery(<CustomerDetailPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Flag customer' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Fake orders' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save flag' }));
+    await screen.findByRole('alert');
+    await waitFor(() => expect(api.getCustomer.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(screen.getByRole('dialog', { name: 'Flag this customer' })).toBeVisible();
+  });
+
+  it('closes, refetches, and focuses Flag customer after a clear', async () => {
+    api.getCustomer.mockResolvedValueOnce(profile(true)).mockResolvedValue(profile(false));
+    api.clearCustomerFlag.mockResolvedValue({});
+    renderWithQuery(<CustomerDetailPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Clear flag' }));
+    await userEvent.selectOptions(screen.getByLabelText('Reason'), 'customer_settled');
+    await userEvent.click(screen.getByRole('button', { name: 'Clear flag', hidden: false }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(api.clearCustomerFlag).toHaveBeenCalledWith(CUSTOMER_ID, {
+      reasonCode: 'customer_settled',
+      expectedUpdatedAt: '2026-11-03T10:00:00.000Z',
+    });
+    expect(api.getCustomer.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Flag customer' })).toHaveFocus(),
+    );
+  });
+
+  it.each([
+    ['STALE_RECORD', 'This customer changed while you were looking'],
+    ['NOT_FLAGGED', 'This customer is not flagged any more.'],
+  ])('keeps the clear dialog open on %s without echoing anything typed', async (code, text) => {
+    api.getCustomer.mockResolvedValue(profile(true));
+    api.clearCustomerFlag.mockRejectedValue(new ApiError(409, { code }));
+    renderWithQuery(<CustomerDetailPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Clear flag' }));
+    await userEvent.selectOptions(screen.getByLabelText('Reason'), 'customer_settled');
+    await userEvent.click(screen.getByRole('button', { name: 'Clear flag', hidden: false }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(text);
+    expect(alert).not.toHaveTextContent('x');
+    expect(screen.getByRole('dialog', { name: 'Clear the flag' })).toBeVisible();
   });
 });

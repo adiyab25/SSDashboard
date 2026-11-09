@@ -131,7 +131,7 @@ export function CustomerSearchPanel({ enabled }: { enabled: boolean }) {
           aria-pressed={submitted?.kind === 'flagged'}
           onClick={() => {
             setInputError(null);
-            if (submitted?.kind === 'flagged') void query.refetch();
+            if (submitted?.kind === 'flagged') setSubmitted(null);
             else setSubmitted({ kind: 'flagged', text: '' });
           }}
         >

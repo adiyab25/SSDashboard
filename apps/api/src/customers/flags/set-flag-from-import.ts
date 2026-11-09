@@ -1,6 +1,7 @@
 import type { CustomerRiskFlag } from '@ssdashboard/contracts';
 import { sql } from '@ssdashboard/db';
 import { pgArray, type Executor, type Transaction } from '../../database/sql.js';
+import { nextStampOf } from '../customer-stamp.js';
 import { CustomersError } from '../customers.errors.js';
 
 /** What `CustomersService.setFlagFromImport` did (spec 0014 AC-12). */
@@ -64,7 +65,8 @@ export async function setFlagFromImport(
   await tx.execute(sql`
     UPDATE customers
     SET risk_flag = ${kind}, risk_flag_source = 'blacklist_import', risk_flag_note = NULL,
-        risk_flag_set_at = now(), risk_flag_set_by = NULL, updated_at = now()
+        risk_flag_set_at = now(), risk_flag_set_by = NULL,
+        updated_at = ${nextStampOf(ids)}
     WHERE id = ${canonicalId}::uuid`);
   return 'set';
 }

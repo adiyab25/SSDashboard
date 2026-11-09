@@ -1174,6 +1174,118 @@ describe('customers by phone', { timeout: 180_000 }, () => {
       }
     });
 
+    // Review m1 and m4 of milestone 3: merge and undo stamp after their locks, never `now()`.
+    const undoMerge = (mergeId: string) =>
+      send('POST', `/customers/merges/${mergeId}/undo`, { reasonCode: 'wrong_merge' });
+    const mergeIdOf = (reply: { body: unknown }) => (reply.body as { mergeId: string }).mergeId;
+
+    it('moves the stamp past a flag set that committed while a merge waited, so a clear with the set’s stamp is STALE_RECORD', async () => {
+      const a = (await link({ phone: newPhone() })).customerId as string;
+      const b = (await link({ phone: newPhone() })).customerId as string;
+      await flagAs(b, 'fake');
+
+      let setStamp = '';
+      const merged = await holdingLockOf(
+        a,
+        () => merge(a, b),
+        async (client) => {
+          // A flag set commits while the merge waits for the lock: its stamp is read after the
+          // merge's transaction began, so it is newer than that transaction's now().
+          const result = (await client.query(
+            `UPDATE customers
+             SET risk_flag = 'returner', risk_flag_source = 'blacklist_import',
+                 risk_flag_set_at = clock_timestamp(), updated_at = clock_timestamp()
+             WHERE id = $1
+             RETURNING to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stamp`,
+            [a],
+          )) as { rows: { stamp: string }[] };
+          setStamp = result.rows[0]?.stamp ?? '';
+        },
+      );
+
+      expect(merged.status, merged.text).toBe(201);
+      expect(setStamp).not.toBe('');
+      expect((await stampOf(a)) > setStamp).toBe(true);
+      const cleared = await clearFlag(a, {
+        reasonCode: 'flag_mistaken',
+        expectedUpdatedAt: setStamp,
+      });
+      expect(cleared.status).toBe(409);
+      expect(cleared.body).toMatchObject({ code: 'STALE_RECORD' });
+      expect(await row(b)).toMatchObject({
+        risk_flag: 'fake',
+        risk_flag_source: 'blacklist_import',
+      });
+      expect((await row(a))?.risk_flag).toBe('returner');
+    });
+
+    it('gives consistent outcomes to an undo racing a flag clear, never a 500', async () => {
+      for (let round = 0; round < 5; round += 1) {
+        const a = (await link({ phone: newPhone() })).customerId as string;
+        const b = (await link({ phone: newPhone() })).customerId as string;
+        await setFlag(a, { kind: 'returner', expectedUpdatedAt: await stampOf(a) });
+        await flagAs(b, 'fake');
+        const made = await merge(a, b);
+        expect(made.status, made.text).toBe(201);
+        const stamp = await stampOf(a);
+
+        const [undone, cleared] = await Promise.all([
+          undoMerge(mergeIdOf(made)),
+          clearFlag(a, { reasonCode: 'flag_mistaken', expectedUpdatedAt: stamp }),
+        ]);
+
+        // The undo checks no stamp, so it always lands; the clear either ran first and emptied
+        // both flags, or came second and found the restored record gone from the stamp it read.
+        expect(undone.status, undone.text).toBe(200);
+        expect([204, 409]).toContain(cleared.status);
+        if (cleared.status === 409) {
+          expect(cleared.body).toMatchObject({ code: 'STALE_RECORD' });
+          expect((await row(a))?.risk_flag).toBe('returner');
+          expect((await row(b))?.risk_flag).toBe('fake');
+        } else {
+          expect((await row(a))?.risk_flag).toBeNull();
+          expect((await row(b))?.risk_flag).toBeNull();
+        }
+        expect(
+          await count(
+            `SELECT count(*) AS n FROM customers WHERE id = $1 AND merged_into_id IS NULL`,
+            [b],
+          ),
+        ).toBe(1);
+      }
+    });
+
+    it('after an undo the survivor’s stamp steps back to its value before the merge and the restored record’s moves forward', async () => {
+      const a = (await link({ phone: newPhone() })).customerId as string;
+      const b = (await link({ phone: newPhone() })).customerId as string;
+      const aBefore = await stampOf(a);
+      const bBefore = await stampOf(b);
+      const made = await merge(a, b);
+      expect(made.status, made.text).toBe(201);
+      const whileMerged = await stampOf(a);
+      expect(whileMerged > aBefore).toBe(true);
+
+      expect((await undoMerge(mergeIdOf(made))).status).toBe(200);
+
+      // The survivor reads exactly as she did before the merge, so her old stamp is hers again.
+      expect(await stampOf(a)).toBe(aBefore);
+      const bAfter = await stampOf(b);
+      expect(bAfter > whileMerged).toBe(true);
+      // A stamp issued while the two were one customer is stale on both.
+      for (const id of [a, b]) {
+        const reply = await setFlag(id, { kind: 'refuser', expectedUpdatedAt: whileMerged });
+        expect([id, reply.status, (reply.body as { code: string }).code]).toEqual([
+          id,
+          409,
+          'STALE_RECORD',
+        ]);
+      }
+      // The restored record's stamp from before the merge is stale; the survivor's is not.
+      expect((await setFlag(b, { kind: 'refuser', expectedUpdatedAt: bBefore })).status).toBe(409);
+      expect((await setFlag(b, { kind: 'refuser', expectedUpdatedAt: bAfter })).status).toBe(200);
+      expect((await setFlag(a, { kind: 'refuser', expectedUpdatedAt: aBefore })).status).toBe(200);
+    });
+
     it('setFlagFromImport answers CUSTOMER_CHANGED when a merge moved the id set while it waited', async () => {
       const a = (await link({ phone: newPhone() })).customerId as string;
       const b = (await link({ phone: newPhone() })).customerId as string;

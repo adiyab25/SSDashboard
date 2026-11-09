@@ -3,7 +3,7 @@
 import type { CustomerProfile } from '@ssdashboard/contracts';
 import { Button } from '@ssdashboard/ui/components/button';
 import { FlagIcon, FlagOffIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CustomerClearFlagDialog } from './customer-clear-flag-dialog';
 import { CustomerFlagDialog } from './customer-flag-dialog';
@@ -16,10 +16,11 @@ import { CustomerFlagDialog } from './customer-flag-dialog';
 export function CustomerFlagActions({ profile }: { profile: CustomerProfile }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<'set' | 'clear' | null>(null);
+  const setButton = useRef<HTMLButtonElement>(null);
   const flagged = profile.flag !== null;
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen('set')}>
+      <Button ref={setButton} size="sm" variant="outline" onClick={() => setOpen('set')}>
         <FlagIcon aria-hidden data-icon="inline-start" />
         {flagged ? t('customers.profile.flagCard.change') : t('customers.profile.flagCard.set')}
       </Button>
@@ -31,7 +32,11 @@ export function CustomerFlagActions({ profile }: { profile: CustomerProfile }) {
       )}
       {open === 'set' && <CustomerFlagDialog profile={profile} onClose={() => setOpen(null)} />}
       {open === 'clear' && (
-        <CustomerClearFlagDialog profile={profile} onClose={() => setOpen(null)} />
+        <CustomerClearFlagDialog
+          profile={profile}
+          focusAfterClear={setButton}
+          onClose={() => setOpen(null)}
+        />
       )}
     </>
   );

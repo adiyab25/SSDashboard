@@ -12,6 +12,7 @@ import { pgArray, type Transaction } from '../../database/sql.js';
 import { briefRows } from '../customer-briefs.js';
 import { CustomersError, MergeAlreadyUndone, MergeNotLatest } from '../customers.errors.js';
 import { CustomersService } from '../customers.service.js';
+import { nextStampOf } from '../customer-stamp.js';
 
 /** The handler code of the audit screen's undo of `customer.merged` (spec 0014, Audit actions). */
 export const MERGE_UNDO_HANDLER = 'customers.merge_undo';
@@ -133,8 +134,11 @@ export class CustomerMerges {
     }
 
     const repointed = mergedIds.filter((id) => id !== mergedId);
+    // Stamped after the locks over both sets, so the survivor's stamp moves past any write that
+    // committed while this merge waited (review m1 of milestone 3).
     await tx.execute(sql`
-      UPDATE customers SET merged_into_id = ${survivorId}::uuid, updated_at = now()
+      UPDATE customers
+      SET merged_into_id = ${survivorId}::uuid, updated_at = ${nextStampOf([...survivorIds, ...mergedIds])}
       WHERE id = ${mergedId}::uuid OR merged_into_id = ${mergedId}::uuid`);
     const mergeId = (
       await tx.execute<{ id: string }>(sql`
@@ -270,12 +274,20 @@ export class CustomerMerges {
       throw new MergeNotLatest();
     }
 
+    // One stamp for every moved row, read after the locks over the survivor's whole set (review
+    // m1 of milestone 3): the restored customer's stamp is newer than any the survivor answered.
+    const stamp = (
+      await tx.execute<{ at: string }>(sql`
+        SELECT ${nextStampOf(await this.customers.idsOf(merge.survivor_id, tx))}::text AS at`)
+    ).rows[0]?.at;
+    if (stamp === undefined) throw new Error('The undo stamp read returned no row');
     await tx.execute(sql`
-      UPDATE customers SET merged_into_id = NULL, updated_at = now()
+      UPDATE customers SET merged_into_id = NULL, updated_at = ${stamp}::timestamptz
       WHERE id = ${merge.merged_id}::uuid`);
     if (merge.repointed_ids.length > 0) {
       const moved = await tx.execute<{ id: string }>(sql`
-        UPDATE customers SET merged_into_id = ${merge.merged_id}::uuid, updated_at = now()
+        UPDATE customers
+        SET merged_into_id = ${merge.merged_id}::uuid, updated_at = ${stamp}::timestamptz
         WHERE id = ANY(${pgArray(merge.repointed_ids)}::uuid[])
           AND merged_into_id = ${merge.survivor_id}::uuid
         RETURNING id`);

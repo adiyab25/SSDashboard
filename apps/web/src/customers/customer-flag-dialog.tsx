@@ -22,16 +22,18 @@ import { RadioGroup, RadioGroupItem } from '@ssdashboard/ui/components/radio-gro
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { refetchAfterWrite } from '@/api/refetch-after-write';
+import { useFormat } from '@/i18n/use-format';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { customerKeys, setCustomerFlag } from './customers-api';
+import { customerSelectClass } from './customer-select-class';
 import { flagErrorKey, type FlagErrorKey } from './flag-error-key';
 
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
+/** The reasons a person may pick by hand: `suggestion_applied` is kept for the one tap apply of a shown suggestion (AC-13). */
+const MANUAL_REASONS = CustomerFlagReasonCode.exclude(['suggestion_applied']).options;
 
 interface Props {
   /** The profile being flagged: its `updatedAt` is sent back as `expectedUpdatedAt`. */
@@ -49,6 +51,10 @@ export function CustomerFlagDialog({ profile, onClose }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const returnFocus = useReturnFocus();
+  const format = useFormat();
+  const firstKind = useRef<HTMLButtonElement>(null);
+  // The title it opened with: a reload after STALE_RECORD must not rename the open dialog.
+  const [openedFlagged] = useState(profile.flag !== null);
   const [kind, setKind] = useState<CustomerRiskFlag | ''>(profile.flag?.kind ?? '');
   const [note, setNote] = useState(profile.flag?.note ?? '');
   const [reason, setReason] = useState<CustomerFlagReasonCode | ''>('');
@@ -60,6 +66,7 @@ export function CustomerFlagDialog({ profile, onClose }: Props) {
     event.preventDefault();
     if (kind === '') {
       setKindMissing(true);
+      firstKind.current?.focus();
       return;
     }
     setKindMissing(false);
@@ -93,27 +100,29 @@ export function CustomerFlagDialog({ profile, onClose }: Props) {
       >
         <DialogHeader>
           <DialogTitle>
-            {profile.flag
+            {openedFlagged
               ? t('customers.flagging.set.changeTitle')
               : t('customers.flagging.set.title')}
           </DialogTitle>
           <DialogDescription>{t('customers.flagging.set.description')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={(event) => void onSubmit(event)} noValidate className="flex flex-col gap-4">
-          <fieldset
-            className="flex flex-col gap-2"
-            aria-describedby={kindMissing ? 'flag-kind-error' : undefined}
-          >
+          <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">{t('customers.flagging.set.kind')}</legend>
             <RadioGroup
               value={kind}
               onValueChange={(value) => setKind(CustomerRiskFlag.parse(value))}
-              aria-label={t('customers.flagging.set.kind')}
+              aria-invalid={kindMissing || undefined}
+              aria-describedby={kindMissing ? 'flag-kind-error' : undefined}
               className="gap-2"
             >
-              {CustomerRiskFlag.options.map((option) => (
+              {CustomerRiskFlag.options.map((option, index) => (
                 <div key={option} className="flex items-center gap-2">
-                  <RadioGroupItem value={option} id={`flag-kind-${option}`} />
+                  <RadioGroupItem
+                    ref={index === 0 ? firstKind : undefined}
+                    value={option}
+                    id={`flag-kind-${option}`}
+                  />
                   <Label htmlFor={`flag-kind-${option}`}>{t(`customers.flag.${option}`)}</Label>
                 </div>
               ))}
@@ -133,14 +142,14 @@ export function CustomerFlagDialog({ profile, onClose }: Props) {
               onChange={(event) => setNote(event.target.value)}
             />
             <FieldDescription id="flag-note-hint">
-              {t('customers.flagging.set.noteHint', { max: CUSTOMER_FLAG_NOTE_MAX })}
+              {t('customers.flagging.set.noteHint', { max: format.number(CUSTOMER_FLAG_NOTE_MAX) })}
             </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="flag-reason">{t('customers.flagging.set.reason')}</FieldLabel>
             <select
               id="flag-reason"
-              className={SELECT}
+              className={customerSelectClass}
               value={reason}
               onChange={(event) => {
                 const parsed = CustomerFlagReasonCode.safeParse(event.target.value);
@@ -148,7 +157,7 @@ export function CustomerFlagDialog({ profile, onClose }: Props) {
               }}
             >
               <option value="">{t('customers.flagging.set.reasonNone')}</option>
-              {CustomerFlagReasonCode.options.map((code) => (
+              {MANUAL_REASONS.map((code) => (
                 <option key={code} value={code}>
                   {t(`customers.flagging.set.reasons.${code}`)}
                 </option>
