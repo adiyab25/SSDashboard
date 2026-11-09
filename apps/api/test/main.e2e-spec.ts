@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { get } from 'node:http';
 import { HealthResponse } from '@ssdashboard/contracts';
 import { runMigrations } from '@ssdashboard/db';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -50,6 +51,21 @@ describe('api entry point (dist/main.js)', { timeout: 30_000 }, () => {
       version: '9.9.9',
       database: 'up',
     });
+  });
+
+  it('keeps an idle connection open longer than the proxies in front of it do', async () => {
+    const base = await startApi({ DATABASE_URL: devDatabaseUrl() });
+
+    // node:http, not fetch: the Keep-Alive header is what the server tells every client.
+    const keepAlive = await new Promise<string | string[] | undefined>((resolve, reject) => {
+      get(`${base}/api/health`, (response) => {
+        response.resume();
+        resolve(response.headers['keep-alive']);
+      }).on('error', reject);
+    });
+
+    // Caddy keeps an idle upstream connection for 2 minutes; the api must outlast it (130 s).
+    expect(keepAlive).toBe('timeout=130');
   });
 
   it('serves routes only under the /api prefix that Caddy forwards', async () => {
