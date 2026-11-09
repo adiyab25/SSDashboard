@@ -1,7 +1,7 @@
 # 0014. Customers by phone: one customer per normalized phone, merged and undone as daily work, with one timeline read through each hat
 
 **Date**: 2026-11-07
-**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; milestone 1 is built; milestone 2's api, tasks 7 to 9, is built)
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; milestones 1 and 2 are built)
 **Feature**: [scope feature 14, Customers by phone](../../scope/confirmation-to-cash.md) (slice 1a, Core, Beta)
 **Depends on**: the feature 4 baseline as built ([spec 0002 customers child](../0002-core-data-model/0002-customers-credit-tasks.md): `customers`, `customer_phones`, `customer_external_ids`, `customer_merges`, `EgyptianPhone`); hats ([spec 0008](../0008-roles-as-hats/index.md)); the audit trail and its undo registry ([spec 0010](../0010-audit-trail/index.md)); the settings registry of [spec 0009](../0009-settings-toggles-bundles/index.md) milestone 1 (milestone 3 here only). Milestone 4 needs `OrderQueries.forCustomers` and `OrderQueries.countsForCustomers` of spec 0013 (scope feature 16, its AC-21) and `ChannelsService.storeLabelsByConnection` of spec 0015. Specs 0013 (orders) and 0015 (Shopify) call this feature's `findOrCreate`, so milestone 1 lands before their first link.
 
@@ -261,7 +261,7 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (database, s
 8. [x] Audit codes `customer.merged`, `customer.unmerged`, `customer.merge_suggestion_dismissed`, `customer.phone_added` with labels in both languages; the handler `customers.merge_undo` registered from `onModuleInit`, satisfies **AC-6**, **AC-8**, **AC-10**, **AC-19**
 9. [x] Routes: merges, undo, suggestions list and dismiss, with `FIXTURES`, satisfies **AC-6**, **AC-8**, **AC-9**, **AC-16**
 10. [x] Web: `/customers/merge` compare and merge (prefilled from `?a=&b=`), the "To review" tab with one tap merge and dismiss, the toast with Undo, merges listed on the profile with Undo, satisfies **AC-7**, **AC-9**
-11. [ ] Tests: `apps/api/test/customers-merge.e2e-spec.ts` (the chain scenario, twenty parallel merges, undo from both screens, other modules' rows untouched) and `apps/api/test/customers-audit.e2e-spec.ts` (every new code writes its entry, the proof file); web e2e for merge and undo by keyboard, satisfies **AC-6**, **AC-7**, **AC-8**, **AC-9**, **AC-10** (progress: both api suites are built and pass; the web e2e for merge, undo by keyboard from the toast, undo from the profile, and the To review tab is `apps/web/e2e/customers-merge.spec.ts`, built with task 10)
+11. [x] Tests: `apps/api/test/customers-merge.e2e-spec.ts` (the chain scenario, twenty parallel merges, undo from both screens, other modules' rows untouched) and `apps/api/test/customers-audit.e2e-spec.ts` (every new code writes its entry, the proof file); web e2e for merge and undo by keyboard, satisfies **AC-6**, **AC-7**, **AC-8**, **AC-9**, **AC-10** (the web e2e for merge, undo by keyboard from the toast, undo from the profile, and the To review tab is `apps/web/e2e/customers-merge.spec.ts`, with the undo from `/audit` of a merge made on `/customers/merge`)
 
 **Done when** milestone 1's commands pass with these files added, and an undo from `/audit` of a merge made on `/customers/merge` restores both records.
 
