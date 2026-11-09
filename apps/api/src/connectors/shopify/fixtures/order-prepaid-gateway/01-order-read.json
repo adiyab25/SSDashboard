@@ -352,6 +352,7 @@
           "transactions": [
             {
               "id": "gid://shopify/OrderTransaction/2220000005001",
+              "parentTransaction": null,
               "kind": "SALE",
               "status": "SUCCESS",
               "gateway": "Fixture Card Gateway",

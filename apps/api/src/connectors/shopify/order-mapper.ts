@@ -30,6 +30,12 @@ const MoneyBag = z.object({ shopMoney: z.object({ amount: z.string() }) });
 
 const PageInfo = z.object({ hasNextPage: z.boolean() });
 
+/**
+ * A Shopify `DateTime` as an ISO 8601 instant with its offset (security review L3): a value that
+ * is not one fails the read as `ORDER_UNREADABLE` instead of reaching a SQL cast or `new Date`.
+ */
+const Instant = z.iso.datetime({ offset: true });
+
 const Visit = z
   .object({
     landingPage: z.string().nullable(),
@@ -54,10 +60,10 @@ const Visit = z
 export const ShopifyOrder = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  createdAt: Instant,
+  updatedAt: Instant,
   test: z.boolean(),
-  cancelledAt: z.string().nullable(),
+  cancelledAt: Instant.nullable(),
   cancelReason: z.string().nullable(),
   paymentGatewayNames: z.array(z.string()),
   totalPriceSet: MoneyBag,
@@ -116,9 +122,13 @@ export const ShopifyOrder = z.object({
     ),
     pageInfo: PageInfo,
   }),
-  fulfillments: z.array(z.object({ id: z.string(), status: z.string(), createdAt: z.string() })),
+  fulfillments: z.array(z.object({ id: z.string(), status: z.string(), createdAt: Instant })),
   transactions: z.array(
     z.object({
+      /** Kept on the mapping at creation (`state.creationTransactionIds`, lead decision D10). */
+      id: z.string().min(1),
+      /** For a refund, the sale or capture it refunds (D10 counts refunds of creation sales). */
+      parentTransaction: z.object({ id: z.string() }).nullable(),
       kind: z.string(),
       status: z.string(),
       gateway: z.string().nullable(),
@@ -470,21 +480,74 @@ export function shopifyPaymentOf(
 /**
  * The order's payment gateway names (cleaned of control and direction characters and capped, as
  * `unmappedGateways` lists them) with the payment method `config.gatewayMethods` gives each now,
- * null when unmapped. The inbox job keeps it on the order mapping (`state.gatewayMethods`), so a
- * later read back sees when a manager mapped a gateway differently (the rederive of spec 0013
- * AC-25 c), and never mistakes a new transaction (a "mark as paid") for a mapping change.
+ * null when unmapped. The inbox job keeps it once, at creation (`state.creationGateways`, lead
+ * decision D10), so a later read back sees when a manager mapped one of those gateways
+ * differently (the rederive of spec 0013 AC-25 c); a gateway that appears later is never one.
  */
 export function gatewayMappingOf(
   order: Pick<ShopifyOrder, 'paymentGatewayNames'>,
   context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
 ): Record<string, OrderPaymentMethod | null> {
-  const mapping: Record<string, OrderPaymentMethod | null> = {};
+  const entries = new Map<string, OrderPaymentMethod | null>();
   for (const name of order.paymentGatewayNames) {
     const clean = cleanText(name, GATEWAY_NAME_MAX);
-    if (clean === null || Object.hasOwn(mapping, clean)) continue;
-    mapping[clean] = entryOf(context.gatewayMethods, name) ?? null;
+    if (clean === null || entries.has(clean)) continue;
+    entries.set(clean, entryOf(context.gatewayMethods, name) ?? null);
   }
-  return mapping;
+  // Built with `Object.fromEntries`, so a gateway named `__proto__` stays an own key (L5).
+  return Object.fromEntries(entries);
+}
+
+/** Transaction kinds that count as a payment for the prepaid rule. */
+const PAYMENT_KINDS: readonly string[] = ['SALE', 'CAPTURE'];
+
+/**
+ * The ids of the order's successful `SALE` and `CAPTURE` transactions, whatever their gateway:
+ * the payments that exist when the order is created, kept immutable on the mapping
+ * (`state.creationTransactionIds`, lead decision D10), so a later rederive counts only them.
+ */
+export function paymentTransactionIdsOf(order: Pick<ShopifyOrder, 'transactions'>): string[] {
+  return order.transactions
+    .filter((transaction) => transaction.status === 'SUCCESS')
+    .filter((transaction) => PAYMENT_KINDS.includes(transaction.kind))
+    .map((transaction) => transaction.id);
+}
+
+/** What an order looked like at creation, as the mapping keeps it (lead decision D10). */
+export interface ShopifyCreationFacts {
+  /** The gateway names at creation (cleaned), as `state.creationGateways` keeps them. */
+  readonly gatewayNames: readonly string[];
+  /** The successful sale and capture transaction ids at creation. */
+  readonly transactionIds: readonly string[];
+}
+
+/**
+ * The payment of an order derived again from the facts at its creation only (lead decision D10,
+ * spec 0013 AC-25 c): the creation rules of `paymentOf` with the current `config.gatewayMethods`,
+ * over the gateway names the order had at creation and the transactions recorded then (and the
+ * refunds whose parent is one of them). A gateway or a sale added later (a "mark as paid"
+ * `manual` sale) never counts. Throws `TRANSACTIONS_TRUNCATED` on a full transaction page.
+ */
+export function creationPaymentOf(
+  order: ShopifyOrder,
+  context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
+  facts: ShopifyCreationFacts,
+): RederivePaymentMethodInput {
+  if (order.transactions.length >= ORDER_READ_TRANSACTIONS_PAGE) {
+    throw new ShopifyOrderMappingError('TRANSACTIONS_TRUNCATED');
+  }
+  const ids = new Set(facts.transactionIds);
+  const transactions = order.transactions.filter((transaction) =>
+    PAYMENT_KINDS.includes(transaction.kind)
+      ? ids.has(transaction.id)
+      : transaction.kind === 'REFUND' &&
+        transaction.parentTransaction !== null &&
+        ids.has(transaction.parentTransaction.id),
+  );
+  return shopifyPaymentOf(
+    { ...order, paymentGatewayNames: [...facts.gatewayNames], transactions },
+    context,
+  );
 }
 
 /**

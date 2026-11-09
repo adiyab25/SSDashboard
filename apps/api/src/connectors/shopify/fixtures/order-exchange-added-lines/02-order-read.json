@@ -322,6 +322,7 @@
           "transactions": [
             {
               "id": "gid://shopify/OrderTransaction/2220000008001",
+              "parentTransaction": null,
               "kind": "SALE",
               "status": "SUCCESS",
               "gateway": "manual",
@@ -340,6 +341,9 @@
             },
             {
               "id": "gid://shopify/OrderTransaction/2220000008002",
+              "parentTransaction": {
+                "id": "gid://shopify/OrderTransaction/2220000008001"
+              },
               "kind": "REFUND",
               "status": "SUCCESS",
               "gateway": "manual",

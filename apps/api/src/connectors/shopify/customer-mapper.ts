@@ -11,7 +11,8 @@ import { z } from 'zod';
  */
 export const ShopifyCustomer = z.object({
   id: z.string().min(1),
-  updatedAt: z.string(),
+  /** An ISO 8601 instant with its offset (security review L3), else `CUSTOMER_UNREADABLE`. */
+  updatedAt: z.iso.datetime({ offset: true }),
   firstName: z.string().nullable(),
   lastName: z.string().nullable(),
   defaultPhoneNumber: z.object({ phoneNumber: z.string() }).nullable(),

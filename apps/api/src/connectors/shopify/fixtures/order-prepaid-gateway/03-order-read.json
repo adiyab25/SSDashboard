@@ -294,6 +294,7 @@
           "transactions": [
             {
               "id": "gid://shopify/OrderTransaction/2220000005101",
+              "parentTransaction": null,
               "kind": "SALE",
               "status": "SUCCESS",
               "gateway": "manual",

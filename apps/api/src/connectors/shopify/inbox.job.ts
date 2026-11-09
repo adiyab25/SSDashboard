@@ -151,6 +151,11 @@ function labelOf(order: ShopifyOrder): string | null {
   return shopifyOrderName(order) || null;
 }
 
+/** A Shopify instant the schema checked, as the UTC ISO text bound in SQL (security review L3). */
+function isoOf(instant: string): string {
+  return new Date(instant).toISOString();
+}
+
 /** `OrderNumberTaken` as the inbox's upper case failure code `ORDER_NUMBER_TAKEN`. */
 export function upperCode(code: string): string {
   return code
@@ -208,10 +213,10 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  * - Then, inside `OrderTransactions.run` (rerunnable, no provider call), it locks the event and the
  *   order mapping again and decides: a test order is `ignored` `test_order`; a known order (a
  *   mapping exists) is `ignored` `stale` when the snapshot is not newer than `external_version`,
- *   else applied by `applyKnown` (task 9: cancel, first fulfillment, late links, the edit with its
- *   `held_write_back_open` and `edit_not_applied` outcomes, the payment rederive); a new order
- *   writes its mapping first (`appliedLineIds`, `appliedLines`, `unmappedLines`, `discountCodes`,
- *   `unmappedGateways`, `gatewayMethods`), then `OrderIntake.createFromChannel` (actor
+ *   else applied by `applyKnown` (task 9: cancel, late links, the edit with its
+ *   `held_write_back_open` and `edit_not_applied` outcomes, first fulfillment, the payment
+ *   rederive of lead decision D10); a new order writes its mapping first (`createdOrderState`,
+ *   with the creation facts of D10), then `OrderIntake.createFromChannel` (actor
  *   `system_job`, or `import` as the mapper names for a closed order before go live), the
  *   mapping's `local_id`, a live order's cancel or first fulfillment (AC-13), and
  *   `last_order_at`. An empty read back is `ignored` `not_visible`. Every other `received` event
@@ -226,8 +231,9 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *
  * Variant mappings come from `connection_external_ids`; none exist before task 8, so lines stay
  * unmapped and are listed in the mapping's `state.unmappedLines` (the product read before mapping,
- * review M8, waits for task 8; a line whose variant maps later is linked on the next read back). Law 151: it never logs, throws, or stores a name, phone, address,
- * note, or line title; its log lines and output carry ids and codes only.
+ * review M8, waits for task 8; a line whose variant maps later is linked on the next read back).
+ * Law 151: it never logs, throws, or stores a name, phone, address, note, or line title; its log
+ * lines and output carry ids and codes only.
  */
 @Injectable()
 export class InboxJob {
@@ -488,7 +494,7 @@ export class InboxJob {
           WHERE connection_id = ${event.connection_id}::uuid AND subject_type = 'customer'
             AND subject_external_id = ${gid} AND status = 'processed' AND id <> ${event.id}::uuid
             AND (outcome IS NULL OR outcome = 'no_phone')
-            AND subject_version >= ${customer.updatedAt}::timestamptz
+            AND subject_version >= ${input.seenAt.toISOString()}::timestamptz
           LIMIT 1`);
         if (rows[0]) return this.end(tx, event, null, { status: 'ignored', outcome: 'stale' });
         if (input.phone === null) {
@@ -561,13 +567,18 @@ export class InboxJob {
     ];
     const variants = await this.variantMappings(tx, event.connection_id, variantGids);
     const mapped = mapShopifyOrder(order, { ...base, variants });
+    // A live order Shopify already cancelled or fulfilled takes its named move right after its
+    // creation (AC-13); an imported order's first states already hold it (AC-17).
+    const live = mapped.actor === 'system_job' && !mapped.input.firstStates;
+    const cancelReasonCode = live && order.cancelledAt !== null ? cancelReasonCodeOf(order) : null;
+    const first = live && cancelReasonCode === null ? firstActiveFulfillmentOf(order) : null;
 
     // The connector's own rows first, then orders (AC-7).
-    const state = createdOrderState(order, base, mapped.input.lines, mapped);
+    const state = createdOrderState(order, base, mapped.input.lines, mapped, first?.id ?? null);
     const row = await tx.execute<{ id: string }>(sql`
       INSERT INTO connection_external_ids (connection_id, entity, external_id, external_version,
                                            state)
-      VALUES (${event.connection_id}::uuid, 'order', ${gid}, ${order.updatedAt}::timestamptz,
+      VALUES (${event.connection_id}::uuid, 'order', ${gid}, ${isoOf(order.updatedAt)}::timestamptz,
               ${JSON.stringify(state)}::jsonb)
       ON CONFLICT ON CONSTRAINT connection_external_ids_unique DO UPDATE
         SET external_version = EXCLUDED.external_version, state = EXCLUDED.state,
@@ -583,21 +594,21 @@ export class InboxJob {
     await tx.execute(sql`
       UPDATE connection_external_ids SET local_id = ${created.orderId}::uuid, updated_at = now()
       WHERE id = ${mappingId}::uuid`);
-    // A live order Shopify already cancelled or fulfilled takes its named move at once (AC-13);
-    // an imported order's first states already hold it (AC-17).
-    if (created.created && mapped.actor === 'system_job' && !mapped.input.firstStates) {
+    let outcome: string | null = mapped.flags.includes('gift_tag_not_free')
+      ? 'gift_tag_not_free'
+      : null;
+    if (created.created) {
       const moveActor: ChannelActor = { type: 'system_job', job: INBOX_JOB_NAME, jobId };
-      const cancelReasonCode = order.cancelledAt !== null ? cancelReasonCodeOf(order) : null;
-      const first = firstActiveFulfillmentOf(order);
       if (cancelReasonCode !== null) {
-        await this.intake.cancelFromChannel(tx, created.orderId, cancelReasonCode, moveActor);
-      } else if (first !== null) {
-        await this.transitions.recordCarrierDelivery(
+        const cancel = await this.intake.cancelFromChannel(
           tx,
           created.orderId,
-          { at: new Date(first.createdAt), source: { type: 'shopify_fulfillment', id: first.id } },
+          cancelReasonCode,
           moveActor,
         );
+        if (!cancel.applied) outcome = 'cancel_not_applied';
+      } else if (first !== null) {
+        await this.recordDelivery(tx, created.orderId, first.id, first.createdAt, moveActor);
       }
     }
 
@@ -616,28 +627,31 @@ export class InboxJob {
     }
     await tx.execute(sql`
       UPDATE connections SET last_order_at = now() WHERE id = ${event.connection_id}::uuid`);
-    const outcome = mapped.flags.includes('gift_tag_not_free') ? 'gift_tag_not_free' : null;
     return this.end(tx, event, label, { status: 'processed', outcome });
   }
 
   /**
-   * A newer read back of a known order (task 9; AC-9, AC-11, AC-13, AC-14), inside the unit, in
-   * this order (the plan is `planKnownOrder`, pure):
+   * A newer read back of a known order (task 9; AC-9, AC-11, AC-13, AC-14, lead decision D10),
+   * inside the unit, in this order (the plan is `planKnownOrder`, pure):
    *
-   * 1. A Shopify cancel: `cancelFromChannel` with `channel.<reason>`, and nothing else.
-   * 2. The first active fulfillment: `recordCarrierDelivery` with source `shopify_fulfillment` at
-   *    its `createdAt` (orders ignores a repeat, and takes the next one after it cleared the
-   *    freeze).
-   * 3. Late variant links of `state.unmappedLines` whose variant now maps
+   * 1. A Shopify cancel: `cancelFromChannel` with `channel.<reason>`, and nothing else; an answer
+   *    that applied nothing (`already_final`, `after_pickup`) is outcome `cancel_not_applied`.
+   * 2. Late variant links of `state.unmappedLines` whose variant now maps
    *    (`linkChannelLineVariant`), before the edit, so the link is never seen as a change; a link
    *    that orders refuses as `VariantUnknown` is planned again with that variant unmapped. Task 8
    *    builds the product read that makes new variant mappings; until then none exist.
-   * 4. `applyChannelEdit` with the snapshot (every open Shopify line while no fulfillment is
-   *    active; the held lines while one is). `write_back_open` ends the event `ignored`
-   *    `held_write_back_open`: the mapping and its version stay, so the read back that milestone 3
-   *    enqueues when the command syncs or is resolved applies it (task 13 seam, AC-14). Any other
-   *    refusal (orders raised `channel_edit_not_applied`) is outcome `edit_not_applied`.
-   * 5. `rederivePaymentMethod` when a gateway of the order maps to another method now;
+   * 3. `applyChannelEdit` with the snapshot: every open Shopify line while no fulfillment is active
+   *    and on the read where the first one appears (code review m1: the edit came before the
+   *    fulfillment froze it; the small window is that a line changed after the fulfillment but
+   *    before this first read of it also counts as an edit); afterwards the held lines.
+   *    `write_back_open` records the carrier delivery (step 4) and ends the event `ignored`
+   *    `held_write_back_open` without coalescing (security review L2): the mapping and its version
+   *    stay, so the read back that milestone 3 enqueues when the command syncs or is resolved
+   *    applies it (task 13 seam, AC-14). Any other refusal is outcome `edit_not_applied`.
+   * 4. The first active fulfillment: `recordCarrierDelivery` with source `shopify_fulfillment` at
+   *    its `createdAt` (orders ignores a repeat, and takes the next one after it cleared the
+   *    freeze); the mapping remembers it as `deliveryFulfillmentId`.
+   * 5. `rederivePaymentMethod` when the config maps a creation gateway differently (D10);
    *    `PaymentMethodLocked` is recorded on the mapping and left (outcome
    *    `payment_method_locked`).
    * 6. The mapping's `external_version` and `state` move to this read.
@@ -645,7 +659,7 @@ export class InboxJob {
    * Seams not built here: task 10's `exchange-by-edit.ts` takes the lines added while a
    * fulfillment is active and the refunds (`ChannelRefundRecorded`); task 9a's fulfillment stock
    * out calls `recordChannelStockOut`, `recordChannelFulfillmentCancelled`, and
-   * `recordChannelReturn` after step 2.
+   * `recordChannelReturn` after step 4.
    */
   private async applyKnown(
     tx: OrderTransaction,
@@ -671,21 +685,12 @@ export class InboxJob {
     let plan: KnownOrderPlan = planKnownOrder(order, { ...base, variants }, state);
 
     if (plan.cancelReasonCode !== null) {
-      await this.intake.cancelFromChannel(tx, orderId, plan.cancelReasonCode, actor);
+      const cancel = await this.intake.cancelFromChannel(tx, orderId, plan.cancelReasonCode, actor);
       await this.saveMapping(tx, mapping.id, order.updatedAt, state);
-      return this.end(tx, event, label, { status: 'processed', outcome: null });
-    }
-
-    if (plan.carrierDelivery !== null) {
-      await this.transitions.recordCarrierDelivery(
-        tx,
-        orderId,
-        {
-          at: new Date(plan.carrierDelivery.at),
-          source: { type: 'shopify_fulfillment', id: plan.carrierDelivery.id },
-        },
-        actor,
-      );
+      return this.end(tx, event, label, {
+        status: 'processed',
+        outcome: cancel.applied ? null : 'cancel_not_applied',
+      });
     }
 
     const linked = new Set<string>();
@@ -715,12 +720,29 @@ export class InboxJob {
     if (plan.snapshot !== null) {
       const result = await this.intake.applyChannelEdit(tx, orderId, plan.snapshot, actor);
       if (!result.applied && result.why === 'write_back_open') {
-        // AC-14: nothing changes and the version stays. TODO(spec 0015 task 13): when the open
-        // command syncs or is resolved, the outbound framework enqueues one read back of the order.
-        return this.end(tx, event, label, { status: 'ignored', outcome: 'held_write_back_open' });
+        // AC-13 still holds: the delivery fact is recorded (orders raises its own attention for
+        // the open command). AC-14: nothing else changes and the version stays.
+        // TODO(spec 0015 task 13): when the open command syncs or is resolved, the outbound
+        // framework enqueues one read back of the order.
+        if (plan.carrierDelivery !== null) {
+          const { id, at } = plan.carrierDelivery;
+          await this.recordDelivery(tx, orderId, id, at, actor);
+        }
+        return this.end(
+          tx,
+          event,
+          label,
+          { status: 'ignored', outcome: 'held_write_back_open' },
+          false,
+        );
       }
       editApplied = result.applied;
       if (!result.applied) outcome = 'edit_not_applied';
+    }
+
+    if (plan.carrierDelivery !== null) {
+      const { id, at } = plan.carrierDelivery;
+      await this.recordDelivery(tx, orderId, id, at, actor);
     }
 
     let paymentLocked = false;
@@ -734,14 +756,29 @@ export class InboxJob {
       }
     }
 
-    const next = nextKnownOrderState(state, plan, {
-      editApplied,
-      linked,
-      rederiveTried: plan.rederive !== null,
-      paymentLocked,
-    });
+    const next = nextKnownOrderState(state, plan, { editApplied, linked, paymentLocked });
     await this.saveMapping(tx, mapping.id, order.updatedAt, next);
     return this.end(tx, event, label, { status: 'processed', outcome });
+  }
+
+  /**
+   * Reports a Shopify fulfillment as the carrier delivery (AC-13): `recordCarrierDelivery` with
+   * source `shopify_fulfillment` (the fulfillment gid) at its `createdAt`, an ISO instant the
+   * schema already checked.
+   */
+  private async recordDelivery(
+    tx: OrderTransaction,
+    orderId: string,
+    fulfillmentId: string,
+    createdAt: string,
+    actor: ChannelActor,
+  ): Promise<void> {
+    await this.transitions.recordCarrierDelivery(
+      tx,
+      orderId,
+      { at: new Date(createdAt), source: { type: 'shopify_fulfillment', id: fulfillmentId } },
+      actor,
+    );
   }
 
   /** Moves an order mapping's version and state to an applied read back. */
@@ -753,7 +790,8 @@ export class InboxJob {
   ): Promise<void> {
     await tx.execute(sql`
       UPDATE connection_external_ids
-      SET external_version = ${version}::timestamptz, state = ${JSON.stringify(state)}::jsonb,
+      SET external_version = ${isoOf(version)}::timestamptz,
+          state = ${JSON.stringify(state)}::jsonb,
           updated_at = now()
       WHERE id = ${mappingId}::uuid`);
   }
@@ -775,15 +813,17 @@ export class InboxJob {
 
   /**
    * Ends the event and coalesces: the event takes its status, outcome, label, and processed time,
-   * and every other `received` order topic event of the same order received before this run's
-   * read back started is `processed` `coalesced` (AC-7). A later event (a change after the read)
-   * and other topics of the order (refunds, which wait for their own task) are left alone.
+   * and every other `received` event of the same subject and processed topics received before
+   * this run's read back started is `processed` `coalesced` (AC-7). A later event (a change after
+   * the read) and other topics (refunds, which wait for their own task) are left alone. A held
+   * edit passes `coalesce` false (security review L2): the other events keep their own jobs.
    */
   private async end(
     tx: Executor,
     event: EventRow,
     label: string | null,
     end: EventEnd,
+    coalesce = true,
   ): Promise<InboxOutcome> {
     await tx.execute(sql`
       UPDATE inbound_events
@@ -791,7 +831,7 @@ export class InboxJob {
           subject_label = coalesce(${label}, subject_label), processed_at = now()
       WHERE id = ${event.id}::uuid`);
     const topics = COALESCED_TOPICS[event.subject_type];
-    if (event.subject_external_id && topics) {
+    if (coalesce && event.subject_external_id && topics) {
       await tx.execute(sql`
         UPDATE inbound_events
         SET status = 'processed', outcome = 'coalesced',

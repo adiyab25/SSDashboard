@@ -1,9 +1,15 @@
 import { createHmac, randomUUID } from 'node:crypto';
+import type { LoggerService } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { SkuDetail } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { InboundEventFailed } from '../src/connectors/connectors.events.js';
+import { InboxJob } from '../src/connectors/shopify/inbox.job.js';
 import { ConnectionSecrets } from '../src/connectors/connections/connection-secrets.js';
 import { CustomersService } from '../src/customers/customers.service.js';
+import { OrderIntake } from '../src/orders/intake/order-intake.service.js';
 import { OrderTransitions } from '../src/orders/transitions/order-transitions.service.js';
+import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { WorkerModule } from '../src/worker.module.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import {
@@ -44,6 +50,16 @@ const CONFIG = JSON.stringify({
   gatewayMethods: { 'Cash on Delivery (COD)': 'cod', 'Fixture Card Gateway': 'instapay' },
 });
 
+/** Every log line either process writes while the suite runs (security review L6). */
+const logLines: string[] = [];
+const capture: LoggerService = {
+  log: (...args: unknown[]) => void logLines.push(args.map(String).join(' ')),
+  warn: (...args: unknown[]) => void logLines.push(args.map(String).join(' ')),
+  error: (...args: unknown[]) => void logLines.push(args.map(String).join(' ')),
+  debug: (...args: unknown[]) => void logLines.push(args.map(String).join(' ')),
+  verbose: (...args: unknown[]) => void logLines.push(args.map(String).join(' ')),
+};
+
 interface Planted {
   id: string;
   shopDomain: string;
@@ -68,9 +84,12 @@ describe(
     let worker: TestingModule;
     let refusingFetch: typeof fetch;
     const planted: string[] = [];
+    /** Every `InboundEventFailed` the worker published, as JSON (security review L6). */
+    const failedEvents: string[] = [];
+    let manager = '';
 
     /** Plants a Shopify store, its own channel, and an active connection sealed with `SECRET`. */
-    const plant = async (): Promise<Planted> => {
+    const plant = async (config: string = CONFIG): Promise<Planted> => {
       const t = randomUUID().slice(0, 8);
       const storeCode = `OF${t.toUpperCase()}`;
       const shopDomain = `ordersfx-${t}.myshopify.com`;
@@ -98,7 +117,7 @@ describe(
                                 credentials_updated_at, config, health)
        VALUES ($1::uuid, 'shopify', 'Orders store', $2::uuid, 'active', $3, $4, $5, 'WXYZ', now(),
                $6::jsonb, 'ok')`,
-        [id, storeId, shopDomain, sealed.ciphertext, sealed.keyVersion, CONFIG],
+        [id, storeId, shopDomain, sealed.ciphertext, sealed.keyVersion, config],
       );
       planted.push(id);
       return { id, shopDomain, storeId };
@@ -205,7 +224,16 @@ describe(
 
     beforeAll(async () => {
       api = await startInProcessApi();
+      api.app.useLogger(capture);
       worker = await Test.createTestingModule({ imports: [WorkerModule] }).compile();
+      worker.useLogger(capture);
+      worker
+        .get(DomainEvents)
+        .on(
+          InboundEventFailed,
+          (_tx, event) => void failedEvents.push(JSON.stringify(event)),
+          'orders-in-full-e2e',
+        );
       await worker.init();
 
       // The token exchange is answered from the recorded `connect-ok` grant; every other request
@@ -225,7 +253,7 @@ describe(
 
       // AC-10: the brand lists `gift-influencer` as an influencer gift (setting `shopify_gift_tags`).
       const boss = await api.addPerson(['manager']);
-      const manager = await api.signIn(boss.email);
+      manager = await api.signIn(boss.email);
       const put = await api.call(manager, 'PUT', '/api/settings/shopify_gift_tags', {
         value: { 'gift-influencer': 'influencer' },
         reason: 'orders in full e2e',
@@ -472,6 +500,442 @@ describe(
       }
     });
 
+    /** Row counts of the tables inbound processing must never write for these tests (AC-14). */
+    const ownedCounts = async (orderId: string) => {
+      const count = async (text: string, args: unknown[] = []) =>
+        Number((await api.owner.pool.query<{ n: string }>(text, args)).rows[0]?.n);
+      return {
+        movements: await count('SELECT count(*) AS n FROM stock_movements'),
+        credit: await count('SELECT count(*) AS n FROM credit_entries'),
+        cashEvents: await count(
+          `SELECT count(*) AS n FROM order_events WHERE order_id = $1::uuid AND machine = 'cash'`,
+          [orderId],
+        ),
+      };
+    };
+
+    it('takes a cancel that arrives after a fulfillment as the cancel alone, writing no stock, credit, or cash row (AC-13, AC-14)', async () => {
+      useShopifyScenarios('order-fulfilled-then-cancelled');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000017001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      const order = await orderOf(c, gid);
+      const before = await ownedCounts(order?.id as string);
+      expect(await arrive(c, 'orders/updated', gid, '2026-11-03T08:30:05Z')).toMatchObject({
+        status: 'processed',
+      });
+      expect(await ownedCounts(order?.id as string)).toEqual(before);
+      expect((await orderOf(c, gid))?.carrier_delivery_created_at).not.toBeNull();
+      expect(await arrive(c, 'orders/cancelled', gid, '2026-11-03T12:00:00Z')).toMatchObject({
+        status: 'processed',
+      });
+      // The cancel is the orders module's own rule: an unpaid order moves to nothing to collect, and nothing else.
+      const after = await ownedCounts(order?.id as string);
+      expect(after).toEqual({ ...before, cashEvents: before.cashEvents + 1 });
+      const cash = await api.owner.pool.query<{ to_state: string }>(
+        `SELECT to_state FROM order_events WHERE order_id = $1::uuid AND machine = 'cash' ORDER BY recorded_at DESC LIMIT 1`,
+        [order?.id],
+      );
+      expect(cash.rows[0]?.to_state).toBe('nothing_to_collect');
+      const { rows } = await api.owner.pool.query<{ cod: string }>(
+        `SELECT cod_collected_amount AS cod FROM orders WHERE id = $1::uuid`,
+        [order?.id],
+      );
+      expect(rows[0]?.cod).toBe('0.00');
+    });
+
+    it('answers a second Shopify cancel of an already cancelled order with processed cancel_not_applied and no new event (AC-13)', async () => {
+      useShopifyScenarios('order-cancelled-twice');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000016001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      await arrive(c, 'orders/cancelled', gid, '2026-11-02T12:00:00Z');
+      const order = await orderOf(c, gid);
+      const events = async () =>
+        Number(
+          (
+            await api.owner.pool.query<{ n: string }>(
+              `SELECT count(*) AS n FROM order_events WHERE order_id = $1::uuid`,
+              [order?.id],
+            )
+          ).rows[0]?.n,
+        );
+      const before = await events();
+      expect(await arrive(c, 'orders/updated', gid, '2026-11-02T12:30:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: 'cancel_not_applied',
+      });
+      expect(await events()).toBe(before);
+      expect((await orderOf(c, gid))?.fulfillment_state).toBe('cancelled');
+      expect((await mappingOf(c, gid))?.version?.toISOString()).toBe('2026-11-02T12:30:00.000Z');
+    });
+
+    it('applies only the cancel when one read back holds both a cancel and an edit (AC-13)', async () => {
+      useShopifyScenarios('order-cancelled-with-edit');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000002001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      expect(await arrive(c, 'orders/cancelled', gid, '2026-11-02T13:00:00Z')).toMatchObject({
+        status: 'processed',
+      });
+      const order = await orderOf(c, gid);
+      expect(order?.fulfillment_state).toBe('cancelled');
+      expect(order?.ship_to_address).toContain('12 شارع الاختبار');
+      const { rows } = await api.owner.pool.query<{ reason_code: string }>(
+        `SELECT reason_code FROM order_events
+         WHERE order_id = $1::uuid AND machine = 'fulfillment' AND to_state = 'cancelled'`,
+        [order?.id],
+      );
+      expect(rows).toEqual([{ reason_code: 'channel.inventory' }]);
+    });
+
+    it('coalesces two customer webhooks of one customer into one read back and one findOrCreate (AC-7, AC-15)', async () => {
+      useShopifyScenarios('customer-updated-phone');
+      const c = await plant();
+      const gid = 'gid://shopify/Customer/8880000020001';
+      await api.owner.pool.query(`UPDATE connections SET status = 'paused' WHERE id = $1::uuid`, [
+        c.id,
+      ]);
+      const first = await deliver(c, 'customers/create', body(gid, '2026-11-04T10:00:00Z'));
+      const second = await deliver(c, 'customers/update', body(gid, '2026-11-04T10:00:00Z'));
+      const idOf = async (webhookId: string) =>
+        (
+          await api.owner.pool.query<{ id: string }>(
+            `SELECT id FROM inbound_events WHERE connection_id = $1::uuid AND dedupe_key = $2`,
+            [c.id, webhookId],
+          )
+        ).rows[0]?.id as string;
+      const firstId = await idOf(first);
+      const secondId = await idOf(second);
+      await eventually(
+        async () =>
+          (
+            await api.owner.pool.query<{ n: string }>(
+              `SELECT count(*) AS n FROM pgboss.job WHERE name = 'connector-shopify'
+               AND data->>'eventId' = ANY($1) AND state = 'completed'`,
+              [[firstId, secondId]],
+            )
+          ).rows[0]?.n === '2'
+            ? true
+            : undefined,
+        { timeoutMs: 60_000, what: 'the paused jobs to complete' },
+      );
+      await api.owner.pool.query(`UPDATE connections SET status = 'active' WHERE id = $1::uuid`, [
+        c.id,
+      ]);
+      const spy = vi.spyOn(worker.get(CustomersService), 'findOrCreate');
+      try {
+        const out = await worker
+          .get(InboxJob)
+          .run({ connectionId: c.id, eventId: firstId }, 'customer-coalesce');
+        expect(out).toEqual({ status: 'processed', code: null });
+        expect(spy).toHaveBeenCalledTimes(1);
+        const rows = await api.owner.pool.query<{ status: string; outcome: string | null }>(
+          `SELECT status, outcome FROM inbound_events WHERE connection_id = $1::uuid
+           ORDER BY topic`,
+          [c.id],
+        );
+        expect(rows.rows).toEqual([
+          { status: 'processed', outcome: null },
+          { status: 'processed', outcome: 'coalesced' },
+        ]);
+        expect(remainingShopifyExchanges()).toEqual([]);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('records payment_method_locked and keeps the cash state when a gateway mapping changes after the cash state moved (AC-14)', async () => {
+      useShopifyScenarios('order-prepaid-gateway');
+      const c = await plant();
+      const cod = 'gid://shopify/Order/5550000005101';
+      await arrive(c, 'orders/create', cod, '2026-11-02T09:15:04Z');
+      const order = await orderOf(c, cod);
+      // The manager maps the COD gateway to another method, and the cash state has already moved.
+      await api.owner.pool.query(
+        `UPDATE connections SET config = jsonb_set(config, '{gatewayMethods,Cash on Delivery (COD)}', '"instapay"') WHERE id = $1::uuid`,
+        [c.id],
+      );
+      await api.owner.pool.query(`UPDATE orders SET cash_state = 'remitted' WHERE id = $1::uuid`, [
+        order?.id,
+      ]);
+      const answer = await arrive(c, 'orders/updated', cod, '2026-11-02T14:00:00Z');
+      expect(answer).toMatchObject({ status: 'processed' });
+      expect(answer.outcome).toBe('payment_method_locked');
+      expect(await orderOf(c, cod)).toMatchObject({ payment_method: 'cod' });
+      expect((await mappingOf(c, cod))?.state['paymentMethodLocked']).toBe(true);
+    });
+
+    /** A SKU made through the catalog route, archived when asked. */
+    const sku = async (code: string, archived = false): Promise<string> => {
+      const reply = await api.call(manager, 'POST', '/api/products', {
+        name: { en: `Tee ${code}` },
+        variants: [{ sku: code, price: '450.00' }],
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      const id = SkuDetail.parse(reply.body).id;
+      if (archived) {
+        await api.owner.pool.query(
+          `UPDATE product_variants SET archived_at = now() WHERE id = $1::uuid`,
+          [id],
+        );
+      }
+      return id;
+    };
+
+    /** Maps a Shopify variant to an app variant on the connection, as task 8 will. */
+    const mapVariant = (c: Planted, variantGid: string, variantId: string) =>
+      api.owner.pool.query(
+        `INSERT INTO connection_external_ids (connection_id, entity, external_id, local_id)
+         VALUES ($1::uuid, 'variant', $2, $3::uuid)`,
+        [c.id, variantGid, variantId],
+      );
+
+    const auditActions = async (orderId: string) =>
+      (
+        await api.owner.pool.query<{ action: string }>(
+          `SELECT action FROM audit_entries WHERE record_id = $1::uuid ORDER BY recorded_at, id`,
+          [orderId],
+        )
+      ).rows.map((row) => row.action);
+
+    it('rederives the payment from the creation facts only when a creation gateway is mapped differently (lead decision D10)', async () => {
+      useShopifyScenarios('order-cod-remapped');
+      // Created with the COD gateway unmapped; marked as paid on `manual` (unmapped) later.
+      const c = await plant(JSON.stringify({ appOwner: 'organization', gatewayMethods: {} }));
+      const gid = 'gid://shopify/Order/5550000021001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      expect(await orderOf(c, gid)).toMatchObject({
+        payment_method: 'cod',
+        prepaid_amount: '0.00',
+      });
+      expect((await mappingOf(c, gid))?.state).toMatchObject({
+        creationGateways: { 'Cash on Delivery (COD)': null },
+        creationTransactionIds: [],
+      });
+      expect(await arrive(c, 'orders/updated', gid, '2026-11-02T14:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      expect(await orderOf(c, gid)).toMatchObject({
+        payment_method: 'cod',
+        prepaid_amount: '0.00',
+      });
+
+      // The manager maps the COD gateway to another method: the next read rederives, and the later
+      // manual sale is not counted as a prepayment.
+      await api.owner.pool.query(
+        `UPDATE connections SET config = jsonb_set(config, '{gatewayMethods}', '{"Cash on Delivery (COD)":"instapay"}') WHERE id = $1::uuid`,
+        [c.id],
+      );
+      expect(await arrive(c, 'orders/updated', gid, '2026-11-02T15:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      const order = await orderOf(c, gid);
+      expect(order).toMatchObject({
+        payment_method: 'instapay',
+        prepaid_amount: '0.00',
+        prepaid_method: null,
+      });
+      expect(await auditActions(order?.id as string)).toContain('order.payment_method_rederived');
+      expect((await mappingOf(c, gid))?.state).toMatchObject({
+        creationGateways: { 'Cash on Delivery (COD)': null },
+        creationTransactionIds: [],
+      });
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
+    it('links a late mapped variant with linkChannelLineVariant before the edit, with no edit recorded, and leaves a retired SKU unmapped (AC-9)', async () => {
+      useShopifyScenarios('order-late-link');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000022001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      const order = await orderOf(c, gid);
+      expect((await mappingOf(c, gid))?.state['unmappedLines']).toHaveLength(3);
+      const live = await sku(`LL-${randomUUID().slice(0, 6)}`);
+      const retired = await sku(`LR-${randomUUID().slice(0, 6)}`, true);
+      await mapVariant(c, 'gid://shopify/ProductVariant/7770000000101', live);
+      await mapVariant(c, 'gid://shopify/ProductVariant/7770000000999', retired);
+      const intake = worker.get(OrderIntake);
+      const link = vi.spyOn(intake, 'linkChannelLineVariant');
+      try {
+        expect(await arrive(c, 'orders/updated', gid, '2026-11-02T10:00:00Z')).toMatchObject({
+          status: 'processed',
+          outcome: null,
+        });
+        expect(link).toHaveBeenCalledTimes(2);
+      } finally {
+        link.mockRestore();
+      }
+      const variants = await api.owner.pool.query<{ variant_id: string | null }>(
+        `SELECT variant_id FROM order_lines WHERE order_id = $1::uuid ORDER BY position`,
+        [order?.id],
+      );
+      expect(variants.rows.map((row) => row.variant_id)).toEqual([live, null, null]);
+      expect(await auditActions(order?.id as string)).not.toContain('order.edited');
+      expect((await orderOf(c, gid))?.updated_at).toEqual(order?.updated_at);
+      expect((await mappingOf(c, gid))?.state['unmappedLines']).toEqual([
+        {
+          channelLineId: 'gid://shopify/LineItem/55500000220012',
+          variantGid: 'gid://shopify/ProductVariant/7770000000999',
+        },
+        { channelLineId: 'gid://shopify/LineItem/55500000220013', variantGid: null },
+      ]);
+    });
+
+    it('takes the named move of a new order whose first read already shows a cancel or a fulfillment (AC-13)', async () => {
+      useShopifyScenarios('order-cancelled-customer', 'order-go-live-import');
+      const c = await plant();
+      const cancelled = 'gid://shopify/Order/5550000006001';
+      expect(await arrive(c, 'orders/create', cancelled, '2026-11-02T10:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      const order = await orderOf(c, cancelled);
+      expect(order?.fulfillment_state).toBe('cancelled');
+      const reasons = await api.owner.pool.query<{ reason_code: string }>(
+        `SELECT reason_code FROM order_events
+         WHERE order_id = $1::uuid AND machine = 'fulfillment' AND to_state = 'cancelled'`,
+        [order?.id],
+      );
+      expect(reasons.rows).toEqual([{ reason_code: 'channel.customer' }]);
+
+      // A live order (no go live instant) read for the first time already fulfilled.
+      const fulfilled = 'gid://shopify/Order/5550000009101';
+      expect(await arrive(c, 'orders/create', fulfilled, '2026-10-23T09:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      expect((await orderOf(c, fulfilled))?.carrier_delivery_created_at?.toISOString()).toBe(
+        '2026-10-23T09:00:00.000Z',
+      );
+      expect((await mappingOf(c, fulfilled))?.state['deliveryFulfillmentId']).toBe(
+        'gid://shopify/Fulfillment/9990000009101',
+      );
+    });
+
+    it('applies an edit made before the fulfillment on the read where the fulfillment first appears, then records the carrier delivery (code review m1)', async () => {
+      useShopifyScenarios('order-swapped-then-fulfilled');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000023001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      expect(await arrive(c, 'orders/updated', gid, '2026-11-02T12:00:05Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      const order = await orderOf(c, gid);
+      expect(await linesOf(order?.id as string)).toEqual([
+        ['55500000230011', 'cancelled', 'edit_removal'],
+        ['55500000230012', 'open', null],
+        ['55500000230013', 'open', null],
+      ]);
+      expect(order?.ship_to_address).toContain('30 شارع التعديل');
+      expect(order?.carrier_delivery_created_at?.toISOString()).toBe('2026-11-02T12:00:00.000Z');
+      expect((await mappingOf(c, gid))?.state['deliveryFulfillmentId']).toBe(
+        'gid://shopify/Fulfillment/9990000023001',
+      );
+    });
+
+    it('leaves the other received events of a held order received, so they run their own read back (security review L2)', async () => {
+      useShopifyScenarios('order-edited-size-swap');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000002001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      const order = await orderOf(c, gid);
+      await api.owner.pool.query(
+        `INSERT INTO outbound_commands (connection_id, kind, linked_type, linked_id, payload, idempotency_key)
+         VALUES ($1::uuid, 'shopify.order_edit', 'order', $2::uuid, '{}'::jsonb, $3)`,
+        [c.id, order?.id, `fixture:${randomUUID()}`],
+      );
+      await api.owner.pool.query(`UPDATE connections SET status = 'paused' WHERE id = $1::uuid`, [
+        c.id,
+      ]);
+      const first = await deliver(c, 'orders/edited', body(gid, '2026-11-02T11:40:09Z'));
+      const second = await deliver(c, 'orders/updated', body(gid, '2026-11-02T11:40:09Z'));
+      const rowOf = async (webhookId: string) =>
+        (
+          await api.owner.pool.query<{ id: string; status: string; outcome: string | null }>(
+            `SELECT id, status, outcome FROM inbound_events
+             WHERE connection_id = $1::uuid AND dedupe_key = $2`,
+            [c.id, webhookId],
+          )
+        ).rows[0];
+      const ids = [(await rowOf(first))?.id as string, (await rowOf(second))?.id as string];
+      await eventually(
+        async () =>
+          (
+            await api.owner.pool.query<{ n: string }>(
+              `SELECT count(*) AS n FROM pgboss.job WHERE name = 'connector-shopify'
+               AND data->>'eventId' = ANY($1) AND state = 'completed'`,
+              [ids],
+            )
+          ).rows[0]?.n === '2'
+            ? true
+            : undefined,
+        { timeoutMs: 60_000, what: 'the paused jobs to complete' },
+      );
+      await api.owner.pool.query(`UPDATE connections SET status = 'active' WHERE id = $1::uuid`, [
+        c.id,
+      ]);
+      const out = await worker
+        .get(InboxJob)
+        .run({ connectionId: c.id, eventId: ids[0] as string }, 'held-no-coalesce');
+      expect(out).toEqual({ status: 'ignored', code: 'held_write_back_open' });
+      expect(await rowOf(second)).toMatchObject({ status: 'received', outcome: null });
+    });
+
+    it('reruns the known order unit once after a deadlock, leaving one edit, one audit entry, and one saved mapping (code review m6)', async () => {
+      useShopifyScenarios('order-edited-size-swap');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000002001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      const order = await orderOf(c, gid);
+      const intake = worker.get(OrderIntake);
+      const original = intake.applyChannelEdit.bind(intake);
+      const edit = vi.spyOn(intake, 'applyChannelEdit').mockImplementationOnce(async (...args) => {
+        await original(...args);
+        throw Object.assign(new Error('deadlock detected'), { code: '40P01' });
+      });
+      try {
+        expect(await arrive(c, 'orders/edited', gid, '2026-11-02T11:40:09Z')).toMatchObject({
+          status: 'processed',
+          outcome: null,
+        });
+        expect(edit).toHaveBeenCalledTimes(2);
+      } finally {
+        edit.mockRestore();
+      }
+      expect(await linesOf(order?.id as string)).toEqual([
+        ['6660000002001', 'cancelled', 'edit_removal'],
+        ['6660000002002', 'open', null],
+        ['6660000002003', 'open', null],
+      ]);
+      expect(
+        (await auditActions(order?.id as string)).filter((action) => action === 'order.edited'),
+      ).toHaveLength(1);
+      expect((await mappingOf(c, gid))?.version?.toISOString()).toBe('2026-11-02T11:40:09.000Z');
+    });
+
+    it('fails a read back of a known order whose mapping state is damaged, MAPPING_STATE_UNREADABLE with InboundEventFailed', async () => {
+      useShopifyScenarios('order-edited-size-swap');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000002001';
+      await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      await api.owner.pool.query(
+        `UPDATE connection_external_ids SET state = '{"appliedLines":{"x":"bad"}}'::jsonb
+         WHERE connection_id = $1::uuid AND entity = 'order' AND external_id = $2`,
+        [c.id, gid],
+      );
+      const event = await arrive(c, 'orders/edited', gid, '2026-11-02T11:40:09Z');
+      expect(event).toMatchObject({
+        status: 'failed',
+        failure_code: 'MAPPING_STATE_UNREADABLE',
+        subject_label: '#1002',
+      });
+      expect(failedEvents.some((json) => json.includes(event.id))).toBe(true);
+    });
+
     it('keeps every inbox payload of these connections free of a phone, a name, or an address (AC-6)', async () => {
       const { rows } = await api.owner.pool.query<{ text: string }>(
         `SELECT payload::text AS text FROM inbound_events WHERE connection_id = ANY($1::uuid[])`,
@@ -494,6 +958,34 @@ describe(
         'orders/edited',
         'orders/updated',
       ]);
+
+      // Security review L6: the mapping state, the event code and label columns, every
+      // InboundEventFailed, and every log line stay free of personal data too.
+      const texts = async (query: string) =>
+        (await api.owner.pool.query<{ text: string }>(query, [planted])).rows
+          .map((row) => row.text)
+          .join('\n');
+      const places = {
+        mappings: await texts(
+          `SELECT state::text AS text FROM connection_external_ids
+           WHERE connection_id = ANY($1::uuid[])`,
+        ),
+        columns: await texts(
+          `SELECT concat_ws(' ', subject_label, outcome, failure_code) AS text FROM inbound_events
+           WHERE connection_id = ANY($1::uuid[])`,
+        ),
+        failedEvents: failedEvents.join('\n'),
+        logs: logLines.join('\n'),
+      };
+      expect(places.mappings).toContain('appliedLines');
+      expect(places.failedEvents).toContain('MAPPING_STATE_UNREADABLE');
+      expect(places.logs).toContain('inbox event=');
+      for (const [place, text] of Object.entries(places)) {
+        expect(text, `phone in ${place}`).not.toMatch(/(\+?20|0)1[0-9]{9}/);
+        for (const personal of PERSONAL) {
+          expect(text.includes(personal), `${personal} in ${place}`).toBe(false);
+        }
+      }
     });
   },
 );

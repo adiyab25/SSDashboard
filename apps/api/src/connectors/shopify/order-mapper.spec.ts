@@ -229,6 +229,8 @@ describe('mapShopifyOrder', () => {
     });
     const refunded = changed('order-prepaid-gateway/01-order-read.json', (order) => {
       order.transactions.push({
+        id: 'gid://shopify/OrderTransaction/2220000005002',
+        parentTransaction: { id: 'gid://shopify/OrderTransaction/2220000005001' },
         kind: 'REFUND',
         status: 'SUCCESS',
         gateway: 'Fixture Card Gateway',
