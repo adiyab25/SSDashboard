@@ -14,12 +14,22 @@ import {
   type CreateStockReceiptRequest,
   type ChangeSkuCodeRequest,
   type LocationStatus,
+  type SeasonFilter,
   type SkuStatus,
   type UpdateLocationRequest,
   type UpdateSkuRequest,
 } from '@ssdashboard/contracts';
 import { apiRequest, withBusyRetry } from '@/api/client';
 import type { LocationChoice } from '@/shell/current-location-provider';
+
+/** What the SKU list page asks for (spec 0012, AC-3 and AC-4); an empty `q` and an absent filter are not sent. */
+export interface SkuListFilters {
+  q: string;
+  status: SkuStatus;
+  /** A season id, or `none` for styles with no season. */
+  seasonId?: SeasonFilter;
+  productGroupId?: string;
+}
 
 /** Query keys, so a write invalidates exactly what it changed. */
 export const inventoryKeys = {
@@ -30,8 +40,9 @@ export const inventoryKeys = {
   /** The receipt line picker's search results for one query. */
   skuSearch: (q: string) => ['skus', 'search', q] as const,
   skus: ['skus'] as const,
-  /** The SKU list page for one search and status. */
-  skuList: (q: string, status: SkuStatus) => ['skus', 'list', q, status] as const,
+  /** The SKU list page for one search, status, and season and group filter. */
+  skuList: (filters: SkuListFilters) =>
+    ['skus', 'list', filters.q, filters.status, filters.seasonId, filters.productGroupId] as const,
   /** One SKU's detail. */
   sku: (id: string) => ['skus', 'detail', id] as const,
   /** What a SKU is used by, for the delete check. */
@@ -129,15 +140,19 @@ const noContent = { parse: (): void => undefined };
 const skuPath = (id: string) => `/api/skus/${encodeURIComponent(id)}`;
 const locationPath = (id: string) => `/api/locations/${encodeURIComponent(id)}`;
 
-/** The SKU list page: search by code prefix or name, active or archived, 50 a page (AC-13). */
+/**
+ * The SKU list page: search by name, SKU code, or barcode, filtered by status, season, and
+ * product group, 50 a page (spec 0006 AC-13, spec 0012 AC-3 and AC-4).
+ */
 export function listSkus(
-  q: string,
-  status: SkuStatus,
+  filters: SkuListFilters,
   cursor: string | undefined,
   signal?: AbortSignal,
 ) {
-  const params = new URLSearchParams({ limit: '50', status });
-  if (q.trim()) params.set('q', q.trim());
+  const params = new URLSearchParams({ limit: '50', status: filters.status });
+  if (filters.q.trim()) params.set('q', filters.q.trim());
+  if (filters.seasonId) params.set('seasonId', filters.seasonId);
+  if (filters.productGroupId) params.set('productGroupId', filters.productGroupId);
   if (cursor) params.set('cursor', cursor);
   return apiRequest('GET', `/api/skus?${params}`, SkuListResponse, { signal });
 }

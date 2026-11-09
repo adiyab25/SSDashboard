@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PriceString } from '../catalog.js';
+import { PriceString } from '../catalog/index.js';
 import { CustomerRiskFlag } from '../customers/customer-enums.js';
 import { moneyInput, quantityInput } from '../digit-input.js';
 import { LocalizedText } from '../localized-text.js';

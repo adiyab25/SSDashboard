@@ -40,6 +40,14 @@ const sku = (n: number, overrides: Partial<SkuSummary> = {}): SkuSummary => ({
   productId: `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
   code: `SKU-${n}`,
   name: { en: `Item ${n}` },
+  style: {
+    id: `10000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    code: `SKU-${n}`,
+    name: { en: `Item ${n}` },
+  },
+  season: null,
+  productGroup: { id: '20000000-0000-4000-8000-000000000001', code: 'MAIN', name: { en: 'Main' } },
+  options: [],
   price: '12.50',
   archived: false,
   ...overrides,
@@ -49,6 +57,7 @@ const detail = (n: number) => ({
   ...sku(n),
   status: 'active' as const,
   updatedAt: '2026-11-03T10:00:00.123456Z',
+  barcodes: [],
 });
 
 afterEach(() => {
@@ -72,7 +81,11 @@ describe('SkusPage (AC-13)', () => {
       `/skus/${sku(1).id}`,
     );
     expect(within(table).getByText('Item 2')).toBeVisible();
-    expect(api.listSkus).toHaveBeenCalledWith('', 'active', undefined, expect.anything());
+    expect(api.listSkus).toHaveBeenCalledWith(
+      { q: '', status: 'active' },
+      undefined,
+      expect.anything(),
+    );
   });
 
   it('searches with q and switches to the archived filter', async () => {
@@ -80,17 +93,20 @@ describe('SkusPage (AC-13)', () => {
     renderWithQuery(<SkusPage />);
     await screen.findByText(/No SKUs yet/);
 
-    await userEvent.type(screen.getByLabelText('Search SKUs'), 'AB_');
+    await userEvent.type(screen.getByLabelText('Name, SKU or barcode'), 'AB_');
     await waitFor(() =>
-      expect(api.listSkus).toHaveBeenLastCalledWith('AB_', 'active', undefined, expect.anything()),
+      expect(api.listSkus).toHaveBeenLastCalledWith(
+        { q: 'AB_', status: 'active' },
+        undefined,
+        expect.anything(),
+      ),
     );
     expect(await screen.findByText('No SKU matches this search.')).toBeVisible();
 
     await userEvent.click(screen.getByRole('button', { name: 'Archived' }));
     await waitFor(() =>
       expect(api.listSkus).toHaveBeenLastCalledWith(
-        'AB_',
-        'archived',
+        { q: 'AB_', status: 'archived' },
         undefined,
         expect.anything(),
       ),
@@ -105,9 +121,14 @@ describe('SkusPage (AC-13)', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
 
-    expect(await screen.findByRole('link', { name: 'SKU-2' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'SKU-1' })).toBeVisible();
-    expect(api.listSkus).toHaveBeenLastCalledWith('', 'active', 'cursor-2', expect.anything());
+    const table = screen.getByRole('table', { name: 'SKUs' });
+    expect(await within(table).findByRole('link', { name: 'SKU-2' })).toBeVisible();
+    expect(within(table).getByRole('link', { name: 'SKU-1' })).toBeVisible();
+    expect(api.listSkus).toHaveBeenLastCalledWith(
+      { q: '', status: 'active' },
+      'cursor-2',
+      expect.anything(),
+    );
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
   });
 });
@@ -116,7 +137,8 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
   async function openEdit(n = 1) {
     api.listSkus.mockResolvedValue({ items: [sku(n)], nextCursor: null });
     renderWithQuery(<SkusPage />);
-    await userEvent.click(await screen.findByRole('button', { name: `Edit SKU-${n}` }));
+    const table = await screen.findByRole('table', { name: 'SKUs' });
+    await userEvent.click(await within(table).findByRole('button', { name: `Edit SKU-${n}` }));
     return screen.findByRole('dialog', { name: 'Edit SKU SKU-1' });
   }
 
@@ -206,7 +228,11 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
         <SkusPage />
       </QueryClientProvider>,
     );
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit SKU-1' }));
+    await userEvent.click(
+      await within(await screen.findByRole('table', { name: 'SKUs' })).findByRole('button', {
+        name: 'Edit SKU-1',
+      }),
+    );
     const dialog = await screen.findByRole('dialog', { name: 'Edit SKU SKU-1' });
     await within(dialog).findByLabelText('Name in English');
 
@@ -246,7 +272,11 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
         <SkusPage />
       </QueryClientProvider>,
     );
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit SKU-1' }));
+    await userEvent.click(
+      await within(await screen.findByRole('table', { name: 'SKUs' })).findByRole('button', {
+        name: 'Edit SKU-1',
+      }),
+    );
     const dialog = await screen.findByRole('dialog', { name: 'Edit SKU SKU-1' });
     await waitFor(() =>
       expect(within(dialog).getByLabelText('Name in English')).toHaveValue('Fresh name'),
@@ -294,7 +324,13 @@ describe('SKU edit dialog (AC-2, AC-3)', () => {
     await userEvent.keyboard('{Escape}');
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit SKU-1' })).toHaveFocus());
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('table', { name: 'SKUs' })).getByRole('button', {
+          name: 'Edit SKU-1',
+        }),
+      ).toHaveFocus(),
+    );
   });
 
   describe('as an admin', () => {
