@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ENV } from '../src/config/config.module.js';
 import { loadEnv } from '../src/config/env.js';
 import { ConnectionSecrets } from '../src/connectors/connections/connection-secrets.js';
+import { GoLiveClock } from '../src/connectors/connections/go-live-clock.js';
 import { InboxPurgeJob } from '../src/connectors/inbox/inbox-purge.job.js';
 import { ConnectorBudget } from '../src/connectors/shopify/connector-budget.js';
 import { ConnectorClock } from '../src/connectors/shopify/connector-clock.js';
@@ -253,17 +254,20 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       minutesAgo?: number;
       daysAgo?: number;
       attempts?: number;
+      topic?: string;
+      subject?: string;
     },
   ) => {
     const { rows } = await api.owner.pool.query<{ id: string }>(
       `INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,
                                    subject_external_id, subject_version, payload, status,
                                    failure_code, attempts, received_at, processed_at)
-       VALUES ($1::uuid, $2::inbound_source, 'orders/create', $3, 'order', $4,
+       VALUES ($1::uuid, $2::inbound_source, $9, $3, $10::inbound_subject, $4,
                '2026-11-05T09:00:00Z', '{}'::jsonb, $5::inbound_status,
                CASE WHEN $5 = 'failed' THEN 'CONTRACT_REFUSED' ELSE NULL END, $6,
                now() - make_interval(mins => $7::int, days => $8::int),
-               CASE WHEN $5 = 'received' THEN NULL ELSE now() END)
+               CASE WHEN $5 = 'received' THEN NULL
+                    ELSE now() - make_interval(mins => $7::int, days => $8::int) END)
        RETURNING id`,
       [
         c.id,
@@ -274,13 +278,28 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         row.attempts ?? 0,
         row.minutesAgo ?? 0,
         row.daysAgo ?? 0,
+        row.topic ?? 'orders/create',
+        row.subject ?? 'order',
       ],
     );
     return rows[0]?.id as string;
   };
 
+  /** Plants a succeeded gateway scan with the given counts. */
+  const scanned = async (c: Planted, counts: Record<string, unknown>) =>
+    api.owner.pool.query(
+      `INSERT INTO connection_sync_runs (connection_id, kind, status, counts, finished_at)
+       VALUES ($1::uuid, 'gateway_scan', 'succeeded', $2::jsonb, now())`,
+      [c.id, JSON.stringify(counts)],
+    );
+
   beforeAll(async () => {
-    api = await startInProcessApi();
+    // The go live window (D11) is judged by the fixtures' instant, not the machine's clock.
+    api = await startInProcessApi((builder) => {
+      builder
+        .overrideProvider(GoLiveClock)
+        .useValue({ now: async () => Promise.resolve(new Date('2026-11-05T09:00:00Z')) });
+    });
     budget.bulkPollSeconds = 0;
     worker = await Test.createTestingModule({ imports: [WorkerModule] })
       .overrideProvider(ENV)
@@ -358,13 +377,21 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       const again = await api.call(manager, 'POST', `/api/connections/${c.id}/gateway-scan`);
       expect(again.status).toBe(409);
       expect(again.body).toMatchObject({ code: 'SCAN_RUNNING' });
-      const scanned = await finished(c, 'gateway_scan', 'the gateway scan');
-      expect(scanned).toMatchObject({ id: scanRunId, status: 'succeeded', cursor: null });
-      expect(scanned.counts).toMatchObject({
+      const scanRun = await finished(c, 'gateway_scan', 'the gateway scan');
+      expect(scanRun).toMatchObject({ id: scanRunId, status: 'succeeded', cursor: null });
+      expect(scanRun.counts).toMatchObject({
         orders: 3,
         gatewayNames: [COD, CARD],
+        gatewayNamesTruncated: false,
         since: '2026-09-06T09:00:00Z',
       });
+      // Security review L7: the scan's start is audited with its run id.
+      const scanAudit = await api.owner.pool.query<{ after: Record<string, unknown> }>(
+        `SELECT after FROM audit_entries
+         WHERE action = 'connection.gateway_scan_started' AND record_id = $1::uuid`,
+        [c.id],
+      );
+      expect(scanAudit.rows).toEqual([{ after: { runId: scanRunId } }]);
 
       const unmapped = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
         goLiveAt: GO_LIVE,
@@ -378,6 +405,10 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
          WHERE id = $1::uuid`,
         [c.id, JSON.stringify({ [COD]: 'cod', [CARD]: 'gateway' })],
       );
+
+      // A webhook of #1033 received while the backfill runs: the bulk snapshot may predate it, so
+      // the backfill never coalesces it (code review minor); it keeps waiting for its own job.
+      const duringBackfill = await inboxRow(c, { gidValue: gid(1033), status: 'received' });
 
       // A zero time budget: every orders chunk stops after one order and the next resumes on the
       // line after it (4 orders, 4 chunks: each reads the operation and the file once).
@@ -397,14 +428,54 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
 
         const orders = await finished(c, 'backfill_orders', 'the orders backfill');
         expect(orders.status).toBe('succeeded');
-        expect(orders.counts).toMatchObject({ objects: 4, applied: 4, failed: 0, mode: 'bulk' });
+        expect(orders.counts).toMatchObject({
+          objects: 4,
+          applied: 4,
+          failed: 0,
+          mode: 'bulk',
+          rereadsQueued: 2,
+        });
         const products = (await runsOf(c, 'backfill_products'))[0];
         expect(products).toMatchObject({ id: productsRunId, status: 'succeeded' });
         expect(products?.counts).toMatchObject({ objects: 1, recorded: 1 });
       } finally {
         budget.chunkMillis = 60_000;
       }
+      // Lead decision D12: the two imported orders still open (#1031 confirmed, #1032 new) are
+      // read back once, which nets their sales history; the closed ones (#1033, #1034) never.
+      const rereads = await eventually(
+        async () => {
+          const { rows } = await api.owner.pool.query<{
+            subject_external_id: string;
+            status: string;
+            outcome: string | null;
+          }>(
+            `SELECT subject_external_id, status, outcome FROM inbound_events
+             WHERE connection_id = $1::uuid AND dedupe_key LIKE 'backfill-reread:%'
+             ORDER BY subject_external_id`,
+            [c.id],
+          );
+          return rows.length === 2 && rows.every((r) => r.status !== 'received') ? rows : undefined;
+        },
+        { timeoutMs: 60_000, what: 'the budgeted read backs' },
+      );
+      expect(rereads).toEqual([
+        { subject_external_id: gid(1031), status: 'processed', outcome: 'history_netted' },
+        { subject_external_id: gid(1032), status: 'processed', outcome: 'history_netted' },
+      ]);
+      const unread = await api.owner.pool.query<{ external_id: string }>(
+        `SELECT external_id FROM connection_external_ids
+         WHERE connection_id = $1::uuid AND entity = 'order'
+           AND state->>'salesHistoryTruncated' = 'true' ORDER BY external_id`,
+        [c.id],
+      );
+      expect(unread.rows.map((r) => r.external_id)).toEqual([gid(1033), gid(1034)]);
       expect(remainingShopifyExchanges()).toEqual([]);
+      const webhook = await api.owner.pool.query<{ status: string }>(
+        `SELECT status FROM inbound_events WHERE id = $1::uuid`,
+        [duringBackfill],
+      );
+      expect(webhook.rows[0]?.status).toBe('received');
 
       // Open, placed 07:30, before go live: confirmed by system_job with go_live_import.
       const open = await orderOf(c, gid(1031));
@@ -427,8 +498,20 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       );
       expect(Number(movements.rows[0]?.n)).toBe(0);
 
+      // Security review L4: the backfilled orders' system_job actor is the backfill.
+      const actors = await api.owner.pool.query<{ actor_ref: string | null }>(
+        `SELECT DISTINCT a.actor_ref FROM audit_entries a
+         WHERE a.actor_kind = 'system_job' AND a.record_id = ANY($1::uuid[])`,
+        [[open?.id, (await orderOf(c, gid(1032)))?.id]],
+      );
+      for (const row of actors.rows) {
+        expect(row.actor_ref ?? '').not.toContain('connectors.shopify.inbox');
+      }
+
       // One inbox row per order, never two, each minimized; the product recorded with no job.
-      const orderEvents = await eventsOf(c, 'order');
+      const orderEvents = (await eventsOf(c, 'order')).filter((e) =>
+        e.dedupe_key.startsWith('backfill:'),
+      );
       expect(orderEvents.map((e) => e.subject_external_id).sort()).toEqual(
         [gid(1031), gid(1032), gid(1033), gid(1034)].sort(),
       );
@@ -456,6 +539,12 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(row?.orders_swept_through).not.toBeNull();
       expect(row?.products_swept_through).not.toBeNull();
       expect(row?.last_sweep_at).not.toBeNull();
+      // Code review minor: the last order is the newest order's creation, never the clock.
+      const lastOrder = await api.owner.pool.query<{ last_order_at: Date | null }>(
+        `SELECT last_order_at FROM connections WHERE id = $1::uuid`,
+        [c.id],
+      );
+      expect(lastOrder.rows[0]?.last_order_at?.toISOString()).toBe('2026-11-05T08:30:00.000Z');
       const stored = await api.owner.pool.query<{ text: string }>(
         `SELECT coalesce(string_agg(row_to_json(r)::text, ''), '') AS text
          FROM connection_sync_runs r WHERE connection_id = $1::uuid`,
@@ -470,7 +559,15 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         [c.id],
       );
       expect(audit.rows).toHaveLength(1);
-      expect(audit.rows[0]?.after).toMatchObject({ goLiveAt: GO_LIVE });
+      expect(audit.rows[0]?.after).toMatchObject({ goLiveAt: GO_LIVE, resumed: false });
+
+      // Lead decision D11: the go live instant is set once; another one is refused.
+      const moved = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
+        goLiveAt: '2026-11-05T08:30:00Z',
+      });
+      expect(moved.status).toBe(409);
+      expect(moved.body).toMatchObject({ code: 'GO_LIVE_ALREADY_SET' });
+      expect((await connectionRow(c))?.go_live_at?.toISOString()).toBe('2026-11-05T08:00:00.000Z');
 
       // The runs list, newest first, a page at a time.
       const first = await api.call(manager, 'GET', `/api/connections/${c.id}/sync-runs?limit=1`);
@@ -485,6 +582,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       );
       const page2 = SyncRunListResponse.parse(rest.body);
       expect(page2.items.map((run) => run.kind)).toEqual(['backfill_products', 'gateway_scan']);
+      expect(JSON.stringify([page1, page2])).not.toContain('movedAt');
       expect(page2.items[1]?.counts['gatewayNames']).toEqual([COD, CARD]);
       expect(JSON.stringify([page1, page2])).not.toContain('bulkId');
     });
@@ -493,11 +591,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       const c = await plant();
       const skuM = await sku(`SJP-${randomUUID().slice(0, 6)}`);
       await mapVariant(c, VARIANT_M, skuM);
-      await api.owner.pool.query(
-        `INSERT INTO connection_sync_runs (connection_id, kind, status, counts, finished_at)
-         VALUES ($1::uuid, 'gateway_scan', 'succeeded', $2::jsonb, now())`,
-        [c.id, JSON.stringify({ orders: 2, gatewayNames: [COD] })],
-      );
+      await scanned(c, { orders: 2, gatewayNames: [COD] });
       budget.chunkMillis = 0;
       try {
         useShopifyScenarios('backfill-paged-fallback');
@@ -522,18 +616,130 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect((await eventsOf(c, 'order')).map((e) => e.status)).toEqual(['processed', 'processed']);
     });
 
-    it('refuses a backfill of a connection that is not active with CONNECTION_NOT_READY', async () => {
+    it('refuses a backfill of a paused connection with CONNECTION_PAUSED and a failing one with CONNECTION_NOT_READY (QA 3)', async () => {
       const c = await plant({ status: 'paused' });
       const reply = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
         goLiveAt: GO_LIVE,
       });
       expect(reply.status).toBe(409);
-      expect(reply.body).toMatchObject({ code: 'CONNECTION_NOT_READY' });
+      expect(reply.body).toMatchObject({ code: 'CONNECTION_PAUSED' });
+      const failing = await plant({ health: 'failing', healthReason: 'CREDENTIALS_REJECTED' });
+      const refused = await api.call(manager, 'POST', `/api/connections/${failing.id}/backfill`, {
+        goLiveAt: GO_LIVE,
+      });
+      expect(refused.status).toBe(409);
+      expect(refused.body).toMatchObject({ code: 'CONNECTION_NOT_READY' });
       const bad = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
         goLiveAt: 'soon',
       });
       expect(bad.status).toBe(422);
       expect(bad.body).toMatchObject({ code: 'INVALID_BODY' });
+    });
+
+    it('refuses a first go live instant more than 5 minutes ahead or 60 days back of the database clock (D11)', async () => {
+      const c = await plant();
+      await scanned(c, { orders: 1, gatewayNames: [COD] });
+      for (const goLiveAt of ['2026-11-05T09:05:01Z', '2026-09-06T08:59:59Z']) {
+        const reply = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
+          goLiveAt,
+        });
+        expect(reply.status, goLiveAt).toBe(422);
+        expect(reply.body).toMatchObject({ code: 'GO_LIVE_OUT_OF_RANGE' });
+      }
+      expect((await connectionRow(c))?.go_live_at).toBeNull();
+      expect(await runsOf(c, 'backfill_products')).toEqual([]);
+    });
+
+    it('refuses the backfill with GATEWAYS_TOO_MANY while the newest scan dropped names (security review L3)', async () => {
+      const c = await plant();
+      await scanned(c, { orders: 500, gatewayNames: [COD], gatewayNamesTruncated: true });
+      const reply = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
+        goLiveAt: GO_LIVE,
+      });
+      expect(reply.status).toBe(409);
+      expect(reply.body).toMatchObject({ code: 'GATEWAYS_TOO_MANY' });
+      expect((await connectionRow(c))?.go_live_at).toBeNull();
+    });
+
+    it('resumes a failed paged orders backfill from its recorded page with the same go live instant (D11, AC-17)', async () => {
+      const c = await plant({ goLiveAt: GO_LIVE });
+      const skuM = await sku(`SJU-${randomUUID().slice(0, 6)}`);
+      await mapVariant(c, VARIANT_M, skuM);
+      await scanned(c, { orders: 2, gatewayNames: [COD] });
+      const position = {
+        step: 3,
+        bulkId: null,
+        line: 0,
+        mode: 'paged',
+        after: 'fixture-cursor-1047',
+        since: null,
+      };
+      const failed = await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO connection_sync_runs (connection_id, kind, status, cursor, counts,
+                                           finished_at, error_code)
+         VALUES ($1::uuid, 'backfill_orders', 'failed', $2, $3::jsonb, now(),
+                 'CONNECTION_NOT_LIVE')
+         RETURNING id`,
+        [
+          c.id,
+          JSON.stringify(position),
+          JSON.stringify({ goLiveAt: GO_LIVE, objects: 1, applied: 1, mode: 'paged' }),
+        ],
+      );
+      const runId = failed.rows[0]?.id as string;
+      useShopifyScenarios('backfill-resume-paged');
+      const resumed = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
+        goLiveAt: GO_LIVE,
+      });
+      expect(resumed.status, JSON.stringify(resumed.body)).toBe(202);
+      expect(SyncRunStarted.parse(resumed.body).runId).toBe(runId);
+      const run = await finished(c, 'backfill_orders', 'the resumed backfill');
+      expect(run).toMatchObject({ id: runId, status: 'succeeded', error_code: null });
+      expect(run.counts).toMatchObject({ objects: 2, applied: 2, mode: 'paged' });
+      expect(await orderOf(c, 'gid://shopify/Order/5550001048001')).toMatchObject({
+        order_number: '#1048',
+        fulfillment_state: 'confirmed',
+      });
+      expect(await runsOf(c, 'backfill_products')).toEqual([]);
+      expect(remainingShopifyExchanges()).toEqual([]);
+      const audit = await api.owner.pool.query<{ after: Record<string, unknown> }>(
+        `SELECT after FROM audit_entries
+         WHERE action = 'connection.backfill_started' AND record_id = $1::uuid`,
+        [c.id],
+      );
+      expect(audit.rows.map((r) => r.after)).toEqual([{ goLiveAt: GO_LIVE, runId, resumed: true }]);
+    });
+
+    it('ends a stalled gateway scan RUN_STALLED and starts a new one instead of answering SCAN_RUNNING forever (code review Major 3)', async () => {
+      clock.at = new Date('2026-11-05T09:00:00Z');
+      const c = await plant();
+      const fresh = await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO connection_sync_runs (connection_id, kind, status, started_at)
+         VALUES ($1::uuid, 'gateway_scan', 'running', now() - interval '1 hour') RETURNING id`,
+        [c.id],
+      );
+      const busy = await api.call(manager, 'POST', `/api/connections/${c.id}/gateway-scan`);
+      expect(busy.status).toBe(409);
+      expect(busy.body).toMatchObject({ code: 'SCAN_RUNNING' });
+      await api.owner.pool.query(
+        `UPDATE connection_sync_runs SET started_at = now() - interval '7 hours'
+         WHERE id = $1::uuid`,
+        [fresh.rows[0]?.id],
+      );
+      useShopifyScenarios('gateway-scan-two-gateways');
+      const scan = await api.call(manager, 'POST', `/api/connections/${c.id}/gateway-scan`);
+      expect(scan.status, JSON.stringify(scan.body)).toBe(202);
+      const done = await finished(c, 'gateway_scan', 'the new gateway scan');
+      expect(done).toMatchObject({
+        id: SyncRunStarted.parse(scan.body).runId,
+        status: 'succeeded',
+      });
+      const runs = await runsOf(c, 'gateway_scan');
+      expect(runs.find((r) => r.id === fresh.rows[0]?.id)).toMatchObject({
+        status: 'failed',
+        error_code: 'RUN_STALLED',
+      });
+      expect(remainingShopifyExchanges()).toEqual([]);
     });
   });
 
@@ -615,8 +821,20 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       });
       const skuM = await sku(`SJR-${randomUUID().slice(0, 6)}`);
       await mapVariant(c, VARIANT_M, skuM);
-      // #1038: its webhook event failed (a rule fixed since).
-      await inboxRow(c, { gidValue: gid(1038), status: 'failed', minutesAgo: 30 });
+      // #1038: its webhook event failed 90 minutes ago (a rule fixed since).
+      await inboxRow(c, { gidValue: gid(1038), status: 'failed', minutesAgo: 90 });
+      // Code review minor: the n-th retry waits n hours after the previous attempt. #1052 failed
+      // 30 minutes ago (retry 1 waits an hour); #1053 failed its first retry 90 minutes ago
+      // (retry 2 waits two hours). Neither is retried by this sweep.
+      await inboxRow(c, { gidValue: gid(1052), status: 'failed', minutesAgo: 30 });
+      await inboxRow(c, { gidValue: gid(1053), status: 'failed', minutesAgo: 200 });
+      await inboxRow(c, {
+        gidValue: gid(1053),
+        status: 'failed',
+        source: 'sweep',
+        dedupe: `sweep-retry:${gid(1053)}:2026-11-05T09:00:00.000Z:1`,
+        minutesAgo: 90,
+      });
       // #1039: its webhook event was recorded 20 minutes ago and its job was lost.
       await inboxRow(c, { gidValue: gid(1039), status: 'received', minutesAgo: 20 });
       // #1040: already retried 3 times today, each failing.
@@ -659,6 +877,16 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         [c.id, capped],
       );
       expect(Number(cappedRows.rows[0]?.n)).toBe(4);
+      const spaced = await api.owner.pool.query<{ subject_external_id: string; n: string }>(
+        `SELECT subject_external_id, count(*) AS n FROM inbound_events
+         WHERE connection_id = $1::uuid AND subject_external_id = ANY($2::text[])
+         GROUP BY subject_external_id ORDER BY subject_external_id`,
+        [c.id, [gid(1052), gid(1053)]],
+      );
+      expect(spaced.rows.map((r) => [r.subject_external_id, Number(r.n)])).toEqual([
+        [gid(1052), 1],
+        [gid(1053), 2],
+      ]);
 
       await eventually(async () => orderOf(c, gid(1038)), {
         timeoutMs: 60_000,
@@ -778,6 +1006,22 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       });
       const [run] = await runsOf(c, 'hourly_check');
       expect(run?.counts).toMatchObject({ missingScopes: ['write_inventory'] });
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
+    it('QA 4: sets SCOPES_MISSING in a run that clears WEBHOOKS_MISSING, never leaving health ok', async () => {
+      const c = await plant({
+        goLiveAt: '2026-11-01T00:00:00Z',
+        health: 'degraded',
+        healthReason: 'WEBHOOKS_MISSING',
+      });
+      useShopifyScenarios('hourly-check-scope-missing');
+      const outcome = await worker.get(HourlyCheckJob).check(c.id, randomUUID());
+      expect(outcome).toMatchObject({ status: 'succeeded', missingScopes: ['write_inventory'] });
+      expect(await connectionRow(c)).toMatchObject({
+        health: 'degraded',
+        health_reason: 'SCOPES_MISSING',
+      });
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
@@ -911,6 +1155,71 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(runs.rows.map((r) => r.id)).not.toContain(oldRun);
     });
 
+    it('purges a failed row past 90 days once a newer event of its order did not fail, received rows of unprocessed topics past 90 days, and unfinished runs past 90 days (code review minor, security review L5, D13)', async () => {
+      const c = await plant();
+      const superseded = await inboxRow(c, { gidValue: gid(1054), status: 'failed', daysAgo: 95 });
+      const newer = await inboxRow(c, { gidValue: gid(1054), status: 'processed', daysAgo: 92 });
+      const alone = await inboxRow(c, { gidValue: gid(1055), status: 'failed', daysAgo: 95 });
+      const product = await inboxRow(c, {
+        gidValue: 'gid://shopify/Product/2220001056001',
+        status: 'received',
+        daysAgo: 91,
+        topic: 'products/update',
+        subject: 'product',
+      });
+      const recentProduct = await inboxRow(c, {
+        gidValue: 'gid://shopify/Product/2220001057001',
+        status: 'received',
+        daysAgo: 30,
+        topic: 'products/update',
+        subject: 'product',
+      });
+      const refund = await inboxRow(c, {
+        gidValue: gid(1056),
+        status: 'received',
+        daysAgo: 91,
+        topic: 'refunds/create',
+      });
+      const waitingOrder = await inboxRow(c, {
+        gidValue: gid(1057),
+        status: 'received',
+        daysAgo: 120,
+      });
+      const stuck = await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO connection_sync_runs (connection_id, kind, status, started_at)
+         VALUES ($1::uuid, 'backfill_orders', 'running', now() - interval '100 days')
+         RETURNING id`,
+        [c.id],
+      );
+      const kept = await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO connection_sync_runs (connection_id, kind, status, started_at, finished_at)
+         VALUES ($1::uuid, 'backfill_orders', 'succeeded', now() - interval '120 days',
+                 now() - interval '120 days')
+         RETURNING id`,
+        [c.id],
+      );
+
+      const outcome = await worker.get(InboxPurgeJob).run();
+      expect(outcome.unprocessedInboundEvents).toBeGreaterThanOrEqual(2);
+      const left = (
+        await api.owner.pool.query<{ id: string }>(
+          `SELECT id FROM inbound_events WHERE connection_id = $1::uuid`,
+          [c.id],
+        )
+      ).rows.map((r) => r.id);
+      expect(left.sort()).toEqual([alone, recentProduct, waitingOrder].sort());
+      for (const gone of [superseded, newer, product, refund]) expect(left).not.toContain(gone);
+      const runs = (
+        await api.owner.pool.query<{ id: string }>(
+          `SELECT id FROM connection_sync_runs WHERE connection_id = $1::uuid`,
+          [c.id],
+        )
+      ).rows.map((r) => r.id);
+      // The newest finished run of a kind stays, however old; the stuck unfinished one goes.
+      expect(runs).toEqual([kept.rows[0]?.id]);
+      expect(runs).not.toContain(stuck.rows[0]?.id);
+    });
+
     it('QA: keeps rows 1 hour short of 90 and 180 days and purges them 1 hour past, for every closed status', async () => {
       const c = await plant();
       const ids = {
@@ -933,8 +1242,9 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
           daysAgo: 91,
         }),
         echoGone: await inboxRow(c, { gidValue: gid(1049), status: 'echo', daysAgo: 91 }),
+        // Its own order: a newer row of the same order that did not fail would supersede it.
         failedKept: await inboxRow(c, {
-          gidValue: gid(1049),
+          gidValue: gid(1058),
           status: 'failed',
           daysAgo: 179,
           minutesAgo: 23 * 60,
@@ -970,17 +1280,21 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         expect(checked, status).toHaveProperty('skipped');
         expect(await runsOf(c, 'sweep_orders'), status).toEqual([]);
         expect(await runsOf(c, 'hourly_check'), status).toEqual([]);
-        // A paused connection's scan is accepted and then fails in its job; an archived one is
-        // refused at the route.
-        if (status === 'archived') {
-          const scan = await api.call(manager, 'POST', `/api/connections/${c.id}/gateway-scan`);
-          expect(scan.status, status).toBe(409);
-        }
+        // QA 3: a paused connection's scan and backfill are refused at the route with
+        // CONNECTION_PAUSED; an archived one's with CONNECTION_ARCHIVED and CONNECTION_NOT_READY.
+        const scan = await api.call(manager, 'POST', `/api/connections/${c.id}/gateway-scan`);
+        expect(scan.status, status).toBe(409);
+        expect(scan.body, status).toMatchObject({
+          code: status === 'paused' ? 'CONNECTION_PAUSED' : 'CONNECTION_ARCHIVED',
+        });
+        expect(await runsOf(c, 'gateway_scan'), status).toEqual([]);
         const fill = await api.call(manager, 'POST', `/api/connections/${c.id}/backfill`, {
           goLiveAt: GO_LIVE,
         });
         expect(fill.status, status).toBe(409);
-        expect(fill.body, status).toMatchObject({ code: 'CONNECTION_NOT_READY' });
+        expect(fill.body, status).toMatchObject({
+          code: status === 'paused' ? 'CONNECTION_PAUSED' : 'CONNECTION_NOT_READY',
+        });
       }
     });
   });

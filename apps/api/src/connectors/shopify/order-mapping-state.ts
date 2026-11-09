@@ -75,6 +75,11 @@ export const OrderMappingState = z.looseObject({
   recordedRefundIds: z.array(z.string()).optional(),
   /** Set while the last read did not hold the whole sales history (task 10, netting). */
   salesHistoryTruncated: z.boolean().optional(),
+  /**
+   * Set when the `import` actor created the order (a closed order placed before go live, AC-17):
+   * its refunds are recorded in `recordedRefundIds` and never published (security review M2).
+   */
+  imported: z.boolean().optional(),
   /** The replacement orders made from lines added while a fulfillment was active (AC-12). */
   replacementOrderIds: z.array(z.string()).optional(),
   /** The Shopify line item ids those replacement orders hold, never sent again. */

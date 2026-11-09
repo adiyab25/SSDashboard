@@ -339,6 +339,17 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.connectionBackfillStarted',
     proof: 'apps/api/test/shopify-sync-jobs.e2e-spec.ts',
   },
+  // Spec 0015 task 12 (security review L7): a manager started a gateway scan of a connection.
+  // Record type `connection`, the label the store code; the diff holds the scan run id only.
+  'connection.gateway_scan_started': {
+    module: 'connectors',
+    recordType: 'connection',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.connectionGatewayScanStarted',
+    proof: 'apps/api/test/shopify-sync-jobs.e2e-spec.ts',
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */

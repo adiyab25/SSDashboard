@@ -48,7 +48,7 @@ import {
   ShopifyCustomerMappingError,
 } from './customer-mapper.js';
 import { nettingInstantsOf, planNetting } from './edit-netting.js';
-import { ExchangeByEdit } from './exchange-by-edit.js';
+import { ExchangeByEdit, stateWithoutWaitingReplacement } from './exchange-by-edit.js';
 import { nextKnownOrderState, planKnownOrder, type KnownOrderPlan } from './known-order-plan.js';
 import {
   cancelReasonCodeOf,
@@ -106,6 +106,21 @@ interface EventRow extends Record<string, unknown> {
   status: string;
   /** When this run first read the event (before the read back), exact to the microsecond. */
   read_started_at: string;
+}
+
+/**
+ * How the order part of a run applies a read: the job name its `system_job` actors carry, and
+ * whether the read came from the backfill's bulk or paged result (spec 0015 task 12).
+ */
+interface ApplyOptions {
+  /** `connectors.shopify.inbox`, or `connectors.shopify.backfill` (security review L4). */
+  readonly jobName: string;
+  /**
+   * A backfill read: the bulk snapshot may be older than webhook events received since, so it
+   * coalesces nothing (code review minor), and `last_order_at` takes the order's `createdAt`,
+   * never the clock (code review minor).
+   */
+  readonly fromBackfill: boolean;
 }
 
 /** The connection columns the job reads; the ciphertext stays a buffer in memory only. */
@@ -232,9 +247,11 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *   first fulfillment (AC-13), and `last_order_at`. Every applied read of an order (new, cancel,
  *   or known; never a held, stale, or test one) then nets its sales history (task 10, `net`):
  *   `ChannelEditNetted` per new pair and `ChannelRefundRecorded` per new refund, in the same
- *   unit, their ids kept on the mapping. An empty read back is `ignored` `not_visible`. Every other `received` event
- *   of the same order that arrived before this run's read back is marked `processed` `coalesced`
- *   in the same transaction; a later one waits for its own job (code review m1).
+ *   unit, their ids kept on the mapping (refunds before go live, or of an imported order, are
+ *   kept quiet: security review M2). An empty read back is `ignored` `not_visible`. Every other
+ *   `received` event of the same order that arrived before this run's read back is marked
+ *   `processed` `coalesced` in the same transaction; a later one waits for its own job (code
+ *   review m1). A backfill read (`applyRead`) coalesces nothing.
  * - A customer topic (task 11) reads the customer back with `CUSTOMER_READ` and calls
  *   `CustomersService.findOrCreate` (see `customer`), with the same `not_visible`, `stale`,
  *   `coalesced`, and failure rules; no phone is `processed` `no_phone`, writing nothing.
@@ -344,7 +361,10 @@ export class InboxJob {
       variables: { id: gid },
     });
     if ('done' in answer) return answer.done;
-    return this.applyOrder(event, connection, config.data, gid, answer.data, jobId, event.id);
+    return this.applyOrder(event, connection, config.data, gid, answer.data, jobId, event.id, {
+      jobName: INBOX_JOB_NAME,
+      fromBackfill: false,
+    });
   }
 
   /**
@@ -352,14 +372,18 @@ export class InboxJob {
    * each order of its bulk (or paged) result here with the inbox event it recorded for it, so the
    * order goes through exactly the same unit of work and mapper as a webhook's read back, with no
    * second Shopify call. `read` is the order in `ORDER_READ`'s shape (`{ order }`); `importRunId`
-   * names the backfill run in the `import` actor of a closed order placed before go live. The
-   * event must still be `received` and the connection `active`, as in `run`.
+   * names the backfill run in the `import` actor of a closed order placed before go live, and
+   * `jobName` the job its `system_job` actors carry (`connectors.shopify.backfill`, security
+   * review L4). A backfill read coalesces no other event (its bulk snapshot may predate them) and
+   * moves `last_order_at` only to the order's own `createdAt`. The event must still be `received`
+   * and the connection `active`, as in `run`.
    */
   async applyRead(
     data: { connectionId: string; eventId: string },
     read: { readonly order: unknown },
     jobId: string,
     importRunId: string,
+    jobName: string,
   ): Promise<InboxOutcome> {
     const event = await this.eventOf(data);
     if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
@@ -372,7 +396,10 @@ export class InboxJob {
     if (!connection.store_id) return { skipped: 'CONNECTION_INCOMPLETE' };
     const config = ShopifyConnectionConfig.partial().safeParse(connection.config);
     if (!config.success) return this.fail(event, 'CONNECTION_CONFIG_INVALID', null);
-    return this.applyOrder(event, connection, config.data, gid, read, jobId, importRunId);
+    return this.applyOrder(event, connection, config.data, gid, read, jobId, importRunId, {
+      jobName,
+      fromBackfill: true,
+    });
   }
 
   /** The inbox event of a job, with this run's read start time; undefined when absent. */
@@ -414,6 +441,7 @@ export class InboxJob {
     readData: unknown,
     jobId: string,
     importRunId: string,
+    options: ApplyOptions,
   ): Promise<InboxOutcome> {
     const read =
       typeof readData === 'object' && readData !== null
@@ -421,7 +449,13 @@ export class InboxJob {
         : undefined;
     if (read === null) {
       return this.unit(event, async (tx) =>
-        this.end(tx, event, null, { status: 'ignored', outcome: 'not_visible' }),
+        this.end(
+          tx,
+          event,
+          null,
+          { status: 'ignored', outcome: 'not_visible' },
+          !options.fromBackfill,
+        ),
       );
     }
     let order: ShopifyOrder;
@@ -453,7 +487,7 @@ export class InboxJob {
 
     try {
       return await this.unit(event, (tx) =>
-        this.apply(tx, event, gid, order, base, jobId, importRunId),
+        this.apply(tx, event, gid, order, base, jobId, importRunId, options),
       );
     } catch (error) {
       const code = failureCodeOf(error);
@@ -525,7 +559,9 @@ export class InboxJob {
   /**
    * A `customers/create` or `customers/update` event (task 11, AC-15): reads the customer back
    * with `CUSTOMER_READ`, parses its phone with `EgyptianPhone.parse` at this edge, and calls
-   * `CustomersService.findOrCreate(tx, { phone, channelCustomer, name, seenAt, phoneVerified: false })` (owner ruling L1: an unverified phone never links to an existing customer; the event is `processed` `unverified_phone` when it linked nothing) in one
+   * `CustomersService.findOrCreate` with the phone, channel customer, name, seen time, and
+   * `phoneVerified: false` (owner ruling L1: an unverified phone never links to an existing
+   * customer; the event is `processed` `unverified_phone` when it linked nothing) in one
    * transaction with the event's end. No customer touches an order, so the unit is a plain
    * transaction, not `OrderTransactions.run`. An empty read back is `ignored` `not_visible`; a
    * read back of another customer fails `READ_BACK_MISMATCH`; a read not newer than one an
@@ -620,9 +656,13 @@ export class InboxJob {
     base: Omit<ShopifyOrderContext, 'variants'>,
     jobId: string,
     importRunId: string,
+    options: ApplyOptions,
   ): Promise<InboxOutcome> {
     const label = labelOf(order);
-    if (order.test) return this.end(tx, event, label, { status: 'ignored', outcome: 'test_order' });
+    const coalesce = !options.fromBackfill;
+    if (order.test) {
+      return this.end(tx, event, label, { status: 'ignored', outcome: 'test_order' }, coalesce);
+    }
 
     const mapping = (
       await tx.execute<MappingRow>(sql`
@@ -636,10 +676,37 @@ export class InboxJob {
     ).rows[0];
     if (mapping?.local_id) {
       const applied = mapping.external_version ? Date.parse(mapping.external_version) : -Infinity;
-      if (Date.parse(order.updatedAt) <= applied) {
-        return this.end(tx, event, label, { status: 'ignored', outcome: 'stale' });
+      if (Date.parse(order.updatedAt) < applied) {
+        return this.end(tx, event, label, { status: 'ignored', outcome: 'stale' }, coalesce);
       }
-      return this.applyKnown(tx, event, label, mapping, mapping.local_id, order, base, jobId);
+      if (Date.parse(order.updatedAt) === applied) {
+        // Lead decision D12: a bulk imported order's history was never read; a read of the same
+        // version only nets it (no orders call: nothing else changed). Otherwise it is stale.
+        const state = parseOrderMappingState(mapping.state);
+        if (state.salesHistoryTruncated !== true) {
+          return this.end(tx, event, label, { status: 'ignored', outcome: 'stale' }, coalesce);
+        }
+        const netted = await this.net(tx, mapping.local_id, order, state, base.goLiveAt);
+        await this.saveMapping(tx, mapping.id, order.updatedAt, netted);
+        return this.end(
+          tx,
+          event,
+          label,
+          { status: 'processed', outcome: 'history_netted' },
+          coalesce,
+        );
+      }
+      return this.applyKnown(
+        tx,
+        event,
+        label,
+        mapping,
+        mapping.local_id,
+        order,
+        base,
+        jobId,
+        options,
+      );
     }
 
     const variantGids = [
@@ -658,6 +725,8 @@ export class InboxJob {
     // (imported shipped ones too), so a later read holds the applied lines (code re-review R1).
     const delivered = order.cancelledAt === null ? firstActiveFulfillmentOf(order) : null;
     const state = createdOrderState(order, base, mapped.input.lines, mapped, delivered?.id ?? null);
+    // An order created by the `import` actor never publishes its refunds (security review M2).
+    if (mapped.actor === 'import') state.imported = true;
     const row = await tx.execute<{ id: string }>(sql`
       INSERT INTO connection_external_ids (connection_id, entity, external_id, external_version,
                                            state)
@@ -672,9 +741,9 @@ export class InboxJob {
     const actor: ChannelCreateActor =
       mapped.actor === 'import'
         ? { type: 'import', runId: importRunId }
-        : { type: 'system_job', job: INBOX_JOB_NAME, jobId };
+        : { type: 'system_job', job: options.jobName, jobId };
     const created = await this.intake.createFromChannel(tx, mapped.input, actor);
-    const netted = await this.net(tx, created.orderId, order, state);
+    const netted = await this.net(tx, created.orderId, order, state, base.goLiveAt);
     await tx.execute(sql`
       UPDATE connection_external_ids
       SET local_id = ${created.orderId}::uuid, state = ${JSON.stringify(netted)}::jsonb,
@@ -684,7 +753,7 @@ export class InboxJob {
       ? 'gift_tag_not_free'
       : null;
     if (created.created) {
-      const moveActor: ChannelActor = { type: 'system_job', job: INBOX_JOB_NAME, jobId };
+      const moveActor: ChannelActor = { type: 'system_job', job: options.jobName, jobId };
       if (cancelReasonCode !== null) {
         const cancel = await this.intake.cancelFromChannel(
           tx,
@@ -711,9 +780,15 @@ export class InboxJob {
                  AND r.finished_at IS NOT NULL
                ORDER BY r.started_at DESC, r.id DESC LIMIT 1) = 'false'`);
     }
+    // A backfilled order moves the last order only to its own creation time (code review minor):
+    // the greatest `createdAt` seen, never the clock.
+    const lastOrderAt = options.fromBackfill
+      ? sql`greatest(last_order_at, ${isoOf(order.createdAt)}::timestamptz)`
+      : sql`now()`;
     await tx.execute(sql`
-      UPDATE connections SET last_order_at = now() WHERE id = ${event.connection_id}::uuid`);
-    return this.end(tx, event, label, { status: 'processed', outcome });
+      UPDATE connections SET last_order_at = ${lastOrderAt}
+      WHERE id = ${event.connection_id}::uuid`);
+    return this.end(tx, event, label, { status: 'processed', outcome }, coalesce);
   }
 
   /**
@@ -721,7 +796,9 @@ export class InboxJob {
    * inside the unit, in this order (the plan is `planKnownOrder`, pure):
    *
    * 1. A Shopify cancel: `cancelFromChannel` with `channel.<reason>`, and nothing else; an answer
-   *    that applied nothing (`already_final`, `after_pickup`) is outcome `cancel_not_applied`.
+   *    that applied nothing (`already_final`, `after_pickup`) is outcome `cancel_not_applied`. A
+   *    waiting replacement is dropped (outcome `replacement_dropped` when the cancel applied): a
+   *    cancelled original never gets one, so the hourly check stops trying.
    * 2. Late variant links of `state.unmappedLines` whose variant now maps
    *    (`linkChannelLineVariant`), before the edit, so the link is never seen as a change; a link
    *    that orders refuses as `VariantUnknown` is planned again with that variant unmapped. Task 8
@@ -761,8 +838,10 @@ export class InboxJob {
     order: ShopifyOrder,
     base: Omit<ShopifyOrderContext, 'variants'>,
     jobId: string,
+    options: ApplyOptions,
   ): Promise<InboxOutcome> {
-    const actor: ChannelActor = { type: 'system_job', job: INBOX_JOB_NAME, jobId };
+    const actor: ChannelActor = { type: 'system_job', job: options.jobName, jobId };
+    const coalesce = !options.fromBackfill;
     const state = parseOrderMappingState(mapping.state);
     const variantGids = [
       ...new Set([
@@ -777,12 +856,18 @@ export class InboxJob {
 
     if (plan.cancelReasonCode !== null) {
       const cancel = await this.intake.cancelFromChannel(tx, orderId, plan.cancelReasonCode, actor);
-      const netted = await this.net(tx, orderId, order, state);
+      const dropped = state.pendingReplacementLines !== undefined;
+      const kept = dropped ? stateWithoutWaitingReplacement(state) : state;
+      const netted = await this.net(tx, orderId, order, kept, base.goLiveAt);
       await this.saveMapping(tx, mapping.id, order.updatedAt, netted);
-      return this.end(tx, event, label, {
-        status: 'processed',
-        outcome: cancel.applied ? null : 'cancel_not_applied',
-      });
+      const cancelOutcome = dropped ? 'replacement_dropped' : null;
+      return this.end(
+        tx,
+        event,
+        label,
+        { status: 'processed', outcome: cancel.applied ? cancelOutcome : 'cancel_not_applied' },
+        coalesce,
+      );
     }
 
     const linked = new Set<string>();
@@ -864,9 +949,9 @@ export class InboxJob {
     }
 
     next = nextKnownOrderState(next, plan, { editApplied, linked, paymentLocked });
-    next = await this.net(tx, orderId, order, next);
+    next = await this.net(tx, orderId, order, next, base.goLiveAt);
     await this.saveMapping(tx, mapping.id, order.updatedAt, next);
-    return this.end(tx, event, label, { status: 'processed', outcome });
+    return this.end(tx, event, label, { status: 'processed', outcome }, coalesce);
   }
 
   /**
@@ -875,14 +960,18 @@ export class InboxJob {
    * operating day cutoff applies, never a TypeScript date), then `planNetting`; publishes one
    * `ChannelEditNetted` per new pair and one `ChannelRefundRecorded` per new refund in the unit,
    * and returns the state with the netted sale ids, the recorded refund ids, and
-   * `salesHistoryTruncated` while the read did not hold the whole history. Never changes the
-   * order: the snapshot was already decided by the lines.
+   * `salesHistoryTruncated` while the read did not hold the whole history. A refund that happened
+   * before `goLiveAt`, or any refund of an order the `import` actor created (`state.imported`), is
+   * kept in `recordedRefundIds` without `ChannelRefundRecorded` (security review M2): feature 35
+   * must never count money that moved before the app took over. Never changes the order: the
+   * snapshot was already decided by the lines.
    */
   private async net(
     tx: Transaction,
     orderId: string,
     order: ShopifyOrder,
     state: OrderMappingState,
+    goLiveAt: string | null,
   ): Promise<OrderMappingState> {
     const instants = nettingInstantsOf(order);
     const days = new Map<string, string>();
@@ -892,7 +981,10 @@ export class InboxJob {
         FROM unnest(${pgArray(instants)}::text[]) AS t(at)`);
       for (const row of rows) days.set(row.at, row.day);
     }
-    const plan = planNetting(order, days, state);
+    const plan = planNetting(order, days, state, {
+      before: goLiveAt,
+      all: state.imported === true,
+    });
     for (const pair of plan.pairs) {
       await this.events.publish(
         tx,

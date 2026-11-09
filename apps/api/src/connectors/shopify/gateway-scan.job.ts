@@ -12,7 +12,11 @@ import { gatewayScanBulkQuery } from './shopify-queries.js';
 /** The days of orders the gateway scan reads (the 60 days Shopify lets the app see, Q-13.2). */
 export const GATEWAY_SCAN_DAYS = 60;
 
-/** The most distinct gateway names one scan keeps (far above any real store's few). */
+/**
+ * The most distinct gateway names one scan keeps (far above any real store's few). Past it the
+ * run records `gatewayNamesTruncated` and the backfill refuses with `GATEWAYS_TOO_MANY`, since an
+ * unlisted name could never be checked for a mapping (security review L3).
+ */
 export const GATEWAY_SCAN_MAX_NAMES = 100;
 
 /** An instant as the whole second UTC text Shopify's search takes. */
@@ -35,9 +39,10 @@ function namesOf(value: unknown): string[] {
  * payment gateway names, polled every 30 seconds (or found by the next poll after Shopify's
  * `BULK_OPERATIONS_FINISH`), streamed line by line and never stored. The distinct names, keyed as
  * `config.gatewayMethods` keys them (`gatewayKeyOf`), are kept sorted in the run's
- * `counts.gatewayNames` (at most 100) with `counts.orders`: the Mapping tab lists them, and
- * `POST /api/connections/:id/backfill` refuses with `GATEWAYS_UNMAPPED` while the newest
- * succeeded scan names one with no method. Gateway names are a store's payment providers, never
+ * `counts.gatewayNames` (at most 100, `counts.gatewayNamesTruncated` set when more were seen)
+ * with `counts.orders`: the Mapping tab lists them, and `POST /api/connections/:id/backfill`
+ * refuses with `GATEWAYS_UNMAPPED` while the newest succeeded scan names one with no method, and
+ * with `GATEWAYS_TOO_MANY` while it was truncated. Gateway names are a store's payment providers, never
  * personal data.
  */
 @Injectable()
@@ -82,10 +87,12 @@ export class GatewayScanJob {
       searchInstant(new Date(this.clock.now().getTime() - GATEWAY_SCAN_DAYS * 86_400_000));
     const position = { ...run.position, since };
     const names = new Set(namesOf(run.counts['gatewayNames']));
+    let truncated = run.counts['gatewayNamesTruncated'] === true;
     let orders = typeof run.counts['orders'] === 'number' ? run.counts['orders'] : 0;
     const counts = () => ({
       orders,
       gatewayNames: [...names].sort().slice(0, GATEWAY_SCAN_MAX_NAMES),
+      gatewayNamesTruncated: truncated || names.size > GATEWAY_SCAN_MAX_NAMES,
       since,
     });
     const cost = { points: 0 };
@@ -96,7 +103,12 @@ export class GatewayScanJob {
         gatewayScanBulkQuery(since),
         async (object) => {
           orders += 1;
-          for (const name of scannedGatewayNames(object.root)) names.add(name);
+          for (const name of scannedGatewayNames(object.root)) {
+            // One name past the cap is kept to know it was passed; never more in memory.
+            if (names.has(name)) continue;
+            if (names.size > GATEWAY_SCAN_MAX_NAMES) truncated = true;
+            else names.add(name);
+          }
           await Promise.resolve();
         },
         cost,

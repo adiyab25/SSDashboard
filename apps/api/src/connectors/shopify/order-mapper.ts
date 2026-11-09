@@ -704,12 +704,14 @@ function taxRateOf(
 
 /**
  * The lines with a current quantity above 0 (or, given `held`, exactly the held line items at the
- * held quantities) and the ones whose variant has no mapping.
+ * held quantities) and the ones whose variant has no mapping. Line items in `excluded` (the ones a
+ * replacement order already holds) are never lines of this order.
  */
 function linesOf(
   order: ShopifyOrder,
   context: Pick<ShopifyOrderContext, 'variants' | 'defaultTaxRate'>,
   held?: ReadonlyMap<string, number>,
+  excluded?: ReadonlySet<string>,
 ) {
   if (order.lineItems.pageInfo.hasNextPage) {
     throw new ShopifyOrderMappingError('LINE_ITEMS_TRUNCATED');
@@ -718,7 +720,7 @@ function linesOf(
   const quantityOf = (line: ShopifyOrder['lineItems']['nodes'][number]): number =>
     held ? (held.get(line.id) ?? 0) : line.currentQuantity;
   const lines = order.lineItems.nodes
-    .filter((line) => quantityOf(line) > 0)
+    .filter((line) => quantityOf(line) > 0 && !excluded?.has(line.id))
     .map((line) => {
       const variantId = line.variant ? (context.variants.get(line.variant.id) ?? null) : null;
       if (variantId === null) {
@@ -788,12 +790,15 @@ function sharedOf(
   order: ShopifyOrder,
   context: ShopifyOrderContext,
   held?: ReadonlyMap<string, number>,
+  options: { readonly excluded?: ReadonlySet<string>; readonly allowEmpty?: boolean } = {},
 ) {
   const payment = paymentOf(order, context);
   const gift = giftOf(order, context);
   const discount = discountOf(order);
-  const { lines, unmappedLines } = linesOf(order, context, held);
-  if (lines.length === 0) throw new ShopifyOrderMappingError('NO_OPEN_LINES');
+  const { lines, unmappedLines } = linesOf(order, context, held, options.excluded);
+  if (lines.length === 0 && !options.allowEmpty) {
+    throw new ShopifyOrderMappingError('NO_OPEN_LINES');
+  }
   const flags: ShopifyOrderFlag[] = [...(order.test ? ['test_order' as const] : []), ...gift.flags];
   return {
     payment,
@@ -944,6 +949,31 @@ export function mapShopifyOrderSnapshot(
   held?: ReadonlyMap<string, number>,
 ): ShopifySnapshotMapping {
   const { fields, notes } = sharedOf(order, context, held);
+  return { snapshot: parseOr(ChannelOrderSnapshot, fields, 'CONTRACT_REFUSED'), ...notes };
+}
+
+/** A full snapshot that may be empty once the replacement orders' lines are left out. */
+export interface ShopifyOpenSnapshotMapping extends ShopifyMappingNotes {
+  /** The snapshot, or null when every open line item is held by a replacement order. */
+  readonly snapshot: ChannelOrderSnapshot | null;
+}
+
+/**
+ * The full snapshot of a known order while no fulfillment is active, or on the read where the
+ * first one appears (spec 0015 AC-11, AC-12; code review Major 1 of the sync jobs): every line
+ * item with a current quantity above 0 except the ones in `excluded`, the line items already on a
+ * `-R<n>` replacement order (`state.replacementLineIds`), so a piece is never on the original and
+ * on its replacement at once. Null when no other open line is left: nothing is sent to
+ * `applyChannelEdit` then (the original's own lines were refunded, which reaches the app as
+ * `ChannelRefundRecorded`). Throws `ShopifyOrderMappingError` for anything else it refuses.
+ */
+export function mapShopifyOpenSnapshot(
+  order: ShopifyOrder,
+  context: ShopifyOrderContext,
+  excluded: ReadonlySet<string>,
+): ShopifyOpenSnapshotMapping {
+  const { fields, notes } = sharedOf(order, context, undefined, { excluded, allowEmpty: true });
+  if (fields.lines.length === 0) return { snapshot: null, ...notes };
   return { snapshot: parseOr(ChannelOrderSnapshot, fields, 'CONTRACT_REFUSED'), ...notes };
 }
 

@@ -13,7 +13,8 @@ const Instant = z.iso.datetime({ offset: true });
 /**
  * `POST /api/connections/:id/backfill` (`settings.manage`, AC-17): the go live instant. Open
  * orders placed before it enter `confirmed` (`go_live_import`), later ones as live `new` orders,
- * closed ones with their found states. Feature 15's default (the online location's verified
+ * closed ones with their found states. It is set once, by the first start (lead decision D11): a
+ * later call with the same instant resumes or redoes the backfill, another instant is refused. Feature 15's default (the online location's verified
  * opening count) is filled by the screen, not here.
  */
 export const BackfillBody = z.strictObject({
@@ -39,7 +40,11 @@ export type SyncRunStarted = z.infer<typeof SyncRunStarted>;
  * `CONNECTION_NOT_READY` (the connection is not active, or its health is not `ok` or `degraded`),
  * `GATEWAYS_UNMAPPED` (no gateway scan finished yet, or a scanned gateway name has no payment
  * method in the connection's `gatewayMethods`); 404 `NOT_FOUND`; 422 `INVALID_BODY`; 400
- * `INVALID_QUERY` for a bad list query or cursor.
+ * `INVALID_QUERY` for a bad list query or cursor. Appended by lead decision D11 and the F1 fixes:
+ * 409 `GO_LIVE_ALREADY_SET` (a backfill with another go live instant than the one set), 422
+ * `GO_LIVE_OUT_OF_RANGE` (a first go live instant after the database clock plus 5 minutes or
+ * before it minus 60 days), 409 `CONNECTION_PAUSED` (a scan or backfill of a paused connection),
+ * and 409 `GATEWAYS_TOO_MANY` (the newest gateway scan found more than 100 names).
  */
 export const SyncRunErrorCode = z.enum([
   'SCAN_RUNNING',
@@ -49,6 +54,10 @@ export const SyncRunErrorCode = z.enum([
   'NOT_FOUND',
   'INVALID_BODY',
   'INVALID_QUERY',
+  'GO_LIVE_ALREADY_SET',
+  'GO_LIVE_OUT_OF_RANGE',
+  'CONNECTION_PAUSED',
+  'GATEWAYS_TOO_MANY',
 ]);
 /** One SyncRunErrorCode value. */
 export type SyncRunErrorCode = z.infer<typeof SyncRunErrorCode>;

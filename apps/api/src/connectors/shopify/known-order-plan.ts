@@ -8,6 +8,7 @@ import {
   creationPaymentOf,
   firstActiveFulfillmentOf,
   gatewayMethodOf,
+  mapShopifyOpenSnapshot,
   mapShopifyOrderSnapshot,
   type ShopifyMappingNotes,
   type ShopifyOrder,
@@ -47,12 +48,20 @@ export interface KnownOrderPlan {
   readonly links: readonly PlannedLink[];
   /**
    * The snapshot for `applyChannelEdit`: every line with a current quantity above 0 while no
-   * fulfillment is active, and on the read where the first one appears; afterwards, while one is
-   * active, the lines the app holds at their applied quantities, so only ship to and other changes
-   * reach it (added lines go to `exchange-by-edit.ts`, refunds to `ChannelRefundRecorded`). Null when nothing may be sent: a milestone 1
-   * mapping (no `appliedLines`) whose fulfillment is already reported (code review m4).
+   * fulfillment is active, and on the read where the first one appears, except the line items a
+   * replacement order already holds (`state.replacementLineIds`); afterwards, while one is active,
+   * the lines the app holds at their applied quantities, so only ship to and other changes reach
+   * it (added lines go to `exchange-by-edit.ts`, refunds to `ChannelRefundRecorded`). Null when
+   * nothing may be sent: a milestone 1 mapping (no `appliedLines`) whose fulfillment is already
+   * reported (code review m4), or a full snapshot whose every open line is on a replacement.
    */
   readonly snapshot: ChannelOrderSnapshot | null;
+  /**
+   * True when the plan is the full snapshot (no active fulfillment, or its first read). A waiting
+   * replacement is then dropped once the edit applied (its lines reached the original as a normal
+   * edit) or nothing was left to send: one owner per piece, never the original and a replacement.
+   */
+  readonly fullSnapshot: boolean;
   /**
    * True when the snapshot holds the applied lines because a fulfillment is active and was
    * reported before (not on its first read, and not for a milestone 1 mapping): then the line items
@@ -111,6 +120,7 @@ export function planKnownOrder(
       firstFulfillmentRead: false,
       links: [],
       snapshot: null,
+      fullSnapshot: false,
       holdsAppliedLines: false,
       notes: null,
       rederive: null,
@@ -127,8 +137,11 @@ export function planKnownOrder(
   let snapshot: ChannelOrderSnapshot | null;
   let notes: ShopifyMappingNotes;
   const holdsAppliedLines = first !== null && !firstFulfillmentRead && !milestone1;
-  if (first === null || firstFulfillmentRead) {
-    ({ snapshot, ...notes } = mapShopifyOrderSnapshot(order, context));
+  const fullSnapshot = first === null || firstFulfillmentRead;
+  if (fullSnapshot) {
+    // Lines already on a `-R<n>` order never return to the original (code review Major 1).
+    const excluded = new Set(state.replacementLineIds ?? []);
+    ({ snapshot, ...notes } = mapShopifyOpenSnapshot(order, context, excluded));
   } else if (milestone1) {
     // A milestone 1 mapping knows no applied quantities: a refund must never look like an edit.
     ({ snapshot, ...notes } = mapShopifyOrderSnapshot(order, context));
@@ -143,6 +156,7 @@ export function planKnownOrder(
     firstFulfillmentRead,
     links,
     snapshot,
+    fullSnapshot,
     holdsAppliedLines,
     notes,
     rederive: rederiveOf(order, context, state),
@@ -164,7 +178,9 @@ export interface KnownOrderResult {
  * becomes the held lines and their quantities; unmapped lines drop the linked ones (or follow
  * the snapshot); discount codes are the union of every code seen (code review m3); unmapped
  * gateways follow the read; the reported fulfillment is remembered; `paymentMethodLocked` is set
- * when orders refused the rederive. The creation facts of D10 and keys of later tasks are kept.
+ * when orders refused the rederive; a waiting replacement is dropped after a full snapshot that
+ * applied or had nothing to send (`fullSnapshot`). The creation facts of D10 and keys of later
+ * tasks are kept.
  */
 export function nextKnownOrderState(
   state: OrderMappingState,
@@ -188,5 +204,9 @@ export function nextKnownOrderState(
   }
   if (plan.carrierDelivery !== null) next.deliveryFulfillmentId = plan.carrierDelivery.id;
   if (result.paymentLocked) next.paymentMethodLocked = true;
+  if (plan.fullSnapshot && (plan.snapshot === null || result.editApplied)) {
+    delete next.pendingReplacementLines;
+    delete next.pendingReplacement;
+  }
   return next;
 }

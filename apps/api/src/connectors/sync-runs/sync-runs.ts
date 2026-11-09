@@ -23,7 +23,9 @@ import { ConnectionsError } from '../connectors.errors.js';
  * a duplicate and is skipped; `bulkId` is the bulk operation of a gateway scan or backfill run;
  * `line` the JSONL line the next chunk starts at; `mode` `paged` once the orders backfill fell
  * back to paged reads; `after` the page cursor of a sweep or a paged backfill; `since` the instant
- * a gateway scan reads from (fixed at its first step). Never a bulk result address.
+ * a gateway scan reads from (fixed at its first step); `movedAt` the database instant the position
+ * was last written (stamped by `progress` and `reopen`, read by the stall rule). Never a bulk
+ * result address. A failed run keeps its position, so a backfill can resume from it (AC-17).
  */
 export const RunPosition = z.object({
   step: z.number().int().nonnegative(),
@@ -32,9 +34,23 @@ export const RunPosition = z.object({
   mode: z.enum(['bulk', 'paged']).default('bulk'),
   after: z.string().max(1000).nullable().default(null),
   since: z.string().max(40).nullable().default(null),
+  movedAt: z.string().max(40).nullable().default(null),
 });
 /** The parsed RunPosition. */
 export type RunPosition = z.infer<typeof RunPosition>;
+
+/**
+ * An unfinished gateway scan or backfill run whose position has not moved for this long is stalled
+ * (code review Major 3): its jobs are gone (every attempt of the queue's longest retry window,
+ * about 3 h 31 min of waits plus 18 attempts of at most 5 minutes, is over), so the start routes
+ * no longer refuse with `SCAN_RUNNING` or `BACKFILL_RUNNING` because of it.
+ */
+export const RUN_STALLED_AFTER_MS = 6 * 60 * 60_000;
+
+/** The position JSON with `movedAt` stamped by the database clock, as stored in `cursor`. */
+const stampedCursor = (position: RunPosition) =>
+  sql`(${JSON.stringify(position)}::jsonb || jsonb_build_object('movedAt',
+        to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text`;
 
 /** The first position of a run. */
 export function firstPosition(): RunPosition {
@@ -49,6 +65,10 @@ export interface SyncRunRow {
   readonly status: SyncRunStatus;
   readonly startedAt: string;
   readonly finished: boolean;
+  /** When the position last moved (`position.movedAt`), else when the run started. */
+  readonly movedAt: string;
+  /** The code a finished run ended with, else null. */
+  readonly errorCode: string | null;
   readonly watermarkFrom: string | null;
   readonly position: RunPosition;
   readonly counts: Record<string, unknown>;
@@ -175,6 +195,46 @@ export class SyncRuns {
     return row ? this.rowOf(row) : null;
   }
 
+  /**
+   * Whether an unfinished run is stalled (`RUN_STALLED_AFTER_MS` since its position last moved),
+   * judged by the database clock.
+   */
+  async stalled(executor: Executor, run: SyncRunRow): Promise<boolean> {
+    const { rows } = await executor.execute<{ stalled: boolean }>(sql`
+      SELECT ${run.movedAt}::timestamptz
+             < clock_timestamp() - make_interval(secs => ${RUN_STALLED_AFTER_MS / 1000})
+             AS stalled`);
+    return rows[0]?.stalled === true;
+  }
+
+  /** The newest run of a connection among `kinds`, finished or not, or null. */
+  async newest(
+    executor: Executor,
+    connectionId: string,
+    kinds: readonly SyncRunKind[],
+  ): Promise<SyncRunRow | null> {
+    const { rows } = await executor.execute<RunRecord>(sql`
+      SELECT ${RUN_COLUMNS} FROM connection_sync_runs
+      WHERE connection_id = ${connectionId}::uuid
+        AND kind::text = ANY(${pgArray([...kinds])}::text[])
+      ORDER BY started_at DESC, id DESC
+      LIMIT 1`);
+    const row = rows[0];
+    return row ? this.rowOf(row) : null;
+  }
+
+  /**
+   * Opens a failed run again at `position` (status `running`, no end, no code): the backfill's
+   * resume (lead decision D11). The caller sends the job of `position.step`.
+   */
+  async reopen(executor: Executor, runId: string, position: RunPosition): Promise<void> {
+    await executor.execute(sql`
+      UPDATE connection_sync_runs
+      SET status = 'running', finished_at = NULL, error_code = NULL,
+          cursor = ${stampedCursor(position)}
+      WHERE id = ${runId}::uuid`);
+  }
+
   /** The newest `succeeded` run of a kind, or null. */
   async lastSucceeded(
     executor: Executor,
@@ -207,13 +267,16 @@ export class SyncRuns {
   ): Promise<void> {
     await executor.execute(sql`
       UPDATE connection_sync_runs
-      SET cursor = ${JSON.stringify(update.position)}, counts = ${JSON.stringify(update.counts)}::jsonb,
+      SET cursor = ${stampedCursor(update.position)}, counts = ${JSON.stringify(update.counts)}::jsonb,
           cost_points = cost_points + ${Math.max(0, Math.round(update.cost))},
           status = ${update.status}::sync_run_status
       WHERE id = ${runId}::uuid AND finished_at IS NULL`);
   }
 
-  /** Finishes a run: its status, counts, the cost spent since the last write, and its code. */
+  /**
+   * Finishes a run: its status, counts, the cost spent since the last write, and its code. A
+   * succeeded run drops its position; a failed one keeps it for a resume (never answered).
+   */
   async finish(
     executor: Executor,
     runId: string,
@@ -229,7 +292,8 @@ export class SyncRuns {
       end.counts === undefined ? sql`counts` : sql`${JSON.stringify(end.counts)}::jsonb`;
     await executor.execute(sql`
       UPDATE connection_sync_runs
-      SET status = ${end.status}::sync_run_status, finished_at = now(), cursor = NULL,
+      SET status = ${end.status}::sync_run_status, finished_at = now(),
+          cursor = CASE WHEN ${end.status} = 'failed' THEN cursor ELSE NULL END,
           counts = ${counts}, cost_points = cost_points + ${Math.max(0, Math.round(end.cost ?? 0))},
           error_code = ${end.errorCode ?? null},
           watermark_to = coalesce(${end.watermarkTo ?? null}::timestamptz, watermark_to)
@@ -286,6 +350,7 @@ export class SyncRuns {
   }
 
   private rowOf(row: RunRecord): SyncRunRow {
+    const position = positionOf(row.cursor);
     return {
       id: row.id,
       connectionId: row.connection_id,
@@ -293,8 +358,10 @@ export class SyncRuns {
       status: row.status,
       startedAt: row.started_at,
       finished: row.finished_at !== null,
+      movedAt: position.movedAt ?? row.started_at,
+      errorCode: row.error_code,
       watermarkFrom: row.watermark_from,
-      position: positionOf(row.cursor),
+      position,
       counts: countsOf(row.counts),
     };
   }

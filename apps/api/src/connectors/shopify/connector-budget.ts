@@ -12,6 +12,12 @@ import { Injectable } from '@nestjs/common';
 export class ConnectorBudget {
   /** How long one chunk may work, in milliseconds. */
   chunkMillis = 60_000;
+  /**
+   * The hard wall clock limit of one bulk chunk, in milliseconds (security review L2): past it the
+   * result stream is aborted even inside one object, a transient `TIMEOUT` the step retries from
+   * its recorded line. Kept below the queue's 300 second job expiry.
+   */
+  chunkHardMillis = 240_000;
   /** How many Shopify cost points one chunk may spend. */
   chunkPoints = 3_000;
   /** How long to wait between two polls of a running bulk operation, in seconds. */

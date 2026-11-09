@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { z } from 'zod';
 import { DATABASE } from '../../database/database.module.js';
-import type { Executor } from '../../database/sql.js';
+import type { Executor, Transaction } from '../../database/sql.js';
+import { JobSender } from '../../platform/jobs/job-sender.js';
 import { SyncRuns, type RunPosition, type SyncRunRow } from '../sync-runs/sync-runs.js';
 import { assembleBulkOrder, type BulkObject } from './bulk-jsonl.js';
 import { BulkRunProgress, type BulkJobOutcome } from './bulk-run-progress.js';
@@ -10,6 +11,12 @@ import { BulkRunner } from './bulk-runner.js';
 import { ConnectionAccess } from './connection-access.js';
 import { ConnectorBudget } from './connector-budget.js';
 import { ConnectorClock } from './connector-clock.js';
+import {
+  BACKFILL_JOB_PRIORITY,
+  connectionGroup,
+  CONNECTOR_SHOPIFY_QUEUE,
+  type ShopifyJobData,
+} from './connector-shopify.queue.js';
 import { searchInstant } from './gateway-scan.job.js';
 import { InboxJob, type InboxOutcome } from './inbox.job.js';
 import {
@@ -26,10 +33,13 @@ import {
   PRODUCTS_BULK_QUERY,
 } from './shopify-queries.js';
 import { isStorableText } from './storable-text.js';
-import { SWEEP_PRODUCT_TOPIC } from './sweep.job.js';
+import { SWEEP_ORDER_TOPIC, SWEEP_PRODUCT_TOPIC } from './sweep.job.js';
 
 /** The days of orders before the go live instant the backfill reads (Q-13.2). */
 export const BACKFILL_DAYS = 60;
+
+/** The job name a backfilled order's `system_job` actors carry (security review L4). */
+export const BACKFILL_JOB_NAME = 'connectors.shopify.backfill';
 
 /** The topic a backfill's order row carries, so the one inbox path applies it (AC-7). */
 export const BACKFILL_ORDER_TOPIC = 'orders/create';
@@ -80,9 +90,19 @@ function countOf(counts: Record<string, unknown>, key: string): number {
  *    (`go_live_import`, actor `system_job`), a later one as a live `new` order, and a closed one
  *    with its found states (actor `import` with this run's id). If Shopify refuses the bulk
  *    selection (`DiscountApplication` is no `Node`), the run falls back to paged reads of one order
- *    each (`ORDERS_BACKFILL_PAGE`, about 810 points), dedupe `backfill:<run id>:<gid>`. When it
- *    ends, `orders_swept_through` is set (the run's start) and `last_sweep_at` moves: the backfill
- *    read every order up to then, so the orders sweep takes over.
+ *    each (`ORDERS_BACKFILL_PAGE`, about 871 points: `ORDER_READ`'s 869 plus 2 for the
+ *    connection), dedupe `backfill:<run id>:<gid>`. When it ends, `orders_swept_through` is set
+ *    (the run's start) and `last_sweep_at` moves: the backfill read every order up to then, so the
+ *    orders sweep takes over. Each order's `system_job` actors carry `connectors.shopify.backfill`
+ *    (security review L4); a backfill read coalesces no webhook event and moves `last_order_at`
+ *    only to the greatest order `createdAt` seen.
+ * 3. After the orders run succeeds, every imported order still open gets one budgeted read back
+ *    (lead decision D12): an inbox row (`source = 'backfill'`, dedupe `backfill-reread:<gid>`)
+ *    with its job, so its sales history, left unread by the bulk selection, is netted. Closed
+ *    imported orders are never read again: their netting does not matter.
+ *
+ * A failed or stalled run resumes from its recorded position when the route is called again with
+ * the same go live instant (lead decision D11, `ConnectionsService.startBackfill`).
  *
  * A chunk stops after its budget (`ConnectorBudget`) between two orders and records the JSONL line
  * (or page cursor) reached, so the next chunk resumes there; an order already recorded and no
@@ -104,6 +124,7 @@ export class BackfillJob {
     @Inject(InboxJob) private readonly inbox: InboxJob,
     @Inject(ConnectorClock) private readonly clock: ConnectorClock,
     @Inject(ConnectorBudget) private readonly budget: ConnectorBudget,
+    @Inject(JobSender) private readonly jobs: JobSender,
   ) {}
 
   /** Runs one step of a backfill run (see the class); a stale step is skipped. */
@@ -335,18 +356,60 @@ export class BackfillJob {
     counts: Record<string, unknown>,
     cost: number,
   ): Promise<BulkJobOutcome> {
-    await this.connection.db.transaction(async (tx) => {
-      await this.runs.finish(tx, run.id, { status: 'succeeded', counts, cost });
+    await this.jobs.prepare(CONNECTOR_SHOPIFY_QUEUE);
+    const rereads = await this.connection.db.transaction(async (tx) => {
+      const queued = await this.queueRereads(tx, run.connectionId);
+      await this.runs.finish(tx, run.id, {
+        status: 'succeeded',
+        counts: { ...counts, rereadsQueued: queued },
+        cost,
+      });
       await tx.execute(sql`
         UPDATE connections
         SET orders_swept_through = coalesce(orders_swept_through, ${run.startedAt}::timestamptz),
             last_sweep_at = now(), updated_at = now()
         WHERE id = ${run.connectionId}::uuid`);
+      return queued;
     });
     this.logger.log(
-      `backfill orders run=${run.id} connection=${run.connectionId} objects=${String(counts['objects'])} applied=${String(counts['applied'])} failed=${String(counts['failed'])}`,
+      `backfill orders run=${run.id} connection=${run.connectionId} objects=${String(counts['objects'])} applied=${String(counts['applied'])} failed=${String(counts['failed'])} rereads=${rereads}`,
     );
     return { step: 'done', status: 'succeeded' };
+  }
+
+  /**
+   * The budgeted read back of lead decision D12, in the run's closing transaction: one inbox row
+   * (`source = 'backfill'`, topic `orders/updated`, dedupe `backfill-reread:<gid>`, so a redone
+   * backfill queues none twice) and its job for each order mapping of the connection whose sales
+   * history is still unread (`salesHistoryTruncated`, the bulk import) and that the `import`
+   * actor did not create (a closed order before go live is never read again). The jobs go at the
+   * backfill's low priority, behind webhook and sweep jobs, and each read is paced by the
+   * client's throttle (about 869 points an order). Answers how many were queued.
+   */
+  private async queueRereads(tx: Transaction, connectionId: string): Promise<number> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,
+                                  subject_external_id, subject_version, payload)
+      SELECT m.connection_id, 'backfill', ${SWEEP_ORDER_TOPIC}, 'backfill-reread:' || m.external_id,
+             'order', m.external_id, m.external_version,
+             jsonb_build_object('topic', ${SWEEP_ORDER_TOPIC}::text, 'id', m.external_id,
+                                'updatedAt', to_char(m.external_version AT TIME ZONE 'UTC',
+                                                     'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
+      FROM connection_external_ids m
+      WHERE m.connection_id = ${connectionId}::uuid AND m.entity = 'order'
+        AND m.local_id IS NOT NULL AND m.removed_at IS NULL
+        AND m.state->>'salesHistoryTruncated' = 'true'
+        AND coalesce(m.state->>'imported', 'false') <> 'true'
+      ON CONFLICT ON CONSTRAINT inbound_events_dedupe_unique DO NOTHING
+      RETURNING id`);
+    for (const row of rows) {
+      const data: ShopifyJobData = { kind: 'inbox', connectionId, eventId: row.id };
+      await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, {
+        ...connectionGroup(connectionId),
+        priority: BACKFILL_JOB_PRIORITY,
+      });
+    }
+    return rows.length;
   }
 
   /**
@@ -379,6 +442,7 @@ export class BackfillJob {
       { order: order ?? {} },
       jobId,
       run.id,
+      BACKFILL_JOB_NAME,
     );
   }
 

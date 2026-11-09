@@ -78,10 +78,12 @@ function codeOf(value: string | null | undefined, fallback: string): string {
  * gateway scan and both backfill phases): starts the bulk query when the position has none
  * (`bulkOperationRunQuery`), else reads the operation (`bulkOperation(id:)`), and once it is
  * `COMPLETED` streams its JSONL result from the position's line through `ShopifyClient`, handing
- * each whole object (`BulkObjectGrouper`) to `onObject`. After each object it checks the chunk's
- * budget (`ConnectorBudget`, `ConnectorClock`): out of time, it stops before the next object and
- * answers its first line, so the next chunk resumes there with no object handled twice. At least
- * one object is handled per chunk. The result address is read again by every chunk and never
+ * each whole object (`BulkObjectGrouper`) to `onObject`. It checks the clock on every line
+ * (`ConnectorBudget`, `ConnectorClock`): past the chunk's time, it stops before the next object
+ * and answers its first line, so the next chunk resumes there with no object handled twice; past
+ * the hard limit (`chunkHardMillis`, also the stream's wall clock on its abort controller), it
+ * stops even inside an object with a transient `TIMEOUT`, so the step retries from its recorded
+ * line (security review L2). At least one object is handled per chunk. The result address is read again by every chunk and never
  * stored, logged, or returned; no line of the file is kept. Shopify errors pass through typed.
  */
 @Injectable()
@@ -104,7 +106,9 @@ export class BulkRunner {
     onObject: (object: BulkObject) => Promise<void>,
     cost: { points: number },
   ): Promise<BulkStep> {
-    const deadline = this.clock.now().getTime() + this.budget.chunkMillis;
+    const started = this.clock.now().getTime();
+    const deadline = started + this.budget.chunkMillis;
+    const hardDeadline = started + Math.max(this.budget.chunkMillis, this.budget.chunkHardMillis);
     if (position.bulkId === null) {
       const answer = await this.shopify.request(access, {
         operationName: BULK_OPERATION_RUN_QUERY_OPERATION,
@@ -152,6 +156,7 @@ export class BulkRunner {
       operation.url,
       position.line,
       async (line, index) => {
+        if (this.clock.now().getTime() >= hardDeadline) throw new ShopifyTransientError('TIMEOUT');
         const object = grouper.push(line, index);
         if (!object) return 'next';
         await onObject(object);
@@ -162,6 +167,7 @@ export class BulkRunner {
         }
         return 'next';
       },
+      { wallClockMs: hardDeadline - this.clock.now().getTime() },
     );
     if (!ended.ended && stop.at !== null) {
       return { kind: 'more', position: { bulkId: position.bulkId, line: stop.at } };

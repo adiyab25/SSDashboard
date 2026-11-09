@@ -5,7 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { BulkRunner, type BulkPosition } from './bulk-runner.js';
 import { ConnectorBudget } from './connector-budget.js';
 import { ConnectorClock } from './connector-clock.js';
-import { ShopifyClient, type ShopifyConnectionAccess } from './shopify-client.js';
+import {
+  ShopifyClient,
+  ShopifyTransientError,
+  type ShopifyConnectionAccess,
+} from './shopify-client.js';
 
 const ACCESS = {
   connectionId: 'c1',
@@ -166,6 +170,86 @@ describe('BulkRunner', () => {
     );
     expect(step).toEqual({ kind: 'failed', code: 'ACCESS_DENIED' });
     expect(downloads).toHaveLength(0);
+  });
+
+  it('stops inside an object with a transient TIMEOUT once the hard limit passes, checked on every line (security review L2)', async () => {
+    const { fetchFn } = fakeFetch();
+    const run = runner(fetchFn, 0);
+    // A clock that reads the chunk's start once, then 300 seconds later: the first line is past
+    // the 240 second hard limit, inside the first object.
+    let reads = 0;
+    const jumping = new ConnectorClock();
+    jumping.now = () => new Date((reads++ === 0 ? 0 : 300_000) + Date.UTC(2026, 10, 5));
+    const budget = new ConnectorBudget();
+    budget.chunkHardMillis = 240_000;
+    const client = (run as unknown as { shopify: ShopifyClient }).shopify;
+    const hard = new BulkRunner(client, jumping, budget);
+    const seen: unknown[] = [];
+    await expect(
+      hard.step(
+        ACCESS,
+        { bulkId: BULK, line: 0 },
+        'q',
+        async (object) => {
+          seen.push(object.root['id']);
+          await Promise.resolve();
+        },
+        { points: 0 },
+      ),
+    ).rejects.toEqual(new ShopifyTransientError('TIMEOUT'));
+    expect(seen).toEqual([]);
+  });
+
+  it('does not count the time the caller spends on an object as network idle time (code review minor)', async () => {
+    const text = `${LINES.join('\n')}\n`;
+    const client = new ShopifyClient({
+      timeoutMs: 50,
+      fetch: async () => {
+        await Promise.resolve();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(text));
+              controller.close();
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    const handled: number[] = [];
+    const ended = await client.streamBulkResult(URL_SIGNED, 0, async (_line, index) => {
+      // Each line takes longer than the idle timeout, as a slow database would.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      handled.push(index);
+      return 'next';
+    });
+    expect(ended).toEqual({ ended: true, lines: 6 });
+    expect(handled).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('aborts a stream open past its wall clock limit on the same controller as a transient TIMEOUT', async () => {
+    const client = new ShopifyClient({
+      timeoutMs: 10_000,
+      fetch: async (_input: string | URL | Request, init?: RequestInit) => {
+        await Promise.resolve();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              // One line, then nothing more: only the wall clock can end the read.
+              controller.enqueue(new TextEncoder().encode(`${LINES[0] ?? ''}\n`));
+              init?.signal?.addEventListener('abort', () => controller.error(new Error('aborted')));
+            },
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await expect(
+      client.streamBulkResult(URL_SIGNED, 0, async () => Promise.resolve('next' as const), {
+        wallClockMs: 30,
+      }),
+    ).rejects.toEqual(new ShopifyTransientError('TIMEOUT'));
   });
 
   it('keeps no file: no connector source imports the file system', () => {

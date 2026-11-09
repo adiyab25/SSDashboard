@@ -8,7 +8,11 @@ export type ConnectionsErrorCode =
   | 'SCAN_RUNNING'
   | 'BACKFILL_RUNNING'
   | 'CONNECTION_NOT_READY'
-  | 'GATEWAYS_UNMAPPED';
+  | 'GATEWAYS_UNMAPPED'
+  | 'CONNECTION_PAUSED'
+  | 'GO_LIVE_ALREADY_SET'
+  | 'GO_LIVE_OUT_OF_RANGE'
+  | 'GATEWAYS_TOO_MANY';
 
 /**
  * A typed domain error of the connectors module (spec 0015), never an error string. Its message

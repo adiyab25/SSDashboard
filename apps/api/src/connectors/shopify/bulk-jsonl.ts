@@ -10,7 +10,16 @@ import { gatewayKeyOf } from './order-mapper.js';
  * Shopify call; errors carry a code and a line number, never a value of the file.
  */
 
-/** A line that is not a JSON object, or a child line that does not follow its parent. */
+/**
+ * The most child lines one object may hold (security review L2): an order's line items and
+ * discount applications are far fewer. Past it the result is unreadable, never kept growing.
+ */
+export const BULK_OBJECT_MAX_CHILDREN = 2_000;
+
+/**
+ * A line that is not a JSON object, a child line that does not follow its parent, or an object
+ * with more than `BULK_OBJECT_MAX_CHILDREN` children.
+ */
 export class BulkResultUnreadable extends Error {
   /** @param line - the line's index in the file (from 0). */
   constructor(readonly line: number) {
@@ -65,6 +74,9 @@ export class BulkObjectGrouper {
       return done;
     }
     if (typeof parentId !== 'string' || !this.current || !this.current.ids.has(parentId)) {
+      throw new BulkResultUnreadable(line);
+    }
+    if (this.current.children.length >= BULK_OBJECT_MAX_CHILDREN) {
       throw new BulkResultUnreadable(line);
     }
     this.current.children.push(node);

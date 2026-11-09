@@ -195,6 +195,8 @@ export type WaitingReplacementRetry =
   | { readonly status: 'nothing_waiting' }
   /** The original is still not replaceable: the lines keep waiting. */
   | { readonly status: 'waiting' }
+  /** The original was cancelled: the waiting replacement is dropped, never tried again. */
+  | { readonly status: 'dropped' }
   /** The replacement order was made and the mapping no longer waits. */
   | { readonly status: 'created'; readonly orderId: string };
 
@@ -260,7 +262,9 @@ export class ExchangeByEdit {
    * it and waits no more; refused with `RelatedOrderState`, the lines keep waiting. Idempotent: a
    * replacement already made under its ref is taken as made. Throws `ShopifyOrderMappingError`
    * (`MAPPING_STATE_UNREADABLE`, `CONTRACT_REFUSED`) and orders' other domain errors (for example
-   * `VariantUnknown` for a variant archived since), which the caller records and leaves.
+   * `VariantUnknown` for a variant archived since), which the caller records and leaves. A
+   * waiting replacement whose original is now `cancelled` is dropped (`dropped`), so the hourly
+   * check stops trying it every hour.
    */
   async retryWaitingReplacements(
     tx: OrderTransaction,
@@ -282,6 +286,10 @@ export class ExchangeByEdit {
     if (!lines || !replacement) return { status: 'nothing_waiting' };
 
     const original = await this.queries.detail(row.local_id, tx);
+    if (original.fulfillmentState === 'cancelled') {
+      await this.saveState(tx, row.id, stateWithoutWaitingReplacement(state));
+      return { status: 'dropped' };
+    }
     const input = waitingReplacementInput(replacement, lines, {
       storeId: original.storeId,
       channelId: original.channelId,
@@ -303,11 +311,20 @@ export class ExchangeByEdit {
       attempt.orderId,
       lines.map((line) => line.channelLineId),
     );
+    await this.saveState(tx, row.id, next);
+    return { status: 'created', orderId: attempt.orderId };
+  }
+
+  /** Writes the order mapping's state (the connector's own row). */
+  private async saveState(
+    tx: OrderTransaction,
+    mappingId: string,
+    state: OrderMappingState,
+  ): Promise<void> {
     await tx.execute(sql`
       UPDATE connection_external_ids
-      SET state = ${JSON.stringify(next)}::jsonb, updated_at = now()
-      WHERE id = ${row.id}::uuid`);
-    return { status: 'created', orderId: attempt.orderId };
+      SET state = ${JSON.stringify(state)}::jsonb, updated_at = now()
+      WHERE id = ${mappingId}::uuid`);
   }
 
   /**

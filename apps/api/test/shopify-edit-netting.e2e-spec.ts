@@ -567,11 +567,15 @@ describe(
       await arrive(c, 'orders/updated', gid, '2026-11-08T09:00:00Z');
       const held = await heldCount(c, gid, line('6660000008002'));
       // The piece is on exactly one order, or still waiting alone; never on the original and
-      // waiting (or made) at once.
+      // waiting (or made) at once. The owner rule (F1): with no active fulfillment the added
+      // line is a normal edit of the original and the waiting replacement is dropped once that
+      // edit applies; orders refuses it here (the original is frozen after its carrier delivery),
+      // so the line keeps waiting and the original does not hold it.
       expect(
         [held.originalHas, held.replacementHas, held.waiting].filter(Boolean).length,
         JSON.stringify(held),
-      ).toBeLessThanOrEqual(1);
+      ).toBe(1);
+      expect(held.replacementHas, JSON.stringify(held)).toBe(false);
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
@@ -589,6 +593,27 @@ describe(
       const held = await heldCount(c, gid, line('6660000008002'));
       expect(held.replacementHas).toBe(true);
       expect(held.originalHas, JSON.stringify(held)).toBe(false);
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
+    it('publishes no refund event for an order imported with a refund made before go live, keeping its id recorded (security review M2)', async () => {
+      useShopifyScenarios('order-imported-refund-before-go-live');
+      const c = await plant();
+      await api.owner.pool.query(
+        `UPDATE connections SET go_live_at = '2026-11-06T00:00:00Z' WHERE id = $1::uuid`,
+        [c.id],
+      );
+      const gid = 'gid://shopify/Order/5550001049001';
+      expect(await arrive(c, 'orders/create', gid, '2026-11-05T10:00:00Z')).toMatchObject({
+        status: 'processed',
+      });
+      const order = await orderOf(c, gid);
+      expect(order?.fulfillment_state).toBe('shipped');
+      expect(refundsFor(order?.id as string)).toEqual([]);
+      expect((await mappingOf(c, gid))?.state).toMatchObject({
+        imported: true,
+        recordedRefundIds: ['gid://shopify/Refund/1110001049001'],
+      });
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 

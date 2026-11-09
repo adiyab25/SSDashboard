@@ -1837,6 +1837,7 @@ export const ar: Catalog = {
       orderPaymentMethodRederived: 'تصحيح طريقة دفع الطلب',
       connectionCreated: 'ربط متجر Shopify',
       connectionBackfillStarted: 'بدء استيراد بيانات Shopify السابقة',
+      connectionGatewayScanStarted: 'بدء فحص بوابات الدفع في Shopify',
       policyChanged: 'تغيير سياسة نوع مالك الموقع',
       costRuleRecorded: 'تسجيل قاعدة تكلفة لكل طلب',
       costRuleRecordedInLockedPeriod: 'تسجيل قاعدة تكلفة لكل طلب في فترة مقفلة',

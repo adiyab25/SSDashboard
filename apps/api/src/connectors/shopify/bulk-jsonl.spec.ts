@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assembleBulkOrder,
+  BULK_OBJECT_MAX_CHILDREN,
   BulkObjectGrouper,
   BulkResultUnreadable,
   scannedGatewayNames,
@@ -48,6 +49,24 @@ describe('the bulk JSONL reading', () => {
     expect(() => group([JSON.stringify({ id: LINE, __parentId: ORDER })])).toThrow(
       'BULK_RESULT_UNREADABLE at line 0',
     );
+  });
+
+  it('refuses an object with more children than BULK_OBJECT_MAX_CHILDREN, never growing (security review L2)', () => {
+    const grouper = new BulkObjectGrouper();
+    grouper.push(JSON.stringify({ id: 'gid://shopify/Order/9' }), 0);
+    for (let n = 1; n <= BULK_OBJECT_MAX_CHILDREN; n += 1) {
+      grouper.push(
+        JSON.stringify({ id: `gid://shopify/LineItem/${n}`, __parentId: 'gid://shopify/Order/9' }),
+        n,
+      );
+    }
+    const next = BULK_OBJECT_MAX_CHILDREN + 1;
+    expect(() =>
+      grouper.push(
+        JSON.stringify({ id: 'gid://shopify/LineItem/x', __parentId: 'gid://shopify/Order/9' }),
+        next,
+      ),
+    ).toThrow(new BulkResultUnreadable(next));
   });
 
   it('assembles an order in the read back shape with its sales history marked unread (task 10)', () => {

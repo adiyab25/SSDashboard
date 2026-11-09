@@ -21,6 +21,20 @@ export const SHOPIFY_CUSTOMER_TOPICS: readonly string[] = ['customers/create', '
 export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 
 /**
+ * The topics an inbox job processes today (webhook, sweep, and backfill rows alike): every other
+ * topic's rows stay `received` with no job until their task, and the purge removes them after 90
+ * days (spec 0015 AC-6, code review minor and security review L5 of the sync jobs).
+ */
+export const PROCESSED_INBOX_TOPICS: readonly string[] = [
+  ...SHOPIFY_ORDER_TOPICS,
+  ...SHOPIFY_CUSTOMER_TOPICS,
+  SHOPIFY_APP_UNINSTALLED_TOPIC,
+];
+
+/** The subject types of the processed topics: the resend scan's index friendly filter. */
+export const PROCESSED_INBOX_SUBJECTS: readonly InboundSubject[] = ['order', 'customer', 'app'];
+
+/**
  * Whether a verified topic gets an inbox job now: the order topics, the customer topics (task 11),
  * and `app/uninstalled` (D9). Every other verified topic (refunds, products, inventory levels,
  * bulk operations) is still recorded in the inbox with its minimized payload, but no job is sent:

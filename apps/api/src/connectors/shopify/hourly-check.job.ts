@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { ENV } from '../../config/config.module.js';
 import type { Env } from '../../config/env.js';
 import { DATABASE } from '../../database/database.module.js';
-import type { Executor } from '../../database/sql.js';
+import { pgArray, type Executor } from '../../database/sql.js';
 import type { ChannelActor } from '../../orders/intake/order-intake.service.js';
 import { OrderTransactions } from '../../orders/order-transactions.js';
 import {
@@ -75,6 +75,9 @@ function parse<T extends z.ZodType>(schema: T, data: unknown): z.output<T> {
   return parsed.data;
 }
 
+/** The degraded codes the hourly check owns: it sets them, moves between them, and clears them. */
+const HOURLY_CODES: readonly ConnectionHealthReason[] = ['SCOPES_MISSING', 'WEBHOOKS_MISSING'];
+
 /** The stable code of a waiting replacement refused for good, or null for anything else. */
 function refusalCodeOf(error: unknown): string | null {
   if (error instanceof ShopifyOrderMappingError) return error.code;
@@ -91,6 +94,16 @@ export interface HourlyCheckOutcome {
   readonly missingScopes?: readonly string[];
   readonly created?: number;
   readonly replacementsCreated?: number;
+}
+
+/**
+ * The code a run ends with when the check stops on an error that is not Shopify's (code review
+ * Major 3): an orders or mapping domain code, else `INTERNAL_ERROR`.
+ */
+function internalCodeOf(error: unknown): string {
+  if (error instanceof ShopifyOrderMappingError) return error.code;
+  if (error instanceof OrdersError) return upperCode(error.code);
+  return 'INTERNAL_ERROR';
 }
 
 /**
@@ -114,7 +127,16 @@ export interface HourlyCheckOutcome {
  *   keep waiting, and one mapping refused by orders (or unreadable) is counted and left, never
  *   failing the check.
  * - A Shopify error ends the run `failed` with its code and is not retried: the next hour checks
- *   again. Only one degraded code is kept at a time: these codes never overwrite another.
+ *   again. Any other error (a lock timeout, a database failure) also ends the run `failed`, with
+ *   the domain code or `INTERNAL_ERROR`, and is thrown for pg-boss to retry: a run is never left
+ *   `running` (code review Major 3).
+ * - Health: only one degraded code is kept at a time, and the hourly codes never overwrite
+ *   another one. `SCOPES_MISSING` is set as soon as the scopes are read; at the end the run's
+ *   verdict is applied in one statement: `SCOPES_MISSING` when a scope is missing, else
+ *   `WEBHOOKS_MISSING` when a registration was refused, else `ok`, moving between the two hourly
+ *   codes, so clearing one never hides the other found in the same run (QA 4).
+ * - A waiting replacement whose original is cancelled is dropped and counted
+ *   (`replacementsDropped`).
  *
  * `ChannelFulfillmentPartialStale` (AC-28) is task 9a's, not here.
  */
@@ -177,7 +199,10 @@ export class HourlyCheckJob {
         }),
       ).currentAppInstallation.accessScopes.map((scope) => scope.handle);
       const missing = missingScopes(granted);
-      await this.markScopes(this.connection.db, connectionId, missing);
+      // Recorded at once, so a later Shopify error of this run does not lose it.
+      if (missing.length > 0) {
+        await this.markHealth(this.connection.db, connectionId, 'SCOPES_MISSING');
+      }
 
       const existing = await this.subscriptions(call);
       const address = hookAddress(this.env.PUBLIC_URL, connectionId);
@@ -203,7 +228,11 @@ export class HourlyCheckJob {
         }
       }
       const subscribed = SHOPIFY_WEBHOOK_TOPICS.length - missingTopics.length + created;
-      await this.markWebhooks(this.connection.db, connectionId, refused);
+      await this.markHealth(
+        this.connection.db,
+        connectionId,
+        missing.length > 0 ? 'SCOPES_MISSING' : refused ? 'WEBHOOKS_MISSING' : null,
+      );
 
       const waiting = await this.retryWaitingReplacements(connectionId, jobId);
       await this.runs.finish(this.connection.db, runId, {
@@ -219,6 +248,7 @@ export class HourlyCheckJob {
           replacementsCreated: waiting.created,
           replacementsStillWaiting: waiting.waiting,
           replacementsRefused: waiting.refused,
+          replacementsDropped: waiting.dropped,
         },
       });
       this.logger.log(
@@ -231,14 +261,15 @@ export class HourlyCheckJob {
         replacementsCreated: waiting.created,
       };
     } catch (error) {
-      if (!(error instanceof ShopifyClientError)) throw error;
+      const code = error instanceof ShopifyClientError ? error.code : internalCodeOf(error);
       await this.runs.finish(this.connection.db, runId, {
         status: 'failed',
         cost: cost.points,
-        errorCode: error.code,
+        errorCode: code,
       });
-      this.logger.warn(`hourly connection=${connectionId} failed=${error.code}`);
-      return { status: 'failed', code: error.code };
+      this.logger.warn(`hourly connection=${connectionId} failed=${code}`);
+      if (!(error instanceof ShopifyClientError)) throw error;
+      return { status: 'failed', code };
     }
   }
 
@@ -262,43 +293,36 @@ export class HourlyCheckJob {
     return found;
   }
 
-  /** `SCOPES_MISSING` set (from `ok`, or kept current) or cleared (AC-3). */
-  private async markScopes(
+  /**
+   * Applies the run's health verdict (AC-3, AC-18, QA 4): `reason` set as the degraded code from
+   * `ok` or from the other hourly code, or, with null, an hourly code cleared back to `ok`. Any
+   * other health or code (a connect check's, `SWEEP_LATE`, `READS_FAILING`) is never touched. The
+   * change time moves only when the code changes.
+   */
+  private async markHealth(
     executor: Executor,
     connectionId: string,
-    missing: readonly string[],
+    reason: ConnectionHealthReason | null,
   ): Promise<void> {
-    await this.mark(executor, connectionId, 'SCOPES_MISSING', missing.length > 0);
-  }
-
-  /** `WEBHOOKS_MISSING` set (from `ok`) when a registration was refused, else cleared. */
-  private async markWebhooks(
-    executor: Executor,
-    connectionId: string,
-    refused: boolean,
-  ): Promise<void> {
-    await this.mark(executor, connectionId, 'WEBHOOKS_MISSING', refused);
-  }
-
-  /** Sets a degraded code from `ok`, or clears it back to `ok` when it is the current one. */
-  private async mark(
-    executor: Executor,
-    connectionId: string,
-    reason: ConnectionHealthReason,
-    on: boolean,
-  ): Promise<void> {
-    if (on) {
+    const owned = pgArray([...HOURLY_CODES]);
+    if (reason !== null) {
       await executor.execute(sql`
         UPDATE connections
-        SET health = 'degraded', health_reason = ${reason}, health_changed_at = now(),
+        SET health = 'degraded', health_reason = ${reason},
+            health_changed_at = CASE WHEN health_reason IS DISTINCT FROM ${reason}::text
+                                     THEN now() ELSE health_changed_at END,
             updated_at = now()
-        WHERE id = ${connectionId}::uuid AND health = 'ok'`);
+        WHERE id = ${connectionId}::uuid
+          AND (health = 'ok'
+               OR (health = 'degraded' AND health_reason = ANY(${owned}::text[])))
+          AND health_reason IS DISTINCT FROM ${reason}::text`);
       return;
     }
     await executor.execute(sql`
       UPDATE connections
       SET health = 'ok', health_reason = NULL, health_changed_at = now(), updated_at = now()
-      WHERE id = ${connectionId}::uuid AND health = 'degraded' AND health_reason = ${reason}`);
+      WHERE id = ${connectionId}::uuid AND health = 'degraded'
+        AND health_reason = ANY(${owned}::text[])`);
   }
 
   /**
@@ -312,14 +336,20 @@ export class HourlyCheckJob {
   private async retryWaitingReplacements(
     connectionId: string,
     jobId: string,
-  ): Promise<{ tried: number; created: number; waiting: number; refused: number }> {
+  ): Promise<{
+    tried: number;
+    created: number;
+    waiting: number;
+    refused: number;
+    dropped: number;
+  }> {
     const { rows } = await this.connection.db.execute<{ id: string }>(sql`
       SELECT id FROM connection_external_ids
       WHERE connection_id = ${connectionId}::uuid AND entity = 'order'
         AND state ? 'pendingReplacementLines'
       ORDER BY id`);
     const actor: ChannelActor = { type: 'system_job', job: HOURLY_CHECK_JOB_NAME, jobId };
-    const counts = { tried: rows.length, created: 0, waiting: 0, refused: 0 };
+    const counts = { tried: rows.length, created: 0, waiting: 0, refused: 0, dropped: 0 };
     for (const row of rows) {
       try {
         const result = await this.orderTransactions.run((tx) =>
@@ -327,6 +357,7 @@ export class HourlyCheckJob {
         );
         if (result.status === 'created') counts.created += 1;
         else if (result.status === 'waiting') counts.waiting += 1;
+        else if (result.status === 'dropped') counts.dropped += 1;
       } catch (error) {
         const code = refusalCodeOf(error);
         if (code === null) throw error;

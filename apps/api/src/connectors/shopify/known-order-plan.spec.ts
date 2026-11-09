@@ -157,6 +157,99 @@ describe('planKnownOrder: exchange by edit (task 10, AC-12)', () => {
         .holdsAppliedLines,
     ).toBe(false);
   });
+
+  // Code review Major 1 (sync jobs, F1): a piece is never on the original and its replacement.
+  const delivered = createdState('order-exchange-fulfillment-cancelled/01-order-read.json');
+  const cancelledRead = fixture('order-exchange-fulfillment-cancelled/03-order-read.json');
+  const pendingLine = {
+    channelLineId: line('6660000008002'),
+    variantId: null,
+    title: 'Tee L',
+    quantity: 1,
+    unitPrice: '450.00',
+    discountAmount: '0.00',
+    taxRate: '14.00',
+  };
+  const waiting: OrderMappingState = {
+    ...delivered,
+    pendingReplacementLines: [pendingLine],
+    pendingReplacement: {
+      n: 1,
+      orderNumber: '#1047-R1',
+      placedAt: '2026-11-04T10:00:00Z',
+      type: 'sale',
+      giftReasonCode: null,
+      paymentMethod: 'cod',
+      customerExternalId: null,
+    },
+  };
+
+  it('never sends a line already on a -R<n> order once every fulfillment is cancelled: nothing is left to send', () => {
+    const made: OrderMappingState = {
+      ...delivered,
+      replacementOrderIds: ['0b6f0a52-9a51-4d38-8f63-0a8f3c1d2e09'],
+      replacementLineIds: [line('6660000008002')],
+    };
+    const plan = planKnownOrder(cancelledRead, CONTEXT, made);
+    expect(plan).toMatchObject({ fullSnapshot: true, holdsAppliedLines: false, snapshot: null });
+    const next = nextKnownOrderState(made, plan, {
+      editApplied: false,
+      linked: new Set(),
+      paymentLocked: false,
+    });
+    expect(next.appliedLines).toEqual(made.appliedLines);
+    expect(next.replacementLineIds).toEqual([line('6660000008002')]);
+  });
+
+  it('keeps a replacement line out of a first fulfillment read too, sending only the original lines', () => {
+    const read = structuredClone(cancelledRead);
+    const [m] = read.lineItems.nodes;
+    if (!m) throw new Error('fixture lines');
+    m.currentQuantity = 1;
+    const made: OrderMappingState = { ...delivered, replacementLineIds: [line('6660000008002')] };
+    const plan = planKnownOrder(read, CONTEXT, made);
+    expect(plan.snapshot?.lines.map((l) => l.channelLineId)).toEqual([line('6660000008001')]);
+  });
+
+  it('gives a waiting line to the original as a normal edit and drops the waiting replacement, so it is never made later', () => {
+    const plan = planKnownOrder(cancelledRead, CONTEXT, waiting);
+    expect(plan.fullSnapshot).toBe(true);
+    expect(plan.snapshot?.lines.map((l) => l.channelLineId)).toEqual([line('6660000008002')]);
+    const next = nextKnownOrderState(waiting, plan, {
+      editApplied: true,
+      linked: new Set(),
+      paymentLocked: false,
+    });
+    expect(next.appliedLines).toEqual({ [line('6660000008002')]: 1 });
+    expect(next).not.toHaveProperty('pendingReplacementLines');
+    expect(next).not.toHaveProperty('pendingReplacement');
+  });
+
+  it('keeps the waiting replacement when the edit was refused, so the piece is on no order twice', () => {
+    const plan = planKnownOrder(cancelledRead, CONTEXT, waiting);
+    const next = nextKnownOrderState(waiting, plan, {
+      editApplied: false,
+      linked: new Set(),
+      paymentLocked: false,
+    });
+    expect(next.appliedLines).toEqual(waiting.appliedLines);
+    expect(next.pendingReplacementLines).toEqual([pendingLine]);
+  });
+
+  it('keeps the waiting replacement while the fulfillment stays active (the held snapshot)', () => {
+    const plan = planKnownOrder(
+      fixture('order-exchange-fulfillment-cancelled/02-order-read.json'),
+      CONTEXT,
+      waiting,
+    );
+    expect(plan).toMatchObject({ fullSnapshot: false, holdsAppliedLines: true });
+    const next = nextKnownOrderState(waiting, plan, {
+      editApplied: true,
+      linked: new Set(),
+      paymentLocked: false,
+    });
+    expect(next.pendingReplacementLines).toEqual([pendingLine]);
+  });
 });
 
 describe('planKnownOrder: cancel and fulfillment (AC-13)', () => {

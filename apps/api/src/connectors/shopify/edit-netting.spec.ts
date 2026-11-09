@@ -205,6 +205,51 @@ describe('planNetting: edit pairs (AC-11)', () => {
   });
 });
 
+describe('planNetting: refunds kept quiet (security review M2)', () => {
+  const order = fixture('order-exchange-added-lines/02-order-read.json');
+  const refundId = 'gid://shopify/Refund/1110000008001';
+
+  it('records a refund made before go live without publishing it, and never later', () => {
+    const plan = planNetting(
+      order,
+      oneDay(order, '2026-11-07'),
+      {},
+      {
+        before: '2026-11-08T00:00:00Z',
+        all: false,
+      },
+    );
+    expect(plan.refunds).toEqual([]);
+    expect(plan.recordedRefundIds).toEqual([refundId]);
+    const later = planNetting(order, oneDay(order, '2026-11-07'), {
+      recordedRefundIds: plan.recordedRefundIds,
+    });
+    expect(later.refunds).toEqual([]);
+  });
+
+  it('publishes a refund made at or after go live, and never one of an imported order', () => {
+    expect(
+      planNetting(
+        order,
+        oneDay(order, '2026-11-07'),
+        {},
+        {
+          before: '2026-11-07T15:02:00Z',
+          all: false,
+        },
+      ).refunds.map((refund) => refund.externalRefundId),
+    ).toEqual([refundId]);
+    const imported = planNetting(
+      order,
+      oneDay(order, '2026-11-07'),
+      {},
+      { before: null, all: true },
+    );
+    expect(imported.refunds).toEqual([]);
+    expect(imported.recordedRefundIds).toEqual([refundId]);
+  });
+});
+
 describe('planNetting: Shopify refunds (AC-11, AC-12)', () => {
   it('records the RETURN sales of a refund agreement once per refund id', () => {
     const order = fixture('order-exchange-added-lines/02-order-read.json');

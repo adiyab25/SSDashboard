@@ -1814,6 +1814,7 @@ export const en = {
       orderPaymentMethodRederived: 'Order payment method corrected',
       connectionCreated: 'Shopify store connected',
       connectionBackfillStarted: 'Shopify backfill started',
+      connectionGatewayScanStarted: 'Shopify payment gateway scan started',
       policyChanged: 'Location owner type policy changed',
       costRuleRecorded: 'Per order cost rule recorded',
       costRuleRecordedInLockedPeriod: 'Per order cost rule recorded in a locked period',

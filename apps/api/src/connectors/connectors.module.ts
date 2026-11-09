@@ -7,6 +7,7 @@ import { ConnectionSecrets } from './connections/connection-secrets.js';
 import { ConnectionStores } from './connections/connection-stores.js';
 import { ConnectionsController } from './connections/connections.controller.js';
 import { ConnectionsService } from './connections/connections.service.js';
+import { GoLiveClock } from './connections/go-live-clock.js';
 import { ConnectorsService } from './connectors.service.js';
 import { ShopifyHookVerifier } from './hooks/shopify-hook-verifier.js';
 import { ShopifyHooksController } from './hooks/shopify-hooks.controller.js';
@@ -43,6 +44,7 @@ import { SyncRuns } from './sync-runs/sync-runs.js';
     ShopifyHooksService,
     SyncRuns,
     FreshnessService,
+    GoLiveClock,
   ],
   exports: [ConnectorsService, ConnectionSecrets, ShopifyHookVerifier, SyncRuns],
 })

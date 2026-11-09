@@ -5,8 +5,8 @@ import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Transaction } from '../../database/sql.js';
 import { JobSender } from '../../platform/jobs/job-sender.js';
 import {
-  SHOPIFY_APP_UNINSTALLED_TOPIC,
-  SHOPIFY_CUSTOMER_TOPICS,
+  PROCESSED_INBOX_SUBJECTS,
+  PROCESSED_INBOX_TOPICS,
   SHOPIFY_ORDER_TOPICS,
 } from '../hooks/shopify-hook-payload.js';
 import { SyncRuns, type RunPosition, type SyncRunRow } from '../sync-runs/sync-runs.js';
@@ -48,6 +48,13 @@ export const SWEEP_STALLED_AFTER_MS = 15 * 60_000;
 export const SWEEP_RETRIES_PER_DAY = 3;
 
 /**
+ * The n-th retry of a failed order in an operating day waits at least n times this long after the
+ * previous attempt (the failed event's `processed_at`): 1 hour, then 2, then 3, so the 3 retries
+ * spread over the day instead of three sweeps in 15 minutes (code review minor).
+ */
+export const SWEEP_RETRY_SPACING_HOURS = 1;
+
+/**
  * A `received` event with no attempt yet is sent its job again after this long (its webhook job
  * was lost, the connection was paused, or its keys were refused): a queued job ahead of it would
  * have run by then.
@@ -63,13 +70,6 @@ export const RESEND_RETRIED_AFTER_HOURS = 4;
 
 /** The most events one sweep sends again. */
 const RESEND_LIMIT = 200;
-
-/** The topics an inbox job processes (webhook, sweep, and backfill rows alike). */
-const PROCESSED_TOPICS: readonly string[] = [
-  ...SHOPIFY_ORDER_TOPICS,
-  ...SHOPIFY_CUSTOMER_TOPICS,
-  SHOPIFY_APP_UNINSTALLED_TOPIC,
-];
 
 /** The topic a sweep's order row carries, so the one inbox path reads it back (AC-7). */
 export const SWEEP_ORDER_TOPIC = 'orders/updated';
@@ -446,15 +446,23 @@ export class SweepJob {
   /**
    * The end of an orders sweep (AC-8): a retry row for each order whose latest event is `failed`
    * (at most `SWEEP_RETRIES_PER_DAY` a day per order by the operating day, `ssd_operating_day` in
-   * SQL), each with its inbox job; then the job of every event left `received` with no job sent
-   * again (`RESEND_AFTER_MINUTES`, `RESEND_RETRIED_AFTER_HOURS`), at most one resend per event an
-   * hour. Answers the counts.
+   * SQL; the n-th waits `SWEEP_RETRY_SPACING_HOURS` times n after the previous attempt), each with
+   * its inbox job; then the job of every event left `received` with no job sent again
+   * (`RESEND_AFTER_MINUTES`, `RESEND_RETRIED_AFTER_HOURS`), at most one resend per event an hour.
+   * The resend scan filters on the processed subject types first, so the partial index on
+   * (connection, subject type, received at) skips product, inventory, and bulk rows cheaply.
+   * Answers the counts.
    */
   private async retryAndResend(
     connectionId: string,
   ): Promise<{ readonly retried: number; readonly resent: number }> {
     const retried = await this.connection.db.transaction(async (tx) => {
-      const { rows } = await tx.execute<{ gid: string; version: string; attempt: number }>(sql`
+      const { rows } = await tx.execute<{
+        gid: string;
+        version: string;
+        attempt: number;
+        due: boolean;
+      }>(sql`
         SELECT f.subject_external_id AS gid,
                to_char(coalesce(f.subject_version, f.received_at) AT TIME ZONE 'UTC',
                        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS version,
@@ -462,7 +470,14 @@ export class SweepJob {
                 WHERE r.connection_id = f.connection_id AND r.subject_type = 'order'
                   AND r.subject_external_id = f.subject_external_id AND r.source = 'sweep'
                   AND left(r.dedupe_key, 12) = 'sweep-retry:'
-                  AND ssd_operating_day(r.received_at) = ssd_operating_day(now())) + 1 AS attempt
+                  AND ssd_operating_day(r.received_at) = ssd_operating_day(now())) + 1 AS attempt,
+               coalesce(f.processed_at, f.received_at) <= now() - make_interval(
+                 hours => ${SWEEP_RETRY_SPACING_HOURS} * (
+                   (SELECT count(*)::int FROM inbound_events r
+                    WHERE r.connection_id = f.connection_id AND r.subject_type = 'order'
+                      AND r.subject_external_id = f.subject_external_id AND r.source = 'sweep'
+                      AND left(r.dedupe_key, 12) = 'sweep-retry:'
+                      AND ssd_operating_day(r.received_at) = ssd_operating_day(now())) + 1)) AS due
         FROM inbound_events f
         WHERE f.connection_id = ${connectionId}::uuid AND f.status = 'failed'
           AND f.subject_type = 'order' AND f.subject_external_id IS NOT NULL
@@ -474,7 +489,7 @@ export class SweepJob {
               AND (l.received_at, l.id) > (f.received_at, f.id))`);
       let added = 0;
       for (const row of rows) {
-        if (row.attempt > SWEEP_RETRIES_PER_DAY) continue;
+        if (row.attempt > SWEEP_RETRIES_PER_DAY || !row.due) continue;
         const dedupe = `sweep-retry:${row.gid}:${row.version}:${row.attempt}`;
         const payload = { topic: SWEEP_ORDER_TOPIC, id: row.gid, updatedAt: row.version };
         const inserted = await tx.execute<{ id: string }>(sql`
@@ -494,8 +509,10 @@ export class SweepJob {
 
     const { rows: stuck } = await this.connection.db.execute<{ id: string }>(sql`
       SELECT id FROM inbound_events
-      WHERE connection_id = ${connectionId}::uuid AND status = 'received'
-        AND topic = ANY(${pgArray([...PROCESSED_TOPICS])}::text[])
+      WHERE connection_id = ${connectionId}::uuid
+        AND subject_type = ANY(${pgArray([...PROCESSED_INBOX_SUBJECTS])}::inbound_subject[])
+        AND status = 'received'
+        AND topic = ANY(${pgArray([...PROCESSED_INBOX_TOPICS])}::text[])
         AND ((attempts = 0
               AND received_at < now() - make_interval(mins => ${RESEND_AFTER_MINUTES}))
              OR received_at < now() - make_interval(hours => ${RESEND_RETRIED_AFTER_HOURS}))

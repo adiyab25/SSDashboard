@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BackfillBody, SyncRunListQuery, SyncRunListResponse } from './sync-runs.js';
+import {
+  BackfillBody,
+  SyncRunErrorCode,
+  SyncRunListQuery,
+  SyncRunListResponse,
+} from './sync-runs.js';
 
 // Spec 0015 task 12 (*API surface*): the gateway scan, backfill, and sync runs routes' shapes.
 describe('the sync run contracts', () => {
@@ -47,5 +52,21 @@ describe('the sync run contracts', () => {
         nextCursor: null,
       }).success,
     ).toBe(false);
+  });
+
+  it('lists the error codes of the routes, the F1 codes appended after the first ones', () => {
+    expect(SyncRunErrorCode.options).toEqual([
+      'SCAN_RUNNING',
+      'BACKFILL_RUNNING',
+      'CONNECTION_NOT_READY',
+      'GATEWAYS_UNMAPPED',
+      'NOT_FOUND',
+      'INVALID_BODY',
+      'INVALID_QUERY',
+      'GO_LIVE_ALREADY_SET',
+      'GO_LIVE_OUT_OF_RANGE',
+      'CONNECTION_PAUSED',
+      'GATEWAYS_TOO_MANY',
+    ]);
   });
 });

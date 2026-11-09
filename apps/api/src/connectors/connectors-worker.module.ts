@@ -60,7 +60,5 @@ import { SweepJob } from './shopify/sweep.job.js';
     InboxPurgeJob,
     ConnectorShopifyWorker,
   ],
-  // Task 12's hourly check takes the waiting replacements through `retryWaitingReplacements`.
-  exports: [ExchangeByEdit],
 })
 export class ConnectorsWorkerModule {}

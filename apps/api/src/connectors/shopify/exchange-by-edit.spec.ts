@@ -375,4 +375,27 @@ describe('ExchangeByEdit (AC-12)', () => {
     ).toEqual({ status: 'nothing_waiting' });
     expect(refused.inputs).toHaveLength(1);
   });
+  it('retryWaitingReplacements drops the waiting replacement of a cancelled original instead of trying it every hour (code review nit)', async () => {
+    const plan = planReplacement(EXCHANGED, CONTEXT, DELIVERED, ORIGINAL)!;
+    const stored: unknown = JSON.parse(
+      JSON.stringify(stateWithWaitingReplacement(DELIVERED, plan.pending)),
+    );
+    const { intake, inputs } = fakeIntake(() => Promise.resolve({ orderId: 'r1', created: true }));
+    const cancelled = {
+      detail: () => Promise.resolve({ ...DETAIL, fulfillmentState: 'cancelled' }),
+    } as unknown as OrderQueries;
+    const { tx, statements } = fakeTx([
+      [{ id: 'm1', external_id: GID, local_id: ORIGINAL, state: stored }],
+    ]);
+    expect(
+      await new ExchangeByEdit(intake, cancelled).retryWaitingReplacements(
+        tx,
+        CONTEXT.connectionId,
+        'm1',
+        ACTOR,
+      ),
+    ).toEqual({ status: 'dropped' });
+    expect(inputs).toEqual([]);
+    expect(statements.at(-1)).toMatch(/^UPDATE connection_external_ids SET state = /);
+  });
 });

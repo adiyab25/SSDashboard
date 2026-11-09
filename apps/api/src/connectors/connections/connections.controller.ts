@@ -75,7 +75,12 @@ export function connectionHttpError(error: unknown): unknown {
       case 'SCAN_RUNNING':
       case 'BACKFILL_RUNNING':
       case 'CONNECTION_NOT_READY':
+      case 'CONNECTION_PAUSED':
+      case 'GO_LIVE_ALREADY_SET':
+      case 'GATEWAYS_TOO_MANY':
         return new ConflictException({ code: error.code, message: error.message });
+      case 'GO_LIVE_OUT_OF_RANGE':
+        return new UnprocessableEntityException({ code: error.code, message: error.message });
       case 'GATEWAYS_UNMAPPED':
         return new ConflictException({
           code: error.code,
@@ -164,22 +169,29 @@ export class ConnectionsController {
 
   /**
    * Starts a gateway scan (spec 0015 task 12, AC-17): 202 `{ runId }`; 404 `NOT_FOUND`; 409
-   * `SCAN_RUNNING` or `CONNECTION_ARCHIVED`.
+   * `SCAN_RUNNING`, `CONNECTION_ARCHIVED`, or `CONNECTION_PAUSED`. Audited
+   * (`connection.gateway_scan_started`).
    */
   @Post(':id/gateway-scan')
   @HttpCode(202)
-  async gatewayScan(@Param('id', connectionId()) id: string): Promise<SyncRunStarted> {
+  async gatewayScan(
+    @Param('id', connectionId()) id: string,
+    @Req() request: AuthenticatedRequest,
+    @CurrentAccess() access: Access,
+  ): Promise<SyncRunStarted> {
     try {
-      return await this.connections.startGatewayScan(id);
+      return await this.connections.startGatewayScan(id, { userId: request.staff.id, access });
     } catch (error) {
       throw connectionHttpError(error);
     }
   }
 
   /**
-   * Starts the first backfill with its go live instant (AC-17): 202 `{ runId }`; 404 `NOT_FOUND`;
-   * 409 `BACKFILL_RUNNING`, `CONNECTION_NOT_READY`, or `GATEWAYS_UNMAPPED` (with `gateways`, the
-   * scanned names still unmapped); 422 `INVALID_BODY`.
+   * Starts the first backfill with its go live instant, or resumes or redoes it with the same
+   * instant (AC-17, lead decision D11): 202 `{ runId }`; 404 `NOT_FOUND`; 409 `BACKFILL_RUNNING`,
+   * `CONNECTION_NOT_READY`, `CONNECTION_PAUSED`, `GO_LIVE_ALREADY_SET`, `GATEWAYS_TOO_MANY`, or
+   * `GATEWAYS_UNMAPPED` (with `gateways`, the scanned names still unmapped); 422 `INVALID_BODY` or
+   * `GO_LIVE_OUT_OF_RANGE`.
    */
   @Post(':id/backfill')
   @HttpCode(202)

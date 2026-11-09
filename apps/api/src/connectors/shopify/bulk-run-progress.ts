@@ -14,7 +14,18 @@ import {
   CONNECTOR_SHOPIFY_RETRY,
   type ShopifyJobData,
 } from './connector-shopify.queue.js';
+import { OrdersError } from '../../orders/orders.errors.js';
+import { upperCode } from './inbox.job.js';
+import { ShopifyOrderMappingError } from './order-mapper.js';
 import { ShopifyRejectedError, ShopifyTransientError } from './shopify-client.js';
+
+/** The code a run ends with when its last retry fails on anything but a refusal. */
+export function lastRetryCodeOf(error: unknown): string {
+  if (error instanceof ShopifyTransientError) return error.code;
+  if (error instanceof ShopifyOrderMappingError) return error.code;
+  if (error instanceof OrdersError) return upperCode(error.code);
+  return 'INTERNAL_ERROR';
+}
 
 /** The job kinds that drive a bulk run step by step. */
 export type BulkJobKind = 'gateway_scan' | 'backfill';
@@ -34,8 +45,10 @@ export interface BulkJobOutcome {
  * job at once; `refused` and `failed` finish the run `failed` with a code. Every next job carries
  * the run and the step it expects, sent in the transaction that records the position, so a crash
  * between the two leaves neither. It also turns the errors of a chunk into the run's end:
- * `BULK_RESULT_UNREADABLE`, a Shopify refusal's code, and a transient error's code on the queue's
- * last retry (earlier ones are thrown, so pg-boss retries the same step).
+ * `BULK_RESULT_UNREADABLE`, a Shopify refusal's code, and on the queue's last retry any other
+ * error too: a transient error's code, an orders or mapping domain code, else `INTERNAL_ERROR`
+ * (code review Major 3: a database failure or a bug never leaves the run `running` for good).
+ * Earlier attempts are thrown, so pg-boss retries the same step.
  */
 @Injectable()
 export class BulkRunProgress {
@@ -144,12 +157,7 @@ export class BulkRunProgress {
     let code: string | null = null;
     if (error instanceof BulkResultUnreadable) code = 'BULK_RESULT_UNREADABLE';
     else if (error instanceof ShopifyRejectedError) code = error.code;
-    else if (
-      error instanceof ShopifyTransientError &&
-      retryCount >= CONNECTOR_SHOPIFY_RETRY.retryLimit
-    ) {
-      code = error.code;
-    }
+    else if (retryCount >= CONNECTOR_SHOPIFY_RETRY.retryLimit) code = lastRetryCodeOf(error);
     if (code === null) throw error;
     await this.runs.finish(this.connection.db, run.id, {
       status: 'failed',
