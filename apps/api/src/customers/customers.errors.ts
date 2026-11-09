@@ -13,7 +13,9 @@ export type CustomersErrorCode =
   | 'SUGGESTION_MISMATCH'
   | 'MERGE_NOT_FOUND'
   | 'MERGE_ALREADY_UNDONE'
-  | 'MERGE_NOT_LATEST';
+  | 'MERGE_NOT_LATEST'
+  | 'STALE_RECORD'
+  | 'NOT_FLAGGED';
 
 /**
  * A rule of the customers module that a caller broke. The message is fixed text: it never holds a

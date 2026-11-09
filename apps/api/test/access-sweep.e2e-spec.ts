@@ -211,6 +211,20 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => `/customers/merge-suggestions/${randomUUID()}/dismiss`,
       body: () => ({}),
     },
+    // Spec 0014 milestone 3: an unknown customer, so a permitted call answers 404 and flags nobody.
+    'PUT /customers/:id/flag': {
+      needs: ['customers.flag'],
+      path: () => `/customers/${randomUUID()}/flag`,
+      body: () => ({ kind: 'refuser', expectedUpdatedAt: '2026-11-08T10:00:00.000000Z' }),
+    },
+    'POST /customers/:id/flag/clear': {
+      needs: ['customers.flag'],
+      path: () => `/customers/${randomUUID()}/flag/clear`,
+      body: () => ({
+        reasonCode: 'flag_mistaken',
+        expectedUpdatedAt: '2026-11-08T10:00:00.000000Z',
+      }),
+    },
     'GET /orders': { needs: ['orders.view'] },
     'POST /orders/search': { needs: ['orders.view'], body: () => ({}) },
     'GET /orders/options': { needs: ['orders.confirm'] },

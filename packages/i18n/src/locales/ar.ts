@@ -1001,6 +1001,7 @@ export const ar: Catalog = {
       customers: {
         view: 'الاطلاع على ملفات العملاء وأرقام هواتفهم وسجلهم',
         merge: 'دمج العملاء والتراجع عن الدمج',
+        flag: 'وضع علامة الخطر على عميل وإزالتها',
       },
       exchanges: {
         handle: 'فتح طلبات الاستبدال والإرجاع لعميل والعمل على مكتب المراجعة',
@@ -1881,6 +1882,8 @@ export const ar: Catalog = {
       customerUnmerged: 'التراجع عن دمج عميل',
       customerMergeSuggestionDismissed: 'تجاهل اقتراح دمج',
       customerPhoneAdded: 'إضافة رقم هاتف ثانٍ لعميل',
+      customerFlagged: 'وضع علامة على عميل',
+      customerUnflagged: 'إزالة علامة عميل',
     },
   },
   settings: {

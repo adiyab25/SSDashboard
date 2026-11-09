@@ -267,11 +267,11 @@ Tracer Bullet: milestone 1 runs one real thread through every layer (database, s
 
 **Milestone 3: The flag**
 
-12. [ ] `customers.flag` in `packages/contracts/src/access.ts` on support, operations, and manager, marked personal (after spec 0008 is amended by its owner), satisfies **AC-11**, **AC-16**
-13. [ ] Flag set and clear in the service and routes, `setFlagFromImport`, codes `customer.flagged` and `customer.unflagged` (the flagged list in search is already built in milestone 1, task 4), satisfies **AC-11**, **AC-12**
-14. [ ] Setting `customer_risk_signal` in the spec 0009 registry with both labels, satisfies **AC-13**
+12. [x] `customers.flag` in `packages/contracts/src/access.ts` on support, operations, and manager, marked personal (after spec 0008 is amended by its owner), satisfies **AC-11**, **AC-16**
+13. [x] Flag set and clear in the service and routes, `setFlagFromImport`, codes `customer.flagged` and `customer.unflagged` (the flagged list in search is already built in milestone 1, task 4), satisfies **AC-11**, **AC-12**
+14. [x] Setting `customer_risk_signal` in the spec 0009 registry with both labels, satisfies **AC-13**
 15. [ ] Web: flag dialog (kind, note, reason code), the flag on the header and on search rows, the flagged filter, satisfies **AC-11**, **AC-18**
-16. [ ] Tests: flag cases in `customers.e2e-spec.ts` and `customers-audit.e2e-spec.ts`, the import precedence, the web flag flow, satisfies **AC-11**, **AC-12**
+16. [ ] Tests: flag cases in `customers.e2e-spec.ts` and `customers-audit.e2e-spec.ts`, the import precedence, the web flag flow, satisfies **AC-11**, **AC-12** (the api part is in: the flag cases, the import precedence, the audit entries, the access sweep `FIXTURES`, and the note in the log sentinel; the web flag flow follows task 15)
 
 **Done when** milestone 1's commands pass with the flag cases, and `registry.spec.ts` of spec 0009 passes with the new key.
 

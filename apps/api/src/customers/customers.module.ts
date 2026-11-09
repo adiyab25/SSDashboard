@@ -4,6 +4,8 @@ import { AuditUndoRegistry } from '../audit/audit-undo.registry.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { CustomersService } from './customers.service.js';
+import { CustomerFlagsController } from './flags/customer-flags.controller.js';
+import { CustomerFlags } from './flags/customer-flags.service.js';
 import { CustomerMergeUndoHandler } from './merges/customer-merge-undo.handler.js';
 import { CustomerMerges, MERGE_UNDO_HANDLER } from './merges/customer-merges.service.js';
 import { CustomerMergesController } from './merges/customer-merges.controller.js';
@@ -18,21 +20,28 @@ import { CustomerSearchService } from './search/customer-search.service.js';
  * The customers module (spec 0014): one customer per normalized phone. It owns the customer
  * tables and exports `CustomersService`, the only way any module links, finds, or flags a
  * customer. Core, no toggle. It holds find or create, `addPhone`, search, the profile, and merge
- * and undo with the merge suggestions (milestone 2); the flag and the timeline follow. It
+ * and undo with the merge suggestions (milestone 2), and the flag (milestone 3); the timeline
+ * follows. It
  * registers the audit undo handler `customers.merge_undo` from `onModuleInit`; `AppModule`
  * imports it, so the api's undo start check finds the handler.
  */
 @Module({
   imports: [AuditModule, ChannelsModule, StaffDirectoryModule],
-  // The merge controller comes before the profile one, so `GET merge-suggestions` is matched
-  // before `GET :id` (README).
-  controllers: [CustomerSearchController, CustomerMergesController, CustomerProfileController],
+  // The merge and flag controllers come before the profile one, so `GET merge-suggestions` is
+  // matched before `GET :id` (README).
+  controllers: [
+    CustomerSearchController,
+    CustomerMergesController,
+    CustomerFlagsController,
+    CustomerProfileController,
+  ],
   providers: [
     CustomersService,
     CustomerSearchService,
     CustomerProfileService,
     CustomerMerges,
     MergeSuggestions,
+    CustomerFlags,
     CustomerMergeUndoHandler,
     // One window per api process (README, Decisions); the factory keeps the defaults of the constants.
     { provide: CustomerSearchThrottle, useFactory: () => new CustomerSearchThrottle() },

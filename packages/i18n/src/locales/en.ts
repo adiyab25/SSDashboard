@@ -1009,6 +1009,7 @@ export const en = {
       customers: {
         view: 'See customer profiles, phones, and history',
         merge: 'Merge customers and undo a merge',
+        flag: 'Set and clear a customer’s risk flag',
       },
       exchanges: {
         handle: 'Open exchanges and returns for a customer, work the review desk',
@@ -1883,6 +1884,8 @@ export const en = {
       customerUnmerged: 'Customer merge undone',
       customerMergeSuggestionDismissed: 'Merge suggestion dismissed',
       customerPhoneAdded: 'Second phone added to a customer',
+      customerFlagged: 'Customer flagged',
+      customerUnflagged: 'Customer flag cleared',
     },
   },
   // The settings registry of spec 0009 (AC-1): one label and description per entry, and the

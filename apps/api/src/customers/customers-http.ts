@@ -33,6 +33,8 @@ export function customersHttpError(error: unknown): unknown {
     case 'SUGGESTION_MISMATCH':
     case 'MERGE_ALREADY_UNDONE':
     case 'MERGE_NOT_LATEST':
+    case 'STALE_RECORD':
+    case 'NOT_FLAGGED':
       return new ConflictException({ code: error.code, message: error.message });
   }
 }
@@ -51,7 +53,7 @@ export const notFoundIdPipe = (code: 'MERGE_NOT_FOUND' | 'SUGGESTION_NOT_FOUND')
   });
 
 /**
- * Parses a merge, undo, or dismiss body against its contract (spec 0014 API table): a missing
+ * Parses a merge, undo, dismiss, or flag body against its contract (spec 0014 API table): a missing
  * (absent, null, or empty) `reasonCode` the schema requires is 422 `REASON_REQUIRED`; an unlisted
  * one, or a null or empty one for an optional field, 422 `REASON_INVALID`; and any
  * other bad body 422 `VALIDATION_FAILED` naming the failing paths. Never echoes a value.
@@ -66,6 +68,17 @@ export class CustomerBodyPipe<T extends z.ZodType> implements PipeTransform<unkn
     const result = this.schema.safeParse(body);
     if (result.success) return result.data;
     const paths = [...new Set(result.error.issues.map((issue) => issue.path.join('.')))];
+    // A flag note over its cap has its own code (spec 0014 API table); the note is never echoed.
+    if (
+      paths.length === 1 &&
+      paths[0] === 'note' &&
+      result.error.issues.every((issue) => issue.code === 'too_big')
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'NOTE_TOO_LONG',
+        message: 'The note is too long',
+      });
+    }
     if (paths.length === 1 && paths[0] === 'reasonCode') {
       const given =
         typeof body === 'object' && body !== null && 'reasonCode' in body

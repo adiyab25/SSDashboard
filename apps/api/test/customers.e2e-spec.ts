@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { CustomerProfile, CustomerSearchResponse } from '@ssdashboard/contracts';
+import {
+  CustomerProfile,
+  CustomerSearchResponse,
+  CustomerSetFlagResponse,
+} from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditService } from '../src/audit/audit.service.js';
@@ -22,7 +26,8 @@ import {
 } from './support.js';
 
 // Spec 0014 milestone 1 (AC-1 to AC-5, AC-9, AC-16, AC-17): the customers module against
-// PostgreSQL as the application role, with the built api serving the two routes.
+// PostgreSQL as the application role, with the built api serving the routes; milestone 3 adds the
+// flag (AC-11, AC-12) and its note to the log sentinel.
 describe('customers by phone', { timeout: 180_000 }, () => {
   let scratch: { name: string; url: string };
   let owner: DatabaseConnection;
@@ -728,6 +733,221 @@ describe('customers by phone', { timeout: 180_000 }, () => {
     });
   });
 
+  describe('the flag (AC-11, AC-12)', () => {
+    const send = async (method: 'PUT' | 'POST', path: string, body: unknown, cookie = support) => {
+      const response = await fetch(`${base}/api${path}`, {
+        method,
+        headers: { 'content-type': 'application/json', origin: base, cookie },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { status: response.status, text, body: (text ? JSON.parse(text) : null) as unknown };
+    };
+    const setFlag = (id: string, body: unknown, cookie = support) =>
+      send('PUT', `/customers/${id}/flag`, body, cookie);
+    const clearFlag = (id: string, body: unknown, cookie = support) =>
+      send('POST', `/customers/${id}/flag/clear`, body, cookie);
+    const stampOf = async (id: string) => CustomerProfile.parse((await profile(id)).body).updatedAt;
+    const importFlag = (id: string, kind: 'returner' | 'refuser' | 'fake' | 'abusive') =>
+      app.db.transaction((tx) => customers.setFlagFromImport(tx, id, kind, randomUUID()));
+    const row = async (id: string) =>
+      (
+        await owner.pool.query<{
+          risk_flag: string | null;
+          risk_flag_source: string | null;
+          risk_flag_note: string | null;
+          risk_flag_set_by: string | null;
+          set: boolean;
+        }>(
+          `SELECT risk_flag, risk_flag_source, risk_flag_note, risk_flag_set_by,
+                  risk_flag_set_at IS NOT NULL AS set
+           FROM customers WHERE id = $1`,
+          [id],
+        )
+      ).rows[0];
+
+    it('sets refuser with a note as a manual flag by the person, shows it, then clears it with flag_mistaken', async () => {
+      const id = (await link({ phone: newPhone() })).customerId as string;
+
+      const set = await setFlag(id.toUpperCase(), {
+        kind: 'refuser',
+        note: '  Refused twice at the door  ',
+        reasonCode: 'repeated_refusals',
+        expectedUpdatedAt: await stampOf(id),
+      });
+
+      expect(set.status).toBe(200);
+      const answer = CustomerSetFlagResponse.parse(set.body);
+      expect(answer.flag).toMatchObject({
+        kind: 'refuser',
+        source: 'manual',
+        note: 'Refused twice at the door',
+      });
+      expect(answer.flag.setByName).not.toBeNull();
+      const shown = CustomerProfile.parse((await profile(id)).body);
+      expect(shown.flag).toEqual(answer.flag);
+      expect(shown.updatedAt).toBe(answer.updatedAt);
+      expect(await row(id)).toMatchObject({ risk_flag_source: 'manual', set: true });
+      expect((await row(id))?.risk_flag_set_by).not.toBeNull();
+      const listed = await search({ phone: shown.phones[0]?.e164 });
+      expect(CustomerSearchResponse.parse(listed.body).items[0]).toMatchObject({
+        flagKind: 'refuser',
+        flagSource: 'manual',
+      });
+
+      const cleared = await clearFlag(id, {
+        reasonCode: 'flag_mistaken',
+        expectedUpdatedAt: answer.updatedAt,
+      });
+
+      expect(cleared.status).toBe(204);
+      expect(CustomerProfile.parse((await profile(id)).body).flag).toBeNull();
+      expect(await row(id)).toEqual({
+        risk_flag: null,
+        risk_flag_source: null,
+        risk_flag_note: null,
+        risk_flag_set_by: null,
+        set: false,
+      });
+    });
+
+    it('answers 409 STALE_RECORD for an old stamp and 409 NOT_FLAGGED for a customer with no flag', async () => {
+      const id = (await link({ phone: newPhone() })).customerId as string;
+      const old = await stampOf(id);
+      const first = await setFlag(id, { kind: 'returner', expectedUpdatedAt: old });
+      expect(first.status).toBe(200);
+
+      const again = await setFlag(id, { kind: 'fake', expectedUpdatedAt: old });
+      const clearOld = await clearFlag(id, { reasonCode: 'policy_review', expectedUpdatedAt: old });
+      expect(again.status).toBe(409);
+      expect(again.body).toMatchObject({ code: 'STALE_RECORD' });
+      expect(clearOld.status).toBe(409);
+      expect(clearOld.body).toMatchObject({ code: 'STALE_RECORD' });
+
+      const fresh = await stampOf(id);
+      expect(
+        (await clearFlag(id, { reasonCode: 'policy_review', expectedUpdatedAt: fresh })).status,
+      ).toBe(204);
+      const none = await clearFlag(id, {
+        reasonCode: 'policy_review',
+        expectedUpdatedAt: await stampOf(id),
+      });
+      expect(none.status).toBe(409);
+      expect(none.body).toMatchObject({ code: 'NOT_FLAGGED' });
+    });
+
+    it('refuses a set on a merged id with 409 CUSTOMER_MERGED, an unknown id with 404, a long note with 422 NOTE_TOO_LONG, and a missing clear reason with 422 REASON_REQUIRED', async () => {
+      const survivor = (await link({ phone: newPhone() })).customerId as string;
+      const merged = (await link({ phone: newPhone() })).customerId as string;
+      await owner.pool.query(`UPDATE customers SET merged_into_id = $2 WHERE id = $1`, [
+        merged,
+        survivor,
+      ]);
+      const stamp = await stampOf(survivor);
+
+      const onMerged = await setFlag(merged, { kind: 'fake', expectedUpdatedAt: stamp });
+      const unknown = await setFlag(randomUUID(), { kind: 'fake', expectedUpdatedAt: stamp });
+      const long = await setFlag(survivor, {
+        kind: 'fake',
+        note: 'Zzlongnote'.repeat(51),
+        expectedUpdatedAt: stamp,
+      });
+      const noReason = await clearFlag(survivor, { expectedUpdatedAt: stamp });
+
+      expect(onMerged.status).toBe(409);
+      expect(onMerged.body).toMatchObject({ code: 'CUSTOMER_MERGED' });
+      expect(unknown.status).toBe(404);
+      expect(unknown.body).toMatchObject({ code: 'CUSTOMER_NOT_FOUND' });
+      expect(long.status).toBe(422);
+      expect(long.body).toMatchObject({ code: 'NOTE_TOO_LONG' });
+      expect(long.text).not.toContain('Zzlongnote');
+      expect(noReason.status).toBe(422);
+      expect(noReason.body).toMatchObject({ code: 'REASON_REQUIRED' });
+      expect((await row(survivor))?.risk_flag).toBeNull();
+    });
+
+    it('shows a flag on a merged id on the survivor until cleared, and the clear empties every flagged id', async () => {
+      const survivor = (await link({ phone: newPhone() })).customerId as string;
+      const merged = (await link({ phone: newPhone() })).customerId as string;
+      const other = (await link({ phone: newPhone() })).customerId as string;
+      await owner.pool.query(
+        `UPDATE customers SET risk_flag = 'abusive', risk_flag_source = 'blacklist_import',
+                risk_flag_set_at = now() WHERE id = ANY($1::uuid[])`,
+        [[merged, other]],
+      );
+      await owner.pool.query(
+        `UPDATE customers SET merged_into_id = $2 WHERE id = ANY($1::uuid[])`,
+        [[merged, other], survivor],
+      );
+      expect(CustomerProfile.parse((await profile(survivor)).body).flag).toMatchObject({
+        kind: 'abusive',
+        source: 'blacklist_import',
+      });
+
+      // Asked through a merged id, the clear works on its survivor.
+      const cleared = await clearFlag(merged, {
+        reasonCode: 'customer_settled',
+        expectedUpdatedAt: await stampOf(survivor),
+      });
+
+      expect(cleared.status).toBe(204);
+      expect(CustomerProfile.parse((await profile(survivor)).body).flag).toBeNull();
+      for (const id of [merged, other, survivor]) expect((await row(id))?.risk_flag).toBeNull();
+    });
+
+    it('setFlagFromImport never replaces a manual flag, on the customer or a merged id, and replaces an older import flag', async () => {
+      const manual = (await link({ phone: newPhone() })).customerId as string;
+      await setFlag(manual, {
+        kind: 'returner',
+        note: 'kept',
+        expectedUpdatedAt: await stampOf(manual),
+      });
+
+      expect(await importFlag(manual, 'fake')).toBe('kept_manual');
+      expect(await row(manual)).toMatchObject({
+        risk_flag: 'returner',
+        risk_flag_source: 'manual',
+        risk_flag_note: 'kept',
+      });
+
+      const imported = (await link({ phone: newPhone() })).customerId as string;
+      expect(await importFlag(imported, 'returner')).toBe('set');
+      expect(await importFlag(imported, 'fake')).toBe('set');
+      expect(await row(imported)).toEqual({
+        risk_flag: 'fake',
+        risk_flag_source: 'blacklist_import',
+        risk_flag_note: null,
+        risk_flag_set_by: null,
+        set: true,
+      });
+
+      // A manual flag on a record merged into the customer also keeps the import out.
+      const survivor = (await link({ phone: newPhone() })).customerId as string;
+      await owner.pool.query(`UPDATE customers SET merged_into_id = $2 WHERE id = $1`, [
+        manual,
+        survivor,
+      ]);
+      expect(await importFlag(survivor, 'abusive')).toBe('kept_manual');
+      expect((await row(survivor))?.risk_flag).toBeNull();
+      await expect(importFlag(randomUUID(), 'fake')).rejects.toMatchObject({
+        code: 'CUSTOMER_NOT_FOUND',
+      });
+    });
+
+    it('answers 403 to the warehouse hat on both flag routes', async () => {
+      const id = (await link({ phone: newPhone() })).customerId as string;
+      const stamp = await stampOf(id);
+
+      expect(
+        (await setFlag(id, { kind: 'fake', expectedUpdatedAt: stamp }, warehouse)).status,
+      ).toBe(403);
+      expect(
+        (await clearFlag(id, { reasonCode: 'flag_mistaken', expectedUpdatedAt: stamp }, warehouse))
+          .status,
+      ).toBe(403);
+    });
+  });
+
   describe('caching', () => {
     it('marks the search answer and the profile answer, found or not, Cache-Control no-store', async () => {
       const id = (await link({ phone: newPhone() })).customerId as string;
@@ -770,6 +990,31 @@ describe('customers by phone', { timeout: 180_000 }, () => {
         await search({ phone: '01099887766x' });
         const created = (await customers.findByPhone(phone)) as string;
         await profile(created);
+        // A flag note is personal data too (AC-17): set, refuse as too long, and clear it.
+        const stamp = CustomerProfile.parse((await profile(created)).body).updatedAt;
+        const flagged = await fetch(`${base}/api/customers/${created}/flag`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', origin: base, cookie: support },
+          body: JSON.stringify({
+            kind: 'abusive',
+            note: 'Zzsentinel note',
+            expectedUpdatedAt: stamp,
+          }),
+        });
+        await fetch(`${base}/api/customers/${created}/flag`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json', origin: base, cookie: support },
+          body: JSON.stringify({
+            kind: 'abusive',
+            note: 'Zzsentinel'.repeat(60),
+            expectedUpdatedAt: stamp,
+          }),
+        });
+        const { updatedAt } = CustomerSetFlagResponse.parse(await flagged.json());
+        await post(support, `/customers/${created}/flag/clear`, {
+          reasonCode: 'flag_mistaken',
+          expectedUpdatedAt: updatedAt,
+        });
         errorText = await link({
           phone,
           channelCustomer: shopify(issuers.shopifyA, ' '),

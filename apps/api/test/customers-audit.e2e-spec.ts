@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import {
   AUDIT_ACTIONS,
   CustomerMergeResponse,
+  CustomerProfile,
+  CustomerSetFlagResponse,
   personActor,
   type NormalizedPhone,
 } from '@ssdashboard/contracts';
@@ -14,9 +16,9 @@ import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 // Spec 0014 Audit actions and spec 0010 AC-19: the proof that every customers code writes its
 // entry: `customer.merged` (one per changed record, the undo only on the merged record's),
 // `customer.unmerged`, `customer.merged_undone` (the audit screen's undo through
-// `customers.merge_undo`), `customer.merge_suggestion_dismissed`, and `customer.phone_added`.
-// Entries of record type `customer` carry ids and codes only, never a name or a phone (AC-17).
-// `customer.flagged` and `customer.unflagged` arrive with milestone 3.
+// `customers.merge_undo`), `customer.merge_suggestion_dismissed`, `customer.phone_added`, and
+// (milestone 3) `customer.flagged` and `customer.unflagged` (one per changed record). Entries of
+// record type `customer` carry ids and codes only, never a name, a phone, or a flag note (AC-17).
 describe('customers audit', { timeout: 120_000 }, () => {
   let api: InProcessApi;
   let customers: CustomersService;
@@ -72,7 +74,7 @@ describe('customers audit', { timeout: 120_000 }, () => {
       )
     ).rows;
 
-  it('registers the four milestone 2 codes on the customer record type with code reasons', () => {
+  it('registers the six customers codes on the customer record type with code reasons', () => {
     const codes = Object.keys(AUDIT_ACTIONS).filter((code) => code.startsWith('customer.'));
 
     expect(codes).toEqual([
@@ -80,6 +82,8 @@ describe('customers audit', { timeout: 120_000 }, () => {
       'customer.unmerged',
       'customer.merge_suggestion_dismissed',
       'customer.phone_added',
+      'customer.flagged',
+      'customer.unflagged',
     ]);
     expect(AUDIT_ACTIONS['customer.merged']).toMatchObject({
       undoable: true,
@@ -241,7 +245,62 @@ describe('customers audit', { timeout: 120_000 }, () => {
     });
   });
 
-  it('keeps every customer entry free of names and phones', async () => {
+  it('writes customer.flagged with kind and source only, and customer.unflagged on each changed record under one correlation id', async () => {
+    const a = await customer();
+    const b = await customer();
+    await api.owner.pool.query(
+      `UPDATE customers SET risk_flag = 'returner', risk_flag_source = 'blacklist_import',
+              risk_flag_set_at = now(), merged_into_id = $2 WHERE id = $1`,
+      [b.id, a.id],
+    );
+    const stamp = async () =>
+      CustomerProfile.parse((await api.call(support, 'GET', `/api/customers/${a.id}`)).body)
+        .updatedAt;
+
+    const set = await api.call(support, 'PUT', `/api/customers/${a.id}/flag`, {
+      kind: 'refuser',
+      note: 'Zzauditsentinel note',
+      reasonCode: 'repeated_refusals',
+      expectedUpdatedAt: await stamp(),
+    });
+    expect(set.status).toBe(200);
+    CustomerSetFlagResponse.parse(set.body);
+    expect(await entriesOf('customer.flagged', a.id)).toMatchObject([
+      {
+        record_type: 'customer',
+        record_label: null,
+        reason: 'repeated_refusals',
+        actor_kind: 'person',
+        before: { riskFlag: null, riskFlagSource: null },
+        after: { riskFlag: 'refuser', riskFlagSource: 'manual' },
+      },
+    ]);
+
+    const cleared = await api.call(support, 'POST', `/api/customers/${a.id}/flag/clear`, {
+      reasonCode: 'flag_mistaken',
+      expectedUpdatedAt: await stamp(),
+    });
+    expect(cleared.status).toBe(204);
+    const [onA] = await entriesOf('customer.unflagged', a.id);
+    const [onB] = await entriesOf('customer.unflagged', b.id);
+    expect(onA).toMatchObject({
+      reason: 'flag_mistaken',
+      before: { riskFlag: 'refuser', riskFlagSource: 'manual' },
+      after: { riskFlag: null, riskFlagSource: null },
+    });
+    expect(onB).toMatchObject({
+      reason: 'flag_mistaken',
+      before: { riskFlag: 'returner', riskFlagSource: 'blacklist_import' },
+    });
+    expect(onB?.correlation_id).toBe(onA?.correlation_id);
+
+    // An import writes no entry here: feature 15 writes its own.
+    const c = await customer();
+    await db.db.transaction((tx) => customers.setFlagFromImport(tx, c.id, 'fake', randomUUID()));
+    expect(await entriesOf('customer.flagged', c.id)).toEqual([]);
+  });
+
+  it('keeps every customer entry free of names, phones, and flag notes', async () => {
     const { rows } = await api.owner.pool.query<{ text: string }>(
       `SELECT row_to_json(a)::text AS text FROM audit_entries a WHERE record_type = 'customer'`,
     );
