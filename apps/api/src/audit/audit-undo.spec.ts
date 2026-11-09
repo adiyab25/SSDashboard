@@ -91,6 +91,15 @@ describe('AuditUndoRegistry and the start check', () => {
     const undos = new AuditUndoRegistry();
     const check = new AuditUndoStartCheck(undos);
 
+    // The live registry's own undoable codes (spec 0014's `customers.merge_undo`) are registered
+    // by their owners, so only the planted handler is missing.
+    for (const action of Object.values(registry)) {
+      if (action.undoable && action.undoHandler && action.undoHandler !== HANDLER) {
+        if (!undos.handlerOf(action.undoHandler)) {
+          undos.register(action.undoHandler, noop, action.module);
+        }
+      }
+    }
     expect(undos.missingHandlers()).toEqual([HANDLER]);
     expect(() => check.onApplicationBootstrap()).toThrow(AuditUndoHandlerMissing);
 

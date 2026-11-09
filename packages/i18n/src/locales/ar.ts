@@ -1777,6 +1777,10 @@ export const ar: Catalog = {
       policyChanged: 'تغيير سياسة نوع مالك الموقع',
       costRuleRecorded: 'تسجيل قاعدة تكلفة لكل طلب',
       costRuleRecordedInLockedPeriod: 'تسجيل قاعدة تكلفة لكل طلب في فترة مقفلة',
+      customerMerged: 'دمج عميلين',
+      customerUnmerged: 'التراجع عن دمج عميل',
+      customerMergeSuggestionDismissed: 'تجاهل اقتراح دمج',
+      customerPhoneAdded: 'إضافة رقم هاتف ثانٍ لعميل',
     },
   },
   settings: {

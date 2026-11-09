@@ -1,6 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CustomerBrief, NormalizedPhone } from '@ssdashboard/contracts';
+import type {
+  AuditActor,
+  CustomerBrief,
+  CustomerPhoneAddedReasonCode,
+  NormalizedPhone,
+} from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
+import { AuditService } from '../audit/audit.service.js';
 import { DATABASE } from '../database/database.module.js';
 import { pgArray, type Executor, type Transaction } from '../database/sql.js';
 import { briefRows } from './customer-briefs.js';
@@ -10,6 +16,7 @@ import {
   type FindOrCreateInput,
   type FindOrCreateResult,
 } from './find-or-create/find-or-create.js';
+import { addPhone, type AddPhoneResult } from './phones/add-phone.js';
 
 /** A customer as other modules may show it (spec 0014 `briefs`): the asked id and the canonical customer behind it. */
 export interface CustomerBriefOf extends CustomerBrief {
@@ -30,8 +37,11 @@ export interface CustomerBriefOf extends CustomerBrief {
  */
 @Injectable()
 export class CustomersService {
-  /** Takes the app database connection. */
-  constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
+  /** Takes the app database connection and the audit writer (for `customer.phone_added`). */
+  constructor(
+    @Inject(DATABASE) private readonly connection: DatabaseConnection,
+    @Inject(AuditService) private readonly audit: AuditService,
+  ) {}
 
   /**
    * Links a phone and an optional outside id to its canonical customer, or creates her (AC-1,
@@ -39,6 +49,22 @@ export class CustomersService {
    */
   findOrCreate(tx: Transaction, input: FindOrCreateInput): Promise<FindOrCreateResult> {
     return findOrCreate(tx, input);
+  }
+
+  /**
+   * Attaches a second phone to the customer (AC-10): `added`, `already_held`, or `held_by_other`
+   * with the other canonical customer and one `second_phone_conflict` suggestion; a phone is never
+   * moved. A person's `added` writes `customer.phone_added`. See {@link addPhone}. Pass the
+   * caller's transaction.
+   */
+  addPhone(
+    tx: Transaction,
+    customerId: string,
+    phone: NormalizedPhone,
+    actor: AuditActor,
+    reasonCode?: CustomerPhoneAddedReasonCode,
+  ): Promise<AddPhoneResult> {
+    return addPhone(tx, this.audit, customerId, phone, actor, reasonCode);
   }
 
   /** The canonical customer holding this phone, or null when none does. Writes nothing. */

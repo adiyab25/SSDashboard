@@ -1774,6 +1774,10 @@ export const en = {
       policyChanged: 'Location owner type policy changed',
       costRuleRecorded: 'Per order cost rule recorded',
       costRuleRecordedInLockedPeriod: 'Per order cost rule recorded in a locked period',
+      customerMerged: 'Customers merged',
+      customerUnmerged: 'Customer merge undone',
+      customerMergeSuggestionDismissed: 'Merge suggestion dismissed',
+      customerPhoneAdded: 'Second phone added to a customer',
     },
   },
   // The settings registry of spec 0009 (AC-1): one label and description per entry, and the
