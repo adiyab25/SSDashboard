@@ -438,8 +438,11 @@ function paymentOf(
   if (order.transactions.length >= ORDER_READ_TRANSACTIONS_PAGE) {
     throw new ShopifyOrderMappingError('TRANSACTIONS_TRUNCATED');
   }
-  const methodOf = (gateway: string | null): OrderPaymentMethod | undefined =>
-    gateway === null ? undefined : entryOf(context.gatewayMethods, gateway);
+  // Looked up by the one gateway key (`gatewayKeyOf`), as the creation facts and the rederive do.
+  const methodOf = (gateway: string | null): OrderPaymentMethod | undefined => {
+    const key = gateway === null ? null : gatewayKeyOf(gateway);
+    return key === null ? undefined : entryOf(context.gatewayMethods, key);
+  };
   let prepaid = 0n;
   let prepaidMethod: OrderPaymentMethod | null = null;
   let sold = false;
@@ -496,11 +499,19 @@ const GATEWAY_KEY_MAX = 200;
  * 200 characters, never cleaned (security review N1). The one key the creation lookup,
  * `state.creationGateways`, the remap check, and `creationPaymentOf` share, so a name that
  * cleaning would change (padding, a right to left mark, more than 100 characters) never looks
- * remapped.
+ * remapped. A high surrogate the cut leaves alone is dropped; a name holding U+0000 or an
+ * unpaired surrogate answers null (security review N3): PostgreSQL `jsonb` refuses both, so such
+ * a name can never be a config key, is treated as unmapped, and is never stored as a key.
  */
-export function gatewayKeyOf(name: string): string {
-  return name.slice(0, GATEWAY_KEY_MAX);
+export function gatewayKeyOf(name: string): string | null {
+  if (name.includes('\u0000') || LONE_SURROGATE.test(name)) return null;
+  const key = name.slice(0, GATEWAY_KEY_MAX);
+  const last = key.charCodeAt(key.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? key.slice(0, -1) : key;
 }
+
+/** An unpaired surrogate, which PostgreSQL `jsonb` refuses beside U+0000. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** The method `config.gatewayMethods` gives a gateway key, null when unmapped. */
 export function gatewayMethodOf(
@@ -524,7 +535,7 @@ export function gatewayMappingOf(
   const entries = new Map<string, OrderPaymentMethod | null>();
   for (const name of order.paymentGatewayNames) {
     const key = gatewayKeyOf(name);
-    if (key === '' || entries.has(key)) continue;
+    if (key === null || key === '' || entries.has(key)) continue;
     entries.set(key, gatewayMethodOf(context, key));
   }
   return Object.fromEntries(entries);

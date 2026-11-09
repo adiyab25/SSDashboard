@@ -5,6 +5,7 @@ import { nextKnownOrderState, planKnownOrder } from './known-order-plan.js';
 import {
   creationPaymentOf,
   firstActiveFulfillmentOf,
+  gatewayKeyOf,
   gatewayMappingOf,
   parseShopifyOrder,
   paymentTransactionIdsOf,
@@ -343,6 +344,37 @@ describe('planKnownOrder: the payment rederive (lead decision D10, spec 0013 AC-
       prepaidAmount: '860.00',
       prepaidMethod: 'gateway',
     });
+  });
+
+  it('gives a key jsonb accepts: no U+0000, no lone surrogate, no pair split at 200 (security review N3)', () => {
+    const emoji = '\u{1F4B3}';
+    const split = `${'x'.repeat(199)}${emoji}tail`;
+    expect(gatewayKeyOf(split)).toBe('x'.repeat(199));
+    expect(gatewayKeyOf(`${'x'.repeat(198)}${emoji}`)).toBe(`${'x'.repeat(198)}${emoji}`);
+    expect(gatewayKeyOf('Cash on\u0000Delivery')).toBeNull();
+    expect(gatewayKeyOf('Wallet \uD83D')).toBeNull();
+    expect(gatewayKeyOf('\uDCB3 Wallet')).toBeNull();
+    const mapping = gatewayMappingOf(
+      { paymentGatewayNames: ['Cash on\u0000Delivery', 'Wallet \uD83D', split] },
+      { ...CONTEXT, gatewayMethods: { 'Cash on\u0000Delivery': 'cod' } },
+    );
+    expect(mapping).toEqual({ ['x'.repeat(199)]: null });
+    expect(JSON.parse(JSON.stringify(mapping)) as unknown).toEqual(mapping);
+  });
+
+  it('looks a name above 200 characters up and records it under the same key (code review nit 1)', () => {
+    const name = `G${'y'.repeat(250)}`;
+    const key = gatewayKeyOf(name) ?? '';
+    const order = structuredClone(fixture('order-prepaid-gateway/01-order-read.json'));
+    order.paymentGatewayNames = [name];
+    for (const transaction of order.transactions) transaction.gateway = name;
+    const context = { ...CONTEXT, gatewayMethods: { [key]: 'wallet' as const } };
+    expect(shopifyPaymentOf(order, context)).toEqual({
+      paymentMethod: 'wallet',
+      prepaidAmount: '860.00',
+      prepaidMethod: 'wallet',
+    });
+    expect(gatewayMappingOf(order, context)).toEqual({ [key]: 'wallet' });
   });
 
   it('keeps a gateway named __proto__ as an own key (security review L5)', () => {

@@ -848,6 +848,22 @@ describe(
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
+    it('creates an order whose gateway name holds U+0000, storing no such key in the jsonb mapping state (security review N3)', async () => {
+      useShopifyScenarios('order-gateway-nul');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000025001';
+      expect(await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      expect(await orderOf(c, gid)).toMatchObject({ payment_method: 'cod' });
+      expect((await mappingOf(c, gid))?.state).toMatchObject({
+        creationGateways: {},
+        unmappedGateways: ['Cash onDelivery'],
+      });
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
     it('applies an edit made before the fulfillment on the read where the fulfillment first appears, then records the carrier delivery (code review m1)', async () => {
       useShopifyScenarios('order-swapped-then-fulfilled');
       const c = await plant();
