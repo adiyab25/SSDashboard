@@ -16,6 +16,8 @@ import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { LedgerError } from '../ledger/ledger.errors.js';
 import { buildAvailabilitySql } from '../ledger/ledger.service.js';
+import { LocationPolicyService } from '../locations/location-policy.service.js';
+import { ISO_UTC } from '../locations/locations.service.js';
 import { OnlineStockError } from './online-stock.errors.js';
 
 /**
@@ -26,8 +28,8 @@ import { OnlineStockError } from './online-stock.errors.js';
  */
 export const ONLINE_FEED_LAG = '5 minutes';
 
-/** `to_char` format of an instant: microseconds, UTC, so a position round trips exactly. */
-const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
+/** Variants read per query when the gate counts a location's stock. */
+const GATE_CHUNK = 5000;
 
 /** What the online gate shows about a location's stock (spec 0011 AC-19, Value sourcing). */
 export interface OnlineGateCounts {
@@ -73,8 +75,11 @@ function toRow(
  */
 @Injectable()
 export class OnlineStockService {
-  /** Takes the app database connection. */
-  constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
+  /** Takes the app database connection and the policy service that says what an owner type allows. */
+  constructor(
+    @Inject(DATABASE) private readonly connection: DatabaseConnection,
+    @Inject(LocationPolicyService) private readonly policy: LocationPolicyService,
+  ) {}
 
   /** The online location (`{ id, code, name }`), or null when no location feeds online stock. */
   async onlineLocation(executor: Executor = this.connection.db): Promise<OnlineLocationRef | null> {
@@ -118,7 +123,9 @@ export class OnlineStockService {
    * The same figures for a location that is not necessarily online yet, for the Shopify
    * connector's first push preview (spec 0011 Contract for neighbours). With `variantIds` it
    * reads those; otherwise it pages like `list`. Raises `UnknownReference` for a missing or
-   * archived location, and never `NoOnlineLocation`.
+   * archived location, `NotOnlineCandidate` for a location that could never be online (not a
+   * sellable warehouse, or its owner type may not sell online: a partner's figures are never
+   * offered), and never `NoOnlineLocation`.
    */
   async forCandidate(
     locationId: string,
@@ -126,9 +133,22 @@ export class OnlineStockService {
   ): Promise<OnlineStockCandidateResponse> {
     const parsed = parse(OnlineStockCandidateQuery, query);
     const id = parse(z.uuid(), locationId);
-    const { rows: found } = await this.connection.db.execute(sql`
-      SELECT 1 FROM locations WHERE id = ${id} AND archived_at IS NULL`);
-    if (!found.length) throw new LedgerError('UnknownReference', 'No such active location');
+    const { rows: found } = await this.connection.db.execute<{
+      kind: string;
+      is_sellable: boolean;
+    }>(sql`SELECT kind, is_sellable FROM locations WHERE id = ${id} AND archived_at IS NULL`);
+    const location = found[0];
+    if (!location) throw new LedgerError('UnknownReference', 'No such active location');
+    if (
+      location.kind !== 'warehouse' ||
+      !location.is_sellable ||
+      !(await this.policy.policyFor(id)).canSellOnline
+    ) {
+      throw new OnlineStockError(
+        'NotOnlineCandidate',
+        'Only an active sellable warehouse whose owner may sell online can feed online stock',
+      );
+    }
     if (parsed.variantIds) {
       const ids = [...new Set(parsed.variantIds)];
       return {
@@ -214,33 +234,28 @@ export class OnlineStockService {
     locationId: string,
     executor: Executor = this.connection.db,
   ): Promise<OnlineGateCounts> {
-    const { rows } = await executor.execute<{
-      variants_with_stock: number;
-      total_on_hand: number;
-      variants_pushed_zero: number;
-    }>(sql`
-      WITH bal AS (
-        SELECT variant_id, sum(on_hand)::int AS on_hand
-        FROM stock_levels WHERE location_id = ${locationId} GROUP BY variant_id
-      ), res AS (
-        SELECT variant_id, sum(open_quantity)::int AS reserved, sum(unfilled_quantity)::int AS unfilled
-        FROM reservations WHERE location_id = ${locationId} AND status = 'active' GROUP BY variant_id
-      ), v AS (
-        SELECT variant_id, coalesce(bal.on_hand, 0) AS on_hand, coalesce(res.reserved, 0) AS reserved,
-               coalesce(res.unfilled, 0) AS unfilled
-        FROM bal FULL JOIN res USING (variant_id)
-        WHERE coalesce(bal.on_hand, 0) <> 0 OR res.reserved IS NOT NULL
-      )
-      SELECT count(*) FILTER (WHERE on_hand > 0)::int AS variants_with_stock,
-             coalesce(sum(on_hand) FILTER (WHERE on_hand > 0), 0)::int AS total_on_hand,
-             count(*) FILTER (WHERE greatest(on_hand - reserved - unfilled, 0) = 0)::int AS variants_pushed_zero
-      FROM v`);
-    const row = rows[0];
-    return {
-      variantsWithStock: row?.variants_with_stock ?? 0,
-      totalOnHand: row?.total_on_hand ?? 0,
-      variantsPushedZero: row?.variants_pushed_zero ?? 0,
+    // The same rule as every online read: the figures of `rowsFor` (sellable places only, summed
+    // over bins and lots per variant), so the gate and `forCandidate` always agree.
+    const { rows } = await executor.execute<{ variant_id: string }>(sql`
+      SELECT variant_id FROM stock_levels WHERE location_id = ${locationId} AND on_hand <> 0
+      UNION
+      SELECT variant_id FROM reservations WHERE location_id = ${locationId} AND status = 'active'`);
+    const counts: OnlineGateCounts = {
+      variantsWithStock: 0,
+      totalOnHand: 0,
+      variantsPushedZero: 0,
     };
+    for (let at = 0; at < rows.length; at += GATE_CHUNK) {
+      const ids = rows.slice(at, at + GATE_CHUNK).map((row) => row.variant_id);
+      for (const row of await this.rowsFor(executor, locationId, ids)) {
+        if (row.onHand > 0) {
+          counts.variantsWithStock += 1;
+          counts.totalOnHand += row.onHand;
+        }
+        if (row.pushable === 0) counts.variantsPushedZero += 1;
+      }
+    }
+    return counts;
   }
 
   /** How many active reservations a location holds (the ones that stay when the flag moves away). */

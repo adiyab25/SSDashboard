@@ -4,13 +4,11 @@ import type { MessageKey } from '@ssdashboard/i18n';
 import type { Executor } from '../../database/sql.js';
 
 /**
- * What a registered check answers for a location (spec 0011 AC-19): the keys of
- * `OnlineGateCheck`, with `label` and `action.label` typed as catalog message keys so the web can
+ * What a registered check answers for a location (spec 0011 AC-19): the fields of
+ * `OnlineGateCheck` except the key (the registry stamps the provider's key), with `label` and `action.label` typed as catalog message keys so the web can
  * translate them and no English text crosses the api.
  */
 export interface OnlineGateCheckResult {
-  /** Stable key owned by the registering module, for example `orders.open_orders_held`. */
-  key: string;
   /** A `@ssdashboard/i18n` message key. */
   label: MessageKey;
   /** True when the location may go online as far as this check is concerned. */
@@ -27,7 +25,7 @@ export interface OnlineGateCheckResult {
  * never reads inventory tables itself.
  */
 export interface OnlineGateCheckProvider {
-  /** Stable key owned by the registering module; one provider per key. */
+  /** Stable key owned by the registering module, for example `orders.open_orders_held`; one provider per key. */
   readonly key: string;
   /** Evaluates the check for the location that wants to go online. */
   run(locationId: string, executor: Executor): Promise<OnlineGateCheckResult>;

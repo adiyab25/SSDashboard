@@ -1,5 +1,5 @@
 {
-  "id": "f0452757-af72-4aff-9985-e6a79704becb",
+  "id": "af74fbf3-0d35-4df2-8055-caaaedbdb686",
   "prevId": "83693912-d705-4e20-8fa3-9c401f4433cc",
   "version": "7",
   "dialect": "postgresql",
@@ -6700,7 +6700,7 @@
         },
         "reservations_has_demand": {
           "name": "reservations_has_demand",
-          "value": "\"reservations\".\"quantity\" + \"reservations\".\"unfilled_quantity\" > 0"
+          "value": "\"reservations\".\"status\" <> 'active' OR \"reservations\".\"quantity\" + \"reservations\".\"unfilled_quantity\" > 0"
         },
         "reservations_open_quantity_range": {
           "name": "reservations_open_quantity_range",
@@ -8224,6 +8224,10 @@
         "locations_online_needs_warehouse": {
           "name": "locations_online_needs_warehouse",
           "value": "NOT \"locations\".\"sellable_online\" OR (\"locations\".\"kind\" = 'warehouse' AND \"locations\".\"is_sellable\")"
+        },
+        "locations_online_not_archived": {
+          "name": "locations_online_not_archived",
+          "value": "NOT \"locations\".\"sellable_online\" OR \"locations\".\"archived_at\" IS NULL"
         },
         "locations_party_matches_owner": {
           "name": "locations_party_matches_owner",

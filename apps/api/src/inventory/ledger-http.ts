@@ -77,6 +77,9 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
   }
   if (error instanceof OnlineStockError) {
     // Only the connector reads online stock through code; a route that surfaces it asks to go online first.
+    if (error.code === 'NotOnlineCandidate') {
+      return unprocessable('NOT_ONLINE_CANDIDATE', error.message);
+    }
     return new ConflictException({ code: 'NO_ONLINE_LOCATION', message: error.message });
   }
   if (error instanceof InvalidAmountError) {

@@ -96,7 +96,7 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
     locations = new LocationsService(h.app, h.ledger, policies, new AuditService());
     online = new OnlineLocationService(
       h.app,
-      new OnlineStockService(h.app),
+      new OnlineStockService(h.app, policies),
       new OnlineStockGate(),
       policies,
       locations,

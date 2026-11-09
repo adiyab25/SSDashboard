@@ -66,6 +66,8 @@ export function locationHttpError(error: unknown, response?: Response): unknown 
         return new ConflictException({ code: 'STOCK_ON_HAND', message: error.message });
       case 'InUse':
         return new ConflictException({ code: 'IN_USE', message: error.message });
+      case 'AlreadyOnline':
+        return new ConflictException({ code: 'ALREADY_ONLINE', message: error.message });
       case 'AlreadyConfirmed':
         return new ConflictException({ code: 'ALREADY_CONFIRMED', message: error.message });
       case 'OnlineGateFailed':

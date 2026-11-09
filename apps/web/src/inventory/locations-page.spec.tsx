@@ -1,7 +1,7 @@
 import type { LocationDetail } from '@ssdashboard/contracts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { LocationsPage } from './locations-page';
 import { renderWithQuery } from '@/shared/render-with-query';
@@ -11,6 +11,9 @@ const api = vi.hoisted(() => ({
   updateLocation: vi.fn(),
   setLocationArchived: vi.fn(),
   deleteLocation: vi.fn(),
+  getOnlineStatus: vi.fn(),
+  getOnlineGate: vi.fn(),
+  stopOnlineStock: vi.fn(),
 }));
 vi.mock('./inventory-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -49,6 +52,10 @@ const location = (n: number, overrides: Partial<LocationDetail> = {}): LocationD
 });
 
 const page = (items: LocationDetail[], nextCursor: string | null = null) => ({ items, nextCursor });
+
+beforeEach(() => {
+  api.getOnlineStatus.mockResolvedValue({ onlineLocation: null });
+});
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
@@ -177,5 +184,68 @@ describe('LocationsPage (AC-4)', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'New location' }));
     expect(await screen.findByRole('dialog', { name: 'New location' })).toBeVisible();
+  });
+
+  it('badges the online location with Online stock and offers Make online only on active warehouses (spec 0011 AC-12, AC-19)', async () => {
+    api.listLocations.mockResolvedValue(
+      page([
+        location(1, { online: true }),
+        location(2),
+        location(3, { kind: 'shop' }),
+        location(4, { archived: true }),
+      ]),
+    );
+    renderWithQuery(<LocationsPage />);
+
+    const table = await screen.findByRole('table', { name: 'Locations' });
+    expect(await within(table).findByText('Online stock')).toBeVisible();
+    expect(within(table).getAllByText('Online stock')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Stop online stock at LOC1' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Make online LOC1' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Make online LOC2' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Make online LOC3' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Make online LOC4' })).toBeNull();
+  });
+
+  it('stops online stock only with a written reason (spec 0011 AC-19)', async () => {
+    api.listLocations.mockResolvedValue(page([location(1, { online: true })]));
+    api.stopOnlineStock.mockResolvedValue({ onlineLocation: null });
+    renderWithQuery(<LocationsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop online stock at LOC1' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Describe the stock, not a person/)).toBeVisible();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Stop online stock' }));
+    expect(await within(dialog).findByText('Give a reason, up to 500 characters.')).toBeVisible();
+    expect(api.stopOnlineStock).not.toHaveBeenCalled();
+
+    await userEvent.type(within(dialog).getByLabelText(/Reason/), 'Recount under way');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Stop online stock' }));
+    await waitFor(() => expect(api.stopOnlineStock).toHaveBeenCalledWith('Recount under way'));
+  });
+
+  it('shows the no online location line on Locations without a link to itself', async () => {
+    api.listLocations.mockResolvedValue(page([location(1)]));
+    renderWithQuery(<LocationsPage />);
+
+    expect(
+      await screen.findByText('No location feeds online stock: Shopify is not being updated'),
+    ).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Open the online gate' })).toBeNull();
+  });
+
+  it('says the online location must stay a warehouse when a kind change is refused (spec 0011 AC-1)', async () => {
+    api.listLocations.mockResolvedValue(page([location(1, { online: true })]));
+    api.updateLocation.mockRejectedValue(new ApiError(422, { code: 'ONLINE_NEEDS_WAREHOUSE' }));
+    renderWithQuery(<LocationsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit LOC1' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit location LOC1' });
+    await userEvent.type(within(dialog).getByLabelText('Name in English'), ' x');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'must stay a warehouse. Stop online stock first',
+    );
   });
 });

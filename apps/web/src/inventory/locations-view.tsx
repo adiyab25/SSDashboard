@@ -26,6 +26,9 @@ import { ConfirmActionDialog } from './confirm-action-dialog';
 import { deleteLocation, inventoryKeys, listLocations, setLocationArchived } from './inventory-api';
 import { LocationEditDialog } from './location-edit-dialog';
 import { NewLocationDialog } from './new-location-dialog';
+import { OnlineGateDialog } from './online-gate-dialog';
+import { OnlineStatusNotice } from './online-status-notice';
+import { StopOnlineDialog } from './stop-online-dialog';
 
 /** The table columns, in order. */
 const COLUMNS = ['code', 'name', 'type', 'status', 'actions'] as const;
@@ -62,6 +65,8 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
   const [status, setStatus] = useState<LocationStatus>('active');
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<LocationDetail | null>(null);
+  const [gating, setGating] = useState<LocationDetail | null>(null);
+  const [stopping, setStopping] = useState<LocationDetail | null>(null);
   const [confirm, setConfirm] = useState<{ action: Action; location: LocationDetail } | null>(null);
 
   const query = useInfiniteQuery({
@@ -122,6 +127,8 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
           {t('inventory.locations.newLocation')}
         </Button>
       </div>
+
+      {enabled && <OnlineStatusNotice linkToGate={false} />}
 
       <div role="group" aria-label={t('inventory.locations.filterLabel')} className="flex gap-1">
         {STATUSES.map((value) => (
@@ -194,6 +201,11 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                           ? t('inventory.locations.archivedBadge')
                           : t('inventory.locations.activeBadge')}
                       </Badge>
+                      {row.online && (
+                        <Badge variant="default" className="ms-1">
+                          {t('inventory.onlineGate.badge')}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="px-3">
                       <div className="flex flex-wrap gap-1">
@@ -206,6 +218,28 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                         >
                           {t('inventory.locations.edit')}
                         </Button>
+                        {row.online && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={t('inventory.onlineGate.stopLabel', { code: row.code })}
+                            onClick={() => setStopping(row)}
+                          >
+                            {t('inventory.onlineGate.stop')}
+                          </Button>
+                        )}
+                        {!row.archived && row.kind === 'warehouse' && !row.online && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={t('inventory.onlineGate.openLabel', { code: row.code })}
+                            onClick={() => setGating(row)}
+                          >
+                            {t('inventory.onlineGate.open')}
+                          </Button>
+                        )}
                         {row.archived ? (
                           <Button
                             type="button"
@@ -276,6 +310,10 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
           onClose={() => setEditing(null)}
         />
       )}
+      {gating && (
+        <OnlineGateDialog key={gating.id} location={gating} onClose={() => setGating(null)} />
+      )}
+      {stopping && <StopOnlineDialog location={stopping} onClose={() => setStopping(null)} />}
       {confirm && (
         <ConfirmActionDialog
           title={copy(confirm.action, confirm.location.code).title}

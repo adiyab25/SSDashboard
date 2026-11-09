@@ -1,5 +1,9 @@
-/** The online stock rules a caller can break: there is no online location to read. */
-export type OnlineStockErrorCode = 'NoOnlineLocation';
+/**
+ * The online stock rules a caller can break: there is no online location to read, or the location
+ * asked about could never become one (`NotOnlineCandidate`: not an active sellable warehouse whose
+ * owner type may sell online).
+ */
+export type OnlineStockErrorCode = 'NoOnlineLocation' | 'NotOnlineCandidate';
 
 /**
  * Raised by every online stock read while no location feeds online stock (spec 0011 AC-2): the

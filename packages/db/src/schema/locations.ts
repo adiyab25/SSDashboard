@@ -67,6 +67,8 @@ export const locations = pgTable(
       'locations_online_needs_warehouse',
       sql`NOT ${t.sellableOnline} OR (${t.kind} = 'warehouse' AND ${t.isSellable})`,
     ),
+    // An archived location never feeds online stock (spec 0011 AC-1): archive clears the flag.
+    check('locations_online_not_archived', sql`NOT ${t.sellableOnline} OR ${t.archivedAt} IS NULL`),
     uniqueIndex('locations_one_online')
       .on(t.tenantId)
       .where(sql`${t.sellableOnline} AND ${t.archivedAt} IS NULL`),

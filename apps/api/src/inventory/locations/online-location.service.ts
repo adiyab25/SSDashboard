@@ -146,8 +146,9 @@ export class OnlineLocationService {
         await tx.execute(sql`
           SELECT id FROM locations WHERE id = ANY(${pgArray(ids)}::uuid[]) ORDER BY id FOR UPDATE`);
         const current = await this.onlineStock.onlineLocation(tx);
-        if ((current?.id ?? null) !== (seen?.id ?? null) || current?.id === locationId) {
-          throw stale();
+        if ((current?.id ?? null) !== (seen?.id ?? null)) throw stale();
+        if (current?.id === locationId) {
+          throw new LocationError('AlreadyOnline', 'This location already feeds online stock');
         }
         const row = await this.rowOf(tx, locationId);
         if (!row) throw new LocationError('NotFound', 'Location not found');

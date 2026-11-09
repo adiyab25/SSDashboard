@@ -27,6 +27,13 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
   let counter = 0;
   /** A fixture check other modules would register: flips between passing and failing. */
   const fixtureCheck = { passes: true };
+  /** When set, the fixture check waits until `expected` moves have reached it. */
+  let latch: {
+    expected: number;
+    arrived: number;
+    release: () => void;
+    opened: Promise<void>;
+  } | null = null;
 
   beforeAll(async () => {
     api = await startInProcessApi();
@@ -35,9 +42,15 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
     online = api.app.get(OnlineStockService);
     api.app.get(OnlineStockGate).register({
       key: 'fixture.orders_held',
-      run: () =>
-        Promise.resolve({
-          key: 'fixture.orders_held',
+      run: async () => {
+        // A test may hold every move at this point until `expected` moves have arrived, so two
+        // transactions are open at the same time (the unique index race, spec 0011 AC-1).
+        if (latch) {
+          latch.arrived += 1;
+          if (latch.arrived >= latch.expected) latch.release();
+          await latch.opened;
+        }
+        return {
           label: 'inventory.onlineGate.checks.stockCounted',
           passed: fixtureCheck.passes,
           count: 3,
@@ -46,7 +59,8 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
             path: '/api/orders/hold-open-orders',
             label: 'inventory.onlineGate.checks.stockCounted',
           },
-        }),
+        };
+      },
     });
     cookie = await api.signIn((await api.addPerson(['manager'])).email);
     supportCookie = await api.signIn((await api.addPerson(['support'])).email);
@@ -82,9 +96,14 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
     return id;
   }
 
-  async function stock(variantId: string, locationId: string, quantity: number): Promise<void> {
+  async function stock(
+    variantId: string,
+    locationId: string,
+    quantity: number,
+    lotId?: string,
+  ): Promise<void> {
     await ledger.post(
-      posting([{ variantId, locationId, quantity, unitCost: '5.0000' }], {
+      posting([{ variantId, locationId, quantity, unitCost: '5.0000', ...(lotId && { lotId }) }], {
         sourceType: 'opening_balance',
       }),
     );
@@ -189,9 +208,110 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       ]);
 
       expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
+      // The loser read "nothing online" before the winner committed: its recount is stale.
       expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
         code: 'ONLINE_GATE_STALE',
       });
+    });
+
+    it('gives one success and one ONLINE_GATE_STALE for parallel moves of two different warehouses', async () => {
+      const first = await warehouse({ verified: true });
+      const second = await warehouse({ verified: true });
+      const body = { confirmedVariantCount: 0, reason: 'Race' };
+      let release = () => {};
+      const opened = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // Both moves read "no online location", lock their own row, and wait here until both are
+      // open: the second flag write then waits on the first and meets `locations_one_online`.
+      latch = { expected: 2, arrived: 0, release, opened };
+      try {
+        const replies = await Promise.all([
+          call('POST', `/api/locations/${first}/make-online`, body),
+          call('POST', `/api/locations/${second}/make-online`, body),
+        ]);
+
+        expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
+        expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
+          code: 'ONLINE_GATE_STALE',
+        });
+      } finally {
+        latch = null;
+      }
+      const online = await api.owner.pool.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM locations WHERE sellable_online',
+      );
+      expect(online.rows[0]?.n).toBe(1);
+    });
+
+    it('answers ALREADY_ONLINE for the location that already feeds online stock', async () => {
+      const id = await warehouse({ verified: true });
+      await goOnline(id, 0);
+
+      const again = await call('POST', `/api/locations/${id}/make-online`, {
+        confirmedVariantCount: 0,
+        reason: 'Again',
+      });
+
+      expect(again.status).toBe(409);
+      expect(again.body).toMatchObject({ code: 'ALREADY_ONLINE' });
+    });
+
+    it('refuses a kind change of the online location, and allows it once it is off', async () => {
+      const id = await warehouse({ verified: true });
+      await goOnline(id, 0);
+      const current = (await call('GET', '/api/locations')).body as { items: LocationDetail[] };
+      const row = current.items.find((item) => item.id === id) as LocationDetail;
+
+      const refused = await call('PATCH', `/api/locations/${id}`, {
+        updatedAt: row.updatedAt,
+        kind: 'shop',
+      });
+
+      expect(refused.status).toBe(422);
+      expect(refused.body).toMatchObject({ code: 'ONLINE_NEEDS_WAREHOUSE' });
+      const kept = await api.owner.pool.query<{ kind: string }>(
+        'SELECT kind FROM locations WHERE id = $1',
+        [id],
+      );
+      expect(kept.rows[0]?.kind).toBe('warehouse');
+
+      await call('POST', '/api/locations/online/stop', { reason: 'Switching' });
+      const stopped = (await call('GET', '/api/locations')).body as { items: LocationDetail[] };
+      const off = stopped.items.find((item) => item.id === id) as LocationDetail;
+      const allowed = await call('PATCH', `/api/locations/${id}`, {
+        updatedAt: off.updatedAt,
+        kind: 'shop',
+      });
+      expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    });
+
+    it('never brings an unarchived location back online, and records the flag the archive cleared', async () => {
+      const id = await warehouse({ verified: true });
+      await goOnline(id, 0);
+      await call('POST', `/api/locations/${id}/archive`);
+      const entry = await api.owner.pool.query<{ before: unknown; after: unknown }>(
+        `SELECT before, after FROM audit_entries WHERE record_id = $1 AND action = 'location.archived'`,
+        [id],
+      );
+      expect(entry.rows[0]).toEqual({
+        before: { archived: false, online: true },
+        after: { archived: true, online: false },
+      });
+
+      const back = await call('POST', `/api/locations/${id}/unarchive`);
+
+      expect(back.status, JSON.stringify(back.body)).toBe(200);
+      expect(back.body).toMatchObject({ archived: false, online: false, sellableOnline: false });
+      expect(await online.onlineLocation()).toBeNull();
+    });
+
+    it('refuses an archived location online even when written past the api', async () => {
+      const id = await warehouse();
+      await api.owner.pool.query('UPDATE locations SET archived_at = now() WHERE id = $1', [id]);
+      await expect(
+        api.owner.pool.query('UPDATE locations SET sellable_online = true WHERE id = $1', [id]),
+      ).rejects.toThrow(/locations_online_not_archived/);
     });
 
     it('refuses a shop and a partner warehouse with their own codes', async () => {
@@ -521,6 +641,75 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       ]);
     });
 
+    it('sums the lots of a lot tracked variant at the online location', async () => {
+      const wh = await warehouse({ verified: true });
+      const variant = await make.variant({ tracking: 'lot' });
+      await stock(variant, wh, 4, await make.lot(variant));
+      await stock(variant, wh, 6, await make.lot(variant));
+      const view = OnlineGateView.parse(
+        (await call('GET', `/api/locations/${wh}/online-gate`)).body,
+      );
+      expect(view).toMatchObject({ variantsWithStock: 1, totalOnHand: 10 });
+      await goOnline(wh, 1);
+
+      expect(await online.forVariants([variant])).toEqual([
+        {
+          variantId: variant,
+          onHand: 10,
+          reserved: 0,
+          unfilledDemand: 0,
+          available: 10,
+          pushable: 10,
+        },
+      ]);
+    });
+
+    it('agrees between the gate and forCandidate: stock in an unsellable bin is not counted', async () => {
+      const wh = await warehouse({ verified: true });
+      const variant = await make.variant();
+      const bin = await make.bin(wh, { isSellable: false });
+      await ledger.post(
+        posting(
+          [{ variantId: variant, locationId: wh, binId: bin, quantity: 5, unitCost: '5.0000' }],
+          {
+            sourceType: 'opening_balance',
+          },
+        ),
+      );
+      await stock(await make.variant(), wh, 2);
+
+      const view = OnlineGateView.parse(
+        (await call('GET', `/api/locations/${wh}/online-gate`)).body,
+      );
+      const candidate = await online.forCandidate(wh);
+
+      expect(view.variantsWithStock).toBe(candidate.rows.filter((row) => row.onHand > 0).length);
+      expect(view).toMatchObject({ variantsWithStock: 1, totalOnHand: 2, variantsPushedZero: 1 });
+    });
+
+    it('refuses forCandidate for a location that could never be online', async () => {
+      const shop = (
+        await api.owner.pool.query<{ id: string }>(
+          `INSERT INTO locations (code, name, kind) VALUES ('CAND-SHOP', '{"en": "Shop"}', 'shop') RETURNING id`,
+        )
+      ).rows[0]?.id as string;
+      const partner = await api.addParty('PT-CAND', { consignment: true });
+      const partnerWarehouse = (
+        await api.owner.pool.query<{ id: string }>(
+          `INSERT INTO locations (code, name, kind, owner_type, party_id)
+           VALUES ('CAND-PW', '{"en": "Partner"}', 'warehouse', 'consignment_partner', $1) RETURNING id`,
+          [partner],
+        )
+      ).rows[0]?.id as string;
+      const unsellable = await make.location({ isSellable: false });
+
+      for (const id of [shop, partnerWarehouse, unsellable]) {
+        await expect(online.forCandidate(id)).rejects.toMatchObject({
+          code: 'NotOnlineCandidate',
+        });
+      }
+    });
+
     it('raises NoOnlineLocation on every read when no location is online, never zeros', async () => {
       const variant = await make.variant();
 
@@ -631,28 +820,32 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       await goOnline(wh, 1);
       const baseline = await online.changedSince({ since: null });
       expect(baseline.watermark < (baseline.rows.at(-1)?.changedAt ?? '')).toBe(true);
-      const since = baseline.rows.at(-1)?.changedAt ?? baseline.watermark;
 
       const client = await api.owner.pool.connect();
+      let during: Awaited<ReturnType<typeof online.changedSince>>;
+      const other = await make.variant();
       try {
         await client.query('BEGIN');
         // The change is stamped with this transaction's start and stays uncommitted.
         await client.query('UPDATE reservations SET updated_at = now() WHERE id = $1', [held]);
         // Another change commits meanwhile and a run reads past the held open one.
-        const other = await make.variant();
         await stock(other, wh, 1);
-        const during = await online.changedSince({ since });
+        during = await online.changedSince({ since: baseline.watermark });
         expect(idsOf(during.rows)).toContain(other);
-        expect(idsOf(during.rows)).not.toContain(variant);
         await client.query('COMMIT');
       } finally {
         await client.query('ROLLBACK');
         client.release();
       }
 
-      // The next run, from the same position, sees the change that committed late.
-      const later = await online.changedSince({ since });
-      expect(idsOf(later.rows)).toContain(variant);
+      // The caller stored the in-between run's watermark as its next `since`: the next run sees
+      // the change that committed late, although its stamp is older than a change the in-between
+      // run already returned (so a `since` of the last seen `changedAt` would have lost it).
+      const later = await online.changedSince({ since: during.watermark });
+      const late = later.rows.find((row) => row.variantId === variant);
+      const seenBefore = during.rows.find((row) => row.variantId === other);
+      expect(late).toBeDefined();
+      expect((late?.changedAt ?? '') < (seenBefore?.changedAt ?? '')).toBe(true);
     });
 
     it('pages through every change with after, each variant once', async () => {

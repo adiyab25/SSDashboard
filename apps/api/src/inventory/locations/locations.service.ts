@@ -41,7 +41,7 @@ export interface LocationRef {
 }
 
 /** `to_char` format of `updatedAt`: microseconds, UTC (spec 0006, Value sourcing). */
-const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
+export const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
 /**
  * The location rules a caller can break: missing, code taken, edited by someone else, code
@@ -55,6 +55,7 @@ export type LocationErrorCode =
   | 'StockOnHand'
   | 'InUse'
   | 'AlreadyConfirmed'
+  | 'AlreadyOnline'
   | 'OnlineGateFailed'
   | 'OnlineGateStale'
   | 'OnlineNeedsWarehouse'
@@ -305,7 +306,16 @@ export class LocationsService {
           sets.push(sql`code = ${input.code}`);
         }
         if (input.name) sets.push(sql`name = ${JSON.stringify(input.name)}::jsonb`);
-        if (input.kind) sets.push(sql`kind = ${input.kind}`);
+        if (input.kind) {
+          // The online location stays a warehouse (spec 0011 AC-1): refuse before the database does.
+          if (current.online && input.kind !== 'warehouse') {
+            throw new LocationError(
+              'OnlineNeedsWarehouse',
+              'The online location must stay a warehouse. Move online stock to another warehouse first.',
+            );
+          }
+          sets.push(sql`kind = ${input.kind}`);
+        }
         const { rows } = await tx.execute<LocationRow>(sql`
           UPDATE locations SET ${sql.join(sets, sql`, `)}
           WHERE id = ${id}
@@ -356,7 +366,7 @@ export class LocationsService {
       }
       const location = await this.setArchived(tx, id, true);
       if (before && !before.archived) {
-        await this.recordArchive(tx, location, caller, correlationId);
+        await this.recordArchive(tx, location, caller, correlationId, before.sellable_online);
       }
       return location;
     });
@@ -388,13 +398,15 @@ export class LocationsService {
     location: LocationDetail,
     caller: LocationCaller,
     correlationId: string,
+    wasOnline = false,
   ): Promise<void> {
     await this.audit.record(tx, {
       actor: personActor(caller.id, caller.access.actingHat('catalog.manage')),
       action: location.archived ? 'location.archived' : 'location.unarchived',
       record: { type: 'location', id: location.id, label: location.code },
-      before: { archived: !location.archived },
-      after: { archived: location.archived },
+      // An archive that turns online stock off says so (spec 0011 AC-1).
+      before: { archived: !location.archived, ...(wasOnline ? { online: true } : {}) },
+      after: { archived: location.archived, ...(wasOnline ? { online: false } : {}) },
       correlationId,
     });
   }
@@ -414,9 +426,9 @@ export class LocationsService {
   }
 
   /**
-   * How many locations of an owner type sell online, archived or not (spec 0009, AC-24): above
-   * zero, the type's policy cannot turn online selling off. An archived one counts, because
-   * bringing it back does not ask the policy again.
+   * How many locations of an owner type sell online (spec 0009, AC-24): above zero, the type's
+   * policy cannot turn online selling off. An archived location never sells online (archive
+   * clears the flag, and unarchive never sets it), so it does not count.
    */
   async countSellableOnlineByOwnerType(
     ownerType: LocationOwnerType,
@@ -424,7 +436,8 @@ export class LocationsService {
   ): Promise<number> {
     const { rows } = await executor.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM locations
-      WHERE owner_type = ${ownerType}::location_owner_type AND sellable_online`);
+      WHERE owner_type = ${ownerType}::location_owner_type AND sellable_online
+        AND archived_at IS NULL`);
     return rows[0]?.n ?? 0;
   }
 
@@ -493,7 +506,7 @@ export class LocationsService {
     const { rows } = await tx.execute<LocationRow>(sql`
       UPDATE locations
       SET archived_at = ${archived ? sql`coalesce(archived_at, now())` : sql`NULL`},
-          sellable_online = ${archived ? sql`false` : sql`sellable_online`},
+          sellable_online = false,
           updated_at = now()
       WHERE id = ${id}
       RETURNING ${LOCATION_COLUMNS}`);

@@ -352,7 +352,11 @@ export const reservations = pgTable(
       .where(sql`${t.status} = 'active' AND ${t.openQuantity} > 0`),
     check('reservations_quantity_not_negative', sql`${t.quantity} >= 0`),
     check('reservations_unfilled_not_negative', sql`${t.unfilledQuantity} >= 0`),
-    check('reservations_has_demand', sql`${t.quantity} + ${t.unfilledQuantity} > 0`),
+    // An active row holds or waits for something; a closed row has nothing open and may be empty.
+    check(
+      'reservations_has_demand',
+      sql`${t.status} <> 'active' OR ${t.quantity} + ${t.unfilledQuantity} > 0`,
+    ),
     check(
       'reservations_open_quantity_range',
       sql`${t.openQuantity} >= 0 AND ${t.openQuantity} <= ${t.quantity}`,

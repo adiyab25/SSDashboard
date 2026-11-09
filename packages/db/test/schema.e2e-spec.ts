@@ -1069,6 +1069,48 @@ describe('core data model schema (spec 0002)', () => {
     });
   });
 
+  // Spec 0011 review R1: an active reservation holds or waits for something, but a closed one may
+  // be empty, so a line that never held a piece (quantity 0, all unfilled) can still be released.
+  describe('reservations with waiting demand (spec 0011)', () => {
+    const insert = (variantId: string, locationId: string, held: number, unfilled: number) =>
+      one<{ id: string }>(
+        owner,
+        `INSERT INTO reservations (variant_id, location_id, quantity, open_quantity, unfilled_quantity,
+                                   source_type, source_id, source_line_id)
+         VALUES ($1, $2, $3, $3, $4, 'order', gen_random_uuid(), gen_random_uuid()) RETURNING id`,
+        [variantId, locationId, held, unfilled],
+      );
+
+    it('releases a reservation that held nothing and only waited', async () => {
+      const row = await insert(await makeVariant(), await makeLocation(), 0, 2);
+
+      await owner.query(
+        `UPDATE reservations SET open_quantity = 0, unfilled_quantity = 0, status = 'released',
+                closed_at = now() WHERE id = $1`,
+        [row.id],
+      );
+
+      const after = await one<{ status: string; quantity: number }>(
+        owner,
+        'SELECT status, quantity FROM reservations WHERE id = $1',
+        [row.id],
+      );
+      expect(after).toEqual({ status: 'released', quantity: 0 });
+    });
+
+    it('refuses an active reservation with nothing held and nothing waiting', async () => {
+      await expect(insert(await makeVariant(), await makeLocation(), 0, 0)).rejects.toThrow(
+        /reservations_has_demand|reservations_open_while_active/,
+      );
+      const row = await insert(await makeVariant(), await makeLocation(), 1, 0);
+      await expect(
+        owner.query('UPDATE reservations SET quantity = 0, open_quantity = 0 WHERE id = $1', [
+          row.id,
+        ]),
+      ).rejects.toThrow(/reservations_has_demand|reservations_open_while_active/);
+    });
+  });
+
   describe('referenced master data (AC-13)', () => {
     it('refuses to delete a SKU that has movements, but lets it be archived', async () => {
       const { variantId } = await makeMovement();

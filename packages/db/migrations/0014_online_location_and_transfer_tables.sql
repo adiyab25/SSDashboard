@@ -42,6 +42,7 @@ CREATE INDEX "locations_stock_verified_by_idx" ON "locations" USING btree ("stoc
 CREATE UNIQUE INDEX "locations_one_online" ON "locations" USING btree ("tenant_id") WHERE "locations"."sellable_online" AND "locations"."archived_at" IS NULL;--> statement-breakpoint
 ALTER TABLE "reservations" ADD CONSTRAINT "reservations_quantity_not_negative" CHECK ("reservations"."quantity" >= 0);--> statement-breakpoint
 ALTER TABLE "reservations" ADD CONSTRAINT "reservations_unfilled_not_negative" CHECK ("reservations"."unfilled_quantity" >= 0);--> statement-breakpoint
-ALTER TABLE "reservations" ADD CONSTRAINT "reservations_has_demand" CHECK ("reservations"."quantity" + "reservations"."unfilled_quantity" > 0);--> statement-breakpoint
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_has_demand" CHECK ("reservations"."status" <> 'active' OR "reservations"."quantity" + "reservations"."unfilled_quantity" > 0);--> statement-breakpoint
 ALTER TABLE "reservations" ADD CONSTRAINT "reservations_open_while_active" CHECK (("reservations"."status" = 'active') = ("reservations"."open_quantity" > 0 OR "reservations"."unfilled_quantity" > 0));--> statement-breakpoint
-ALTER TABLE "locations" ADD CONSTRAINT "locations_online_needs_warehouse" CHECK (NOT "locations"."sellable_online" OR ("locations"."kind" = 'warehouse' AND "locations"."is_sellable"));
+ALTER TABLE "locations" ADD CONSTRAINT "locations_online_needs_warehouse" CHECK (NOT "locations"."sellable_online" OR ("locations"."kind" = 'warehouse' AND "locations"."is_sellable"));--> statement-breakpoint
+ALTER TABLE "locations" ADD CONSTRAINT "locations_online_not_archived" CHECK (NOT "locations"."sellable_online" OR "locations"."archived_at" IS NULL);
