@@ -458,6 +458,7 @@ describe(
           channelCustomer: { kind: 'shopify_customer', connectionId: c.id, externalId: withPhone },
           name: 'سارة تجريبية',
           seenAt: new Date('2026-11-04T10:00:00Z'),
+          phoneVerified: false,
         });
         const linked = await api.owner.pool.query<{ e164: string }>(
           `SELECT p.phone_e164 AS e164 FROM customer_external_ids x
@@ -498,6 +499,83 @@ describe(
       } finally {
         spy.mockRestore();
       }
+    });
+
+    it('records unverified_phone for a customer webhook whose phone another customer holds and whose Shopify id is unknown: no channel id attached, nothing created (owner ruling L1)', async () => {
+      useShopifyScenarios('customer-updated-phone');
+      const c = await plant();
+      const gid = 'gid://shopify/Customer/8880000020001';
+      const holder = await api.owner.pool.query<{ customer_id: string }>(
+        `SELECT customer_id FROM customer_phones WHERE phone_e164 = '+201000000120'`,
+      );
+      if (holder.rows[0] === undefined) {
+        const holderId = (
+          await api.owner.pool.query<{ id: string }>(
+            `INSERT INTO customers (name) VALUES ('Held phone') RETURNING id`,
+          )
+        ).rows[0]?.id;
+        await api.owner.pool.query(
+          `INSERT INTO customer_phones (customer_id, phone_e164, kind, is_primary)
+           VALUES ($1::uuid, '+201000000120', 'mobile', true)`,
+          [holderId],
+        );
+      }
+      const before = await api.owner.pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM customers`,
+      );
+
+      expect(await arrive(c, 'customers/update', gid, '2026-11-04T10:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: 'unverified_phone',
+      });
+
+      const attached = await api.owner.pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM customer_external_ids WHERE connection_id = $1::uuid`,
+        [c.id],
+      );
+      expect(attached.rows[0]?.n).toBe('0');
+      const after = await api.owner.pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM customers`,
+      );
+      expect(after.rows[0]?.n).toBe(before.rows[0]?.n);
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
+    it('attaches no phone when a known Shopify id arrives with a new phone, and records unverified_phone (owner ruling L1)', async () => {
+      useShopifyScenarios('customer-updated-new-phone');
+      const c = await plant();
+      const gid = 'gid://shopify/Customer/8880000020003';
+      const customerId = (
+        await api.owner.pool.query<{ id: string }>(
+          `INSERT INTO customers (name) VALUES ('Known id') RETURNING id`,
+        )
+      ).rows[0]?.id as string;
+      await api.owner.pool.query(
+        `INSERT INTO customer_phones (customer_id, phone_e164, kind, is_primary)
+         VALUES ($1::uuid, '+201000000199', 'mobile', true)`,
+        [customerId],
+      );
+      await api.owner.pool.query(
+        `INSERT INTO customer_external_ids (customer_id, kind, connection_id, external_id)
+         VALUES ($1::uuid, 'shopify_customer', $2::uuid, $3)`,
+        [customerId, c.id, gid],
+      );
+
+      expect(await arrive(c, 'customers/update', gid, '2026-11-04T12:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: 'unverified_phone',
+      });
+
+      const phones = await api.owner.pool.query<{ phone_e164: string }>(
+        `SELECT phone_e164 FROM customer_phones WHERE customer_id = $1::uuid`,
+        [customerId],
+      );
+      expect(phones.rows).toEqual([{ phone_e164: '+201000000199' }]);
+      const stray = await api.owner.pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM customer_phones WHERE phone_e164 = '+201000000123'`,
+      );
+      expect(stray.rows[0]?.n).toBe('0');
+      expect(remainingShopifyExchanges()).toEqual([]);
     });
 
     /** Row counts of the tables inbound processing must never write for these tests (AC-14). */
@@ -623,12 +701,21 @@ describe(
       await api.owner.pool.query(`UPDATE connections SET status = 'active' WHERE id = $1::uuid`, [
         c.id,
       ]);
+      const phoneHeld =
+        (
+          await api.owner.pool.query(
+            `SELECT 1 FROM customer_phones WHERE phone_e164 = '+201000000120'`,
+          )
+        ).rows.length > 0;
       const spy = vi.spyOn(worker.get(CustomersService), 'findOrCreate');
       try {
         const out = await worker
           .get(InboxJob)
           .run({ connectionId: c.id, eventId: firstId }, 'customer-coalesce');
-        expect(out).toEqual({ status: 'processed', code: null });
+        // An earlier test of this file may already hold the fixture phone: then (owner ruling L1) the
+        // unknown Shopify id links nothing and the event records unverified_phone.
+        const outcome = phoneHeld ? 'unverified_phone' : null;
+        expect(out).toEqual({ status: 'processed', code: outcome });
         expect(spy).toHaveBeenCalledTimes(1);
         const rows = await api.owner.pool.query<{ status: string; outcome: string | null }>(
           `SELECT status, outcome FROM inbound_events WHERE connection_id = $1::uuid
@@ -636,7 +723,7 @@ describe(
           [c.id],
         );
         expect(rows.rows).toEqual([
-          { status: 'processed', outcome: null },
+          { status: 'processed', outcome },
           { status: 'processed', outcome: 'coalesced' },
         ]);
         expect(remainingShopifyExchanges()).toEqual([]);

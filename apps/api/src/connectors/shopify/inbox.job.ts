@@ -452,7 +452,7 @@ export class InboxJob {
   /**
    * A `customers/create` or `customers/update` event (task 11, AC-15): reads the customer back
    * with `CUSTOMER_READ`, parses its phone with `EgyptianPhone.parse` at this edge, and calls
-   * `CustomersService.findOrCreate(tx, { phone, channelCustomer, name, seenAt })` in one
+   * `CustomersService.findOrCreate(tx, { phone, channelCustomer, name, seenAt, phoneVerified: false })` (owner ruling L1: an unverified phone never links to an existing customer; the event is `processed` `unverified_phone` when it linked nothing) in one
    * transaction with the event's end. No customer touches an order, so the unit is a plain
    * transaction, not `OrderTransactions.run`. An empty read back is `ignored` `not_visible`; a
    * read back of another customer fails `READ_BACK_MISMATCH`; a read not newer than one an
@@ -493,20 +493,26 @@ export class InboxJob {
           SELECT id FROM inbound_events
           WHERE connection_id = ${event.connection_id}::uuid AND subject_type = 'customer'
             AND subject_external_id = ${gid} AND status = 'processed' AND id <> ${event.id}::uuid
-            AND (outcome IS NULL OR outcome = 'no_phone')
+            AND (outcome IS NULL OR outcome IN ('no_phone', 'unverified_phone'))
             AND subject_version >= ${input.seenAt.toISOString()}::timestamptz
           LIMIT 1`);
         if (rows[0]) return this.end(tx, event, null, { status: 'ignored', outcome: 'stale' });
         if (input.phone === null) {
           return this.end(tx, event, null, { status: 'processed', outcome: 'no_phone' });
         }
-        await this.customers.findOrCreate(tx, {
+        // Owner ruling L1: a Shopify customer's phone is unverified, so it never links to an
+        // existing customer; `unverified_phone` is recorded on the event.
+        const result = await this.customers.findOrCreate(tx, {
           phone: input.phone,
           channelCustomer: input.channelCustomer,
           name: input.name,
           seenAt: input.seenAt,
+          phoneVerified: false,
         });
-        return this.end(tx, event, null, { status: 'processed', outcome: null });
+        return this.end(tx, event, null, {
+          status: 'processed',
+          outcome: result.outcome === 'unverified_phone' ? 'unverified_phone' : null,
+        });
       });
     } catch (error) {
       const code = failureCodeOf(error);

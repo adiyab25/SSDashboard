@@ -34,6 +34,7 @@ _Steps derived from spec 0014 acceptance criteria and its Value sourcing table. 
 
 - [ ] `findOrCreate` with a phone known on A and a Shopify id known on B → answers A, one suggestion with `reason = channel_id_conflict` and the external id row as evidence → AC-1, AC-9
 - [ ] `findOrCreate` with no phone and a Shopify id known on A → answers A (`matched_by_channel_id`), the order keeps its raw phone → AC-1
+- [ ] `findOrCreate` with `phoneVerified: false` (the Shopify customer webhook): a phone known on A and an unknown Shopify id → answers null with `unverified_phone` and writes nothing; a Shopify id known on A and a new phone → answers A with `unverified_phone` and attaches no phone (owner ruling 2026-11-09) → AC-1
 - [ ] A customer created from an order → its name is the order's ship to name; a later order with another name leaves it unchanged; `last_seen_at` equals the later order's time → AC-1
 - [ ] The merge screen preselects the older record as survivor → AC-7 (`customers.created_at`)
 - [ ] After a merge, `customer_merges.repointed_ids` holds exactly the customers that pointed at the merged one → AC-6
