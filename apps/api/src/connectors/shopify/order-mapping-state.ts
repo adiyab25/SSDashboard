@@ -1,7 +1,7 @@
 // The `state` of an order mapping row (`connection_external_ids`, entity `order`; spec 0015 Data
 // model): what the inbox job remembers of a Shopify order between read backs. Pure: no database.
 // It holds ids, quantities, codes, and gateway names only, never a name, phone, or address.
-import { OrderPaymentMethod } from '@ssdashboard/contracts';
+import { ChannelOrderLineInput, GiftReasonCode, OrderPaymentMethod } from '@ssdashboard/contracts';
 import { z } from 'zod';
 import {
   gatewayMappingOf,
@@ -13,10 +13,29 @@ import {
 } from './order-mapper.js';
 
 /**
+ * What a replacement order that waits for its original needs beyond its lines and the ship to
+ * (spec 0015 AC-12, task 10): its number on the order (`R<n>`), its order number, placed time,
+ * type, payment method, and the Shopify customer id. Ids, codes, and the Shopify order name only,
+ * never a name, phone, or address: `retryWaitingReplacements` takes the ship to from the original
+ * app order.
+ */
+export const PendingReplacement = z.object({
+  n: z.number().int().positive(),
+  orderNumber: z.string().min(1).max(64),
+  placedAt: z.string().min(1),
+  type: z.enum(['sale', 'gifted']),
+  giftReasonCode: GiftReasonCode.nullable(),
+  paymentMethod: OrderPaymentMethod,
+  /** The Shopify customer gid of the order, or null when it has none. */
+  customerExternalId: z.string().min(1).max(255).nullable(),
+});
+/** The validated shape of `PendingReplacement`. */
+export type PendingReplacement = z.infer<typeof PendingReplacement>;
+
+/**
  * The order mapping state the inbox job reads and writes. Keys it does not know (task 9a's
- * `stockOuts`, task 10's `nettedSaleIds` and `pendingReplacementLines`, and the `gatewayMethods`
- * an earlier build of task 9 wrote) are kept as they are, so a later task's keys survive a read
- * back of this one.
+ * `stockOuts` and `returnSourceIds`, and the `gatewayMethods` an earlier build of task 9 wrote)
+ * are kept as they are, so a later task's keys survive a read back of this one.
  */
 export const OrderMappingState = z.looseObject({
   /**
@@ -50,6 +69,25 @@ export const OrderMappingState = z.looseObject({
   deliveryFulfillmentId: z.string().optional(),
   /** Set once `rederivePaymentMethod` answered `PaymentMethodLocked`: recorded and left. */
   paymentMethodLocked: z.boolean().optional(),
+  /** The Shopify sale ids already netted (task 10, `ChannelEditNetted`): never netted again. */
+  nettedSaleIds: z.array(z.string()).optional(),
+  /** The Shopify refund ids already published as `ChannelRefundRecorded` (task 10). */
+  recordedRefundIds: z.array(z.string()).optional(),
+  /** Set while the last read did not hold the whole sales history (task 10, netting). */
+  salesHistoryTruncated: z.boolean().optional(),
+  /** The replacement orders made from lines added while a fulfillment was active (AC-12). */
+  replacementOrderIds: z.array(z.string()).optional(),
+  /** The Shopify line item ids those replacement orders hold, never sent again. */
+  replacementLineIds: z.array(z.string()).optional(),
+  /**
+   * The added lines of a replacement whose original is not yet `delivered`, `partially_delivered`,
+   * or `refused` (`RELATED_ORDER_STATE`): line id, variant, quantity, price, discount, tax rate,
+   * and the product title (Value sourcing), tried again on every read back and by the hourly check
+   * (`retryWaitingReplacements`). Absent when nothing waits (the hourly check's partial index).
+   */
+  pendingReplacementLines: z.array(ChannelOrderLineInput).min(1).optional(),
+  /** The rest of that waiting replacement (`PendingReplacement`), beside its lines. */
+  pendingReplacement: PendingReplacement.optional(),
 });
 /** The validated shape of `OrderMappingState`. */
 export type OrderMappingState = z.infer<typeof OrderMappingState>;

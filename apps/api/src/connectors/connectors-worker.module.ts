@@ -9,14 +9,17 @@ import { ConnectorsModule } from './connectors.module.js';
 import { ConnectJob } from './shopify/connect.job.js';
 import { ConnectorClock } from './shopify/connector-clock.js';
 import { ConnectorShopifyWorker } from './shopify/connector-shopify.worker.js';
+import { ExchangeByEdit } from './shopify/exchange-by-edit.js';
 import { InboxJob } from './shopify/inbox.job.js';
 import { ShopifyClient } from './shopify/shopify-client.js';
 
 /**
- * The connectors module's worker half (spec 0015 tasks 6, 7, 9, and 11): the process's one
+ * The connectors module's worker half (spec 0015 tasks 6, 7, 9, 10, and 11): the process's one
  * `ShopifyClient` (token cache, rate policy; `SHOPIFY_MOCK_ORIGIN` when set), the
  * `connector-shopify` queue and its handler (`ConnectorShopifyWorker`, declared through the
- * worker's `JobRegistry`), the `connect` job, and the `inbox` job, which applies orders through
+ * worker's `JobRegistry`), the `connect` job, `ExchangeByEdit` (task 10: replacement orders for
+ * lines added while a fulfillment is active, and `retryWaitingReplacements` for task 12's hourly
+ * check), and the `inbox` job, which applies orders through
  * the orders module's `OrderTransactions`, `OrderIntake`, and `OrderTransitions`, and Shopify
  * customers through the customers module's exported `CustomersService`. Imported only by `WorkerModule`: the
  * api never calls Shopify (spec 0015 key invariants). In its own file, apart from
@@ -32,8 +35,11 @@ import { ShopifyClient } from './shopify/shopify-client.js';
     },
     ConnectorClock,
     ConnectJob,
+    ExchangeByEdit,
     InboxJob,
     ConnectorShopifyWorker,
   ],
+  // Task 12's hourly check takes the waiting replacements through `retryWaitingReplacements`.
+  exports: [ExchangeByEdit],
 })
 export class ConnectorsWorkerModule {}

@@ -126,6 +126,39 @@ describe('planKnownOrder: no fulfillment active (AC-11)', () => {
   });
 });
 
+describe('planKnownOrder: exchange by edit (task 10, AC-12)', () => {
+  it('holds the applied lines once a reported fulfillment is active, so the added L goes to the exchange', () => {
+    const state = createdState('order-exchange-added-lines/01-order-read.json');
+    const plan = planKnownOrder(
+      fixture('order-exchange-added-lines/02-order-read.json'),
+      CONTEXT,
+      state,
+    );
+    expect(plan.holdsAppliedLines).toBe(true);
+    expect(plan.snapshot?.lines.map((l) => [l.channelLineId, l.quantity])).toEqual([
+      [line('6660000008001'), 1],
+    ]);
+  });
+
+  it('does not hold them before any fulfillment, on the first fulfillment read, or for a milestone 1 mapping', () => {
+    const open = createdState('order-fulfilled-later/01-order-read.json');
+    expect(
+      planKnownOrder(fixture('order-edited-size-swap/02-order-read.json'), CONTEXT, open)
+        .holdsAppliedLines,
+    ).toBe(false);
+    expect(
+      planKnownOrder(fixture('order-fulfilled-later/02-order-read.json'), CONTEXT, open)
+        .holdsAppliedLines,
+    ).toBe(false);
+    const delivered = createdState('order-exchange-added-lines/01-order-read.json');
+    const milestone1 = { ...delivered, appliedLines: undefined };
+    expect(
+      planKnownOrder(fixture('order-exchange-added-lines/02-order-read.json'), CONTEXT, milestone1)
+        .holdsAppliedLines,
+    ).toBe(false);
+  });
+});
+
 describe('planKnownOrder: cancel and fulfillment (AC-13)', () => {
   it('plans only the cancel, with channel.customer, for a Shopify cancel', () => {
     const state = createdState('order-cancelled-later/01-order-read.json');

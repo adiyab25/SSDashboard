@@ -53,6 +53,32 @@ const Visit = z
   .nullable();
 
 /**
+ * One sale of a sales agreement (`interfaces/Sale`, `2026-10`): `actionType` (`ORDER`, `RETURN`,
+ * `UPDATE`, `UNKNOWN`) and `lineType` (`PRODUCT`, `SHIPPING`, and others) stay plain strings, as
+ * the other enums here; `lineItem` is present only on a `ProductSale`. Every id is kept verbatim in
+ * the mapping state or an event, so each is a `StorableShopifyId`. Read by `edit-netting.ts`.
+ */
+const ShopifySale = z.object({
+  id: StorableShopifyId,
+  actionType: z.string(),
+  lineType: z.string(),
+  quantity: z.number().int().nullable(),
+  totalAmount: MoneyBag,
+  lineItem: z.object({ id: StorableShopifyId }).optional(),
+});
+
+/**
+ * One sales agreement of the order (`interfaces/SalesAgreement`, `2026-10`): when it happened, its
+ * sales, and, on a `RefundAgreement`, its refund's id. Read by `edit-netting.ts`.
+ */
+const ShopifySalesAgreement = z.object({
+  id: StorableShopifyId,
+  happenedAt: Instant,
+  refund: z.object({ id: StorableShopifyId }).optional(),
+  sales: z.object({ nodes: z.array(ShopifySale), pageInfo: PageInfo }),
+});
+
+/**
  * The part of a Shopify `Order` the mapper reads, field for field what `ORDER_READ` selects
  * (`shopify-queries.ts`). Unknown keys are stripped, so a recording holding more fields parses.
  * Enum fields (`cancelReason`, `status`, `kind`, `targetType`) are plain strings on purpose: a
@@ -136,6 +162,8 @@ export const ShopifyOrder = z.object({
       amountSet: MoneyBag,
     }),
   ),
+  /** The sales history, newest first (spec 0015 task 10): read only by `edit-netting.ts`. */
+  agreements: z.object({ nodes: z.array(ShopifySalesAgreement), pageInfo: PageInfo }),
 });
 /** The validated shape of `ShopifyOrder`. */
 export type ShopifyOrder = z.infer<typeof ShopifyOrder>;
@@ -654,7 +682,7 @@ function discountOf(order: ShopifyOrder): { discountCode: string | null; discoun
 /**
  * A line's tax rate in percent with 2 decimals: the sum of its tax lines' percentages; with no tax
  * line, the context's `defaultTaxRate` (the `sales_tax_rate` setting), else 0. A full page of tax
- * lines (`ORDER_READ_TAX_LINES_PAGE`, 10) may hide more, so it throws `TAX_LINES_TRUNCATED` rather
+ * lines (`ORDER_READ_TAX_LINES_PAGE`, 4) may hide more, so it throws `TAX_LINES_TRUNCATED` rather
  * than under sum the rate.
  */
 function taxRateOf(
@@ -944,6 +972,12 @@ export function replacementInput(
   if (!Number.isInteger(request.n) || request.n < 1) {
     throw new ShopifyOrderMappingError('BAD_REPLACEMENT_NUMBER');
   }
+  // No added open line, no replacement: checked first, so an order whose every line was refunded
+  // (no open line at all) plans nothing instead of failing `NO_OPEN_LINES`.
+  const added = order.lineItems.nodes.some(
+    (line) => line.currentQuantity > 0 && !request.knownLineIds.has(line.id),
+  );
+  if (!added) return null;
   const { fields, notes } = sharedOf(order, context);
   const lines = fields.lines.filter((line) => !request.knownLineIds.has(line.channelLineId));
   if (lines.length === 0) return null;

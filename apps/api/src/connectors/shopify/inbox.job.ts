@@ -30,7 +30,11 @@ import {
   CredentialsUnreadable,
   type ConnectionCredentials,
 } from '../connections/connection-secrets.js';
-import { InboundEventFailed } from '../connectors.events.js';
+import {
+  ChannelEditNetted,
+  ChannelRefundRecorded,
+  InboundEventFailed,
+} from '../connectors.events.js';
 import {
   SHOPIFY_APP_UNINSTALLED_TOPIC,
   SHOPIFY_CUSTOMER_TOPICS,
@@ -43,6 +47,8 @@ import {
   parseShopifyCustomer,
   ShopifyCustomerMappingError,
 } from './customer-mapper.js';
+import { nettingInstantsOf, planNetting } from './edit-netting.js';
+import { ExchangeByEdit } from './exchange-by-edit.js';
 import { nextKnownOrderState, planKnownOrder, type KnownOrderPlan } from './known-order-plan.js';
 import {
   cancelReasonCodeOf,
@@ -54,7 +60,11 @@ import {
   type ShopifyOrder,
   type ShopifyOrderContext,
 } from './order-mapper.js';
-import { createdOrderState, parseOrderMappingState } from './order-mapping-state.js';
+import {
+  createdOrderState,
+  parseOrderMappingState,
+  type OrderMappingState,
+} from './order-mapping-state.js';
 import {
   ShopifyClient,
   ShopifyRejectedError,
@@ -215,11 +225,14 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *   mapping exists) is `ignored` `stale` when the snapshot is not newer than `external_version`,
  *   else applied by `applyKnown` (task 9: cancel, late links, the edit with its
  *   `held_write_back_open` and `edit_not_applied` outcomes, first fulfillment, the payment
- *   rederive of lead decision D10); a new order writes its mapping first (`createdOrderState`,
- *   with the creation facts of D10), then `OrderIntake.createFromChannel` (actor
- *   `system_job`, or `import` as the mapper names for a closed order before go live), the
- *   mapping's `local_id`, a live order's cancel or first fulfillment (AC-13), and
- *   `last_order_at`. An empty read back is `ignored` `not_visible`. Every other `received` event
+ *   rederive of lead decision D10; task 10: the exchange by edit with its `replacement_waiting`
+ *   outcome); a new order writes its mapping first (`createdOrderState`, with the creation facts
+ *   of D10), then `OrderIntake.createFromChannel` (actor `system_job`, or `import` as the mapper
+ *   names for a closed order before go live), the mapping's `local_id`, a live order's cancel or
+ *   first fulfillment (AC-13), and `last_order_at`. Every applied read of an order (new, cancel,
+ *   or known; never a held, stale, or test one) then nets its sales history (task 10, `net`):
+ *   `ChannelEditNetted` per new pair and `ChannelRefundRecorded` per new refund, in the same
+ *   unit, their ids kept on the mapping. An empty read back is `ignored` `not_visible`. Every other `received` event
  *   of the same order that arrived before this run's read back is marked `processed` `coalesced`
  *   in the same transaction; a later one waits for its own job (code review m1).
  * - A customer topic (task 11) reads the customer back with `CUSTOMER_READ` and calls
@@ -232,8 +245,9 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  * Variant mappings come from `connection_external_ids`; none exist before task 8, so lines stay
  * unmapped and are listed in the mapping's `state.unmappedLines` (the product read before mapping,
  * review M8, waits for task 8; a line whose variant maps later is linked on the next read back).
- * Law 151: it never logs, throws, or stores a name, phone, address, note, or line title; its log
- * lines and output carry ids and codes only.
+ * Law 151: it never logs, throws, or stores a name, phone, address, or note, and keeps a line's
+ * product title only in a waiting replacement's lines (`state.pendingReplacementLines`, Value
+ * sourcing); its log lines and output carry ids and codes only.
  */
 @Injectable()
 export class InboxJob {
@@ -241,7 +255,7 @@ export class InboxJob {
 
   /**
    * Takes the database, secrets, the Shopify client, channels, settings, orders (intake and
-   * transitions), customers, events, and the clock.
+   * transitions), customers, events, the clock, and the exchange by edit (task 10).
    */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
@@ -255,6 +269,7 @@ export class InboxJob {
     @Inject(CustomersService) private readonly customers: CustomersService,
     @Inject(DomainEvents) private readonly events: DomainEvents,
     @Inject(ConnectorClock) private readonly clock: ConnectorClock,
+    @Inject(ExchangeByEdit) private readonly exchanges: ExchangeByEdit,
   ) {}
 
   /**
@@ -600,8 +615,11 @@ export class InboxJob {
         ? { type: 'import', runId: event.id }
         : { type: 'system_job', job: INBOX_JOB_NAME, jobId };
     const created = await this.intake.createFromChannel(tx, mapped.input, actor);
+    const netted = await this.net(tx, created.orderId, order, state);
     await tx.execute(sql`
-      UPDATE connection_external_ids SET local_id = ${created.orderId}::uuid, updated_at = now()
+      UPDATE connection_external_ids
+      SET local_id = ${created.orderId}::uuid, state = ${JSON.stringify(netted)}::jsonb,
+          updated_at = now()
       WHERE id = ${mappingId}::uuid`);
     let outcome: string | null = mapped.flags.includes('gift_tag_not_free')
       ? 'gift_tag_not_free'
@@ -660,15 +678,20 @@ export class InboxJob {
    * 4. The first active fulfillment: `recordCarrierDelivery` with source `shopify_fulfillment` at
    *    its `createdAt` (orders ignores a repeat, and takes the next one after it cleared the
    *    freeze); the mapping remembers it as `deliveryFulfillmentId`.
-   * 5. `rederivePaymentMethod` when the config maps a creation gateway differently (D10);
+   * 5. While the fulfillment is active and was reported before (`holdsAppliedLines`), the line
+   *    items added since become one linked replacement order (`ExchangeByEdit.fromReadBack`,
+   *    task 10, AC-12), or wait on the mapping for the original's delivery (outcome
+   *    `replacement_waiting`, unless an earlier step set one); the refunded original lines never
+   *    reach `applyChannelEdit` (the held snapshot keeps them) and arrive as
+   *    `ChannelRefundRecorded` from step 7.
+   * 6. `rederivePaymentMethod` when the config maps a creation gateway differently (D10);
    *    `PaymentMethodLocked` is recorded on the mapping and left (outcome
    *    `payment_method_locked`).
-   * 6. The mapping's `external_version` and `state` move to this read.
+   * 7. The sales history is netted (`net`, task 10), on the cancel path too.
+   * 8. The mapping's `external_version` and `state` move to this read.
    *
-   * Seams not built here: task 10's `exchange-by-edit.ts` takes the lines added while a
-   * fulfillment is active and the refunds (`ChannelRefundRecorded`); task 9a's fulfillment stock
-   * out calls `recordChannelStockOut`, `recordChannelFulfillmentCancelled`, and
-   * `recordChannelReturn` after step 4.
+   * Seam not built here: task 9a's fulfillment stock out calls `recordChannelStockOut`,
+   * `recordChannelFulfillmentCancelled`, and `recordChannelReturn` after step 4.
    */
   private async applyKnown(
     tx: OrderTransaction,
@@ -695,7 +718,8 @@ export class InboxJob {
 
     if (plan.cancelReasonCode !== null) {
       const cancel = await this.intake.cancelFromChannel(tx, orderId, plan.cancelReasonCode, actor);
-      await this.saveMapping(tx, mapping.id, order.updatedAt, state);
+      const netted = await this.net(tx, orderId, order, state);
+      await this.saveMapping(tx, mapping.id, order.updatedAt, netted);
       return this.end(tx, event, label, {
         status: 'processed',
         outcome: cancel.applied ? null : 'cancel_not_applied',
@@ -754,6 +778,21 @@ export class InboxJob {
       await this.recordDelivery(tx, orderId, id, at, actor);
     }
 
+    // Task 10 (AC-12): while the fulfillment is active, the line items added since are one linked
+    // replacement order, or wait for the original's delivery (`replacement_waiting`).
+    let next = state;
+    if (plan.holdsAppliedLines) {
+      const exchange = await this.exchanges.fromReadBack(tx, {
+        order,
+        context: { ...base, variants },
+        state,
+        originalOrderId: orderId,
+        actor,
+      });
+      next = exchange.state;
+      if (exchange.waiting) outcome ??= 'replacement_waiting';
+    }
+
     let paymentLocked = false;
     if (plan.rederive !== null) {
       try {
@@ -765,9 +804,59 @@ export class InboxJob {
       }
     }
 
-    const next = nextKnownOrderState(state, plan, { editApplied, linked, paymentLocked });
+    next = nextKnownOrderState(next, plan, { editApplied, linked, paymentLocked });
+    next = await this.net(tx, orderId, order, next);
     await this.saveMapping(tx, mapping.id, order.updatedAt, next);
     return this.end(tx, event, label, { status: 'processed', outcome });
+  }
+
+  /**
+   * Nets the order's sales history (task 10, AC-11, Inbound processing item 5): the operating day
+   * of every instant `nettingInstantsOf` names, read in one SQL call to `ssd_operating_day` (the
+   * operating day cutoff applies, never a TypeScript date), then `planNetting`; publishes one
+   * `ChannelEditNetted` per new pair and one `ChannelRefundRecorded` per new refund in the unit,
+   * and returns the state with the netted sale ids, the recorded refund ids, and
+   * `salesHistoryTruncated` while the read did not hold the whole history. Never changes the
+   * order: the snapshot was already decided by the lines.
+   */
+  private async net(
+    tx: Transaction,
+    orderId: string,
+    order: ShopifyOrder,
+    state: OrderMappingState,
+  ): Promise<OrderMappingState> {
+    const instants = nettingInstantsOf(order);
+    const days = new Map<string, string>();
+    if (instants.length > 0) {
+      const { rows } = await tx.execute<{ at: string; day: string }>(sql`
+        SELECT t.at, to_char(ssd_operating_day(t.at::timestamptz), 'YYYY-MM-DD') AS day
+        FROM unnest(${pgArray(instants)}::text[]) AS t(at)`);
+      for (const row of rows) days.set(row.at, row.day);
+    }
+    const plan = planNetting(order, days, state);
+    for (const pair of plan.pairs) {
+      await this.events.publish(
+        tx,
+        new ChannelEditNetted(orderId, pair.channelLineIds, pair.operatingDay),
+      );
+    }
+    for (const refund of plan.refunds) {
+      await this.events.publish(
+        tx,
+        new ChannelRefundRecorded(
+          orderId,
+          refund.externalRefundId,
+          refund.amount,
+          refund.occurredAt,
+        ),
+      );
+    }
+    const next: OrderMappingState = { ...state };
+    if (plan.nettedSaleIds.length > 0) next.nettedSaleIds = [...plan.nettedSaleIds];
+    if (plan.recordedRefundIds.length > 0) next.recordedRefundIds = [...plan.recordedRefundIds];
+    if (plan.truncated) next.salesHistoryTruncated = true;
+    else delete next.salesHistoryTruncated;
+    return next;
   }
 
   /**

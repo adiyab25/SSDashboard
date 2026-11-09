@@ -491,7 +491,7 @@ describe('mapShopifyOrder', () => {
         ];
       }
     });
-    expect(ORDER_READ_TAX_LINES_PAGE).toBe(10);
+    expect(ORDER_READ_TAX_LINES_PAGE).toBe(4);
     expect(mapShopifyOrder(three, CONTEXT).input.lines[0]?.taxRate).toBe('15.50');
   });
 
