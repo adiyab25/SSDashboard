@@ -1,9 +1,8 @@
 import type { InboundSubject } from '@ssdashboard/contracts';
 
 /**
- * The order topics milestone 1 processes (spec 0015 task 7, lead decision D9): each sends one
- * inbox job, which reads the order back. A known order is not changed yet (task 9 applies edits,
- * cancels, and fulfillments); its event is recorded `ignored` with `update_deferred`.
+ * The order topics the inbox processes (spec 0015 tasks 7 and 9): each sends one inbox job, which
+ * reads the order back and creates it, or applies its cancel, first fulfillment, and edit.
  */
 export const SHOPIFY_ORDER_TOPICS: readonly string[] = [
   'orders/create',
@@ -12,17 +11,27 @@ export const SHOPIFY_ORDER_TOPICS: readonly string[] = [
   'orders/cancelled',
 ];
 
+/**
+ * The customer topics the inbox processes (spec 0015 task 11, AC-15): each sends one inbox job,
+ * which reads the customer back and calls `CustomersService.findOrCreate`.
+ */
+export const SHOPIFY_CUSTOMER_TOPICS: readonly string[] = ['customers/create', 'customers/update'];
+
 /** The app topic milestone 1 processes: confirmed by the inbox job, then health `failing` (L1). */
 export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 
 /**
- * Whether a verified topic gets an inbox job now (D9). Every other verified topic (refunds,
- * products, customers, inventory levels, bulk operations) is still recorded in the inbox with its
- * minimized payload, but no job is sent: it stays `received` until its milestone 2 or 3 task
- * processes it.
+ * Whether a verified topic gets an inbox job now: the order topics, the customer topics (task 11),
+ * and `app/uninstalled` (D9). Every other verified topic (refunds, products, inventory levels,
+ * bulk operations) is still recorded in the inbox with its minimized payload, but no job is sent:
+ * it stays `received` until its milestone 2 or 3 task processes it.
  */
 export function topicIsProcessed(topic: string): boolean {
-  return SHOPIFY_ORDER_TOPICS.includes(topic) || topic === SHOPIFY_APP_UNINSTALLED_TOPIC;
+  return (
+    SHOPIFY_ORDER_TOPICS.includes(topic) ||
+    SHOPIFY_CUSTOMER_TOPICS.includes(topic) ||
+    topic === SHOPIFY_APP_UNINSTALLED_TOPIC
+  );
 }
 
 /** The subject type of a topic, by its resource (the part before the slash). */

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { ENV } from '../config/config.module.js';
+import { CustomersModule } from '../customers/customers.module.js';
 import type { Env } from '../config/env.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PlatformModule } from '../platform/platform.module.js';
@@ -12,16 +13,17 @@ import { InboxJob } from './shopify/inbox.job.js';
 import { ShopifyClient } from './shopify/shopify-client.js';
 
 /**
- * The connectors module's worker half (spec 0015 tasks 6 and 7): the process's one
+ * The connectors module's worker half (spec 0015 tasks 6, 7, 9, and 11): the process's one
  * `ShopifyClient` (token cache, rate policy; `SHOPIFY_MOCK_ORIGIN` when set), the
  * `connector-shopify` queue and its handler (`ConnectorShopifyWorker`, declared through the
  * worker's `JobRegistry`), the `connect` job, and the `inbox` job, which applies orders through
- * the orders module's `OrderTransactions` and `OrderIntake`. Imported only by `WorkerModule`: the
+ * the orders module's `OrderTransactions`, `OrderIntake`, and `OrderTransitions`, and Shopify
+ * customers through the customers module's exported `CustomersService`. Imported only by `WorkerModule`: the
  * api never calls Shopify (spec 0015 key invariants). In its own file, apart from
  * `ConnectorsModule`, because it imports `OrdersModule`, which imports `ConnectorsModule`.
  */
 @Module({
-  imports: [ConnectorsModule, ChannelsModule, PlatformModule, OrdersModule],
+  imports: [ConnectorsModule, ChannelsModule, CustomersModule, PlatformModule, OrdersModule],
   providers: [
     {
       provide: ShopifyClient,

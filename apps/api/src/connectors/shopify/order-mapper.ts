@@ -12,6 +12,7 @@ import {
   ReasonCode,
   type GoLiveFirstStates,
   type OrderPaymentMethod,
+  type RederivePaymentMethodInput,
 } from '@ssdashboard/contracts';
 import { z, type ZodType } from 'zod';
 import {
@@ -144,7 +145,8 @@ export type ShopifyOrderMappingErrorCode =
   | 'BAD_AMOUNT'
   | 'BAD_TAX_RATE'
   | 'BAD_REPLACEMENT_NUMBER'
-  | 'CONTRACT_REFUSED';
+  | 'CONTRACT_REFUSED'
+  | 'MAPPING_STATE_UNREADABLE';
 
 const ERROR_TEXT: Readonly<Record<ShopifyOrderMappingErrorCode, string>> = {
   ORDER_UNREADABLE: 'The Shopify order read back does not have the expected shape',
@@ -159,6 +161,8 @@ const ERROR_TEXT: Readonly<Record<ShopifyOrderMappingErrorCode, string>> = {
   BAD_TAX_RATE: 'A Shopify tax rate is not a finite number',
   BAD_REPLACEMENT_NUMBER: 'A replacement number is a whole number from 1',
   CONTRACT_REFUSED: 'The mapped order does not satisfy the channel order contract',
+  MAPPING_STATE_UNREADABLE:
+    'The stored state of the order mapping does not have the expected shape',
 };
 
 /**
@@ -451,6 +455,39 @@ function paymentOf(
 }
 
 /**
+ * The payment of an order as a new order would get it (Value sourcing, `paymentMethod`,
+ * `prepaidAmount`, `prepaidMethod`), for `OrderIntake.rederivePaymentMethod` after a gateway
+ * mapping change (spec 0013 AC-25 c). Throws `TRANSACTIONS_TRUNCATED` on a full transaction page.
+ */
+export function shopifyPaymentOf(
+  order: ShopifyOrder,
+  context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
+): RederivePaymentMethodInput {
+  const { paymentMethod, prepaidAmount, prepaidMethod } = paymentOf(order, context);
+  return { paymentMethod, prepaidAmount, prepaidMethod };
+}
+
+/**
+ * The order's payment gateway names (cleaned of control and direction characters and capped, as
+ * `unmappedGateways` lists them) with the payment method `config.gatewayMethods` gives each now,
+ * null when unmapped. The inbox job keeps it on the order mapping (`state.gatewayMethods`), so a
+ * later read back sees when a manager mapped a gateway differently (the rederive of spec 0013
+ * AC-25 c), and never mistakes a new transaction (a "mark as paid") for a mapping change.
+ */
+export function gatewayMappingOf(
+  order: Pick<ShopifyOrder, 'paymentGatewayNames'>,
+  context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
+): Record<string, OrderPaymentMethod | null> {
+  const mapping: Record<string, OrderPaymentMethod | null> = {};
+  for (const name of order.paymentGatewayNames) {
+    const clean = cleanText(name, GATEWAY_NAME_MAX);
+    if (clean === null || Object.hasOwn(mapping, clean)) continue;
+    mapping[clean] = entryOf(context.gatewayMethods, name) ?? null;
+  }
+  return mapping;
+}
+
+/**
  * The type and gift reason (AC-10): a listed tag (matched without regard to case) on an order
  * whose total (lines and shipping, `totalPriceSet`) is 0 gives `gifted` with that tag's reason; on
  * a paid order a `sale` flagged `gift_tag_not_free`. A reason outside `GiftReasonCode` maps to
@@ -530,17 +567,23 @@ function taxRateOf(
   return textOfCents(BigInt(hundredths));
 }
 
-/** The lines with a current quantity above 0 and the ones whose variant has no mapping. */
+/**
+ * The lines with a current quantity above 0 (or, given `held`, exactly the held line items at the
+ * held quantities) and the ones whose variant has no mapping.
+ */
 function linesOf(
   order: ShopifyOrder,
   context: Pick<ShopifyOrderContext, 'variants' | 'defaultTaxRate'>,
+  held?: ReadonlyMap<string, number>,
 ) {
   if (order.lineItems.pageInfo.hasNextPage) {
     throw new ShopifyOrderMappingError('LINE_ITEMS_TRUNCATED');
   }
   const unmappedLines: ShopifyUnmappedLine[] = [];
+  const quantityOf = (line: ShopifyOrder['lineItems']['nodes'][number]): number =>
+    held ? (held.get(line.id) ?? 0) : line.currentQuantity;
   const lines = order.lineItems.nodes
-    .filter((line) => line.currentQuantity > 0)
+    .filter((line) => quantityOf(line) > 0)
     .map((line) => {
       const variantId = line.variant ? (context.variants.get(line.variant.id) ?? null) : null;
       if (variantId === null) {
@@ -554,7 +597,7 @@ function linesOf(
         channelLineId: line.id,
         variantId,
         title: cleanText([line.title, line.variantTitle].filter(Boolean).join(' '), 500),
-        quantity: line.currentQuantity,
+        quantity: quantityOf(line),
         unitPrice: textOfCents(amountOf(line.originalUnitPriceSet)),
         discountAmount: textOfCents(discount),
         taxRate: taxRateOf(line.taxLines, context.defaultTaxRate),
@@ -606,11 +649,15 @@ function sourceOf(order: ShopifyOrder) {
 }
 
 /** The fields an order and its later snapshots share, and the notes for the inbox job. */
-function sharedOf(order: ShopifyOrder, context: ShopifyOrderContext) {
+function sharedOf(
+  order: ShopifyOrder,
+  context: ShopifyOrderContext,
+  held?: ReadonlyMap<string, number>,
+) {
   const payment = paymentOf(order, context);
   const gift = giftOf(order, context);
   const discount = discountOf(order);
-  const { lines, unmappedLines } = linesOf(order, context);
+  const { lines, unmappedLines } = linesOf(order, context, held);
   if (lines.length === 0) throw new ShopifyOrderMappingError('NO_OPEN_LINES');
   const flags: ShopifyOrderFlag[] = [...(order.test ? ['test_order' as const] : []), ...gift.flags];
   return {
@@ -750,13 +797,18 @@ export function mapShopifyOrder(
 /**
  * A Shopify order as the snapshot of an existing app order (AC-11, `applyChannelEdit`): the shared
  * fields of `mapShopifyOrder`, without identity, prepayment, related order, and first states.
- * Throws `ShopifyOrderMappingError`.
+ * Without `held`, the lines are every line item with a current quantity above 0 (no fulfillment
+ * active). With `held` (a fulfillment is active, Inbound processing item 4), the lines are exactly
+ * the held line items at the held quantities (what the app order holds), so added lines (task 10's
+ * exchange by edit) and refunded quantities (task 10's `ChannelRefundRecorded`) never reach
+ * `applyChannelEdit`, and only ship to and other changes do. Throws `ShopifyOrderMappingError`.
  */
 export function mapShopifyOrderSnapshot(
   order: ShopifyOrder,
   context: ShopifyOrderContext,
+  held?: ReadonlyMap<string, number>,
 ): ShopifySnapshotMapping {
-  const { fields, notes } = sharedOf(order, context);
+  const { fields, notes } = sharedOf(order, context, held);
   return { snapshot: parseOr(ChannelOrderSnapshot, fields, 'CONTRACT_REFUSED'), ...notes };
 }
 

@@ -305,3 +305,37 @@ export const ORDER_READ = `query OrderRead($id: ID!) {
     }
   }
 }`;
+
+// --- Customer read back (spec 0015 AC-15, `customer-mapper.ts`) -------------------------------
+
+/** The operation name of `CUSTOMER_READ`. */
+export const CUSTOMER_READ_OPERATION = 'CustomerRead';
+
+/**
+ * The read back of one customer for `customers/create` and `customers/update` (AC-15), selecting
+ * exactly what `ShopifyCustomer` in `customer-mapper.ts` parses: the id, `updatedAt` (the stale
+ * rule), the first and last name (joined into the customer's name), and the phone. Variables:
+ * `id` (the customer gid). Read on `objects/Customer` and `queries/customer` (`2026-10`,
+ * 2026-11-08): `id: ID!`, `updatedAt: DateTime!`, `firstName` and `lastName` nullable `String`,
+ * `defaultPhoneNumber: CustomerPhoneNumber` (`phoneNumber: String!`), and `phone` deprecated, so it
+ * is read only as a fallback (carry-over D4, as `ORDER_READ`); the query takes `id: ID!` and
+ * returns a nullable `Customer`. No email or address is selected: the app needs neither.
+ *
+ * Requested cost estimate (objects 1, scalars 0): the customer 1 and its phone number object 1,
+ * about 2 points; the recordings of task 1 replace it with Shopify's `requestedQueryCost`.
+ */
+export const CUSTOMER_READ = `query CustomerRead($id: ID!) {
+  customer(id: $id) {
+    id
+    updatedAt
+    firstName
+    lastName
+    defaultPhoneNumber {
+      phoneNumber
+    }
+    phone
+  }
+}`;
+
+/** The expected cost of `CUSTOMER_READ` in points, passed to the client's throttle (AC-25). */
+export const CUSTOMER_READ_EXPECTED_COST = 2;
