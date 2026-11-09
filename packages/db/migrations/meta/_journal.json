@@ -92,6 +92,20 @@
       "when": 1794138202431,
       "tag": "0012_owner_policy_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794182610707,
+      "tag": "0013_catalog_search_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794182625472,
+      "tag": "0014_catalog_search_rules",
+      "breakpoints": true
     }
   ]
 }

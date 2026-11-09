@@ -327,14 +327,255 @@ describe('master data api', { timeout: 90_000 }, () => {
       expect(walked).toEqual(['DUPQ-1', 'DUPQ-2', 'XDUPQ-3']);
     });
 
+    // Spec 0012 AC-3: the code prefix branch takes %, _, and a backslash literally; the contains
+    // branch matches normalized words, in which they are word breaks, never wildcards.
     it('treats %, _, and a backslash in q as plain characters', async () => {
-      await newSku('ESC_1', { en: 'Under score' });
-      await newSku('ESCX1', { en: 'Plain one' });
+      await newSku('ES_1', { en: 'Under score' });
+      await newSku('ESX1', { en: 'Plain one' });
       await newSku('ESC-SLASH', { en: 'Back\\slash tee' });
       await newSku('ESC-PCT', { en: '50% off' });
-      expect(await codes(`?q=${encodeURIComponent('esc_')}`)).toEqual(['ESC_1']);
-      expect(await codes(`?q=${encodeURIComponent('k\\s')}`)).toEqual(['ESC-SLASH']);
-      expect(await codes(`?q=${encodeURIComponent('0% o')}`)).toEqual(['ESC-PCT']);
+      expect(await codes(`?q=${encodeURIComponent('es_')}`)).toEqual(['ES_1']);
+      expect(await codes(`?q=${encodeURIComponent('%')}`)).toEqual([]);
+      expect(await codes(`?q=${encodeURIComponent('_')}`)).toEqual([]);
+      expect(await codes(`?q=${encodeURIComponent('back\\slash')}`)).toEqual(['ESC-SLASH']);
+      expect(await codes(`?q=${encodeURIComponent('off%')}`)).toEqual(['ESC-PCT']);
+    });
+  });
+
+  describe('search and filters (spec 0012, AC-3, AC-4)', () => {
+    let season: string;
+    let tee: string;
+    let polo: string;
+    let qamis: string;
+    const variants = new Map<string, string>();
+
+    /** A style planted as the owner (the style routes come with milestone 2), with its options. */
+    async function plantStyle(
+      code: string,
+      name: { en?: string; ar?: string },
+      options: { name: { en?: string; ar?: string }; values: { en?: string; ar?: string }[] }[],
+      seasonId: string | null = null,
+    ): Promise<string> {
+      const { rows } = await owner.pool.query<{ id: string }>(
+        `INSERT INTO products (style_code, product_group_id, name, status, season_id)
+         VALUES ($1, (SELECT id FROM product_groups WHERE code = 'MAIN'), $2::jsonb, 'active', $3)
+         RETURNING id`,
+        [code, JSON.stringify(name), seasonId],
+      );
+      const id = rows[0]?.id ?? '';
+      for (const [position, option] of options.entries()) {
+        await owner.pool.query(
+          `INSERT INTO product_options (product_id, name, position, values)
+           VALUES ($1, $2::jsonb, $3, $4::jsonb)`,
+          [id, JSON.stringify(option.name), position, JSON.stringify(option.values)],
+        );
+      }
+      return id;
+    }
+
+    /** A variant of a planted style, with an optional barcode. */
+    async function plantVariant(
+      styleId: string,
+      sku: string,
+      optionValues: Record<string, number>,
+      barcode?: string,
+    ): Promise<void> {
+      const { rows } = await owner.pool.query<{ id: string }>(
+        `INSERT INTO product_variants (product_id, sku, option_values, base_uom_id, price)
+         VALUES ($1, $2, $3::jsonb, (SELECT id FROM uoms WHERE code = 'pc'), 25)
+         RETURNING id`,
+        [styleId, sku, JSON.stringify(optionValues)],
+      );
+      const id = rows[0]?.id ?? '';
+      variants.set(sku, id);
+      if (barcode) {
+        await owner.pool.query(
+          `INSERT INTO barcodes (variant_id, uom_id, code)
+           VALUES ($1, (SELECT id FROM uoms WHERE code = 'pc'), $2)`,
+          [id, barcode],
+        );
+      }
+    }
+
+    const search = (q: string, more = '') => codes(`?q=${encodeURIComponent(q)}${more}`);
+
+    beforeAll(async () => {
+      const planted = await owner.pool.query<{ id: string }>(
+        `INSERT INTO seasons (code, name) VALUES ('SS26', '{"en": "Spring 26"}') RETURNING id`,
+      );
+      season = planted.rows[0]?.id ?? '';
+      const size = { name: { en: 'Size', ar: 'المقاس' }, values: [{ en: 'M' }, { en: 'L' }] };
+      tee = await plantStyle(
+        'TEE',
+        { en: 'Tee' },
+        [size, { name: { en: 'Color' }, values: [{ en: 'Black', ar: 'أسود' }, { en: 'White' }] }],
+        season,
+      );
+      await plantVariant(tee, 'TEE-BLK-M', { '0': 0, '1': 0 });
+      await plantVariant(tee, 'TEE-WHT-M', { '0': 0, '1': 1 }, '6221234567890');
+      polo = await plantStyle('POLO', { en: 'Polo' }, [size]);
+      await plantVariant(polo, '2044-BLK-M', { '0': 0 }, '6221234567891');
+      qamis = await plantStyle('QAMIS', { ar: 'قميص أسود' }, []);
+      await plantVariant(qamis, 'QAMIS-1', {});
+      await plantVariant(await plantStyle('MX', { en: 'Mx' }, []), 'MX-1', {});
+    });
+
+    it('finds an Arabic name typed without hamza', async () => {
+      expect(await search('اسود')).toEqual(['QAMIS-1', 'TEE-BLK-M']);
+      expect(await search('قميص اسود')).toEqual(['QAMIS-1']);
+    });
+
+    it('finds a code typed in Arabic digits', async () => {
+      expect(await search('٢٠٤٤')).toEqual(['2044-BLK-M']);
+    });
+
+    it('finds two words in any order across the style name and an option value', async () => {
+      expect(await search('black tee')).toEqual(['TEE-BLK-M']);
+      expect(await search('tee black')).toEqual(['TEE-BLK-M']);
+      expect(await search('Tee   BLACK!')).toEqual(['TEE-BLK-M']);
+    });
+
+    it('finds a hyphenated code fragment', async () => {
+      expect(await search('blk-m')).toEqual(['2044-BLK-M', 'TEE-BLK-M']);
+    });
+
+    it('returns exactly the variant of a scanned barcode, in either digit set', async () => {
+      expect(await search('6221234567890')).toEqual(['TEE-WHT-M']);
+      expect(await search(' ٦٢٢١٢٣٤٥٦٧٨٩١ ')).toEqual(['2044-BLK-M']);
+    });
+
+    it('searches only barcodes and code prefixes for a word under 3 characters', async () => {
+      const found = await search('m');
+      expect(found).toContain('MX-1');
+      expect(found.every((code) => code.startsWith('M'))).toBe(true);
+      expect(await search('m', `&styleId=${tee}`)).toEqual([]);
+      expect(await search('tw')).toEqual([]);
+    });
+
+    it('answers archived variants only under status=archived', async () => {
+      const id = variants.get('TEE-WHT-M') ?? '';
+      const ofTee = `&styleId=${tee}`;
+      expect((await call('POST', `/skus/${id}/archive`, { cookie: admin })).status).toBe(200);
+      expect(await search('6221234567890')).toEqual([]);
+      expect(await search('tee', ofTee)).toEqual(['TEE-BLK-M']);
+      expect(await search('6221234567890', '&status=archived')).toEqual(['TEE-WHT-M']);
+      expect(await search('white', `&status=archived${ofTee}`)).toEqual(['TEE-WHT-M']);
+      expect((await call('POST', `/skus/${id}/unarchive`, { cookie: admin })).status).toBe(200);
+    });
+
+    it('filters by season, no season, product group, and style, combined with q', async () => {
+      expect(await search('blk', `&seasonId=${season}`)).toEqual(['TEE-BLK-M']);
+      expect(await search('blk', '&seasonId=none')).toEqual(['2044-BLK-M']);
+      expect(await codes(`?seasonId=${season}`)).toEqual(['TEE-BLK-M', 'TEE-WHT-M']);
+      expect(await codes(`?styleId=${polo}`)).toEqual(['2044-BLK-M']);
+      const main = (
+        await owner.pool.query<{ id: string }>("SELECT id FROM product_groups WHERE code = 'MAIN'")
+      ).rows[0]?.id;
+      expect(await search('blk', `&productGroupId=${main}`)).toEqual(['2044-BLK-M', 'TEE-BLK-M']);
+      expect(await search('blk', `&productGroupId=${randomUUID()}`)).toEqual([]);
+      for (const bad of ['seasonId=SS26', 'productGroupId=MAIN', 'styleId=1']) {
+        expect((await call('GET', `/skus?${bad}`, { cookie: staff })).body).toMatchObject({
+          code: 'INVALID_QUERY',
+        });
+      }
+    });
+
+    it('pages a search by code without skipping or repeating a row', async () => {
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: SkuListResponse = SkuListResponse.parse(
+          (
+            await call('GET', `/skus?q=blk&limit=1${cursor ? `&cursor=${cursor}` : ''}`, {
+              cookie: staff,
+            })
+          ).body,
+        );
+        walked.push(...page.items.map((item) => item.code));
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(walked).toEqual(['2044-BLK-M', 'TEE-BLK-M']);
+    });
+
+    // Review of spec 0012 M1: the PGX-* rows match both the code prefix and the contains branch,
+    // AAA-PGX and JKT-1 only the contains branch, so every page edge sits on a row the UNION must
+    // list once and every branch must cut after the cursor.
+    it('pages a search whose branches overlap without skipping or repeating a row', async () => {
+      const pgx = await plantStyle('PGX', { en: 'Plain' }, []);
+      for (const sku of ['PGX-1', 'PGX-2', 'PGX-3', 'AAA-PGX']) await plantVariant(pgx, sku, {});
+      await plantVariant(await plantStyle('JKT', { en: 'Pgx Jacket' }, []), 'JKT-1', {});
+      const expected = ['AAA-PGX', 'JKT-1', 'PGX-1', 'PGX-2', 'PGX-3'];
+      expect(await search('pgx')).toEqual(expected);
+
+      for (const limit of [1, 2]) {
+        const walked: string[] = [];
+        let cursor: string | null = null;
+        do {
+          const page: SkuListResponse = SkuListResponse.parse(
+            (
+              await call('GET', `/skus?q=pgx&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`, {
+                cookie: staff,
+              })
+            ).body,
+          );
+          expect(page.items.length).toBeLessThanOrEqual(limit);
+          walked.push(...page.items.map((item) => item.code));
+          cursor = page.nextCursor;
+        } while (cursor);
+        expect(walked).toEqual(expected);
+      }
+    });
+
+    it('carries the style, season, group, and option values on each row', async () => {
+      const page = SkuListResponse.parse(
+        (await call('GET', '/skus?q=tee-blk-m', { cookie: staff })).body,
+      );
+      expect(page.items).toEqual([
+        expect.objectContaining({
+          code: 'TEE-BLK-M',
+          style: { id: tee, code: 'TEE', name: { en: 'Tee' } },
+          season: { id: season, code: 'SS26', name: { en: 'Spring 26' } },
+          productGroup: expect.objectContaining({ code: 'MAIN' }) as unknown,
+          options: [
+            { name: { en: 'Size', ar: 'المقاس' }, value: { en: 'M' } },
+            { name: { en: 'Color' }, value: { en: 'Black', ar: 'أسود' } },
+          ],
+          price: '25.00',
+          archived: false,
+        }),
+      ]);
+      const qamisRow = SkuListResponse.parse(
+        (await call('GET', `/skus?styleId=${qamis}`, { cookie: staff })).body,
+      ).items[0];
+      expect(qamisRow).toMatchObject({ season: null, options: [] });
+    });
+
+    it('adds the barcodes to the SKU detail', async () => {
+      const detail = await getSku(variants.get('TEE-WHT-M') ?? '');
+      expect(detail).toMatchObject({
+        code: 'TEE-WHT-M',
+        style: { code: 'TEE' },
+        season: { code: 'SS26' },
+        options: [
+          { name: { en: 'Size', ar: 'المقاس' }, value: { en: 'M' } },
+          { name: { en: 'Color' }, value: { en: 'White' } },
+        ],
+        barcodes: [{ id: expect.any(String) as unknown, code: '6221234567890' }],
+      });
+      expect((await getSku(variants.get('QAMIS-1') ?? '')).barcodes).toEqual([]);
+    });
+
+    it('follows a style rename through the API into search', async () => {
+      const id = variants.get('QAMIS-1') ?? '';
+      const before = await getSku(id);
+      const renamed = await call('PATCH', `/skus/${id}`, {
+        cookie: staff,
+        body: { updatedAt: before.updatedAt, name: { en: 'Linen shirt', ar: 'قميص كتان' } },
+      });
+      expect(renamed.status).toBe(200);
+      expect(await search('linen')).toEqual(['QAMIS-1']);
+      expect(await search('كتان')).toEqual(['QAMIS-1']);
+      expect(await search('اسود')).toEqual(['TEE-BLK-M']);
     });
   });
 

@@ -1,5 +1,5 @@
 import type { SkuDetail, StockReceiptDetail } from '@ssdashboard/contracts';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SkuView } from '@/catalog/sku-view';
 import { SkusPage } from '@/catalog/skus-page';
@@ -49,10 +49,15 @@ const skuDetail: SkuDetail = {
   productId: '00000000-0000-4000-8000-000000000001',
   code: 'WIDGET-1',
   name: { en: 'Widget' },
+  style: { id: '00000000-0000-4000-8000-000000000001', code: 'WIDGET', name: { en: 'Widget' } },
+  season: null,
+  productGroup: { id: '00000000-0000-4000-8000-000000000002', code: 'MAIN', name: { en: 'Main' } },
+  options: [],
   price: '9.00',
   archived: false,
   status: 'active',
   updatedAt: '2026-11-03T10:00:00.123456Z',
+  barcodes: [],
 };
 
 const receipt = {
@@ -93,9 +98,11 @@ describe.each([
       nextCursor: null,
     });
     renderWithQuery(<SkusPage />);
-    await screen.findByRole('link', { name: 'WIDGET-1' });
+    await screen.findAllByRole('link', { name: 'WIDGET-1' });
     shown(screen.queryByRole('button', { name: 'New SKU' }));
-    shown(screen.queryByRole('button', { name: /^Edit/ }));
+    shown(
+      within(screen.getByRole('table', { name: 'SKUs' })).queryByRole('button', { name: /^Edit/ }),
+    );
   });
 
   it('Edit on the SKU page needs catalog.edit', async () => {
