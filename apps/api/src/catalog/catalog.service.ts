@@ -4,18 +4,26 @@ import {
   UpdateSkuRequest,
   type LocalizedText,
   type SkuDetail,
+  type SkuBarcode,
   type SkuListQuery,
   type SkuListResponse,
-  type SkuSummary,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
 import { isStillReferenced, pgArray, pgConstraint, type Executor } from '../database/sql.js';
-import { decodeKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
+import { encodeKeyset } from '../platform/keyset-cursor.js';
+import {
+  buildSkuListSql,
+  ISO_UTC,
+  SKU_ROW_COLUMNS,
+  SKU_ROW_FROM,
+  searchWords,
+  toSkuSummary,
+  type SkuRow,
+} from './search/sku-list-sql.js';
 
-/** `to_char` format of `updatedAt`: microseconds, UTC (spec 0006, Value sourcing). */
-const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
+export { escapeLike } from './search/sku-list-sql.js';
 
 /**
  * The catalog rules a caller can break: code already used, SKU missing, edited by someone else
@@ -53,16 +61,6 @@ export interface StockableSku {
 export type StockableCheck =
   { fault: 'UNKNOWN_SKU' } | { fault: 'ARCHIVED' | 'NOT_STOCKABLE' | null; sku: StockableSku };
 
-interface SkuRow extends Record<string, unknown> {
-  id: string;
-  product_id: string;
-  sku: string;
-  name: LocalizedText;
-  price: string | null;
-  archived: boolean;
-  updated_at: string;
-}
-
 /**
  * A SKU code clash: the variant code, or the style code a new product takes from it.
  */
@@ -73,72 +71,13 @@ function isSkuTaken(error: unknown): boolean {
   );
 }
 
-/** `%`, `_`, and `\` match themselves in a LIKE pattern. */
-export function escapeLike(text: string): string {
-  return text.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
-
-function toSummary(row: SkuRow): SkuSummary {
+function toDetail(row: SkuRow, barcodes: SkuBarcode[]): SkuDetail {
   return {
-    id: row.id,
-    productId: row.product_id,
-    code: row.sku,
-    name: { en: row.name.en, ar: row.name.ar },
-    price: row.price,
-    archived: row.archived,
-  };
-}
-
-function toDetail(row: SkuRow): SkuDetail {
-  return {
-    ...toSummary(row),
+    ...toSkuSummary(row),
     status: row.archived ? 'archived' : 'active',
     updatedAt: row.updated_at,
+    barcodes,
   };
-}
-
-const SKU_COLUMNS = sql`
-  v.id, v.product_id, v.sku, p.name, v.price, v.archived_at IS NOT NULL AS archived,
-  to_char(v.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
-
-/**
- * The SQL behind `list()`. With a search `q` it is the union of two ordered, limited branches
- * (code prefix, name contains), so the prefix branch walks `product_variants_sku_c_idx` instead
- * of the OR forcing a scan of every row. UNION (not ALL) keeps a SKU matching both once.
- */
-export function buildSkuListSql(query: SkuListQuery): SQL {
-  const filters: SQL[] = [
-    query.status === 'archived' ? sql`v.archived_at IS NOT NULL` : sql`v.archived_at IS NULL`,
-  ];
-  if (query.cursor) {
-    const [after] = decodeKeyset(query.cursor, 1);
-    filters.push(sql`v.sku COLLATE "C" > ${after} COLLATE "C"`);
-  }
-  const limit = query.limit + 1;
-  if (!query.q) {
-    return sql`
-      SELECT ${SKU_COLUMNS}
-      FROM product_variants v JOIN products p ON p.id = v.product_id
-      WHERE ${sql.join(filters, sql` AND `)}
-      ORDER BY v.sku COLLATE "C"
-      LIMIT ${limit}`;
-  }
-  const where = sql.join(filters, sql` AND `);
-  const prefix = `${escapeLike(query.q.toUpperCase())}%`;
-  const contains = `%${escapeLike(query.q)}%`;
-  return sql`
-    SELECT ${SKU_COLUMNS}
-    FROM product_variants v JOIN products p ON p.id = v.product_id
-    WHERE v.id IN (
-      (SELECT v.id FROM product_variants v
-        WHERE ${where} AND v.sku COLLATE "C" LIKE ${prefix}
-        ORDER BY v.sku COLLATE "C" LIMIT ${limit})
-      UNION
-      (SELECT v.id FROM product_variants v JOIN products p ON p.id = v.product_id
-        WHERE ${where} AND (p.name->>'en' ILIKE ${contains} OR p.name->>'ar' ILIKE ${contains})
-        ORDER BY v.sku COLLATE "C" LIMIT ${limit}))
-    ORDER BY v.sku COLLATE "C"
-    LIMIT ${limit}`;
 }
 
 /**
@@ -195,15 +134,18 @@ export class CatalogService {
   }
 
   /**
-   * A page of SKUs ordered by code (`COLLATE "C"`, keyset on the code). `q` matches a code
-   * starting with `q` (uppercased) or an English or Arabic name containing it (AC-13).
+   * A page of SKUs ordered by code (`COLLATE "C"`, keyset on the code), filtered by status,
+   * season, product group, and style. `q` matches an exact barcode, a code prefix, or every
+   * normalized word in the variant's search text (spec 0012, AC-3 and AC-4; `buildSkuListSql`).
    */
   async list(query: SkuListQuery): Promise<SkuListResponse> {
-    const { rows } = await this.connection.db.execute<SkuRow>(buildSkuListSql(query));
+    const db = this.connection.db;
+    const words = query.q ? await searchWords(db, query.q) : [];
+    const { rows } = await db.execute<SkuRow>(buildSkuListSql(query, words));
     const page = rows.slice(0, query.limit);
     const last = page.at(-1);
     return {
-      items: page.map(toSummary),
+      items: page.map(toSkuSummary),
       nextCursor: rows.length > query.limit && last ? encodeKeyset([last.sku]) : null,
     };
   }
@@ -391,10 +333,13 @@ export class CatalogService {
 
   private async findSku(executor: Executor, id: string): Promise<SkuDetail | null> {
     const { rows } = await executor.execute<SkuRow>(sql`
-      SELECT ${SKU_COLUMNS}
-      FROM product_variants v JOIN products p ON p.id = v.product_id
+      SELECT ${SKU_ROW_COLUMNS}
+      FROM ${SKU_ROW_FROM}
       WHERE v.id = ${id}`);
     const row = rows[0];
-    return row ? toDetail(row) : null;
+    if (!row) return null;
+    const barcodes = await executor.execute<SkuBarcode>(sql`
+      SELECT id, code FROM barcodes WHERE variant_id = ${id} ORDER BY code COLLATE "C"`);
+    return toDetail(row, barcodes.rows);
   }
 }
