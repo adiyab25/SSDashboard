@@ -71,6 +71,7 @@ describe('CustomerBodyPipe', () => {
 
     expect(codeOf(() => undo.transform({}))).toBe('REASON_REQUIRED');
     expect(codeOf(() => undo.transform(undefined))).toBe('REASON_REQUIRED');
+    expect(codeOf(() => undo.transform({ reasonCode: null }))).toBe('REASON_REQUIRED');
     expect(codeOf(() => undo.transform({ reasonCode: 'call_01012345678' }))).toBe('REASON_INVALID');
     expect(undo.transform({ reasonCode: 'wrong_merge' })).toEqual({ reasonCode: 'wrong_merge' });
   });
@@ -80,6 +81,13 @@ describe('CustomerBodyPipe', () => {
 
     expect(codeOf(() => merge.transform({ survivorId, mergedId }))).toBe('passed');
     expect(codeOf(() => merge.transform({ survivorId, mergedId, reasonCode: 'nope' }))).toBe(
+      'REASON_INVALID',
+    );
+    // An optional code sent as null or empty is an unlisted code, not a missing required one.
+    expect(codeOf(() => merge.transform({ survivorId, mergedId, reasonCode: null }))).toBe(
+      'REASON_INVALID',
+    );
+    expect(codeOf(() => merge.transform({ survivorId, mergedId, reasonCode: '' }))).toBe(
       'REASON_INVALID',
     );
     let body = '';

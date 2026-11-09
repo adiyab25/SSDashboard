@@ -47,7 +47,8 @@ export class CustomerMergesController {
   /**
    * Merges `mergedId` into `survivorId` (201 `{ mergeId, survivor }`). 404 `CUSTOMER_NOT_FOUND` or
    * `SUGGESTION_NOT_FOUND`; 409 `SAME_CUSTOMER`, `CUSTOMER_MERGED`, `CUSTOMER_CHANGED`,
-   * `SUGGESTION_CLOSED`, `SUGGESTION_MISMATCH`; 422 `REASON_INVALID`.
+   * `SUGGESTION_CLOSED`, `SUGGESTION_MISMATCH`; 422 `REASON_INVALID`, `VALIDATION_FAILED`. Ids
+   * are lower cased first, like the undo and dismiss ids.
    */
   @Permission('customers.merge')
   @Post('merges')
@@ -60,10 +61,13 @@ export class CustomerMergesController {
     try {
       return await this.merges.merge(
         {
-          survivorId: body.survivorId,
-          mergedId: body.mergedId,
+          // Postgres answers ids in lower case; an upper case uuid would compare unequal.
+          survivorId: body.survivorId.toLowerCase(),
+          mergedId: body.mergedId.toLowerCase(),
           ...(body.reasonCode === undefined ? {} : { reasonCode: body.reasonCode }),
-          ...(body.suggestionId === undefined ? {} : { suggestionId: body.suggestionId }),
+          ...(body.suggestionId === undefined
+            ? {}
+            : { suggestionId: body.suggestionId.toLowerCase() }),
         },
         mergeActor(request, access),
       );
@@ -74,7 +78,8 @@ export class CustomerMergesController {
 
   /**
    * Undoes a merge (200 `{ restoredId, survivorId }`). 404 `MERGE_NOT_FOUND`; 409
-   * `MERGE_ALREADY_UNDONE`, `MERGE_NOT_LATEST`; 422 `REASON_REQUIRED`, `REASON_INVALID`.
+   * `MERGE_ALREADY_UNDONE`, `MERGE_NOT_LATEST`; 422 `REASON_REQUIRED`, `REASON_INVALID`,
+   * `VALIDATION_FAILED`.
    */
   @Permission('customers.merge')
   @Post('merges/:id/undo')
@@ -105,7 +110,7 @@ export class CustomerMergesController {
     }
   }
 
-  /** Dismisses an open suggestion for good (204). 404 `SUGGESTION_NOT_FOUND`; 409 `SUGGESTION_CLOSED`; 422 `REASON_INVALID`. */
+  /** Dismisses an open suggestion for good (204). 404 `SUGGESTION_NOT_FOUND`; 409 `SUGGESTION_CLOSED`; 422 `REASON_INVALID`, `VALIDATION_FAILED`. */
   @Permission('customers.merge')
   @Post('merge-suggestions/:id/dismiss')
   @HttpCode(204)

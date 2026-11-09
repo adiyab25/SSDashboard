@@ -26,9 +26,13 @@ export interface MergeActor {
 
 /** What a merge needs (spec 0014 AC-6). */
 export interface MergeInput {
+  /** The customer that stays: must be canonical (lower case uuid, as Postgres answers ids). */
   survivorId: string;
+  /** The customer that is pointed at the survivor: must be canonical and not the survivor. */
   mergedId: string;
+  /** Why, as a listed code; recorded on the merge row and its audit entries, never a note. */
   reasonCode?: CustomerMergeReasonCode;
+  /** The open suggestion this merge applies; it must name this pair (lower case uuid). */
   suggestionId?: string;
 }
 
@@ -45,7 +49,11 @@ interface MergeRow extends Record<string, unknown> {
   undone: boolean;
 }
 
-const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
+/**
+ * Whether two id lists are equal element by element. Both must come sorted from
+ * `CustomersService.idsOf` (it orders by id), so equal lists mean equal sets.
+ */
+const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((id, i) => id === b[i]);
 
 /**
@@ -114,8 +122,8 @@ export class CustomerMerges {
     if (
       (await this.customers.canonicalOf(survivorId, tx)) !== survivorId ||
       (await this.customers.canonicalOf(mergedId, tx)) !== mergedId ||
-      !sameSet(await this.customers.idsOf(survivorId, tx), survivorIds) ||
-      !sameSet(await this.customers.idsOf(mergedId, tx), mergedIds)
+      !sameIds(await this.customers.idsOf(survivorId, tx), survivorIds) ||
+      !sameIds(await this.customers.idsOf(mergedId, tx), mergedIds)
     ) {
       throw new CustomersError('CUSTOMER_CHANGED', 'The customers changed, open them again');
     }
@@ -223,7 +231,8 @@ export class CustomerMerges {
    * `MERGE_NOT_FOUND` for an id that is not a merge, `MergeAlreadyUndone` when an undo row names
    * it, and `MergeNotLatest` unless the survivor is canonical and the merged customer still points
    * at it. Restores exactly the pointers before the merge (the merged customer canonical, its
-   * repointed customers back on it) and appends the `undo` row.
+   * repointed customers back on it), appends the `undo` row, and reopens every suggestion this
+   * merge applied whose pair no longer resolves to one customer.
    */
   async undoIn(
     tx: Transaction,
@@ -278,6 +287,16 @@ export class CustomerMerges {
       VALUES ('undo', ${merge.survivor_id}::uuid, ${merge.merged_id}::uuid,
               ${pgArray(merge.repointed_ids)}::uuid[], ${mergeId}::uuid, ${reasonCode},
               ${actor.userId}::uuid)`);
+    // Every suggestion this merge applied (the named one too: no column records which one it
+    // named) whose pair is apart again goes back to the open list, where a person can dismiss it.
+    await tx.execute(sql`
+      UPDATE customer_merge_suggestions s
+      SET status = 'open', merge_id = NULL, decided_by = NULL, decided_at = NULL,
+          updated_at = now()
+      FROM customers lo, customers hi
+      WHERE s.status = 'applied' AND s.merge_id = ${mergeId}::uuid
+        AND lo.id = s.customer_low_id AND hi.id = s.customer_high_id
+        AND coalesce(lo.merged_into_id, lo.id) <> coalesce(hi.merged_into_id, hi.id)`);
     return {
       restoredId: merge.merged_id,
       survivorId: merge.survivor_id,

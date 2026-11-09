@@ -1,10 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  AuditActor,
-  CustomerBrief,
-  CustomerPhoneAddedReasonCode,
-  NormalizedPhone,
-} from '@ssdashboard/contracts';
+import type { AuditActor, CustomerBrief, NormalizedPhone } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { AuditService } from '../audit/audit.service.js';
 import { DATABASE } from '../database/database.module.js';
@@ -16,7 +11,7 @@ import {
   type FindOrCreateInput,
   type FindOrCreateResult,
 } from './find-or-create/find-or-create.js';
-import { addPhone, type AddPhoneResult } from './phones/add-phone.js';
+import { addPhone, type AddPhoneOptions, type AddPhoneResult } from './phones/add-phone.js';
 
 /** A customer as other modules may show it (spec 0014 `briefs`): the asked id and the canonical customer behind it. */
 export interface CustomerBriefOf extends CustomerBrief {
@@ -54,17 +49,18 @@ export class CustomersService {
   /**
    * Attaches a second phone to the customer (AC-10): `added`, `already_held`, or `held_by_other`
    * with the other canonical customer and one `second_phone_conflict` suggestion; a phone is never
-   * moved. A person's `added` writes `customer.phone_added`. See {@link addPhone}. Pass the
-   * caller's transaction.
+   * moved. A person's `added` writes `customer.phone_added`, with `options.reasonCode` and under
+   * `options.correlationId` when given (else a new id). See {@link addPhone}. Pass the caller's
+   * transaction.
    */
   addPhone(
     tx: Transaction,
     customerId: string,
     phone: NormalizedPhone,
     actor: AuditActor,
-    reasonCode?: CustomerPhoneAddedReasonCode,
+    options: AddPhoneOptions = {},
   ): Promise<AddPhoneResult> {
-    return addPhone(tx, this.audit, customerId, phone, actor, reasonCode);
+    return addPhone(tx, this.audit, customerId, phone, actor, options);
   }
 
   /** The canonical customer holding this phone, or null when none does. Writes nothing. */

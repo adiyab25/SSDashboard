@@ -75,6 +75,8 @@ export const CustomerMergeErrorCode = z.enum([
   'MERGE_NOT_LATEST',
   'REASON_REQUIRED',
   'REASON_INVALID',
+  'VALIDATION_FAILED',
+  'INVALID_QUERY',
   'INVALID_CURSOR',
 ]);
 /** One merge route error code. */

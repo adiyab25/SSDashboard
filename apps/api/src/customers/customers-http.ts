@@ -52,7 +52,8 @@ export const notFoundIdPipe = (code: 'MERGE_NOT_FOUND' | 'SUGGESTION_NOT_FOUND')
 
 /**
  * Parses a merge, undo, or dismiss body against its contract (spec 0014 API table): a missing
- * required `reasonCode` is 422 `REASON_REQUIRED`, an unlisted one 422 `REASON_INVALID`, and any
+ * (absent, null, or empty) `reasonCode` the schema requires is 422 `REASON_REQUIRED`; an unlisted
+ * one, or a null or empty one for an optional field, 422 `REASON_INVALID`; and any
  * other bad body 422 `VALIDATION_FAILED` naming the failing paths. Never echoes a value.
  */
 export class CustomerBodyPipe<T extends z.ZodType> implements PipeTransform<unknown, z.output<T>> {
@@ -70,7 +71,10 @@ export class CustomerBodyPipe<T extends z.ZodType> implements PipeTransform<unkn
         typeof body === 'object' && body !== null && 'reasonCode' in body
           ? (body as { reasonCode?: unknown }).reasonCode
           : undefined;
-      if (given === undefined || given === null || given === '') {
+      // Missing is REASON_REQUIRED only where the schema requires the code; a null or empty code
+      // for an optional field is an unlisted one (REASON_INVALID).
+      const missing = given === undefined || given === null || given === '';
+      if (missing && this.requiresReason(body)) {
         throw new UnprocessableEntityException({
           code: 'REASON_REQUIRED',
           message: 'A reason code is required',
@@ -86,5 +90,13 @@ export class CustomerBodyPipe<T extends z.ZodType> implements PipeTransform<unkn
       message: 'Some fields are not valid',
       issues: paths.map((path) => ({ path })),
     });
+  }
+
+  /** Whether the schema refuses this body with its `reasonCode` left out: the field is required. */
+  private requiresReason(body: unknown): boolean {
+    if (typeof body !== 'object' || body === null) return true;
+    const { reasonCode: _omitted, ...rest } = body as Record<string, unknown>;
+    const result = this.schema.safeParse(rest);
+    return !result.success && result.error.issues.some((issue) => issue.path[0] === 'reasonCode');
   }
 }

@@ -138,6 +138,8 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Locations',
       // The customers group (spec 0014); the administrator's manager hat holds customers.view.
       'Customers',
+      // Merge customers needs customers.merge, which the manager hat holds too (spec 0014, AC-18).
+      'Merge customers',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

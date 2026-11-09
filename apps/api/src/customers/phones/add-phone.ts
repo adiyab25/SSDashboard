@@ -12,6 +12,17 @@ import { CustomersError } from '../customers.errors.js';
 /** What `CustomersService.addPhone` did (spec 0014 AC-10). */
 export type AddPhoneOutcome = 'added' | 'already_held' | 'held_by_other';
 
+/** The optional parts of an `addPhone` call. */
+export interface AddPhoneOptions {
+  /** Why a person added the phone; recorded on `customer.phone_added`. */
+  reasonCode?: CustomerPhoneAddedReasonCode;
+  /**
+   * The caller's business action correlation id, so the entry joins it; without one, a new id
+   * from `AuditService.newCorrelationId(actor)`.
+   */
+  correlationId?: string;
+}
+
 /** The answer of `addPhone`: the outcome, and the other canonical customer for `held_by_other`. */
 export interface AddPhoneResult {
   /** What happened. */
@@ -28,7 +39,8 @@ export interface AddPhoneResult {
  * never moved: it answers `held_by_other` with that customer's canonical id and opens one
  * `second_phone_conflict` suggestion for the pair (at most one row per pair, ever). A person's
  * `added` writes `customer.phone_added` (ids only, never the phone); a system job or an import
- * writes no entry. Throws `CUSTOMER_NOT_FOUND` for an unknown customer.
+ * writes no entry. The entry takes `options.correlationId` when the caller passes one (its own
+ * business action), else a new one. Throws `CUSTOMER_NOT_FOUND` for an unknown customer.
  */
 export async function addPhone(
   tx: Transaction,
@@ -36,8 +48,9 @@ export async function addPhone(
   customerId: string,
   phone: NormalizedPhone,
   actor: AuditActor,
-  reasonCode?: CustomerPhoneAddedReasonCode,
+  options: AddPhoneOptions = {},
 ): Promise<AddPhoneResult> {
+  const { reasonCode, correlationId } = options;
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(${CUSTOMER_PHONE_LOCK}::int, hashtext(${phone.e164}))`,
   );
@@ -81,7 +94,7 @@ export async function addPhone(
       record: { type: 'customer', id: canonical },
       after: { phoneId: inserted, isPrimary: false },
       ...(reasonCode === undefined ? {} : { reason: reasonCode }),
-      correlationId: audit.newCorrelationId(actor),
+      correlationId: correlationId ?? audit.newCorrelationId(actor),
     });
   }
   return { outcome: 'added' };

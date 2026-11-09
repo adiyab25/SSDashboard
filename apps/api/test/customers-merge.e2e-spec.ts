@@ -615,6 +615,196 @@ describe('customers merge and undo', { timeout: 240_000 }, () => {
     });
   });
 
+  describe('races and edges (review m5, security L3, review m4)', () => {
+    /** Every pointer is one hop: no customer points at a customer that points elsewhere. */
+    const chainsLongerThanOneHop = async () =>
+      (
+        await owner.pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM customers c
+           JOIN customers p ON p.id = c.merged_into_id WHERE p.merged_into_id IS NOT NULL`,
+        )
+      ).rows[0]?.n;
+    const codeOf = (reply: { body: unknown }) => (reply.body as { code?: string } | null)?.code;
+
+    it('ten merges of A into B and ten of B into A in parallel give one merge and nineteen 409s, three rounds', async () => {
+      for (let round = 0; round < 3; round += 1) {
+        const a = await customer();
+        const b = await customer();
+
+        const replies = await Promise.all(
+          Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? merge(a, b) : merge(b, a))),
+        );
+
+        const statuses = replies.map((reply) => reply.status);
+        expect(
+          statuses.filter((status) => status === 201),
+          statuses.join(),
+        ).toHaveLength(1);
+        expect(
+          statuses.filter((status) => status === 409),
+          statuses.join(),
+        ).toHaveLength(19);
+        for (const reply of replies.filter((r) => r.status === 409)) {
+          expect(['SAME_CUSTOMER', 'CUSTOMER_CHANGED', 'CUSTOMER_MERGED']).toContain(codeOf(reply));
+        }
+        const rows = await owner.pool.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM customer_merges
+           WHERE action = 'merge' AND ((survivor_id = $1 AND merged_id = $2) OR (survivor_id = $2 AND merged_id = $1))`,
+          [a, b],
+        );
+        expect(rows.rows[0]?.n).toBe(1);
+        const pointers = [await pointerOf(a), await pointerOf(b)];
+        expect(pointers.filter((pointer) => pointer === null)).toHaveLength(1);
+      }
+      expect(await chainsLongerThanOneHop()).toBe(0);
+    });
+
+    it('an undo of X into S racing a merge of S into T never errors and leaves the pointers one consistent state, five rounds', async () => {
+      for (let round = 0; round < 5; round += 1) {
+        const s = await customer();
+        const x = await customer();
+        const t = await customer();
+        const made = CustomerMergeResponse.parse((await merge(s, x)).body);
+
+        const [undone, merged] = await Promise.all([undo(made.mergeId), merge(t, s)]);
+
+        expect([200, 409], undone.text).toContain(undone.status);
+        expect([201, 409], merged.text).toContain(merged.status);
+        if (undone.status === 409) expect(codeOf(undone)).toBe('MERGE_NOT_LATEST');
+        if (merged.status === 409) expect(codeOf(merged)).toBe('CUSTOMER_CHANGED');
+        expect(undone.status === 200 || merged.status === 201).toBe(true);
+        const state = { s: await pointerOf(s), x: await pointerOf(x), t: await pointerOf(t) };
+        if (undone.status === 200 && merged.status === 201) {
+          // The undo committed first and the merge read the sets after it.
+          expect(state).toEqual({ s: t, x: null, t: null });
+        } else if (undone.status === 200) {
+          expect(state).toEqual({ s: null, x: null, t: null });
+        } else {
+          // The merge won: X moved to T with S, so the undo of X into S is no longer the latest.
+          expect(state).toEqual({ s: t, x: t, t: null });
+        }
+      }
+      expect(await chainsLongerThanOneHop()).toBe(0);
+    });
+
+    it('refuses an undo whose repointed customer moved (planted) with MERGE_NOT_LATEST and changes nothing', async () => {
+      const s = await customer();
+      const x = await customer();
+      const r = await customer();
+      expect((await merge(x, r)).status).toBe(201);
+      const made = CustomerMergeResponse.parse((await merge(s, x)).body);
+      expect(await pointerOf(r)).toBe(s);
+      // No route can move R alone while X points at S; the owner plants it to reach the check.
+      await owner.pool.query('UPDATE customers SET merged_into_id = NULL WHERE id = $1', [r]);
+
+      const reply = await undo(made.mergeId);
+
+      expect([reply.status, codeOf(reply)]).toEqual([409, 'MERGE_NOT_LATEST']);
+      expect(await pointerOf(x)).toBe(s);
+      const undoRows = await owner.pool.query(
+        'SELECT 1 FROM customer_merges WHERE undoes_merge_id = $1',
+        [made.mergeId],
+      );
+      expect(undoRows.rows).toEqual([]);
+    });
+
+    it('an undo reopens every suggestion its merge applied whose pair is apart again, the named one too', async () => {
+      const a = await customer();
+      const b = await customer();
+      const r = await customer();
+      await addPhone(a, await phoneOf(b));
+      await addPhone(r, await phoneOf(a));
+      const [named] = await suggestionOf(a, b);
+      expect((await merge(b, r)).status).toBe(201);
+      const made = CustomerMergeResponse.parse(
+        (await merge(a, b, { suggestionId: named?.id })).body,
+      );
+      // The named pair and, as a side effect, R and A (R now resolves to A) are applied.
+      expect(await suggestionOf(a, b)).toMatchObject([
+        { status: 'applied', merge_id: made.mergeId },
+      ]);
+      expect(await suggestionOf(r, a)).toMatchObject([
+        { status: 'applied', merge_id: made.mergeId },
+      ]);
+      // No route can leave a pair this merge applied as one after its undo; the owner plants one.
+      const f = await customer();
+      const g = await customer();
+      await addPhone(f, await phoneOf(g));
+      expect((await merge(f, g)).status).toBe(201);
+      await owner.pool.query(
+        `UPDATE customer_merge_suggestions SET merge_id = $1
+         WHERE customer_low_id = LEAST($2::uuid, $3::uuid) AND customer_high_id = GREATEST($2::uuid, $3::uuid)`,
+        [made.mergeId, f, g],
+      );
+
+      expect((await undo(made.mergeId)).status).toBe(200);
+
+      const reopened = { status: 'open', merge_id: null };
+      expect(await suggestionOf(a, b)).toMatchObject([reopened]);
+      expect(await suggestionOf(r, a)).toMatchObject([reopened]);
+      const decided = await owner.pool.query(
+        `SELECT decided_by, decided_at FROM customer_merge_suggestions WHERE id = ANY($1::uuid[])`,
+        [[named?.id, (await suggestionOf(r, a))[0]?.id]],
+      );
+      expect(decided.rows).toEqual([
+        { decided_by: null, decided_at: null },
+        { decided_by: null, decided_at: null },
+      ]);
+      expect(await suggestionOf(f, g)).toMatchObject([
+        { status: 'applied', merge_id: made.mergeId },
+      ]);
+      const page = MergeSuggestionPage.parse(
+        (await call(support, 'GET', '/customers/merge-suggestions?limit=100')).body,
+      );
+      expect(page.items.map((i) => i.id)).toContain(named?.id);
+    });
+
+    it('takes upper case ids on the merge route like undo and dismiss', async () => {
+      const a = await customer();
+      const b = await customer();
+      await addPhone(a, await phoneOf(b));
+      const [suggestion] = await suggestionOf(a, b);
+
+      const reply = await merge(a.toUpperCase(), b.toUpperCase(), {
+        suggestionId: suggestion?.id.toUpperCase(),
+      });
+
+      expect(reply.status, reply.text).toBe(201);
+      expect(await pointerOf(b)).toBe(a);
+      expect(await suggestionOf(a, b)).toMatchObject([{ status: 'applied' }]);
+    });
+
+    it('writes the dismiss entries on today’s canonical customers, not the ids merged since', async () => {
+      const a = await customer();
+      const b = await customer();
+      const survivor = await customer();
+      await addPhone(a, await phoneOf(b));
+      const [suggestion] = await suggestionOf(a, b);
+      expect((await merge(survivor, a)).status).toBe(201);
+
+      const reply = await call(
+        support,
+        'POST',
+        `/customers/merge-suggestions/${suggestion?.id}/dismiss`,
+        { reasonCode: 'shared_phone' },
+      );
+
+      expect(reply.status, reply.text).toBe(204);
+      const { rows } = await owner.pool.query<{ record_id: string; other: string }>(
+        `SELECT record_id, after->>'otherCustomerId' AS other FROM audit_entries
+         WHERE action = 'customer.merge_suggestion_dismissed' AND after->>'suggestionId' = $1
+         ORDER BY record_id`,
+        [suggestion?.id],
+      );
+      expect(rows).toEqual(
+        [
+          { record_id: survivor, other: b },
+          { record_id: b, other: survivor },
+        ].sort((x, y) => (x.record_id < y.record_id ? -1 : 1)),
+      );
+    });
+  });
+
   describe('who may call (AC-16)', () => {
     it('answers 403 to the warehouse hat on every merge route and 401 without a session', async () => {
       const a = await customer();

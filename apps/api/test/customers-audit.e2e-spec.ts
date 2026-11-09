@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   AUDIT_ACTIONS,
   CustomerMergeResponse,
@@ -211,19 +212,17 @@ describe('customers audit', { timeout: 120_000 }, () => {
     }
   });
 
-  it('writes customer.phone_added for a person, and nothing for a system job', async () => {
+  it('writes customer.phone_added for a person under the caller’s correlation id, and nothing for a system job', async () => {
     const a = await customer();
     const second = newPhone();
     const third = newPhone();
+    const joined = randomUUID();
 
     await db.db.transaction((tx) =>
-      customers.addPhone(
-        tx,
-        a.id,
-        second,
-        personActor(supportId, 'support'),
-        'confirmed_by_customer',
-      ),
+      customers.addPhone(tx, a.id, second, personActor(supportId, 'support'), {
+        reasonCode: 'confirmed_by_customer',
+        correlationId: joined,
+      }),
     );
     await db.db.transaction((tx) =>
       customers.addPhone(tx, a.id, third, {
@@ -238,6 +237,7 @@ describe('customers audit', { timeout: 120_000 }, () => {
     expect(entries[0]).toMatchObject({
       reason: 'confirmed_by_customer',
       after: { isPrimary: false },
+      correlation_id: joined,
     });
   });
 

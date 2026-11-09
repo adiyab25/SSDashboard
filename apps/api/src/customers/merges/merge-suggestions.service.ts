@@ -107,7 +107,8 @@ export class MergeSuggestions {
   /**
    * Dismisses an open suggestion for good (status `dismissed`, who, when, the reason code), and
    * writes one `customer.merge_suggestion_dismissed` on each customer of the pair under one
-   * correlation id. `SUGGESTION_NOT_FOUND` for an unknown id, `SUGGESTION_CLOSED` when it is not
+   * correlation id. The pair is resolved to today's canonical customers (`merged_into_id`), so the
+   * entries land on the records a person opens, not on ids merged since the suggestion opened. `SUGGESTION_NOT_FOUND` for an unknown id, `SUGGESTION_CLOSED` when it is not
    * open.
    */
   async dismiss(
@@ -119,8 +120,11 @@ export class MergeSuggestions {
     await this.connection.db.transaction(async (tx) => {
       const row = (
         await tx.execute<{ status: string; low: string; high: string }>(sql`
-          SELECT status, customer_low_id AS low, customer_high_id AS high
-          FROM customer_merge_suggestions WHERE id = ${suggestionId}::uuid FOR UPDATE`)
+          SELECT s.status,
+                 (SELECT coalesce(merged_into_id, id) FROM customers WHERE id = s.customer_low_id) AS low,
+                 (SELECT coalesce(merged_into_id, id) FROM customers WHERE id = s.customer_high_id) AS high
+          FROM customer_merge_suggestions s WHERE s.id = ${suggestionId}::uuid
+          FOR UPDATE OF s`)
       ).rows[0];
       if (row === undefined) {
         throw new CustomersError('SUGGESTION_NOT_FOUND', 'No merge suggestion has that id');
@@ -136,10 +140,14 @@ export class MergeSuggestions {
       const auditActor = personActor(actor.userId, actor.hat);
       await this.audit.recordMany(
         tx,
-        [
-          [row.low, row.high],
-          [row.high, row.low],
-        ].map(([id, other]): AuditEntryInput => ({
+        // A pair that already resolves to one customer gets one entry, not two on the same record.
+        (row.low === row.high
+          ? [[row.low, row.high]]
+          : [
+              [row.low, row.high],
+              [row.high, row.low],
+            ]
+        ).map(([id, other]): AuditEntryInput => ({
           actor: auditActor,
           action: 'customer.merge_suggestion_dismissed',
           record: { type: 'customer', id: id as string },
