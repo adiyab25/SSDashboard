@@ -314,11 +314,11 @@
                       "quantity": 1,
                       "totalAmount": {
                         "shopMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         },
                         "presentmentMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         }
                       },
@@ -326,10 +326,16 @@
                         "id": "gid://shopify/LineItem/6660000004001"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },

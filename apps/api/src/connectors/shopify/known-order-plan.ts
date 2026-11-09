@@ -49,10 +49,16 @@ export interface KnownOrderPlan {
    * The snapshot for `applyChannelEdit`: every line with a current quantity above 0 while no
    * fulfillment is active, and on the read where the first one appears; afterwards, while one is
    * active, the lines the app holds at their applied quantities, so only ship to and other changes
-   * reach it (added lines and refunds are task 10's). Null when nothing may be sent: a milestone 1
+   * reach it (added lines go to `exchange-by-edit.ts`, refunds to `ChannelRefundRecorded`). Null when nothing may be sent: a milestone 1
    * mapping (no `appliedLines`) whose fulfillment is already reported (code review m4).
    */
   readonly snapshot: ChannelOrderSnapshot | null;
+  /**
+   * True when the snapshot holds the applied lines because a fulfillment is active and was
+   * reported before (not on its first read, and not for a milestone 1 mapping): then the line items
+   * added since are an exchange by edit (task 10's `exchange-by-edit.ts`, AC-12).
+   */
+  readonly holdsAppliedLines: boolean;
   /** The notes of the read (unmapped lines and gateways, discount codes); null after a cancel. */
   readonly notes: ShopifyMappingNotes | null;
   /**
@@ -105,6 +111,7 @@ export function planKnownOrder(
       firstFulfillmentRead: false,
       links: [],
       snapshot: null,
+      holdsAppliedLines: false,
       notes: null,
       rederive: null,
     };
@@ -119,6 +126,7 @@ export function planKnownOrder(
   const milestone1 = state.appliedLines === undefined;
   let snapshot: ChannelOrderSnapshot | null;
   let notes: ShopifyMappingNotes;
+  const holdsAppliedLines = first !== null && !firstFulfillmentRead && !milestone1;
   if (first === null || firstFulfillmentRead) {
     ({ snapshot, ...notes } = mapShopifyOrderSnapshot(order, context));
   } else if (milestone1) {
@@ -135,6 +143,7 @@ export function planKnownOrder(
     firstFulfillmentRead,
     links,
     snapshot,
+    holdsAppliedLines,
     notes,
     rederive: rederiveOf(order, context, state),
   };

@@ -359,55 +359,61 @@
           "agreements": {
             "nodes": [
               {
-                "id": "gid://shopify/OrderAgreement/4440000001001",
+                "id": "gid://shopify/OrderAgreement/4440000026001",
                 "happenedAt": "2026-11-02T09:15:00Z",
                 "reason": "ORDER",
                 "sales": {
                   "nodes": [
                     {
                       "__typename": "ProductSale",
-                      "id": "gid://shopify/ProductSale/5000000001001",
+                      "id": "gid://shopify/ProductSale/5000000026001",
                       "actionType": "ORDER",
                       "lineType": "PRODUCT",
                       "quantity": 1,
                       "totalAmount": {
                         "shopMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         },
                         "presentmentMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         }
                       },
                       "lineItem": {
-                        "id": "gid://shopify/LineItem/6660000001001"
+                        "id": "gid://shopify/LineItem/55500000260011"
                       }
                     },
                     {
                       "__typename": "ProductSale",
-                      "id": "gid://shopify/ProductSale/5000000001002",
+                      "id": "gid://shopify/ProductSale/5000000026002",
                       "actionType": "ORDER",
                       "lineType": "PRODUCT",
                       "quantity": 1,
                       "totalAmount": {
                         "shopMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         },
                         "presentmentMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         }
                       },
                       "lineItem": {
-                        "id": "gid://shopify/LineItem/6660000001002"
+                        "id": "gid://shopify/LineItem/55500000260012"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },

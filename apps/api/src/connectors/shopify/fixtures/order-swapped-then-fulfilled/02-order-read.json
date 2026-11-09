@@ -472,7 +472,10 @@
                         "id": "gid://shopify/LineItem/6660000002002"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               },
               {
@@ -521,10 +524,16 @@
                         "id": "gid://shopify/LineItem/6660000002003"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },
