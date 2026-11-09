@@ -327,6 +327,18 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.connectionCreated',
     proof: 'apps/api/test/shopify-connect.e2e-spec.ts',
   },
+  // Spec 0015 task 12 (AC-17): a manager started a connection's first backfill with its go live
+  // instant. Record type `connection`, the label the store code; the diff holds the go live
+  // instant and the products run id, never a credential.
+  'connection.backfill_started': {
+    module: 'connectors',
+    recordType: 'connection',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.connectionBackfillStarted',
+    proof: 'apps/api/test/shopify-sync-jobs.e2e-spec.ts',
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */

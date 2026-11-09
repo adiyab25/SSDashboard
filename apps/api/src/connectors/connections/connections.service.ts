@@ -12,13 +12,17 @@ import {
   type ConnectionListResponse,
   type ConnectShopifyBody,
   type ConnectShopifyResponse,
+  type BackfillBody,
+  type SyncRunListQuery,
+  type SyncRunListResponse,
+  type SyncRunStarted,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { AuditService } from '../../audit/audit.service.js';
 import { ChannelsError } from '../../channels/channels.errors.js';
 import { ChannelsService } from '../../channels/channels.service.js';
 import { DATABASE } from '../../database/database.module.js';
-import { pgConstraint, pgErrorCode } from '../../database/sql.js';
+import { pgConstraint, pgErrorCode, type Transaction } from '../../database/sql.js';
 import type { Access } from '../../platform/access/access.js';
 import { JobSender } from '../../platform/jobs/job-sender.js';
 import {
@@ -28,10 +32,13 @@ import {
 } from '../../platform/keyset-cursor.js';
 import { ConnectionsError } from '../connectors.errors.js';
 import {
+  BACKFILL_JOB_PRIORITY,
   connectionGroup,
   CONNECTOR_SHOPIFY_QUEUE,
   type ShopifyJobData,
 } from '../shopify/connector-shopify.queue.js';
+import { gatewayKeyOf } from '../shopify/order-mapper.js';
+import { SyncRuns } from '../sync-runs/sync-runs.js';
 import { ConnectionSecrets, credentialsHint } from './connection-secrets.js';
 
 /** Who asks: the signed in manager and their `Access`, for the audit actor. */
@@ -131,6 +138,7 @@ export class ConnectionsService {
     @Inject(ConnectionSecrets) private readonly secrets: ConnectionSecrets,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(JobSender) private readonly jobs: JobSender,
+    @Inject(SyncRuns) private readonly runs: SyncRuns,
   ) {}
 
   /**
@@ -312,6 +320,130 @@ export class ConnectionsService {
       const data: ShopifyJobData = { kind: 'connect', connectionId: id };
       await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, connectionGroup(id));
     });
+  }
+
+  /**
+   * Starts a gateway scan (`POST /api/connections/:id/gateway-scan`, spec 0015 task 12, AC-17):
+   * under the connection's row lock, refuses while a gateway scan of the connection has not
+   * finished (`SCAN_RUNNING`), then writes a `gateway_scan` run and sends its first job, in one
+   * transaction. Answers the run id. Throws `NOT_FOUND`, `CONNECTION_ARCHIVED`, or `SCAN_RUNNING`.
+   */
+  async startGatewayScan(id: string): Promise<SyncRunStarted> {
+    await this.jobs.prepare(CONNECTOR_SHOPIFY_QUEUE);
+    return this.connection.db.transaction(async (tx) => {
+      const row = await this.lockConnection(tx, id);
+      if (row.status === 'archived') {
+        throw new ConnectionsError('CONNECTION_ARCHIVED', 'An archived connection is not scanned');
+      }
+      if (await this.runs.unfinished(tx, id, ['gateway_scan'])) {
+        throw new ConnectionsError('SCAN_RUNNING', 'A gateway scan of this connection is running');
+      }
+      const runId = await this.runs.start(tx, { connectionId: id, kind: 'gateway_scan' });
+      const data: ShopifyJobData = { kind: 'gateway_scan', connectionId: id, runId, step: 0 };
+      await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, {
+        ...connectionGroup(id),
+        priority: BACKFILL_JOB_PRIORITY,
+      });
+      return { runId };
+    });
+  }
+
+  /**
+   * Starts the first backfill (`POST /api/connections/:id/backfill`, spec 0015 task 12, AC-17):
+   * under the connection's row lock, refuses a connection that is not `active` or whose health is
+   * not `ok` or `degraded` (`CONNECTION_NOT_READY`), one with an unfinished backfill run
+   * (`BACKFILL_RUNNING`), and one whose newest succeeded gateway scan names a gateway with no
+   * payment method in `config.gatewayMethods`, or that has no succeeded scan yet
+   * (`GATEWAYS_UNMAPPED`, with the unmapped names). Then, in one transaction, it sets `go_live_at`,
+   * writes the `backfill_products` run, records `connection.backfill_started` (the go live instant
+   * and the run id, never a credential), and sends the run's first job. Answers the run id.
+   */
+  async startBackfill(
+    id: string,
+    body: BackfillBody,
+    caller: ConnectionCaller,
+  ): Promise<SyncRunStarted> {
+    await this.jobs.prepare(CONNECTOR_SHOPIFY_QUEUE);
+    const correlationId = this.audit.newCorrelationId();
+    return this.connection.db.transaction(async (tx) => {
+      const row = await this.lockConnection(tx, id);
+      if (row.status !== 'active' || (row.health !== 'ok' && row.health !== 'degraded')) {
+        throw new ConnectionsError(
+          'CONNECTION_NOT_READY',
+          'The connection must be active and past its connect check',
+        );
+      }
+      if (await this.runs.unfinished(tx, id, ['backfill_products', 'backfill_orders'])) {
+        throw new ConnectionsError('BACKFILL_RUNNING', 'A backfill of this connection is running');
+      }
+      const scan = await this.runs.lastSucceeded(tx, id, 'gateway_scan');
+      const config = ShopifyConnectionConfig.partial().safeParse(row.config);
+      const mapped = (config.success ? config.data.gatewayMethods : undefined) ?? {};
+      const scanned = Array.isArray(scan?.counts['gatewayNames'])
+        ? (scan.counts['gatewayNames'] as unknown[]).filter(
+            (name): name is string => typeof name === 'string',
+          )
+        : [];
+      // The scan stored keys (`scannedGatewayNames`); keying again is a no op for them.
+      const unmapped = scanned.filter((name) => {
+        const key = gatewayKeyOf(name);
+        return key !== null && !Object.hasOwn(mapped, key);
+      });
+      if (!scan || unmapped.length > 0) {
+        throw new ConnectionsError(
+          'GATEWAYS_UNMAPPED',
+          scan
+            ? 'Every scanned payment gateway needs a payment method first'
+            : 'Scan the payment gateways and map them first',
+          unmapped,
+        );
+      }
+      await tx.execute(sql`
+        UPDATE connections SET go_live_at = ${body.goLiveAt}::timestamptz, updated_at = now()
+        WHERE id = ${id}::uuid`);
+      const runId = await this.runs.start(tx, {
+        connectionId: id,
+        kind: 'backfill_products',
+        counts: { goLiveAt: body.goLiveAt },
+      });
+      const store = row.store_id ? (await this.channels.stores([row.store_id], tx))[0] : undefined;
+      await this.audit.record(tx, {
+        actor: personActor(caller.userId, caller.access.actingHat('settings.manage')),
+        action: 'connection.backfill_started',
+        record: { type: 'connection', id, ...(store && { label: store.code }) },
+        after: { goLiveAt: body.goLiveAt, runId },
+        correlationId,
+      });
+      const data: ShopifyJobData = { kind: 'backfill', connectionId: id, runId, step: 0 };
+      await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, {
+        ...connectionGroup(id),
+        priority: BACKFILL_JOB_PRIORITY,
+      });
+      return { runId };
+    });
+  }
+
+  /** A connection's sync runs, newest first (`GET /api/connections/:id/sync-runs`). */
+  async syncRuns(id: string, query: SyncRunListQuery): Promise<SyncRunListResponse> {
+    return this.runs.list(id, query);
+  }
+
+  /** The connection row under its lock, for the task 12 starts; throws `NOT_FOUND`. */
+  private async lockConnection(
+    tx: Transaction,
+    id: string,
+  ): Promise<{ status: string; health: string; config: unknown; store_id: string | null }> {
+    const { rows } = await tx.execute<{
+      status: string;
+      health: string;
+      config: unknown;
+      store_id: string | null;
+    }>(sql`
+      SELECT status, health::text AS health, config, store_id
+      FROM connections WHERE id = ${id}::uuid AND provider = 'shopify' FOR UPDATE`);
+    const row = rows[0];
+    if (!row) throw new ConnectionsError('NOT_FOUND', 'No connection has that id');
+    return row;
   }
 }
 

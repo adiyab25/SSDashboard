@@ -1774,6 +1774,7 @@ export const ar: Catalog = {
       orderCollectionRecordedManually: 'إدخال تحصيل نقدي يدويًا',
       orderPaymentMethodRederived: 'تصحيح طريقة دفع الطلب',
       connectionCreated: 'ربط متجر Shopify',
+      connectionBackfillStarted: 'بدء استيراد بيانات Shopify السابقة',
       policyChanged: 'تغيير سياسة نوع مالك الموقع',
       costRuleRecorded: 'تسجيل قاعدة تكلفة لكل طلب',
       costRuleRecordedInLockedPeriod: 'تسجيل قاعدة تكلفة لكل طلب في فترة مقفلة',
@@ -2337,6 +2338,7 @@ export const ar: Catalog = {
       inventoryReconcile: 'المراجعة الليلية لدفتر المخزون',
       mailSend: 'إرسال البريد الإلكتروني',
       connectorsShopifySync: 'قراءة الطلبات والمنتجات من Shopify',
+      connectorsInbox: 'حذف سجلات صندوق Shopify وعمليات المزامنة القديمة',
     },
   },
   // شاشات الربط في المواصفة 0015 (AC-1 وAC-2 وAC-27): القائمة ونموذج ربط متجر Shopify. السبب جملة

@@ -281,22 +281,9 @@ export class InboxJob {
     jobId: string,
     retryCount = 0,
   ): Promise<InboxOutcome> {
-    const event = (
-      await this.connection.db.execute<EventRow>(sql`
-        SELECT id, connection_id, topic, subject_type, subject_external_id, status,
-               to_char(clock_timestamp() AT TIME ZONE 'UTC',
-                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_started_at
-        FROM inbound_events
-        WHERE id = ${data.eventId}::uuid AND connection_id = ${data.connectionId}::uuid`)
-    ).rows[0];
+    const event = await this.eventOf(data);
     if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
-    const connection = (
-      await this.connection.db.execute<ConnectionRow>(sql`
-        SELECT id, status, store_id, shop_domain, credentials_ciphertext,
-               credentials_key_version, config,
-               to_char(go_live_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS go_live_at
-        FROM connections WHERE id = ${data.connectionId}::uuid AND provider = 'shopify'`)
-    ).rows[0];
+    const connection = await this.connectionOf(data.connectionId);
     if (!connection) return { skipped: 'CONNECTION_NOT_LIVE' };
     // Paused: recorded, left `received`; resume (task 16) sends the work again.
     if (connection.status === 'paused') return { skipped: 'CONNECTION_PAUSED' };
@@ -357,8 +344,77 @@ export class InboxJob {
       variables: { id: gid },
     });
     if ('done' in answer) return answer.done;
-    const readData = answer.data;
+    return this.applyOrder(event, connection, config.data, gid, answer.data, jobId, event.id);
+  }
 
+  /**
+   * Applies one order the app already read (spec 0015 task 12, AC-7, AC-17): the backfill hands
+   * each order of its bulk (or paged) result here with the inbox event it recorded for it, so the
+   * order goes through exactly the same unit of work and mapper as a webhook's read back, with no
+   * second Shopify call. `read` is the order in `ORDER_READ`'s shape (`{ order }`); `importRunId`
+   * names the backfill run in the `import` actor of a closed order placed before go live. The
+   * event must still be `received` and the connection `active`, as in `run`.
+   */
+  async applyRead(
+    data: { connectionId: string; eventId: string },
+    read: { readonly order: unknown },
+    jobId: string,
+    importRunId: string,
+  ): Promise<InboxOutcome> {
+    const event = await this.eventOf(data);
+    if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
+    const connection = await this.connectionOf(data.connectionId);
+    if (!connection || connection.status !== 'active') return { skipped: 'CONNECTION_NOT_LIVE' };
+    const gid = event.subject_external_id;
+    if (!gid || event.subject_type !== 'order' || !SHOPIFY_ORDER_TOPICS.includes(event.topic)) {
+      return { skipped: 'TOPIC_NOT_PROCESSED' };
+    }
+    if (!connection.store_id) return { skipped: 'CONNECTION_INCOMPLETE' };
+    const config = ShopifyConnectionConfig.partial().safeParse(connection.config);
+    if (!config.success) return this.fail(event, 'CONNECTION_CONFIG_INVALID', null);
+    return this.applyOrder(event, connection, config.data, gid, read, jobId, importRunId);
+  }
+
+  /** The inbox event of a job, with this run's read start time; undefined when absent. */
+  private async eventOf(data: {
+    connectionId: string;
+    eventId: string;
+  }): Promise<EventRow | undefined> {
+    return (
+      await this.connection.db.execute<EventRow>(sql`
+        SELECT id, connection_id, topic, subject_type, subject_external_id, status,
+               to_char(clock_timestamp() AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_started_at
+        FROM inbound_events
+        WHERE id = ${data.eventId}::uuid AND connection_id = ${data.connectionId}::uuid`)
+    ).rows[0];
+  }
+
+  /** The Shopify connection of a job; undefined when absent. */
+  private async connectionOf(connectionId: string): Promise<ConnectionRow | undefined> {
+    return (
+      await this.connection.db.execute<ConnectionRow>(sql`
+        SELECT id, status, store_id, shop_domain, credentials_ciphertext,
+               credentials_key_version, config,
+               to_char(go_live_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS go_live_at
+        FROM connections WHERE id = ${connectionId}::uuid AND provider = 'shopify'`)
+    ).rows[0];
+  }
+
+  /**
+   * The order part of the inbox job after the read (see the class): the read's `order`, its
+   * checks, its context, and the unit of work. `importRunId` is the `import` actor's run: the
+   * event for a webhook or sweep, the backfill run for a backfill.
+   */
+  private async applyOrder(
+    event: EventRow,
+    connection: ConnectionRow,
+    config: Partial<ShopifyConnectionConfig>,
+    gid: string,
+    readData: unknown,
+    jobId: string,
+    importRunId: string,
+  ): Promise<InboxOutcome> {
     const read =
       typeof readData === 'object' && readData !== null
         ? (readData as { order?: unknown }).order
@@ -379,7 +435,7 @@ export class InboxJob {
     if (order.id !== gid) return this.fail(event, 'READ_BACK_MISMATCH', null);
 
     const settings = await this.settings.read(['sales_tax_rate', 'shopify_gift_tags']);
-    const storeId = connection.store_id;
+    const storeId = connection.store_id ?? '';
     const channel = (await this.channels.listChannels({ kinds: ['shopify'] })).find(
       (candidate) => candidate.defaultStoreId === storeId,
     );
@@ -388,15 +444,17 @@ export class InboxJob {
       // A store without its own channel cannot take orders: the contract refuses an empty id.
       channelId: channel?.id ?? '',
       connectionId: connection.id,
-      altPhoneAttribute: config.data.altPhoneAttribute ?? null,
-      gatewayMethods: config.data.gatewayMethods ?? {},
+      altPhoneAttribute: config.altPhoneAttribute ?? null,
+      gatewayMethods: config.gatewayMethods ?? {},
       giftTags: settings.shopify_gift_tags,
       goLiveAt: connection.go_live_at,
       defaultTaxRate: settings.sales_tax_rate,
     };
 
     try {
-      return await this.unit(event, (tx) => this.apply(tx, event, gid, order, base, jobId));
+      return await this.unit(event, (tx) =>
+        this.apply(tx, event, gid, order, base, jobId, importRunId),
+      );
     } catch (error) {
       const code = failureCodeOf(error);
       if (code === null) throw error;
@@ -555,6 +613,7 @@ export class InboxJob {
     order: ShopifyOrder,
     base: Omit<ShopifyOrderContext, 'variants'>,
     jobId: string,
+    importRunId: string,
   ): Promise<InboxOutcome> {
     const label = labelOf(order);
     if (order.test) return this.end(tx, event, label, { status: 'ignored', outcome: 'test_order' });
@@ -606,7 +665,7 @@ export class InboxJob {
 
     const actor: ChannelCreateActor =
       mapped.actor === 'import'
-        ? { type: 'import', runId: event.id }
+        ? { type: 'import', runId: importRunId }
         : { type: 'system_job', job: INBOX_JOB_NAME, jobId };
     const created = await this.intake.createFromChannel(tx, mapped.input, actor);
     const netted = await this.net(tx, created.orderId, order, state);

@@ -11,6 +11,9 @@ import { ConnectorsService } from './connectors.service.js';
 import { ShopifyHookVerifier } from './hooks/shopify-hook-verifier.js';
 import { ShopifyHooksController } from './hooks/shopify-hooks.controller.js';
 import { ShopifyHooksService } from './hooks/shopify-hooks.service.js';
+import { FreshnessController } from './freshness/freshness.controller.js';
+import { FreshnessService } from './freshness/freshness.service.js';
+import { SyncRuns } from './sync-runs/sync-runs.js';
 
 /**
  * The connectors module (spec 0015), in the api and the worker alike: `ConnectorsService` (the
@@ -20,13 +23,17 @@ import { ShopifyHooksService } from './hooks/shopify-hooks.service.js';
  * `ConnectionStoreSource` it registers with `ChannelsService` when it starts, so channels never
  * reads `connections`; from task 7 the Shopify hook (`ShopifyHooksController`,
  * `POST /api/hooks/shopify/:connectionId`), its signature check (`ShopifyHookVerifier`, run by
- * `mountHooks` before the guards), and the inbox writer (`ShopifyHooksService`). It owns the
+ * `mountHooks` before the guards), and the inbox writer (`ShopifyHooksService`); from task 12 the
+ * sync runs (`SyncRuns`, exported for the worker's jobs) and the freshness line
+ * (`FreshnessController`, `GET /api/connections/freshness`, `FreshnessService`). It owns the
  * connector tables (`table-ownership.ts`). It must never import the orders module (orders imports
  * it), and never calls Shopify: only `ConnectorsWorkerModule`'s jobs do.
  */
 @Module({
   imports: [AuditModule, ChannelsModule, PlatformModule],
-  controllers: [ConnectionsController, ShopifyHooksController],
+  // `FreshnessController` first: its `connections/freshness` route must be matched before
+  // `ConnectionsController`'s `connections/:id`.
+  controllers: [FreshnessController, ConnectionsController, ShopifyHooksController],
   providers: [
     ConnectorsService,
     ConnectionsService,
@@ -34,8 +41,10 @@ import { ShopifyHooksService } from './hooks/shopify-hooks.service.js';
     ConnectionStores,
     ShopifyHookVerifier,
     ShopifyHooksService,
+    SyncRuns,
+    FreshnessService,
   ],
-  exports: [ConnectorsService, ConnectionSecrets, ShopifyHookVerifier],
+  exports: [ConnectorsService, ConnectionSecrets, ShopifyHookVerifier, SyncRuns],
 })
 export class ConnectorsModule implements OnModuleInit {
   /** Takes the channels service and the store source it registers there. */
