@@ -815,6 +815,39 @@ describe(
       );
     });
 
+    it('holds the applied lines of an imported shipped order, so a later refund never reaches applyChannelEdit (code re-review R1)', async () => {
+      useShopifyScenarios('order-imported-refunded');
+      const c = await plant();
+      await api.owner.pool.query(
+        `UPDATE connections SET go_live_at = '2026-11-01T00:00:00Z' WHERE id = $1::uuid`,
+        [c.id],
+      );
+      const gid = 'gid://shopify/Order/5550000024001';
+      expect(await arrive(c, 'orders/create', gid, '2026-10-23T09:00:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: null,
+      });
+      const order = await orderOf(c, gid);
+      expect(order?.fulfillment_state).toBe('shipped');
+      expect((await mappingOf(c, gid))?.state['deliveryFulfillmentId']).toBe(
+        'gid://shopify/Fulfillment/9990000024001',
+      );
+      const edit = vi.spyOn(worker.get(OrderIntake), 'applyChannelEdit');
+      try {
+        // 02: the line refunded and restocked after the import (current quantity 0).
+        expect(await arrive(c, 'orders/updated', gid, '2026-11-05T10:00:00Z')).toMatchObject({
+          status: 'processed',
+          outcome: null,
+        });
+        expect(edit).toHaveBeenCalledTimes(1);
+        expect(edit.mock.calls[0]?.[2].lines.map((line) => line.quantity)).toEqual([1]);
+      } finally {
+        edit.mockRestore();
+      }
+      expect(await linesOf(order?.id as string)).toEqual([['55500000240011', 'open', null]]);
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
     it('applies an edit made before the fulfillment on the read where the fulfillment first appears, then records the carrier delivery (code review m1)', async () => {
       useShopifyScenarios('order-swapped-then-fulfilled');
       const c = await plant();
@@ -893,6 +926,8 @@ describe(
       const order = await orderOf(c, gid);
       const intake = worker.get(OrderIntake);
       const original = intake.applyChannelEdit.bind(intake);
+      // A JS error carrying 40P01 after the real write: proves the unit's rollback and single rerun,
+      // not PostgreSQL's own deadlock detection (code re-review nit).
       const edit = vi.spyOn(intake, 'applyChannelEdit').mockImplementationOnce(async (...args) => {
         await original(...args);
         throw Object.assign(new Error('deadlock detected'), { code: '40P01' });

@@ -35,14 +35,15 @@ export const OrderMappingState = z.looseObject({
   /** Every discount code the order ever carried, in the order first seen (feature 48). */
   discountCodes: z.array(z.string()).optional(),
   /**
-   * The order's gateway names at creation and the method each mapped to then. Written once at
-   * creation and never changed (lead decision D10): a rederive runs only when the current config
-   * maps one of them differently.
+   * The order's gateway keys at creation (the raw Shopify name capped at 200, as
+   * `config.gatewayMethods` keys it, security review N1) and the method each mapped to then.
+   * Written once at creation and never changed (lead decision D10): a rederive runs only when the
+   * current config maps one of them differently.
    */
   creationGateways: z.record(z.string(), OrderPaymentMethod.nullable()).optional(),
   /**
-   * The successful sale and capture transactions at creation, written once (D10): a rederive
-   * counts only these (and refunds of them), never a later "mark as paid".
+   * The successful sale, capture, and refund transactions at creation, written once (D10, D10a):
+   * a rederive counts only these, never a later "mark as paid" or a later refund (task 10's).
    */
   creationTransactionIds: z.array(z.string()).optional(),
   /** The Shopify fulfillment whose time was reported as the carrier delivery (AC-13, m1). */
@@ -87,8 +88,10 @@ export function unionOfCodes(
 /**
  * The state of a new order's mapping, written before `createFromChannel` (AC-7): its lines and
  * quantities, the unmapped lines, every discount code, the unmapped gateway names, the creation
- * facts of lead decision D10 (`creationGateways`, `creationTransactionIds`), and the fulfillment
- * whose time the job reports as the carrier delivery right after creation, when it does.
+ * facts of lead decisions D10 and D10a (`creationGateways`, `creationTransactionIds`), and the
+ * first active fulfillment the creation read already holds (`deliveryFulfillmentId`, for every
+ * order created not cancelled, imported shipped ones included, so a later refund never reaches
+ * `applyChannelEdit`; code re-review R1).
  */
 export function createdOrderState(
   order: ShopifyOrder,

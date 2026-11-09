@@ -125,10 +125,8 @@ export const ShopifyOrder = z.object({
   fulfillments: z.array(z.object({ id: z.string(), status: z.string(), createdAt: Instant })),
   transactions: z.array(
     z.object({
-      /** Kept on the mapping at creation (`state.creationTransactionIds`, lead decision D10). */
+      /** Kept on the mapping at creation (`state.creationTransactionIds`, D10 and D10a). */
       id: z.string().min(1),
-      /** For a refund, the sale or capture it refunds (D10 counts refunds of creation sales). */
-      parentTransaction: z.object({ id: z.string() }).nullable(),
       kind: z.string(),
       status: z.string(),
       gateway: z.string().nullable(),
@@ -213,8 +211,21 @@ function parseOr<T>(schema: ZodType<T>, value: unknown, code: ShopifyOrderMappin
  * read values. A null order (not visible) is the inbox job's `not_visible` case, decided before.
  */
 export function parseShopifyOrder(data: unknown): ShopifyOrder {
-  return parseOr(ShopifyOrder, data, 'ORDER_UNREADABLE');
+  const order = parseOr(ShopifyOrder, data, 'ORDER_UNREADABLE');
+  // A fulfillment cannot be made after the order's own update time (making it updates the order):
+  // one more than a day later is a broken answer, never a carrier delivery time (L3 residual).
+  const latest = Date.parse(order.updatedAt) + FULFILLMENT_AFTER_UPDATE_MAX_MS;
+  const late = order.fulfillments.findIndex(
+    (fulfillment) => Date.parse(fulfillment.createdAt) > latest,
+  );
+  if (late >= 0) {
+    throw new ShopifyOrderMappingError('ORDER_UNREADABLE', [`fulfillments.${late}.createdAt`]);
+  }
+  return order;
 }
+
+/** How far after the order's `updatedAt` a fulfillment's `createdAt` may lie before it is refused. */
+const FULFILLMENT_AFTER_UPDATE_MAX_MS = 24 * 60 * 60_000;
 
 // ---------------------------------------------------------------------------------------------
 // Context and results
@@ -477,12 +488,34 @@ export function shopifyPaymentOf(
   return { paymentMethod, prepaidAmount, prepaidMethod };
 }
 
+/** The longest gateway key `config.gatewayMethods` holds (`connection-config.ts`, 200). */
+const GATEWAY_KEY_MAX = 200;
+
 /**
- * The order's payment gateway names (cleaned of control and direction characters and capped, as
- * `unmappedGateways` lists them) with the payment method `config.gatewayMethods` gives each now,
- * null when unmapped. The inbox job keeps it once, at creation (`state.creationGateways`, lead
- * decision D10), so a later read back sees when a manager mapped one of those gateways
- * differently (the rederive of spec 0013 AC-25 c); a gateway that appears later is never one.
+ * A gateway name as `config.gatewayMethods` keys it: the raw Shopify name, capped at the config's
+ * 200 characters, never cleaned (security review N1). The one key the creation lookup,
+ * `state.creationGateways`, the remap check, and `creationPaymentOf` share, so a name that
+ * cleaning would change (padding, a right to left mark, more than 100 characters) never looks
+ * remapped.
+ */
+export function gatewayKeyOf(name: string): string {
+  return name.slice(0, GATEWAY_KEY_MAX);
+}
+
+/** The method `config.gatewayMethods` gives a gateway key, null when unmapped. */
+export function gatewayMethodOf(
+  context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
+  key: string,
+): OrderPaymentMethod | null {
+  return entryOf(context.gatewayMethods, key) ?? null;
+}
+
+/**
+ * The order's payment gateway keys (`gatewayKeyOf`) with the method `config.gatewayMethods` gives
+ * each now, null when unmapped. The inbox job keeps it once, at creation
+ * (`state.creationGateways`, lead decision D10), so a later read back sees when a manager mapped
+ * one of those gateways differently (the rederive of spec 0013 AC-25 c); a gateway that appears
+ * later is never one. Built with `Object.fromEntries`, so a `__proto__` name stays an own key (L5).
  */
 export function gatewayMappingOf(
   order: Pick<ShopifyOrder, 'paymentGatewayNames'>,
@@ -490,43 +523,45 @@ export function gatewayMappingOf(
 ): Record<string, OrderPaymentMethod | null> {
   const entries = new Map<string, OrderPaymentMethod | null>();
   for (const name of order.paymentGatewayNames) {
-    const clean = cleanText(name, GATEWAY_NAME_MAX);
-    if (clean === null || entries.has(clean)) continue;
-    entries.set(clean, entryOf(context.gatewayMethods, name) ?? null);
+    const key = gatewayKeyOf(name);
+    if (key === '' || entries.has(key)) continue;
+    entries.set(key, gatewayMethodOf(context, key));
   }
-  // Built with `Object.fromEntries`, so a gateway named `__proto__` stays an own key (L5).
   return Object.fromEntries(entries);
 }
 
-/** Transaction kinds that count as a payment for the prepaid rule. */
-const PAYMENT_KINDS: readonly string[] = ['SALE', 'CAPTURE'];
+/** Transaction kinds the prepaid rule reads: payments and the refunds netted against them. */
+const CREATION_KINDS: readonly string[] = ['SALE', 'CAPTURE', 'REFUND'];
 
 /**
- * The ids of the order's successful `SALE` and `CAPTURE` transactions, whatever their gateway:
- * the payments that exist when the order is created, kept immutable on the mapping
- * (`state.creationTransactionIds`, lead decision D10), so a later rederive counts only them.
+ * The ids of the order's successful `SALE`, `CAPTURE`, and `REFUND` transactions, whatever their
+ * gateway: the transactions known when the order is created, kept immutable on the mapping
+ * (`state.creationTransactionIds`, lead decisions D10 and D10a), so a later rederive counts only
+ * them. A refund made after creation never counts there: it belongs to the refund path (task 10's
+ * `ChannelRefundRecorded`).
  */
 export function paymentTransactionIdsOf(order: Pick<ShopifyOrder, 'transactions'>): string[] {
   return order.transactions
     .filter((transaction) => transaction.status === 'SUCCESS')
-    .filter((transaction) => PAYMENT_KINDS.includes(transaction.kind))
+    .filter((transaction) => CREATION_KINDS.includes(transaction.kind))
     .map((transaction) => transaction.id);
 }
 
-/** What an order looked like at creation, as the mapping keeps it (lead decision D10). */
+/** What an order looked like at creation, as the mapping keeps it (lead decisions D10, D10a). */
 export interface ShopifyCreationFacts {
-  /** The gateway names at creation (cleaned), as `state.creationGateways` keeps them. */
+  /** The gateway keys at creation (`gatewayKeyOf`), as `state.creationGateways` keeps them. */
   readonly gatewayNames: readonly string[];
-  /** The successful sale and capture transaction ids at creation. */
+  /** The successful sale, capture, and refund transaction ids at creation. */
   readonly transactionIds: readonly string[];
 }
 
 /**
- * The payment of an order derived again from the facts at its creation only (lead decision D10,
- * spec 0013 AC-25 c): the creation rules of `paymentOf` with the current `config.gatewayMethods`,
- * over the gateway names the order had at creation and the transactions recorded then (and the
- * refunds whose parent is one of them). A gateway or a sale added later (a "mark as paid"
- * `manual` sale) never counts. Throws `TRANSACTIONS_TRUNCATED` on a full transaction page.
+ * The payment of an order derived again from the facts at its creation only (lead decisions D10
+ * and D10a, spec 0013 AC-25 c): the creation rules of `paymentOf` with the current
+ * `config.gatewayMethods`, over the gateway keys the order had at creation and only the
+ * transactions recorded then (its sales, captures, and the refunds that already existed). A
+ * gateway, a sale (a "mark as paid" `manual` sale), or a refund added later never counts. Throws
+ * `TRANSACTIONS_TRUNCATED` on a full transaction page.
  */
 export function creationPaymentOf(
   order: ShopifyOrder,
@@ -537,13 +572,7 @@ export function creationPaymentOf(
     throw new ShopifyOrderMappingError('TRANSACTIONS_TRUNCATED');
   }
   const ids = new Set(facts.transactionIds);
-  const transactions = order.transactions.filter((transaction) =>
-    PAYMENT_KINDS.includes(transaction.kind)
-      ? ids.has(transaction.id)
-      : transaction.kind === 'REFUND' &&
-        transaction.parentTransaction !== null &&
-        ids.has(transaction.parentTransaction.id),
-  );
+  const transactions = order.transactions.filter((transaction) => ids.has(transaction.id));
   return shopifyPaymentOf(
     { ...order, paymentGatewayNames: [...facts.gatewayNames], transactions },
     context,

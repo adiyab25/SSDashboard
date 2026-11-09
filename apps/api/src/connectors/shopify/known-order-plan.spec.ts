@@ -263,26 +263,26 @@ describe('planKnownOrder: the payment rederive (lead decision D10, spec 0013 AC-
     ).not.toBeNull();
   });
 
-  it('nets a refund of a creation sale and ignores a sale added later (creationPaymentOf)', () => {
+  it('counts only transactions known at creation: a later sale or refund never counts (D10a)', () => {
     const order = structuredClone(fixture('order-prepaid-gateway/01-order-read.json'));
+    const later = (id: string, kind: string, amount: string) => ({
+      id: `gid://shopify/OrderTransaction/${id}`,
+      kind,
+      status: 'SUCCESS',
+      gateway: 'Fixture Card Gateway',
+      amountSet: { shopMoney: { amount } },
+    });
+    // A refund that already existed at creation is a creation fact and is netted.
+    order.transactions.push(later('2220000005002', 'REFUND', '60.00'));
     const creationIds = paymentTransactionIdsOf(order);
+    expect(creationIds).toEqual([
+      'gid://shopify/OrderTransaction/2220000005001',
+      'gid://shopify/OrderTransaction/2220000005002',
+    ]);
+    // A goodwill refund and another sale after creation belong to other paths.
     order.transactions.push(
-      {
-        id: 'gid://shopify/OrderTransaction/2220000005003',
-        parentTransaction: null,
-        kind: 'SALE',
-        status: 'SUCCESS',
-        gateway: 'Fixture Card Gateway',
-        amountSet: { shopMoney: { amount: '100.00' } },
-      },
-      {
-        id: 'gid://shopify/OrderTransaction/2220000005004',
-        parentTransaction: { id: 'gid://shopify/OrderTransaction/2220000005001' },
-        kind: 'REFUND',
-        status: 'SUCCESS',
-        gateway: 'Fixture Card Gateway',
-        amountSet: { shopMoney: { amount: '60.00' } },
-      },
+      later('2220000005003', 'SALE', '100.00'),
+      later('2220000005004', 'REFUND', '100.00'),
     );
     const mapped = { ...CONTEXT, gatewayMethods: { 'Fixture Card Gateway': 'instapay' as const } };
     expect(
@@ -292,6 +292,35 @@ describe('planKnownOrder: the payment rederive (lead decision D10, spec 0013 AC-
       }),
     ).toEqual({ paymentMethod: 'instapay', prepaidAmount: '800.00', prepaidMethod: 'instapay' });
   });
+
+  it.each([
+    ['a padded name', '  Fixture Wallet  '],
+    ['a right to left mark', '‏محفظة تجريبية'],
+    ['a 101 character name', `W${'x'.repeat(100)}`],
+  ])(
+    'never rederives %s without a real remap, and does with one (security review N1)',
+    (_, name) => {
+      const order = structuredClone(fixture('order-prepaid-gateway/01-order-read.json'));
+      order.paymentGatewayNames = [name];
+      for (const transaction of order.transactions) transaction.gateway = name;
+      const context = { ...CONTEXT, gatewayMethods: { [name]: 'wallet' as const } };
+      const lines = [{ channelLineId: line('6660000005001'), quantity: 1 }];
+      const state = createdOrderState(order, context, lines, {
+        unmappedLines: [],
+        unmappedGateways: [],
+        discountCodes: [],
+        flags: [],
+      });
+      expect(state.creationGateways).toEqual({ [name]: 'wallet' });
+      expect(planKnownOrder(order, context, state).rederive).toBeNull();
+      const remapped = { ...CONTEXT, gatewayMethods: { [name]: 'instapay' as const } };
+      expect(planKnownOrder(order, remapped, state).rederive).toEqual({
+        paymentMethod: 'instapay',
+        prepaidAmount: '860.00',
+        prepaidMethod: 'instapay',
+      });
+    },
+  );
 
   it('never rederives a mapping written before D10 (no creation facts), nor a locked one', () => {
     const order = fixture('order-created-cod/01-order-read.json');

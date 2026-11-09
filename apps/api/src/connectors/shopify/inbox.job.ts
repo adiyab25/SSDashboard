@@ -574,7 +574,10 @@ export class InboxJob {
     const first = live && cancelReasonCode === null ? firstActiveFulfillmentOf(order) : null;
 
     // The connector's own rows first, then orders (AC-7).
-    const state = createdOrderState(order, base, mapped.input.lines, mapped, first?.id ?? null);
+    // Every order created not cancelled remembers the fulfillment its creation read already holds
+    // (imported shipped ones too), so a later read holds the applied lines (code re-review R1).
+    const delivered = order.cancelledAt === null ? firstActiveFulfillmentOf(order) : null;
+    const state = createdOrderState(order, base, mapped.input.lines, mapped, delivered?.id ?? null);
     const row = await tx.execute<{ id: string }>(sql`
       INSERT INTO connection_external_ids (connection_id, entity, external_id, external_version,
                                            state)

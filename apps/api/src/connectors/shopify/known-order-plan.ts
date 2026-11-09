@@ -7,6 +7,7 @@ import {
   cancelReasonCodeOf,
   creationPaymentOf,
   firstActiveFulfillmentOf,
+  gatewayMethodOf,
   mapShopifyOrderSnapshot,
   type ShopifyMappingNotes,
   type ShopifyOrder,
@@ -62,13 +63,6 @@ export interface KnownOrderPlan {
   readonly rederive: RederivePaymentMethodInput | null;
 }
 
-/** The method the current config gives a gateway name, null when unmapped. */
-function currentMethodOf(context: Pick<ShopifyOrderContext, 'gatewayMethods'>, name: string) {
-  return Object.hasOwn(context.gatewayMethods, name)
-    ? (context.gatewayMethods[name] ?? null)
-    : null;
-}
-
 /**
  * The rederive of lead decision D10: only when the mapping holds the creation facts, is not
  * locked, and the current config maps a creation gateway to another method; then the creation
@@ -83,7 +77,7 @@ function rederiveOf(
   const transactionIds = state.creationTransactionIds;
   if (state.paymentMethodLocked || !gateways || !transactionIds) return null;
   const changed = Object.entries(gateways).some(
-    ([name, method]) => currentMethodOf(context, name) !== method,
+    ([name, method]) => gatewayMethodOf(context, name) !== method,
   );
   if (!changed) return null;
   return creationPaymentOf(order, context, {
