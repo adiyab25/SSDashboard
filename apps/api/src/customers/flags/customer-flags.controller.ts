@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Param, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Header, HttpCode, Param, Post, Put, Req } from '@nestjs/common';
 import {
   CustomerClearFlagRequest,
   CustomerSetFlagRequest,
@@ -34,10 +34,12 @@ export class CustomerFlagsController {
   /**
    * Sets a `manual` flag (200 `{ flag, updatedAt }`). 404 `CUSTOMER_NOT_FOUND`; 409
    * `STALE_RECORD`, `CUSTOMER_MERGED`; 422 `REASON_INVALID`, `NOTE_TOO_LONG`, `VALIDATION_FAILED`.
-   * The id is lower cased first, because Postgres answers ids in lower case.
+   * The id is lower cased first, because Postgres answers ids in lower case. The answer carries the
+   * note, so it is `Cache-Control: no-store`.
    */
   @Permission('customers.flag')
   @Put(':id/flag')
+  @Header('Cache-Control', 'no-store')
   @HttpCode(200)
   async set(
     @Param('id', customerIdPipe()) id: string,

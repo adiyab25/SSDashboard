@@ -9,6 +9,7 @@ The customer search and the To review tab at `/customers`, the customer profile 
 - To review: [merge-suggestions-panel.tsx](merge-suggestions-panel.tsx) (list, load more, dismiss), [merge-suggestions-table.tsx](merge-suggestions-table.tsx) and [merge-pair-customer.tsx](merge-pair-customer.tsx); Merge opens the merge screen with the pair and the suggestion
 - Merge: [merge-page.tsx](merge-page.tsx) (the `customers.merge` gate), [merge-view.tsx](merge-view.tsx) (two slots filled from `?a=&b=&s=` or by finding a customer by phone, the older record preselected, Swap, one Merge button), [merge-customer-picker.tsx](merge-customer-picker.tsx), [merge-customer-card.tsx](merge-customer-card.tsx), [merge-page-href.ts](merge-page-href.ts); [use-merge-actions.ts](use-merge-actions.ts) merges and undoes (the toast with Undo, reason `wrong_merge`) and [merge-error-key.ts](merge-error-key.ts) maps each stable api code to a translated message
 - Profile: [customer-detail-page.tsx](customer-detail-page.tsx) (the access gate), [customer-detail-view.tsx](customer-detail-view.tsx) (header, merged notice, link to merge), and its sections for phones, channel ids, the flag, and merged records ([customer-merges-section.tsx](customer-merges-section.tsx), with Undo while `undoable`)
+- Flag: [customer-flag-actions.tsx](customer-flag-actions.tsx) (Flag, Change, Clear buttons for holders of `customers.flag`), [customer-flag-dialog.tsx](customer-flag-dialog.tsx) (kind, note up to 500, optional reason code), [customer-clear-flag-dialog.tsx](customer-clear-flag-dialog.tsx) (required reason code), [flag-error-key.ts](flag-error-key.ts); a stale record reloads the profile and keeps the dialog open. The Search tab has a Show flagged customers button (`{ flagged: true }`).
 - The api calls and query keys: [customers-api.ts](customers-api.ts)
 - Routes: `src/app/(backoffice)/customers/page.tsx`, `src/app/(backoffice)/customers/merge/page.tsx`, and `src/app/(backoffice)/customers/[id]/page.tsx`
 
@@ -27,10 +28,10 @@ pnpm --filter @ssdashboard/web exec playwright test e2e/customers.spec.ts e2e/cu
 
 ## Governing spec
 
-- [0014 Customers by phone](../../../../docs/specs/0014-customers-by-phone/index.md) (milestones 1 and 2: AC-3, AC-4, AC-5, AC-7, AC-9, AC-18)
+- [0014 Customers by phone](../../../../docs/specs/0014-customers-by-phone/index.md) (milestones 1 to 3: AC-3, AC-4, AC-5, AC-7, AC-9, AC-11, AC-18)
 - [0008 Roles as hats](../../../../docs/specs/0008-roles-as-hats/index.md)
 - [0003 Design system and UI foundation](../../../../docs/specs/0003-design-system-ui-foundation/index.md)
 
 ## Decisions
 
-None yet. The flag and timeline screens arrive with later milestones of spec 0014.
+None yet. The timeline screen arrives with a later milestone of spec 0014.

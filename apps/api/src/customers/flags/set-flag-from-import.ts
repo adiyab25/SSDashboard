@@ -26,6 +26,13 @@ export interface CustomerSets {
  * It writes no audit entry (feature 15 writes its own import entry, carrying its run id). Throws
  * `CUSTOMER_NOT_FOUND` for an unknown id and `CUSTOMER_CHANGED` when a merge moved the id set while
  * it waited for the locks (the import retries the row).
+ *
+ * Ordering rule: the `customer` locks are held until the caller's transaction ends. Prefer one
+ * call per transaction. A transaction that flags several customers must call it in the order of
+ * the canonical lock key (`hashtext` of the canonical id, then the id; the order `lockCustomers`
+ * uses), so two imports never wait on each other in a circle; even then a merge spanning two of
+ * its customers can deadlock with it, so the import retries the whole transaction on a deadlock
+ * (PostgreSQL `40P01`) or on `CUSTOMER_CHANGED`.
  */
 export async function setFlagFromImport(
   tx: Transaction,

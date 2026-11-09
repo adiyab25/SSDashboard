@@ -946,6 +946,299 @@ describe('customers by phone', { timeout: 180_000 }, () => {
           .status,
       ).toBe(403);
     });
+
+    // Review m1: the stamp is the greatest `updated_at` over every id, so absorbing a record moves it.
+    const merge = (survivorId: string, mergedId: string) =>
+      send('POST', '/customers/merges', { survivorId, mergedId });
+    const flagAs = async (id: string, kind: string, setAt = 'now()') =>
+      owner.pool.query(
+        `UPDATE customers SET risk_flag = $2, risk_flag_source = 'blacklist_import',
+                risk_flag_set_at = ${setAt} WHERE id = $1`,
+        [id, kind],
+      );
+    /** Waits until some session waits for an advisory lock, so a held lock is known to block it. */
+    const waitForAdvisoryWaiter = async () => {
+      for (let tries = 0; tries < 200; tries += 1) {
+        const waiting = await count(
+          `SELECT count(*) AS n FROM pg_locks
+           WHERE locktype = 'advisory' AND NOT granted AND classid = $1
+             AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+          [CUSTOMER_LOCK],
+        );
+        if (waiting > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error('No session waited for the customer lock');
+    };
+    /** Runs `during` while an owner transaction holds the customer lock of `id`, then commits it. */
+    const holdingLockOf = async <T>(
+      id: string,
+      blocked: () => Promise<T>,
+      during: (client: {
+        query(text: string, params?: unknown[]): Promise<unknown>;
+      }) => Promise<void>,
+    ): Promise<T> => {
+      const client = await owner.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SELECT pg_advisory_xact_lock($1::int, hashtext($2::text))`, [
+          CUSTOMER_LOCK,
+          id,
+        ]);
+        const pending = blocked();
+        // Keep a refusal from being reported as unhandled before it is awaited below.
+        pending.catch(() => undefined);
+        await waitForAdvisoryWaiter();
+        await during(client);
+        await client.query('COMMIT');
+        return await pending;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+
+    it('moves the stamp when a flagged record is merged in, so a clear with the old stamp is STALE_RECORD and keeps its flag', async () => {
+      const a = (await link({ phone: newPhone() })).customerId as string;
+      const b = (await link({ phone: newPhone() })).customerId as string;
+      await setFlag(a, { kind: 'returner', expectedUpdatedAt: await stampOf(a) });
+      await flagAs(b, 'fake');
+      const old = await stampOf(a);
+
+      expect((await merge(a, b)).status).toBe(201);
+      const moved = await stampOf(a);
+      expect(moved > old).toBe(true);
+
+      const cleared = await clearFlag(a, { reasonCode: 'flag_mistaken', expectedUpdatedAt: old });
+      const set = await setFlag(a, { kind: 'abusive', expectedUpdatedAt: old });
+
+      expect(cleared.status).toBe(409);
+      expect(cleared.body).toMatchObject({ code: 'STALE_RECORD' });
+      expect(set.status).toBe(409);
+      expect(set.body).toMatchObject({ code: 'STALE_RECORD' });
+      expect(await row(b)).toMatchObject({
+        risk_flag: 'fake',
+        risk_flag_source: 'blacklist_import',
+      });
+      expect(await row(a)).toMatchObject({ risk_flag: 'returner', risk_flag_source: 'manual' });
+
+      // With the stamp after the merge, both flags go, and the set answers the profile's stamp.
+      const fresh = await setFlag(a, { kind: 'abusive', expectedUpdatedAt: moved });
+      expect(fresh.status).toBe(200);
+      const answer = CustomerSetFlagResponse.parse(fresh.body);
+      expect(answer.updatedAt).toBe(await stampOf(a));
+      expect(
+        (await clearFlag(b, { reasonCode: 'flag_mistaken', expectedUpdatedAt: answer.updatedAt }))
+          .status,
+      ).toBe(204);
+      for (const id of [a, b]) expect((await row(id))?.risk_flag).toBeNull();
+    });
+
+    it('lists a customer whose only flag sits on a merged record in the flagged list, once, by that flag time', async () => {
+      const a = (await link({ phone: newPhone(), name: 'Mergedflag only' })).customerId as string;
+      const severe = (await link({ phone: newPhone() })).customerId as string;
+      const mild = (await link({ phone: newPhone() })).customerId as string;
+      const twin = (await link({ phone: newPhone(), name: 'Mergedflag twin' }))
+        .customerId as string;
+      // The most severe merged flag is a's canonical flag; `twin` holds its own flag at the same time.
+      await flagAs(severe, 'fake', `'2099-01-01T00:00:00Z'`);
+      await flagAs(mild, 'returner', `'2099-06-01T00:00:00Z'`);
+      await flagAs(twin, 'refuser', `'2099-01-01T00:00:00Z'`);
+      await owner.pool.query(
+        `UPDATE customers SET merged_into_id = $2 WHERE id = ANY($1::uuid[])`,
+        [[severe, mild], a],
+      );
+
+      const ids: string[] = [];
+      const kinds = new Map<string, string | null>();
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const page = CustomerSearchResponse.parse(
+          (await search({ flagged: true, limit: 1, ...(cursor && { cursor }) })).body,
+        );
+        ids.push(...page.items.map((item) => item.id));
+        for (const item of page.items) kinds.set(item.id, item.flagKind);
+        cursor = page.nextCursor ?? undefined;
+        pages += 1;
+      } while (cursor && pages < 2);
+      // The two customers flagged on 2099-01-01 come first, a and twin, in one order, no repeats.
+      expect([...ids].sort()).toEqual([a, twin].sort());
+      expect(kinds.get(a)).toBe('fake');
+
+      const all: string[] = [];
+      cursor = undefined;
+      pages = 0;
+      do {
+        const page = CustomerSearchResponse.parse(
+          (await search({ flagged: true, limit: 7, ...(cursor && { cursor }) })).body,
+        );
+        all.push(...page.items.map((item) => item.id));
+        cursor = page.nextCursor ?? undefined;
+        pages += 1;
+      } while (cursor && pages < 20);
+      expect(new Set(all).size).toBe(all.length);
+      expect(all.filter((id) => id === a)).toHaveLength(1);
+      expect(all).not.toContain(severe);
+      expect(all).not.toContain(mild);
+      expect(all.slice(0, 2).sort()).toEqual([a, twin].sort());
+    });
+
+    it('answers one 200 and nine STALE_RECORD to ten parallel sets with one stamp, and the same to ten clears', async () => {
+      const id = (await link({ phone: newPhone() })).customerId as string;
+      const stamp = await stampOf(id);
+      const sets = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          setFlag(id, { kind: 'refuser', expectedUpdatedAt: stamp }),
+        ),
+      );
+      expect(sets.filter((reply) => reply.status === 200)).toHaveLength(1);
+      for (const reply of sets.filter((r) => r.status !== 200)) {
+        expect([reply.status, (reply.body as { code: string }).code]).toEqual([
+          409,
+          'STALE_RECORD',
+        ]);
+      }
+
+      const flagged = await stampOf(id);
+      const clears = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          clearFlag(id, { reasonCode: 'policy_review', expectedUpdatedAt: flagged }),
+        ),
+      );
+      expect(clears.filter((reply) => reply.status === 204)).toHaveLength(1);
+      for (const reply of clears.filter((r) => r.status !== 204)) {
+        expect([reply.status, (reply.body as { code: string }).code]).toEqual([
+          409,
+          'STALE_RECORD',
+        ]);
+      }
+      expect(
+        await count(
+          `SELECT count(*) AS n FROM audit_entries WHERE record_id = $1 AND action = 'customer.unflagged'`,
+          [id],
+        ),
+      ).toBe(1);
+    });
+
+    it('refuses a clear that waited while a flagged record was merged in with STALE_RECORD, and keeps that flag', async () => {
+      const a = (await link({ phone: newPhone() })).customerId as string;
+      const b = (await link({ phone: newPhone() })).customerId as string;
+      await setFlag(a, { kind: 'returner', expectedUpdatedAt: await stampOf(a) });
+      await flagAs(b, 'fake');
+      const old = await stampOf(a);
+
+      const cleared = await holdingLockOf(
+        a,
+        () => clearFlag(a, { reasonCode: 'flag_mistaken', expectedUpdatedAt: old }),
+        async (client) => {
+          // The merge commits while the clear waits for the lock (as the owner, the pointer and stamp).
+          await client.query(
+            `UPDATE customers SET merged_into_id = $2, updated_at = now() WHERE id = $1`,
+            [b, a],
+          );
+        },
+      );
+
+      expect(cleared.status).toBe(409);
+      expect(cleared.body).toMatchObject({ code: 'STALE_RECORD' });
+      expect(await row(b)).toMatchObject({ risk_flag: 'fake' });
+      expect(await row(a)).toMatchObject({ risk_flag: 'returner' });
+    });
+
+    it('gives consistent outcomes to a clear racing a real merge, never a 500, and never clears the merged record unseen', async () => {
+      for (let round = 0; round < 5; round += 1) {
+        const a = (await link({ phone: newPhone() })).customerId as string;
+        const b = (await link({ phone: newPhone() })).customerId as string;
+        await setFlag(a, { kind: 'returner', expectedUpdatedAt: await stampOf(a) });
+        await flagAs(b, 'fake');
+        const old = await stampOf(a);
+
+        const [merged, cleared] = await Promise.all([
+          merge(a, b),
+          clearFlag(a, { reasonCode: 'flag_mistaken', expectedUpdatedAt: old }),
+        ]);
+
+        expect(merged.status, merged.text).toBe(201);
+        expect([204, 409]).toContain(cleared.status);
+        if (cleared.status === 409) {
+          expect(cleared.body).toMatchObject({ code: 'STALE_RECORD' });
+          expect((await row(a))?.risk_flag).toBe('returner');
+        } else {
+          expect((await row(a))?.risk_flag).toBeNull();
+        }
+        // Either way b joined after the person's read, so its flag stays.
+        expect((await row(b))?.risk_flag).toBe('fake');
+      }
+    });
+
+    it('setFlagFromImport answers CUSTOMER_CHANGED when a merge moved the id set while it waited', async () => {
+      const a = (await link({ phone: newPhone() })).customerId as string;
+      const b = (await link({ phone: newPhone() })).customerId as string;
+
+      await expect(
+        holdingLockOf(
+          a,
+          () => importFlag(a, 'fake'),
+          async (client) => {
+            await client.query(
+              `UPDATE customers SET merged_into_id = $2, updated_at = now() WHERE id = $1`,
+              [b, a],
+            );
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'CUSTOMER_CHANGED' });
+      expect((await row(a))?.risk_flag).toBeNull();
+      expect(await importFlag(a, 'fake')).toBe('set');
+    });
+
+    it('lets a person replace an import flag, the audit entry carrying the import source before', async () => {
+      const id = (await link({ phone: newPhone() })).customerId as string;
+      expect(await importFlag(id, 'refuser')).toBe('set');
+
+      const set = await setFlag(id, { kind: 'fake', expectedUpdatedAt: await stampOf(id) });
+
+      expect(set.status).toBe(200);
+      expect(await row(id)).toMatchObject({ risk_flag: 'fake', risk_flag_source: 'manual' });
+      const entries = (
+        await owner.pool.query<{ before: unknown; after: unknown }>(
+          `SELECT before, after FROM audit_entries
+           WHERE action = 'customer.flagged' AND record_id = $1`,
+          [id],
+        )
+      ).rows;
+      expect(entries).toEqual([
+        {
+          before: { riskFlag: 'refuser', riskFlagSource: 'blacklist_import' },
+          after: { riskFlag: 'fake', riskFlagSource: 'manual' },
+        },
+      ]);
+    });
+
+    it('strips invisible format characters from the note and answers Cache-Control no-store', async () => {
+      const id = (await link({ phone: newPhone() })).customerId as string;
+      const response = await fetch(`${base}/api/customers/${id}/flag`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', origin: base, cookie: support },
+        body: JSON.stringify({
+          kind: 'abusive',
+          note: '‮ Shouted ​at the courier ⁦',
+          expectedUpdatedAt: await stampOf(id),
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(CustomerSetFlagResponse.parse(await response.json()).flag.note).toBe(
+        'Shouted at the courier',
+      );
+      expect((await row(id))?.risk_flag_note).toBe('Shouted at the courier');
+
+      const early = await setFlag(id, { kind: 'fake', expectedUpdatedAt: '0000-01-01T00:00:00Z' });
+      expect(early.status).toBe(422);
+      expect(early.body).toMatchObject({ code: 'VALIDATION_FAILED' });
+    });
   });
 
   describe('caching', () => {

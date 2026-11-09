@@ -6,6 +6,14 @@ import { CustomerFlagView } from './customer-views.js';
 const Timestamp = z.iso.datetime({ offset: true });
 
 /**
+ * The stamp a person sends back: an ISO timestamp from 1970 on. An earlier one was never issued,
+ * and a year PostgreSQL cannot read would otherwise fail in the database instead of answering 422.
+ */
+const ExpectedStamp = Timestamp.refine((value) => Date.parse(value) >= 0, {
+  message: 'The stamp is not one the api issued',
+});
+
+/**
  * The most characters a flag note may hold (spec 0014 AC-11). The note is personal data (Law
  * 151): it lives only on the customer row and never reaches a log line, an error, or an audit
  * entry. A longer note is 422 `NOTE_TOO_LONG`.
@@ -13,16 +21,27 @@ const Timestamp = z.iso.datetime({ offset: true });
 export const CUSTOMER_FLAG_NOTE_MAX = 500;
 
 /**
+ * A flag note as stored: invisible format characters (`\p{Cf}`, such as direction marks) removed,
+ * then trimmed, then held to `CUSTOMER_FLAG_NOTE_MAX`, so the cap counts what is kept.
+ */
+const FlagNote = z
+  .string()
+  .overwrite((value) => value.replace(/\p{Cf}/gu, ''))
+  .trim()
+  .max(CUSTOMER_FLAG_NOTE_MAX);
+
+/**
  * `PUT /api/customers/:id/flag` (spec 0014 AC-11): sets a `manual` flag of `kind` on the
  * canonical customer, with an optional note and an optional reason code. `expectedUpdatedAt` is
  * the profile's `updatedAt`, sent back exactly (409 `STALE_RECORD` when it moved on). A null or
- * blank note stores no note. The id must be canonical (409 `CUSTOMER_MERGED` otherwise).
+ * blank note stores no note; the note is cleaned of invisible format characters and trimmed before
+ * its length is checked. The id must be canonical (409 `CUSTOMER_MERGED` otherwise).
  */
 export const CustomerSetFlagRequest = z.strictObject({
   kind: CustomerRiskFlag,
-  note: z.string().max(CUSTOMER_FLAG_NOTE_MAX).nullable().optional(),
+  note: FlagNote.nullable().optional(),
   reasonCode: CustomerFlagReasonCode.optional(),
-  expectedUpdatedAt: Timestamp,
+  expectedUpdatedAt: ExpectedStamp,
 });
 /** The validated shape of `CustomerSetFlagRequest`. */
 export type CustomerSetFlagRequest = z.infer<typeof CustomerSetFlagRequest>;
@@ -45,7 +64,7 @@ export type CustomerSetFlagResponse = z.infer<typeof CustomerSetFlagResponse>;
  */
 export const CustomerClearFlagRequest = z.strictObject({
   reasonCode: CustomerUnflagReasonCode,
-  expectedUpdatedAt: Timestamp,
+  expectedUpdatedAt: ExpectedStamp,
 });
 /** The validated shape of `CustomerClearFlagRequest`. */
 export type CustomerClearFlagRequest = z.infer<typeof CustomerClearFlagRequest>;

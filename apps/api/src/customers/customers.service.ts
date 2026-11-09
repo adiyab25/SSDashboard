@@ -152,7 +152,10 @@ export class CustomersService {
    * rule flag, and answers `set`; when any id of the customer holds a `manual` flag it writes
    * nothing and answers `kept_manual`. It writes no audit entry: the import writes its own,
    * carrying `importRunId`, which the customer row has no column for. Pass the caller's
-   * transaction. See {@link setFlagFromImport}.
+   * transaction. Throws `CUSTOMER_NOT_FOUND` for an unknown id and `CUSTOMER_CHANGED` when a merge
+   * moved the customer's id set while it waited for the locks (retry the row). One call per
+   * transaction, or several in the order of the canonical lock key, retrying the transaction on a
+   * deadlock or `CUSTOMER_CHANGED`. See {@link setFlagFromImport}.
    */
   setFlagFromImport(
     tx: Transaction,

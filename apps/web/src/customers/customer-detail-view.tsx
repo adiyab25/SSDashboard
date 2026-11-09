@@ -13,6 +13,7 @@ import { ApiError } from '@/api/client';
 import { useFormat } from '@/i18n/use-format';
 import { CustomerChannelIdsSection } from './customer-channel-ids-section';
 import { CustomerDetailSkeleton } from './customer-detail-skeleton';
+import { CustomerFlagActions } from './customer-flag-actions';
 import { CustomerFlagBadge } from './customer-flag-badge';
 import { CustomerFlagSection } from './customer-flag-section';
 import { CustomerMergesSection } from './customer-merges-section';
@@ -105,19 +106,23 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
         <p className="text-sm text-muted-foreground">
           {t('customers.profile.since', { date: format.date(profile.createdAt) })}
         </p>
-        {access.can('customers.merge') && (
-          <Button asChild size="sm" variant="outline" className="mt-2 self-start">
-            <Link href={mergePageHref(profile.id)}>
-              <GitMergeIcon aria-hidden data-icon="inline-start" />
-              {t('customers.profile.merges.mergeWith')}
-            </Link>
-          </Button>
-        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {access.can('customers.merge') && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={mergePageHref(profile.id)}>
+                <GitMergeIcon aria-hidden data-icon="inline-start" />
+                {t('customers.profile.merges.mergeWith')}
+              </Link>
+            </Button>
+          )}
+          {access.can('customers.flag') && <CustomerFlagActions profile={profile} />}
+        </div>
       </header>
+
+      <CustomerFlagSection flag={profile.flag} />
 
       <CustomerPhonesSection phones={profile.phones} />
       <CustomerChannelIdsSection ids={profile.channelIds} />
-      <CustomerFlagSection flag={profile.flag} />
       <CustomerMergesSection merges={profile.merges} />
     </div>
   );

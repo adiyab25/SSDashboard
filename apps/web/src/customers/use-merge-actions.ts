@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { customerKeys, mergeCustomers, undoCustomerMerge } from './customers-api';
 import { mergeErrorKey, type MergeErrorKey } from './merge-error-key';
 
@@ -47,7 +48,7 @@ export function useMergeActions(): MergeActions {
         toast.error(t(key));
         return key;
       } finally {
-        await queryClient.invalidateQueries({ queryKey: customerKeys.all });
+        await refetchAfterWrite(queryClient, { queryKey: customerKeys.all });
       }
     },
     [t, queryClient],
@@ -65,7 +66,7 @@ export function useMergeActions(): MergeActions {
       } finally {
         // Not awaited: the merge page navigates away at once, and waiting for the refetch would
         // show the merged slot answering with the survivor (a false "already the same customer").
-        void queryClient.invalidateQueries({ queryKey: customerKeys.all });
+        void refetchAfterWrite(queryClient, { queryKey: customerKeys.all });
       }
     },
     [t, queryClient, undo],
