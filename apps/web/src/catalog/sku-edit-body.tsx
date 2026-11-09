@@ -25,6 +25,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useAccess } from '@/access/use-access';
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { ConfirmActionDialog } from '@/inventory/confirm-action-dialog';
 import {
   changeSkuCode,
@@ -126,16 +127,18 @@ export function SkuEditBody({
   }, [adoptedSku, form, codeForm]);
   const codeErrors = codeForm.formState.errors;
 
+  // `refetchAfterWrite`, not a plain invalidation: a list search typed just before Save can still
+  // be on its way with the old row, and an invalidation would keep that answer.
   const stored = (next: SkuDetail) => {
     queryClient.setQueryData(inventoryKeys.sku(next.id), next);
-    void queryClient.invalidateQueries({ queryKey: inventoryKeys.skus });
+    void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.skus });
   };
 
   // A rename or code change shows in stock and receipt lines too.
   const storedEverywhere = (next: SkuDetail) => {
     stored(next);
-    void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
-    void queryClient.invalidateQueries({ queryKey: inventoryKeys.receiptsRoot });
+    void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.stockAll });
+    void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.receiptsRoot });
   };
 
   const save = useMutation({
