@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
@@ -46,6 +47,10 @@ export const locations = pgTable(
     /** Only these locations feed the portal and Shopify; the policy table says where it may be true. */
     sellableOnline: boolean('sellable_online').notNull().default(false),
     allowNegative: boolean('allow_negative').notNull().default(false),
+    /** When the location's stock was confirmed counted (the online gate's "stock counted" fact, spec 0011 AC-19). */
+    stockVerifiedAt: timestamp('stock_verified_at', { withTimezone: true }),
+    /** Who confirmed it. */
+    stockVerifiedBy: uuid('stock_verified_by').references(() => users.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: archivedAt(),
@@ -53,6 +58,18 @@ export const locations = pgTable(
   (t) => [
     unique('locations_code_unique').on(t.tenantId, t.code),
     index('locations_party_idx').on(t.partyId),
+    // Foreign key index: stock_verified_by (spec 0011 task 1).
+    index('locations_stock_verified_by_idx')
+      .on(t.stockVerifiedBy)
+      .where(sql`${t.stockVerifiedBy} IS NOT NULL`),
+    // Spec 0011 AC-1: only a sellable warehouse is ever online, and at most one active location is.
+    check(
+      'locations_online_needs_warehouse',
+      sql`NOT ${t.sellableOnline} OR (${t.kind} = 'warehouse' AND ${t.isSellable})`,
+    ),
+    uniqueIndex('locations_one_online')
+      .on(t.tenantId)
+      .where(sql`${t.sellableOnline} AND ${t.archivedAt} IS NULL`),
     check('locations_party_matches_owner', sql`(${t.ownerType} = 'own') = (${t.partyId} IS NULL)`),
   ],
 );

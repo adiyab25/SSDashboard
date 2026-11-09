@@ -92,6 +92,27 @@
       "when": 1794138202431,
       "tag": "0012_owner_policy_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794182545287,
+      "tag": "0013_online_flag_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794182566935,
+      "tag": "0014_online_location_and_transfer_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794182571969,
+      "tag": "0015_stock_transfer_rules",
+      "breakpoints": true
     }
   ]
 }

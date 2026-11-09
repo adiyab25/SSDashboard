@@ -25,6 +25,7 @@ import {
 } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import type { z } from 'zod';
+import { auditHttpError } from '../../audit/audit-http.js';
 import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
 import type { Access } from '../../platform/access/access.js';
 import { CurrentAccess } from '../../platform/access/current-access.decorator.js';
@@ -65,6 +66,23 @@ export function locationHttpError(error: unknown, response?: Response): unknown 
         return new ConflictException({ code: 'STOCK_ON_HAND', message: error.message });
       case 'InUse':
         return new ConflictException({ code: 'IN_USE', message: error.message });
+      case 'AlreadyConfirmed':
+        return new ConflictException({ code: 'ALREADY_CONFIRMED', message: error.message });
+      case 'OnlineGateFailed':
+        return new ConflictException({
+          code: 'ONLINE_GATE_FAILED',
+          message: error.message,
+          ...error.details,
+        });
+      case 'OnlineGateStale':
+        return new ConflictException({ code: 'ONLINE_GATE_STALE', message: error.message });
+      case 'OnlineNeedsWarehouse':
+        return new UnprocessableEntityException({
+          code: 'ONLINE_NEEDS_WAREHOUSE',
+          message: error.message,
+        });
+      case 'NoOnlineLocation':
+        return new ConflictException({ code: 'NO_ONLINE_LOCATION', message: error.message });
     }
   }
   if (error instanceof LocationPolicyError) {
@@ -91,11 +109,11 @@ export function locationHttpError(error: unknown, response?: Response): unknown 
   if (error instanceof InvalidCursorError) {
     return new BadRequestException({ code: 'INVALID_QUERY', message: error.message });
   }
-  return ledgerHttpError(error, response);
+  return auditHttpError(error) ?? ledgerHttpError(error, response);
 }
 
 /** A malformed id is a location that does not exist: 404, never 400. */
-const locationId = () =>
+export const locationId = () =>
   new ParseUUIDPipe({
     exceptionFactory: () => new NotFoundException({ code: 'NOT_FOUND', message: 'Not found' }),
   });

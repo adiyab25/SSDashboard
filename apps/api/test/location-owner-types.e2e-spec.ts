@@ -12,6 +12,9 @@ import {
   LocationsService,
   type LocationCaller,
 } from '../src/inventory/locations/locations.service.js';
+import { OnlineLocationService } from '../src/inventory/locations/online-location.service.js';
+import { OnlineStockGate } from '../src/inventory/online-stock/online-stock-gate.js';
+import { OnlineStockService } from '../src/inventory/online-stock/online-stock.service.js';
 import { PartnerAccounts } from '../src/partners/partner-accounts.service.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import {
@@ -80,6 +83,8 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
   let make: ReturnType<typeof fixtures>;
   let policies: LocationPolicyService;
   let locations: LocationsService;
+  /** The gated actions that move the online flag (spec 0011 AC-19). */
+  let online: OnlineLocationService;
   let counter = 0;
   /** The manager the archives and edits are recorded for (spec 0010). */
   let admin: LocationCaller;
@@ -89,6 +94,14 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
     make = fixtures(h.owner);
     policies = new LocationPolicyService(h.app, new PartnerAccounts(h.app));
     locations = new LocationsService(h.app, h.ledger, policies, new AuditService());
+    online = new OnlineLocationService(
+      h.app,
+      new OnlineStockService(h.app),
+      new OnlineStockGate(),
+      policies,
+      locations,
+      new AuditService(),
+    );
     admin = { id: await make.user(), access: { actingHat: () => 'manager' } };
   });
 
@@ -230,33 +243,37 @@ describe('location owner types: the three way test (AC-29)', { timeout: 60_000 }
     it('refuses online selling where the policy forbids it', async () => {
       const partner = SCENARIOS[1];
       if (!partner) throw new Error('scenario table changed');
+      counter += 1;
+      const warehouse = await locations.create({
+        code: `NSO-${counter}`,
+        name: { en: 'x' },
+        kind: 'warehouse',
+        ownerType: partner.ownerType,
+        partyId: await party('is_consignment_partner'),
+      });
+      expect(warehouse.sellableOnline).toBe(false);
       await expect(
-        locations.create({
-          code: 'NSO-1',
-          name: { en: 'x' },
-          kind: 'shop',
-          ownerType: partner.ownerType,
-          partyId: await party('is_consignment_partner'),
-          sellableOnline: true,
-        }),
-      ).rejects.toMatchObject({ code: 'NotSellableOnline' });
-
-      const shop = await newShop(partner);
-      await expect(
-        locations.update(shop.id, { updatedAt: shop.updatedAt, sellableOnline: true }, admin),
+        online.makeOnline(warehouse.id, { confirmedVariantCount: 0, reason: 'Test' }, admin),
       ).rejects.toBeInstanceOf(LocationPolicyError);
     });
 
     it('lets the brand own location feed online channels', async () => {
       const own = SCENARIOS[0];
       if (!own) throw new Error('scenario table changed');
-      const shop = await locations.create({
+      const warehouse = await locations.create({
         code: 'NSO-OWN',
         name: { en: 'x' },
-        kind: 'shop',
-        sellableOnline: true,
+        kind: 'warehouse',
       });
-      expect(shop).toMatchObject({ ownerType: own.ownerType, sellableOnline: true });
+      await h.owner.pool.query('UPDATE locations SET stock_verified_at = now() WHERE id = $1', [
+        warehouse.id,
+      ]);
+      const moved = await online.makeOnline(
+        warehouse.id,
+        { confirmedVariantCount: 0, reason: 'Test' },
+        admin,
+      );
+      expect(moved).toMatchObject({ ownerType: own.ownerType, sellableOnline: true, online: true });
     });
 
     it('refuses a party whose role does not fit, a missing party, and a party on the brand location', async () => {

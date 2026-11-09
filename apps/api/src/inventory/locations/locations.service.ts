@@ -48,17 +48,31 @@ const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
  * locked by use, stock still on hand, or still referenced.
  */
 export type LocationErrorCode =
-  'NotFound' | 'CodeTaken' | 'Stale' | 'CodeLocked' | 'StockOnHand' | 'InUse';
+  | 'NotFound'
+  | 'CodeTaken'
+  | 'Stale'
+  | 'CodeLocked'
+  | 'StockOnHand'
+  | 'InUse'
+  | 'AlreadyConfirmed'
+  | 'OnlineGateFailed'
+  | 'OnlineGateStale'
+  | 'OnlineNeedsWarehouse'
+  | 'NoOnlineLocation';
 
 /**
  * A location rule the caller broke (AC-4); the controller maps `code` to an HTTP answer. The
  * seeded transit and virtual locations are `NotFound` on every management action.
  */
 export class LocationError extends Error {
-  /** Takes the stable `code` the controller maps to an HTTP answer, and a message safe to show. */
+  /**
+   * Takes the stable `code` the controller maps to an HTTP answer, a message safe to show, and
+   * optional `details` the answer carries (the failed gate keys of `OnlineGateFailed`).
+   */
   constructor(
     readonly code: LocationErrorCode,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'LocationError';
@@ -94,22 +108,30 @@ export function decodeCursor(cursor: string): string {
 /** Only warehouses and shops are listed or managed; transit and virtual are system rows. */
 const WORK_KIND = sql`kind IN ('warehouse', 'shop')`;
 
-interface LocationRow extends Record<string, unknown> {
+/** A location row as `LOCATION_COLUMNS` selects it. */
+export interface LocationRow extends Record<string, unknown> {
   id: string;
   code: string;
   name: { en?: string; ar?: string };
   kind: 'warehouse' | 'shop';
   owner_type: LocationOwnerType;
   sellable_online: boolean;
+  online: boolean;
+  stock_verified_at: string | null;
   archived: boolean;
   updated_at: string;
 }
 
-const LOCATION_COLUMNS = sql`
-  id, code, name, kind, owner_type, sellable_online, archived_at IS NOT NULL AS archived,
+/** The columns every location answer selects (`toDetail` reads them). */
+export const LOCATION_COLUMNS = sql`
+  id, code, name, kind, owner_type, sellable_online,
+  (sellable_online AND archived_at IS NULL) AS online,
+  to_char(stock_verified_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS stock_verified_at,
+  archived_at IS NOT NULL AS archived,
   to_char(updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
 
-function toDetail(row: LocationRow, codeLocked: boolean): LocationDetail {
+/** A location row as the detail answer of the list and the management routes. */
+export function toDetail(row: LocationRow, codeLocked: boolean): LocationDetail {
   return {
     id: row.id,
     code: row.code,
@@ -117,6 +139,8 @@ function toDetail(row: LocationRow, codeLocked: boolean): LocationDetail {
     kind: row.kind === 'shop' ? 'shop' : 'warehouse',
     ownerType: row.owner_type,
     sellableOnline: row.sellable_online,
+    online: row.online,
+    stockVerifiedAt: row.stock_verified_at,
     archived: row.archived,
     updatedAt: row.updated_at,
     codeLocked,
@@ -225,9 +249,10 @@ export class LocationsService {
   }
 
   /**
-   * Creates a sellable warehouse or shop that does not allow negative stock (AC-4, AC-29). The
+   * Creates a sellable warehouse or shop that does not allow negative stock and is never online
+   * (AC-4, AC-29; the online flag moves only through the gate, spec 0011 AC-1). The
    * owner type defaults to the brand's own; the policy service refuses a party whose roles do not
-   * fit it (`PartyRoleMismatch`) and online selling it forbids (`NotSellableOnline`). The check and
+   * fit it (`PartyRoleMismatch`). The check and
    * the insert run in one transaction and the party row is read `FOR SHARE`, so a party archived
    * or stripped of its role at the same moment cannot be linked. It runs through
    * `ledgerTransaction`, so a lock wait is capped at 5 seconds and answers `LockTimeout` (503, as
@@ -241,7 +266,7 @@ export class LocationsService {
         INSERT INTO locations (code, name, kind, owner_type, party_id, sellable_online, is_sellable, allow_negative)
         VALUES (${input.code}, ${JSON.stringify(input.name)}::jsonb, ${input.kind},
                 ${input.ownerType ?? sql`DEFAULT`}, ${input.partyId ?? null},
-                ${input.sellableOnline ?? false}, true, false)
+                false, true, false)
         RETURNING ${LOCATION_COLUMNS}`);
         const row = rows[0];
         if (!row) throw new Error('The location insert returned no row');
@@ -253,7 +278,7 @@ export class LocationsService {
   }
 
   /**
-   * Edits name, kind, online selling, and code (AC-4) with the stale check on `updatedAt`. A code change first
+   * Edits name, kind, and code (AC-4; online selling changes only through the gate, spec 0011) with the stale check on `updatedAt`. A code change first
    * locks the location against postings (as an archive does), then answers `CodeLocked` once
    * stock was posted there or a receipt names it. The fields that really changed are recorded as
    * one `location.edited` entry in the same transaction (spec 0010, AC-11).
@@ -281,10 +306,6 @@ export class LocationsService {
         }
         if (input.name) sets.push(sql`name = ${JSON.stringify(input.name)}::jsonb`);
         if (input.kind) sets.push(sql`kind = ${input.kind}`);
-        if (input.sellableOnline !== undefined) {
-          if (input.sellableOnline) await this.policy.assertCanSellOnline(id, tx);
-          sets.push(sql`sellable_online = ${input.sellableOnline}`);
-        }
         const { rows } = await tx.execute<LocationRow>(sql`
           UPDATE locations SET ${sql.join(sets, sql`, `)}
           WHERE id = ${id}
@@ -429,6 +450,29 @@ export class LocationsService {
     if (!deleted) throw notFound();
   }
 
+  /**
+   * Records that a location's stock is confirmed counted (spec 0011 AC-19): the gate's "stock
+   * counted" fact. Called by the confirm action here and by feature 15's verify step. Sets
+   * `stock_verified_at` and `stock_verified_by` only while unset and answers whether it did, so a
+   * second call changes nothing. A system location is never confirmed (false).
+   */
+  async recordStockVerified(tx: Transaction, locationId: string, by: string): Promise<boolean> {
+    const { rows } = await tx.execute(sql`
+      UPDATE locations
+      SET stock_verified_at = now(), stock_verified_by = ${by}, updated_at = now()
+      WHERE id = ${locationId} AND ${WORK_KIND} AND stock_verified_at IS NULL
+      RETURNING id`);
+    return rows.length > 0;
+  }
+
+  /** One warehouse or shop as the detail answer, or null when it does not exist (or is a system row). */
+  async detailOf(tx: Executor, id: string): Promise<LocationDetail | null> {
+    const { rows } = await tx.execute<LocationRow>(sql`
+      SELECT ${LOCATION_COLUMNS} FROM locations WHERE id = ${id} AND ${WORK_KIND}`);
+    const row = rows[0];
+    return row ? toDetail(row, await this.isCodeLocked(tx, id)) : null;
+  }
+
   private async findWork(tx: Transaction, id: string): Promise<LocationRow | null> {
     const { rows } = await tx.execute<LocationRow>(sql`
       SELECT ${LOCATION_COLUMNS} FROM locations WHERE id = ${id} AND ${WORK_KIND}`);
@@ -449,6 +493,7 @@ export class LocationsService {
     const { rows } = await tx.execute<LocationRow>(sql`
       UPDATE locations
       SET archived_at = ${archived ? sql`coalesce(archived_at, now())` : sql`NULL`},
+          sellable_online = ${archived ? sql`false` : sql`sellable_online`},
           updated_at = now()
       WHERE id = ${id}
       RETURNING ${LOCATION_COLUMNS}`);

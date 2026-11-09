@@ -838,6 +838,11 @@ export const en = {
         generic: 'That did not work. Check your connection and try again.',
       },
     },
+    onlineGate: {
+      checks: {
+        stockCounted: 'Stock is confirmed counted at this location',
+      },
+    },
     receipt: {
       newTitle: 'Receive stock',
       newDescription:
@@ -1760,6 +1765,9 @@ export const en = {
       locationEdited: 'Location edited',
       locationArchived: 'Location archived',
       locationUnarchived: 'Location unarchived',
+      locationStockConfirmed: 'Location stock confirmed as counted',
+      locationOnlineMoved: 'Online stock moved to a location',
+      locationOnlineStopped: 'Online stock stopped',
       auditExported: 'Audit trail exported',
       // Every undone entry (`<code>_undone`, spec 0010 task 16) shares this label.
       actionUndone: 'Earlier action undone',

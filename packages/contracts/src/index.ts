@@ -7,6 +7,7 @@ export * from './inventory.js';
 export * from './localized-text.js';
 export * from './locations.js';
 export * from './money.js';
+export * from './online-stock.js';
 export * from './partner-users.js';
 export * from './platform.js';
 export * from './staff.js';

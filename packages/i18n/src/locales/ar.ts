@@ -834,6 +834,11 @@ export const ar: Catalog = {
         generic: 'لم تنجح العملية. تحقق من اتصالك وحاول مرة أخرى.',
       },
     },
+    onlineGate: {
+      checks: {
+        stockCounted: 'تم تأكيد جرد المخزون في هذا الموقع',
+      },
+    },
     receipt: {
       newTitle: 'استلام مخزون',
       newDescription: 'سجّل ما وصل. الحفظ يرحّل المخزون فورًا ويعطي الإذن رقمًا.',
@@ -1763,6 +1768,9 @@ export const ar: Catalog = {
       locationEdited: 'تعديل موقع',
       locationArchived: 'أرشفة موقع',
       locationUnarchived: 'إلغاء أرشفة موقع',
+      locationStockConfirmed: 'تأكيد جرد مخزون موقع',
+      locationOnlineMoved: 'نقل المخزون المباع أونلاين إلى موقع',
+      locationOnlineStopped: 'إيقاف المخزون المباع أونلاين',
       auditExported: 'تصدير سجل المراجعة',
       // Every undone entry (`<code>_undone`, spec 0010 task 16) shares this label.
       actionUndone: 'التراجع عن إجراء سابق',

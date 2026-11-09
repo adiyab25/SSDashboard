@@ -272,6 +272,8 @@ export const stockLevels = pgTable(
       foreignColumns: [lots.id, lots.variantId],
     }).onDelete('restrict'),
     index('stock_levels_location_variant_idx').on(t.locationId, t.variantId),
+    // The online change feed reads a location's balances by update time (spec 0011 AC-4).
+    index('stock_levels_location_updated_idx').on(t.locationId, t.updatedAt),
     // Foreign key index: the (bin_id, location_id) key; PostgreSQL does not index it (spec 0002 item 19).
     index('stock_levels_bin_idx')
       .on(t.binId, t.locationId)
@@ -308,11 +310,15 @@ export const reservations = pgTable(
     /** The original quantity. */
     quantity: integer('quantity').notNull(),
     openQuantity: integer('open_quantity').notNull(),
+    /** Demand that could not be held yet; filled first when stock comes back (spec 0011 AC-21). */
+    unfilledQuantity: integer('unfilled_quantity').notNull().default(0),
     sourceType: text('source_type').notNull(),
     sourceId: uuid('source_id').notNull(),
     sourceLineId: uuid('source_line_id').notNull(),
     status: reservationStatus('status').notNull().default('active'),
     createdAt: createdAt(),
+    /** Every reservation write sets it to `now()`; the online change feed reads it (spec 0011 AC-4). */
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
   },
   (t) => [
@@ -334,14 +340,26 @@ export const reservations = pgTable(
     index('reservations_variant_idx').on(t.variantId),
     // Foreign key index: location_id (spec 0002 item 19).
     index('reservations_location_idx').on(t.locationId),
-    check('reservations_quantity_positive', sql`${t.quantity} > 0`),
+    index('reservations_location_updated_idx').on(t.locationId, t.updatedAt),
+    index('reservations_source_idx').on(t.sourceType, t.sourceId),
+    // Oldest waiting demand first (spec 0011 AC-21).
+    index('reservations_waiting_idx')
+      .on(t.variantId, t.locationId, t.createdAt, t.id)
+      .where(sql`${t.status} = 'active' AND ${t.unfilledQuantity} > 0`),
+    // Newest held reservation first, for shortening (spec 0011 AC-22, AC-23).
+    index('reservations_newest_idx')
+      .on(t.variantId, t.locationId, t.createdAt.desc().nullsFirst(), t.id.desc().nullsFirst())
+      .where(sql`${t.status} = 'active' AND ${t.openQuantity} > 0`),
+    check('reservations_quantity_not_negative', sql`${t.quantity} >= 0`),
+    check('reservations_unfilled_not_negative', sql`${t.unfilledQuantity} >= 0`),
+    check('reservations_has_demand', sql`${t.quantity} + ${t.unfilledQuantity} > 0`),
     check(
       'reservations_open_quantity_range',
       sql`${t.openQuantity} >= 0 AND ${t.openQuantity} <= ${t.quantity}`,
     ),
     check(
       'reservations_open_while_active',
-      sql`(${t.status} = 'active') = (${t.openQuantity} > 0)`,
+      sql`(${t.status} = 'active') = (${t.openQuantity} > 0 OR ${t.unfilledQuantity} > 0)`,
     ),
   ],
 );

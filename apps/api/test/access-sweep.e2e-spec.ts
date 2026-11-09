@@ -254,6 +254,28 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['catalog.manage'],
       path: () => `/locations/${ids.locationToChange}`,
     },
+    // Spec 0011 milestone 1 (AC-17, AC-19, AC-20): the online gate routes and the status read. The
+    // bodies are empty, so a person with the permission gets a validation or rule answer, never 5xx.
+    'GET /locations/:id/online-gate': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.location}/online-gate`,
+    },
+    'POST /locations/:id/confirm-stock': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.locationToChange}/confirm-stock`,
+      body: () => ({}),
+    },
+    'POST /locations/:id/make-online': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.locationToChange}/make-online`,
+      body: () => ({}),
+    },
+    'POST /locations/online/stop': {
+      needs: ['catalog.manage'],
+      path: () => '/locations/online/stop',
+      body: () => ({}),
+    },
+    'GET /stock/online-status': { needs: ['stock.view'] },
     'POST /stock-receipts': {
       needs: ['stock.receive'],
       body: () => ({

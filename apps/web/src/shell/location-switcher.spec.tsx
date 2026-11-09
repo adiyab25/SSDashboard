@@ -17,6 +17,8 @@ const DETAIL = {
   codeLocked: false,
   ownerType: 'own',
   sellableOnline: false,
+  online: false,
+  stockVerifiedAt: null,
 };
 const MAIN = {
   ...DETAIL,

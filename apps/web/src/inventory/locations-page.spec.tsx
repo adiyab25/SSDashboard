@@ -43,6 +43,8 @@ const location = (n: number, overrides: Partial<LocationDetail> = {}): LocationD
   archived: false,
   updatedAt: '2026-11-03T10:00:00.654321Z',
   codeLocked: false,
+  online: false,
+  stockVerifiedAt: null,
   ...overrides,
 });
 

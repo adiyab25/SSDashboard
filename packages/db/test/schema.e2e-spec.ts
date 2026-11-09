@@ -460,6 +460,26 @@ describe('core data model schema (spec 0002)', () => {
           params: [receipt.id],
         };
       },
+      stock_transfers: async () => {
+        const { groupId } = await makeMovement();
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('T', $1) RETURNING id",
+          [`transfer-${counter}@example.test`],
+        );
+        const transfer = await one<{ id: string }>(
+          owner,
+          `INSERT INTO stock_transfers (id, number, kind, from_location_id, to_location_id, request_hash, movement_group_id, effective_at, posted_by)
+           VALUES (gen_random_uuid(), $1, 'send_to_partner', $2, $3, 'h', $4, now(), $5) RETURNING id`,
+          [`TR-T-${counter}`, await makeLocation(), await makeLocation(), groupId, user.id],
+        );
+        return {
+          update: "UPDATE stock_transfers SET reference = 'x' WHERE id = $1",
+          remove: 'DELETE FROM stock_transfers WHERE id = $1',
+          params: [transfer.id],
+        };
+      },
       order_events: async () => {
         counter += 1;
         const order = await one<{ id: string }>(
@@ -761,6 +781,22 @@ describe('core data model schema (spec 0002)', () => {
            VALUES ($1, 'closed', '{"statement_total": "0.00"}', 'rule', $2)
            RETURNING recorded_at < now() + interval '1 minute' AS stamped`,
           [period.id, FUTURE],
+        );
+      },
+      stock_transfers: async () => {
+        const { groupId } = await makeMovement();
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('T', $1) RETURNING id",
+          [`transfer-stamp-${counter}@example.test`],
+        );
+        return one(
+          app,
+          `INSERT INTO stock_transfers (id, number, kind, from_location_id, to_location_id, request_hash, movement_group_id, effective_at, posted_by, recorded_at)
+           VALUES (gen_random_uuid(), $1, 'send_to_partner', $2, $3, 'h', $4, now(), $5, $6)
+           RETURNING recorded_at = now() AS stamped`,
+          [`TR-S-${counter}`, await makeLocation(), await makeLocation(), groupId, user.id, FUTURE],
         );
       },
       // Spec 0009: a recorded license's instant is the database's too.
