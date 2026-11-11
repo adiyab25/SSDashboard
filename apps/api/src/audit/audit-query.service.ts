@@ -15,7 +15,7 @@ import { StaffDirectory } from '../identity/staff/staff-directory.js';
 import type { Access } from '../platform/access/access.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
 import {
-  auditDiffFor,
+  auditDiffsFor,
   COST_ENTRY_ACTIONS,
   serializeAuditDetail,
   serializeAuditEntry,
@@ -349,7 +349,7 @@ export class AuditQueryService {
    * actor names (spec 0010, AC-15). The caller closes the generator (a `for await` that stops
    * early does) when its reader goes away. Refuses a viewer without `audit.export`
    * (`AuditReadForbidden`, on the first read) and leaves cost fields out of each row's `before`
-   * and `after` for one without `cost.view` (`auditDiffFor`).
+   * and `after` for one without `cost.view` (`auditDiffsFor`, which also redacts a holder's export entry).
    */
   async *exportBatches(
     query: AuditExportQuery,
@@ -381,8 +381,7 @@ export class AuditQueryService {
       yield rows.map((row) => ({
         row: {
           ...row,
-          before: auditDiffFor(row.before, showCost),
-          after: auditDiffFor(row.after, showCost),
+          ...auditDiffsFor(row, showCost),
         },
         localAt: row.local_at,
         actorName: row.actor_user_id ? (names.get(row.actor_user_id) ?? null) : null,

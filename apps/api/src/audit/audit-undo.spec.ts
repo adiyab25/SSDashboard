@@ -262,15 +262,35 @@ describe('AuditUndoService', () => {
   };
 
   /** The service over a transaction that answers `results` in order. */
+  /** A statement as text: literal SQL kept, a bound string as `'value'`, any other value as `?`. */
+  function statementText(query: unknown): string {
+    const chunks = (query as { queryChunks?: unknown[] }).queryChunks ?? [];
+    return chunks
+      .map((chunk): string => {
+        if (typeof chunk === 'object' && chunk !== null) {
+          const value = (chunk as { value?: unknown }).value;
+          if (Array.isArray(value)) return value.join('');
+          if (Array.isArray((chunk as { queryChunks?: unknown }).queryChunks)) {
+            return statementText(chunk);
+          }
+        }
+        return typeof chunk === 'string' ? `'${chunk}'` : '?';
+      })
+      .join('');
+  }
+
   function serviceWith(results: { rows: unknown[] }[], undos: AuditUndoRegistry) {
     const statements: unknown[] = [];
     const execute = vi.fn((query: unknown) => {
       statements.push(query);
       return Promise.resolve(results.shift() ?? { rows: [] });
     });
-    const tx = { execute } as unknown as Transaction;
+    const tx = { execute };
     const connection = {
-      db: { transaction: (work: (t: Transaction) => Promise<unknown>) => work(tx) },
+      db: {
+        transaction: (work: (t: Transaction) => Promise<unknown>) =>
+          work(tx as unknown as Transaction),
+      },
     } as unknown as DatabaseConnection;
     const write = vi.fn<AuditUndoneWriter['write']>(() => Promise.resolve(written));
     const writer = { write } as unknown as AuditUndoneWriter;
@@ -304,7 +324,7 @@ describe('AuditUndoService', () => {
 
   // Spec 0012 AC-17, the owner's ruling of 2026-11-11 "Hide whole entry": a cost entry is
   // missing to an undoer without cost.view, never "not undoable", so its existence never leaks.
-  it('answers a cost entry as missing to an undoer without cost.view, and as not undoable with it', async () => {
+  it('reads the target under the visibility condition, so a cost entry is missing without cost.view, and not undoable with it', async () => {
     const undos = new AuditUndoRegistry();
     const cost = target({
       action: 'cost_record.recorded',
@@ -313,9 +333,18 @@ describe('AuditUndoService', () => {
     });
     const noCost = { ...viewer, has: (permission: string) => permission !== 'cost.view' };
 
-    await expect(
-      serviceWith(reads(cost), undos).service.undo(ID, noCost, 'wrong'),
-    ).rejects.toBeInstanceOf(AuditEntryNotFound);
+    // The database applies the condition; the fake answers no row to a statement that carries it.
+    const hidden = serviceWith([{ rows: [] }, { rows: [] }], undos);
+    await expect(hidden.service.undo(ID, noCost, 'wrong')).rejects.toBeInstanceOf(
+      AuditEntryNotFound,
+    );
+    const targetRead = statementText(hidden.tx.execute.mock.calls[1]?.[0]);
+    expect(targetRead).toContain(
+      `NOT (audit_entries.action = ANY('{"cost_record.recorded"}'::text[]))`,
+    );
+    const holderRead = serviceWith(reads(cost), undos);
+    await expect(holderRead.service.undo(ID, viewer, 'wrong')).rejects.toBeInstanceOf(NotUndoable);
+    expect(statementText(holderRead.tx.execute.mock.calls[1]?.[0])).not.toContain('NOT (');
     await expect(
       serviceWith(reads(cost), undos).service.undo(ID, viewer, 'wrong'),
     ).rejects.toBeInstanceOf(NotUndoable);

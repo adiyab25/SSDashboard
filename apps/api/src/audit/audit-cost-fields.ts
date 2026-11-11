@@ -1,4 +1,5 @@
 import {
+  AUDIT_ACTIONS,
   COST_FIELD_KEYS,
   type AuditEntryDetail,
   type AuditEntryListResponse,
@@ -75,29 +76,67 @@ export function auditDiffFor(
  * The action codes whose whole entry is a cost (spec 0012 AC-17, the owner's ruling of 2026-11-11
  * "Hide whole entry"): a cost record's entry carries the amount and a reason typed next to it, so
  * a reader without `cost.view` never sees such an entry at all, in any list, history, detail,
- * undo, count, or export. None of them is undoable, so no undone code is listed.
+ * undo, count, or export. Derived from the registry's `costEntry` flag, so a new cost action
+ * cannot be forgotten here. None of them is undoable, so no undone code is listed.
  */
-export const COST_ENTRY_ACTIONS: readonly string[] = ['cost_record.recorded'];
+export const COST_ENTRY_ACTIONS: readonly string[] = Object.entries(AUDIT_ACTIONS)
+  .filter(([, definition]) => 'costEntry' in definition)
+  .map(([code]) => code);
 
 const COST_ENTRY_ACTION_SET: ReadonlySet<string> = new Set(COST_ENTRY_ACTIONS);
 
 /**
- * Whether a reader may see an entry of `action` at all: always with `showCost`, else only when
- * the action is not in `COST_ENTRY_ACTIONS`. Pure. The readers filter these entries out in SQL
- * (`visibleEntries` in `audit-query.service.ts`) so paging stays whole; this is the same rule for
- * a row already read (the undo's target).
+ * What a reader without `cost.view` sees as the `after` of an `audit.exported` entry whose export
+ * could have included a cost entry: the filter and `rows` are dropped, since either would tell
+ * them a cost entry exists. Who exported, when, and the reason stay visible (oversight).
  */
-export function isEntryVisible(action: string, showCost: boolean): boolean {
-  return showCost || !COST_ENTRY_ACTION_SET.has(action);
+export const REDACTED_EXPORT_AFTER: Readonly<Record<string, unknown>> = { redacted: true };
+
+/**
+ * Whether an `audit.exported` entry's `after` (the export filter, `rows`, and `costVisible`)
+ * belongs to an export that could have included a cost entry: the export ran with cost
+ * visibility (`costVisible: true`, written when the exporter held `cost.view`) and its action
+ * filter is a cost entry action or absent. An export by someone without `cost.view` never held
+ * one, and an export filtered to another action holds none, so both stay complete. A legacy entry
+ * has no marker and counts as not cost visible: no cost entry exists on any install before spec
+ * 0012 milestone 3 ships, so such an export cannot have held one. The marker stays visible in an
+ * entry that is not redacted (it only says the exporter held the grant, which the actor's hat
+ * already shows). Pure.
+ */
+export function exportMayHaveHeldCostEntries(after: Record<string, unknown> | null): boolean {
+  if (after?.['costVisible'] !== true) return false;
+  const action = after['action'];
+  return typeof action !== 'string' || COST_ENTRY_ACTION_SET.has(action);
+}
+
+/** Whether an entry is redacted for a reader without `cost.view`: an export that may hold cost. */
+function isRedactedExport(entry: Pick<AuditEntryView, 'action' | 'after'>): boolean {
+  return entry.action === 'audit.exported' && exportMayHaveHeldCostEntries(entry.after);
+}
+
+/**
+ * The `before` and `after` of a row as a reader may see them in an export file or a list: cost
+ * keys stripped (`auditDiffFor`) and, for a reader without `cost.view`, a holder's export's
+ * filter and `rows` redacted (`REDACTED_EXPORT_AFTER`). Pure.
+ */
+export function auditDiffsFor(
+  row: {
+    action: string;
+    before: Record<string, unknown> | null;
+    after: Record<string, unknown> | null;
+  },
+  showCost: boolean,
+): { before: Record<string, unknown> | null; after: Record<string, unknown> | null } {
+  if (showCost) return { before: row.before, after: row.after };
+  return {
+    before: auditDiffFor(row.before, false),
+    after: isRedactedExport(row) ? { ...REDACTED_EXPORT_AFTER } : auditDiffFor(row.after, false),
+  };
 }
 
 /** One entry with its `before` and `after` stripped of cost fields. */
 function entryWithoutCost<T extends AuditEntryView>(entry: T): T {
-  return {
-    ...entry,
-    before: auditDiffFor(entry.before, false),
-    after: auditDiffFor(entry.after, false),
-  };
+  return { ...entry, ...auditDiffsFor(entry, false) };
 }
 
 /**
@@ -139,6 +178,18 @@ export function serializeAuditDetail(
   access: Pick<Access, 'has'>,
 ): AuditEntryDetail {
   if (access.has('cost.view')) return detail;
+  if (isRedactedExport(detail)) {
+    return {
+      ...entryWithoutCost(detail),
+      changes: Object.keys(REDACTED_EXPORT_AFTER).map((field) => ({
+        field,
+        kind: 'added' as const,
+        before: null,
+        after: REDACTED_EXPORT_AFTER[field],
+        personal: false,
+      })),
+    };
+  }
   return {
     ...entryWithoutCost(detail),
     changes: detail.changes

@@ -1,13 +1,16 @@
 import {
+  AUDIT_ACTIONS,
   isAuditActionCode,
   type AuditEntryDetail,
   type AuditEntryListResponse,
+  type AuditEntryView,
 } from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   auditDiffFor,
   COST_ENTRY_ACTIONS,
-  isEntryVisible,
+  auditDiffsFor,
+  exportMayHaveHeldCostEntries,
   isCostKey,
   serializeAuditDetail,
   serializeAuditEntry,
@@ -109,10 +112,18 @@ describe('cost entries (cost_record.recorded)', () => {
     for (const action of COST_ENTRY_ACTIONS) expect(isAuditActionCode(action)).toBe(true);
   });
 
-  it('shows a cost entry only with cost.view, and every other entry always', () => {
-    expect(isEntryVisible('cost_record.recorded', false)).toBe(false);
-    expect(isEntryVisible('cost_record.recorded', true)).toBe(true);
-    expect(isEntryVisible('style.updated', false)).toBe(true);
+  // Guard (security review L1): the list is derived from the registry flag, and any action whose
+  // proof is the cost e2e must carry the flag, so a new cost action cannot leak unflagged.
+  it('derives the list from the registry flag, and flags every action proven by the cost e2e', () => {
+    const flagged = Object.entries(AUDIT_ACTIONS)
+      .filter(([, definition]) => 'costEntry' in definition)
+      .map(([code]) => code);
+    expect(COST_ENTRY_ACTIONS).toEqual(flagged);
+    for (const [code, definition] of Object.entries(AUDIT_ACTIONS)) {
+      if (definition.proof === 'apps/api/test/cost.e2e-spec.ts') {
+        expect(COST_ENTRY_ACTIONS, code).toContain(code);
+      }
+    }
   });
 
   it('keeps the reason of every entry the reader is shown', () => {
@@ -206,5 +217,73 @@ describe('cost keys in any spelling and inside JSON text', () => {
     expect(serializeAuditDetail(detail, { has: () => false }).changes).toEqual([
       { field: 'payload', kind: 'added', before: null, after: '{"qty":1}', personal: false },
     ]);
+  });
+});
+
+// Security review M1, the lead's ruling of 2026-11-11: a holder's export stays visible (who and
+// when), but its filter and rows are redacted for a reader without cost.view when the export
+// could have held a cost entry (a cost action filter, or none).
+describe('a cost.view holder audit.exported entry', () => {
+  const exported = (after: Record<string, unknown>): AuditEntryView => ({
+    ...entry,
+    action: 'audit.exported',
+    record: { type: 'audit_entry', id: '00000000-0000-4000-8000-000000000009', label: null },
+    before: null,
+    after,
+    reason: 'quarterly review',
+  });
+  const noCost = { has: () => false };
+
+  it('decides from the cost marker and the action filter', () => {
+    const held = { costVisible: true, rows: 3 };
+    expect(exportMayHaveHeldCostEntries({ ...held, dayFrom: '2026-11-01' })).toBe(true);
+    expect(exportMayHaveHeldCostEntries({ ...held, action: 'cost_record.recorded' })).toBe(true);
+    expect(exportMayHaveHeldCostEntries({ ...held, action: 'style.updated' })).toBe(false);
+    // A non-holder's export, and a legacy one with no marker, never held a cost entry.
+    expect(exportMayHaveHeldCostEntries({ rows: 3 })).toBe(false);
+    expect(exportMayHaveHeldCostEntries({ costVisible: false, rows: 3 })).toBe(false);
+    expect(exportMayHaveHeldCostEntries(null)).toBe(false);
+  });
+
+  it('redacts filter and rows on every serializer, keeping who, when, and the reason', () => {
+    const open = exported({ dayFrom: '2026-11-01', rows: 17, costVisible: true });
+    const shownEntry = serializeAuditEntry(open, noCost);
+    expect(shownEntry.after).toEqual({ redacted: true });
+    expect(shownEntry.reason).toBe('quarterly review');
+    expect(shownEntry.actor).toEqual(open.actor);
+    expect(serializeAuditPage({ items: [open], nextCursor: null }, noCost).items[0]?.after).toEqual(
+      {
+        redacted: true,
+      },
+    );
+    const detail = serializeAuditDetail(
+      {
+        ...open,
+        changes: [
+          { field: 'rows', kind: 'added', before: null, after: 17, personal: false },
+          { field: 'dayFrom', kind: 'added', before: null, after: '2026-11-01', personal: false },
+        ],
+      },
+      noCost,
+    );
+    expect(detail.after).toEqual({ redacted: true });
+    expect(detail.changes).toEqual([
+      { field: 'redacted', kind: 'added', before: null, after: true, personal: false },
+    ]);
+    expect(auditDiffsFor(open, false).after).toEqual({ redacted: true });
+  });
+
+  it('keeps an export filtered to another action complete, and everything for a holder', () => {
+    const other = exported({ action: 'style.updated', rows: 4, costVisible: true });
+    expect(serializeAuditEntry(other, noCost).after).toEqual({
+      action: 'style.updated',
+      rows: 4,
+      costVisible: true,
+    });
+    const open = exported({ rows: 17, costVisible: true });
+    expect(serializeAuditEntry(open, { has: () => true })).toBe(open);
+    expect(auditDiffsFor(open, true).after).toEqual({ rows: 17, costVisible: true });
+    const nonHolder = exported({ rows: 9 });
+    expect(serializeAuditEntry(nonHolder, noCost).after).toEqual({ rows: 9 });
   });
 });

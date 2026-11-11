@@ -498,6 +498,7 @@ describe(
     describe('cost entries hidden whole from an audit reader without cost.view', () => {
       const reason = 'was 120.00 and now 95.50';
       const lateReason = 'Invoice found late at 88.25';
+      const CRLF = '\r\n';
       const LEAK = /cost_record|unitCost|77\.7|88\.25|95\.50|was 120/;
       let styleId: string;
       let costIds: string[];
@@ -672,6 +673,139 @@ describe(
         expect(rowsOf(fileSeen) - rowsOf(fileHidden)).toBe(costIds.length);
         expect(await exportedRows(noCostId)).toBe(rowsOf(fileHidden));
         expect(await exportedRows(ownerId)).toBe(rowsOf(fileSeen));
+      });
+
+      // Security review M1, the lead's ruling of 2026-11-11: a holder's export stays visible
+      // (who and when), but a reader without cost.view gets its filter and rows redacted when
+      // the export could have held a cost entry (a cost action filter, or no action filter).
+      it('shows a holder export to a reader without cost.view, redacted when it could hold cost entries', async () => {
+        const exportWith = async (cookie: string, extra: string) => {
+          const reply = await fetch(
+            `${api.base}/api/audit/entries/export?recordType=style&recordId=${styleId}&dayFrom=${today}&dayTo=${today}${extra}`,
+            { method: 'POST', headers: { cookie, origin: api.base } },
+          );
+          expect(reply.status).toBe(200);
+          await reply.text();
+        };
+        await exportWith(owner, '&action=cost_record.recorded');
+        await exportWith(owner, '');
+        await exportWith(owner, '&action=style.updated');
+
+        const { rows } = await api.owner.pool.query<{
+          id: string;
+          after: Record<string, unknown>;
+        }>(
+          `SELECT id, after FROM audit_entries
+           WHERE action = 'audit.exported' AND actor_user_id = $1 AND after->>'recordId' = $2
+           ORDER BY recorded_at, id`,
+          [ownerId, styleId],
+        );
+        const redacted = rows.filter(
+          (row) =>
+            row.after['action'] === undefined || row.after['action'] === 'cost_record.recorded',
+        );
+        const complete = rows.filter((row) => !redacted.includes(row));
+        expect(redacted.length).toBeGreaterThanOrEqual(2);
+        expect(complete.length).toBeGreaterThanOrEqual(1);
+        const idsOf = (list: { id: string }[]) => list.map((row) => row.id);
+
+        for (const row of rows) {
+          const seen = await api.call(owner, 'GET', `/api/audit/entries/${row.id}`);
+          const shown = await api.call(noCost, 'GET', `/api/audit/entries/${row.id}`);
+          expect(seen.status).toBe(200);
+          expect(shown.status).toBe(200);
+          const holder = AuditEntryDetail.parse(seen.body);
+          const reader = AuditEntryDetail.parse(shown.body);
+          expect(holder.after).toEqual(row.after);
+          expect(reader.actor).toEqual(holder.actor);
+          expect(reader.recordedAt).toBe(holder.recordedAt);
+          if (redacted.includes(row)) {
+            expect(reader.after).toEqual({ redacted: true });
+            expect(reader.changes.map((change) => change.field)).toEqual(['redacted']);
+            expect(JSON.stringify(shown.body)).not.toMatch(/cost_record|recordId|"rows"/);
+          } else {
+            expect(reader.after).toEqual(row.after);
+          }
+        }
+
+        // The list and a record's history answer the same redaction.
+        const list = await api.call(
+          noCost,
+          'GET',
+          `/api/audit/entries?action=audit.exported&actorUserId=${ownerId}&limit=100`,
+        );
+        const listed = AuditEntryListResponse.parse(list.body).items;
+        expect(listed.map((item) => item.id)).toEqual(expect.arrayContaining(idsOf(rows)));
+        for (const item of listed.filter((entry) => idsOf(redacted).includes(entry.id))) {
+          expect(item.after).toEqual({ redacted: true });
+        }
+        for (const item of listed.filter((entry) => idsOf(complete).includes(entry.id))) {
+          expect(item.after).toMatchObject({ action: 'style.updated' });
+        }
+        const exportId = (redacted[0] as { id: string }).id;
+        const { rows: record } = await api.owner.pool.query<{ record_id: string }>(
+          'SELECT record_id FROM audit_entries WHERE id = $1',
+          [exportId],
+        );
+        const history = await api.call(
+          noCost,
+          'GET',
+          `/api/audit/records/audit_entry/${record[0]?.record_id}/entries`,
+        );
+        expect(AuditEntryListResponse.parse(history.body).items[0]?.after).toEqual({
+          redacted: true,
+        });
+
+        // A non-holder's CSV that holds those entries leaks neither the filter nor the rows.
+        const csv = await (
+          await fetch(
+            `${api.base}/api/audit/entries/export?action=audit.exported&actorUserId=${ownerId}&dayFrom=${today}&dayTo=${today}`,
+            { method: 'POST', headers: { cookie: noCost, origin: api.base } },
+          )
+        ).text();
+        for (const row of redacted) {
+          const line = csv.split(CRLF).find((candidate) => candidate.includes(row.id));
+          expect(line, row.id).toBeDefined();
+          expect(line).toContain('redacted');
+          expect(line).not.toMatch(/cost_record|recordId|rows/);
+        }
+        for (const row of complete) {
+          const line = csv.split(CRLF).find((candidate) => candidate.includes(row.id));
+          expect(line).toContain('style.updated');
+        }
+
+        // A non-holder's export could never hold a cost entry: it stays complete for everyone,
+        // an unfiltered one included, and carries no cost marker.
+        await exportWith(noCost, '');
+        const { rows: ownExports } = await api.owner.pool.query<{
+          id: string;
+          after: Record<string, unknown>;
+        }>(
+          `SELECT id, after FROM audit_entries
+           WHERE action = 'audit.exported' AND actor_user_id = $1 AND after->>'recordId' = $2`,
+          [noCostId, styleId],
+        );
+        expect(ownExports.length).toBeGreaterThanOrEqual(1);
+        const otherReader = await api.signIn((await api.addPerson(['manager'])).email);
+        for (const row of ownExports) {
+          expect(row.after['costVisible']).toBeUndefined();
+          for (const cookie of [otherReader, owner]) {
+            const reply = await api.call(cookie, 'GET', `/api/audit/entries/${row.id}`);
+            expect(reply.status).toBe(200);
+            expect(AuditEntryDetail.parse(reply.body).after).toEqual(row.after);
+          }
+        }
+
+        // The audit list of a holder shows every one whole.
+        const holderList = await api.call(
+          owner,
+          'GET',
+          `/api/audit/entries?action=audit.exported&actorUserId=${ownerId}&limit=100`,
+        );
+        for (const item of AuditEntryListResponse.parse(holderList.body).items) {
+          const row = rows.find((candidate) => candidate.id === item.id);
+          if (row) expect(item.after).toEqual(row.after);
+        }
       });
     });
 

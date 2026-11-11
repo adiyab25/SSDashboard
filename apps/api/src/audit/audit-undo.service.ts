@@ -10,10 +10,11 @@ import {
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../database/database.module.js';
 import { pgConstraint, pgErrorCode } from '../database/sql.js';
-import { isEntryVisible, serializeAuditEntry } from './audit-cost-fields.js';
+import { serializeAuditEntry } from './audit-cost-fields.js';
 import {
   AuditQueryService,
   entryViewOf,
+  visibleEntries,
   type AuditViewer,
   type EntryRow,
 } from './audit-query.service.js';
@@ -101,7 +102,7 @@ export class AuditUndoService {
    * first (review M4R3). In one transaction: takes a transaction advisory lock on the entry (so
    * two undos of one entry queue, and the second sees the first's entry), loads it
    * (`AuditEntryNotFound`, also for a cost entry a viewer without `cost.view` may not see,
-   * `isEntryVisible`), refuses one that cannot be undone (`NotUndoable`: no `undo_action`, an
+   * `visibleEntries` in the target's SQL), refuses one that cannot be undone (`NotUndoable`: no `undo_action`, an
    * action the registry does not mark undoable, or another handler than the registry's) or that
    * is undone already (`AlreadyUndone`), checks the reason against the undone code's policy
    * (`AuditReasonRequired`, `AuditReasonTooLong`, `AuditReasonInvalid`) before any owner code
@@ -127,11 +128,12 @@ export class AuditUndoService {
           const { rows } = await tx.execute<TargetRow>(sql`
             SELECT id, action, correlation_id, record_type, record_id, record_label, before,
                    after, undo_action, undo_args
-            FROM audit_entries WHERE id = ${id}`);
+            FROM audit_entries
+            WHERE ${sql.join([sql`id = ${id}`, ...visibleEntries(viewer)], sql` AND `)}`);
           const target = rows[0];
           // An entry the viewer may not see at all (a cost entry without `cost.view`) is
           // missing to them, before any other refusal could say it exists.
-          if (!target || !isEntryVisible(target.action, viewer.has('cost.view'))) {
+          if (!target) {
             throw new AuditEntryNotFound();
           }
           if (!target.undo_action || !isUndoableEntry(target.action, target.undo_action)) {

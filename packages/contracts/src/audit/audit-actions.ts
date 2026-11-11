@@ -36,6 +36,13 @@ export interface AuditActionDefinition {
   /** True when the owning module registers an undo handler for it. */
   readonly undoable: boolean;
   /**
+   * True when the whole entry is a cost (spec 0012 AC-17): its diff carries an amount and a
+   * reason typed next to it, so a reader without `cost.view` never sees the entry, and an
+   * `audit.exported` entry whose export could have included it is shown redacted. The api derives
+   * its `COST_ENTRY_ACTIONS` from this flag; set it on any action that records a cost.
+   */
+  readonly costEntry?: true;
+  /**
    * The code of the undo handler the owning module registers (milestone 4,
    * `AuditUndoRegistry`). Required exactly when `undoable`; the registry test refuses an undoable
    * code without one.
@@ -566,6 +573,7 @@ export const AUDIT_ACTIONS = {
     reason: 'optional',
     automatic: false,
     undoable: false,
+    costEntry: true,
     label: 'audit.actions.costRecordRecorded',
     proof: COST_PROOF,
   },

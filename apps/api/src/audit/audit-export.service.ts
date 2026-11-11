@@ -10,7 +10,7 @@ import {
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { en, flatten } from '@ssdashboard/i18n';
 import { DATABASE } from '../database/database.module.js';
-import { auditDiffFor } from './audit-cost-fields.js';
+import { auditDiffsFor } from './audit-cost-fields.js';
 import { AuditExportTooLarge } from './audit.errors.js';
 import {
   AuditQueryService,
@@ -143,7 +143,8 @@ export class AuditExportService {
       : 0;
     if (rows > AUDIT_EXPORT_MAX_ROWS) throw new AuditExportTooLarge(AUDIT_EXPORT_MAX_ROWS);
     const exportId = this.audit.newCorrelationId();
-    // The filter, without the fields the caller left out, is the entry's `after`.
+    // The filter, without the fields the caller left out, is the entry's `after`, with `rows` and
+    // `costVisible` (the export ran with cost visibility, so it could hold cost entries).
     const given = Object.fromEntries(
       Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
@@ -152,7 +153,11 @@ export class AuditExportService {
         actor: personActor(viewer.userId, viewer.actingHat('audit.export')),
         action: 'audit.exported',
         record: { type: 'audit_entry', id: exportId },
-        after: { ...given, rows } satisfies JsonObject,
+        after: {
+          ...given,
+          rows,
+          ...(viewer.has('cost.view') ? { costVisible: true } : {}),
+        } satisfies JsonObject,
         ...(reason ? { reason } : {}),
         correlationId: exportId,
       }),
@@ -197,8 +202,7 @@ export class AuditExportService {
               exportCells(
                 {
                   ...row,
-                  before: auditDiffFor(row.before, plan.showCost),
-                  after: auditDiffFor(row.after, plan.showCost),
+                  ...auditDiffsFor(row, plan.showCost),
                 },
                 localAt,
                 actorName,
