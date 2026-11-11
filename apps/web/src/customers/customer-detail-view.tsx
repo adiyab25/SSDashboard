@@ -3,20 +3,23 @@
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeftIcon, GitMergeIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAccess } from '@/access/use-access';
 import { ApiError } from '@/api/client';
 import { useFormat } from '@/i18n/use-format';
 import { CustomerChannelIdsSection } from './customer-channel-ids-section';
 import { CustomerDetailSkeleton } from './customer-detail-skeleton';
+import { CustomerFlagActions } from './customer-flag-actions';
 import { CustomerFlagBadge } from './customer-flag-badge';
 import { CustomerFlagSection } from './customer-flag-section';
 import { CustomerMergesSection } from './customer-merges-section';
 import { CustomerPhonesSection } from './customer-phones-section';
 import { customerKeys, getCustomer } from './customers-api';
+import { mergePageHref } from './merge-page-href';
 
 /**
  * One customer (spec 0014, AC-4, AC-18): the header with the name and flag, every phone, every
@@ -28,6 +31,7 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
   const format = useFormat();
   const queryClient = useQueryClient();
+  const access = useAccess();
   const { id } = useParams<{ id: string }>();
   const [mergedNotice, setMergedNotice] = useState(false);
   const query = useQuery({
@@ -102,11 +106,23 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
         <p className="text-sm text-muted-foreground">
           {t('customers.profile.since', { date: format.date(profile.createdAt) })}
         </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {access.can('customers.merge') && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={mergePageHref(profile.id)}>
+                <GitMergeIcon aria-hidden data-icon="inline-start" />
+                {t('customers.profile.merges.mergeWith')}
+              </Link>
+            </Button>
+          )}
+          {access.can('customers.flag') && <CustomerFlagActions profile={profile} />}
+        </div>
       </header>
+
+      <CustomerFlagSection flag={profile.flag} />
 
       <CustomerPhonesSection phones={profile.phones} />
       <CustomerChannelIdsSection ids={profile.channelIds} />
-      <CustomerFlagSection flag={profile.flag} />
       <CustomerMergesSection merges={profile.merges} />
     </div>
   );

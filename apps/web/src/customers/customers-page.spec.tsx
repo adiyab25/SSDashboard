@@ -230,3 +230,22 @@ describe('CustomersPage (AC-3, AC-5, AC-18)', () => {
     expect(api.searchCustomers).not.toHaveBeenCalled();
   });
 });
+
+describe('the flagged customers button (AC-11)', () => {
+  it('searches flagged, shows its own empty state, and toggles back to the prompt', async () => {
+    api.searchCustomers.mockResolvedValue({ items: [], nextCursor: null });
+    renderWithQuery(<CustomersPage />);
+    const button = await screen.findByRole('button', { name: 'Show flagged customers' });
+    await userEvent.click(button);
+    expect(await screen.findByText('No flagged customers')).toBeVisible();
+    expect(api.searchCustomers).toHaveBeenCalledWith(
+      { flagged: true },
+      undefined,
+      expect.anything(),
+    );
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('No flagged customers')).toBeNull();
+  });
+});

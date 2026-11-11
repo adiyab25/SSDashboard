@@ -5,8 +5,8 @@
  * The two key form is a separate key space from the single key locks of the ledger and identity.
  */
 export const CUSTOMER_PHONE_LOCK = 727_010;
-// Every writer of `customer_phones` takes this lock first (`findOrCreate` today, `addPhone` in
-// milestone 2): a writer that skips it can make `findOrCreate` fail on a unique key.
+// Every writer of `customer_phones` takes this lock first (`findOrCreate` and `addPhone`): a writer
+// that skips it can make `findOrCreate` fail on a unique key.
 
 /**
  * The first key of the per channel id lock `findOrCreate` takes after the phone lock, as
