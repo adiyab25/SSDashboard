@@ -7,6 +7,7 @@ import {
   SkuMovementsResponse,
   SkuUsage,
   StockReceiptDetail,
+  StyleDetail,
 } from '@ssdashboard/contracts';
 import {
   APP_ROLE,
@@ -16,6 +17,8 @@ import {
   type DatabaseConnection,
 } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogService } from '../src/catalog/catalog.service.js';
+import type { Transaction } from '../src/database/sql.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ledgerTransaction, lockKey } from '../src/inventory/ledger/locks.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
@@ -502,7 +505,11 @@ describe('master data api', { timeout: 90_000 }, () => {
     // list once and every branch must cut after the cursor.
     it('pages a search whose branches overlap without skipping or repeating a row', async () => {
       const pgx = await plantStyle('PGX', { en: 'Plain' }, []);
-      for (const sku of ['PGX-1', 'PGX-2', 'PGX-3', 'AAA-PGX']) await plantVariant(pgx, sku, {});
+      // Distinct option values: two active variants of one style never share them (AC-10). The
+      // style has no options, so the indexes add no label to the search text.
+      for (const [i, sku] of ['PGX-1', 'PGX-2', 'PGX-3', 'AAA-PGX'].entries()) {
+        await plantVariant(pgx, sku, { '0': i });
+      }
       await plantVariant(await plantStyle('JKT', { en: 'Pgx Jacket' }, []), 'JKT-1', {});
       const expected = ['AAA-PGX', 'JKT-1', 'PGX-1', 'PGX-2', 'PGX-3'];
       expect(await search('pgx')).toEqual(expected);
@@ -1322,6 +1329,181 @@ describe('master data api', { timeout: 90_000 }, () => {
         archived: true,
         codeLocked: true,
       });
+    });
+  });
+
+  describe('archiving a style with several variants (spec 0012, AC-10, AC-11)', () => {
+    /** A style of `count` variants (sizes S, M, L, ...), returning its SKUs in creation order. */
+    async function styleOf(prefix: string, sizes: string[]) {
+      const first = await newSku(`${prefix}-${sizes[0]}`);
+      const skus = [first];
+      for (const size of sizes.slice(1)) {
+        const { status, body } = await call('POST', `/styles/${first.productId}/variants`, {
+          cookie: staff,
+          body: {
+            sku: `${prefix}-${size}`,
+            options: [{ name: { en: 'Size' }, value: { en: size } }],
+          },
+        });
+        expect(status, JSON.stringify(body)).toBe(201);
+        skus.push(SkuDetail.parse(body));
+      }
+      return skus;
+    }
+
+    const styleArchived = async (styleId: string) =>
+      StyleDetail.parse((await call('GET', `/styles/${styleId}`, { cookie: staff })).body).archived;
+
+    const archive = (id: string) => call('POST', `/skus/${id}/archive`, { cookie: admin });
+    const unarchive = (id: string) => call('POST', `/skus/${id}/unarchive`, { cookie: admin });
+
+    it('keeps the style active while another variant is active, archives it with the last, and unarchives it with any', async () => {
+      const [a, b] = await styleOf('ARC2', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+
+      expect((await archive(b.id)).status).toBe(200);
+      expect(await styleArchived(a.productId)).toBe(false);
+      expect((await archive(a.id)).status).toBe(200);
+      expect(await styleArchived(a.productId)).toBe(true);
+      expect((await unarchive(b.id)).status).toBe(200);
+      expect(await styleArchived(a.productId)).toBe(false);
+      expect((await getSku(a.id)).archived).toBe(true);
+    });
+
+    it('archives the style when its last two active variants are archived at the same time', async () => {
+      const [a, b] = await styleOf('ARCPAR', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+
+      const answers = await Promise.all([archive(a.id), archive(b.id)]);
+
+      expect(answers.map((answer) => answer.status)).toEqual([200, 200]);
+      expect(await styleArchived(a.productId)).toBe(true);
+    });
+
+    it('refuses to unarchive a variant whose option values another active variant took (409 OPTION_COMBINATION_TAKEN)', async () => {
+      const [, medium] = await styleOf('ARCDUP', ['S', 'M']);
+      if (!medium) throw new Error('two variants expected');
+      expect((await archive(medium.id)).status).toBe(200);
+      const again = await call('POST', `/styles/${medium.productId}/variants`, {
+        cookie: staff,
+        body: { sku: 'ARCDUP-M2', options: [{ name: { en: 'size' }, value: { en: 'm' } }] },
+      });
+      expect(again.status, JSON.stringify(again.body)).toBe(201);
+
+      const refused = await unarchive(medium.id);
+
+      expect(refused.status).toBe(409);
+      expect(refused.body).toMatchObject({ code: 'OPTION_COMBINATION_TAKEN' });
+      expect((await getSku(medium.id)).archived).toBe(true);
+    });
+
+    /**
+     * Opens a READ COMMITTED transaction as the app role and keeps it open until `finish`, so a
+     * test can hold one writer's locks while another writer runs.
+     */
+    async function openTransaction(): Promise<{ tx: Transaction; finish: () => Promise<void> }> {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let opened: (tx: Transaction) => void = () => undefined;
+      const ready = new Promise<Transaction>((resolve) => (opened = resolve));
+      const done = app.db.transaction(
+        async (tx) => {
+          opened(tx);
+          await gate;
+        },
+        { isolationLevel: 'read committed' },
+      );
+      return {
+        tx: await ready,
+        finish: async () => {
+          release();
+          await done;
+        },
+      };
+    }
+
+    // Review M2 minor 1: an unarchive of one variant is open (it holds the style row) while the
+    // archive of the style's other active variant runs. The archive waits on the style row, then
+    // sees the unarchived variant, so the style stays active (before the fix it archived the
+    // style, its NOT EXISTS reading a snapshot without the unarchive).
+    it('keeps the style active when one variant is archived while another is being unarchived', async () => {
+      const [a, b] = await styleOf('ARCRACE', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+      expect((await archive(b.id)).status).toBe(200);
+      const catalog = new CatalogService(app);
+
+      const unarchiving = await openTransaction();
+      await catalog.setArchived(unarchiving.tx, b.id, false);
+      const archiving = await openTransaction();
+      const archived = catalog.setArchived(archiving.tx, a.id, true);
+      await waitForLockWaits(1);
+      await unarchiving.finish();
+      await archived;
+      await archiving.finish();
+
+      expect(await styleArchived(a.productId)).toBe(false);
+      expect((await getSku(a.id)).archived).toBe(true);
+      expect((await getSku(b.id)).archived).toBe(false);
+    });
+
+    // Review M2 minor 1 and 7: a variant add holds the style row (its barcode insert waits on a
+    // held barcode) while the archive of the style's last active variant runs. The archive waits
+    // on the style row, then sees the new variant, so the style stays active.
+    it('keeps the style active when its last active variant is archived while a variant is being added', async () => {
+      const [a, b, c] = await styleOf('ARCADD', ['S', 'M', 'L']);
+      if (!a || !b || !c) throw new Error('three variants expected');
+      expect((await archive(a.id)).status).toBe(200);
+      expect((await archive(b.id)).status).toBe(200);
+      const other = await newSku('ARCADD-HOLDER');
+      const barcode = 'ARCADD-BARCODE';
+      const holder = await owner.pool.connect();
+      await holder.query('BEGIN');
+      await holder.query(
+        `INSERT INTO barcodes (variant_id, uom_id, code)
+         VALUES ($1, (SELECT id FROM uoms WHERE code = 'pc'), $2)`,
+        [other.id, barcode],
+      );
+
+      // Size M again: b, which held it, is archived, and no option or value is appended, so the
+      // add touches no other variant row and waits only on the held barcode.
+      const adding = call('POST', `/styles/${c.productId}/variants`, {
+        cookie: staff,
+        body: {
+          sku: 'ARCADD-M2',
+          options: [{ name: { en: 'Size' }, value: { en: 'M' } }],
+          barcode,
+        },
+      });
+      await waitForLockWaits(1);
+      const catalog = new CatalogService(app);
+      const archiving = await openTransaction();
+      const archived = catalog.setArchived(archiving.tx, c.id, true);
+      await waitForLockWaits(2);
+      await holder.query('ROLLBACK');
+      holder.release();
+      const added = await adding;
+      await archived;
+      await archiving.finish();
+
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      expect(await styleArchived(c.productId)).toBe(false);
+      expect((await getSku(c.id)).archived).toBe(true);
+      expect(SkuDetail.parse(added.body).archived).toBe(false);
+    });
+
+    it('deletes the style with its options when its last variant goes', async () => {
+      const [a, b] = await styleOf('ARCDEL', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+
+      expect((await call('DELETE', `/skus/${a.id}`, { cookie: admin })).status).toBe(204);
+      expect((await call('GET', `/styles/${a.productId}`, { cookie: staff })).status).toBe(200);
+      expect((await call('DELETE', `/skus/${b.id}`, { cookie: admin })).status).toBe(204);
+      expect((await call('GET', `/styles/${a.productId}`, { cookie: staff })).status).toBe(404);
+      const { rows } = await owner.pool.query(
+        'SELECT 1 FROM product_options WHERE product_id = $1',
+        [a.productId],
+      );
+      expect(rows).toEqual([]);
     });
   });
 

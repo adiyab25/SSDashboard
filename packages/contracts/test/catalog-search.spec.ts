@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SkuDetail, SkuListQuery } from '../src/index.js';
+import { AssignStylesRequest, SkuDetail, SkuListQuery, UpdateStyleRequest } from '../src/index.js';
 
 // Spec 0012, AC-3 and AC-4: the SKU list query and the wider SKU rows.
 describe('SkuListQuery', () => {
@@ -59,5 +59,31 @@ describe('SkuDetail', () => {
     };
     expect(SkuDetail.parse(detail)).toEqual(detail);
     expect(SkuDetail.safeParse({ ...detail, barcodes: undefined }).success).toBe(false);
+  });
+});
+
+// Review of spec 0012 milestone 2, minor 5: ids a caller sends are lowercased, so `a` and `A`
+// are one style, and the api compares and audits them the way PostgreSQL answers them.
+describe('catalog ids in style requests', () => {
+  const ID = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b';
+  const UPPER = ID.toUpperCase();
+
+  it('lowercases style, season, and group ids', () => {
+    expect(
+      AssignStylesRequest.parse({ styleIds: [UPPER], seasonId: UPPER, productGroupId: UPPER }),
+    ).toEqual({ styleIds: [ID], seasonId: ID, productGroupId: ID });
+    expect(
+      UpdateStyleRequest.parse({
+        updatedAt: '2026-11-08T10:00:00.000000Z',
+        seasonId: UPPER,
+        productGroupId: UPPER,
+      }),
+    ).toMatchObject({ seasonId: ID, productGroupId: ID });
+  });
+
+  it('counts an id and its uppercase twin once in the distinct check', () => {
+    expect(AssignStylesRequest.safeParse({ styleIds: [ID, UPPER], seasonId: null }).success).toBe(
+      false,
+    );
   });
 });

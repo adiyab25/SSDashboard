@@ -143,6 +143,11 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     customer: '',
     order: '',
     connection: '',
+    style: '',
+    season: '',
+    seasonToArchive: '',
+    productGroup: '',
+    productGroupToArchive: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -190,6 +195,87 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'GET /stock': { needs: ['stock.view'] },
     'GET /skus/:id/stock': { needs: ['stock.view'], path: () => `/skus/${ids.sku}/stock` },
     'GET /skus/:id/movements': { needs: ['stock.view'], path: () => `/skus/${ids.sku}/movements` },
+    // Spec 0012 milestone 2 (AC-16): styles, barcodes, seasons, and product groups. Edits are
+    // stale (409) or name an unknown id (404) for a person allowed, so the sweep changes nothing
+    // the next persona relies on; creates make fresh rows, and archive and unarchive toggle a row
+    // of their own.
+    'GET /styles': { needs: ['stock.view'] },
+    'GET /styles/:id': { needs: ['stock.view'], path: () => `/styles/${ids.style}` },
+    'PATCH /styles/:id': {
+      needs: ['catalog.edit'],
+      path: () => `/styles/${ids.style}`,
+      body: () => ({ updatedAt: STALE }),
+    },
+    'POST /styles/assign': {
+      needs: ['catalog.edit'],
+      body: () => ({ styleIds: [randomUUID()], seasonId: null }),
+    },
+    'PATCH /styles/:id/code': {
+      needs: ['catalog.manage'],
+      path: () => `/styles/${ids.style}/code`,
+      body: () => ({ updatedAt: STALE, code: 'SWEEP-STYLE' }),
+    },
+    'POST /styles/:id/variants': {
+      needs: ['catalog.edit'],
+      path: () => `/styles/${ids.style}/variants`,
+      body: () => ({
+        sku: unique('SWV'),
+        options: [{ name: { en: 'Size' }, value: { en: unique('v') } }],
+      }),
+    },
+    'POST /skus/:id/barcodes': {
+      needs: ['catalog.edit'],
+      path: () => `/skus/${ids.sku}/barcodes`,
+      body: () => ({ code: unique('BC') }),
+    },
+    'DELETE /skus/:id/barcodes/:barcodeId': {
+      needs: ['catalog.edit'],
+      path: () => `/skus/${ids.sku}/barcodes/${randomUUID()}`,
+    },
+    'GET /seasons': { needs: ['stock.view'] },
+    'POST /seasons': {
+      needs: ['catalog.manage'],
+      body: () => ({ code: unique('SN').slice(0, 16), name: { en: 'Sweep season' } }),
+    },
+    'PATCH /seasons/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${ids.season}`,
+      body: () => ({ updatedAt: STALE }),
+    },
+    'POST /seasons/:id/archive': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${ids.seasonToArchive}/archive`,
+    },
+    'POST /seasons/:id/unarchive': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${ids.seasonToArchive}/unarchive`,
+    },
+    'DELETE /seasons/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${randomUUID()}`,
+    },
+    'GET /product-groups': { needs: ['stock.view'] },
+    'POST /product-groups': {
+      needs: ['catalog.manage'],
+      body: () => ({ code: unique('PG').slice(0, 16), name: { en: 'Sweep group' } }),
+    },
+    'PATCH /product-groups/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${ids.productGroup}`,
+      body: () => ({ updatedAt: STALE }),
+    },
+    'POST /product-groups/:id/archive': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${ids.productGroupToArchive}/archive`,
+    },
+    'POST /product-groups/:id/unarchive': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${ids.productGroupToArchive}/unarchive`,
+    },
+    'DELETE /product-groups/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${randomUUID()}`,
+    },
     'POST /customers/search': {
       needs: ['customers.view'],
       body: () => ({ phone: '01001234567' }),
@@ -633,6 +719,21 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     ids.location = await location();
     ids.locationToChange = await location();
     ids.sku = await sku();
+    ids.style = SkuDetail.parse(
+      (await api.call(boss.cookie, 'GET', `/api/skus/${ids.sku}`)).body,
+    ).productId;
+    const grouping = async (path: string, prefix: string) => {
+      const reply = await api.call(boss.cookie, 'POST', path, {
+        code: unique(prefix).slice(0, 16),
+        name: { en: 'Sweep grouping' },
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      return (reply.body as { id: string }).id;
+    };
+    ids.season = await grouping('/api/seasons', 'SS');
+    ids.seasonToArchive = await grouping('/api/seasons', 'SA');
+    ids.productGroup = await grouping('/api/product-groups', 'GG');
+    ids.productGroupToArchive = await grouping('/api/product-groups', 'GA');
     ids.skuToDelete = await sku();
     ids.skuToArchive = await sku();
     ids.receipt = await receipt();

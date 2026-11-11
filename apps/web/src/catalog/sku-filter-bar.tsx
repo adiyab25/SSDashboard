@@ -6,7 +6,10 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { SkuFilterSelect } from './sku-filter-select';
-import type { SkuFilterOptions } from './use-sku-filter-options';
+import type { GroupingChoices } from './use-grouping-choices';
+
+/** The season and group choices the filters offer (the active rows, from the api lists). */
+export type SkuFilterOptions = Pick<GroupingChoices, 'seasons' | 'groups'>;
 
 const STATUSES: readonly SkuStatus[] = ['active', 'archived'];
 

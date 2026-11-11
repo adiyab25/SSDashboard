@@ -47,6 +47,17 @@ describe('visibleNavItems (spec 0008, AC-11)', () => {
     expect(ids(['warehouse'])).toEqual(expect.arrayContaining(['stock', 'receipts', 'skus']));
   });
 
+  it('shows Styles to stock.view, and Seasons and Product groups to catalog.manage (spec 0012, AC-18)', () => {
+    expect(ids(['warehouse'])).toContain('styles');
+    expect(ids(['support'])).toContain('styles');
+    expect(ids(['warehouse'])).not.toContain('seasons');
+    expect(ids(['warehouse'])).not.toContain('productGroups');
+    expect(ids(['manager'])).toEqual(
+      expect.arrayContaining(['styles', 'seasons', 'productGroups']),
+    );
+    expect(ids(['media_buyer'])).not.toContain('styles');
+  });
+
   it('shows Customers to customers.view holders only (spec 0014, AC-18)', () => {
     for (const hat of ['support', 'operations', 'manager'] as const) {
       expect(ids([hat])).toContain('customers');

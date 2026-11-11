@@ -32,6 +32,7 @@ import {
   OrderPaymentMethod,
   OrderRelation,
   OrderSourceCapturedFrom,
+  OptionRole,
   OrderType,
   OutboundLinkedType,
   PayoutMethod,
@@ -139,6 +140,8 @@ describe('every database enum with a Zod twin matches its contract', () => {
     ['license_check_trigger', LicenseCheckTrigger.options],
     ['license_check_outcome', LicenseCheckOutcome.options],
     ['license_phase', LicensePhase.options],
+    // Spec 0012 milestone 2 (AC-10): the role of a style's option axis.
+    ['option_role', OptionRole.options],
   ] as const)('%s has the values of its Zod enum', async (type, options) => {
     const { rows } = await owner.query<{ value: string }>(
       `SELECT unnest(enum_range(NULL::public.${type}))::text AS value`,

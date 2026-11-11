@@ -20,7 +20,7 @@ import { NewSkuDialog } from './new-sku-dialog';
 import { SkuEditDialog } from './sku-edit-dialog';
 import { SkuFilterBar, type SkuFilterValues } from './sku-filter-bar';
 import { SkuNameCell } from './sku-name-cell';
-import { useSkuFilterOptions } from './use-sku-filter-options';
+import { useGroupingChoices } from './use-grouping-choices';
 
 const SEARCH_DELAY_MS = 300;
 
@@ -63,7 +63,7 @@ export function SkusView({ enabled }: { enabled: boolean }) {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
   const rows = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
-  const options = useSkuFilterOptions(rows);
+  const options = useGroupingChoices(enabled);
   const loading = query.isPending;
   const filtered = q !== '' || filters.season !== '' || filters.group !== '';
 

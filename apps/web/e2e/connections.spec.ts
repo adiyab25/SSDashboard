@@ -363,6 +363,27 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await expect(page).toHaveURL('/connections');
       expect(bodies).toEqual([{ ...VALID_BODY, appOwner: 'person' }]);
     });
+
+    test('keyboard focus lands in the form when the language is slow to load', async ({
+      page,
+      isMobile,
+    }) => {
+      test.skip(isMobile, 'a keyboard path is a desktop concern');
+      test.skip(dir === 'ltr', 'only a language other than English hides the page while it loads');
+      // A slow /api/config keeps the page hidden after the form hydrates, as a loaded machine
+      // did; the hydration wait must also wait for the page to show (see e2e/support.ts).
+      await page.route('**/api/config', async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        await route.fallback();
+      });
+      await page.goto('/connections/new');
+      await waitForFormHydration(page);
+
+      await page.locator('#connection-label').focus();
+      await expect(page.locator('#connection-label')).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(page.locator('#connection-store-code')).toBeFocused();
+    });
   });
 
   test.describe(`connections without settings.manage in ${languageName}`, () => {

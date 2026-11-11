@@ -62,6 +62,16 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationa
 - Testing: Vitest and Testing Library beside the source, database backed e2e and Playwright for user flows (`test-preferences.json`).
 - CI (`.github/workflows/ci.yml`): `conventions` (branch name and every commit subject, PRs only), `images` (builds `app` and `web`, not pushed), `checks` (format, lint, typecheck, unit), `e2e` (Postgres 18 service, Playwright), `scale` (Postgres 18 service, `pnpm --filter @ssdashboard/api test:scale`; nightly at 02:30 UTC, on pull requests labelled `scale`, or by hand). Publishing images comes with feature 26 (deployment).
 
+## Knowledge graphs
+
+Three graphify graphs of this repo, built from one extraction ([graphify-out/README.md](graphify-out/README.md)). Pick by what the question needs, and start from a concrete name: `graphify query "<question>" --seed <SymbolOrFile> --graph <path>` (also `path`, `explain`, `affected`). An unseeded question matches on its words and returns noise.
+
+- **Product** `graphify-out/graph.json` (the default): code plus specs, ADRs, scope, reviews, and READMEs, without `.claude/`. Use for why and where questions that cross docs and code (about 1,100 edges link a spec, ADR, or review to the code it governs).
+- **Code** `graphify-out/code/graph.json`: structure only (imports, calls, classes, SQL). Use for refactors, call chains, impact (`graphify affected`), and import cycles; no doc noise.
+- **All** `graphify-out/all/graph.json`: product plus the vendored `.claude/` skills and agents. Use only for questions about the agent tooling itself.
+
+A grep beats the graph for one lookup ("where is X defined"). The graphs are not committed and go stale; rebuild with the steps in that README after a merge.
+
 ## Git
 
 - integration: on
