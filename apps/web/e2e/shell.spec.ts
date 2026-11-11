@@ -134,6 +134,11 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Stock on hand',
       'Stock receipts',
       'SKUs',
+      // The catalog pages of spec 0012: Styles (stock.view), Seasons and Product groups
+      // (catalog.manage, which the administrator's manager hat holds).
+      'Styles',
+      'Seasons',
+      'Product groups',
       // Locations is admin only (spec 0006, AC-15); the suite signs in as an administrator.
       'Locations',
       // The customers group (spec 0014); the administrator's manager hat holds customers.view.

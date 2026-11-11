@@ -3,7 +3,7 @@ import { ar } from '@ssdashboard/i18n/ar';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanguageProvider } from '@/i18n/language-provider';
 import { renderWithQuery } from '@/shared/render-with-query';
 import { SkuDetailPage } from './sku-detail-page';
@@ -19,6 +19,11 @@ const api = vi.hoisted(() => ({
 vi.mock('@/inventory/inventory-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
+}));
+const catalog = vi.hoisted(() => ({ listGroupingChoices: vi.fn() }));
+vi.mock('@/catalog/catalog-api', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  ...catalog,
 }));
 vi.mock('@/shell/client-config', () => ({ loadConfig: () => new Promise(() => undefined) }));
 vi.mock('next/navigation', () => ({
@@ -78,8 +83,22 @@ const inArabic = (ui: ReactNode) => (
   <LanguageProvider initial={{ language: 'ar', catalog: ar }}>{ui}</LanguageProvider>
 );
 
+/** A season no loaded row holds: the filter offers it because it comes from `GET /api/seasons`. */
+const WINTER = {
+  id: '30000000-0000-4000-8000-000000000002',
+  code: 'AW27',
+  name: { en: 'Winter 27', ar: 'شتاء 27' },
+};
+
+beforeEach(() => {
+  catalog.listGroupingChoices.mockImplementation((kind: string) =>
+    Promise.resolve(kind === 'season' ? [SEASON, WINTER] : [GROUP]),
+  );
+});
+
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();
+  catalog.listGroupingChoices.mockReset();
 });
 
 describe('SkusPage columns, search, and filters (spec 0012, AC-3, AC-4)', () => {
@@ -105,7 +124,7 @@ describe('SkusPage columns, search, and filters (spec 0012, AC-3, AC-4)', () => 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
-  it('sends the season and group filters, including none, and keeps the options it met', async () => {
+  it('offers the seasons and groups from their api lists and sends the filters, including none', async () => {
     api.listSkus.mockResolvedValue({ items: [sku(1)], nextCursor: null });
     renderWithQuery(<SkusPage />);
     await screen.findByRole('table', { name: 'SKUs' });
@@ -114,6 +133,9 @@ describe('SkusPage columns, search, and filters (spec 0012, AC-3, AC-4)', () => 
     await waitFor(() =>
       expect(within(season).getByRole('option', { name: 'Summer 27' })).toBeInTheDocument(),
     );
+    expect(within(season).getByRole('option', { name: 'Winter 27' })).toBeInTheDocument();
+    expect(catalog.listGroupingChoices).toHaveBeenCalledWith('season', expect.anything());
+    expect(catalog.listGroupingChoices).toHaveBeenCalledWith('productGroup', expect.anything());
     await userEvent.selectOptions(season, SEASON.id);
     await waitFor(() =>
       expect(api.listSkus).toHaveBeenLastCalledWith(
@@ -194,11 +216,16 @@ describe('SKU page style block (spec 0012, AC-4)', () => {
 
     const block = await screen.findByRole('region', { name: 'About this SKU' });
     expect(within(block).getByText('TEE', { selector: 'bdi' })).toBeVisible();
+    expect(within(block).getByRole('link', { name: /TEE/ })).toHaveAttribute(
+      'href',
+      '/styles/40000000-0000-4000-8000-000000000001',
+    );
     expect(within(block).getByText('Summer 27')).toBeVisible();
     expect(within(block).getByText('Tops')).toBeVisible();
     expect(within(block).getByText('Size: M, Color: Black')).toBeVisible();
     expect(within(block).getByText('6221234567890')).toHaveAttribute('dir', 'ltr');
     expect(within(block).queryByRole('button')).not.toBeInTheDocument();
+    expect(catalog.listGroupingChoices).not.toHaveBeenCalled();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 
