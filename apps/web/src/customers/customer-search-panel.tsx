@@ -6,7 +6,7 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { CUSTOMER_SEARCH_RATE_LIMITED } from '@ssdashboard/contracts';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { LoaderCircleIcon, SearchIcon, UsersRoundIcon } from 'lucide-react';
+import { FlagIcon, LoaderCircleIcon, SearchIcon, UsersRoundIcon } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '@/api/client';
@@ -16,7 +16,7 @@ import { CustomerResultsTable } from './customer-results-table';
 
 /** What was searched: kept in component state only, never in the address (spec 0014, AC-3). */
 interface Submitted {
-  kind: 'phone' | 'name';
+  kind: 'phone' | 'name' | 'flagged';
   text: string;
 }
 
@@ -35,9 +35,11 @@ export function CustomerSearchPanel({ enabled }: { enabled: boolean }) {
     queryKey: customerKeys.search(submitted?.kind ?? 'phone', submitted?.text ?? ''),
     queryFn: ({ pageParam, signal }) =>
       searchCustomers(
-        submitted?.kind === 'phone'
-          ? { phone: submitted.text }
-          : { nameContains: submitted?.text ?? '' },
+        submitted?.kind === 'flagged'
+          ? { flagged: true }
+          : submitted?.kind === 'phone'
+            ? { phone: submitted.text }
+            : { nameContains: submitted?.text ?? '' },
         pageParam,
         signal,
       ),
@@ -123,6 +125,19 @@ export function CustomerSearchPanel({ enabled }: { enabled: boolean }) {
           <SearchIcon aria-hidden data-icon="inline-start" />
           {t('customers.search.submit')}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          aria-pressed={submitted?.kind === 'flagged'}
+          onClick={() => {
+            setInputError(null);
+            if (submitted?.kind === 'flagged') setSubmitted(null);
+            else setSubmitted({ kind: 'flagged', text: '' });
+          }}
+        >
+          <FlagIcon aria-hidden data-icon="inline-start" />
+          {t('customers.search.flaggedShow')}
+        </Button>
       </form>
 
       {errorKey && (
@@ -167,8 +182,20 @@ export function CustomerSearchPanel({ enabled }: { enabled: boolean }) {
         <>
           {rows.length === 0 ? (
             <div className="flex flex-col items-center gap-1 rounded-lg border px-4 py-10 text-center">
-              <p className="font-medium">{t('customers.search.noMatchTitle')}</p>
-              <p className="text-sm text-muted-foreground">{t('customers.search.noMatchBody')}</p>
+              <p className="font-medium">
+                {t(
+                  submitted?.kind === 'flagged'
+                    ? 'customers.search.noFlaggedTitle'
+                    : 'customers.search.noMatchTitle',
+                )}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  submitted?.kind === 'flagged'
+                    ? 'customers.search.noFlaggedBody'
+                    : 'customers.search.noMatchBody',
+                )}
+              </p>
             </div>
           ) : (
             <CustomerResultsTable rows={rows} />

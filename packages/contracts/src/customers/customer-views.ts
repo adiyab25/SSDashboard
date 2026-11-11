@@ -79,7 +79,8 @@ export type CustomerFlagView = z.infer<typeof CustomerFlagView>;
 /**
  * `GET /api/customers/:id` (spec 0014 AC-4): the canonical customer with the union of phones and
  * channel ids over all her ids. `resolvedFrom` is the id that was asked when it was a merged
- * record, else null. `updatedAt` is the canonical row's stamp (the flag routes check it).
+ * record, else null. `updatedAt` is the customer's stamp, the greatest `updated_at` over all her
+ * ids, so absorbing a record moves it (the flag routes check it).
  */
 export const CustomerProfile = z.object({
   id: z.uuid(),

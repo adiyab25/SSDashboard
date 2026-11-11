@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { AuditActor, CustomerBrief, NormalizedPhone } from '@ssdashboard/contracts';
+import type {
+  AuditActor,
+  CustomerBrief,
+  CustomerRiskFlag,
+  NormalizedPhone,
+} from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { AuditService } from '../audit/audit.service.js';
 import { DATABASE } from '../database/database.module.js';
@@ -11,6 +16,7 @@ import {
   type FindOrCreateInput,
   type FindOrCreateResult,
 } from './find-or-create/find-or-create.js';
+import { setFlagFromImport, type ImportFlagOutcome } from './flags/set-flag-from-import.js';
 import { addPhone, type AddPhoneOptions, type AddPhoneResult } from './phones/add-phone.js';
 
 /** A customer as other modules may show it (spec 0014 `briefs`): the asked id and the canonical customer behind it. */
@@ -138,5 +144,25 @@ export class CustomersService {
     for (const key of keys) {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${CUSTOMER_LOCK}::int, ${key}::int)`);
     }
+  }
+
+  /**
+   * The import entry point of the flag (AC-12, feature 15): writes a `blacklist_import` flag of
+   * `kind` with no person and no note on the canonical customer, replacing an older import or
+   * rule flag, and answers `set`; when any id of the customer holds a `manual` flag it writes
+   * nothing and answers `kept_manual`. It writes no audit entry: the import writes its own,
+   * carrying `importRunId`, which the customer row has no column for. Pass the caller's
+   * transaction. Throws `CUSTOMER_NOT_FOUND` for an unknown id and `CUSTOMER_CHANGED` when a merge
+   * moved the customer's id set while it waited for the locks (retry the row). One call per
+   * transaction, or several in the order of the canonical lock key, retrying the transaction on a
+   * deadlock or `CUSTOMER_CHANGED`. See {@link setFlagFromImport}.
+   */
+  setFlagFromImport(
+    tx: Transaction,
+    customerId: string,
+    kind: CustomerRiskFlag,
+    _importRunId: string,
+  ): Promise<ImportFlagOutcome> {
+    return setFlagFromImport(tx, this, customerId, kind);
   }
 }

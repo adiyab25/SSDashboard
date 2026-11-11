@@ -1,6 +1,11 @@
 import type { BadRequestException } from '@nestjs/common';
 import { ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { CustomerMergeRequest, CustomerUndoMergeRequest } from '@ssdashboard/contracts';
+import {
+  CustomerClearFlagRequest,
+  CustomerMergeRequest,
+  CustomerSetFlagRequest,
+  CustomerUndoMergeRequest,
+} from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
 import { CustomerBodyPipe, customersHttpError } from './customers-http.js';
 import { CustomersError, MergeAlreadyUndone, MergeNotLatest } from './customers.errors.js';
@@ -43,6 +48,8 @@ describe('customersHttpError', () => {
       new CustomersError('SUGGESTION_MISMATCH', 'x'),
       new MergeAlreadyUndone(),
       new MergeNotLatest(),
+      new CustomersError('STALE_RECORD', 'x'),
+      new CustomersError('NOT_FLAGGED', 'x'),
     ]) {
       const answer = customersHttpError(error) as ConflictException;
       expect(answer).toBeInstanceOf(ConflictException);
@@ -98,5 +105,33 @@ describe('CustomerBodyPipe', () => {
     }
     expect(body).toContain('VALIDATION_FAILED');
     expect(body).not.toContain('Zzsentinel');
+  });
+
+  // Spec 0014 AC-11: a flag note over 500 characters is NOTE_TOO_LONG, never echoed.
+  it('answers NOTE_TOO_LONG for a long note and maps the flag reason codes', () => {
+    const set = new CustomerBodyPipe(CustomerSetFlagRequest);
+    const clear = new CustomerBodyPipe(CustomerClearFlagRequest);
+    const expectedUpdatedAt = '2026-11-08T10:00:00.123456Z';
+    const note = 'Zzsentinel'.repeat(51);
+
+    let body = '';
+    try {
+      set.transform({ kind: 'refuser', note, expectedUpdatedAt });
+    } catch (error) {
+      body = JSON.stringify((error as UnprocessableEntityException).getResponse());
+    }
+    expect(body).toContain('NOTE_TOO_LONG');
+    expect(body).not.toContain('Zzsentinel');
+    expect(codeOf(() => set.transform({ kind: 'refuser', note: 1, expectedUpdatedAt }))).toBe(
+      'VALIDATION_FAILED',
+    );
+    expect(
+      codeOf(() => set.transform({ kind: 'refuser', reasonCode: 'x', expectedUpdatedAt })),
+    ).toBe('REASON_INVALID');
+    expect(codeOf(() => set.transform({ kind: 'refuser', expectedUpdatedAt }))).toBe('passed');
+    expect(codeOf(() => clear.transform({ expectedUpdatedAt }))).toBe('REASON_REQUIRED');
+    expect(codeOf(() => clear.transform({ reasonCode: 'confirmed_fake', expectedUpdatedAt }))).toBe(
+      'REASON_INVALID',
+    );
   });
 });
