@@ -208,10 +208,10 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       ]);
 
       expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
-      // The loser read "nothing online" before the winner committed: its recount is stale.
-      expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
-        code: 'ONLINE_GATE_STALE',
-      });
+      // Timing decides the loser's code: it read "nothing online" before the winner committed
+      // (stale), or it read the winner's committed flag (already online). Both are a 409.
+      const loser = replies.find((reply) => reply.status === 409)?.body as { code?: string };
+      expect(['ONLINE_GATE_STALE', 'ALREADY_ONLINE']).toContain(loser.code);
     });
 
     it('gives one success and one ONLINE_GATE_STALE for parallel moves of two different warehouses', async () => {

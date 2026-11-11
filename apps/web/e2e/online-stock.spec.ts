@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { createLocation, createSku, receive } from './master-data-api';
+import { pressEnterOn, typeInto, useOnlineFlag } from './online-flag';
 import { expectNoAxeViolations, textFor, useBrowserState, waitForPageHydration } from './support';
 
 // Spec 0011, milestone 1, task 5 (AC-12, AC-16, AC-19, AC-20): the online gate and the Online
-// stock badge on the Locations page, as an admin, in English and Arabic. The gate moves the one
-// online flag of the install, so the two languages run one after the other, never in parallel.
+// stock badge on the Locations page, as an admin, in English and Arabic, with the keyboard only.
+// The gate moves the one online flag of the install: the tests of a file run one after the other,
+// and `useOnlineFlag` holds a lock across workers (this file and online-stock-states.spec.ts run
+// in parallel workers) and stops online stock after each test, pass or fail.
 test.describe.configure({ mode: 'serial' });
 
 test.beforeEach(({ viewport }) => {
@@ -30,11 +33,13 @@ async function openLocations(page: Page) {
 
 for (const { language, dir } of LANGUAGES) {
   test.describe(`Online gate in ${language} (AC-16, AC-19)`, () => {
+    useOnlineFlag();
+
     test.beforeEach(async ({ page }) => {
       await useBrowserState(page, { language });
     });
 
-    test('opens the gate from a warehouse, confirms the stock counted, moves online, and stops it', async ({
+    test('opens the gate from a warehouse, confirms the stock counted, moves online, and stops it, by keyboard', async ({
       page,
     }) => {
       const t = (key: Parameters<typeof textFor>[1]) => textFor(dir, key);
@@ -48,12 +53,13 @@ for (const { language, dir } of LANGUAGES) {
       await expect(page.locator('html')).toHaveAttribute('dir', dir);
       await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
 
-      // Open the gate by keyboard: focus the row's button and press Enter.
-      const open = page.getByRole('button', {
-        name: t('inventory.onlineGate.openLabel').replace('{{code}}', code),
-      });
-      await open.focus();
-      await page.keyboard.press('Enter');
+      // Open the gate: Tab to the row's button, Enter.
+      await pressEnterOn(
+        page,
+        page.getByRole('button', {
+          name: t('inventory.onlineGate.openLabel').replace('{{code}}', code),
+        }),
+      );
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
 
@@ -63,17 +69,24 @@ for (const { language, dir } of LANGUAGES) {
       await expect(move).toBeDisabled();
       await expectNoAxeViolations(page);
 
-      await dialog.getByRole('button', { name: t('inventory.onlineGate.confirmStock') }).click();
+      await pressEnterOn(
+        page,
+        dialog.getByRole('button', { name: t('inventory.onlineGate.confirmStock') }),
+      );
       await expect(dialog.getByText(t('inventory.onlineGate.passed'))).toBeVisible();
       await expect(move).toBeEnabled();
 
       // A blank reason is refused before anything is sent, with the helper text beside it.
       await expect(dialog.getByText(t('inventory.onlineGate.reasonHint'))).toBeVisible();
-      await move.click();
+      await pressEnterOn(page, move);
       await expect(dialog.getByText(t('inventory.onlineGate.reasonRequired'))).toBeVisible();
-      await dialog.getByLabel(new RegExp(t('inventory.onlineGate.reason'))).fill('Counted by hand');
+      await typeInto(
+        page,
+        dialog.getByLabel(new RegExp(t('inventory.onlineGate.reason'))),
+        'Counted by hand',
+      );
       await expectNoAxeViolations(page);
-      await move.click();
+      await pressEnterOn(page, move);
 
       // The row now carries the Online stock badge and offers Stop online stock.
       await expect(dialog).toBeHidden();
@@ -81,16 +94,22 @@ for (const { language, dir } of LANGUAGES) {
       await expect(row.getByText(t('inventory.onlineGate.badge'), { exact: true })).toBeVisible();
       await expect(page.getByText(t('inventory.onlineGate.notice'))).toHaveCount(0);
 
-      await row
-        .getByRole('button', {
+      await pressEnterOn(
+        page,
+        row.getByRole('button', {
           name: t('inventory.onlineGate.stopLabel').replace('{{code}}', code),
-        })
-        .click();
+        }),
+      );
       const stop = page.getByRole('dialog');
-      await stop.getByRole('button', { name: t('inventory.onlineGate.stopConfirm') }).click();
+      const stopConfirm = stop.getByRole('button', { name: t('inventory.onlineGate.stopConfirm') });
+      await pressEnterOn(page, stopConfirm);
       await expect(stop.getByText(t('inventory.onlineGate.reasonRequired'))).toBeVisible();
-      await stop.getByLabel(new RegExp(t('inventory.onlineGate.reason'))).fill('Recount');
-      await stop.getByRole('button', { name: t('inventory.onlineGate.stopConfirm') }).click();
+      await typeInto(
+        page,
+        stop.getByLabel(new RegExp(t('inventory.onlineGate.reason'))),
+        'Recount',
+      );
+      await pressEnterOn(page, stopConfirm);
 
       // Nothing feeds online stock now: the Locations page and the Stock page say so.
       await expect(stop).toBeHidden();

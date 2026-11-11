@@ -824,6 +824,8 @@ export const en = {
       deleteDescription:
         'This removes the location for good. It only works for a location that never had receipts, movements, balances, or bins.',
       deletedDone: 'Location {{code}} deleted.',
+      archiveOnlineDescription:
+        'This location feeds online stock. Archiving it stops online stock, so Shopify is not updated until another location goes online. Its history stays.',
       errors: {
         STALE_RECORD:
           'Someone else changed this location while you had it open. Reload to see the latest version; the changes you typed here are discarded.',
@@ -847,6 +849,7 @@ export const en = {
       notice: 'No location feeds online stock: Shopify is not being updated',
       noticeLabel: 'Online stock status',
       noticeLink: 'Open the online gate',
+      statusError: 'Online stock status could not be loaded',
       badge: 'Online stock',
       open: 'Make online',
       openLabel: 'Make online {{code}}',

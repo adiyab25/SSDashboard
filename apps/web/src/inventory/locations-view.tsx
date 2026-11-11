@@ -89,6 +89,8 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.receiptsRoot });
+      // Archiving the online location stops online stock (spec 0011 AC-1), so the status line may appear.
+      void queryClient.invalidateQueries({ queryKey: inventoryKeys.onlineStatus });
       const done = {
         archive: 'inventory.locations.archivedDone',
         unarchive: 'inventory.locations.unarchivedDone',
@@ -109,9 +111,12 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
     setConfirm({ action, location });
   };
 
-  const copy = (action: Action, code: string) => ({
+  const copy = (action: Action, code: string, online: boolean) => ({
     title: t(`inventory.locations.${action}Title`, { code }),
-    description: t(`inventory.locations.${action}Description`),
+    description:
+      action === 'archive' && online
+        ? t('inventory.locations.archiveOnlineDescription')
+        : t(`inventory.locations.${action}Description`),
     label: t(`inventory.locations.${action}`),
   });
 
@@ -316,9 +321,11 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
       {stopping && <StopOnlineDialog location={stopping} onClose={() => setStopping(null)} />}
       {confirm && (
         <ConfirmActionDialog
-          title={copy(confirm.action, confirm.location.code).title}
-          description={copy(confirm.action, confirm.location.code).description}
-          confirmLabel={copy(confirm.action, confirm.location.code).label}
+          title={copy(confirm.action, confirm.location.code, confirm.location.online).title}
+          description={
+            copy(confirm.action, confirm.location.code, confirm.location.online).description
+          }
+          confirmLabel={copy(confirm.action, confirm.location.code, confirm.location.online).label}
           destructive={confirm.action === 'delete'}
           pending={act.isPending}
           error={act.error ? t(`inventory.locations.errors.${errorCode(act.error)}`) : null}

@@ -248,4 +248,28 @@ describe('LocationsPage (AC-4)', () => {
       'must stay a warehouse. Stop online stock first',
     );
   });
+
+  it('archiving the online location says it stops online stock, then shows the not being updated line (spec 0011 AC-1, AC-20)', async () => {
+    api.listLocations.mockResolvedValue(page([location(1, { online: true })]));
+    api.getOnlineStatus.mockResolvedValue({
+      onlineLocation: { id: location(1).id, code: 'LOC1', name: { en: 'Place 1' } },
+    });
+    api.setLocationArchived.mockImplementation(() => {
+      api.getOnlineStatus.mockResolvedValue({ onlineLocation: null });
+      return Promise.resolve(location(1, { archived: true }));
+    });
+    renderWithQuery(<LocationsPage />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Archive LOC1' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Archive location LOC1?' });
+    expect(within(dialog).getByText(/Archiving it stops online stock/)).toBeVisible();
+    expect(
+      screen.queryByText('No location feeds online stock: Shopify is not being updated'),
+    ).toBeNull();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Archive' }));
+
+    expect(
+      await screen.findByText('No location feeds online stock: Shopify is not being updated'),
+    ).toBeVisible();
+  });
 });

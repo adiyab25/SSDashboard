@@ -115,10 +115,17 @@ export const OnlineStockCandidateResponse = z.object({
 /** The validated shape of `OnlineStockCandidateResponse`. */
 export type OnlineStockCandidateResponse = z.infer<typeof OnlineStockCandidateResponse>;
 
+/**
+ * A same origin api path a gate action may point at: `/api/` then letters, digits, `-`, `_` and
+ * `/` only, so never another host (`https://`, `//host`), a `..` segment, a query, or a fragment.
+ * The web fetches or links this path as it is, so a provider can never send a browser off site.
+ */
+export const GATE_ACTION_PATH = /^(?!.*\/\/)\/api\/[A-Za-z0-9/_-]+$/;
+
 /** The route a failed gate check points to: the HTTP method and path that fixes it, with a label key. */
 export const OnlineGateAction = z.object({
   method: z.enum(['POST', 'PUT', 'PATCH']),
-  path: z.string().min(1),
+  path: z.string().regex(GATE_ACTION_PATH, 'A gate action path is a same origin /api/ path'),
   /** A `@ssdashboard/i18n` message key; the web translates it. */
   label: z.string().min(1),
 });

@@ -32,6 +32,9 @@ const STATIC_REFERENCE =
 /** A dynamic `import(...)` or `require(...)`, with whatever expression is its argument. */
 const DYNAMIC_REFERENCE = /\b(?:import|require)\s*\(([^)]*)\)/g;
 
+/** An argument that is one plain string literal, with no template placeholder or concatenation. */
+const PLAIN_STRING = /^(['"])([^'"`\\]*)\1$/;
+
 const LEDGER_FOLDER = /^inventory\/ledger(?:\/|$)/;
 const INVENTORY_BARREL = /^inventory\/inventory\.module(?:\.[mc]?[jt]sx?)?$/;
 
@@ -52,9 +55,10 @@ function resolvedSpecifier(specifier: string, fromFile: string): string {
  * - resolves to a file under `inventory/ledger/` (static, re-export, or dynamic);
  * - reaches `inventory/inventory.module` as a namespace (`import * as`, `export * from`), which
  *   can hand out `LedgerService`, or by a clause naming `LedgerService` or `ReconciliationService`;
- * - is a dynamic `import()` or `require()` whose argument mentions `inventory/ledger` or
- *   `inventory.module` in any form (a template literal, a concatenation, a variable path is
- *   caught by the text it holds).
+ * - is a dynamic `import()` or `require()` whose argument is a plain string literal resolving to
+ *   `inventory/ledger/` or the barrel, or is anything but a plain string literal (a variable, a
+ *   template literal, a concatenation: a computed load cannot be read, so it is refused);
+ * - uses `createRequire` at all (its loader is not named `require`).
  * Importing `InventoryModule` or the read services by name stays allowed. Pure: it reads text only.
  * A re-export chain through a third module (a file elsewhere that re-exports the ledger, imported
  * from a channel file) is not followed; the module wall and review cover it.
@@ -72,13 +76,19 @@ function forbiddenLedgerImports(source: string, fromFile: string): string[] {
     else if (INVENTORY_BARREL.test(target) && (namesWriter || namespace)) found.push(written);
   }
   for (const match of source.matchAll(DYNAMIC_REFERENCE)) {
-    const argument = match[1] ?? '';
-    if (/inventory\/ledger|inventory\.module/.test(argument.replace(/\.\.\//g, ''))) {
-      found.push(argument.trim());
-    } else if (/inventory/.test(argument) && /ledger|\.module/.test(argument)) {
-      found.push(argument.trim());
+    const argument = (match[1] ?? '').trim();
+    const literal = PLAIN_STRING.exec(argument);
+    if (!literal) {
+      // A computed argument (a variable, a template literal, a concatenation) cannot be read, so
+      // a channel side file may not load code that way at all.
+      found.push(`non literal ${match[0].trim()}`);
+      continue;
     }
+    const target = resolvedSpecifier(literal[2] ?? '', fromFile);
+    if (LEDGER_FOLDER.test(target) || INVENTORY_BARREL.test(target)) found.push(argument);
   }
+  // `createRequire` makes a loader whose calls are not named `require`, so it is never allowed.
+  if (/\bcreateRequire\b/.test(source)) found.push('createRequire');
   return found;
 }
 
@@ -154,6 +164,19 @@ describe('channels never write stock (spec 0011 AC-8)', () => {
       [
         'a dynamic import',
         "const ledger = await import('../../inventory/ledger/ledger.service.js');",
+      ],
+      [
+        'a dynamic import of a variable',
+        "const p = '../../inventory/ledger/ledger.service.js';\nawait import(p);",
+      ],
+      [
+        'a dynamic import of a harmless looking variable',
+        'const target = pick();\nawait import(target);',
+      ],
+      ['a require of a variable', 'const mod = require(path);'],
+      [
+        'a createRequire loader',
+        "const load = createRequire(import.meta.url);\nload('../../inventory/ledger/ledger.service.js');",
       ],
       [
         'a dynamic import of a template literal',

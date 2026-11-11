@@ -10,7 +10,7 @@ The single writer of stock movements, and the locations it moves stock between. 
 Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner decision Q-11.6): a minimal consignment partner record and numbered send to and return from a showroom, so partner stock leaves the online count from the first move.
 - [x] Design it (spec): `/architect stock ledger & locations`
 - [ ] Build it: `/develop stock ledger & locations`
-  - [ ] The gated online location and the online stock read
+  - [x] The gated online location and the online stock read
   - [ ] Reservations, waiting demand, carrier shipments, and catalog locks
   - [ ] Partners, owner type screens, and showroom moves
   - [ ] Adjustments, adjustment requests, and the receipt cost rule

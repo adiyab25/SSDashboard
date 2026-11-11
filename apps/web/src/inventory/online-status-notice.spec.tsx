@@ -1,4 +1,5 @@
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderWithQuery } from '@/shared/render-with-query';
 import { OnlineStatusNotice } from './online-status-notice';
@@ -65,11 +66,15 @@ describe('OnlineStatusNotice (spec 0011 AC-20)', () => {
     expect(screen.queryByText(LINE)).toBeNull();
   });
 
-  it('draws nothing when the read fails', async () => {
-    api.getOnlineStatus.mockRejectedValue(new Error('down'));
+  it('says the status could not be loaded, with Try again, instead of drawing nothing (AC-16)', async () => {
+    api.getOnlineStatus.mockRejectedValueOnce(new Error('down'));
+    api.getOnlineStatus.mockResolvedValue({ onlineLocation: null });
     renderWithQuery(<OnlineStatusNotice linkToGate />);
 
-    await settled();
+    expect(await screen.findByText('Online stock status could not be loaded')).toBeVisible();
     expect(screen.queryByText(LINE)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText(LINE)).toBeVisible();
+    expect(screen.queryByText('Online stock status could not be loaded')).toBeNull();
   });
 });

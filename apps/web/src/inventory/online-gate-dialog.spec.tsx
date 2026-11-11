@@ -206,6 +206,48 @@ describe('OnlineGateDialog (spec 0011 AC-19)', () => {
     await waitFor(() => expect(api.getOnlineGate.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
+  it.each([
+    'https://evil.example/steal',
+    '//evil.example/x',
+    '/api/orders?x=1',
+    '/orders/hold',
+    '/api/../x',
+  ])('draws no action for the path %s: only a plain api route runs', async (path) => {
+    api.getOnlineGate.mockResolvedValue(
+      gate({
+        checks: [
+          counted(true),
+          {
+            key: 'orders_held',
+            label: 'inventory.onlineGate.checks.stockCounted',
+            passed: false,
+            count: 2,
+            action: { method: 'POST', path, label: 'inventory.onlineGate.stop' },
+          },
+        ],
+      }),
+    );
+    const { dialog } = await open();
+
+    expect(await within(dialog).findByText('Not passed')).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: 'Stop online stock' })).toBeNull();
+    expect(within(dialog).queryByRole('link')).toBeNull();
+  });
+
+  it('offers Confirm stock counted while that check fails, and does not call it "cannot feed online stock"', async () => {
+    // The api reports canGoOnline false while any check fails, so a failed check is not ineligibility.
+    api.getOnlineGate.mockResolvedValue(gate({ canGoOnline: false, checks: [counted(false)] }));
+    const { dialog } = await open();
+
+    expect(
+      await within(dialog).findByRole('button', {
+        name: "Confirm this location's stock is counted",
+      }),
+    ).toBeVisible();
+    expect(within(dialog).queryByText(/cannot feed online stock/)).toBeNull();
+    expect(within(dialog).getByText('Pass every check above to continue.')).toBeVisible();
+  });
+
   it('says a location that cannot go online cannot, and blocks the move', async () => {
     api.getOnlineGate.mockResolvedValue(gate({ canGoOnline: false }));
     const { dialog } = await open();

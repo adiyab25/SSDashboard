@@ -14,7 +14,8 @@ import { getOnlineStatus, inventoryKeys } from './inventory-api';
  * stock: Shopify is not being updated", shown exactly while `GET /api/stock/online-status` answers
  * no online location. `linkToGate` adds the link to the Locations page, where the gate opens, for
  * a person holding `catalog.manage`; the Locations page itself passes false. It draws nothing
- * while loading or when the read fails, and it only explains.
+ * while loading; when the read fails it says so with a Try again button (AC-16), so a failure never
+ * looks like "a location is online". It only explains.
  */
 export function OnlineStatusNotice({ linkToGate }: { linkToGate: boolean }) {
   const { t } = useTranslation();
@@ -23,6 +24,18 @@ export function OnlineStatusNotice({ linkToGate }: { linkToGate: boolean }) {
     queryKey: inventoryKeys.onlineStatus,
     queryFn: ({ signal }) => getOnlineStatus(signal),
   });
+  if (status.isError && !status.data) {
+    return (
+      <section aria-label={t('inventory.onlineGate.noticeLabel')}>
+        <p className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          {t('inventory.onlineGate.statusError')}
+          <Button type="button" size="sm" variant="outline" onClick={() => void status.refetch()}>
+            {t('inventory.retry')}
+          </Button>
+        </p>
+      </section>
+    );
+  }
   if (!status.data || status.data.onlineLocation !== null) return null;
 
   return (

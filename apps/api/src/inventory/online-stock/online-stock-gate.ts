@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { OnlineGateAction, OnlineGateCheck } from '@ssdashboard/contracts';
+import { OnlineGateCheck, type OnlineGateAction } from '@ssdashboard/contracts';
 import type { MessageKey } from '@ssdashboard/i18n';
 import type { Executor } from '../../database/sql.js';
 
@@ -59,12 +59,18 @@ export class OnlineStockGate {
     this.providers.push(provider);
   }
 
-  /** Runs every registered check for the location, in registration order. */
+  /**
+   * Runs every registered check for the location, in registration order, and validates each result
+   * against the `OnlineGateCheck` contract (spec 0011 AC-19): a provider that answers an invalid
+   * action or label makes the evaluation throw.
+   */
   async evaluate(locationId: string, executor: Executor): Promise<OnlineGateCheck[]> {
     const results: OnlineGateCheck[] = [];
     for (const provider of this.providers) {
       const result = await provider.run(locationId, executor);
-      results.push({ ...result, key: provider.key });
+      // A bad result (an off site action path, an empty label) fails here, loudly, and never
+      // reaches the browser: `parse` throws a `ZodError` for the caller's request.
+      results.push(OnlineGateCheck.parse({ ...result, key: provider.key }));
     }
     return results;
   }

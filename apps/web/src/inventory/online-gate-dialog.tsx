@@ -133,7 +133,7 @@ export function OnlineGateDialog({
     },
   });
 
-  const busy = confirmStock.isPending || action.isPending || move.isPending;
+  const busy = confirmStock.isPending || action.isPending || move.isPending || gate.isFetching;
   const counted = view?.checks.find((check) => check.key === STOCK_COUNTED_CHECK_KEY);
   const allPassed = view?.checks.every((check) => check.passed) ?? false;
   const canMove = !!view && view.canGoOnline && allPassed;
@@ -207,7 +207,7 @@ export function OnlineGateDialog({
 
           {view && (
             <>
-              {!view.canGoOnline && (
+              {!view.canGoOnline && allPassed && (
                 <Alert role="status">
                   <AlertDescription>{t('inventory.onlineGate.cannotGoOnline')}</AlertDescription>
                 </Alert>
@@ -298,7 +298,7 @@ export function OnlineGateDialog({
                 invalid={!!errors.reason}
                 register={form.register('reason')}
               />
-              {!canMove && view.canGoOnline && (
+              {!allPassed && (
                 <p className="text-sm text-muted-foreground">
                   {t('inventory.onlineGate.passAllChecks')}
                 </p>
