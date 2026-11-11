@@ -214,10 +214,7 @@ describe('planNetting: refunds kept quiet (security review M2)', () => {
       order,
       oneDay(order, '2026-11-07'),
       {},
-      {
-        before: '2026-11-08T00:00:00Z',
-        all: false,
-      },
+      { before: '2026-11-08T00:00:00Z' },
     );
     expect(plan.refunds).toEqual([]);
     expect(plan.recordedRefundIds).toEqual([refundId]);
@@ -227,26 +224,18 @@ describe('planNetting: refunds kept quiet (security review M2)', () => {
     expect(later.refunds).toEqual([]);
   });
 
-  it('publishes a refund made at or after go live, and never one of an imported order', () => {
+  it('publishes a refund made at or after go live, imported order or not (D14)', () => {
     expect(
       planNetting(
         order,
         oneDay(order, '2026-11-07'),
         {},
-        {
-          before: '2026-11-07T15:02:00Z',
-          all: false,
-        },
+        { before: '2026-11-07T15:02:00Z' },
       ).refunds.map((refund) => refund.externalRefundId),
     ).toEqual([refundId]);
-    const imported = planNetting(
-      order,
-      oneDay(order, '2026-11-07'),
-      {},
-      { before: null, all: true },
-    );
-    expect(imported.refunds).toEqual([]);
-    expect(imported.recordedRefundIds).toEqual([refundId]);
+    // D14: no `all` flag; with no go live instant the refund publishes like any other.
+    const open = planNetting(order, oneDay(order, '2026-11-07'), {}, { before: null });
+    expect(open.refunds.map((refund) => refund.externalRefundId)).toEqual([refundId]);
   });
 });
 

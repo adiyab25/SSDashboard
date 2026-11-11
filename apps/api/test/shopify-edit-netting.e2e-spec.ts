@@ -617,6 +617,29 @@ describe(
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
+    it('publishes the refund of an imported order made after go live exactly once (D14)', async () => {
+      useShopifyScenarios('order-imported-refund-after-go-live');
+      const c = await plant();
+      await api.owner.pool.query(
+        `UPDATE connections SET go_live_at = '2026-11-06T00:00:00Z' WHERE id = $1::uuid`,
+        [c.id],
+      );
+      const gid = 'gid://shopify/Order/5550001054001';
+      expect(await arrive(c, 'orders/create', gid, '2026-11-07T10:00:00Z')).toMatchObject({
+        status: 'processed',
+      });
+      const order = await orderOf(c, gid);
+      expect(order?.fulfillment_state).toBe('shipped');
+      expect(refundsFor(order?.id as string).map((event) => event.externalRefundId)).toEqual([
+        'gid://shopify/Refund/1110001054001',
+      ]);
+      expect((await mappingOf(c, gid))?.state).toMatchObject({
+        imported: true,
+        recordedRefundIds: ['gid://shopify/Refund/1110001054001'],
+      });
+      expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
     it('keeps every netting and refund event free of a name, a phone, or an address (Law 151)', () => {
       const published = JSON.stringify([...netted, ...refunds]);
       expect(netted.length + refunds.length).toBeGreaterThan(0);

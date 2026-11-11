@@ -6,7 +6,7 @@ import {
   SyncRunListResponse,
   SyncRunStarted,
 } from '@ssdashboard/contracts';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ENV } from '../src/config/config.module.js';
 import { loadEnv } from '../src/config/env.js';
 import { ConnectionSecrets } from '../src/connectors/connections/connection-secrets.js';
@@ -14,7 +14,11 @@ import { GoLiveClock } from '../src/connectors/connections/go-live-clock.js';
 import { InboxPurgeJob } from '../src/connectors/inbox/inbox-purge.job.js';
 import { ConnectorBudget } from '../src/connectors/shopify/connector-budget.js';
 import { ConnectorClock } from '../src/connectors/shopify/connector-clock.js';
-import { CONNECTOR_SHOPIFY_QUEUE } from '../src/connectors/shopify/connector-shopify.queue.js';
+import {
+  BACKFILL_JOB_PRIORITY,
+  CONNECTOR_SHOPIFY_QUEUE,
+  INBOX_JOB_PRIORITY,
+} from '../src/connectors/shopify/connector-shopify.queue.js';
 import { HourlyCheckJob } from '../src/connectors/shopify/hourly-check.job.js';
 import { SweepJob } from '../src/connectors/shopify/sweep.job.js';
 import { JobSender } from '../src/platform/jobs/job-sender.js';
@@ -899,6 +903,53 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
+    it('never resends a D12 re-read at webhook priority: not at 15 minutes, only past 4 hours and at the backfill priority (F2, M-R1)', async () => {
+      clock.at = new Date('2026-11-05T12:05:00Z');
+      const c = await plant({
+        goLiveAt: '2026-11-01T00:00:00Z',
+        ordersSweptThrough: '2026-11-05T12:00:00Z',
+        lastSweepMinutesAgo: 5,
+      });
+      const reread = (n: number, minutesAgo: number) =>
+        inboxRow(c, {
+          gidValue: gid(n),
+          status: 'received',
+          source: 'backfill',
+          topic: 'orders/updated',
+          dedupe: `backfill-reread:${gid(n)}`,
+          minutesAgo,
+        });
+      // 40 minutes old: past the 15 minute rule, and still no resend. 5 hours old: resent, low.
+      const recent = await reread(1054, 40);
+      const old = await reread(1055, 300);
+      const webhook = await inboxRow(c, {
+        gidValue: gid(1056),
+        status: 'received',
+        minutesAgo: 20,
+      });
+      useShopifyScenarios('sweep-retry-and-resend');
+      const jobs = worker.get(JobSender);
+      const sent: { eventId: string; priority: number | undefined }[] = [];
+      const spy = vi.spyOn(jobs, 'send').mockImplementation((_queue, data, options) => {
+        const payload = data as { eventId?: string };
+        sent.push({ eventId: payload.eventId ?? '', priority: options?.priority });
+        return Promise.resolve('recorded');
+      });
+      try {
+        await worker.get(SweepJob).sweep('orders', { connectionId: c.id });
+      } finally {
+        spy.mockRestore();
+      }
+      const resent = sent.filter((job) => [recent, old, webhook].includes(job.eventId));
+      expect(resent.sort((a, b) => a.eventId.localeCompare(b.eventId))).toEqual(
+        [
+          { eventId: webhook, priority: INBOX_JOB_PRIORITY },
+          { eventId: old, priority: BACKFILL_JOB_PRIORITY },
+        ].sort((a, b) => a.eventId.localeCompare(b.eventId)),
+      );
+      expect(sent.some((job) => job.eventId === recent)).toBe(false);
+    });
+
     it('marks a live connection whose last sweep is 16 minutes old SWEEP_LATE on the tick', async () => {
       await api.owner.pool.query(
         `UPDATE connections SET status = 'paused' WHERE status = 'active'`,
@@ -1155,7 +1206,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(runs.rows.map((r) => r.id)).not.toContain(oldRun);
     });
 
-    it('purges a failed row past 90 days once a newer event of its order did not fail, received rows of unprocessed topics past 90 days, and unfinished runs past 90 days (code review minor, security review L5, D13)', async () => {
+    it('purges a failed row past 90 days once a newer event of its order did not fail, received rows of unprocessed topics past 90 days except product rows, and unfinished runs past 90 days unless they moved lately (code review minor, security review L5, D13, F2)', async () => {
       const c = await plant();
       const superseded = await inboxRow(c, { gidValue: gid(1054), status: 'failed', daysAgo: 95 });
       const newer = await inboxRow(c, { gidValue: gid(1054), status: 'processed', daysAgo: 92 });
@@ -1191,6 +1242,14 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
          RETURNING id`,
         [c.id],
       );
+      // F2 (m-R1): a backfill started 100 days ago but resumed an hour ago is still running.
+      const resumed = await api.owner.pool.query<{ id: string }>(
+        `INSERT INTO connection_sync_runs (connection_id, kind, status, started_at, cursor)
+         VALUES ($1::uuid, 'backfill_products', 'running', now() - interval '100 days',
+                 jsonb_build_object('movedAt', now() - interval '1 hour')::text)
+         RETURNING id`,
+        [c.id],
+      );
       const kept = await api.owner.pool.query<{ id: string }>(
         `INSERT INTO connection_sync_runs (connection_id, kind, status, started_at, finished_at)
          VALUES ($1::uuid, 'backfill_orders', 'succeeded', now() - interval '120 days',
@@ -1200,15 +1259,16 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       );
 
       const outcome = await worker.get(InboxPurgeJob).run();
-      expect(outcome.unprocessedInboundEvents).toBeGreaterThanOrEqual(2);
+      expect(outcome.unprocessedInboundEvents).toBeGreaterThanOrEqual(1);
       const left = (
         await api.owner.pool.query<{ id: string }>(
           `SELECT id FROM inbound_events WHERE connection_id = $1::uuid`,
           [c.id],
         )
       ).rows.map((r) => r.id);
-      expect(left.sort()).toEqual([alone, recentProduct, waitingOrder].sort());
-      for (const gone of [superseded, newer, product, refund]) expect(left).not.toContain(gone);
+      // F2 (m-R2): a received product row is kept until task 8 reads it, however old.
+      expect(left.sort()).toEqual([alone, product, recentProduct, waitingOrder].sort());
+      for (const gone of [superseded, newer, refund]) expect(left).not.toContain(gone);
       const runs = (
         await api.owner.pool.query<{ id: string }>(
           `SELECT id FROM connection_sync_runs WHERE connection_id = $1::uuid`,
@@ -1216,7 +1276,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         )
       ).rows.map((r) => r.id);
       // The newest finished run of a kind stays, however old; the stuck unfinished one goes.
-      expect(runs).toEqual([kept.rows[0]?.id]);
+      expect(runs.sort()).toEqual([kept.rows[0]?.id, resumed.rows[0]?.id].sort());
       expect(runs).not.toContain(stuck.rows[0]?.id);
     });
 

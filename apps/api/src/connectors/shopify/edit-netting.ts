@@ -53,14 +53,13 @@ export interface NettingMemory {
 }
 
 /**
- * Which refunds are recorded without being published (security review M2): those that happened
- * before `before` (the connection's `go_live_at`), or every refund when `all` (an order the
- * `import` actor created). Their ids still go into `recordedRefundIds`, so a later read never
- * publishes them either.
+ * Which refunds are recorded without being published (security review M2, lead decision D14):
+ * those that happened before `before` (the connection's `go_live_at`), imported order or not. A
+ * refund after go live publishes like any other. Their ids still go into `recordedRefundIds`, so
+ * a later read never publishes them either.
  */
 export interface QuietRefunds {
   readonly before: string | null;
-  readonly all: boolean;
 }
 
 /** What one read back's sales history asks for. */
@@ -148,14 +147,14 @@ interface Candidate {
  * Each refund agreement (it carries `refund`) with at least one `RETURN` sale, whose sales were
  * all read, and whose refund id is not in `memory.recordedRefundIds`, is a new refund: the sum of
  * its `RETURN` sales of every line type, as a positive amount, at its `happenedAt`. A new refund
- * that `quiet` names (before go live, or of an imported order) is only recorded, never planned for
+ * that `quiet` names (before go live) is only recorded, never planned for
  * publishing.
  */
 export function planNetting(
   order: ShopifyOrder,
   days: ReadonlyMap<string, string>,
   memory: NettingMemory,
-  quiet: QuietRefunds = { before: null, all: false },
+  quiet: QuietRefunds = { before: null },
 ): NettingPlan {
   const quietBefore = quiet.before === null ? null : Date.parse(quiet.before);
   const variantOf = new Map(
@@ -186,8 +185,7 @@ export function planNetting(
     }
     const refund = refundOf(agreement);
     if (refund !== null && !recorded.has(refund.externalRefundId)) {
-      const silent =
-        quiet.all || (quietBefore !== null && Date.parse(refund.occurredAt) < quietBefore);
+      const silent = quietBefore !== null && Date.parse(refund.occurredAt) < quietBefore;
       if (!silent) refunds.push(refund);
       recorded.add(refund.externalRefundId);
     }

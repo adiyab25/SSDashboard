@@ -17,7 +17,6 @@ import {
   InvalidOrderInput,
   LineAlreadyMapped,
   OrderLockTimeout,
-  OrdersError,
   OrderTransactionNested,
   PaymentMethodLocked,
   VariantUnknown,
@@ -48,6 +47,7 @@ import {
   ShopifyCustomerMappingError,
 } from './customer-mapper.js';
 import { nettingInstantsOf, planNetting } from './edit-netting.js';
+import { orderErrorCodeOf, upperCode } from './error-codes.js';
 import { ExchangeByEdit, stateWithoutWaitingReplacement } from './exchange-by-edit.js';
 import { nextKnownOrderState, planKnownOrder, type KnownOrderPlan } from './known-order-plan.js';
 import {
@@ -181,23 +181,12 @@ function isoOf(instant: string): string {
   return new Date(instant).toISOString();
 }
 
-/** `OrderNumberTaken` as the inbox's upper case failure code `ORDER_NUMBER_TAKEN`. */
-export function upperCode(code: string): string {
-  return code
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[^A-Za-z0-9_]/g, '_')
-    .toUpperCase()
-    .slice(0, 64);
-}
-
 /** A domain error the inbox records as `failed` with a code; anything else is retried or a bug. */
 function failureCodeOf(error: unknown): string | null {
-  if (error instanceof ShopifyOrderMappingError) return error.code;
   if (error instanceof ShopifyCustomerMappingError) return error.code;
   if (error instanceof CustomersError) return upperCode(error.code);
   if (error instanceof OrderLockTimeout || error instanceof OrderTransactionNested) return null;
-  if (error instanceof OrdersError) return upperCode(error.code);
-  return null;
+  return orderErrorCodeOf(error);
 }
 
 /** Whether a read order lacks a ship to name, phone, or address line (the protected data check). */
@@ -686,6 +675,8 @@ export class InboxJob {
         if (state.salesHistoryTruncated !== true) {
           return this.end(tx, event, label, { status: 'ignored', outcome: 'stale' }, coalesce);
         }
+        // TODO(task 13): this nets without the write back hold check; the outbound side must
+        // decide whether a held order may net before it lands (code re-review n-R1).
         const netted = await this.net(tx, mapping.local_id, order, state, base.goLiveAt);
         await this.saveMapping(tx, mapping.id, order.updatedAt, netted);
         return this.end(
@@ -961,7 +952,7 @@ export class InboxJob {
    * `ChannelEditNetted` per new pair and one `ChannelRefundRecorded` per new refund in the unit,
    * and returns the state with the netted sale ids, the recorded refund ids, and
    * `salesHistoryTruncated` while the read did not hold the whole history. A refund that happened
-   * before `goLiveAt`, or any refund of an order the `import` actor created (`state.imported`), is
+   * before `goLiveAt` is
    * kept in `recordedRefundIds` without `ChannelRefundRecorded` (security review M2): feature 35
    * must never count money that moved before the app took over. Never changes the order: the
    * snapshot was already decided by the lines.
@@ -981,10 +972,7 @@ export class InboxJob {
         FROM unnest(${pgArray(instants)}::text[]) AS t(at)`);
       for (const row of rows) days.set(row.at, row.day);
     }
-    const plan = planNetting(order, days, state, {
-      before: goLiveAt,
-      all: state.imported === true,
-    });
+    const plan = planNetting(order, days, state, { before: goLiveAt });
     for (const pair of plan.pairs) {
       await this.events.publish(
         tx,

@@ -8,11 +8,7 @@ import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import type { ChannelActor } from '../../orders/intake/order-intake.service.js';
 import { OrderTransactions } from '../../orders/order-transactions.js';
-import {
-  OrderLockTimeout,
-  OrdersError,
-  OrderTransactionNested,
-} from '../../orders/orders.errors.js';
+import { OrderLockTimeout, OrderTransactionNested } from '../../orders/orders.errors.js';
 import { JobSender } from '../../platform/jobs/job-sender.js';
 import { SyncRuns } from '../sync-runs/sync-runs.js';
 import { missingScopes } from './connect-health.js';
@@ -23,8 +19,7 @@ import {
   type ShopifyJobData,
 } from './connector-shopify.queue.js';
 import { ExchangeByEdit } from './exchange-by-edit.js';
-import { upperCode } from './inbox.job.js';
-import { ShopifyOrderMappingError } from './order-mapper.js';
+import { orderErrorCodeOf } from './error-codes.js';
 import {
   hookAddress,
   isHttpsAddress,
@@ -80,10 +75,8 @@ const HOURLY_CODES: readonly ConnectionHealthReason[] = ['SCOPES_MISSING', 'WEBH
 
 /** The stable code of a waiting replacement refused for good, or null for anything else. */
 function refusalCodeOf(error: unknown): string | null {
-  if (error instanceof ShopifyOrderMappingError) return error.code;
   if (error instanceof OrderLockTimeout || error instanceof OrderTransactionNested) return null;
-  if (error instanceof OrdersError) return upperCode(error.code);
-  return null;
+  return orderErrorCodeOf(error);
 }
 
 /** How one hourly check ended: codes and counts only. */
@@ -101,9 +94,7 @@ export interface HourlyCheckOutcome {
  * Major 3): an orders or mapping domain code, else `INTERNAL_ERROR`.
  */
 function internalCodeOf(error: unknown): string {
-  if (error instanceof ShopifyOrderMappingError) return error.code;
-  if (error instanceof OrdersError) return upperCode(error.code);
-  return 'INTERNAL_ERROR';
+  return orderErrorCodeOf(error) ?? 'INTERNAL_ERROR';
 }
 
 /**

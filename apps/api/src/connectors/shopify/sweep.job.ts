@@ -16,6 +16,7 @@ import { ConnectorClock } from './connector-clock.js';
 import {
   connectionGroup,
   CONNECTOR_SHOPIFY_QUEUE,
+  BACKFILL_JOB_PRIORITY,
   INBOX_JOB_PRIORITY,
   SWEEP_JOB_PRIORITY,
   type ShopifyJobData,
@@ -507,13 +508,13 @@ export class SweepJob {
       return added;
     });
 
-    const { rows: stuck } = await this.connection.db.execute<{ id: string }>(sql`
-      SELECT id FROM inbound_events
+    const { rows: stuck } = await this.connection.db.execute<{ id: string; reread: boolean }>(sql`
+      SELECT id, left(dedupe_key, 16) = 'backfill-reread:' AS reread FROM inbound_events
       WHERE connection_id = ${connectionId}::uuid
         AND subject_type = ANY(${pgArray([...PROCESSED_INBOX_SUBJECTS])}::inbound_subject[])
         AND status = 'received'
         AND topic = ANY(${pgArray([...PROCESSED_INBOX_TOPICS])}::text[])
-        AND ((attempts = 0
+        AND ((attempts = 0 AND left(dedupe_key, 16) <> 'backfill-reread:'
               AND received_at < now() - make_interval(mins => ${RESEND_AFTER_MINUTES}))
              OR received_at < now() - make_interval(hours => ${RESEND_RETRIED_AFTER_HOURS}))
       ORDER BY received_at
@@ -523,7 +524,8 @@ export class SweepJob {
       const data: ShopifyJobData = { kind: 'inbox', connectionId, eventId: row.id };
       const id = await this.jobs.send(CONNECTOR_SHOPIFY_QUEUE, data, {
         ...connectionGroup(connectionId),
-        priority: INBOX_JOB_PRIORITY,
+        // A D12 re-read whose job was lost keeps the backfill's low priority (lead ruling F2).
+        priority: row.reread ? BACKFILL_JOB_PRIORITY : INBOX_JOB_PRIORITY,
         singletonKey: `resend:${row.id}`,
         singletonSeconds: 3_600,
       });

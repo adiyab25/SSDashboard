@@ -14,17 +14,13 @@ import {
   CONNECTOR_SHOPIFY_RETRY,
   type ShopifyJobData,
 } from './connector-shopify.queue.js';
-import { OrdersError } from '../../orders/orders.errors.js';
-import { upperCode } from './inbox.job.js';
-import { ShopifyOrderMappingError } from './order-mapper.js';
+import { orderErrorCodeOf } from './error-codes.js';
 import { ShopifyRejectedError, ShopifyTransientError } from './shopify-client.js';
 
 /** The code a run ends with when its last retry fails on anything but a refusal. */
 export function lastRetryCodeOf(error: unknown): string {
   if (error instanceof ShopifyTransientError) return error.code;
-  if (error instanceof ShopifyOrderMappingError) return error.code;
-  if (error instanceof OrdersError) return upperCode(error.code);
-  return 'INTERNAL_ERROR';
+  return orderErrorCodeOf(error) ?? 'INTERNAL_ERROR';
 }
 
 /** The job kinds that drive a bulk run step by step. */

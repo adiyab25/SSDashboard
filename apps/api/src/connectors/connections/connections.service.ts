@@ -45,7 +45,8 @@ import { GoLiveClock, goLiveInRange } from './go-live-clock.js';
 /**
  * Where a backfill run resumes (lead decision D11, AC-17): its recorded position with the step
  * moved on (a job of the old step is then a duplicate and skipped). A bulk operation Shopify
- * ended (`BULK_*`) or whose result address it refused (`REQUEST_REJECTED`, an expired address)
+ * ended (`BULK_*`), whose result address it refused (`REQUEST_REJECTED`, an expired address), or
+ * whose result file the client refused as too large (`RESPONSE_TOO_LARGE`)
  * cannot be read again: the run then starts a new bulk read from its first line, and the orders
  * already applied are skipped as `stale` by their mappings' versions. A paged run keeps its page
  * cursor.
@@ -53,7 +54,8 @@ import { GoLiveClock, goLiveInRange } from './go-live-clock.js';
 export function resumePositionOf(run: Pick<SyncRunRow, 'position' | 'errorCode'>): RunPosition {
   const code = run.errorCode ?? '';
   const bulkGone =
-    run.position.mode === 'bulk' && (code.startsWith('BULK_') || code === 'REQUEST_REJECTED');
+    run.position.mode === 'bulk' &&
+    (code.startsWith('BULK_') || code === 'REQUEST_REJECTED' || code === 'RESPONSE_TOO_LARGE');
   return {
     ...run.position,
     step: run.position.step + 1,

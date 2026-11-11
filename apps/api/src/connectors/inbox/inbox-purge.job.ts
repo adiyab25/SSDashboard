@@ -42,14 +42,18 @@ export interface PurgeOutcome {
  *   subject's latest event again, counted by the freshness line and retried by the sweep), first,
  *   so they go before their newer row;
  * - inbox rows `failed` received more than 180 days ago;
- * - inbox rows `received` more than 90 days ago of a topic no inbox job processes yet (products
- *   until task 8, inventory levels, refunds, `bulk_operations/finish`; security review L5); a
- *   `received` row of a processed topic is never purged: it still waits for its job or the sweep;
- * - sync runs started more than 90 days ago, finished or not (an unfinished one that old is
- *   stalled for good, lead decision D13), except the newest finished run of each connection and
- *   kind (the screen's last check, the gateway names the backfill checks, the freshness and the
- *   connect check's protected data flag read it) and a run a connection names as its first push
- *   preview (`stock_push_preview_run_id`).
+ * - inbox rows `received` more than 90 days ago of a topic no inbox job processes yet (inventory
+ *   levels, refunds, `bulk_operations/finish`; security review L5), except product rows (subject
+ *   `product`, from the backfill, the products sweep, and product webhooks): the sweep reads only
+ *   after its watermark, so a purged one is never found again, and they stay until task 8 reads
+ *   them (lead ruling F2; growth is bounded by product changes); a `received` row of a processed
+ *   topic is never purged: it still waits for its job or the sweep;
+ * - sync runs whose position last moved more than 90 days ago (`movedAt` in the cursor, else
+ *   `started_at`, so a resumed backfill is never purged while it runs), finished or not (an
+ *   unfinished one that old is stalled for good, lead decision D13), except the newest finished
+ *   run of each connection and kind (the screen's last check, the gateway names the backfill
+ *   checks, the freshness and the connect check's protected data flag read it) and a run a
+ *   connection names as its first push preview (`stock_push_preview_run_id`).
  *
  * The app role may delete these rows (`connection_sync_runs` and `inbound_events` follow the
  * default privileges of migration 0002; neither is append only). It stops after 2 minutes, leaving
@@ -104,6 +108,7 @@ export class InboxPurgeJob {
             SELECT id FROM inbound_events
             WHERE status = 'received'
               AND NOT (topic = ANY(${pgArray([...PROCESSED_INBOX_TOPICS])}::text[]))
+              AND subject_type <> 'product'
               AND received_at < now() - make_interval(days => ${INBOX_KEEP_DAYS})
             LIMIT ${PURGE_BATCH})`,
     );
@@ -111,7 +116,8 @@ export class InboxPurgeJob {
       deadline,
       sql`DELETE FROM connection_sync_runs WHERE id IN (
             SELECT r.id FROM connection_sync_runs r
-            WHERE r.started_at < now() - make_interval(days => ${SYNC_RUN_KEEP_DAYS})
+            WHERE coalesce((r.cursor::jsonb->>'movedAt')::timestamptz, r.started_at)
+                    < now() - make_interval(days => ${SYNC_RUN_KEEP_DAYS})
               AND NOT EXISTS (SELECT 1 FROM connections c WHERE c.stock_push_preview_run_id = r.id)
               AND (r.finished_at IS NULL
                    OR EXISTS (SELECT 1 FROM connection_sync_runs n

@@ -30,8 +30,13 @@ describe('resumePositionOf (D11, AC-17)', () => {
     expect(resumePositionOf({ position: at, errorCode: null })).toMatchObject({ step: 5, line: 7 });
   });
 
-  it('starts a new bulk read when Shopify ended the operation or refused its address', () => {
-    for (const code of ['BULK_OPERATION_FAILED', 'BULK_EXPIRED', 'REQUEST_REJECTED']) {
+  it('starts a new bulk read when Shopify ended the operation or refused its address, or its file was too large', () => {
+    for (const code of [
+      'BULK_OPERATION_FAILED',
+      'BULK_EXPIRED',
+      'REQUEST_REJECTED',
+      'RESPONSE_TOO_LARGE',
+    ]) {
       expect(resumePositionOf({ position: at, errorCode: code })).toMatchObject({
         step: 5,
         bulkId: null,
