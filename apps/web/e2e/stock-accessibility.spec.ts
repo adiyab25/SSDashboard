@@ -413,6 +413,12 @@ for (const { language, dir } of LANGUAGES) {
       await expect(
         edit.getByRole('button', { name: t('inventory.skuEdit.archive') }),
       ).toBeVisible();
+      // Change code stays disabled (half opacity) until the SKU's usage answers, then fades in
+      // over 150 ms. Under load that answer came after the sweep had waited for animations and
+      // axe measured the half faded text (color-contrast, 2026-11-11 trace), so wait for it first.
+      await expect(
+        edit.getByRole('button', { name: t('inventory.skuEdit.codeChange') }),
+      ).toBeEnabled();
       for (const [action, title] of [
         ['inventory.skuEdit.archive', 'inventory.skuEdit.archiveTitle'],
         ['inventory.skuEdit.delete', 'inventory.skuEdit.deleteTitle'],
