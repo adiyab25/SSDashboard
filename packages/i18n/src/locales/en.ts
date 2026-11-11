@@ -1200,10 +1200,12 @@ export const en = {
       signal: {
         title: 'Suggested flag',
         text: 'Based on recent orders, we suggest the flag "{{flag}}".',
-        refusals_one: '{{count}} order refused at the door in the last {{days}} days',
-        refusals_other: '{{count}} orders refused at the door in the last {{days}} days',
-        returns_one: '{{count}} order returned after delivery in the last {{days}} days',
-        returns_other: '{{count}} orders returned after delivery in the last {{days}} days',
+        days_one: '{{number}} day',
+        days_other: '{{number}} days',
+        refusals_one: '{{number}} order refused at the door in the last {{days}}',
+        refusals_other: '{{number}} orders refused at the door in the last {{days}}',
+        returns_one: '{{number}} order returned after delivery in the last {{days}}',
+        returns_other: '{{number}} orders returned after delivery in the last {{days}}',
         apply: 'Apply the flag "{{flag}}"',
         noLongerHolds:
           'That suggestion no longer applies, so no flag was set. The profile was reloaded.',
@@ -1217,6 +1219,8 @@ export const en = {
         loadMoreError: 'Could not load more entries.',
         retry: 'Try again',
         loadMore: 'Load more',
+        loading: 'Loading the timeline',
+        undoLabel: 'Undo the merge of {{name}} on {{date}}',
         kind: {
           order: 'Order',
           merge: 'Merge',
@@ -1445,6 +1449,14 @@ export const en = {
       goodwill_for: 'Goodwill for',
     },
     reasons: {
+      refused: {
+        size: 'Size did not fit',
+        changed_mind: 'Changed their mind',
+        price: 'Price',
+        not_ordered: 'Did not order it',
+        damaged: 'Damaged',
+        other: 'Other',
+      },
       cancel: {
         customer_cancelled: 'The customer cancelled',
         duplicate: 'Duplicate order',

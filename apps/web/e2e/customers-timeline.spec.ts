@@ -36,7 +36,7 @@ interface SeededHistory {
 }
 
 /**
- * Creates a customer through two manual orders (refused at the door as the carrier will), 24 extra
+ * Creates a customer through two manual orders (refused at the door, set by SQL), 24 extra
  * phones so the timeline needs a second page, and one customer merged into her. Orders go through
  * the real api as the signed in manager; the refusal is written the way the api e2e does it.
  */
@@ -88,7 +88,8 @@ async function seedHistory(request: APIRequestContext): Promise<SeededHistory> {
         [orderId],
       );
     }
-    // 24 more phones: 2 orders, 1 primary phone, 24 phones, and the merge are 28 entries, over one page.
+    // 24 more phones: with the 2 orders, the primary phone, and the merge that is 29 entries, over one page.
+    // Which entries land on page 1 and which on page 2 depends on the write order below (the timeline sorts by time).
     for (let i = 0; i < 24; i += 1) {
       await pool.query(
         `INSERT INTO customer_phones (customer_id, phone_e164, kind, is_primary)
@@ -189,7 +190,9 @@ for (const { dir, name: languageName } of LANGUAGES) {
       // Undo the merge from its entry.
       await mergeEntry
         .getByRole('button', {
-          name: t('customers.profile.merges.undoLabel').replace('{{name}}', seeded.mergedName),
+          name: t('customers.profile.timeline.undoLabel')
+            .replace(/\s*\S+\s*\{\{date\}\}/, '')
+            .replace('{{name}}', seeded.mergedName),
         })
         .click();
       await expect(toast.filter({ hasText: t('customers.merge.undone') }).first()).toBeVisible();

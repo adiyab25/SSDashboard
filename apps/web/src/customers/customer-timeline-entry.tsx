@@ -13,7 +13,14 @@ import { TimelinePhoneEntry } from './timeline-phone-entry';
  * One row of the customer timeline (spec 0014, AC-14): the kind in words and the time in the
  * install's time zone, then the body of that kind. Shows only what the api sent (AC-15).
  */
-export function CustomerTimelineEntry({ entry }: { entry: TimelineEntry }) {
+export function CustomerTimelineEntry({
+  entry,
+  onUndone,
+}: {
+  entry: TimelineEntry;
+  /** Called after an undo from this entry succeeded. */
+  onUndone?: () => void;
+}) {
   const { t } = useTranslation();
   const format = useFormat();
 
@@ -24,7 +31,7 @@ export function CustomerTimelineEntry({ entry }: { entry: TimelineEntry }) {
       break;
     case 'merge':
     case 'unmerge':
-      body = <TimelineMergeEntry entry={entry} />;
+      body = <TimelineMergeEntry entry={entry} onUndone={onUndone} />;
       break;
     case 'phone_added':
       body = <TimelinePhoneEntry entry={entry} />;
@@ -42,7 +49,7 @@ export function CustomerTimelineEntry({ entry }: { entry: TimelineEntry }) {
   }
 
   return (
-    <li className="flex min-w-0 flex-col gap-0.5 px-4 py-3 text-sm">
+    <li className="flex min-w-0 flex-col gap-0.5 px-4 py-3 text-sm" tabIndex={-1}>
       <span className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-medium">{t(`customers.profile.timeline.kind.${entry.kind}`)}</span>
         <span className="text-xs text-muted-foreground tabular-nums">

@@ -9,6 +9,7 @@ import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useFormat } from '@/i18n/use-format';
 import type { MergeErrorKey } from './merge-error-key';
 import { TimelineReasonText } from './timeline-reason-text';
 import { useMergeActions } from './use-merge-actions';
@@ -22,10 +23,14 @@ import { useMergeActions } from './use-merge-actions';
  */
 export function TimelineMergeEntry({
   entry,
+  onUndone,
 }: {
   entry: CustomerTimelineMergeEntry | CustomerTimelineUnmergeEntry;
+  /** Called after an undo succeeded, so the section can put focus where the Undo button was. */
+  onUndone?: () => void;
 }) {
   const { t } = useTranslation();
+  const format = useFormat();
   const actions = useMergeActions();
   const [undoing, setUndoing] = useState(false);
   const [failed, setFailed] = useState<MergeErrorKey | null>(null);
@@ -33,10 +38,13 @@ export function TimelineMergeEntry({
   const undoable = entry.kind === 'merge' && entry.undoable === true;
 
   async function undo() {
+    // Not `disabled` while it runs: a disabled button drops keyboard focus to the page.
+    if (undoing) return;
     setUndoing(true);
     setFailed(null);
     const key = await actions.undo(entry.id);
     if (key) setFailed(key);
+    else onUndone?.();
     setUndoing(false);
   }
 
@@ -76,8 +84,12 @@ export function TimelineMergeEntry({
               type="button"
               size="sm"
               variant="outline"
-              disabled={undoing}
-              aria-label={t('customers.profile.merges.undoLabel', { name })}
+              aria-disabled={undoing}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+              aria-label={t('customers.profile.timeline.undoLabel', {
+                name,
+                date: format.date(entry.at),
+              })}
               onClick={() => void undo()}
             >
               {t('customers.profile.merges.undo')}

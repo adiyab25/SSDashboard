@@ -1,7 +1,6 @@
 'use client';
 
 import type { CustomerProfile } from '@ssdashboard/contracts';
-import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { useQueryClient } from '@tanstack/react-query';
 import { FlagIcon, LoaderCircleIcon } from 'lucide-react';
@@ -15,31 +14,48 @@ import { useFormat } from '@/i18n/use-format';
 import { customerKeys, setCustomerFlag } from './customers-api';
 import { flagErrorKey, type FlagErrorKey } from './flag-error-key';
 
+/** The catalog key of why applying the suggestion failed. */
+export type SignalFailureKey = FlagErrorKey | 'customers.profile.signal.noLongerHolds';
+
 /**
  * The suggested flag of the profile header (spec 0014, AC-13): shown only when the customer has no
  * flag and the api sent a `signal` with a `suggestedKind` (it sends none without `orders.view`).
  * It states the counts and, for a holder of `customers.flag`, applies the suggestion in one tap
  * with the reason `suggestion_applied` and the profile's `updatedAt`. When the suggestion no
- * longer holds (422) or the record moved (409) it says so, reloads the profile, and sets nothing.
+ * longer holds (422) or the record moved (409) it sets nothing and reloads the profile. The
+ * outcome is handed to the profile through `onApplied` and `onFailed`, never kept here: the box
+ * leaves once the reloaded profile has no suggestion, and the message must stay visible after it.
  */
-export function CustomerSignalSuggestion({ profile }: { profile: CustomerProfile }) {
+export function CustomerSignalSuggestion({
+  profile,
+  onApplied,
+  onFailed,
+}: {
+  profile: CustomerProfile;
+  /** Called after the flag was set. */
+  onApplied: () => void;
+  /** Called with the message key of a failure (also toasted here), and with null when a new try starts. */
+  onFailed: (key: SignalFailureKey | null) => void;
+}) {
   const { t } = useTranslation();
   const format = useFormat();
   const access = useAccess();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<FlagErrorKey | 'noLongerHolds' | null>(null);
   const signal = profile.signal;
   const kind = signal?.suggestedKind;
   if (!signal || !kind || profile.flag !== null) return null;
 
-  const days = format.number(signal.windowDays);
+  const days = t('customers.profile.signal.days', {
+    count: signal.windowDays,
+    number: format.number(signal.windowDays),
+  });
   const flagName = t(`customers.flag.${kind}`);
 
   async function apply() {
-    if (!kind) return;
+    if (!kind || pending) return;
     setPending(true);
-    setError(null);
+    onFailed(null);
     try {
       await setCustomerFlag(profile.id, {
         kind,
@@ -47,12 +63,14 @@ export function CustomerSignalSuggestion({ profile }: { profile: CustomerProfile
         expectedUpdatedAt: profile.updatedAt,
       });
       toast.success(t('customers.flagging.set.saved'));
+      onApplied();
     } catch (failure) {
-      setError(
+      const key: SignalFailureKey =
         failure instanceof ApiError && failure.code === 'REASON_INVALID'
-          ? 'noLongerHolds'
-          : flagErrorKey(failure),
-      );
+          ? 'customers.profile.signal.noLongerHolds'
+          : flagErrorKey(failure);
+      toast.error(t(key));
+      onFailed(key);
     } finally {
       // Success or not, read the profile and the timeline again: the flag, the signal, or the stamp moved.
       await refetchAfterWrite(queryClient, { queryKey: customerKeys.all }).catch(() => undefined);
@@ -71,10 +89,22 @@ export function CustomerSignalSuggestion({ profile }: { profile: CustomerProfile
       <p>{t('customers.profile.signal.text', { flag: flagName })}</p>
       <ul className="list-disc ps-5 text-muted-foreground">
         {signal.refusals > 0 && (
-          <li>{t('customers.profile.signal.refusals', { count: signal.refusals, days })}</li>
+          <li>
+            {t('customers.profile.signal.refusals', {
+              count: signal.refusals,
+              number: format.number(signal.refusals),
+              days,
+            })}
+          </li>
         )}
         {signal.returns > 0 && (
-          <li>{t('customers.profile.signal.returns', { count: signal.returns, days })}</li>
+          <li>
+            {t('customers.profile.signal.returns', {
+              count: signal.returns,
+              number: format.number(signal.returns),
+              days,
+            })}
+          </li>
         )}
       </ul>
       {access.can('customers.flag') && (
@@ -82,8 +112,9 @@ export function CustomerSignalSuggestion({ profile }: { profile: CustomerProfile
           <Button
             type="button"
             size="sm"
-            disabled={pending}
+            aria-disabled={pending}
             aria-busy={pending}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={() => void apply()}
           >
             {pending ? (
@@ -98,13 +129,6 @@ export function CustomerSignalSuggestion({ profile }: { profile: CustomerProfile
             {t('customers.profile.signal.apply', { flag: flagName })}
           </Button>
         </div>
-      )}
-      {error && (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription>
-            {error === 'noLongerHolds' ? t('customers.profile.signal.noLongerHolds') : t(error)}
-          </AlertDescription>
-        </Alert>
       )}
     </section>
   );

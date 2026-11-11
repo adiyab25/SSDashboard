@@ -63,8 +63,8 @@ One customer record keyed on a normalized Egyptian phone number, holding many ph
   - [x] Merge and undo as daily work
   - [x] The repeat returner flag
   - [x] One timeline through each lens
-- [ ] Verify it: `/check verify customers by phone`
-- [ ] Test it: `/test customers by phone`
+- [x] Verify it: `/check verify customers by phone`
+- [x] Test it: `/test customers by phone`
 Spec [0014](../specs/0014-customers-by-phone/index.md) (Accepted 2026-11-07)
 
 ### 15. Onboarding imports · GA · needs a decision
