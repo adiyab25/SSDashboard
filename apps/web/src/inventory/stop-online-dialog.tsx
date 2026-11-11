@@ -1,5 +1,6 @@
 'use client';
 
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { LocationDetail } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
@@ -48,9 +49,9 @@ export function StopOnlineDialog({
   const { errors } = form.formState;
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
-    void queryClient.invalidateQueries({ queryKey: inventoryKeys.onlineStatus });
-    void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
+    void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.locations });
+    void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.onlineStatus });
+    void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.stockAll });
   };
 
   const stop = useMutation({

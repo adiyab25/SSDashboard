@@ -1,5 +1,6 @@
 'use client';
 
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { STOCK_COUNTED_CHECK_KEY, type LocationDetail } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
@@ -95,7 +96,7 @@ export function OnlineGateDialog({
     mutationFn: () => confirmLocationStock(location.id),
     onSuccess: () => {
       toast.success(t('inventory.onlineGate.stockConfirmedDone', { code: location.code }));
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.locations });
       void reread();
     },
     onError: (error) => {
@@ -115,9 +116,9 @@ export function OnlineGateDialog({
         reason: values.reason,
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.onlineStatus });
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.locations });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.onlineStatus });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.stockAll });
       toast.success(t('inventory.onlineGate.movedDone', { code: location.code }));
       onClose();
     },

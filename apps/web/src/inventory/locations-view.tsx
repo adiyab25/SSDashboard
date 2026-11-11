@@ -1,5 +1,6 @@
 'use client';
 
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import type { LocationDetail, LocationStatus } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Badge } from '@ssdashboard/ui/components/badge';
@@ -86,11 +87,11 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
         : setLocationArchived(location.id, action === 'archive').then(() => undefined),
     onSuccess: (_result, { action, location }) => {
       reloadSwitcher();
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.receiptsRoot });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.locations });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.stockAll });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.receiptsRoot });
       // Archiving the online location stops online stock (spec 0011 AC-1), so the status line may appear.
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.onlineStatus });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.onlineStatus });
       const done = {
         archive: 'inventory.locations.archivedDone',
         unarchive: 'inventory.locations.unarchivedDone',
