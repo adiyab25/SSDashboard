@@ -13,6 +13,13 @@ export const SkuCode = z
   .toUpperCase()
   .regex(SKU_CODE_PATTERN, 'Letters, digits, dot, dash, and underscore, up to 64');
 
+/**
+ * A catalog record id a caller sends (a style, season, or product group): a uuid, lowercased, so
+ * it compares with the ids PostgreSQL answers, a distinct check counts `a` and `A` once, and an
+ * audit diff never records a case only change (review of spec 0012 milestone 2, minor 5).
+ */
+export const CatalogId = z.uuid().transform((id) => id.toLowerCase());
+
 /** A price of 0 or more with at most 2 decimals. */
 export const PriceString = MoneyString.refine(
   (value) => !value.startsWith('-'),
@@ -35,12 +42,19 @@ export const SkuName = z
 export type SkuName = z.infer<typeof SkuName>;
 
 /**
- * `POST /api/products`. One variant for now; feature 8 lifts the limit. The api makes the product a
- * style whose style code is the SKU code, in the seeded `MAIN` product group (spec 0002, A12).
+ * `POST /api/products`: a new style with its first variant. More variants join the style through
+ * `POST /api/styles/:id/variants` (`AddVariantRequest`, spec 0012 AC-10). `styleCode` defaults to
+ * the SKU code (409 `STYLE_CODE_TAKEN` when another style holds it and no SKU does, `SKU_TAKEN`
+ * when a SKU does), `seasonId` to none, and `productGroupId` to the seeded `MAIN` group (spec
+ * 0002, A12); an unknown season or group answers 404 `NOT_FOUND`, an archived one 422
+ * `ARCHIVED`.
  */
 export const CreateProductRequest = z
   .object({
     name: SkuName,
+    styleCode: SkuCode.optional(),
+    seasonId: CatalogId.optional(),
+    productGroupId: CatalogId.optional(),
     variants: z
       .array(
         z

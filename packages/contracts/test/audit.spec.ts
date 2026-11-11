@@ -287,6 +287,9 @@ describe('audit record types', () => {
       exchange: 'code',
       outbound_command: 'code',
       connection: 'text',
+      style: 'text',
+      season: 'text',
+      product_group: 'text',
     });
   });
 
@@ -297,6 +300,10 @@ describe('audit record types', () => {
     expect(AUDIT_RECORD_TYPES.location.labelPattern.test('WH-CAI')).toBe(true);
     expect(AUDIT_RECORD_TYPES.connection.labelPattern.test('ESS')).toBe(true);
     expect(AUDIT_RECORD_TYPES.connection.labelPattern.test('Fixture Store')).toBe(false);
+    // Spec 0012 milestone 2: a style is labelled by its style code, a season or group by its code.
+    expect(AUDIT_RECORD_TYPES.style.labelPattern.test('TEE-2027')).toBe(true);
+    expect(AUDIT_RECORD_TYPES.season.labelPattern.test('SS27')).toBe(true);
+    expect(AUDIT_RECORD_TYPES.product_group.labelPattern.test('x'.repeat(17))).toBe(false);
     expect(AUDIT_RECORD_TYPES.location.labelPattern.test('x'.repeat(17))).toBe(false);
     expect(AUDIT_RECORD_TYPES.stock_receipt.labelPattern.test('SR-2026-000001')).toBe(true);
     expect(AUDIT_RECORD_TYPES.stock_receipt.labelPattern.test('SR-1')).toBe(false);

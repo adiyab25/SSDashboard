@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
@@ -48,6 +49,8 @@ export const productGroups = pgTable(
     tenantId: tenantId(),
     code: text('code').notNull(),
     name: jsonb('name').$type<LocalizedText>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
     archivedAt: archivedAt(),
   },
   (t) => [unique('product_groups_code_unique').on(t.tenantId, t.code)],
@@ -63,6 +66,8 @@ export const seasons = pgTable(
     name: jsonb('name').$type<LocalizedText>().notNull(),
     startsOn: date('starts_on'),
     endsOn: date('ends_on'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
     archivedAt: archivedAt(),
   },
   (t) => [
@@ -115,6 +120,13 @@ export const products = pgTable(
   ],
 );
 
+/**
+ * What an option axis means (spec 0012, AC-10): `size` or `color` when its normalized name is in
+ * `OPTION_ROLE_NAMES` (`packages/contracts/src/catalog/option-roles.ts`), else `other`. Set when
+ * the option is created; never inferred again on a rename.
+ */
+export const optionRole = pgEnum('option_role', ['size', 'color', 'other']);
+
 /** A choice axis on a product (size, color) with ordered values; variants point into it by position. */
 export const productOptions = pgTable(
   'product_options',
@@ -126,6 +138,7 @@ export const productOptions = pgTable(
       .references(() => products.id, { onDelete: 'restrict' }),
     name: jsonb('name').$type<LocalizedText>().notNull(),
     position: integer('position').notNull(),
+    role: optionRole('role').notNull().default('other'),
     /** Ordered option values, each `{ en, ar }`. */
     values: jsonb('values').$type<LocalizedText[]>().notNull(),
   },
@@ -189,6 +202,10 @@ export const productVariants = pgTable(
     index('product_variants_sku_c_idx').on(sql`${t.sku} COLLATE "C"`),
     // Name, code, and option fragment search ("contains every word", spec 0012 AC-3) at 50,000 variants.
     index('product_variants_search_trgm_idx').using('gin', t.searchText.op('gin_trgm_ops')),
+    // Two active variants of one style never share their option values (spec 0012, AC-10).
+    uniqueIndex('product_variants_options_unique')
+      .on(t.tenantId, t.productId, t.optionValues)
+      .where(sql`${t.archivedAt} IS NULL`),
     check(
       'product_variants_tracking_stocked_only',
       sql`${t.tracking} = 'none' OR ${t.kind} = 'stocked'`,

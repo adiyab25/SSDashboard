@@ -30,6 +30,10 @@ export interface ApiErrorBody {
   rules?: string[];
   /** `OWNER_POLICY_IN_USE`: the locked fields the change touched. */
   fields?: string[];
+  /** `BARCODE_TAKEN`: the SKU code that already holds the barcode. */
+  skuCode?: string;
+  /** `NOT_FOUND` on a bulk style assign: the style ids the api did not find. */
+  missingIds?: string[];
 }
 
 /** A list of plain codes from an error body, or undefined when it is not one. */
@@ -101,12 +105,16 @@ function errorBody(json: unknown): ApiErrorBody {
   const months = 'months' in json ? CostRuleLockedMonths.safeParse(json.months).data : undefined;
   const rules = 'rules' in json ? codeList(json.rules) : undefined;
   const fields = 'fields' in json ? codeList(json.fields) : undefined;
+  const skuCode = 'skuCode' in json && typeof json.skuCode === 'string' ? json.skuCode : undefined;
+  const missingIds = 'missingIds' in json ? codeList(json.missingIds) : undefined;
   return {
     code,
     ...(precondition && { precondition }),
     ...(months && { months }),
     ...(rules && { rules }),
     ...(fields && { fields }),
+    ...(skuCode && { skuCode }),
+    ...(missingIds && { missingIds }),
     ...(requires && { requires }),
     ...(dependants && { dependants }),
     ...(lineErrors && { lineErrors }),
