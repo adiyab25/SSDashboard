@@ -131,7 +131,9 @@ for (const { dir, name: languageName } of LANGUAGES) {
       // The profile reloaded behind it, so the same input now saves.
       await dialog.getByRole('button', { name: t('customers.flagging.set.submit') }).click();
       await expect(dialog).toHaveCount(0);
-      await expect(page.getByText(note)).toBeVisible();
+      await expect(
+        page.getByRole('region', { name: t('customers.profile.flagCard.title') }).getByText(note),
+      ).toBeVisible();
       // The header names who set it and when, and the search row carries the badge.
       const card = page.getByRole('region', { name: t('customers.profile.flagCard.title') });
       await expect(card.getByText(agent?.name ?? 'missing')).toBeVisible();

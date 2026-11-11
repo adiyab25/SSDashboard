@@ -18,6 +18,8 @@ import { CustomerFlagBadge } from './customer-flag-badge';
 import { CustomerFlagSection } from './customer-flag-section';
 import { CustomerMergesSection } from './customer-merges-section';
 import { CustomerPhonesSection } from './customer-phones-section';
+import { CustomerSignalSuggestion } from './customer-signal-suggestion';
+import { CustomerTimelineSection } from './customer-timeline-section';
 import { customerKeys, getCustomer } from './customers-api';
 import { mergePageHref } from './merge-page-href';
 
@@ -117,6 +119,7 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
           )}
           {access.can('customers.flag') && <CustomerFlagActions profile={profile} />}
         </div>
+        <CustomerSignalSuggestion profile={profile} />
       </header>
 
       <CustomerFlagSection flag={profile.flag} />
@@ -124,6 +127,7 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
       <CustomerPhonesSection phones={profile.phones} />
       <CustomerChannelIdsSection ids={profile.channelIds} />
       <CustomerMergesSection merges={profile.merges} />
+      <CustomerTimelineSection customerId={profile.id} />
     </div>
   );
 }

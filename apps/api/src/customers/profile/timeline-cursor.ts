@@ -34,8 +34,16 @@ export function encodeTimelineCursor(position: TimelinePosition): string {
 }
 
 /**
+ * The years a timeline cursor may name. No entry is older than 1970, and a year past 9998 could
+ * step one microsecond into year 10000, which the order source's cursor refuses (a 500, not a 400).
+ */
+const FIRST_YEAR = 1970;
+const LAST_YEAR = 9998;
+
+/**
  * Decodes a timeline cursor, or throws `InvalidCursorError`: three parts, a microsecond UTC
- * timestamp that is a real instant, a known source key, and a uuid (lower cased).
+ * timestamp that is a real instant in the years 1970 to 9998, a known source key, and a uuid
+ * (lower cased).
  */
 export function decodeTimelineCursor(cursor: string): TimelinePosition {
   const [at, source, id] = decodeKeyset(cursor, 3);
@@ -44,6 +52,8 @@ export function decodeTimelineCursor(cursor: string): TimelinePosition {
   }
   // The (timestamp, id) checks of the shared keyset decoder, so a forged instant or id is a 400.
   const checked = decodeTimeIdKeyset(encodeKeyset([at, id]));
+  const year = Number(checked.at.slice(0, 4));
+  if (year < FIRST_YEAR || year > LAST_YEAR) throw new InvalidCursorError();
   return { at: checked.at, source, id: checked.id.toLowerCase() };
 }
 
@@ -59,13 +69,17 @@ export function compareTimeline(a: TimelinePosition, b: TimelinePosition): numbe
   return 0;
 }
 
-/** The microsecond UTC timestamp one microsecond later. */
+/**
+ * The microsecond UTC timestamp one microsecond later, counted in whole microseconds as a
+ * `BigInt` (never a float, which loses the microsecond far from 1970). Takes a timestamp the
+ * timeline decoder accepted, so the answer is never past year 9999.
+ */
 export function nextMicrosecond(at: string): string {
-  const millis = Date.parse(`${at.slice(0, 23)}Z`);
-  const total = millis * 1000 + Number(at.slice(23, 26)) + 1;
-  const wholeMillis = Math.floor(total / 1000);
-  const micros = total - wholeMillis * 1000;
-  return `${new Date(wholeMillis).toISOString().slice(0, 23)}${String(micros).padStart(3, '0')}Z`;
+  const total = BigInt(Date.parse(`${at.slice(0, 23)}Z`)) * 1000n + BigInt(at.slice(23, 26)) + 1n;
+  // Floor division, so an instant before 1970 (a negative count) steps the right way too.
+  const micros = ((total % 1000n) + 1000n) % 1000n;
+  const wholeMillis = (total - micros) / 1000n;
+  return `${new Date(Number(wholeMillis)).toISOString().slice(0, 23)}${String(micros).padStart(3, '0')}Z`;
 }
 
 /**

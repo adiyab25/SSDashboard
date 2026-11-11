@@ -80,7 +80,7 @@ interface FlagDetailRow extends Record<string, unknown> {
 
 /** A place in the merged order with how to build its entry. */
 type Placed =
-  | (TimelinePosition & { from: 'own'; row: OwnRow })
+  | (TimelinePosition & { from: 'customer'; row: OwnRow })
   | (TimelinePosition & { from: 'order'; order: CustomerOrderRow });
 
 /** The details read for one page of own entries, keyed by row id. */
@@ -130,17 +130,9 @@ export class CustomerTimelineService {
     const lens = timelineLens((permission) => viewer.has(permission));
     const wanted = request.kinds ? new Set(request.kinds) : null;
     const kinds = lens.kinds.filter((kind) => wanted === null || wanted.has(kind));
-    let position: TimelinePosition | null = null;
-    if (request.cursor !== undefined) {
-      try {
-        position = decodeTimelineCursor(request.cursor);
-      } catch (error) {
-        if (error instanceof InvalidCursorError) {
-          throw new CustomersError('INVALID_CURSOR', 'The cursor is not one this route issued');
-        }
-        throw error;
-      }
-    }
+    const { cursor } = request;
+    const position =
+      cursor === undefined ? null : asTimelineCursorError(() => decodeTimelineCursor(cursor));
 
     // One snapshot for every source, so a merge that commits between two reads never shows an
     // order of a record whose merge entry is missing, or the other way round.
@@ -150,14 +142,18 @@ export class CustomerTimelineService {
         if (canonicalId === null) {
           throw new CustomersError('CUSTOMER_NOT_FOUND', 'No customer has that id');
         }
-        const ids = await this.customers.idsOf(canonicalId, tx);
+        // A lens and filter that leave no kind read no id set: the page is empty either way.
+        const ids = kinds.length === 0 ? [] : await this.customers.idsOf(canonicalId, tx);
         const ownKinds = kinds.filter((kind) => kind !== 'order');
         const own = await this.ownRows(tx, canonicalId, ids, ownKinds, position, request.limit + 1);
+        // The order source decodes its own cursor; a refusal there is the same 400, never a 500.
         const orderPage = kinds.includes('order')
-          ? await this.orders.forCustomers(
-              ids,
-              { cursor: orderCursorAfter(position), limit: request.limit },
-              tx,
+          ? await asTimelineCursorError(() =>
+              this.orders.forCustomers(
+                ids,
+                { cursor: orderCursorAfter(position), limit: request.limit },
+                tx,
+              ),
             )
           : { items: [], nextCursor: null };
 
@@ -166,7 +162,7 @@ export class CustomerTimelineService {
             at: row.at,
             source: row.source,
             id: row.id,
-            from: 'own',
+            from: 'customer',
             row,
           })),
           ...orderPage.items.map((order): Placed => ({
@@ -182,7 +178,7 @@ export class CustomerTimelineService {
         const details = await this.ownDetails(
           tx,
           canonicalId,
-          items.flatMap((item) => (item.from === 'own' ? [item.row] : [])),
+          items.flatMap((item) => (item.from === 'customer' ? [item.row] : [])),
         );
         return { canonicalId, items, more, details };
       },
@@ -419,6 +415,25 @@ export class CustomerTimelineService {
         ];
       }
     }
+  }
+}
+
+/**
+ * Runs `read` and turns an `InvalidCursorError` it throws (synchronously or from its promise) into
+ * the route's 400 `INVALID_CURSOR`; any other error passes unchanged.
+ */
+function asTimelineCursorError<T>(read: () => T): T {
+  const refuse = (error: unknown): never => {
+    if (error instanceof InvalidCursorError) {
+      throw new CustomersError('INVALID_CURSOR', 'The cursor is not one this route issued');
+    }
+    throw error;
+  };
+  try {
+    const answer = read();
+    return (answer instanceof Promise ? answer.catch(refuse) : answer) as T;
+  } catch (error) {
+    return refuse(error);
   }
 }
 

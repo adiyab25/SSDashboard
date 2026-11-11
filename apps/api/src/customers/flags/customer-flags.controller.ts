@@ -1,5 +1,6 @@
 import { Body, Controller, Header, HttpCode, Param, Post, Put, Req } from '@nestjs/common';
 import {
+  CUSTOMER_PROFILE_GUARDED_FIELDS,
   CustomerClearFlagRequest,
   CustomerSetFlagRequest,
   type CustomerSetFlagResponse,
@@ -42,8 +43,10 @@ export class CustomerFlagsController {
    * `STALE_RECORD`, `CUSTOMER_MERGED`; 422 `REASON_INVALID`, `NOTE_TOO_LONG`, `VALIDATION_FAILED`.
    * Reason code `suggestion_applied` is accepted only while the customer has no flag and the
    * returner signal, recomputed under the locks, suggests exactly `kind` (else 422
-   * `REASON_INVALID`); the entry then carries the counts in its `after`. The id is lower cased first, because Postgres answers ids in lower case. The answer carries the
-   * note, so it is `Cache-Control: no-store`.
+   * `REASON_INVALID`) and the person holds `orders.view` (the signal reads order counts, AC-15;
+   * else 422 `REASON_INVALID`); the entry then carries the counts in its `after`. The id is lower
+   * cased first, because Postgres answers ids in lower case. The answer carries the note, so it
+   * is `Cache-Control: no-store`.
    */
   @Permission('customers.flag')
   @Put(':id/flag')
@@ -65,7 +68,9 @@ export class CustomerFlagsController {
           ...(body.reasonCode === undefined ? {} : { reasonCode: body.reasonCode }),
         },
         flagActor(request, access),
-        this.suggestionCheck,
+        // The signal reads order counts, which AC-15 puts behind `orders.view`: without it no
+        // check is passed, so `suggestion_applied` is 422 `REASON_INVALID` and answers nothing.
+        access.has(CUSTOMER_PROFILE_GUARDED_FIELDS.signal) ? this.suggestionCheck : undefined,
       );
     } catch (error) {
       throw customersHttpError(error);

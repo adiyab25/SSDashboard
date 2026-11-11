@@ -86,14 +86,18 @@ export class CustomerProfileService {
     const read = await this.connection.db.transaction(
       async (tx) => {
         const profile = await this.readProfile(tx, askedId);
-        if (!viewer.has(CUSTOMER_PROFILE_GUARDED_FIELDS.signal))
-          return { ...profile, orders: null };
+        // Each guarded field asks its own permission, so a later split of the keys holds.
+        const showsSignal = viewer.has(CUSTOMER_PROFILE_GUARDED_FIELDS.signal);
+        const showsCount = viewer.has(CUSTOMER_PROFILE_GUARDED_FIELDS.orderCount);
+        if (!showsSignal && !showsCount) return { ...profile, orders: null };
         const ids = await this.customers.idsOf(profile.profile.id, tx);
         return {
           ...profile,
           orders: {
-            signal: await this.signals.signalOf(ids, profile.flagRow !== undefined, tx),
-            orderCount: await this.signals.orderCount(ids, tx),
+            ...(showsSignal
+              ? { signal: await this.signals.signalOf(ids, profile.flagRow !== undefined, tx) }
+              : {}),
+            ...(showsCount ? { orderCount: await this.signals.orderCount(ids, tx) } : {}),
           },
         };
       },

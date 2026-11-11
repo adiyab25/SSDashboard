@@ -115,7 +115,9 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await expect(dialog).toHaveCount(0);
 
       // The header shows the kind, the source, and the note.
-      await expect(page.getByText(note)).toBeVisible();
+      await expect(
+        page.getByRole('region', { name: t('customers.profile.flagCard.title') }).getByText(note),
+      ).toBeVisible();
       const flagCard = page.getByRole('region', { name: t('customers.profile.flagCard.title') });
       await expect(flagCard.getByText(t('customers.flag.refuser'))).toBeVisible();
       await expect(flagCard.getByText(t('customers.flagSource.manual'))).toBeVisible();

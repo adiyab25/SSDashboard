@@ -36,6 +36,11 @@ describe('the timeline cursor (spec 0014 AC-14)', () => {
       encodeKeyset(['2026-02-30T10:00:00.000000Z', 'order', id]),
       encodeKeyset([at, 'order', 'nope']),
       encodeKeyset(['2026-11-01T10:00:00Z', 'order', id]),
+      // Years outside 1970 to 9998: one microsecond past the end is year 10000 (review m1).
+      encodeKeyset(['9999-12-31T23:59:59.999999Z', 'flag', id]),
+      encodeKeyset(['9999-01-01T00:00:00.000000Z', 'order', id]),
+      encodeKeyset(['0001-01-01T00:00:00.000000Z', 'merge', id]),
+      encodeKeyset(['1969-12-31T23:59:59.999999Z', 'flag', id]),
     ]) {
       expect(() => decodeTimelineCursor(forged)).toThrow(InvalidCursorError);
     }
@@ -64,6 +69,29 @@ describe('the timeline cursor (spec 0014 AC-14)', () => {
     expect(nextMicrosecond(at)).toBe('2026-11-01T10:00:00.124000Z');
     expect(nextMicrosecond('2026-12-31T23:59:59.999999Z')).toBe('2027-01-01T00:00:00.000000Z');
     expect(nextMicrosecond('2026-11-01T10:00:00.000000Z')).toBe('2026-11-01T10:00:00.000001Z');
+  });
+
+  it('accepts the first and last years and steps there without losing the microsecond', () => {
+    for (const edge of ['1970-01-01T00:00:00.000000Z', '9998-12-31T23:59:59.999998Z']) {
+      expect(decodeTimelineCursor(encodeKeyset([edge, 'merge', id])).at).toBe(edge);
+    }
+    // Far from 1970 a float count of microseconds is past 2^53 and drops the + 1.
+    expect(nextMicrosecond('9998-12-31T23:59:59.999998Z')).toBe('9998-12-31T23:59:59.999999Z');
+    expect(nextMicrosecond('9998-12-31T23:59:59.999999Z')).toBe('9999-01-01T00:00:00.000000Z');
+    expect(nextMicrosecond('2300-06-01T12:00:00.123456Z')).toBe('2300-06-01T12:00:00.123457Z');
+    expect(nextMicrosecond('1970-01-01T00:00:00.000000Z')).toBe('1970-01-01T00:00:00.000001Z');
+    expect(nextMicrosecond('1969-12-31T23:59:59.999999Z')).toBe('1970-01-01T00:00:00.000000Z');
+    expect(nextMicrosecond('1969-12-31T23:59:59.998999Z')).toBe('1969-12-31T23:59:59.999000Z');
+  });
+
+  it('resumes the order source in the last year with a cursor the order source accepts', () => {
+    const last = '9998-12-31T23:59:59.999999Z';
+    expect(
+      decodeTimeIdKeyset(orderCursorAfter({ at: last, source: 'merge', id }) as string),
+    ).toEqual({
+      at: '9999-01-01T00:00:00.000000Z',
+      id: '00000000-0000-0000-0000-000000000000',
+    });
   });
 
   it('resumes the order source exactly after any position', () => {

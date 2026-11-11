@@ -13,8 +13,11 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { CustomersService } from '../src/customers/customers.service.js';
+import { CustomerFlagsController } from '../src/customers/flags/customer-flags.controller.js';
+import { CustomerProfileService } from '../src/customers/profile/customer-profile.service.js';
 import { CustomerTimelineService } from '../src/customers/profile/customer-timeline.service.js';
 import { DATABASE } from '../src/database/database.module.js';
+import type { AuthenticatedRequest } from '../src/identity/sign-in/current-staff.js';
 import { Access } from '../src/platform/access/access.js';
 import { encodeKeyset } from '../src/platform/keyset-cursor.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
@@ -196,9 +199,11 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
     const orderIds: string[] = [];
     let undoneMerge = '';
     let collisionAt = '';
+    let flaggedMerged = '';
 
     beforeAll(async () => {
-      // 45 orders, 5 merges (one undone, so one unmerge), 8 phones, and the flag: 60 entries.
+      // 45 orders, 5 merges (one undone, so one unmerge), 8 phones, one channel id, and the flag
+      // (held by a merged record, the canonical one holding none): 61 entries.
       const mine = phone();
       for (let i = 0; i < 45; i += 1) orderIds.push(await order(mine));
       customer = await customerOfOrder(orderIds[0] as string);
@@ -210,7 +215,21 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
         );
       }
       const mergeIds: string[] = [];
-      for (let i = 0; i < 5; i += 1) mergeIds.push(await merge(customer, await newCustomer()));
+      for (let i = 0; i < 5; i += 1) {
+        const other = await newCustomer();
+        if (i === 4) {
+          // Flagged before the merge: the merged record keeps the flag, and the timeline's flag
+          // entry is hers by the canonical rule (spec 0002).
+          const stamp = (await profile(support, other)).updatedAt;
+          const flagged = await api.call(support, 'PUT', `/api/customers/${other}/flag`, {
+            kind: 'returner',
+            expectedUpdatedAt: stamp,
+          });
+          expect(flagged.status, JSON.stringify(flagged.body)).toBe(200);
+          flaggedMerged = other;
+        }
+        mergeIds.push(await merge(customer, other));
+      }
       undoneMerge = mergeIds[0] as string;
       const undo = await api.call(support, 'POST', `/api/customers/merges/${undoneMerge}/undo`, {
         reasonCode: 'wrong_merge',
@@ -221,15 +240,9 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
           customers.addPhone(tx, customer, e164Of(phone()), personActor(supportId, 'support')),
         );
       }
-      const stamp = (await profile(support, customer)).updatedAt;
-      const flagged = await api.call(support, 'PUT', `/api/customers/${customer}/flag`, {
-        kind: 'returner',
-        expectedUpdatedAt: stamp,
-      });
-      expect(flagged.status, JSON.stringify(flagged.body)).toBe(200);
 
-      // Two entries at one instant from two sources (an order and a merge, plus a phone), and two
-      // orders at one instant (the id breaks the tie).
+      // Entries at one instant from four sources (a channel id, a merge, an order, and a phone),
+      // and two orders at one instant (the id breaks the tie).
       collisionAt = (
         await owner<{ at: string }>(
           `SELECT to_char(recorded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at
@@ -248,13 +261,18 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
         [customer, collisionAt],
       );
       await owner(
+        `INSERT INTO customer_external_ids (customer_id, kind, channel_id, external_id, created_at)
+         VALUES ($1::uuid, 'partner_reference', $2::uuid, 'TL-REF-1', $3::timestamptz)`,
+        [customer, manualChannel, collisionAt],
+      );
+      await owner(
         `UPDATE orders SET placed_at = (SELECT placed_at FROM orders WHERE id = $2::uuid)
          WHERE id = $1::uuid`,
         [orderIds[20], orderIds[21]],
       );
     });
 
-    it('pages 60 entries by 25 with no gap or repeat, newest first', async () => {
+    it('pages 61 entries by 25 with no gap or repeat, newest first', async () => {
       const { entries, pages } = await allPages(support, customer, 25);
       const keys = entries.map((e) => `${e.kind}:${e.id}`);
       const counts = entries.reduce<Record<string, number>>(
@@ -263,14 +281,23 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
       );
 
       expect(pages).toBe(3);
-      expect(entries).toHaveLength(60);
-      expect(new Set(keys).size).toBe(60);
+      expect(entries).toHaveLength(61);
+      expect(new Set(keys).size).toBe(61);
       expect(counts).toEqual({
         order: 45,
         merge: 5,
         unmerge: 1,
         phone_added: 8,
+        channel_id_added: 1,
         flag: 1,
+      });
+      expect(entries.find((e) => e.kind === 'flag')).toMatchObject({
+        id: flaggedMerged,
+        flagKind: 'returner',
+      });
+      expect(entries.find((e) => e.kind === 'channel_id_added')).toMatchObject({
+        externalId: 'TL-REF-1',
+        channelIdKind: 'partner_reference',
       });
       expect(inOrder(entries)).toBe(true);
       expect(
@@ -284,7 +311,7 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
           .filter((e) => e.at === collisionAt)
           .map((e) => e.kind)
           .sort(),
-      ).toEqual(['merge', 'order', 'phone_added']);
+      ).toEqual(['channel_id_added', 'merge', 'order', 'phone_added']);
     });
 
     it('walks every boundary one entry at a time, the same instant included, to the same list', async () => {
@@ -352,7 +379,7 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
       });
       const page = await api.app.get(CustomerTimelineService).page(customer, { limit: 50 }, viewer);
 
-      expect(page.items).toHaveLength(15);
+      expect(page.items).toHaveLength(16);
       expect(page.items.some((e) => e.kind === 'order')).toBe(false);
       expect(page.items.filter((e) => e.kind === 'merge').every((e) => !('undoable' in e))).toBe(
         true,
@@ -384,6 +411,11 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
         encodeKeyset(['2026-10-01T00:00:00.000000Z', 'credit', randomUUID()]),
         encodeKeyset(['2026-02-30T00:00:00.000000Z', 'order', randomUUID()]),
         encodeKeyset(['2026-10-01T00:00:00.000000Z', randomUUID()]),
+        // Past year 9998 one microsecond more is year 10000, and year 1 is before any entry
+        // (review m1): both 400, never a 500 from the order source.
+        encodeKeyset(['9999-12-31T23:59:59.999999Z', 'merge', randomUUID()]),
+        encodeKeyset(['9999-12-31T23:59:59.999999Z', 'flag', randomUUID()]),
+        encodeKeyset(['0001-01-01T00:00:00.000000Z', 'merge', randomUUID()]),
       ];
       for (const cursor of forged) {
         const reply = await call(`?cursor=${cursor}`);
@@ -430,6 +462,48 @@ describe('customers timeline and signal', { timeout: 300_000 }, () => {
         suggestedKind: 'refuser',
       });
       expect(read.orderCount).toBe(3);
+    });
+
+    it('leaves the signal and the order count out for customers.view alone (AC-15)', async () => {
+      const viewer = new Access({
+        userId: supportId,
+        hats: [],
+        grants: ['customers.view'],
+        partnerAccountId: null,
+      });
+      const read = await api.app.get(CustomerProfileService).profile(customer, viewer);
+
+      expect(read.id).toBe(customer);
+      expect('signal' in read).toBe(false);
+      expect('orderCount' in read).toBe(false);
+    });
+
+    it('refuses suggestion_applied without orders.view, as the order counts are behind it', async () => {
+      const viewer = new Access({
+        userId: supportId,
+        hats: [],
+        grants: ['customers.view', 'customers.flag'],
+        partnerAccountId: null,
+      });
+      const read = await profile(support, customer);
+      expect(read.signal?.suggestedKind).toBe('refuser');
+      const request = { staff: { id: supportId } } as unknown as AuthenticatedRequest;
+
+      const refused = await api.app
+        .get(CustomerFlagsController)
+        .set(
+          customer,
+          { kind: 'refuser', reasonCode: 'suggestion_applied', expectedUpdatedAt: read.updatedAt },
+          request,
+          viewer,
+        )
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+
+      expect(refused).toMatchObject({ status: 422, response: { code: 'REASON_INVALID' } });
+      expect((await profile(support, customer)).flag).toBeNull();
     });
 
     it('removes the suggestion when the setting is raised to 3, and refuses to apply it', async () => {
