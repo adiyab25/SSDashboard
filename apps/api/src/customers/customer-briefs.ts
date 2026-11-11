@@ -6,6 +6,13 @@ import { pgArray, type Executor } from '../database/sql.js';
 /** A timestamp as the api issues it: UTC with microseconds, so a keyset cursor never loses precision. */
 export const MICRO_UTC = `'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'`;
 
+/**
+ * A timestamp column (or SQL expression) formatted in `MICRO_UTC`, for a select list. The column
+ * text is put in the SQL as is, so it must be a fixed column name or expression, never user input.
+ */
+export const utc = (column: string) =>
+  sql.raw(`to_char(${column} AT TIME ZONE 'UTC', ${MICRO_UTC})`);
+
 /** The flag kinds as a SQL array literal, most severe first (`CUSTOMER_FLAG_SEVERITY`). */
 export const FLAG_SEVERITY_SQL = `{${CUSTOMER_FLAG_SEVERITY.join(',')}}`;
 

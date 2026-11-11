@@ -39,6 +39,7 @@ const WARM_UP_PATHS = [
   '/account',
   '/audit',
   '/customers',
+  '/customers/merge',
   `/customers/${PLACEHOLDER_ID}`,
   '/locations',
   '/orders',

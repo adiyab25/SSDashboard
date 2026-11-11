@@ -64,6 +64,15 @@ describe('the permission matrix', () => {
     }
   });
 
+  // Spec 0014 AC-8: the audit screen's undo of `customer.merged` needs only `audit.undo`, so a hat
+  // that could undo from `/audit` must also be one that may merge (security review L1).
+  it('gives every hat that holds audit.undo also customers.merge', () => {
+    const undoers = Hat.options.filter((hat) => HAT_PERMISSIONS[hat].includes('audit.undo'));
+
+    expect(undoers.length).toBeGreaterThan(0);
+    for (const hat of undoers) expect(HAT_PERMISSIONS[hat], hat).toContain('customers.merge');
+  });
+
   it('holds the media buyer to campaigns.view and the partner to its own two (AC-8, AC-9)', () => {
     expect(HAT_PERMISSIONS.media_buyer).toEqual(['campaigns.view']);
     expect(HAT_PERMISSIONS.partner).toEqual(['partner.view_own', 'partner.submit_sales']);
@@ -106,6 +115,7 @@ describe('the permission matrix, cell by cell (spec 0008 table)', () => {
         'orders.confirm',
         'customers.view',
         'customers.merge',
+        'customers.flag',
         'exchanges.handle',
         'stock.view',
         'tasks.work',
@@ -115,6 +125,7 @@ describe('the permission matrix, cell by cell (spec 0008 table)', () => {
         'orders.confirm',
         'customers.view',
         'customers.merge',
+        'customers.flag',
         'exchanges.handle',
         'refunds.approve',
         'fulfillment.work',
@@ -145,6 +156,7 @@ describe('the permission matrix, cell by cell (spec 0008 table)', () => {
         'orders.gift',
         'customers.view',
         'customers.merge',
+        'customers.flag',
         'exchanges.handle',
         'refunds.approve',
         'fulfillment.work',
@@ -184,6 +196,7 @@ describe('the permission matrix, cell by cell (spec 0008 table)', () => {
       'orders.gift': staffOnly,
       'customers.view': staffP,
       'customers.merge': staffP,
+      'customers.flag': staffP,
       'exchanges.handle': staffP,
       'refunds.approve': staffP,
       'fulfillment.work': staffP,

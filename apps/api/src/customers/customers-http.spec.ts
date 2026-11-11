@@ -1,8 +1,14 @@
 import type { BadRequestException } from '@nestjs/common';
-import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  CustomerClearFlagRequest,
+  CustomerMergeRequest,
+  CustomerSetFlagRequest,
+  CustomerUndoMergeRequest,
+} from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
-import { customersHttpError } from './customers-http.js';
-import { CustomersError } from './customers.errors.js';
+import { CustomerBodyPipe, customersHttpError } from './customers-http.js';
+import { CustomersError, MergeAlreadyUndone, MergeNotLatest } from './customers.errors.js';
 
 describe('customersHttpError', () => {
   it('maps each domain error to the status and stable code of the API table', () => {
@@ -31,5 +37,101 @@ describe('customersHttpError', () => {
     const other = new Error('boom');
 
     expect(customersHttpError(other)).toBe(other);
+  });
+
+  it('maps the merge refusals to 409 and the unknown merge or suggestion to 404', () => {
+    for (const error of [
+      new CustomersError('SAME_CUSTOMER', 'x'),
+      new CustomersError('CUSTOMER_MERGED', 'x'),
+      new CustomersError('CUSTOMER_CHANGED', 'x'),
+      new CustomersError('SUGGESTION_CLOSED', 'x'),
+      new CustomersError('SUGGESTION_MISMATCH', 'x'),
+      new MergeAlreadyUndone(),
+      new MergeNotLatest(),
+      new CustomersError('STALE_RECORD', 'x'),
+      new CustomersError('NOT_FLAGGED', 'x'),
+    ]) {
+      const answer = customersHttpError(error) as ConflictException;
+      expect(answer).toBeInstanceOf(ConflictException);
+      expect(answer.getResponse()).toMatchObject({ code: error.code });
+    }
+    for (const code of ['MERGE_NOT_FOUND', 'SUGGESTION_NOT_FOUND'] as const) {
+      expect(customersHttpError(new CustomersError(code, 'x'))).toBeInstanceOf(NotFoundException);
+    }
+  });
+});
+
+describe('CustomerBodyPipe', () => {
+  const survivorId = '01937f3a-0000-7000-8000-00000000000a';
+  const mergedId = '01937f3a-0000-7000-8000-00000000000b';
+  const codeOf = (run: () => unknown): unknown => {
+    try {
+      run();
+    } catch (error) {
+      return ((error as UnprocessableEntityException).getResponse() as { code: string }).code;
+    }
+    return 'passed';
+  };
+
+  it('answers REASON_REQUIRED for a missing required code and REASON_INVALID for an unlisted one', () => {
+    const undo = new CustomerBodyPipe(CustomerUndoMergeRequest);
+
+    expect(codeOf(() => undo.transform({}))).toBe('REASON_REQUIRED');
+    expect(codeOf(() => undo.transform(undefined))).toBe('REASON_REQUIRED');
+    expect(codeOf(() => undo.transform({ reasonCode: null }))).toBe('REASON_REQUIRED');
+    expect(codeOf(() => undo.transform({ reasonCode: 'call_01012345678' }))).toBe('REASON_INVALID');
+    expect(undo.transform({ reasonCode: 'wrong_merge' })).toEqual({ reasonCode: 'wrong_merge' });
+  });
+
+  it('takes a merge without a reason, refuses an unlisted one, and names only paths for other faults', () => {
+    const merge = new CustomerBodyPipe(CustomerMergeRequest);
+
+    expect(codeOf(() => merge.transform({ survivorId, mergedId }))).toBe('passed');
+    expect(codeOf(() => merge.transform({ survivorId, mergedId, reasonCode: 'nope' }))).toBe(
+      'REASON_INVALID',
+    );
+    // An optional code sent as null or empty is an unlisted code, not a missing required one.
+    expect(codeOf(() => merge.transform({ survivorId, mergedId, reasonCode: null }))).toBe(
+      'REASON_INVALID',
+    );
+    expect(codeOf(() => merge.transform({ survivorId, mergedId, reasonCode: '' }))).toBe(
+      'REASON_INVALID',
+    );
+    let body = '';
+    try {
+      merge.transform({ survivorId: 'Zzsentinel', mergedId });
+    } catch (error) {
+      body = JSON.stringify((error as UnprocessableEntityException).getResponse());
+    }
+    expect(body).toContain('VALIDATION_FAILED');
+    expect(body).not.toContain('Zzsentinel');
+  });
+
+  // Spec 0014 AC-11: a flag note over 500 characters is NOTE_TOO_LONG, never echoed.
+  it('answers NOTE_TOO_LONG for a long note and maps the flag reason codes', () => {
+    const set = new CustomerBodyPipe(CustomerSetFlagRequest);
+    const clear = new CustomerBodyPipe(CustomerClearFlagRequest);
+    const expectedUpdatedAt = '2026-11-08T10:00:00.123456Z';
+    const note = 'Zzsentinel'.repeat(51);
+
+    let body = '';
+    try {
+      set.transform({ kind: 'refuser', note, expectedUpdatedAt });
+    } catch (error) {
+      body = JSON.stringify((error as UnprocessableEntityException).getResponse());
+    }
+    expect(body).toContain('NOTE_TOO_LONG');
+    expect(body).not.toContain('Zzsentinel');
+    expect(codeOf(() => set.transform({ kind: 'refuser', note: 1, expectedUpdatedAt }))).toBe(
+      'VALIDATION_FAILED',
+    );
+    expect(
+      codeOf(() => set.transform({ kind: 'refuser', reasonCode: 'x', expectedUpdatedAt })),
+    ).toBe('REASON_INVALID');
+    expect(codeOf(() => set.transform({ kind: 'refuser', expectedUpdatedAt }))).toBe('passed');
+    expect(codeOf(() => clear.transform({ expectedUpdatedAt }))).toBe('REASON_REQUIRED');
+    expect(codeOf(() => clear.transform({ reasonCode: 'confirmed_fake', expectedUpdatedAt }))).toBe(
+      'REASON_INVALID',
+    );
   });
 });

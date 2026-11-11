@@ -3,6 +3,7 @@ import {
   BoxesIcon,
   CalendarRangeIcon,
   CoinsIcon,
+  GitMergeIcon,
   HomeIcon,
   LayersIcon,
   MapPinIcon,
@@ -200,6 +201,16 @@ export const navItems: readonly NavItem[] = [
     group: 'customers',
     needs: 'customers.view',
     module: 'customers',
+  },
+  {
+    id: 'customersMerge',
+    labelKey: 'shell.nav.items.customersMerge',
+    href: '/customers/merge',
+    icon: GitMergeIcon,
+    group: 'customers',
+    needs: 'customers.merge',
+    module: 'customers',
+    action: true,
   },
 ];
 
