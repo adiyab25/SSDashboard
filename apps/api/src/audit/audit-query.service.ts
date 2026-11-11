@@ -16,6 +16,7 @@ import type { Access } from '../platform/access/access.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
 import {
   auditDiffFor,
+  COST_ENTRY_ACTIONS,
   serializeAuditDetail,
   serializeAuditEntry,
   serializeAuditPage,
@@ -163,6 +164,19 @@ function filtersOf(query: Omit<Partial<AuditEntryListQuery>, 'cursor' | 'limit'>
 }
 
 /**
+ * The conditions that keep a viewer to the entries they may see at all (spec 0012 AC-17, the
+ * owner's ruling of 2026-11-11 "Hide whole entry"): none for a viewer with `cost.view`, else one
+ * that leaves out every entry of a `COST_ENTRY_ACTIONS` code. It is a SQL condition, never a
+ * filter on rows already read, so a keyset page stays full and its cursor skips or repeats
+ * nothing, and an export's bound and count never include a hidden entry. Every reader of
+ * `audit_entries` for a viewer adds it.
+ */
+export function visibleEntries(viewer: Pick<Access, 'has'>): SQL[] {
+  if (viewer.has('cost.view')) return [];
+  return [sql`NOT (audit_entries.action = ANY(${pgArray(COST_ENTRY_ACTIONS)}::text[]))`];
+}
+
+/**
  * The field by field diff of an entry (spec 0010, AC-12): every top level field of `before` and
  * `after`, in stored order, with `kind` (`added` when only `after` holds it, `removed` when only
  * `before` does, `changed` when both do, review M3R12), the values on each side (null on a side
@@ -193,7 +207,7 @@ export function fieldChanges(row: EntryRow): AuditFieldChange[] {
  * reader takes the viewer. Every public reader guards itself, whoever calls it (security review
  * AS29, review AR3): `list`, `get`, `view`, and `forRecord` refuse a viewer without `audit.read`,
  * the export reads one without `audit.export` (`AuditReadForbidden`), and each leaves out cost
- * fields for a viewer without `cost.view`; the routes' `@Permission` is the first wall, not the
+ * fields, and every cost entry whole (`visibleEntries`), for a viewer without `cost.view`; the routes' `@Permission` is the first wall, not the
  * only one. It never pages by offset and never counts all rows.
  */
 @Injectable()
@@ -216,7 +230,12 @@ export class AuditQueryService {
     viewer: Pick<Access, 'has'>,
   ): Promise<AuditEntryListResponse> {
     if (!canReadAudit(viewer)) throw new AuditReadForbidden();
-    const page = await this.page(filtersOf(query), query.cursor, query.limit, viewer);
+    const page = await this.page(
+      [...filtersOf(query), ...visibleEntries(viewer)],
+      query.cursor,
+      query.limit,
+      viewer,
+    );
     return serializeAuditPage(page, viewer);
   }
 
@@ -235,7 +254,7 @@ export class AuditQueryService {
   ): Promise<AuditEntryListResponse> {
     if (!canReadAudit(viewer)) throw new AuditReadForbidden();
     const page = await this.page(
-      [sql`record_type = ${type}`, sql`record_id = ${id}`],
+      [sql`record_type = ${type}`, sql`record_id = ${id}`, ...visibleEntries(viewer)],
       cursor,
       limit,
       viewer,
@@ -266,13 +285,17 @@ export class AuditQueryService {
     return serializeAuditEntry((await this.one(id, viewer)).view, viewer);
   }
 
-  /** One row and its view, or `AuditEntryNotFound`. */
+  /**
+   * One row and its view, or `AuditEntryNotFound`: also for an entry this viewer may not see at
+   * all (`visibleEntries`), so its answer is the missing entry's and never says it exists.
+   */
   private async one(
     id: string,
     viewer: Pick<Access, 'has'>,
   ): Promise<{ row: EntryRow; view: AuditEntryView }> {
+    const conditions = [sql`id = ${id}`, ...visibleEntries(viewer)];
     const { rows } = await this.connection.db.execute<EntryRow>(sql`
-      SELECT ${ENTRY_COLUMNS} FROM audit_entries WHERE id = ${id}`);
+      SELECT ${ENTRY_COLUMNS} FROM audit_entries WHERE ${sql.join(conditions, sql` AND `)}`);
     const row = rows[0];
     if (!row) throw new AuditEntryNotFound();
     const [view] = await this.views([row], viewer);
@@ -293,7 +316,8 @@ export class AuditQueryService {
     if (!canExportAudit(viewer)) throw new AuditReadForbidden();
     const { rows } = await this.connection.db.execute<{ at: string; id: string }>(sql`
       SELECT to_char(recorded_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS at, id
-      FROM audit_entries WHERE ${sql.join(filtersOf(query), sql` AND `)}
+      FROM audit_entries
+      WHERE ${sql.join([...filtersOf(query), ...visibleEntries(viewer)], sql` AND `)}
       ORDER BY audit_entries.recorded_at DESC, audit_entries.id DESC
       LIMIT 1`);
     return rows[0] ?? null;
@@ -311,7 +335,7 @@ export class AuditQueryService {
     cap: number,
   ): Promise<number> {
     if (!canExportAudit(viewer)) throw new AuditReadForbidden();
-    const filters = [...filtersOf(query), atOrBelow(bound)];
+    const filters = [...filtersOf(query), ...visibleEntries(viewer), atOrBelow(bound)];
     const { rows } = await this.connection.db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM (
         SELECT 1 FROM audit_entries WHERE ${sql.join(filters, sql` AND `)} LIMIT ${cap}
@@ -337,7 +361,7 @@ export class AuditQueryService {
   ): AsyncGenerator<{ row: EntryRow; localAt: string; actorName: string | null }[]> {
     if (!canExportAudit(viewer)) throw new AuditReadForbidden();
     const showCost = viewer.has('cost.view');
-    const filters = filtersOf(query);
+    const filters = [...filtersOf(query), ...visibleEntries(viewer)];
     let after: AuditKey | null = null;
     let left = max;
     while (left > 0) {

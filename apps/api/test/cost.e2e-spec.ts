@@ -492,44 +492,187 @@ describe(
       expect(JSON.stringify(raw)).not.toMatch(/unitCost|77\.7/);
     });
 
-    it('hides unitCost and the reason of cost_record.recorded from an audit reader without cost.view', async () => {
+    // The owner's ruling of 2026-11-11 "Hide whole entry" (spec 0012 AC-17): an audit reader
+    // without cost.view sees no cost_record.recorded entry anywhere, backdated or not, and a
+    // reader with it sees every one, reason included.
+    describe('cost entries hidden whole from an audit reader without cost.view', () => {
       const reason = 'was 120.00 and now 95.50';
-      const sku = await costedStyle(reason);
-      const listPath = `/api/audit/records/style/${sku.productId}/entries`;
-      const exportPath = `/api/audit/entries/export?action=cost_record.recorded&recordType=style&recordId=${sku.productId}&dayFrom=${today}&dayTo=${today}`;
+      const lateReason = 'Invoice found late at 88.25';
+      const LEAK = /cost_record|unitCost|77\.7|88\.25|95\.50|was 120/;
+      let styleId: string;
+      let costIds: string[];
+      let ownIds: string[];
+      let noCostId: string;
+      let noCost: string;
+
+      const historyPath = (limit: number, cursor?: string) =>
+        `/api/audit/records/style/${styleId}/entries?limit=${limit}` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+
+      /** Every entry id of the style's history, walking pages of `limit`. */
+      async function walk(cookie: string, limit: number): Promise<string[]> {
+        const ids: string[] = [];
+        let cursor: string | undefined;
+        for (let pages = 0; pages < 50; pages += 1) {
+          const reply = await api.call(cookie, 'GET', historyPath(limit, cursor));
+          expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+          const page = AuditEntryListResponse.parse(reply.body);
+          ids.push(...page.items.map((item) => item.id));
+          if (!page.nextCursor) return ids;
+          // A full page before every cursor: a hidden entry never leaves a short page.
+          expect(page.items).toHaveLength(limit);
+          cursor = page.nextCursor;
+        }
+        throw new Error('the history did not end');
+      }
+
       const exportOf = async (cookie: string) =>
         (
-          await fetch(`${api.base}${exportPath}`, {
-            method: 'POST',
-            headers: { cookie, origin: api.base },
-          })
+          await fetch(
+            `${api.base}/api/audit/entries/export?recordType=style&recordId=${styleId}&dayFrom=${today}&dayTo=${today}`,
+            { method: 'POST', headers: { cookie, origin: api.base } },
+          )
         ).text();
 
-      const seen = await api.call(owner, 'GET', listPath);
-      const hidden = await api.call(managerWithoutCost, 'GET', listPath);
-      expect(seen.status, JSON.stringify(seen.body)).toBe(200);
-      expect(hidden.status, JSON.stringify(hidden.body)).toBe(200);
-      const seenItem = AuditEntryListResponse.parse(seen.body).items[0];
-      const hiddenItem = AuditEntryListResponse.parse(hidden.body).items[0];
-      expect(seenItem?.reason).toBe(reason);
-      expect(JSON.stringify(seenItem?.after)).toContain('unitCost');
-      expect(hiddenItem?.action).toBe('cost_record.recorded');
-      expect(hiddenItem?.reason).toBeNull();
-      expect(JSON.stringify(hidden.body)).not.toMatch(/unitCost|77\.7|95\.50/);
+      /** The `rows` the newest `audit.exported` entry of `userId` counted. */
+      async function exportedRows(userId: string): Promise<unknown> {
+        const { rows } = await api.owner.pool.query<{ after: { rows: unknown } }>(
+          `SELECT after FROM audit_entries WHERE action = 'audit.exported' AND actor_user_id = $1
+           ORDER BY recorded_at DESC, id DESC LIMIT 1`,
+          [userId],
+        );
+        return rows[0]?.after.rows;
+      }
 
-      const detailPath = `/api/audit/entries/${hiddenItem?.id}`;
-      const detailSeen = await api.call(owner, 'GET', detailPath);
-      const detailHidden = await api.call(managerWithoutCost, 'GET', detailPath);
-      expect(AuditEntryDetail.parse(detailSeen.body).reason).toBe(reason);
-      expect(AuditEntryDetail.parse(detailHidden.body).reason).toBeNull();
-      expect(JSON.stringify(detailHidden.body)).not.toMatch(/unitCost|77\.7|95\.50/);
+      beforeAll(async () => {
+        const person = await api.addPerson(['manager']);
+        noCostId = person.id;
+        noCost = await api.signIn(person.email);
+        // Newest first the style holds: two edits, a backdated cost record, a cost record dated
+        // today, and its own earlier entries, so page boundaries fall on and around cost entries.
+        const sku = await costedStyle(reason);
+        styleId = sku.productId;
+        const season = await newSeason();
+        const late = await recordCost(styleId, {
+          seasonId: season.id,
+          costBasis: 'purchase_landed',
+          unitCost: '88.25',
+          effectiveFrom: '2000-01-01',
+          reason: lateReason,
+        });
+        expect(late.status, JSON.stringify(late.body)).toBe(201);
+        for (const tag of ['first', 'second']) {
+          const { parsed } = await style(styleId);
+          const edit = await api.call(owner, 'PATCH', `/api/styles/${styleId}`, {
+            updatedAt: parsed.updatedAt,
+            tags: [tag],
+          });
+          expect(edit.status, JSON.stringify(edit.body)).toBe(200);
+        }
+        const { rows } = await api.owner.pool.query<{ id: string }>(
+          `SELECT id FROM audit_entries WHERE record_id = $1 AND action = 'cost_record.recorded'
+           ORDER BY recorded_at DESC, id DESC`,
+          [styleId],
+        );
+        costIds = rows.map((row) => row.id);
+        expect(costIds).toHaveLength(2);
+        ownIds = await walk(owner, 100);
+      });
 
-      const fileSeen = await exportOf(owner);
-      const fileHidden = await exportOf(managerWithoutCost);
-      expect(fileSeen).toContain(reason);
-      expect(fileSeen).toContain('unitCost');
-      expect(fileHidden).toContain('cost_record.recorded');
-      expect(fileHidden).not.toMatch(/unitCost|77\.7|95\.50|was 120/);
+      it('leaves them out of the record history, with no gap or repeat across pages', async () => {
+        expect(ownIds).toEqual(expect.arrayContaining(costIds));
+        const expected = ownIds.filter((id) => !costIds.includes(id));
+        expect(expected.length).toBeGreaterThanOrEqual(2);
+
+        for (const limit of [1, 2, 3]) {
+          expect(await walk(noCost, limit), `limit ${limit}`).toEqual(expected);
+          expect(await walk(owner, limit), `limit ${limit}`).toEqual(ownIds);
+        }
+        const hidden = await api.call(noCost, 'GET', historyPath(100));
+        expect(JSON.stringify(hidden.body)).not.toMatch(LEAK);
+      });
+
+      it('leaves them out of the audit list under every filter, the cost action included', async () => {
+        const { rows } = await api.owner.pool.query<{ correlation_id: string }>(
+          'SELECT correlation_id FROM audit_entries WHERE id = $1',
+          [costIds[0]],
+        );
+        for (const filter of [
+          `recordType=style&recordId=${styleId}`,
+          'action=cost_record.recorded',
+          `correlationId=${rows[0]?.correlation_id}`,
+          `actorUserId=${ownerId}&dayFrom=${today}&dayTo=${today}`,
+        ]) {
+          const path = `/api/audit/entries?${filter}&limit=100`;
+          const hidden = await api.call(noCost, 'GET', path);
+          const seen = await api.call(owner, 'GET', path);
+          expect(hidden.status, JSON.stringify(hidden.body)).toBe(200);
+          const hiddenIds = AuditEntryListResponse.parse(hidden.body).items.map((item) => item.id);
+          const seenIds = AuditEntryListResponse.parse(seen.body).items.map((item) => item.id);
+          expect(
+            hiddenIds.some((id) => costIds.includes(id)),
+            filter,
+          ).toBe(false);
+          expect(JSON.stringify(hidden.body), filter).not.toMatch(LEAK);
+          expect(
+            seenIds.some((id) => costIds.includes(id)),
+            filter,
+          ).toBe(true);
+        }
+        const seen = await api.call(owner, 'GET', `/api/audit/records/style/${styleId}/entries`);
+        const reasons = AuditEntryListResponse.parse(seen.body)
+          .items.filter((item) => costIds.includes(item.id))
+          .map((item) => item.reason);
+        expect(reasons).toEqual([lateReason, reason]);
+      });
+
+      it('answers the detail of one as a missing entry; the holder sees it whole', async () => {
+        const missing = await api.call(noCost, 'GET', `/api/audit/entries/${randomUUID()}`);
+        expect(missing.status).toBe(404);
+        for (const id of costIds) {
+          const hidden = await api.call(noCost, 'GET', `/api/audit/entries/${id}`);
+          expect(hidden.status).toBe(404);
+          expect(hidden.body).toEqual(missing.body);
+        }
+        const seen = await api.call(owner, 'GET', `/api/audit/entries/${costIds[0]}`);
+        expect(seen.status).toBe(200);
+        const detail = AuditEntryDetail.parse(seen.body);
+        expect(detail.reason).toBe(lateReason);
+        expect(JSON.stringify(detail.after)).toContain('unitCost');
+      });
+
+      it('answers an undo of one as a missing entry, never as not undoable', async () => {
+        const body = { reason: 'mistake' };
+        const undo = (cookie: string, id: string) =>
+          api.call(cookie, 'POST', `/api/audit/entries/${id}/undo`, body);
+
+        const missing = await undo(noCost, randomUUID());
+        const hidden = await undo(noCost, costIds[0] as string);
+        const seen = await undo(owner, costIds[0] as string);
+
+        expect(missing.status).toBe(404);
+        expect(hidden.status).toBe(404);
+        expect(hidden.body).toEqual(missing.body);
+        expect(seen.status).toBe(409);
+        expect(seen.body).toMatchObject({ code: 'NOT_UNDOABLE' });
+      });
+
+      it('leaves them out of the CSV and of the count its export entry records', async () => {
+        const fileHidden = await exportOf(noCost);
+        const fileSeen = await exportOf(owner);
+        const rowsOf = (file: string) => file.trim().split('\r\n').length - 1;
+
+        expect(fileHidden).not.toMatch(LEAK);
+        for (const id of costIds) {
+          expect(fileHidden).not.toContain(id);
+          expect(fileSeen).toContain(id);
+        }
+        expect(fileSeen).toContain(reason);
+        expect(fileSeen).toContain(lateReason);
+        expect(rowsOf(fileSeen) - rowsOf(fileHidden)).toBe(costIds.length);
+        expect(await exportedRows(noCostId)).toBe(rowsOf(fileHidden));
+        expect(await exportedRows(ownerId)).toBe(rowsOf(fileSeen));
+      });
     });
 
     it('answers 403 on the cost records without cost.view, and records nothing', async () => {

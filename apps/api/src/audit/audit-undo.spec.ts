@@ -20,6 +20,7 @@ import type { AuditUndoneWriter } from './audit-undone.writer.js';
 import type { AuditService } from './audit.service.js';
 import {
   AlreadyUndone,
+  AuditEntryNotFound,
   AuditReadForbidden,
   AuditReasonInvalid,
   AuditUndoHandlerDuplicate,
@@ -299,6 +300,25 @@ describe('AuditUndoService', () => {
 
     await expect(service.undo(ID, viewer, 'wrong')).rejects.toBeInstanceOf(NotUndoable);
     expect(undo).not.toHaveBeenCalled();
+  });
+
+  // Spec 0012 AC-17, the owner's ruling of 2026-11-11 "Hide whole entry": a cost entry is
+  // missing to an undoer without cost.view, never "not undoable", so its existence never leaks.
+  it('answers a cost entry as missing to an undoer without cost.view, and as not undoable with it', async () => {
+    const undos = new AuditUndoRegistry();
+    const cost = target({
+      action: 'cost_record.recorded',
+      record_type: 'style',
+      undo_action: null,
+    });
+    const noCost = { ...viewer, has: (permission: string) => permission !== 'cost.view' };
+
+    await expect(
+      serviceWith(reads(cost), undos).service.undo(ID, noCost, 'wrong'),
+    ).rejects.toBeInstanceOf(AuditEntryNotFound);
+    await expect(
+      serviceWith(reads(cost), undos).service.undo(ID, viewer, 'wrong'),
+    ).rejects.toBeInstanceOf(NotUndoable);
   });
 
   it('refuses an entry already undone, before any handler runs', async () => {

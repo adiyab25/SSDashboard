@@ -10,7 +10,7 @@ import {
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../database/database.module.js';
 import { pgConstraint, pgErrorCode } from '../database/sql.js';
-import { serializeAuditEntry } from './audit-cost-fields.js';
+import { isEntryVisible, serializeAuditEntry } from './audit-cost-fields.js';
 import {
   AuditQueryService,
   entryViewOf,
@@ -100,7 +100,8 @@ export class AuditUndoService {
    * typed `reason`, and returns the new undone entry as the viewer sees it. The id is lower cased
    * first (review M4R3). In one transaction: takes a transaction advisory lock on the entry (so
    * two undos of one entry queue, and the second sees the first's entry), loads it
-   * (`AuditEntryNotFound`), refuses one that cannot be undone (`NotUndoable`: no `undo_action`, an
+   * (`AuditEntryNotFound`, also for a cost entry a viewer without `cost.view` may not see,
+   * `isEntryVisible`), refuses one that cannot be undone (`NotUndoable`: no `undo_action`, an
    * action the registry does not mark undoable, or another handler than the registry's) or that
    * is undone already (`AlreadyUndone`), checks the reason against the undone code's policy
    * (`AuditReasonRequired`, `AuditReasonTooLong`, `AuditReasonInvalid`) before any owner code
@@ -128,7 +129,11 @@ export class AuditUndoService {
                    after, undo_action, undo_args
             FROM audit_entries WHERE id = ${id}`);
           const target = rows[0];
-          if (!target) throw new AuditEntryNotFound();
+          // An entry the viewer may not see at all (a cost entry without `cost.view`) is
+          // missing to them, before any other refusal could say it exists.
+          if (!target || !isEntryVisible(target.action, viewer.has('cost.view'))) {
+            throw new AuditEntryNotFound();
+          }
           if (!target.undo_action || !isUndoableEntry(target.action, target.undo_action)) {
             throw new NotUndoable();
           }

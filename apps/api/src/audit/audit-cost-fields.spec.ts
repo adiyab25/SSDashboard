@@ -1,8 +1,13 @@
-import type { AuditEntryDetail, AuditEntryListResponse } from '@ssdashboard/contracts';
+import {
+  isAuditActionCode,
+  type AuditEntryDetail,
+  type AuditEntryListResponse,
+} from '@ssdashboard/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   auditDiffFor,
-  auditReasonFor,
+  COST_ENTRY_ACTIONS,
+  isEntryVisible,
   isCostKey,
   serializeAuditDetail,
   serializeAuditEntry,
@@ -95,25 +100,26 @@ describe('auditDiffFor (the export cells)', () => {
   });
 });
 
-// Spec 0012 AC-17: the reason of a cost record may state the amount.
-describe('the reason of cost_record.recorded', () => {
-  const costEntry = { ...entry, action: 'cost_record.recorded', reason: 'was 120.00, now 95' };
-  const none = { has: () => false };
-  const holder = { has: (p: string) => p === 'cost.view' };
-
-  it('is hidden from a reader without cost.view on every entry shape', () => {
-    expect(
-      serializeAuditPage({ items: [costEntry], nextCursor: null }, none).items[0]?.reason,
-    ).toBeNull();
-    expect(serializeAuditEntry(costEntry, none).reason).toBeNull();
-    expect(serializeAuditDetail({ ...costEntry, changes: [] }, none).reason).toBeNull();
-    expect(auditReasonFor('cost_record.recorded', 'x', false)).toBeNull();
+// Spec 0012 AC-17, the owner's ruling of 2026-11-11 "Hide whole entry": a cost record's entry
+// is hidden whole from a reader without cost.view (the readers filter it out in SQL), so the
+// serializers no longer touch its reason.
+describe('cost entries (cost_record.recorded)', () => {
+  it('lists cost_record.recorded as the one cost entry action, a registered code', () => {
+    expect(COST_ENTRY_ACTIONS).toEqual(['cost_record.recorded']);
+    for (const action of COST_ENTRY_ACTIONS) expect(isAuditActionCode(action)).toBe(true);
   });
 
-  it('is kept for cost.view and for every other action', () => {
-    expect(serializeAuditEntry(costEntry, holder).reason).toBe('was 120.00, now 95');
-    expect(serializeAuditEntry({ ...costEntry, action: 'style.updated' }, none).reason).toBe(
-      'was 120.00, now 95',
+  it('shows a cost entry only with cost.view, and every other entry always', () => {
+    expect(isEntryVisible('cost_record.recorded', false)).toBe(false);
+    expect(isEntryVisible('cost_record.recorded', true)).toBe(true);
+    expect(isEntryVisible('style.updated', false)).toBe(true);
+  });
+
+  it('keeps the reason of every entry the reader is shown', () => {
+    const costEntry = { ...entry, action: 'cost_record.recorded', reason: 'Invoice found late' };
+    expect(serializeAuditEntry(costEntry, { has: () => false }).reason).toBe('Invoice found late');
+    expect(serializeAuditDetail({ ...costEntry, changes: [] }, { has: () => true }).reason).toBe(
+      'Invoice found late',
     );
   });
 });

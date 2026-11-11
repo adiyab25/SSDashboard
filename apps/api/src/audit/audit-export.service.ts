@@ -10,7 +10,7 @@ import {
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { en, flatten } from '@ssdashboard/i18n';
 import { DATABASE } from '../database/database.module.js';
-import { auditDiffFor, auditReasonFor } from './audit-cost-fields.js';
+import { auditDiffFor } from './audit-cost-fields.js';
 import { AuditExportTooLarge } from './audit.errors.js';
 import {
   AuditQueryService,
@@ -112,7 +112,9 @@ export class AuditExportCutOff extends Error {
  * only the entries at or below that key, at most the counted number, in keyset batches of 1,000,
  * so the file holds exactly `after.rows` rows and never the export's own entry, which is newer
  * (review M3R2). The file holds no personal data because the table holds none, and no cost
- * field for a reader without `cost.view` (`AuditExportPlan.showCost`, spec 0008 AC-6). It reads no
+ * field for a reader without `cost.view` (`AuditExportPlan.showCost`, spec 0008 AC-6), nor any
+ * cost entry (`COST_ENTRY_ACTIONS`: the reader's bound, count, and batches leave them out, so
+ * `rows` never counts one). It reads no
  * setting: the caller passes the install time zone, so this module never imports the platform
  * module (review M3R6).
  */
@@ -197,7 +199,6 @@ export class AuditExportService {
                   ...row,
                   before: auditDiffFor(row.before, plan.showCost),
                   after: auditDiffFor(row.after, plan.showCost),
-                  reason: auditReasonFor(row.action, row.reason, plan.showCost),
                 },
                 localAt,
                 actorName,

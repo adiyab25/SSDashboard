@@ -72,29 +72,29 @@ export function auditDiffFor(
 }
 
 /**
- * The action codes whose free text reason may state a cost (spec 0012 AC-17: the reason of a cost
- * record is typed next to the amount). A reader without `cost.view` never sees it.
+ * The action codes whose whole entry is a cost (spec 0012 AC-17, the owner's ruling of 2026-11-11
+ * "Hide whole entry"): a cost record's entry carries the amount and a reason typed next to it, so
+ * a reader without `cost.view` never sees such an entry at all, in any list, history, detail,
+ * undo, count, or export. None of them is undoable, so no undone code is listed.
  */
-const COST_REASON_ACTIONS: ReadonlySet<string> = new Set(['cost_record.recorded']);
+export const COST_ENTRY_ACTIONS: readonly string[] = ['cost_record.recorded'];
+
+const COST_ENTRY_ACTION_SET: ReadonlySet<string> = new Set(COST_ENTRY_ACTIONS);
 
 /**
- * The reason of an entry as a reader may see it: unchanged with `showCost` or for any action not
- * in `COST_REASON_ACTIONS`, else null. Pure. The list, the detail, the undo answer, and the CSV
- * export all go through it, so a file never carries what the screen would hide.
+ * Whether a reader may see an entry of `action` at all: always with `showCost`, else only when
+ * the action is not in `COST_ENTRY_ACTIONS`. Pure. The readers filter these entries out in SQL
+ * (`visibleEntries` in `audit-query.service.ts`) so paging stays whole; this is the same rule for
+ * a row already read (the undo's target).
  */
-export function auditReasonFor(
-  action: string,
-  reason: string | null,
-  showCost: boolean,
-): string | null {
-  return showCost || !COST_REASON_ACTIONS.has(action) ? reason : null;
+export function isEntryVisible(action: string, showCost: boolean): boolean {
+  return showCost || !COST_ENTRY_ACTION_SET.has(action);
 }
 
-/** One entry with its `before` and `after` stripped of cost fields and a cost reason hidden. */
+/** One entry with its `before` and `after` stripped of cost fields. */
 function entryWithoutCost<T extends AuditEntryView>(entry: T): T {
   return {
     ...entry,
-    reason: auditReasonFor(entry.action, entry.reason, false),
     before: auditDiffFor(entry.before, false),
     after: auditDiffFor(entry.after, false),
   };

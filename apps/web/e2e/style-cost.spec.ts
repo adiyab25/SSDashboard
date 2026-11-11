@@ -24,6 +24,13 @@ const next = (prefix = '') => `${prefix}${tag}${(counter += 1)}`;
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 640;
 
+/** Today's operating day in Cairo, as `YYYY-MM-DD`. */
+function cairoToday(): string {
+  // The app's operating day is the Cairo calendar day, which is ahead of the UTC date from 22:00
+  // UTC in winter (QA 2026-11-11: a UTC `today` read as backdated and asked for a reason).
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(new Date());
+}
+
 /** A calendar date this many days before today, as `YYYY-MM-DD` (far enough back to be past in Cairo). */
 function daysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -261,7 +268,7 @@ test.describe('Cost as a cost.view holder, in English (AC-12, AC-13, AC-18)', ()
     await expect(dialog.getByText('Enter 0 or more with at most 4 decimals.')).toBeVisible();
 
     await dialog.getByLabel('Unit cost').fill('12.5');
-    await dialog.getByLabel('Effective from').fill(daysAgo(0));
+    await dialog.getByLabel('Effective from').fill(cairoToday());
     await dialog.getByRole('button', { name: 'Record cost' }).click();
     await expect(page.getByText(`Cost recorded for ${style.code}.`)).toBeVisible();
     const row = variantRows(page).filter({ hasText: inheritSku });
@@ -384,7 +391,7 @@ test.describe('Cost per hat (AC-12, AC-13, AC-16)', () => {
       seasonId: season.id,
       costBasis: 'estimate',
       unitCost: '1',
-      effectiveFrom: daysAgo(0),
+      effectiveFrom: cairoToday(),
     });
     expect(add.status).toBe(403);
   });
@@ -419,7 +426,7 @@ test.describe('Cost per hat (AC-12, AC-13, AC-16)', () => {
       seasonId: season.id,
       costBasis: 'estimate',
       unitCost: '1',
-      effectiveFrom: daysAgo(0),
+      effectiveFrom: cairoToday(),
     });
     expect(add.status).toBe(403);
   });
