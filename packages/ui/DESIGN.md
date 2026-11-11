@@ -230,7 +230,7 @@ About 20 table rows fit a 1080p screen at 40px.
 
 ### Feedback
 
-- **Toast** (sonner): brief confirmations of something that already happened ("Transfer TR-000123 posted"). Polite live region, at least 5 seconds, never the only place an error appears.
+- **Toast** (sonner): brief confirmations of something that already happened ("Transfer TR-000123 posted"). Polite live region, at least 5 seconds, never the only place an error appears. While a toast is up, `globals.css` pads the page bottom and its scroll padding by 8rem, so a focused element is never hidden behind it (WCAG 2.2 SC 2.4.11).
 - **Dialog**: confirms a destructive or hard to undo action. Title says what happens, the destructive button names the action ("Archive", never "OK"), and Cancel is a footer close button. Focus returns to the trigger. A dialog taller than the screen caps at `100dvh` minus `2rem` and scrolls inside (`DialogContent`); its footer is not sticky, so Save and Cancel are reached by scrolling.
 - **Empty**: an icon, one sentence on what belongs here, and the action that adds the first item. "No locations yet" style, not "No data".
 - **Loading**: skeletons in the shape of the content for lists and cards; a spinner only inside buttons. Announce long loads in a polite live region.

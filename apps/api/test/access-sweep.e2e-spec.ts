@@ -281,6 +281,22 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       body: () => ({ phone: '01001234567' }),
     },
     'GET /customers/:id': { needs: ['customers.view'], path: () => `/customers/${ids.customer}` },
+    // Spec 0014 milestone 2: bodies naming unknown ids, so a permitted call answers 404 or 422.
+    'POST /customers/merges': {
+      needs: ['customers.merge'],
+      body: () => ({ survivorId: ids.customer, mergedId: randomUUID() }),
+    },
+    'POST /customers/merges/:id/undo': {
+      needs: ['customers.merge'],
+      path: () => `/customers/merges/${randomUUID()}/undo`,
+      body: () => ({ reasonCode: 'wrong_merge' }),
+    },
+    'GET /customers/merge-suggestions': { needs: ['customers.view'] },
+    'POST /customers/merge-suggestions/:id/dismiss': {
+      needs: ['customers.merge'],
+      path: () => `/customers/merge-suggestions/${randomUUID()}/dismiss`,
+      body: () => ({}),
+    },
     'GET /orders': { needs: ['orders.view'] },
     'POST /orders/search': { needs: ['orders.view'], body: () => ({}) },
     'GET /orders/options': { needs: ['orders.confirm'] },

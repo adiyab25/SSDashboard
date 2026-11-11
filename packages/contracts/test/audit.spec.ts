@@ -222,9 +222,16 @@ describe('audit action registry', () => {
     expect(auditUndoneParentOf('customer.merged_undone', registry)?.code).toBe('customer.merged');
     expect(auditUndoneParentOf('stock_receipt.voided_undone', registry)).toBeUndefined();
     expect(auditUndoneParentOf('customer.merged', registry)).toBeUndefined();
-    // Nothing in today's registry is undoable, so no undone code is known.
+    // A final code has no undone code; today's one undoable code (spec 0014) brings exactly one.
     expect(auditActionOf('stock_receipt.voided_undone')).toBeUndefined();
-    expect(Object.keys(auditActionsWithUndone())).toEqual(Object.keys(AUDIT_ACTIONS));
+    expect(Object.keys(auditActionsWithUndone())).toEqual([
+      ...Object.keys(AUDIT_ACTIONS),
+      'customer.merged_undone',
+    ]);
+    expect(auditActionOf('customer.merged_undone')?.reasonCodes).toEqual([
+      'wrong_merge',
+      'different_people',
+    ]);
   });
 
   it('knows its codes and nothing else', () => {

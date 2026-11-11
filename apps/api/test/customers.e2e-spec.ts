@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { CustomerProfile, CustomerSearchResponse } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuditService } from '../src/audit/audit.service.js';
 import { CUSTOMER_LOCK } from '../src/customers/customer-locks.js';
 import { CustomersError } from '../src/customers/customers.errors.js';
 import { CustomersService } from '../src/customers/customers.service.js';
@@ -47,7 +48,7 @@ describe('customers by phone', { timeout: 180_000 }, () => {
     const appUrl = new URL(scratch.url);
     appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
     app = createDatabase(appUrl.toString(), { max: 40 });
-    customers = new CustomersService(app);
+    customers = new CustomersService(app, new AuditService());
 
     for (const key of ['shopifyA', 'shopifyB'] as const) {
       counter += 1;
