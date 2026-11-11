@@ -6,6 +6,15 @@ import {
   ORDER_PARTIAL_DELIVERY_REASONS,
   ORDER_PAYMENT_METHOD_REDERIVED_REASONS,
 } from '../orders/order-reasons.js';
+import { CustomerUndoRefusalCode } from '../customers/customer-merges.js';
+import {
+  CustomerDismissReasonCode,
+  CustomerFlagReasonCode,
+  CustomerMergeReasonCode,
+  CustomerPhoneAddedReasonCode,
+  CustomerUnflagReasonCode,
+  CustomerUnmergeReasonCode,
+} from '../customers/customer-reason-codes.js';
 
 /** Whether an action needs a typed reason (spec 0010, AC-5). */
 export type AuditReasonPolicy = 'required' | 'optional';
@@ -64,11 +73,20 @@ export interface AuditActionDefinition {
 /** The proof test of the orders actions (spec 0013). */
 const ORDERS_PROOF = 'apps/api/test/orders-audit.e2e-spec.ts';
 
+/** The proof test of the customers actions (spec 0014). */
+const CUSTOMERS_PROOF = 'apps/api/test/customers-audit.e2e-spec.ts';
+
 /** The proof test of the inventory master data actions (SKUs and locations). */
 const INVENTORY_PROOF = 'apps/api/test/audit-inventory.e2e-spec.ts';
 
 /** The proof test of the online location actions (spec 0011). */
 const ONLINE_STOCK_PROOF = 'apps/api/test/online-stock.e2e-spec.ts';
+
+/** The proof test of the style, variant, and barcode actions (spec 0012). */
+const STYLES_PROOF = 'apps/api/test/styles.e2e-spec.ts';
+
+/** The proof test of the season and product group actions (spec 0012). */
+const GROUPINGS_PROOF = 'apps/api/test/seasons-groups.e2e-spec.ts';
 
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
@@ -360,6 +378,215 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.connectionCreated',
     proof: 'apps/api/test/shopify-connect.e2e-spec.ts',
   },
+  // Spec 0014 milestone 2: the record id is `customers.id` (no label: a customer has no code that
+  // is not personal), the reason a code, `before` and `after` ids and codes only. A merge writes
+  // one entry per changed customer record under one correlation id; only the merged record's
+  // entry carries the undo (`customers.merge_undo` with `{ mergeId }`).
+  'customer.merged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: true,
+    undoHandler: 'customers.merge_undo',
+    reasonCodes: CustomerMergeReasonCode.options,
+    undoReasonCodes: CustomerUnmergeReasonCode.options,
+    undoRefusalCodes: CustomerUndoRefusalCode.options,
+    label: 'audit.actions.customerMerged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.unmerged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerUnmergeReasonCode.options,
+    label: 'audit.actions.customerUnmerged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.merge_suggestion_dismissed': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerDismissReasonCode.options,
+    label: 'audit.actions.customerMergeSuggestionDismissed',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.phone_added': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerPhoneAddedReasonCode.options,
+    label: 'audit.actions.customerPhoneAdded',
+    proof: CUSTOMERS_PROOF,
+  },
+  // Spec 0014 milestone 3: `before` and `after` carry the flag kind and source only, never the
+  // note (Law 151). A clear writes one entry per changed record under one correlation id; an
+  // import (`setFlagFromImport`) writes none here, feature 15 writes its own.
+  'customer.flagged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerFlagReasonCode.options,
+    label: 'audit.actions.customerFlagged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.unflagged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerUnflagReasonCode.options,
+    label: 'audit.actions.customerUnflagged',
+    proof: CUSTOMERS_PROOF,
+  },
+  // Spec 0012 milestone 2 (AC-17): style edits, a style's code, a variant added to a style, a
+  // SKU's barcodes, and every season and product group write, each a person's action in its own
+  // transaction. The record id is the style, SKU, season, or group id; the label its code. A bulk
+  // assign writes one `style.edited` per changed style under one correlation id.
+  'style.edited': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleEdited',
+    proof: STYLES_PROOF,
+  },
+  'style.code_changed': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleCodeChanged',
+    proof: STYLES_PROOF,
+  },
+  'style.variant_added': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleVariantAdded',
+    proof: STYLES_PROOF,
+  },
+  'sku.barcode_added': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuBarcodeAdded',
+    proof: STYLES_PROOF,
+  },
+  'sku.barcode_removed': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuBarcodeRemoved',
+    proof: STYLES_PROOF,
+  },
+  'season.created': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonCreated',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.edited': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonEdited',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.archived': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonArchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.unarchived': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonUnarchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.deleted': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonDeleted',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.created': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupCreated',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.edited': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupEdited',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.archived': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupArchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.unarchived': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupUnarchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.deleted': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupDeleted',
+    proof: GROUPINGS_PROOF,
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */
@@ -383,12 +610,12 @@ export const AUDIT_UNDONE_SUFFIX = '_undone';
 /** The one label every undone entry shows; the screen names the undone action beside it. */
 const UNDONE_LABEL: MessageKey = 'audit.actions.actionUndone';
 
-/** An undoable code of the registry (none today). */
+/** An undoable code of the registry (`customer.merged` today). */
 export type AuditUndoableActionCode = {
   [Code in AuditActionCode]: (typeof AUDIT_ACTIONS)[Code]['undoable'] extends true ? Code : never;
 }[AuditActionCode];
 
-/** The undone code of an undoable code, `<noun>.<verb>_undone` (none today). */
+/** The undone code of an undoable code, `<noun>.<verb>_undone` (`customer.merged_undone` today). */
 export type AuditUndoneActionCode = `${AuditUndoableActionCode}${typeof AUDIT_UNDONE_SUFFIX}`;
 
 /** The undone code an undo of `code` records. Pure; never checks the registry. */

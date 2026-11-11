@@ -21,6 +21,17 @@ const externalProdUrl = process.env.E2E_PROD_BASE_URL;
 const prodPort = process.env.E2E_PROD_PORT ?? '3100';
 const prodBaseURL = externalProdUrl ?? `http://localhost:${prodPort}`;
 
+// How long the Next servers keep an idle connection open (ms), longer than any test runs.
+// Playwright's request client (`page.request`, `context.request`) keeps idle connections with no
+// time limit, and Node closes them at about 6 s by default: a call after exactly that pause hit the
+// closing socket and failed with `read ECONNRESET` (master-data.spec.ts:691, 2026-11-08; a probe
+// with the same client failed 25 of 40 calls after 5.985 to 6.023 s idle). A request client lives
+// only as long as its test (150 s at most), so with this its connections are never closed under it.
+// `next start` takes it as a flag; `next dev` has none, so `e2e/next-dev-keep-alive.mjs` sets it.
+const nextKeepAliveTimeout = 600_000;
+// A file URL, as `--import` needs on Windows; it has no backslash for NODE_OPTIONS to misread.
+const nextDevKeepAlive = new URL('./e2e/next-dev-keep-alive.mjs', import.meta.url).href;
+
 export default defineConfig({
   testDir: './e2e',
   // Seeds an admin and signs it in once; the shell projects reuse that cookie (spec 0005).
@@ -94,7 +105,12 @@ export default defineConfig({
           {
             command: `pnpm exec next dev --port ${webPort}`,
             url: baseURL,
-            env: { API_INTERNAL_URL: apiURL, PUBLIC_URL: baseURL },
+            env: {
+              API_INTERNAL_URL: apiURL,
+              PUBLIC_URL: baseURL,
+              NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${nextDevKeepAlive}`.trim(),
+              NEXT_KEEP_ALIVE_TIMEOUT: String(nextKeepAliveTimeout),
+            },
             reuseExistingServer: true,
             timeout: 180_000,
             stdout: 'pipe' as const,
@@ -104,7 +120,7 @@ export default defineConfig({
       ? []
       : [
           {
-            command: `pnpm exec next start --port ${prodPort}`,
+            command: `pnpm exec next start --port ${prodPort} --keepAliveTimeout ${nextKeepAliveTimeout}`,
             url: prodBaseURL,
             // The session check must reach this run's api.
             env: { API_INTERNAL_URL: apiURL },

@@ -1,14 +1,21 @@
 # Catalog
 
-Products and their SKUs (variants) for the staff back office: create a product, list and read SKUs, edit and delete a SKU.
+Products and their SKUs (variants) for the staff back office: create a product, list and read SKUs, edit and delete a SKU; styles, seasons, product groups, and barcodes (spec 0012).
 
 ## Owns
 
-- Routes, all staff only: `POST /api/products`, `GET /api/skus`, `GET /api/skus/:id`, `PATCH /api/skus/:id`, `DELETE /api/skus/:id` in [catalog.controller.ts](catalog.controller.ts)
+- Routes, all staff only: `POST /api/products` (optional `styleCode`, `seasonId`, `productGroupId`: defaults the SKU code, none, `MAIN`; a code a SKU holds answers `SKU_TAKEN`, a style code only a style holds `STYLE_CODE_TAKEN`, also when it defaulted to a free SKU code), `GET /api/skus`, `GET /api/skus/:id`, `PATCH /api/skus/:id`, `DELETE /api/skus/:id` in [catalog.controller.ts](catalog.controller.ts), which also holds `catalogHttpError`, the one map from `CatalogError` codes to HTTP answers
+- Styles (spec 0012, AC-8 to AC-10): [styles/](styles/) `GET /api/styles` (keyset by style code, filters `seasonId` or `none`, `productGroupId`, `status`, and `q`, built by [search/style-list-sql.ts](search/style-list-sql.ts)) and `GET /api/styles/:id` (`stock.view`); `PATCH /api/styles/:id` (name, description, season, group, tags, stale check), `POST /api/styles/assign` (1 to 200 styles, all or nothing, one `style.edited` per changed style under one correlation id), and `POST /api/styles/:id/variants` (`catalog.edit`); `PATCH /api/styles/:id/code` (`catalog.manage`). Adding a variant locks the style row first, matches option names and values after `ssd_search_normalize` (either language against either), appends a missing option (at most 3, role from `OPTION_ROLE_NAMES`) or value, and inserts the variant stocked, untracked, in `pc`; `product_variants_options_unique` answers `OPTION_COMBINATION_TAKEN`. An option given twice, or a name or value that normalizes to nothing in both languages (`-`), answers 400 `INVALID_INPUT`, the route's one bad input status. Style, season, and group ids in requests are lowercased by the contract (`CatalogId`), so an uppercase id is the same id and a case only change records nothing; `style.edited` diffs carry `seasonCode` and `productGroupCode` beside the ids
+- Seasons and product groups (spec 0012, AC-6, AC-7): [seasons/](seasons/) and [product-groups/](product-groups/), list (`stock.view`), create, edit with the stale check, archive, unarchive, delete only while unreferenced (`catalog.manage`), both over the one [style-grouping-store.ts](style-grouping-store.ts); the seeded `CORE` season and `MAIN` group are renamed but never recoded, archived, or deleted. A style takes a season or group only through `CatalogService.assignableGrouping` (exists, not archived, read `FOR SHARE` so an archive waits)
+- Barcodes (spec 0012, AC-10): [barcodes/](barcodes/) `POST /api/skus/:id/barcodes` and `DELETE /api/skus/:id/barcodes/:barcodeId` (`catalog.edit`); a code any SKU holds answers `BARCODE_TAKEN` with that SKU's `skuCode`
+- Audit entries (spec 0012, AC-17) for every person action above, through `AuditService.record` in the action's own transaction: `style.edited`, `style.code_changed`, `style.variant_added`, `sku.barcode_added`, `sku.barcode_removed`, `season.*`, `product_group.*` (the actor helpers are in [catalog-caller.ts](catalog-caller.ts)). Creating a product stays unaudited (spec 0006)
+- Archiving a SKU (`setArchived`, called by inventory's SKU lifecycle) archives its style only with its last active variant; unarchiving a SKU unarchives its style. Both lock the style row (`SELECT ... FOR NO KEY UPDATE`, its own statement) before the conditional style update, the lock `addVariant` takes first, so an archive, an unarchive, and a variant add of one style queue and the later one sees the earlier one's variants (`master-data.e2e-spec.ts` holds both races). Deleting a style's last SKU deletes the style and its options
+- Every catalog write transaction goes through [catalog-transaction.ts](catalog-transaction.ts) (`catalogTransaction`): READ COMMITTED, run again once on a deadlock or serialization failure (`isRetryable` of `src/database/sql.ts`), like the ledger's `ledgerTransaction`
 - The catalog logic: [catalog.service.ts](catalog.service.ts), wired in [catalog.module.ts](catalog.module.ts)
+- SKU search (spec 0012, AC-3 and AC-4): [search/sku-list-sql.ts](search/sku-list-sql.ts). `GET /api/skus` first runs `ssd_search_normalize(q)` in SQL (the same function the stored `product_variants.search_text` uses), keeps the first 5 distinct words, then `buildSkuListSql` unions three branches, each filtered (status, `seasonId` or `none`, `productGroupId`, `styleId`, cursor), ordered by code (`COLLATE "C"`), and limited: the exact barcode (`barcodes_code_unique`), the code prefix (`product_variants_sku_c_idx`), and, when a word has 3 or more characters, every word contained in `search_text` (`product_variants_search_trgm_idx`). Rows carry the style, season, product group, and option values; `GET /api/skus/:id` adds the barcodes. `search_text` is kept by database triggers, never by this module's code
 - Cost lookup: [cost.service.ts](cost.service.ts) `CostService.costFor(variantId, onDate)` returns the unit cost with its cost basis from `cost_records` (a variant override beats its style's record on the same day; the latest `recorded_at` breaks the next tie, and the greatest `id` the last one), or `not_set`, never 0. The rule is the pure [cost-selection.ts](cost-selection.ts). Cost records are append only
 - Renaming a SKU also renames the style code of a one variant product whose style code was the old SKU code; a code that only another product's style holds answers `STYLE_CODE_TAKEN` (409), a code another SKU holds `SKU_TAKEN`
-- A product is a style: `style_code` (the SKU code on the create path), a `product_group` (`MAIN` for a one line brand) and an optional season
+- A product is a style: `style_code` (the SKU code on the create path unless `styleCode` is given), a `product_group` (`MAIN` for a one line brand) and an optional season, with 0 to 3 options (`role` size, color, or other) and 1 to N variants
 - The catalog tables, defined in [packages/db](../../../../packages/db/src/schema/catalog.ts): products, options, variants, barcodes, units of measure and conversions, product groups, seasons, and cost records
 
 - Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `catalog`, core, no toggle. Every controller here declares `@RequiresModule('catalog')` (`src/platform/modules/requires-module.spec.ts` fails the build otherwise), so the module gate never answers `MODULE_OFF` for it while the module is core.
@@ -22,16 +29,22 @@ Products and their SKUs (variants) for the staff back office: create a product, 
 ## How to test
 
 ```bash
-pnpm --filter @ssdashboard/api test -- src/catalog
+pnpm --filter @ssdashboard/api exec vitest run src/catalog
 pnpm --filter @ssdashboard/api build
-pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts test/cost.e2e-spec.ts
+pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts test/cost.e2e-spec.ts test/styles.e2e-spec.ts test/seasons-groups.e2e-spec.ts
 ```
 
 ## Governing spec
 
 - [0002 Core data model](../../../../docs/specs/0002-core-data-model/index.md)
 - [0006 Core stock loop](../../../../docs/specs/0006-core-stock-loop/index.md)
+- [0012 Catalog, styles and variants](../../../../docs/specs/0012-catalog-styles-variants/index.md)
 
 ## Decisions
 
-None yet. Record non obvious decisions as ADRs in docs/adr/ and link them here.
+- **The style list's `q` matches an active style by its active variants only** (review of spec 0012 milestone 2, nit 1): an archived size must not bring its active style into a search for that size's code or color. With `status=archived` every variant counts, since an archived style has no active one. AC-8 did not say; [search/style-list-sql.ts](search/style-list-sql.ts) holds the rule.
+- **The retry helper lives in catalog, not inventory**: catalog never imports inventory (the module wall), so `catalogTransaction` reuses only the shared `isRetryable` and sets no lock timeout (no catalog write waits on hot stock rows).
+- **Lock order, a follow-up for the stock ledger session (owner of inventory)**: inventory's SKU lifecycle (`lockForArchive` before `setArchived`, and the code change before `setCode`) takes the variant row before the style row, while the style writers (`addVariant` appending an option or value restamps every variant of the style) take the style first. PostgreSQL then aborts one side with a deadlock; the catalog writers and the SKU lifecycle each run again once, so the person sees no error, but locking the style first in inventory would remove the deadlock.
+- **Follow-up (spec 0012 milestone 1, migration 0014 has shipped in the M1 pull request)**: `product_options_search_text_follows` fires on every update of an option; `AFTER UPDATE OF name, values, product_id` would skip role only updates. A later forward migration may narrow it.
+
+Record other non obvious decisions as ADRs in docs/adr/ and link them here.

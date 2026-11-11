@@ -413,6 +413,13 @@ for (const { language, dir } of LANGUAGES) {
       await expect(
         edit.getByRole('button', { name: t('inventory.skuEdit.archive') }),
       ).toBeVisible();
+      // Change code stays disabled (half opacity) until the SKU's usage answers, then fades in
+      // over 150 ms. Under load that answer came after the sweep had waited for animations and
+      // axe measured the half faded text (color-contrast, 2026-11-11 trace), so wait for it first.
+      // It ends enabled only for a manager on a SKU with no stock use, as here (seeded just above).
+      await expect(
+        edit.getByRole('button', { name: t('inventory.skuEdit.codeChange') }),
+      ).toBeEnabled();
       for (const [action, title] of [
         ['inventory.skuEdit.archive', 'inventory.skuEdit.archiveTitle'],
         ['inventory.skuEdit.delete', 'inventory.skuEdit.deleteTitle'],
@@ -641,9 +648,10 @@ test.describe('the receipt form by keyboard alone (AC-16)', () => {
   });
 });
 
-// BUG-8: the shared table scrolls sideways at a phone width, so axe reports
+// BUG-8: the shared table on /stock and /stock-receipts scrolls sideways at a phone width, so axe reports
 // `scrollable-region-focusable` unless the scroll container can take focus. The mobile project
-// skips these flows, so this sweep sets a 375 px viewport inside the desktop project's test.
+// skips these flows, so this sweep sets a 375 px viewport inside the desktop project's test. /skus shows
+// cards below 640 px instead (spec 0012 AC-18), so its check asserts the card list.
 for (const { language, dir } of LANGUAGES) {
   const t = (key: Parameters<typeof textFor>[1]) => textFor(dir, key);
 
@@ -656,7 +664,6 @@ for (const { language, dir } of LANGUAGES) {
     for (const [path, tableKey] of [
       ['/stock', 'inventory.stock.tableLabel'],
       ['/stock-receipts', 'inventory.receipts.tableLabel'],
-      ['/skus', 'inventory.skus.tableLabel'],
     ] as const) {
       test(`${path} with rows has no axe violations and a keyboard reachable table`, async ({
         page,
@@ -688,5 +695,18 @@ for (const { language, dir } of LANGUAGES) {
         await expectClean(page);
       });
     }
+
+    // /skus uses the shared CollapsingTable: cards below 640 px (AC-18), so no table is visible.
+    test('/skus with rows shows the card list and has no axe violations', async ({ page }) => {
+      test.setTimeout(90_000);
+      await seedStockScene(page.request);
+      await openShell(page, '/skus');
+      await expect(page.getByRole('main')).toBeVisible();
+      const cards = page.getByRole('list', { name: t('inventory.skus.tableLabel') });
+      await expect(cards.getByRole('listitem').first()).toBeVisible();
+      await expect(page.getByRole('table')).toHaveCount(0);
+      await expect(cards).not.toHaveAttribute('aria-busy', 'true');
+      await expectClean(page);
+    });
   });
 }

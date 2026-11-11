@@ -7,6 +7,7 @@ import {
   SkuMovementsResponse,
   SkuUsage,
   StockReceiptDetail,
+  StyleDetail,
 } from '@ssdashboard/contracts';
 import {
   APP_ROLE,
@@ -16,6 +17,8 @@ import {
   type DatabaseConnection,
 } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogService } from '../src/catalog/catalog.service.js';
+import type { Transaction } from '../src/database/sql.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ledgerTransaction, lockKey } from '../src/inventory/ledger/locks.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
@@ -327,14 +330,259 @@ describe('master data api', { timeout: 90_000 }, () => {
       expect(walked).toEqual(['DUPQ-1', 'DUPQ-2', 'XDUPQ-3']);
     });
 
+    // Spec 0012 AC-3: the code prefix branch takes %, _, and a backslash literally; the contains
+    // branch matches normalized words, in which they are word breaks, never wildcards.
     it('treats %, _, and a backslash in q as plain characters', async () => {
-      await newSku('ESC_1', { en: 'Under score' });
-      await newSku('ESCX1', { en: 'Plain one' });
+      await newSku('ES_1', { en: 'Under score' });
+      await newSku('ESX1', { en: 'Plain one' });
       await newSku('ESC-SLASH', { en: 'Back\\slash tee' });
       await newSku('ESC-PCT', { en: '50% off' });
-      expect(await codes(`?q=${encodeURIComponent('esc_')}`)).toEqual(['ESC_1']);
-      expect(await codes(`?q=${encodeURIComponent('k\\s')}`)).toEqual(['ESC-SLASH']);
-      expect(await codes(`?q=${encodeURIComponent('0% o')}`)).toEqual(['ESC-PCT']);
+      expect(await codes(`?q=${encodeURIComponent('es_')}`)).toEqual(['ES_1']);
+      expect(await codes(`?q=${encodeURIComponent('%')}`)).toEqual([]);
+      expect(await codes(`?q=${encodeURIComponent('_')}`)).toEqual([]);
+      expect(await codes(`?q=${encodeURIComponent('back\\slash')}`)).toEqual(['ESC-SLASH']);
+      expect(await codes(`?q=${encodeURIComponent('off%')}`)).toEqual(['ESC-PCT']);
+    });
+  });
+
+  describe('search and filters (spec 0012, AC-3, AC-4)', () => {
+    let season: string;
+    let tee: string;
+    let polo: string;
+    let qamis: string;
+    const variants = new Map<string, string>();
+
+    /** A style planted as the owner (the style routes come with milestone 2), with its options. */
+    async function plantStyle(
+      code: string,
+      name: { en?: string; ar?: string },
+      options: { name: { en?: string; ar?: string }; values: { en?: string; ar?: string }[] }[],
+      seasonId: string | null = null,
+    ): Promise<string> {
+      const { rows } = await owner.pool.query<{ id: string }>(
+        `INSERT INTO products (style_code, product_group_id, name, status, season_id)
+         VALUES ($1, (SELECT id FROM product_groups WHERE code = 'MAIN'), $2::jsonb, 'active', $3)
+         RETURNING id`,
+        [code, JSON.stringify(name), seasonId],
+      );
+      const id = rows[0]?.id ?? '';
+      for (const [position, option] of options.entries()) {
+        await owner.pool.query(
+          `INSERT INTO product_options (product_id, name, position, values)
+           VALUES ($1, $2::jsonb, $3, $4::jsonb)`,
+          [id, JSON.stringify(option.name), position, JSON.stringify(option.values)],
+        );
+      }
+      return id;
+    }
+
+    /** A variant of a planted style, with an optional barcode. */
+    async function plantVariant(
+      styleId: string,
+      sku: string,
+      optionValues: Record<string, number>,
+      barcode?: string,
+    ): Promise<void> {
+      const { rows } = await owner.pool.query<{ id: string }>(
+        `INSERT INTO product_variants (product_id, sku, option_values, base_uom_id, price)
+         VALUES ($1, $2, $3::jsonb, (SELECT id FROM uoms WHERE code = 'pc'), 25)
+         RETURNING id`,
+        [styleId, sku, JSON.stringify(optionValues)],
+      );
+      const id = rows[0]?.id ?? '';
+      variants.set(sku, id);
+      if (barcode) {
+        await owner.pool.query(
+          `INSERT INTO barcodes (variant_id, uom_id, code)
+           VALUES ($1, (SELECT id FROM uoms WHERE code = 'pc'), $2)`,
+          [id, barcode],
+        );
+      }
+    }
+
+    const search = (q: string, more = '') => codes(`?q=${encodeURIComponent(q)}${more}`);
+
+    beforeAll(async () => {
+      const planted = await owner.pool.query<{ id: string }>(
+        `INSERT INTO seasons (code, name) VALUES ('SS26', '{"en": "Spring 26"}') RETURNING id`,
+      );
+      season = planted.rows[0]?.id ?? '';
+      const size = { name: { en: 'Size', ar: 'المقاس' }, values: [{ en: 'M' }, { en: 'L' }] };
+      tee = await plantStyle(
+        'TEE',
+        { en: 'Tee' },
+        [size, { name: { en: 'Color' }, values: [{ en: 'Black', ar: 'أسود' }, { en: 'White' }] }],
+        season,
+      );
+      await plantVariant(tee, 'TEE-BLK-M', { '0': 0, '1': 0 });
+      await plantVariant(tee, 'TEE-WHT-M', { '0': 0, '1': 1 }, '6221234567890');
+      polo = await plantStyle('POLO', { en: 'Polo' }, [size]);
+      await plantVariant(polo, '2044-BLK-M', { '0': 0 }, '6221234567891');
+      qamis = await plantStyle('QAMIS', { ar: 'قميص أسود' }, []);
+      await plantVariant(qamis, 'QAMIS-1', {});
+      await plantVariant(await plantStyle('MX', { en: 'Mx' }, []), 'MX-1', {});
+    });
+
+    it('finds an Arabic name typed without hamza', async () => {
+      expect(await search('اسود')).toEqual(['QAMIS-1', 'TEE-BLK-M']);
+      expect(await search('قميص اسود')).toEqual(['QAMIS-1']);
+    });
+
+    it('finds a code typed in Arabic digits', async () => {
+      expect(await search('٢٠٤٤')).toEqual(['2044-BLK-M']);
+    });
+
+    it('finds two words in any order across the style name and an option value', async () => {
+      expect(await search('black tee')).toEqual(['TEE-BLK-M']);
+      expect(await search('tee black')).toEqual(['TEE-BLK-M']);
+      expect(await search('Tee   BLACK!')).toEqual(['TEE-BLK-M']);
+    });
+
+    it('finds a hyphenated code fragment', async () => {
+      expect(await search('blk-m')).toEqual(['2044-BLK-M', 'TEE-BLK-M']);
+    });
+
+    it('returns exactly the variant of a scanned barcode, in either digit set', async () => {
+      expect(await search('6221234567890')).toEqual(['TEE-WHT-M']);
+      expect(await search(' ٦٢٢١٢٣٤٥٦٧٨٩١ ')).toEqual(['2044-BLK-M']);
+    });
+
+    it('searches only barcodes and code prefixes for a word under 3 characters', async () => {
+      const found = await search('m');
+      expect(found).toContain('MX-1');
+      expect(found.every((code) => code.startsWith('M'))).toBe(true);
+      expect(await search('m', `&styleId=${tee}`)).toEqual([]);
+      expect(await search('tw')).toEqual([]);
+    });
+
+    it('answers archived variants only under status=archived', async () => {
+      const id = variants.get('TEE-WHT-M') ?? '';
+      const ofTee = `&styleId=${tee}`;
+      expect((await call('POST', `/skus/${id}/archive`, { cookie: admin })).status).toBe(200);
+      expect(await search('6221234567890')).toEqual([]);
+      expect(await search('tee', ofTee)).toEqual(['TEE-BLK-M']);
+      expect(await search('6221234567890', '&status=archived')).toEqual(['TEE-WHT-M']);
+      expect(await search('white', `&status=archived${ofTee}`)).toEqual(['TEE-WHT-M']);
+      expect((await call('POST', `/skus/${id}/unarchive`, { cookie: admin })).status).toBe(200);
+    });
+
+    it('filters by season, no season, product group, and style, combined with q', async () => {
+      expect(await search('blk', `&seasonId=${season}`)).toEqual(['TEE-BLK-M']);
+      expect(await search('blk', '&seasonId=none')).toEqual(['2044-BLK-M']);
+      expect(await codes(`?seasonId=${season}`)).toEqual(['TEE-BLK-M', 'TEE-WHT-M']);
+      expect(await codes(`?styleId=${polo}`)).toEqual(['2044-BLK-M']);
+      const main = (
+        await owner.pool.query<{ id: string }>("SELECT id FROM product_groups WHERE code = 'MAIN'")
+      ).rows[0]?.id;
+      expect(await search('blk', `&productGroupId=${main}`)).toEqual(['2044-BLK-M', 'TEE-BLK-M']);
+      expect(await search('blk', `&productGroupId=${randomUUID()}`)).toEqual([]);
+      for (const bad of ['seasonId=SS26', 'productGroupId=MAIN', 'styleId=1']) {
+        expect((await call('GET', `/skus?${bad}`, { cookie: staff })).body).toMatchObject({
+          code: 'INVALID_QUERY',
+        });
+      }
+    });
+
+    it('pages a search by code without skipping or repeating a row', async () => {
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: SkuListResponse = SkuListResponse.parse(
+          (
+            await call('GET', `/skus?q=blk&limit=1${cursor ? `&cursor=${cursor}` : ''}`, {
+              cookie: staff,
+            })
+          ).body,
+        );
+        walked.push(...page.items.map((item) => item.code));
+        cursor = page.nextCursor;
+      } while (cursor);
+      expect(walked).toEqual(['2044-BLK-M', 'TEE-BLK-M']);
+    });
+
+    // Review of spec 0012 M1: the PGX-* rows match both the code prefix and the contains branch,
+    // AAA-PGX and JKT-1 only the contains branch, so every page edge sits on a row the UNION must
+    // list once and every branch must cut after the cursor.
+    it('pages a search whose branches overlap without skipping or repeating a row', async () => {
+      const pgx = await plantStyle('PGX', { en: 'Plain' }, []);
+      // Distinct option values: two active variants of one style never share them (AC-10). The
+      // style has no options, so the indexes add no label to the search text.
+      for (const [i, sku] of ['PGX-1', 'PGX-2', 'PGX-3', 'AAA-PGX'].entries()) {
+        await plantVariant(pgx, sku, { '0': i });
+      }
+      await plantVariant(await plantStyle('JKT', { en: 'Pgx Jacket' }, []), 'JKT-1', {});
+      const expected = ['AAA-PGX', 'JKT-1', 'PGX-1', 'PGX-2', 'PGX-3'];
+      expect(await search('pgx')).toEqual(expected);
+
+      for (const limit of [1, 2]) {
+        const walked: string[] = [];
+        let cursor: string | null = null;
+        do {
+          const page: SkuListResponse = SkuListResponse.parse(
+            (
+              await call('GET', `/skus?q=pgx&limit=${limit}${cursor ? `&cursor=${cursor}` : ''}`, {
+                cookie: staff,
+              })
+            ).body,
+          );
+          expect(page.items.length).toBeLessThanOrEqual(limit);
+          walked.push(...page.items.map((item) => item.code));
+          cursor = page.nextCursor;
+        } while (cursor);
+        expect(walked).toEqual(expected);
+      }
+    });
+
+    it('carries the style, season, group, and option values on each row', async () => {
+      const page = SkuListResponse.parse(
+        (await call('GET', '/skus?q=tee-blk-m', { cookie: staff })).body,
+      );
+      expect(page.items).toEqual([
+        expect.objectContaining({
+          code: 'TEE-BLK-M',
+          style: { id: tee, code: 'TEE', name: { en: 'Tee' } },
+          season: { id: season, code: 'SS26', name: { en: 'Spring 26' } },
+          productGroup: expect.objectContaining({ code: 'MAIN' }) as unknown,
+          options: [
+            { name: { en: 'Size', ar: 'المقاس' }, value: { en: 'M' } },
+            { name: { en: 'Color' }, value: { en: 'Black', ar: 'أسود' } },
+          ],
+          price: '25.00',
+          archived: false,
+        }),
+      ]);
+      const qamisRow = SkuListResponse.parse(
+        (await call('GET', `/skus?styleId=${qamis}`, { cookie: staff })).body,
+      ).items[0];
+      expect(qamisRow).toMatchObject({ season: null, options: [] });
+    });
+
+    it('adds the barcodes to the SKU detail', async () => {
+      const detail = await getSku(variants.get('TEE-WHT-M') ?? '');
+      expect(detail).toMatchObject({
+        code: 'TEE-WHT-M',
+        style: { code: 'TEE' },
+        season: { code: 'SS26' },
+        options: [
+          { name: { en: 'Size', ar: 'المقاس' }, value: { en: 'M' } },
+          { name: { en: 'Color' }, value: { en: 'White' } },
+        ],
+        barcodes: [{ id: expect.any(String) as unknown, code: '6221234567890' }],
+      });
+      expect((await getSku(variants.get('QAMIS-1') ?? '')).barcodes).toEqual([]);
+    });
+
+    it('follows a style rename through the API into search', async () => {
+      const id = variants.get('QAMIS-1') ?? '';
+      const before = await getSku(id);
+      const renamed = await call('PATCH', `/skus/${id}`, {
+        cookie: staff,
+        body: { updatedAt: before.updatedAt, name: { en: 'Linen shirt', ar: 'قميص كتان' } },
+      });
+      expect(renamed.status).toBe(200);
+      expect(await search('linen')).toEqual(['QAMIS-1']);
+      expect(await search('كتان')).toEqual(['QAMIS-1']);
+      expect(await search('اسود')).toEqual(['TEE-BLK-M']);
     });
   });
 
@@ -1081,6 +1329,181 @@ describe('master data api', { timeout: 90_000 }, () => {
         archived: true,
         codeLocked: true,
       });
+    });
+  });
+
+  describe('archiving a style with several variants (spec 0012, AC-10, AC-11)', () => {
+    /** A style of `count` variants (sizes S, M, L, ...), returning its SKUs in creation order. */
+    async function styleOf(prefix: string, sizes: string[]) {
+      const first = await newSku(`${prefix}-${sizes[0]}`);
+      const skus = [first];
+      for (const size of sizes.slice(1)) {
+        const { status, body } = await call('POST', `/styles/${first.productId}/variants`, {
+          cookie: staff,
+          body: {
+            sku: `${prefix}-${size}`,
+            options: [{ name: { en: 'Size' }, value: { en: size } }],
+          },
+        });
+        expect(status, JSON.stringify(body)).toBe(201);
+        skus.push(SkuDetail.parse(body));
+      }
+      return skus;
+    }
+
+    const styleArchived = async (styleId: string) =>
+      StyleDetail.parse((await call('GET', `/styles/${styleId}`, { cookie: staff })).body).archived;
+
+    const archive = (id: string) => call('POST', `/skus/${id}/archive`, { cookie: admin });
+    const unarchive = (id: string) => call('POST', `/skus/${id}/unarchive`, { cookie: admin });
+
+    it('keeps the style active while another variant is active, archives it with the last, and unarchives it with any', async () => {
+      const [a, b] = await styleOf('ARC2', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+
+      expect((await archive(b.id)).status).toBe(200);
+      expect(await styleArchived(a.productId)).toBe(false);
+      expect((await archive(a.id)).status).toBe(200);
+      expect(await styleArchived(a.productId)).toBe(true);
+      expect((await unarchive(b.id)).status).toBe(200);
+      expect(await styleArchived(a.productId)).toBe(false);
+      expect((await getSku(a.id)).archived).toBe(true);
+    });
+
+    it('archives the style when its last two active variants are archived at the same time', async () => {
+      const [a, b] = await styleOf('ARCPAR', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+
+      const answers = await Promise.all([archive(a.id), archive(b.id)]);
+
+      expect(answers.map((answer) => answer.status)).toEqual([200, 200]);
+      expect(await styleArchived(a.productId)).toBe(true);
+    });
+
+    it('refuses to unarchive a variant whose option values another active variant took (409 OPTION_COMBINATION_TAKEN)', async () => {
+      const [, medium] = await styleOf('ARCDUP', ['S', 'M']);
+      if (!medium) throw new Error('two variants expected');
+      expect((await archive(medium.id)).status).toBe(200);
+      const again = await call('POST', `/styles/${medium.productId}/variants`, {
+        cookie: staff,
+        body: { sku: 'ARCDUP-M2', options: [{ name: { en: 'size' }, value: { en: 'm' } }] },
+      });
+      expect(again.status, JSON.stringify(again.body)).toBe(201);
+
+      const refused = await unarchive(medium.id);
+
+      expect(refused.status).toBe(409);
+      expect(refused.body).toMatchObject({ code: 'OPTION_COMBINATION_TAKEN' });
+      expect((await getSku(medium.id)).archived).toBe(true);
+    });
+
+    /**
+     * Opens a READ COMMITTED transaction as the app role and keeps it open until `finish`, so a
+     * test can hold one writer's locks while another writer runs.
+     */
+    async function openTransaction(): Promise<{ tx: Transaction; finish: () => Promise<void> }> {
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let opened: (tx: Transaction) => void = () => undefined;
+      const ready = new Promise<Transaction>((resolve) => (opened = resolve));
+      const done = app.db.transaction(
+        async (tx) => {
+          opened(tx);
+          await gate;
+        },
+        { isolationLevel: 'read committed' },
+      );
+      return {
+        tx: await ready,
+        finish: async () => {
+          release();
+          await done;
+        },
+      };
+    }
+
+    // Review M2 minor 1: an unarchive of one variant is open (it holds the style row) while the
+    // archive of the style's other active variant runs. The archive waits on the style row, then
+    // sees the unarchived variant, so the style stays active (before the fix it archived the
+    // style, its NOT EXISTS reading a snapshot without the unarchive).
+    it('keeps the style active when one variant is archived while another is being unarchived', async () => {
+      const [a, b] = await styleOf('ARCRACE', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+      expect((await archive(b.id)).status).toBe(200);
+      const catalog = new CatalogService(app);
+
+      const unarchiving = await openTransaction();
+      await catalog.setArchived(unarchiving.tx, b.id, false);
+      const archiving = await openTransaction();
+      const archived = catalog.setArchived(archiving.tx, a.id, true);
+      await waitForLockWaits(1);
+      await unarchiving.finish();
+      await archived;
+      await archiving.finish();
+
+      expect(await styleArchived(a.productId)).toBe(false);
+      expect((await getSku(a.id)).archived).toBe(true);
+      expect((await getSku(b.id)).archived).toBe(false);
+    });
+
+    // Review M2 minor 1 and 7: a variant add holds the style row (its barcode insert waits on a
+    // held barcode) while the archive of the style's last active variant runs. The archive waits
+    // on the style row, then sees the new variant, so the style stays active.
+    it('keeps the style active when its last active variant is archived while a variant is being added', async () => {
+      const [a, b, c] = await styleOf('ARCADD', ['S', 'M', 'L']);
+      if (!a || !b || !c) throw new Error('three variants expected');
+      expect((await archive(a.id)).status).toBe(200);
+      expect((await archive(b.id)).status).toBe(200);
+      const other = await newSku('ARCADD-HOLDER');
+      const barcode = 'ARCADD-BARCODE';
+      const holder = await owner.pool.connect();
+      await holder.query('BEGIN');
+      await holder.query(
+        `INSERT INTO barcodes (variant_id, uom_id, code)
+         VALUES ($1, (SELECT id FROM uoms WHERE code = 'pc'), $2)`,
+        [other.id, barcode],
+      );
+
+      // Size M again: b, which held it, is archived, and no option or value is appended, so the
+      // add touches no other variant row and waits only on the held barcode.
+      const adding = call('POST', `/styles/${c.productId}/variants`, {
+        cookie: staff,
+        body: {
+          sku: 'ARCADD-M2',
+          options: [{ name: { en: 'Size' }, value: { en: 'M' } }],
+          barcode,
+        },
+      });
+      await waitForLockWaits(1);
+      const catalog = new CatalogService(app);
+      const archiving = await openTransaction();
+      const archived = catalog.setArchived(archiving.tx, c.id, true);
+      await waitForLockWaits(2);
+      await holder.query('ROLLBACK');
+      holder.release();
+      const added = await adding;
+      await archived;
+      await archiving.finish();
+
+      expect(added.status, JSON.stringify(added.body)).toBe(201);
+      expect(await styleArchived(c.productId)).toBe(false);
+      expect((await getSku(c.id)).archived).toBe(true);
+      expect(SkuDetail.parse(added.body).archived).toBe(false);
+    });
+
+    it('deletes the style with its options when its last variant goes', async () => {
+      const [a, b] = await styleOf('ARCDEL', ['S', 'M']);
+      if (!a || !b) throw new Error('two variants expected');
+
+      expect((await call('DELETE', `/skus/${a.id}`, { cookie: admin })).status).toBe(204);
+      expect((await call('GET', `/styles/${a.productId}`, { cookie: staff })).status).toBe(200);
+      expect((await call('DELETE', `/skus/${b.id}`, { cookie: admin })).status).toBe(204);
+      expect((await call('GET', `/styles/${a.productId}`, { cookie: staff })).status).toBe(404);
+      const { rows } = await owner.pool.query(
+        'SELECT 1 FROM product_options WHERE product_id = $1',
+        [a.productId],
+      );
+      expect(rows).toEqual([]);
     });
   });
 

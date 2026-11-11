@@ -148,39 +148,60 @@ export async function openShell(page: Page, path = '/') {
   await expect(page.getByRole('main')).toBeVisible();
 }
 
+// Each hydration wait below also waits for the page to show. For a saved language other than
+// English the head script hides the body (`<html data-i18n="pending">`, `visibility: hidden`) until
+// `/api/config` and the catalog chunk have loaded, and a client rendered form can hydrate first.
+// The browser does not focus a hidden element, so `focus()` left the focus on the body and the
+// first Tab went to the skip link (connections.spec.ts keyboard test in Arabic, under load; held
+// `/api/config` for 3 s reproduced it every time). The attribute always goes: the language
+// provider removes it when it settles, and the head script after `HIDE_CAP_MS` at the latest.
+
 /**
- * Waits until React has taken over the form on the page. A click or Enter before that submits
- * the form natively (a full page post), which no person with a fast hand would notice but a
- * test does.
+ * Waits until React has taken over the form on the page and the page shows. A click or Enter
+ * before that submits the form natively (a full page post), which no person with a fast hand
+ * would notice but a test does; focus and typing on a page still hidden go nowhere.
  */
 export async function waitForFormHydration(page: Page) {
   await page.waitForFunction(() => {
     const form = document.querySelector('main form');
-    return form !== null && Object.keys(form).some((key) => key.startsWith('__reactProps'));
+    return (
+      !document.documentElement.hasAttribute('data-i18n') &&
+      form !== null &&
+      Object.keys(form).some((key) => key.startsWith('__reactProps'))
+    );
   });
 }
 
 /**
- * Waits until React has taken over the page's controls (for a page with no form, like a list
- * with a search box). Text typed before this is lost when hydration resets the input.
+ * Waits until React has taken over the page's controls and the page shows (for a page with no
+ * form, like a list with a search box). Text typed before this is lost when hydration resets the
+ * input, or never lands while the page is hidden.
  */
 export async function waitForPageHydration(page: Page) {
   await page.waitForFunction(() => {
     const control = document.querySelector('main input, main button');
-    return control !== null && Object.keys(control).some((key) => key.startsWith('__reactProps'));
+    return (
+      !document.documentElement.hasAttribute('data-i18n') &&
+      control !== null &&
+      Object.keys(control).some((key) => key.startsWith('__reactProps'))
+    );
   });
 }
 
 /**
- * Waits until React has taken over one element of the page, found by a CSS selector (for a read
- * only page with no control of its own, such as the cost rules for a reader, where
- * `waitForPageHydration` would wait for a button that never comes). React tags every element it
- * renders with its props, so the tag on a server or first rendered element marks hydration.
+ * Waits until React has taken over one element of the page, found by a CSS selector, and the page
+ * shows (for a read only page with no control of its own, such as the cost rules for a reader,
+ * where `waitForPageHydration` would wait for a button that never comes). React tags every element
+ * it renders with its props, so the tag on a server or first rendered element marks hydration.
  */
 export async function waitForElementHydration(page: Page, selector: string) {
   await page.waitForFunction((css) => {
     const element = document.querySelector(css);
-    return element !== null && Object.keys(element).some((key) => key.startsWith('__reactProps'));
+    return (
+      !document.documentElement.hasAttribute('data-i18n') &&
+      element !== null &&
+      Object.keys(element).some((key) => key.startsWith('__reactProps'))
+    );
   }, selector);
 }
 

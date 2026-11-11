@@ -9,12 +9,12 @@ import { createScratchDatabase, dropScratchDatabase } from './database.js';
 
 const MIGRATIONS = fileURLToPath(new URL('../migrations', import.meta.url));
 
-// Spec 0011 milestone 1 (owner decision D3, review of 2026-11-08): an install migrated up to 0012
+// Spec 0011 milestone 1 (owner decision D3, review of 2026-11-08): an install migrated up to 0016
 // that holds locations flagged online before the gate existed (a shop, a warehouse, an archived
-// warehouse) takes 0013 to 0015 cleanly and ends with no online flag at all, so every brand turns
+// warehouse) takes 0017 to 0019 cleanly and ends with no online flag at all, so every brand turns
 // its online location on again through the gate, and the new check and unique index never meet a
 // row that breaks them.
-describe('the online location migrations upgrade an install at 0012', () => {
+describe('the online location migrations upgrade an install at 0016', () => {
   let name: string;
   let url: string;
   let owner: pg.Client;
@@ -30,7 +30,7 @@ describe('the online location migrations upgrade an install at 0012', () => {
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
       entries: { idx: number }[];
     };
-    journal.entries = journal.entries.filter((entry) => entry.idx <= 12);
+    journal.entries = journal.entries.filter((entry) => entry.idx <= 16);
     writeFileSync(journalPath, JSON.stringify(journal));
     await runMigrations(url, { migrationsFolder: folder });
     owner = new pg.Client({ connectionString: url });

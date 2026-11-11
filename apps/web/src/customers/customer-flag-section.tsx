@@ -25,7 +25,9 @@ export function CustomerFlagSection({ flag }: { flag: CustomerFlagView | null })
         {flag.setByName && (
           <>
             <dt className="text-muted-foreground">{t('customers.profile.flagCard.setBy')}</dt>
-            <dd>{flag.setByName}</dd>
+            <dd>
+              <bdi dir="auto">{flag.setByName}</bdi>
+            </dd>
           </>
         )}
         <dt className="text-muted-foreground">{t('customers.profile.flagCard.setOn')}</dt>
@@ -33,7 +35,9 @@ export function CustomerFlagSection({ flag }: { flag: CustomerFlagView | null })
         {flag.note && (
           <>
             <dt className="text-muted-foreground">{t('customers.profile.flagCard.note')}</dt>
-            <dd className="min-w-0 break-words">{flag.note}</dd>
+            <dd className="min-w-0 break-words">
+              <bdi dir="auto">{flag.note}</bdi>
+            </dd>
           </>
         )}
       </dl>

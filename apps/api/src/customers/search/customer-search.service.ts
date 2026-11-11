@@ -13,7 +13,7 @@ import {
   encodeKeyset,
   InvalidCursorError,
 } from '../../platform/keyset-cursor.js';
-import { briefRows, MICRO_UTC } from '../customer-briefs.js';
+import { briefRows, FLAG_SEVERITY_SQL, utc } from '../customer-briefs.js';
 import { CustomersError } from '../customers.errors.js';
 import { CustomersService } from '../customers.service.js';
 
@@ -117,29 +117,64 @@ export class CustomerSearchService {
     };
   }
 
+  /**
+   * Every canonical customer whose canonical flag is set (spec 0014 AC-5 with AC-11): her own
+   * row's flag, else the most severe on the ids merged into her (then the latest set, then the
+   * lowest id, as `briefRows` and the profile choose). Each customer is listed through the one row
+   * whose flag is her canonical flag, ordered by that row's set time, then its id, both
+   * descending; the keyset is that pair, so no customer is skipped or repeated across pages.
+   *
+   * The first half (a canonical row's own flag) reads `customers_flagged_idx` in its order; the
+   * second half (a customer with no flag of her own and a flagged merged record) reads merged rows
+   * through `customers_merged_into_idx`, which merges keep few.
+   */
   private async flagged(
     limit: number,
     cursor: string | undefined,
   ): Promise<CustomerSearchResponse> {
     const after = cursor === undefined ? null : decodeTimeIdKeyset(cursor);
-    const afterClause =
+    const afterOwn =
       after === null
         ? sql``
-        : sql`AND (risk_flag_set_at, id) < (${after.at}::timestamptz, ${after.id}::uuid)`;
-    const { rows } = await this.connection.db.execute<{ id: string; at: string }>(sql`
-      SELECT id, to_char(risk_flag_set_at AT TIME ZONE 'UTC', ${sql.raw(MICRO_UTC)}) AS at
-      FROM customers
-      WHERE risk_flag IS NOT NULL AND merged_into_id IS NULL ${afterClause}
-      ORDER BY risk_flag_set_at DESC NULLS FIRST, id DESC
+        : sql`AND (k.risk_flag_set_at, k.id) < (${after.at}::timestamptz, ${after.id}::uuid)`;
+    const afterMerged =
+      after === null
+        ? sql``
+        : sql`AND (f.risk_flag_set_at, f.id) < (${after.at}::timestamptz, ${after.id}::uuid)`;
+    const { rows } = await this.connection.db.execute<{
+      row_id: string;
+      customer_id: string;
+      at: string;
+    }>(sql`
+      SELECT row_id, customer_id, ${utc('set_at')} AS at
+      FROM (
+        (SELECT k.id AS row_id, k.id AS customer_id, k.risk_flag_set_at AS set_at
+         FROM customers k
+         WHERE k.risk_flag IS NOT NULL AND k.merged_into_id IS NULL ${afterOwn}
+         ORDER BY k.risk_flag_set_at DESC NULLS FIRST, k.id DESC
+         LIMIT ${limit + 1})
+        UNION ALL
+        (SELECT f.id, f.merged_into_id, f.risk_flag_set_at
+         FROM customers f JOIN customers k ON k.id = f.merged_into_id
+         WHERE f.merged_into_id IS NOT NULL AND f.risk_flag IS NOT NULL
+           AND k.risk_flag IS NULL ${afterMerged}
+           AND f.id = (
+             SELECT g.id FROM customers g
+             WHERE g.merged_into_id = k.id AND g.risk_flag IS NOT NULL
+             ORDER BY array_position(${FLAG_SEVERITY_SQL}::text[], g.risk_flag::text),
+                      g.risk_flag_set_at DESC, g.id
+             LIMIT 1))
+      ) listed
+      ORDER BY set_at DESC NULLS FIRST, row_id DESC
       LIMIT ${limit + 1}`);
     const page = rows.slice(0, limit);
     const last = page.at(-1);
     return {
       items: await briefRows(
         this.connection.db,
-        page.map((row) => row.id),
+        page.map((row) => row.customer_id),
       ),
-      nextCursor: rows.length > limit && last ? encodeKeyset([last.at, last.id]) : null,
+      nextCursor: rows.length > limit && last ? encodeKeyset([last.at, last.row_id]) : null,
     };
   }
 }

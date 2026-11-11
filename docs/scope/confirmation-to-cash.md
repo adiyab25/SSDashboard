@@ -26,8 +26,8 @@ Products as the brand thinks of them: style, season, product group, and variants
 **Done when:** staff can find any variant by name, SKU, or barcode in Arabic or English in well under a second at 10,000 SKUs (tested at 50,000), see its style, season, and group, and every variant inherits its style's cost unless overridden.
 - [x] Design it (spec): `/architect catalog, styles & variants`
 - [ ] Build it: `/develop catalog, styles & variants`
-  - [ ] Arabic and English search through every layer
-  - [ ] Seasons, product groups, and styles
+  - [x] Arabic and English search through every layer
+  - [x] Seasons, product groups, and styles
   - [ ] Inherited cost, visible and recordable
   - [ ] The channel upsert contract
 - [ ] Verify it: `/check verify catalog, styles & variants`
@@ -60,8 +60,8 @@ One customer record keyed on a normalized Egyptian phone number, holding many ph
 - [x] Design it (spec): `/architect customers by phone`
 - [ ] Build it: `/develop customers by phone`
   - [x] One phone, one customer, end to end
-  - [ ] Merge and undo as daily work
-  - [ ] The repeat returner flag
+  - [x] Merge and undo as daily work
+  - [x] The repeat returner flag
   - [ ] One timeline through each lens
 - [ ] Verify it: `/check verify customers by phone`
 - [ ] Test it: `/test customers by phone`

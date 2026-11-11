@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from './auth.js';
@@ -48,6 +49,8 @@ export const productGroups = pgTable(
     tenantId: tenantId(),
     code: text('code').notNull(),
     name: jsonb('name').$type<LocalizedText>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
     archivedAt: archivedAt(),
   },
   (t) => [unique('product_groups_code_unique').on(t.tenantId, t.code)],
@@ -63,6 +66,8 @@ export const seasons = pgTable(
     name: jsonb('name').$type<LocalizedText>().notNull(),
     startsOn: date('starts_on'),
     endsOn: date('ends_on'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
     archivedAt: archivedAt(),
   },
   (t) => [
@@ -112,13 +117,15 @@ export const products = pgTable(
     index('products_product_group_idx').on(t.productGroupId),
     index('products_season_idx').on(t.seasonId),
     index('products_tags_idx').using('gin', t.tags),
-    // Fuzzy search over both names and the style code (feature 12 swaps in its Arabic normalization).
-    index('products_search_trgm_idx').using(
-      'gin',
-      sql`(coalesce(${t.name}->>'en', '') || ' ' || coalesce(${t.name}->>'ar', '') || ' ' || ${t.styleCode}) gin_trgm_ops`,
-    ),
   ],
 );
+
+/**
+ * What an option axis means (spec 0012, AC-10): `size` or `color` when its normalized name is in
+ * `OPTION_ROLE_NAMES` (`packages/contracts/src/catalog/option-roles.ts`), else `other`. Set when
+ * the option is created; never inferred again on a rename.
+ */
+export const optionRole = pgEnum('option_role', ['size', 'color', 'other']);
 
 /** A choice axis on a product (size, color) with ordered values; variants point into it by position. */
 export const productOptions = pgTable(
@@ -131,6 +138,7 @@ export const productOptions = pgTable(
       .references(() => products.id, { onDelete: 'restrict' }),
     name: jsonb('name').$type<LocalizedText>().notNull(),
     position: integer('position').notNull(),
+    role: optionRole('role').notNull().default('other'),
     /** Ordered option values, each `{ en, ar }`. */
     values: jsonb('values').$type<LocalizedText[]>().notNull(),
   },
@@ -173,6 +181,12 @@ export const productVariants = pgTable(
     countryOfOrigin: char('country_of_origin', { length: 2 }),
     requiresShipping: boolean('requires_shipping').notNull().default(true),
     customFields: jsonb('custom_fields').notNull().default({}),
+    /**
+     * `ssd_search_normalize` of the style's names and code, the SKU code, and the variant's option
+     * value labels (spec 0012, AC-2). Kept by database triggers on every write path; never written
+     * by application code. The default only covers the instant before the insert trigger runs.
+     */
+    searchText: text('search_text').notNull().default(''),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: archivedAt(),
@@ -186,8 +200,12 @@ export const productVariants = pgTable(
     index('product_variants_base_uom_idx').on(t.baseUomId),
     // SKU code prefix search: the unique index uses the default collation, which LIKE 'X%' cannot use.
     index('product_variants_sku_c_idx').on(sql`${t.sku} COLLATE "C"`),
-    // SKU fragment search ("contains") at 50,000 variants.
-    index('product_variants_sku_trgm_idx').using('gin', t.sku.op('gin_trgm_ops')),
+    // Name, code, and option fragment search ("contains every word", spec 0012 AC-3) at 50,000 variants.
+    index('product_variants_search_trgm_idx').using('gin', t.searchText.op('gin_trgm_ops')),
+    // Two active variants of one style never share their option values (spec 0012, AC-10).
+    uniqueIndex('product_variants_options_unique')
+      .on(t.tenantId, t.productId, t.optionValues)
+      .where(sql`${t.archivedAt} IS NULL`),
     check(
       'product_variants_tracking_stocked_only',
       sql`${t.tracking} = 'none' OR ${t.kind} = 'stocked'`,

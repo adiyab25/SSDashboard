@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { moneyInput } from './digit-input.js';
-import { MoneyString } from './money.js';
+import { moneyInput } from '../digit-input.js';
+import { LocalizedText } from '../localized-text.js';
+import { MoneyString } from '../money.js';
 
 /** A stored SKU code: upper case letters, digits, dot, dash, and underscore, up to 64. */
 export const SKU_CODE_PATTERN = /^[A-Z0-9._-]{1,64}$/;
@@ -11,6 +12,13 @@ export const SkuCode = z
   .trim()
   .toUpperCase()
   .regex(SKU_CODE_PATTERN, 'Letters, digits, dot, dash, and underscore, up to 64');
+
+/**
+ * A catalog record id a caller sends (a style, season, or product group): a uuid, lowercased, so
+ * it compares with the ids PostgreSQL answers, a distinct check counts `a` and `A` once, and an
+ * audit diff never records a case only change (review of spec 0012 milestone 2, minor 5).
+ */
+export const CatalogId = z.uuid().transform((id) => id.toLowerCase());
 
 /** A price of 0 or more with at most 2 decimals. */
 export const PriceString = MoneyString.refine(
@@ -34,12 +42,19 @@ export const SkuName = z
 export type SkuName = z.infer<typeof SkuName>;
 
 /**
- * `POST /api/products`. One variant for now; feature 8 lifts the limit. The api makes the product a
- * style whose style code is the SKU code, in the seeded `MAIN` product group (spec 0002, A12).
+ * `POST /api/products`: a new style with its first variant. More variants join the style through
+ * `POST /api/styles/:id/variants` (`AddVariantRequest`, spec 0012 AC-10). `styleCode` defaults to
+ * the SKU code (409 `STYLE_CODE_TAKEN` when another style holds it and no SKU does, `SKU_TAKEN`
+ * when a SKU does), `seasonId` to none, and `productGroupId` to the seeded `MAIN` group (spec
+ * 0002, A12); an unknown season or group answers 404 `NOT_FOUND`, an archived one 422
+ * `ARCHIVED`.
  */
 export const CreateProductRequest = z
   .object({
     name: SkuName,
+    styleCode: SkuCode.optional(),
+    seasonId: CatalogId.optional(),
+    productGroupId: CatalogId.optional(),
     variants: z
       .array(
         z
@@ -57,43 +72,62 @@ export const SkuStatus = z.enum(['active', 'archived']);
 /** The validated shape of `SkuStatus`, as the api and web see it after parsing. */
 export type SkuStatus = z.infer<typeof SkuStatus>;
 
-/** A row of `GET /api/skus`. */
+/** A style, season, or product group as a SKU row names it: id, code, and name in both languages. */
+export const CatalogRef = z.object({
+  id: z.uuid(),
+  code: z.string(),
+  name: LocalizedText,
+});
+/** The validated shape of `CatalogRef`, as the api and web see it after parsing. */
+export type CatalogRef = z.infer<typeof CatalogRef>;
+
+/**
+ * One of a variant's option values with its option's name, both in English and Arabic (spec
+ * 0012, AC-4): `{ name: { en: 'Size' }, value: { en: 'M' } }`. Ordered by option position.
+ */
+export const SkuOptionValue = z.object({
+  name: LocalizedText,
+  value: LocalizedText,
+});
+/** The validated shape of `SkuOptionValue`, as the api and web see it after parsing. */
+export type SkuOptionValue = z.infer<typeof SkuOptionValue>;
+
+/**
+ * A row of `GET /api/skus` (spec 0012, AC-4). `name` is the style's name (kept from spec 0006);
+ * `style`, `season` (null when the style has none), `productGroup`, and `options` say exactly
+ * which piece the SKU is.
+ */
 export const SkuSummary = z.object({
   id: z.uuid(),
   productId: z.uuid(),
   code: z.string(),
   name: z.object({ en: z.string().optional(), ar: z.string().optional() }),
+  style: CatalogRef,
+  season: CatalogRef.nullable(),
+  productGroup: CatalogRef,
+  options: z.array(SkuOptionValue),
   price: MoneyString.nullable(),
   archived: z.boolean(),
 });
 /** The validated shape of `SkuSummary`, as the api and web see it after parsing. */
 export type SkuSummary = z.infer<typeof SkuSummary>;
 
-/** `GET /api/skus/:id`. `updatedAt` is the microsecond UTC string the stale check compares. */
+/** A scannable code of a SKU, as `GET /api/skus/:id` lists it. */
+export const SkuBarcode = z.object({ id: z.uuid(), code: z.string() });
+/** The validated shape of `SkuBarcode`, as the api and web see it after parsing. */
+export type SkuBarcode = z.infer<typeof SkuBarcode>;
+
+/**
+ * `GET /api/skus/:id`, and the answer of every SKU write. `updatedAt` is the microsecond UTC
+ * string the stale check compares; `barcodes` are the SKU's codes in code order (spec 0012, AC-4).
+ */
 export const SkuDetail = SkuSummary.extend({
   status: SkuStatus,
   updatedAt: z.string(),
+  barcodes: z.array(SkuBarcode),
 });
 /** The validated shape of `SkuDetail`, as the api and web see it after parsing. */
 export type SkuDetail = z.infer<typeof SkuDetail>;
-
-/** Query of `GET /api/skus`. The receipt line picker sends `limit=20`. */
-export const SkuListQuery = z.object({
-  q: z.string().trim().min(1).max(100).optional(),
-  status: SkuStatus.default('active'),
-  cursor: z.string().min(1).max(400).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(50),
-});
-/** The validated shape of `SkuListQuery`, as the api and web see it after parsing. */
-export type SkuListQuery = z.infer<typeof SkuListQuery>;
-
-/** One page of `GET /api/skus`; pass `nextCursor` back as `cursor` for the next page, null at the end. */
-export const SkuListResponse = z.object({
-  items: z.array(SkuSummary),
-  nextCursor: z.string().nullable(),
-});
-/** The validated shape of `SkuListResponse`, as the api and web see it after parsing. */
-export type SkuListResponse = z.infer<typeof SkuListResponse>;
 
 /** The `updatedAt` a client read, sent back with every edit for the stale check (AC-2). */
 export const UpdatedAt = z.string().min(1).max(40);
@@ -123,13 +157,3 @@ export type ChangeSkuCodeRequest = z.input<typeof ChangeSkuCodeRequest>;
 export const SkuUsage = z.object({ codeLocked: z.boolean(), canArchive: z.boolean() });
 /** The validated shape of `SkuUsage`, as the api and web see it after parsing. */
 export type SkuUsage = z.infer<typeof SkuUsage>;
-
-/** Where a style's cost came from. A margin that rests on an `estimate` is labelled so (spec 0002, A12). */
-export const CostBasis = z.enum([
-  'factory_invoice',
-  'production_run',
-  'purchase_landed',
-  'estimate',
-]);
-/** The validated shape of `CostBasis`, as the api and web see it after parsing. */
-export type CostBasis = z.infer<typeof CostBasis>;

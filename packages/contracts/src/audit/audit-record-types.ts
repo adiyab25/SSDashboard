@@ -1,5 +1,5 @@
 import type { MessageKey } from '@ssdashboard/i18n';
-import { SKU_CODE_PATTERN } from '../catalog.js';
+import { GROUPING_CODE_PATTERN, SKU_CODE_PATTERN } from '../catalog/index.js';
 import { STORE_CODE_PATTERN } from '../connectors/connections.js';
 import { LICENSE_ID_PATTERN } from '../license/license-envelope.js';
 import { LOCATION_CODE_PATTERN } from '../locations.js';
@@ -187,6 +187,32 @@ export const AUDIT_RECORD_TYPES = {
     personalKeys: [],
     reason: 'text',
     labelPattern: STORE_CODE_PATTERN,
+    labelIsOwnCode: true,
+  },
+  style: {
+    // A style (`products` row, spec 0012): the record id is `products.id`, the label the style
+    // code (the SKU code shape, its own code contract), the diff the changed style fields, the
+    // reason the person's free text. Catalog data is not personal.
+    label: 'audit.recordTypes.style',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: SKU_CODE_PATTERN,
+    labelIsOwnCode: true,
+  },
+  season: {
+    // A season (spec 0012, AC-6): the record id is `seasons.id`, the label its code.
+    label: 'audit.recordTypes.season',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: GROUPING_CODE_PATTERN,
+    labelIsOwnCode: true,
+  },
+  product_group: {
+    // A product group (spec 0012, AC-7): the record id is `product_groups.id`, the label its code.
+    label: 'audit.recordTypes.productGroup',
+    personalKeys: [],
+    reason: 'text',
+    labelPattern: GROUPING_CODE_PATTERN,
     labelIsOwnCode: true,
   },
 } as const satisfies Record<string, AuditRecordTypeDefinition>;

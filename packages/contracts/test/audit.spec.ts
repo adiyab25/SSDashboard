@@ -222,9 +222,16 @@ describe('audit action registry', () => {
     expect(auditUndoneParentOf('customer.merged_undone', registry)?.code).toBe('customer.merged');
     expect(auditUndoneParentOf('stock_receipt.voided_undone', registry)).toBeUndefined();
     expect(auditUndoneParentOf('customer.merged', registry)).toBeUndefined();
-    // Nothing in today's registry is undoable, so no undone code is known.
+    // A final code has no undone code; today's one undoable code (spec 0014) brings exactly one.
     expect(auditActionOf('stock_receipt.voided_undone')).toBeUndefined();
-    expect(Object.keys(auditActionsWithUndone())).toEqual(Object.keys(AUDIT_ACTIONS));
+    expect(Object.keys(auditActionsWithUndone())).toEqual([
+      ...Object.keys(AUDIT_ACTIONS),
+      'customer.merged_undone',
+    ]);
+    expect(auditActionOf('customer.merged_undone')?.reasonCodes).toEqual([
+      'wrong_merge',
+      'different_people',
+    ]);
   });
 
   it('knows its codes and nothing else', () => {
@@ -280,6 +287,9 @@ describe('audit record types', () => {
       exchange: 'code',
       outbound_command: 'code',
       connection: 'text',
+      style: 'text',
+      season: 'text',
+      product_group: 'text',
     });
   });
 
@@ -290,6 +300,10 @@ describe('audit record types', () => {
     expect(AUDIT_RECORD_TYPES.location.labelPattern.test('WH-CAI')).toBe(true);
     expect(AUDIT_RECORD_TYPES.connection.labelPattern.test('ESS')).toBe(true);
     expect(AUDIT_RECORD_TYPES.connection.labelPattern.test('Fixture Store')).toBe(false);
+    // Spec 0012 milestone 2: a style is labelled by its style code, a season or group by its code.
+    expect(AUDIT_RECORD_TYPES.style.labelPattern.test('TEE-2027')).toBe(true);
+    expect(AUDIT_RECORD_TYPES.season.labelPattern.test('SS27')).toBe(true);
+    expect(AUDIT_RECORD_TYPES.product_group.labelPattern.test('x'.repeat(17))).toBe(false);
     expect(AUDIT_RECORD_TYPES.location.labelPattern.test('x'.repeat(17))).toBe(false);
     expect(AUDIT_RECORD_TYPES.stock_receipt.labelPattern.test('SR-2026-000001')).toBe(true);
     expect(AUDIT_RECORD_TYPES.stock_receipt.labelPattern.test('SR-1')).toBe(false);

@@ -1,6 +1,6 @@
 export * from './access.js';
 export * from './auth.js';
-export * from './catalog.js';
+export * from './catalog/index.js';
 export * from './digit-input.js';
 export * from './health.js';
 export * from './inventory.js';
@@ -60,3 +60,5 @@ export * from './customers/customer-enums.js';
 export * from './customers/customer-reason-codes.js';
 export * from './customers/customer-views.js';
 export * from './customers/customer-search.js';
+export * from './customers/customer-merges.js';
+export * from './customers/customer-flags.js';

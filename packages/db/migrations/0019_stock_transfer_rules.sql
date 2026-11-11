@@ -1,5 +1,5 @@
 -- Hand written (spec 0011, milestone 1): what Drizzle cannot express for the stock transfer table
--- of 0014_online_location_and_transfer_tables.sql. Edited by hand, never generated.
+-- of 0018_online_location_and_transfer_tables.sql. Edited by hand, never generated.
 
 -- Showroom moves are write once (spec 0011 AC-25), like the receipt lines: the application role
 -- cannot UPDATE, DELETE, or TRUNCATE them, and the trigger is the second guard for every role.

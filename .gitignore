@@ -14,3 +14,8 @@ docs/.agent-cache/
 *.tsbuildinfo
 next-env.d.ts
 .impeccable/hook.cache.json
+graphify-out/*
+!graphify-out/README.md
+!graphify-out/build-graphs.py
+!graphify-out/ast-extract.py
+!graphify-out/coverage-check.py

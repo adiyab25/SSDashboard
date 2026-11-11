@@ -304,6 +304,17 @@
   html {
     @apply font-sans;
   }
+  /*
+   * WCAG 2.2 SC 2.4.11 (Focus Not Obscured): while a toast is up at the bottom of the screen, the
+   * browser keeps a focused element clear of it when it scrolls the element into view, and the
+   * page can scroll that far.
+   */
+  html:has([data-sonner-toast]) {
+    scroll-padding-block-end: 8rem;
+  }
+  body:has([data-sonner-toast]) {
+    padding-block-end: 8rem;
+  }
   body {
     @apply bg-background text-sm text-foreground antialiased;
   }
