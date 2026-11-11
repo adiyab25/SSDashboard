@@ -12,9 +12,9 @@ _Steps derived from spec 0012 acceptance criteria and its Value sourcing table. 
 - [x] Open a style, add a variant with `Color: Navy` and `Size: L` → a Color option appears (role color) and the variant is listed; add the same combination again → "this size and color already exists" (409 `OPTION_COMBINATION_TAKEN`) → AC-10
 - [x] Add a barcode already on another SKU → the message names that SKU's code (409 `BARCODE_TAKEN`) → AC-10
 - [x] Archive one of two variants of a style → the style stays active; archive the other → the style shows archived; unarchive one → active again → AC-11
-- [ ] As a person holding `cost.view`, open a style with a style cost record and one variant override → that variant shows "override", the others "from style", a basis of estimate shows "estimate", a new style shows "Not set" → AC-12
-- [ ] Record a cost dated last month without a reason → the dialog asks for a reason (422 `REASON_REQUIRED`); with one → saved and listed first in the history → AC-13
-- [ ] As a `warehouse` person without the cost grant, open the same style → no cost column, no history panel, no record cost action → AC-12, AC-16
+- [x] As a person holding `cost.view`, open a style with a style cost record and one variant override → that variant shows "override", the others "from style", a basis of estimate shows "estimate", a new style shows "Not set" → AC-12
+- [x] Record a cost dated last month without a reason → the dialog asks for a reason (422 `REASON_REQUIRED`); with one → saved and listed first in the history → AC-13
+- [x] As a `warehouse` person without the cost grant, open the same style → no cost column, no history panel, no record cost action → AC-12, AC-16
 - [x] As a `support` person (no `catalog.edit`), open a style → no edit, add variant, or barcode actions; open `/seasons` by its address → the no access state → AC-16, AC-18
 - [ ] On a style created by the channel fixture, the name in the title's language and each variant's price show "From Shopify" read only → AC-15, AC-18
 - [ ] Switch to Arabic → every catalog page is right to left with Arabic labels, codes stay left to right; keyboard only (Tab, Enter, Escape) edits a style and assigns a season; at phone width the tables show as cards; axe reports no violation in either language → AC-18
@@ -23,7 +23,7 @@ _Steps derived from spec 0012 acceptance criteria and its Value sourcing table. 
 - [x] `pnpm --filter @ssdashboard/db test:e2e -- test/search-normalize.e2e-spec.ts` → the fixture pairs and the trigger recomputation cases pass → AC-1, AC-2
 - [x] `pnpm --filter @ssdashboard/api exec vitest run src/catalog` → the search SQL builder cases (three branches, short words, escaping, 5 word cap) pass → AC-3
 - [x] `pnpm build && pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts test/styles.e2e-spec.ts test/seasons-groups.e2e-spec.ts` → search, filters, styles, options, barcodes, archive, seasons, and groups pass → AC-3, AC-4, AC-6 to AC-11
-- [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/cost.e2e-spec.ts` → `costForMany` equals `costFor` per id, inherited and override, backdating reason, no `cost` key without the grant → AC-12, AC-13, AC-16
+- [x] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/cost.e2e-spec.ts` → `costForMany` equals `costFor` per id, inherited and override, backdating reason, no `cost` key without the grant → AC-12, AC-13, AC-16
 - [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/channel-sync.e2e-spec.ts` → idempotent second run with no audit rows, Default Title, Arabic title, `needs_sku`, `linked`, two stores in parallel, non source store, `sku_mismatch`, `barcode_conflict`, `option_conflict` → AC-14, AC-15, AC-17
 - [x] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/access-sweep.e2e-spec.ts` → every new route answers 403 exactly where the matrix says, no `COST_FIELD_KEYS` key without `cost.view` → AC-16
 - [ ] `pnpm test` → the audit registry test finds every new code with both labels and its proof file → AC-17

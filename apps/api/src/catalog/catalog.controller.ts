@@ -73,6 +73,11 @@ export function catalogHttpError(error: unknown): unknown {
           message: error.message,
           ...error.details,
         });
+      case 'ReasonRequired':
+        return new UnprocessableEntityException({
+          code: 'REASON_REQUIRED',
+          message: error.message,
+        });
     }
   }
   if (error instanceof InvalidCursorError) {

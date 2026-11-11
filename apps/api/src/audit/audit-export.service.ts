@@ -10,7 +10,7 @@ import {
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { en, flatten } from '@ssdashboard/i18n';
 import { DATABASE } from '../database/database.module.js';
-import { auditDiffFor } from './audit-cost-fields.js';
+import { auditDiffFor, auditReasonFor } from './audit-cost-fields.js';
 import { AuditExportTooLarge } from './audit.errors.js';
 import {
   AuditQueryService,
@@ -197,6 +197,7 @@ export class AuditExportService {
                   ...row,
                   before: auditDiffFor(row.before, plan.showCost),
                   after: auditDiffFor(row.after, plan.showCost),
+                  reason: auditReasonFor(row.action, row.reason, plan.showCost),
                 },
                 localAt,
                 actorName,

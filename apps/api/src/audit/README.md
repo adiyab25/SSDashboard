@@ -64,4 +64,4 @@ Who may read (spec 0010, AC-13), all by default on the manager hat only, with no
 - The list, the entry detail, and the record history need `audit.read`.
 - The CSV export (`POST /api/audit/entries/export`) needs `audit.export`.
 - The undo (`POST /api/audit/entries/:id/undo`) needs `audit.undo`.
-- Every reader checks its own permission, and leaves out cost fields for a viewer without `cost.view`, whichever module calls it.
+- Every reader checks its own permission, and leaves out cost fields for a viewer without `cost.view`, whichever module calls it; the free text reason of a `cost_record.recorded` entry is hidden from them too (`auditReasonFor`, `COST_REASON_ACTIONS` in [audit-cost-fields.ts](audit-cost-fields.ts); list, detail, record history, undo answer, and CSV).

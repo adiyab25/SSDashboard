@@ -1,7 +1,7 @@
 # 0012. Catalog, styles and variants: one normalized search column, style screens, visible cost, and a channel upsert contract
 
 **Date**: 2026-11-07
-**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; milestone 1 built 2026-11-08, milestone 2 built 2026-11-09)
+**Status**: Accepted 2026-11-07 (accepted by the owner with every owner decision as recommended; milestone 1 built 2026-11-08, milestone 2 built 2026-11-09, milestone 3 built 2026-11-11)
 **Feature**: scope feature 12, [Catalog, styles & variants](../../scope/confirmation-to-cash.md) (Slice 1a, Core, Beta)
 **Depends on**: the built catalog of [spec 0002](../0002-core-data-model/index.md) ([catalog child](../0002-core-data-model/0002-catalog-locations.md): `products` as styles, `seasons`, `product_groups`, `cost_records`, `CostService`) and [spec 0006](../0006-core-stock-loop/index.md) (SKU create, edit, archive, delete, list); permissions of [spec 0008](../0008-roles-as-hats/index.md); `AuditService` of [spec 0010](../0010-audit-trail/index.md); three settings requested from feature 9 ([spec 0009](../0009-settings-toggles-bundles/index.md), see *Settings requested from feature 9*). Neighbours, written in parallel: spec 0015 (the Shopify connector calls `CatalogChannelSync`), spec 0011 (stock ledger and locations), spec 0013 (orders reference variants).
 
@@ -242,7 +242,7 @@ Registry entries in `packages/contracts/src/settings/` (group "Catalog", bundle 
 
 ### Security model
 
-Staff audience only; permissions per AC-16, no new permission (requested from feature 8: none). Cost fields follow `cost.view` through the response serializer on `Access`, with `cost` added to `COST_FIELD_KEYS` so the sweep catches a leak. No personal data is stored or logged by this feature (catalog data is not personal); free text audit reasons go through the existing phone and email masking.
+Staff audience only; permissions per AC-16, no new permission (requested from feature 8: none). Cost fields follow `cost.view` through the response serializer on `Access`, with `cost` added to `COST_FIELD_KEYS` so the sweep catches a leak. No personal data is stored or logged by this feature (catalog data is not personal); free text audit reasons go through the existing phone and email masking, and the reason of a `cost_record.recorded` entry is hidden from audit readers without `cost.view` in the list, the detail, and the CSV, since a person may type an amount there (lead ruling 2026-11-11, option A; `COST_REASON_ACTIONS` in `apps/api/src/audit/audit-cost-fields.ts`).
 
 ### Configuration required
 
@@ -292,10 +292,10 @@ Tracer Bullet: milestone 1 runs the search through every layer (SQL function, co
 **Done when** `pnpm build && pnpm typecheck && pnpm lint && pnpm test` pass, `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/styles.e2e-spec.ts test/seasons-groups.e2e-spec.ts test/master-data.e2e-spec.ts test/access-sweep.e2e-spec.ts` passes, and `pnpm --filter @ssdashboard/web test:e2e -- e2e/styles.spec.ts` passes.
 
 **Milestone 3: Inherited cost, visible and recordable**
-13. [ ] `CostService.costForMany` (one query, same rule as `costFor`, plus `inheritedFrom`); `cost` in `COST_FIELD_KEYS`; the `StyleDetail` serializer on `Access`, satisfies **AC-12**, **AC-16**
-14. [ ] `cost-records/` controller: list and add with the backdating reason rule and `cost_record.recorded`, satisfies **AC-13**, **AC-17**
-15. [ ] Web: the cost column on the style page (inherited, override, estimate, Not set), the cost history panel, the record cost dialog, hidden without `cost.view`, satisfies **AC-12**, **AC-13**, **AC-18**
-16. [ ] Tests: `test/cost.e2e-spec.ts` extended (many equals one, backdating, 403 and no `cost` key without the grant), the sweep fixtures, the web e2e cost steps, satisfies **AC-12**, **AC-13**, **AC-16**
+13. [x] `CostService.costForMany` (one query, same rule as `costFor`, plus `inheritedFrom`); `cost` in `COST_FIELD_KEYS`; the `StyleDetail` serializer on `Access`, satisfies **AC-12**, **AC-16**
+14. [x] `cost-records/` controller: list and add with the backdating reason rule and `cost_record.recorded`, satisfies **AC-13**, **AC-17**
+15. [x] Web: the cost column on the style page (inherited, override, estimate, Not set), the cost history panel, the record cost dialog, hidden without `cost.view`, satisfies **AC-12**, **AC-13**, **AC-18**
+16. [x] Tests: `test/cost.e2e-spec.ts` extended (many equals one, backdating, 403 and no `cost` key without the grant), the sweep fixtures, the web e2e cost steps, satisfies **AC-12**, **AC-13**, **AC-16** (api part done: `test/cost.e2e-spec.ts` and the two `access-sweep.e2e-spec.ts` fixtures; web component tests done: `apps/web/src/catalog/styles/style-cost.spec.tsx`, English and Arabic; Playwright cost steps done: `apps/web/e2e/style-cost.spec.ts`, desktop and mobile, 2026-11-11)
 
 **Done when** `pnpm test` passes and `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/cost.e2e-spec.ts test/access-sweep.e2e-spec.ts` passes, and the style page shows an inherited cost, an override, and "Not set" for a cost holder and no cost for a warehouse person.
 

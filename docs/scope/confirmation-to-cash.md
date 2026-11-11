@@ -28,7 +28,7 @@ Products as the brand thinks of them: style, season, product group, and variants
 - [ ] Build it: `/develop catalog, styles & variants`
   - [x] Arabic and English search through every layer
   - [x] Seasons, product groups, and styles
-  - [ ] Inherited cost, visible and recordable
+  - [x] Inherited cost, visible and recordable
   - [ ] The channel upsert contract
 - [ ] Verify it: `/check verify catalog, styles & variants`
 - [ ] Test it: `/test catalog, styles & variants`

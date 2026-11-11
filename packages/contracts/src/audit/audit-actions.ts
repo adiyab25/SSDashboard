@@ -73,6 +73,9 @@ const STYLES_PROOF = 'apps/api/test/styles.e2e-spec.ts';
 /** The proof test of the season and product group actions (spec 0012). */
 const GROUPINGS_PROOF = 'apps/api/test/seasons-groups.e2e-spec.ts';
 
+/** The proof test of the cost record action (spec 0012 milestone 3). */
+const COST_PROOF = 'apps/api/test/cost.e2e-spec.ts';
+
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
  * adds its code here in the same change that builds the action, with its label keys and its proof
@@ -471,6 +474,18 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     label: 'audit.actions.productGroupDeleted',
     proof: GROUPINGS_PROOF,
+  },
+  // Spec 0012 milestone 3 (AC-13, AC-17): a cost record added to a style or one of its variants,
+  // recorded on the style. The reason is optional, and required for this call
+  // (`reasonRequired: true`) when the record applies from before today's operating day.
+  'cost_record.recorded': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.costRecordRecorded',
+    proof: COST_PROOF,
   },
 } as const satisfies Record<string, AuditActionDefinition>;
 

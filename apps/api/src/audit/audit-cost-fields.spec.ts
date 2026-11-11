@@ -2,6 +2,7 @@ import type { AuditEntryDetail, AuditEntryListResponse } from '@ssdashboard/cont
 import { describe, expect, it } from 'vitest';
 import {
   auditDiffFor,
+  auditReasonFor,
   isCostKey,
   serializeAuditDetail,
   serializeAuditEntry,
@@ -94,6 +95,29 @@ describe('auditDiffFor (the export cells)', () => {
   });
 });
 
+// Spec 0012 AC-17: the reason of a cost record may state the amount.
+describe('the reason of cost_record.recorded', () => {
+  const costEntry = { ...entry, action: 'cost_record.recorded', reason: 'was 120.00, now 95' };
+  const none = { has: () => false };
+  const holder = { has: (p: string) => p === 'cost.view' };
+
+  it('is hidden from a reader without cost.view on every entry shape', () => {
+    expect(
+      serializeAuditPage({ items: [costEntry], nextCursor: null }, none).items[0]?.reason,
+    ).toBeNull();
+    expect(serializeAuditEntry(costEntry, none).reason).toBeNull();
+    expect(serializeAuditDetail({ ...costEntry, changes: [] }, none).reason).toBeNull();
+    expect(auditReasonFor('cost_record.recorded', 'x', false)).toBeNull();
+  });
+
+  it('is kept for cost.view and for every other action', () => {
+    expect(serializeAuditEntry(costEntry, holder).reason).toBe('was 120.00, now 95');
+    expect(serializeAuditEntry({ ...costEntry, action: 'style.updated' }, none).reason).toBe(
+      'was 120.00, now 95',
+    );
+  });
+});
+
 // Security review AS34: the undo answers one entry through `serializeAuditEntry`.
 describe('serializeAuditEntry (the undo answer, spec 0010 AC-14)', () => {
   it('strips cost fields from one entry without cost.view and keeps it whole with it', () => {
@@ -118,10 +142,13 @@ describe('cost keys in any spelling and inside JSON text', () => {
       'UNIT-COST',
       'unit cost',
       'total_value',
+      // Spec 0012, AC-16: the style page's `cost` object joined COST_FIELD_KEYS.
+      'cost',
+      'Cost',
     ]) {
       expect(isCostKey(key), key).toBe(true);
     }
-    for (const key of ['cost', 'unit', 'price', 'unitCostNote'])
+    for (const key of ['costs', 'unit', 'price', 'unitCostNote', 'costView'])
       expect(isCostKey(key), key).toBe(false);
   });
 

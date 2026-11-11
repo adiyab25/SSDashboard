@@ -71,10 +71,30 @@ export function auditDiffFor(
   return withoutCostFields(diff) as Record<string, unknown>;
 }
 
-/** One entry with its `before` and `after` stripped of cost fields. */
+/**
+ * The action codes whose free text reason may state a cost (spec 0012 AC-17: the reason of a cost
+ * record is typed next to the amount). A reader without `cost.view` never sees it.
+ */
+const COST_REASON_ACTIONS: ReadonlySet<string> = new Set(['cost_record.recorded']);
+
+/**
+ * The reason of an entry as a reader may see it: unchanged with `showCost` or for any action not
+ * in `COST_REASON_ACTIONS`, else null. Pure. The list, the detail, the undo answer, and the CSV
+ * export all go through it, so a file never carries what the screen would hide.
+ */
+export function auditReasonFor(
+  action: string,
+  reason: string | null,
+  showCost: boolean,
+): string | null {
+  return showCost || !COST_REASON_ACTIONS.has(action) ? reason : null;
+}
+
+/** One entry with its `before` and `after` stripped of cost fields and a cost reason hidden. */
 function entryWithoutCost<T extends AuditEntryView>(entry: T): T {
   return {
     ...entry,
+    reason: auditReasonFor(entry.action, entry.reason, false),
     before: auditDiffFor(entry.before, false),
     after: auditDiffFor(entry.after, false),
   };
