@@ -61,7 +61,7 @@ One customer record keyed on a normalized Egyptian phone number, holding many ph
 - [ ] Build it: `/develop customers by phone`
   - [x] One phone, one customer, end to end
   - [x] Merge and undo as daily work
-  - [ ] The repeat returner flag
+  - [x] The repeat returner flag
   - [ ] One timeline through each lens
 - [ ] Verify it: `/check verify customers by phone`
 - [ ] Test it: `/test customers by phone`

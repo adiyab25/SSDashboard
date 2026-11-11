@@ -9,8 +9,10 @@ import {
 import { CustomerUndoRefusalCode } from '../customers/customer-merges.js';
 import {
   CustomerDismissReasonCode,
+  CustomerFlagReasonCode,
   CustomerMergeReasonCode,
   CustomerPhoneAddedReasonCode,
+  CustomerUnflagReasonCode,
   CustomerUnmergeReasonCode,
 } from '../customers/customer-reason-codes.js';
 
@@ -388,6 +390,29 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     reasonCodes: CustomerPhoneAddedReasonCode.options,
     label: 'audit.actions.customerPhoneAdded',
+    proof: CUSTOMERS_PROOF,
+  },
+  // Spec 0014 milestone 3: `before` and `after` carry the flag kind and source only, never the
+  // note (Law 151). A clear writes one entry per changed record under one correlation id; an
+  // import (`setFlagFromImport`) writes none here, feature 15 writes its own.
+  'customer.flagged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerFlagReasonCode.options,
+    label: 'audit.actions.customerFlagged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.unflagged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerUnflagReasonCode.options,
+    label: 'audit.actions.customerUnflagged',
     proof: CUSTOMERS_PROOF,
   },
   // Spec 0012 milestone 2 (AC-17): style edits, a style's code, a variant added to a style, a

@@ -52,7 +52,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 | `orders.gift` | Create a gifted order (spec 0002, owner question 8) | | | | | ✓ | | |
 | `customers.view` | See customer profiles, phones, and history | P | ✓ | ✓ | | ✓ | | |
 | `customers.merge` | Merge customers and undo a merge | P | ✓ | ✓ | | ✓ | | |
-| `customers.flag` | Set and clear a customer's flag (amended 2026-11-07 by spec 0014, designed, not built) | P | ✓ | ✓ | | ✓ | | |
+| `customers.flag` | Set and clear a customer's flag (amended 2026-11-07 by spec 0014, built by feature 14 milestone 3) | P | ✓ | ✓ | | ✓ | | |
 | `exchanges.handle` | Open exchanges and returns for a customer, work the review desk | P | ✓ | ✓ | | ✓ | | |
 | `refunds.approve` | Approve refunds and post credit by hand | P | | ✓ | | ✓ | | |
 | `fulfillment.work` | Pick, pack, ship, scan returns, restock | P | | ✓ | ✓ | ✓ | | |
@@ -81,7 +81,7 @@ The hats, and what each one lets a person do. `P` marks a permission that reache
 
 > Amended 2026-11-06 (gate ruling, spec 0010 AC-13): the single `audit.view` became `audit.read`, `audit.undo` and `audit.export`, all on the manager hat only and marked personal, because an entry's before and after can carry customer data and costs.
 
-> Amended 2026-11-07 by spec 0014 (designed, not built; the build of feature 14 registers it in `packages/contracts/src/access.ts`): the new permission `customers.flag` (owner decision Q-14.3) lets a person set and clear a customer's flag, clearing needing a reason code. It reaches personal data (`P`), so it is on `support`, `operations`, and `manager` only and never on an external hat (AC-8).
+> Amended 2026-11-07 by spec 0014 (built: feature 14 milestone 3 registers it in `packages/contracts/src/access.ts`): the new permission `customers.flag` (owner decision Q-14.3) lets a person set and clear a customer's flag, clearing needing a reason code. It reaches personal data (`P`), so it is on `support`, `operations`, and `manager` only and never on an external hat (AC-8).
 
 > Amended 2026-11-07 by spec 0012 (designed, not built; the build of feature 12 changes the matrix text): `catalog.manage` now also covers managing seasons and product groups (create, edit, archive, unarchive, delete) and changing style codes, in addition to what the row above says. It stays on the `manager` hat only. Built 2026-11-08 by spec 0012 milestone 2: the matrix row above and the permission's label in `packages/i18n` now say so.
 

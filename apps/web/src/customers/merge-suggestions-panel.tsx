@@ -13,6 +13,7 @@ import { CheckCheckIcon, LoaderCircleIcon } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { useFormat } from '@/i18n/use-format';
 import { customerKeys, dismissMergeSuggestion } from './customers-api';
 import { mergeErrorKey, type MergeErrorKey } from './merge-error-key';
@@ -55,7 +56,7 @@ export function MergeSuggestionsPanel({ query, canMerge }: Props) {
         toast.error(t(key));
         setErrors((current) => ({ ...current, [id]: key }));
       } finally {
-        await queryClient.invalidateQueries({ queryKey: customerKeys.suggestions });
+        await refetchAfterWrite(queryClient, { queryKey: customerKeys.suggestions });
         setBusyIds((current) => {
           const next = new Set(current);
           next.delete(id);

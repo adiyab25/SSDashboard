@@ -13,11 +13,9 @@ import { ChannelsService } from '../../channels/channels.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { StaffDirectory } from '../../identity/staff/staff-directory.js';
-import { briefRows, FLAG_SEVERITY_SQL, MICRO_UTC } from '../customer-briefs.js';
+import { briefRows, FLAG_SEVERITY_SQL, utc } from '../customer-briefs.js';
 import { CustomersError } from '../customers.errors.js';
 import { CustomersService } from '../customers.service.js';
-
-const utc = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', ${MICRO_UTC})`);
 
 interface CanonicalRow extends Record<string, unknown> {
   name: string | null;
@@ -99,9 +97,14 @@ export class CustomerProfileService {
     const ids = await this.customers.idsOf(canonicalId, db);
     const idList = pgArray(ids);
 
+    // `updatedAt` is the greatest stamp over every id of the customer, not the canonical row's
+    // alone: a merge stamps the rows it absorbs, so a flag clear made from a profile read before
+    // the merge is refused (`STALE_RECORD`) instead of emptying the flag of a record it never saw.
     const [row] = (
       await db.execute<CanonicalRow>(sql`
-        SELECT name, ${utc('created_at')} AS created_at, ${utc('updated_at')} AS updated_at
+        SELECT name, ${utc('created_at')} AS created_at,
+               (SELECT ${utc('max(m.updated_at)')} FROM customers m
+                 WHERE m.id = ANY(${idList}::uuid[])) AS updated_at
         FROM customers WHERE id = ${canonicalId}::uuid`)
     ).rows;
     if (!row) throw new CustomersError('CUSTOMER_NOT_FOUND', 'No customer has that id');

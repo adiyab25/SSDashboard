@@ -1,11 +1,14 @@
 import {
   CustomerMergeResponse,
+  CustomerSetFlagResponse,
   CustomerProfile,
   CustomerSearchResponse,
   CustomerUndoMergeResponse,
   MergeSuggestionPage,
+  type CustomerClearFlagRequest,
   type CustomerMergeRequest,
   type CustomerSearchRequest,
+  type CustomerSetFlagRequest,
   type CustomerUndoMergeRequest,
   type MergeSuggestionDismissRequest,
 } from '@ssdashboard/contracts';
@@ -18,7 +21,8 @@ export const customerKeys = {
   /** The open merge suggestions (the To review tab). */
   suggestions: ['customers', 'merge-suggestions'] as const,
   /** One search: its kind and the text typed (kept in memory only, never in a URL). */
-  search: (kind: 'phone' | 'name', text: string) => ['customers', 'search', kind, text] as const,
+  search: (kind: 'phone' | 'name' | 'flagged', text: string) =>
+    ['customers', 'search', kind, text] as const,
   /** One customer's profile, by the id asked. */
   profile: (id: string) => ['customers', 'profile', id] as const,
 };
@@ -28,7 +32,7 @@ export const customerKeys = {
  * phone or name travels in the body and never lands in a URL, a proxy log, or browser history.
  */
 export function searchCustomers(
-  by: { phone: string } | { nameContains: string },
+  by: { phone: string } | { nameContains: string } | { flagged: true },
   cursor: string | undefined,
   signal?: AbortSignal,
 ) {
@@ -71,6 +75,21 @@ export const dismissMergeSuggestion = (id: string, body: MergeSuggestionDismissR
   apiRequest(
     'POST',
     `/api/customers/merge-suggestions/${encodeURIComponent(id)}/dismiss`,
+    { parse: () => undefined },
+    { body },
+  );
+
+/** `PUT /api/customers/:id/flag`: sets a manual flag; send the profile's `updatedAt` as `expectedUpdatedAt`. */
+export const setCustomerFlag = (id: string, body: CustomerSetFlagRequest) =>
+  apiRequest('PUT', `/api/customers/${encodeURIComponent(id)}/flag`, CustomerSetFlagResponse, {
+    body,
+  });
+
+/** `POST /api/customers/:id/flag/clear`: clears the flag with a required reason code; answers 204 with no body. */
+export const clearCustomerFlag = (id: string, body: CustomerClearFlagRequest) =>
+  apiRequest(
+    'POST',
+    `/api/customers/${encodeURIComponent(id)}/flag/clear`,
     { parse: () => undefined },
     { body },
   );
