@@ -195,6 +195,11 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       body: () => ({ phone: '01001234567' }),
     },
     'GET /customers/:id': { needs: ['customers.view'], path: () => `/customers/${ids.customer}` },
+    // Spec 0014 milestone 4: the timeline, then per kind through the lens.
+    'GET /customers/:id/timeline': {
+      needs: ['customers.view'],
+      path: () => `/customers/${ids.customer}/timeline`,
+    },
     // Spec 0014 milestone 2: bodies naming unknown ids, so a permitted call answers 404 or 422.
     'POST /customers/merges': {
       needs: ['customers.merge'],

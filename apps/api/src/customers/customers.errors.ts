@@ -15,7 +15,8 @@ export type CustomersErrorCode =
   | 'MERGE_ALREADY_UNDONE'
   | 'MERGE_NOT_LATEST'
   | 'STALE_RECORD'
-  | 'NOT_FLAGGED';
+  | 'NOT_FLAGGED'
+  | 'REASON_INVALID';
 
 /**
  * A rule of the customers module that a caller broke. The message is fixed text: it never holds a

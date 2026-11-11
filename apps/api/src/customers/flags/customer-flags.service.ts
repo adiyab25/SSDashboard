@@ -38,6 +38,26 @@ export interface SetFlagInput {
   expectedUpdatedAt: string;
 }
 
+/** The returner signal's counts a `suggestion_applied` flag carries into its audit entry's `after`. */
+export interface AppliedSuggestion {
+  /** The kind the signal suggests now, or null. */
+  suggestedKind: CustomerRiskFlag | null;
+  refusals: number;
+  returns: number;
+  windowDays: number;
+}
+
+/**
+ * Recomputes the returner signal of a customer's id set inside the flag set's transaction, under
+ * its locks (spec 0014 AC-13). `flagged` says whether any id of the customer holds a flag. The
+ * leaf `CustomerProfileModule` passes it, since only it reads orders.
+ */
+export type SuggestionCheck = (
+  tx: Transaction,
+  ids: readonly string[],
+  flagged: boolean,
+) => Promise<AppliedSuggestion>;
+
 /** What a flag clear needs (spec 0014 AC-11). */
 export interface ClearFlagInput {
   /** Why, as a listed code (required). */
@@ -100,8 +120,18 @@ export class CustomerFlags {
    * the person, now, and the note (invisible format characters stripped, trimmed, a blank one
    * stored as none), and records `customer.flagged`. Answers the flag block as the profile reads
    * it and the new `updatedAt` (the profile's stamp after the write).
+   *
+   * Reason code `suggestion_applied` (AC-13, the one tap apply): accepted only when `suggestion`
+   * is given and, recomputed under the locks, the customer has no flag on any id and the signal
+   * suggests exactly `kind`; the entry's `after` then also carries `refusals`, `returns`, and
+   * `windowDays`. Otherwise 422 `REASON_INVALID`.
    */
-  async set(id: string, input: SetFlagInput, actor: FlagActor): Promise<CustomerSetFlagResponse> {
+  async set(
+    id: string,
+    input: SetFlagInput,
+    actor: FlagActor,
+    suggestion?: SuggestionCheck,
+  ): Promise<CustomerSetFlagResponse> {
     const correlationId = this.audit.newCorrelationId();
     // The note is cleaned like a name: pasted direction marks could otherwise hide its text.
     const note = cleanCustomerName(input.note ?? null);
@@ -120,6 +150,10 @@ export class CustomerFlags {
           throw new CustomersError('CUSTOMER_MERGED', 'This customer was merged into another one');
         }
         if (!fresh) throw stale();
+        const applied =
+          input.reasonCode === 'suggestion_applied'
+            ? await this.confirmSuggestion(tx, ids, input.kind, suggestion)
+            : null;
 
         const after = (
           await tx.execute<{ set_at: string }>(sql`
@@ -138,7 +172,17 @@ export class CustomerFlags {
           action: 'customer.flagged',
           record: { type: 'customer', id },
           before: { riskFlag: row.risk_flag, riskFlagSource: row.risk_flag_source },
-          after: { riskFlag: input.kind, riskFlagSource: 'manual' },
+          after: {
+            riskFlag: input.kind,
+            riskFlagSource: 'manual',
+            ...(applied === null
+              ? {}
+              : {
+                  refusals: applied.refusals,
+                  returns: applied.returns,
+                  windowDays: applied.windowDays,
+                }),
+          },
           ...(input.reasonCode === undefined ? {} : { reason: input.reasonCode }),
           correlationId,
         });
@@ -217,6 +261,31 @@ export class CustomerFlags {
       },
       { isolationLevel: 'read committed' },
     );
+  }
+
+  /**
+   * The signal a `suggestion_applied` set rests on, recomputed under the locks: refused with 422
+   * `REASON_INVALID` when no check is given, any id holds a flag, or the signal suggests another
+   * kind or none.
+   */
+  private async confirmSuggestion(
+    tx: Transaction,
+    ids: readonly string[],
+    kind: CustomerRiskFlag,
+    suggestion: SuggestionCheck | undefined,
+  ): Promise<AppliedSuggestion> {
+    const refuse = () =>
+      new CustomersError('REASON_INVALID', 'Nothing suggests this flag for this customer now');
+    if (suggestion === undefined) throw refuse();
+    const flagged =
+      (
+        await tx.execute<{ flagged: boolean }>(sql`
+          SELECT EXISTS (SELECT 1 FROM customers
+                          WHERE id = ANY(${pgArray(ids)}::uuid[]) AND risk_flag IS NOT NULL) AS flagged`)
+      ).rows[0]?.flagged === true;
+    const signal = await suggestion(tx, ids, flagged);
+    if (flagged || signal.suggestedKind !== kind) throw refuse();
+    return signal;
   }
 
   /**
