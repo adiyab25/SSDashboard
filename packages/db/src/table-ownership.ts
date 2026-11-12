@@ -78,6 +78,7 @@ export const TABLE_OWNERSHIP = {
   stock_level_discrepancies: 'inventory',
   stock_receipts: 'inventory',
   stock_receipt_lines: 'inventory',
+  stock_transfers: 'inventory',
 
   customers: 'customers',
   customer_phones: 'customers',
@@ -136,6 +137,7 @@ export const APPEND_ONLY_TABLES = [
   'stock_movements',
   'movement_serials',
   'stock_receipt_lines',
+  'stock_transfers',
   'cost_records',
   'order_events',
   'customer_merges',

@@ -322,6 +322,7 @@
           "transactions": [
             {
               "id": "gid://shopify/OrderTransaction/2220000008001",
+              "parentTransaction": null,
               "kind": "SALE",
               "status": "SUCCESS",
               "gateway": "manual",
@@ -340,6 +341,9 @@
             },
             {
               "id": "gid://shopify/OrderTransaction/2220000008002",
+              "parentTransaction": {
+                "id": "gid://shopify/OrderTransaction/2220000008001"
+              },
               "kind": "REFUND",
               "status": "SUCCESS",
               "gateway": "manual",
@@ -415,11 +419,14 @@
                         "id": "gid://shopify/LineItem/6660000008001"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               },
               {
-                "id": "gid://shopify/OrderAgreement/4440000008002",
+                "id": "gid://shopify/OrderEditAgreement/4440000008002",
                 "happenedAt": "2026-11-07T15:00:00Z",
                 "reason": "ORDER_EDIT",
                 "sales": {
@@ -444,11 +451,14 @@
                         "id": "gid://shopify/LineItem/6660000008002"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               },
               {
-                "id": "gid://shopify/OrderAgreement/4440000008003",
+                "id": "gid://shopify/RefundAgreement/4440000008003",
                 "happenedAt": "2026-11-07T15:02:00Z",
                 "reason": "REFUND",
                 "sales": {
@@ -473,10 +483,19 @@
                         "id": "gid://shopify/LineItem/6660000008001"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
+                },
+                "refund": {
+                  "id": "gid://shopify/Refund/1110000008001"
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },

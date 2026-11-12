@@ -40,6 +40,7 @@ import { useLanguage } from '@/i18n/language-provider';
 import { StockOutSourceNotice } from '@/shell/stock-out-source-notice';
 import { inventoryKeys, listStock } from './inventory-api';
 import { NewLocationDialog } from './new-location-dialog';
+import { OnlineStatusNotice } from './online-status-notice';
 import { SkuPicker, type PickedSku } from './sku-picker';
 
 const features = tableFeatures({});
@@ -185,6 +186,7 @@ export function StockView({ enabled }: { enabled: boolean }) {
       </div>
 
       {enabled && <StockOutSourceNotice />}
+      {enabled && <OnlineStatusNotice linkToGate />}
 
       <p className="text-sm text-muted-foreground">
         {t('inventory.stock.scope', { location: scope })}

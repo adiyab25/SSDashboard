@@ -375,6 +375,28 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['catalog.manage'],
       path: () => `/locations/${ids.locationToChange}`,
     },
+    // Spec 0011 milestone 1 (AC-17, AC-19, AC-20): the online gate routes and the status read. The
+    // bodies are empty, so a person with the permission gets a validation or rule answer, never 5xx.
+    'GET /locations/:id/online-gate': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.location}/online-gate`,
+    },
+    'POST /locations/:id/confirm-stock': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.locationToChange}/confirm-stock`,
+      body: () => ({}),
+    },
+    'POST /locations/:id/make-online': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.locationToChange}/make-online`,
+      body: () => ({}),
+    },
+    'POST /locations/online/stop': {
+      needs: ['catalog.manage'],
+      path: () => '/locations/online/stop',
+      body: () => ({}),
+    },
+    'GET /stock/online-status': { needs: ['stock.view'] },
     'POST /stock-receipts': {
       needs: ['stock.receive'],
       body: () => ({
@@ -500,6 +522,23 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['settings.manage'],
       path: () => `/connections/${randomUUID()}/check`,
     },
+    // Spec 0015 task 12: the gateway scan and the backfill name an unknown connection (a manager
+    // gets 404, or 422 for the backfill's bad instant, and no job is sent); the sync runs read a
+    // planted connection (200). The freshness line is `orders.view`, not `settings.manage`.
+    'POST /connections/:id/gateway-scan': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${randomUUID()}/gateway-scan`,
+    },
+    'POST /connections/:id/backfill': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${randomUUID()}/backfill`,
+      body: () => ({ goLiveAt: 'not an instant' }),
+    },
+    'GET /connections/:id/sync-runs': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${ids.connection}/sync-runs`,
+    },
+    'GET /connections/freshness': { needs: ['orders.view'] },
     // Spec 0015 task 7: the Shopify hook, audience `hook` with no permission (spec 0008 route
     // mapping: "none, proves itself by signature"). A signed in hat without a Shopify signature
     // gets the hook's own empty 401 (AC-4) before any guard, so nobody "reaches" it.

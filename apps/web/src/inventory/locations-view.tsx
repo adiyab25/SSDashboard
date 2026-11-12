@@ -1,5 +1,6 @@
 'use client';
 
+import { refetchAfterWrite } from '@/api/refetch-after-write';
 import type { LocationDetail, LocationStatus } from '@ssdashboard/contracts';
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Badge } from '@ssdashboard/ui/components/badge';
@@ -26,6 +27,9 @@ import { ConfirmActionDialog } from './confirm-action-dialog';
 import { deleteLocation, inventoryKeys, listLocations, setLocationArchived } from './inventory-api';
 import { LocationEditDialog } from './location-edit-dialog';
 import { NewLocationDialog } from './new-location-dialog';
+import { OnlineGateDialog } from './online-gate-dialog';
+import { OnlineStatusNotice } from './online-status-notice';
+import { StopOnlineDialog } from './stop-online-dialog';
 
 /** The table columns, in order. */
 const COLUMNS = ['code', 'name', 'type', 'status', 'actions'] as const;
@@ -62,6 +66,8 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
   const [status, setStatus] = useState<LocationStatus>('active');
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<LocationDetail | null>(null);
+  const [gating, setGating] = useState<LocationDetail | null>(null);
+  const [stopping, setStopping] = useState<LocationDetail | null>(null);
   const [confirm, setConfirm] = useState<{ action: Action; location: LocationDetail } | null>(null);
 
   const query = useInfiniteQuery({
@@ -81,9 +87,11 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
         : setLocationArchived(location.id, action === 'archive').then(() => undefined),
     onSuccess: (_result, { action, location }) => {
       reloadSwitcher();
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.locations });
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.stockAll });
-      void queryClient.invalidateQueries({ queryKey: inventoryKeys.receiptsRoot });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.locations });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.stockAll });
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.receiptsRoot });
+      // Archiving the online location stops online stock (spec 0011 AC-1), so the status line may appear.
+      void refetchAfterWrite(queryClient, { queryKey: inventoryKeys.onlineStatus });
       const done = {
         archive: 'inventory.locations.archivedDone',
         unarchive: 'inventory.locations.unarchivedDone',
@@ -104,9 +112,12 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
     setConfirm({ action, location });
   };
 
-  const copy = (action: Action, code: string) => ({
+  const copy = (action: Action, code: string, online: boolean) => ({
     title: t(`inventory.locations.${action}Title`, { code }),
-    description: t(`inventory.locations.${action}Description`),
+    description:
+      action === 'archive' && online
+        ? t('inventory.locations.archiveOnlineDescription')
+        : t(`inventory.locations.${action}Description`),
     label: t(`inventory.locations.${action}`),
   });
 
@@ -122,6 +133,8 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
           {t('inventory.locations.newLocation')}
         </Button>
       </div>
+
+      {enabled && <OnlineStatusNotice linkToGate={false} />}
 
       <div role="group" aria-label={t('inventory.locations.filterLabel')} className="flex gap-1">
         {STATUSES.map((value) => (
@@ -194,6 +207,11 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                           ? t('inventory.locations.archivedBadge')
                           : t('inventory.locations.activeBadge')}
                       </Badge>
+                      {row.online && (
+                        <Badge variant="default" className="ms-1">
+                          {t('inventory.onlineGate.badge')}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="px-3">
                       <div className="flex flex-wrap gap-1">
@@ -206,6 +224,28 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                         >
                           {t('inventory.locations.edit')}
                         </Button>
+                        {row.online && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={t('inventory.onlineGate.stopLabel', { code: row.code })}
+                            onClick={() => setStopping(row)}
+                          >
+                            {t('inventory.onlineGate.stop')}
+                          </Button>
+                        )}
+                        {!row.archived && row.kind === 'warehouse' && !row.online && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={t('inventory.onlineGate.openLabel', { code: row.code })}
+                            onClick={() => setGating(row)}
+                          >
+                            {t('inventory.onlineGate.open')}
+                          </Button>
+                        )}
                         {row.archived ? (
                           <Button
                             type="button"
@@ -276,11 +316,17 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
           onClose={() => setEditing(null)}
         />
       )}
+      {gating && (
+        <OnlineGateDialog key={gating.id} location={gating} onClose={() => setGating(null)} />
+      )}
+      {stopping && <StopOnlineDialog location={stopping} onClose={() => setStopping(null)} />}
       {confirm && (
         <ConfirmActionDialog
-          title={copy(confirm.action, confirm.location.code).title}
-          description={copy(confirm.action, confirm.location.code).description}
-          confirmLabel={copy(confirm.action, confirm.location.code).label}
+          title={copy(confirm.action, confirm.location.code, confirm.location.online).title}
+          description={
+            copy(confirm.action, confirm.location.code, confirm.location.online).description
+          }
+          confirmLabel={copy(confirm.action, confirm.location.code, confirm.location.online).label}
           destructive={confirm.action === 'delete'}
           pending={act.isPending}
           error={act.error ? t(`inventory.locations.errors.${errorCode(act.error)}`) : null}

@@ -678,7 +678,7 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect([tampered.status, tampered.text]).toEqual([401, '']);
   });
 
-  it('records a known order with a newer snapshot as update_deferred, changing nothing, and a snapshot not newer as stale', async () => {
+  it('applies the newer snapshot of a known order (task 9 replaced the update_deferred of D1), and records a snapshot not newer as stale', async () => {
     useShopifyScenarios('order-edited-size-swap');
     const gid = 'gid://shopify/Order/5550000002001';
     const created = await deliver(a, 'orders/create', orderBody(gid));
@@ -697,14 +697,17 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
       ).rows[0];
     const before = await snapshot();
 
-    // Read back 02: the size swap, newer than the applied version (D1: task 9 applies it).
+    // Read back 02: the size swap, newer than the applied version: applied through
+    // applyChannelEdit (task 9; shopify-orders-in-full.e2e-spec.ts proves the lines).
     const edited = await deliver(a, 'orders/edited', orderBody(gid, '2026-11-02T11:40:09Z'));
     expect(await settled(a.id, edited.webhookId)).toMatchObject({
-      status: 'ignored',
-      outcome: 'update_deferred',
+      status: 'processed',
+      outcome: null,
       subject_label: '#1002',
     });
-    expect(await snapshot()).toEqual(before);
+    const after = await snapshot();
+    expect(after).not.toEqual(before);
+    expect(after?.version).not.toBe(before?.version);
 
     // The tracer order read back again with the version already applied: stale.
     useShopifyScenarios('order-created-cod');

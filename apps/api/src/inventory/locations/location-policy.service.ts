@@ -314,21 +314,20 @@ export class LocationPolicyService {
 
   /**
    * Checks a new location before it is inserted: the party's roles fit the owner type
-   * (`PartyRoleMismatch`; the brand's own location takes no party) and `sellableOnline` is
-   * allowed by the policy (`NotSellableOnline`). An absent owner type is the brand's own. Pass the
+   * (`PartyRoleMismatch`; the brand's own location takes no party). A new location is never
+   * online, so no online check runs here (spec 0011 AC-1). An absent owner type is the brand's own. Pass the
    * transaction that inserts the location as `executor`: the party row is read `FOR SHARE`, so the
    * lock lasts until that insert commits, and so does the owner type's shared advisory lock, so a
    * policy edit cannot count the type's locations while one is being added (spec 0009, AC-24).
    * Without one it uses a plain connection (no lasting lock).
    */
   async assertCanCreate(
-    input: { ownerType?: LocationOwnerType; partyId?: string; sellableOnline?: boolean },
+    input: { ownerType?: LocationOwnerType; partyId?: string },
     executor: Executor = this.connection.db,
   ): Promise<void> {
     const ownerType = input.ownerType ?? 'own';
     await this.assertParty(ownerType, input.partyId, executor);
     await this.holdOwnerType(ownerType, executor);
-    if (input.sellableOnline) await this.assertOnlineAllowed(ownerType, executor);
   }
 
   /**
@@ -530,16 +529,6 @@ export class LocationPolicyService {
       SELECT owner_type FROM locations WHERE id = ${locationId}`);
     const ownerType = rows[0]?.owner_type;
     if (ownerType !== undefined) await this.holdOwnerType(ownerType, executor);
-  }
-
-  private async assertOnlineAllowed(
-    ownerType: LocationOwnerType,
-    executor: Executor,
-  ): Promise<void> {
-    const { rows } = await executor.execute<{ can_sell_online: boolean }>(sql`
-      SELECT can_sell_online FROM location_owner_policies
-      WHERE owner_type = ${ownerType}::location_owner_type`);
-    if (!rows[0]?.can_sell_online) throw notSellableOnline();
   }
 
   private async assertParty(

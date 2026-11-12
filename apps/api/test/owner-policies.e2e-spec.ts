@@ -6,6 +6,7 @@ import {
 } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LocationPolicyService } from '../src/inventory/locations/location-policy.service.js';
+import { OnlineLocationService } from '../src/inventory/locations/online-location.service.js';
 import { LocationsService } from '../src/inventory/locations/locations.service.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 
@@ -89,14 +90,25 @@ describe('owner type policies (spec 0009, AC-24)', { timeout: 120_000 }, () => {
         [partyId],
       );
     }
-    return api.app.get(LocationsService).create({
+    const created = await api.app.get(LocationsService).create({
       code: `OP-${counter}`,
       name: { en: 'Shop' },
-      kind: 'shop',
+      kind: options.sellableOnline ? 'warehouse' : 'shop',
       ownerType: ownerType as 'own',
       ...(partyId !== undefined && { partyId }),
-      ...(options.sellableOnline !== undefined && { sellableOnline: options.sellableOnline }),
     });
+    if (!options.sellableOnline) return created;
+    // Online selling moves only through the gate (spec 0011 AC-19): confirm the stock, then move.
+    await api.owner.pool.query('UPDATE locations SET stock_verified_at = now() WHERE id = $1', [
+      created.id,
+    ]);
+    return api.app
+      .get(OnlineLocationService)
+      .makeOnline(
+        created.id,
+        { confirmedVariantCount: 0, reason: 'Test' },
+        { id: managerId, access: { actingHat: () => 'manager' } },
+      );
   };
 
   beforeAll(async () => {

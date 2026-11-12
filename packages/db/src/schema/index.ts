@@ -15,4 +15,5 @@ export * from './parties.js';
 export * from './platform.js';
 export * from './settlement.js';
 export * from './stock-receipts.js';
+export * from './stock-transfers.js';
 export * from './tasks.js';
