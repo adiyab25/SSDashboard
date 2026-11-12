@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,8 +16,11 @@ const LOCK = join(tmpdir(), 'ssdashboard-e2e-online-flag.lock');
 /** A lock older than this belongs to a worker that died; it is taken over. */
 const STALE_MS = 3 * 60_000;
 
-/** Waits for the lock, then returns the function that releases it. */
-async function acquireOnlineFlag(): Promise<() => Promise<void>> {
+/**
+ * Waits for the lock, then returns the function that releases it. A test that moves the flag in
+ * its own body (an orders test that packs) takes it there and releases it in its own cleanup.
+ */
+export async function acquireOnlineFlag(): Promise<() => Promise<void>> {
   for (;;) {
     try {
       await mkdir(LOCK);
@@ -62,6 +66,18 @@ export function useOnlineFlag(): void {
       release = undefined;
     }
   });
+}
+
+/**
+ * A location code that sorts before every code an earlier run made (the Locations list sorts by
+ * code, `COLLATE "C"`), so a keyboard test reaches its row in a few Tab presses however many test
+ * locations the shared database holds: `0`, then the seconds left until a far date (it shrinks as
+ * time passes, so a newer code sorts first), then two random characters for tests in the same
+ * second. 13 characters, inside the 16 a location code allows.
+ */
+export function firstSortingCode(): string {
+  const left = String(1e10 - Math.floor(Date.now() / 1000)).padStart(10, '0');
+  return `0${left}${randomUUID().slice(0, 2).toUpperCase()}`;
 }
 
 /** Presses Tab until `locator` has focus (at most `max` presses): keyboard only navigation. */

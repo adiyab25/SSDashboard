@@ -31,6 +31,7 @@ import {
   makeLocationOnline,
   runGateAction,
 } from './inventory-api';
+import { HoldOpenOrdersResult } from './hold-open-orders-result';
 import { OnlineGateCheckRow } from './online-gate-check-row';
 import { OnlineReasonField } from './online-reason-field';
 import { OnlineReasonForm } from './online-reason-form';
@@ -55,9 +56,21 @@ function errorCode(error: unknown): KnownCode | 'generic' {
     : 'generic';
 }
 
+/** Api error codes a gate action has its own message for (spec 0013 AC-26). */
+const ACTION_KNOWN = ['LOCATION_NOT_FOUND', 'BUSY'] as const;
+
+/** The message of a failed gate action: its own sentence for a known code, else "try again". */
+function actionErrorKey(error: unknown) {
+  if (error instanceof ApiError && (ACTION_KNOWN as readonly string[]).includes(error.code)) {
+    return `orders.onlineGate.errors.${error.code as (typeof ACTION_KNOWN)[number]}` as const;
+  }
+  return 'inventory.onlineGate.actionFailed' as const;
+}
+
 /**
  * The online gate of one warehouse (spec 0011 AC-19, AC-16): every check with its count, the fix
- * a failed check points to, the built in "stock is counted" confirmation, the numbers the move
+ * a failed check points to (run for this location, with the counts "Hold the open orders here"
+ * answers), the built in "stock is counted" confirmation, the numbers the move
  * will change, and the move itself with a required written reason. The count sent is the one on
  * screen; when the numbers moved meanwhile (409 stale) or a check failed (409 failed) the gate is
  * read again and the person looks once more. It must never move the flag without that reason, and
@@ -105,7 +118,7 @@ export function OnlineGateDialog({
   });
 
   const action = useMutation({
-    mutationFn: runGateAction,
+    mutationFn: (run: Parameters<typeof runGateAction>[0]) => runGateAction(run, location.id),
     onSettled: () => void reread(),
   });
 
@@ -230,8 +243,11 @@ export function OnlineGateDialog({
                 </ul>
                 {action.isError && (
                   <Alert variant="destructive" role="alert">
-                    <AlertDescription>{t('inventory.onlineGate.actionFailed')}</AlertDescription>
+                    <AlertDescription>{t(actionErrorKey(action.error))}</AlertDescription>
                   </Alert>
+                )}
+                {action.data?.kind === 'held' && (
+                  <HoldOpenOrdersResult result={action.data.result} />
                 )}
                 {counted && !counted.passed && (
                   <Button

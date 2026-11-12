@@ -143,6 +143,21 @@ describe('OrderActions (AC-7, AC-8, AC-20)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('has not reached the sales channel');
   });
 
+  it('says a pack is refused while a line is short of stock (AC-7, Q-16.5)', async () => {
+    me.current = PACKER;
+    const user = userEvent.setup();
+    api.moveOrder.mockRejectedValue(new ApiError(409, { code: 'LINE_SHORT' }));
+    renderWithQuery(<OrderActions order={orderDetailOf({ fulfillmentState: 'confirmed' })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Pack' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A line is short of stock, so the order cannot be packed yet.',
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Pack' })).toBeEnabled();
+  });
+
   it('swaps the Edit button for a calm note when the api says the order is edited in Shopify', async () => {
     const user = userEvent.setup();
     const order: OrderDetail = orderDetailOf({ fulfillmentState: 'confirmed' });
