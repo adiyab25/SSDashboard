@@ -229,6 +229,7 @@ describe('mapShopifyOrder', () => {
     });
     const refunded = changed('order-prepaid-gateway/01-order-read.json', (order) => {
       order.transactions.push({
+        id: 'gid://shopify/OrderTransaction/2220000005002',
         kind: 'REFUND',
         status: 'SUCCESS',
         gateway: 'Fixture Card Gateway',
@@ -490,7 +491,7 @@ describe('mapShopifyOrder', () => {
         ];
       }
     });
-    expect(ORDER_READ_TAX_LINES_PAGE).toBe(10);
+    expect(ORDER_READ_TAX_LINES_PAGE).toBe(4);
     expect(mapShopifyOrder(three, CONTEXT).input.lines[0]?.taxRate).toBe('15.50');
   });
 
@@ -516,6 +517,23 @@ describe('mapShopifyOrder', () => {
     expect(thrown(() => mapShopifyOrder(blank, CONTEXT))).toMatchObject({
       code: 'CONTRACT_REFUSED',
     });
+  });
+});
+
+describe('parseShopifyOrder: a fulfillment after the order update (security review L3 residual)', () => {
+  it('refuses a fulfillment created more than a day after the order updatedAt, naming the path only', () => {
+    const json = JSON.parse(
+      readFileSync(`${FIXTURES}order-cancelled-customer/02-order-read.json`, 'utf8'),
+    ) as { response: { body: { data: { order: { fulfillments: { createdAt: string }[] } } } } };
+    const order = json.response.body.data.order;
+    expect(() => parseShopifyOrder(order)).not.toThrow();
+    const first = order.fulfillments[0];
+    if (!first) throw new Error('fixture fulfillment');
+    first.createdAt = '9999-12-31T23:59:59Z';
+    const error = thrown(() => parseShopifyOrder(order));
+    expect(error).toBeInstanceOf(ShopifyOrderMappingError);
+    expect((error as ShopifyOrderMappingError).code).toBe('ORDER_UNREADABLE');
+    expect((error as ShopifyOrderMappingError).paths).toEqual(['fulfillments.0.createdAt']);
   });
 });
 

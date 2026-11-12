@@ -9,7 +9,12 @@ import { ReconciliationService } from './ledger/reconciliation.service.js';
 import { LocationPolicyService } from './locations/location-policy.service.js';
 import { LocationsController } from './locations/locations.controller.js';
 import { LocationsService } from './locations/locations.service.js';
+import { OnlineLocationController } from './locations/online-location.controller.js';
+import { OnlineLocationService } from './locations/online-location.service.js';
 import { OwnerPoliciesController } from './locations/owner-policies.controller.js';
+import { OnlineStatusController } from './online-stock/online-status.controller.js';
+import { OnlineStockGate } from './online-stock/online-stock-gate.js';
+import { OnlineStockService } from './online-stock/online-stock.service.js';
 import { ReceiptsController } from './receipts/receipts.controller.js';
 import { ReceiptsService } from './receipts/receipts.service.js';
 import { SkuLifecycleController } from './sku-lifecycle/sku-lifecycle.controller.js';
@@ -23,11 +28,15 @@ import { StockService } from './stock/stock.service.js';
  * other audited actions through the audit module's exported `AuditService`. Asks the partners
  * module's `PartnerAccounts` whether a location's party holds the owner type's role. Serves the
  * owner type policy edit of the settings screen (spec 0009, AC-24), since it owns that table.
+ * Serves the online stock read for channels and the registry of online gate checks other modules
+ * fill (spec 0011); channels and connectors read through `OnlineStockService`, never post.
  */
 @Module({
   imports: [PlatformModule, CatalogModule, StaffDirectoryModule, AuditModule, PartnersModule],
   controllers: [
     LocationsController,
+    OnlineLocationController,
+    OnlineStatusController,
     OwnerPoliciesController,
     ReceiptsController,
     StockController,
@@ -38,10 +47,19 @@ import { StockService } from './stock/stock.service.js';
     ReconciliationService,
     LocationsService,
     LocationPolicyService,
+    OnlineLocationService,
+    OnlineStockService,
+    OnlineStockGate,
     ReceiptsService,
     StockService,
     SkuLifecycleService,
   ],
-  exports: [LedgerService, ReconciliationService, LocationPolicyService],
+  exports: [
+    LedgerService,
+    ReconciliationService,
+    LocationPolicyService,
+    OnlineStockService,
+    OnlineStockGate,
+  ],
 })
 export class InventoryModule {}

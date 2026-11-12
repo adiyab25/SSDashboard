@@ -7,6 +7,7 @@ The stock levels page at `/stock`, stock receipts at `/stock-receipts` (list, ne
 - Stock: [stock-page.tsx](stock-page.tsx), [stock-view.tsx](stock-view.tsx), [confirm-action-dialog.tsx](confirm-action-dialog.tsx)
 - Receipts: [receipts-page.tsx](receipts-page.tsx), [receipts-view.tsx](receipts-view.tsx), [receipt-form-page.tsx](receipt-form-page.tsx), [receipt-form-view.tsx](receipt-form-view.tsx), [receipt-form-skeleton.tsx](receipt-form-skeleton.tsx), [receipt-detail-page.tsx](receipt-detail-page.tsx), [receipt-detail-view.tsx](receipt-detail-view.tsx), [void-receipt-dialog.tsx](void-receipt-dialog.tsx), [sku-picker.tsx](sku-picker.tsx)
 - Locations: [locations-page.tsx](locations-page.tsx), [locations-view.tsx](locations-view.tsx), [new-location-dialog.tsx](new-location-dialog.tsx), [location-edit-dialog.tsx](location-edit-dialog.tsx)
+- Online stock (spec 0011): [online-gate-dialog.tsx](online-gate-dialog.tsx) (the gate: checks, counts, confirm stock counted, move with a written reason), [online-gate-check-row.tsx](online-gate-check-row.tsx), [stop-online-dialog.tsx](stop-online-dialog.tsx), [online-reason-field.tsx](online-reason-field.tsx), [online-status-notice.tsx](online-status-notice.tsx) (the "No location feeds online stock" line on the Stock and Locations pages)
 - Calls to the api: [inventory-api.ts](inventory-api.ts)
 - Routes under `src/app/(backoffice)`: `stock`, `stock-receipts`, `locations`
 

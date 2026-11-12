@@ -14,11 +14,15 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
+  BackfillBody,
   ConnectionListQuery,
   ConnectShopifyBody,
+  SyncRunListQuery,
   type ConnectionDetail,
   type ConnectionListResponse,
   type ConnectShopifyResponse,
+  type SyncRunListResponse,
+  type SyncRunStarted,
 } from '@ssdashboard/contracts';
 import { ChannelsError } from '../../channels/channels.errors.js';
 import type { AuthenticatedRequest } from '../../identity/sign-in/current-staff.js';
@@ -68,7 +72,21 @@ export function connectionHttpError(error: unknown): unknown {
       case 'SHOP_ALREADY_CONNECTED':
       case 'STORE_CODE_TAKEN':
       case 'CONNECTION_ARCHIVED':
+      case 'SCAN_RUNNING':
+      case 'BACKFILL_RUNNING':
+      case 'CONNECTION_NOT_READY':
+      case 'CONNECTION_PAUSED':
+      case 'GO_LIVE_ALREADY_SET':
+      case 'GATEWAYS_TOO_MANY':
         return new ConflictException({ code: error.code, message: error.message });
+      case 'GO_LIVE_OUT_OF_RANGE':
+        return new UnprocessableEntityException({ code: error.code, message: error.message });
+      case 'GATEWAYS_UNMAPPED':
+        return new ConflictException({
+          code: error.code,
+          message: error.message,
+          gateways: [...error.gateways],
+        });
       case 'INVALID_CURSOR':
         return new BadRequestException({ code: 'INVALID_QUERY', message: error.message });
     }
@@ -81,9 +99,11 @@ export function connectionHttpError(error: unknown): unknown {
 
 /**
  * The connections of the brand's outside accounts (spec 0015 task 6, AC-1, AC-27): the list,
- * connecting a Shopify store, one connection, and a new connect check. Manager only
+ * connecting a Shopify store, one connection, and a new connect check; from task 12 (AC-17) the
+ * gateway scan, the first backfill with its go live instant, and the sync runs. Manager only
  * (`settings.manage`). Never answers a credential or a token: only that keys are set and the last
- * 4 characters of the client id. The rest of the spec's routes land with their tasks.
+ * 4 characters of the client id. The rest of the spec's routes land with their tasks; the
+ * freshness line is `FreshnessController` (`orders.view`).
  */
 @Audience('staff')
 @RequiresModule('connectors')
@@ -142,6 +162,73 @@ export class ConnectionsController {
     try {
       await this.connections.check(id);
       return {};
+    } catch (error) {
+      throw connectionHttpError(error);
+    }
+  }
+
+  /**
+   * Starts a gateway scan (spec 0015 task 12, AC-17): 202 `{ runId }`; 404 `NOT_FOUND`; 409
+   * `SCAN_RUNNING`, `CONNECTION_ARCHIVED`, or `CONNECTION_PAUSED`. Audited
+   * (`connection.gateway_scan_started`).
+   */
+  @Post(':id/gateway-scan')
+  @HttpCode(202)
+  async gatewayScan(
+    @Param('id', connectionId()) id: string,
+    @Req() request: AuthenticatedRequest,
+    @CurrentAccess() access: Access,
+  ): Promise<SyncRunStarted> {
+    try {
+      return await this.connections.startGatewayScan(id, { userId: request.staff.id, access });
+    } catch (error) {
+      throw connectionHttpError(error);
+    }
+  }
+
+  /**
+   * Starts the first backfill with its go live instant, or resumes or redoes it with the same
+   * instant (AC-17, lead decision D11): 202 `{ runId }`; 404 `NOT_FOUND`; 409 `BACKFILL_RUNNING`,
+   * `CONNECTION_NOT_READY`, `CONNECTION_PAUSED`, `GO_LIVE_ALREADY_SET`, `GATEWAYS_TOO_MANY`, or
+   * `GATEWAYS_UNMAPPED` (with `gateways`, the scanned names still unmapped); 422 `INVALID_BODY` or
+   * `GO_LIVE_OUT_OF_RANGE`.
+   */
+  @Post(':id/backfill')
+  @HttpCode(202)
+  async backfill(
+    @Param('id', connectionId()) id: string,
+    @Body() body: unknown,
+    @Req() request: AuthenticatedRequest,
+    @CurrentAccess() access: Access,
+  ): Promise<SyncRunStarted> {
+    const parsed = BackfillBody.safeParse(body ?? {});
+    if (!parsed.success) {
+      throw new UnprocessableEntityException({
+        code: 'INVALID_BODY',
+        message: 'The go live instant must be an ISO date and time',
+        issues: [...new Set(parsed.error.issues.map((issue) => issue.path.join('.')))].map(
+          (path) => ({ path }),
+        ),
+      });
+    }
+    try {
+      return await this.connections.startBackfill(id, parsed.data, {
+        userId: request.staff.id,
+        access,
+      });
+    } catch (error) {
+      throw connectionHttpError(error);
+    }
+  }
+
+  /** A connection's sync runs, newest first (`kind?`, `cursor?`, `limit?`); 404 `NOT_FOUND`. */
+  @Get(':id/sync-runs')
+  async syncRuns(
+    @Param('id', connectionId()) id: string,
+    @Query(new ZodQueryPipe(SyncRunListQuery)) query: SyncRunListQuery,
+  ): Promise<SyncRunListResponse> {
+    try {
+      return await this.connections.syncRuns(id, query);
     } catch (error) {
       throw connectionHttpError(error);
     }

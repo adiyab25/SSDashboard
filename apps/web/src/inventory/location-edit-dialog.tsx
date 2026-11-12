@@ -51,7 +51,13 @@ type EditOutput = z.output<typeof EditLocationForm>;
 
 const KINDS = ['warehouse', 'shop'] as const;
 
-const KNOWN = ['STALE_RECORD', 'CODE_LOCKED', 'LOCATION_CODE_TAKEN', 'BUSY'] as const;
+const KNOWN = [
+  'STALE_RECORD',
+  'CODE_LOCKED',
+  'LOCATION_CODE_TAKEN',
+  'BUSY',
+  'ONLINE_NEEDS_WAREHOUSE',
+] as const;
 type KnownCode = (typeof KNOWN)[number];
 
 const valuesOf = (location: LocationDetail): EditInput => ({

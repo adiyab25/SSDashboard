@@ -51,6 +51,7 @@ import {
   WEBHOOK_SUBSCRIPTIONS,
   WEBHOOK_SUBSCRIPTIONS_OPERATION,
 } from './shopify-queries.js';
+import { StorableShopifyText } from './storable-text.js';
 
 /** Locations read at connect (one page; Shopify caps an input page at 250). */
 export const CONNECT_LOCATIONS_PAGE = 50;
@@ -63,9 +64,11 @@ const WEBHOOK_SUBSCRIPTIONS_MAX_PAGES = 10;
 // transient `INVALID_RESPONSE` (retried), never a crash with the body in the message.
 const ShopAnswer = z.object({
   shop: z.object({
-    name: z.string().min(1),
+    // Stored verbatim (the store's names, `config.shopTimezone` in `jsonb`): storable text only
+    // (security review N4), else the transient `INVALID_RESPONSE`.
+    name: StorableShopifyText.pipe(z.string().min(1)),
     currencyCode: z.string().min(1),
-    ianaTimezone: z.string().min(1),
+    ianaTimezone: StorableShopifyText.pipe(z.string().min(1)),
   }),
 });
 const ScopesAnswer = z.object({

@@ -10,7 +10,7 @@ The single writer of stock movements, and the locations it moves stock between. 
 Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner decision Q-11.6): a minimal consignment partner record and numbered send to and return from a showroom, so partner stock leaves the online count from the first move.
 - [x] Design it (spec): `/architect stock ledger & locations`
 - [ ] Build it: `/develop stock ledger & locations`
-  - [ ] The gated online location and the online stock read
+  - [x] The gated online location and the online stock read
   - [ ] Reservations, waiting demand, carrier shipments, and catalog locks
   - [ ] Partners, owner type screens, and showroom moves
   - [ ] Adjustments, adjustment requests, and the receipt cost rule
@@ -42,7 +42,7 @@ Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out fr
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
   - [ ] Recorded fixtures and one order through a signed webhook (tasks 2 to 7 built 2026-11-08 on synthetic fixtures: one order through a signed webhook works; task 1, recording from a Shopify development store, waits for the store)
-  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08)
+  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08) (tasks 9 to 12 built: orders in full and customer webhooks 2026-11-08, edit netting, exchange by edit, and the sync jobs 2026-11-09; task 8 products waits for spec 0012's catalog sync and task 9a for spec 0013's stock out)
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
   - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)

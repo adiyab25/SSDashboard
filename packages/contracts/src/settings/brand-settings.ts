@@ -25,6 +25,8 @@ export const DOCUMENT_PREFIX_DEFAULTS = {
   CNT: 'CNT',
   MO: 'MO',
   stock_receipt: 'SR',
+  // Showroom moves (spec 0011 AC-25), `TR-YYYY-NNNNNN`; migration 0015 merges it into stored prefixes.
+  stock_transfer: 'TR',
 } as const;
 
 /** A document type that takes a number. */
