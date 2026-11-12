@@ -672,7 +672,8 @@ export class LedgerService {
         UPDATE reservations
         SET open_quantity = ${open},
             status = ${open === 0 ? 'released' : 'active'}::reservation_status,
-            closed_at = ${open === 0 ? sql`now()` : sql`NULL`}
+            closed_at = ${open === 0 ? sql`now()` : sql`NULL`},
+            updated_at = now()
         WHERE id = ${current.id}
         RETURNING *`);
       return this.toReservation(rows[0]);
@@ -1190,7 +1191,8 @@ export class LedgerService {
       await tx.execute(sql`
         UPDATE reservations r
         SET open_quantity = v.open_quantity, status = v.status,
-            closed_at = CASE WHEN v.status = 'active' THEN NULL ELSE now() END
+            closed_at = CASE WHEN v.status = 'active' THEN NULL ELSE now() END,
+            updated_at = now()
         FROM unnest(
           ${pgArray(touched.map((r) => r.id))}::uuid[],
           ${pgArray(touched.map((r) => r.open_quantity))}::int[],

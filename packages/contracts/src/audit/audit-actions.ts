@@ -79,6 +79,9 @@ const CUSTOMERS_PROOF = 'apps/api/test/customers-audit.e2e-spec.ts';
 /** The proof test of the inventory master data actions (SKUs and locations). */
 const INVENTORY_PROOF = 'apps/api/test/audit-inventory.e2e-spec.ts';
 
+/** The proof test of the online location actions (spec 0011). */
+const ONLINE_STOCK_PROOF = 'apps/api/test/online-stock.e2e-spec.ts';
+
 /** The proof test of the style, variant, and barcode actions (spec 0012). */
 const STYLES_PROOF = 'apps/api/test/styles.e2e-spec.ts';
 
@@ -221,6 +224,36 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     label: 'audit.actions.locationUnarchived',
     proof: INVENTORY_PROOF,
+  },
+  // Spec 0011 AC-19: the gated actions that decide which location feeds online stock. The label is
+  // the location code. The stock confirmation is the gate's "stock counted" fact; moving and
+  // stopping need a written reason. Proven by the online stock e2e suite.
+  'location.stock_confirmed': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationStockConfirmed',
+    proof: ONLINE_STOCK_PROOF,
+  },
+  'location.online_moved': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationOnlineMoved',
+    proof: ONLINE_STOCK_PROOF,
+  },
+  'location.online_stopped': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationOnlineStopped',
+    proof: ONLINE_STOCK_PROOF,
   },
   // Spec 0009, AC-3: every settings write, module toggle, and step switch. The record id is the
   // setting's stable uuid (`settingRecordId`, from its key) and the label is the key. Optional

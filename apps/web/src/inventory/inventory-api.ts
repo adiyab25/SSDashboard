@@ -1,5 +1,8 @@
 import {
   LocationDetail,
+  OnlineGateView,
+  OnlineStatusResponse,
+  StopOnlineResponse,
   LocationListResponse,
   SkuDetail,
   SkuListResponse,
@@ -12,6 +15,8 @@ import {
   type CreateLocationRequest,
   type CreateProductRequest,
   type CreateStockReceiptRequest,
+  type MakeLocationOnlineRequest,
+  type OnlineGateAction,
   type ChangeSkuCodeRequest,
   type LocationStatus,
   type SeasonFilter,
@@ -61,6 +66,10 @@ export const inventoryKeys = {
   receipts: (locationId: LocationChoice, q: string) =>
     ['stock-receipts', 'list', locationId, q] as const,
   receiptsAll: ['stock-receipts', 'list'] as const,
+  /** Which location feeds online stock, or none (spec 0011 AC-20). */
+  onlineStatus: ['online-status'] as const,
+  /** One location's online gate. */
+  onlineGate: (locationId: string) => ['locations', 'online-gate', locationId] as const,
 };
 
 /** The Stock page filters (AC-9): `skuId` narrows to one SKU, `includeZero` adds rows back at 0. */
@@ -218,3 +227,27 @@ export const setLocationArchived = (id: string, archived: boolean) =>
 
 /** Deletes a location with no stock or documents (`catalog.manage`). */
 export const deleteLocation = (id: string) => apiRequest('DELETE', locationPath(id), noContent);
+
+/** `GET /api/stock/online-status` (`stock.view`): the online location, or null (spec 0011 AC-20). */
+export const getOnlineStatus = (signal?: AbortSignal) =>
+  apiRequest('GET', '/api/stock/online-status', OnlineStatusResponse, { signal });
+
+/** `GET /api/locations/:id/online-gate` (`catalog.manage`): the checks and counts (spec 0011 AC-19). */
+export const getOnlineGate = (id: string, signal?: AbortSignal) =>
+  apiRequest('GET', `${locationPath(id)}/online-gate`, OnlineGateView, { signal });
+
+/** `POST /api/locations/:id/confirm-stock`: a manager confirms the location's stock is counted. */
+export const confirmLocationStock = (id: string) =>
+  apiRequest('POST', `${locationPath(id)}/confirm-stock`, LocationDetail, { body: {} });
+
+/** `POST /api/locations/:id/make-online`: moves the online flag here, with the count the manager saw. */
+export const makeLocationOnline = (id: string, body: MakeLocationOnlineRequest) =>
+  apiRequest('POST', `${locationPath(id)}/make-online`, LocationDetail, { body });
+
+/** `POST /api/locations/online/stop`: turns online stock off, with a written reason. */
+export const stopOnlineStock = (reason: string) =>
+  apiRequest('POST', '/api/locations/online/stop', StopOnlineResponse, { body: { reason } });
+
+/** Runs the route a failed gate check points to; the answer is ignored, the gate is read again. */
+export const runGateAction = (action: Pick<OnlineGateAction, 'method' | 'path'>) =>
+  apiRequest(action.method, action.path, noContent, { body: {} });
