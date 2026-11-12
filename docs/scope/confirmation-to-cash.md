@@ -99,11 +99,23 @@ Where support confirms every order before it ships: oldest first, grouped by pho
 The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
 - [ ] Design it (spec): `/architect confirmation queue`
 
-### 19. Bosta connector, mirror mode · GA · needs a decision
+### 19. Bosta connector, mirror mode · GA
 Read the deliveries the carrier's own Shopify app created, with their states, fees, and cash cycles, without executing anything.
 **Done when:** tracking updates move the order's states; attention rules flag exceptions or holds, stuck at pickup over two days, no movement over three days, the carrier's delayed flag, two or more attempts, and stalled after 48 hours; fees and cash cycle amounts come from the per delivery detail and are never overwritten by a list sync that lacks them; recorded fixtures replay green with no live call.
 Also from spec 0007: works with one Bosta account for all stores or one per store; a delivery's store comes from the account's binding, else from its business reference or Shopify store name.
-- [ ] Design it (spec): `/architect bosta connector, mirror mode`
+Also from spec 0018: the order stays editable while Bosta reports pickup requested, and a COD difference after a confirmation edit is a stale carrier record with an operations task before support reconfirms (with spec 0017); the connector keeps Bosta's cities, zones, and districts for address fixing.
+- [x] Design it (spec): `/architect bosta connector, mirror mode`
+- [ ] Build it: `/develop bosta connector, mirror mode`
+  - [ ] One delivery from a verified webhook to a moved order (AC-1, AC-2, AC-4 to AC-7, AC-9, AC-13, AC-14, AC-26, AC-27)
+  - [ ] Every state, the list pass, the cash cycle sweep, linking, and the wind down (AC-6, AC-8 to AC-19, AC-24, AC-25)
+  - [ ] The stale carrier record, attention, and carrier areas (AC-20 to AC-22, AC-28, AC-29, AC-30)
+  - [ ] Screens, freshness, and the runbook (AC-2, AC-3, AC-23, AC-27, AC-28)
+  - [ ] Record the fixtures from the pilot brand's Read Only key (owner decision Q-19.6: synthetic until then; not done before)
+- [ ] Verify it: `/check verify bosta connector, mirror mode`
+- [ ] Test it: `/test bosta connector, mirror mode`
+- [ ] Review it (fresh model): `/check review bosta connector, mirror mode`
+- [ ] Document it: `/document bosta connector, mirror mode`
+Spec [0018](../specs/0018-bosta-connector-mirror-mode/index.md) (Proposed 2026-11-12; owner decisions Q-19.1 to Q-19.6 taken as recommended, awaiting the owner)
 
 ### 20. Barcode scanning · needs a decision
 Scan to find a variant and scan to move stock, on a phone camera or a handheld scanner, starting with restock of returned pieces.
