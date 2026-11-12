@@ -1,0 +1,67 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "scenario": "round-tee",
+    "step": "a tee in three sizes and one color, each with a barcode",
+    "shape": "ChannelProductInput (packages/contracts/src/catalog/channel-product.ts), already mapped from a Shopify product; the mapping is spec 0015's"
+  },
+  "input": {
+    "storeId": "00000000-0000-4000-8000-000000000000",
+    "externalProductId": "gid://shopify/Product/9001",
+    "styleId": null,
+    "handle": "round-tee",
+    "title": "Round Tee",
+    "productType": "Tops",
+    "vendor": "Fixture Brand",
+    "tags": ["summer", "cotton"],
+    "options": [
+      {
+        "name": "Size",
+        "values": ["S", "M", "L"]
+      },
+      {
+        "name": "Color",
+        "values": ["Black"]
+      }
+    ],
+    "variants": [
+      {
+        "externalVariantId": "gid://shopify/ProductVariant/90011",
+        "variantId": null,
+        "sku": "TEE-BLK-S",
+        "optionValues": ["S", "Black"],
+        "price": "250.00",
+        "compareAtPrice": null,
+        "barcode": "622000000001",
+        "weightGrams": 250,
+        "requiresShipping": true,
+        "tracked": true
+      },
+      {
+        "externalVariantId": "gid://shopify/ProductVariant/90012",
+        "variantId": null,
+        "sku": "TEE-BLK-M",
+        "optionValues": ["M", "Black"],
+        "price": "250.00",
+        "compareAtPrice": null,
+        "barcode": "622000000002",
+        "weightGrams": 250,
+        "requiresShipping": true,
+        "tracked": true
+      },
+      {
+        "externalVariantId": "gid://shopify/ProductVariant/90013",
+        "variantId": null,
+        "sku": "TEE-BLK-L",
+        "optionValues": ["L", "Black"],
+        "price": "260.00",
+        "compareAtPrice": null,
+        "barcode": "622000000003",
+        "weightGrams": 250,
+        "requiresShipping": true,
+        "tracked": true
+      }
+    ]
+  }
+}

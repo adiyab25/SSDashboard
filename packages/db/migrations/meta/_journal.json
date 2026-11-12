@@ -141,6 +141,13 @@
       "when": 1794435036261,
       "tag": "0019_stock_transfer_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794485334556,
+      "tag": "0020_catalog_channel_link",
+      "breakpoints": true
     }
   ]
 }

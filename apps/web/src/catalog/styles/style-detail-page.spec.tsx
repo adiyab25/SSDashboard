@@ -61,7 +61,11 @@ const GROUP = {
   name: { en: 'Tops', ar: 'قمصان' },
 };
 const MAIN = { id: '20000000-0000-4000-8000-000000000001', code: 'MAIN', name: { en: 'Main' } };
-const BARCODE = { id: '50000000-0000-4000-8000-000000000001', code: '6221234567890' };
+const BARCODE = {
+  id: '50000000-0000-4000-8000-000000000001',
+  code: '6221234567890',
+  fromChannel: false,
+};
 
 const detail = (overrides: Partial<StyleDetail> = {}): StyleDetail => ({
   id: STYLE_ID,
@@ -75,6 +79,8 @@ const detail = (overrides: Partial<StyleDetail> = {}): StyleDetail => ({
   brand: null,
   archived: false,
   updatedAt: '2026-11-03T10:00:00.123456Z',
+  channelLinked: false,
+  channelNameLanguage: null,
   options: [
     {
       id: '60000000-0000-4000-8000-000000000001',
@@ -91,6 +97,7 @@ const detail = (overrides: Partial<StyleDetail> = {}): StyleDetail => ({
       options: [{ name: { en: 'Size', ar: 'المقاس' }, value: { en: 'M', ar: 'وسط' } }],
       price: '250.00',
       archived: false,
+      channelLinked: false,
       barcodes: [BARCODE],
     },
   ],
@@ -111,6 +118,8 @@ const sku = (overrides: Partial<SkuDetail> = {}): SkuDetail => ({
   status: 'active',
   updatedAt: 'x',
   barcodes: [BARCODE],
+  channelLinked: false,
+  channelNameLanguage: null,
   ...overrides,
 });
 
@@ -469,7 +478,12 @@ describe('Barcodes dialog (spec 0012, AC-10)', () => {
     api.addBarcode
       .mockRejectedValueOnce(new ApiError(409, { code: 'BARCODE_TAKEN', skuCode: 'SHIRT-S' }))
       .mockResolvedValueOnce(
-        sku({ barcodes: [BARCODE, { id: '50000000-0000-4000-8000-000000000002', code: 'NEW1' }] }),
+        sku({
+          barcodes: [
+            BARCODE,
+            { id: '50000000-0000-4000-8000-000000000002', code: 'NEW1', fromChannel: false },
+          ],
+        }),
       );
     const field = within(dialog).getByLabelText('New barcode');
     await userEvent.type(field, 'new1');

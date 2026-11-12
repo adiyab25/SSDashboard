@@ -98,6 +98,9 @@ const GROUPINGS_PROOF = 'apps/api/test/seasons-groups.e2e-spec.ts';
 /** The proof test of the cost record action (spec 0012 milestone 3). */
 const COST_PROOF = 'apps/api/test/cost.e2e-spec.ts';
 
+/** The proof test of the channel sync actions (spec 0012 milestone 4). */
+const CHANNEL_SYNC_PROOF = 'apps/api/test/channel-sync.e2e-spec.ts';
+
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
  * adds its code here in the same change that builds the action, with its label keys and its proof
@@ -632,6 +635,76 @@ export const AUDIT_ACTIONS = {
     costEntry: true,
     label: 'audit.actions.costRecordRecorded',
     proof: COST_PROOF,
+  },
+  // Spec 0012 milestone 4 (AC-14, AC-17): what `CatalogChannelSync.applyProduct` changed, written
+  // as the caller's `system_job` actor with the before and after of the changed fields only (plus
+  // the channel's store and product ids under `channel`). Automatic, no typed reason, and final:
+  // an undo would be written back by the channel on its next sync.
+  'style.channel_created': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.styleChannelCreated',
+    proof: CHANNEL_SYNC_PROOF,
+  },
+  'style.channel_updated': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.styleChannelUpdated',
+    proof: CHANNEL_SYNC_PROOF,
+  },
+  'sku.channel_created': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.skuChannelCreated',
+    proof: CHANNEL_SYNC_PROOF,
+  },
+  'sku.channel_linked': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.skuChannelLinked',
+    proof: CHANNEL_SYNC_PROOF,
+  },
+  'sku.channel_updated': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.skuChannelUpdated',
+    proof: CHANNEL_SYNC_PROOF,
+  },
+  // Spec 0012 milestone 4 fix round (lead ruling 2026-11-11): `CatalogChannelSync.unlink` gave a
+  // style's or a variant's channel fields back to the app, written as the caller's `system_job`
+  // actor. Final: an undo would link a record the channel no longer sends.
+  'style.channel_unlinked': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.styleChannelUnlinked',
+    proof: CHANNEL_SYNC_PROOF,
+  },
+  'sku.channel_unlinked': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: true,
+    undoable: false,
+    label: 'audit.actions.skuChannelUnlinked',
+    proof: CHANNEL_SYNC_PROOF,
   },
 } as const satisfies Record<string, AuditActionDefinition>;
 

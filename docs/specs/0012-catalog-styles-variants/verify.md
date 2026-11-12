@@ -16,7 +16,7 @@ _Steps derived from spec 0012 acceptance criteria and its Value sourcing table. 
 - [x] Record a cost dated last month without a reason → the dialog asks for a reason (422 `REASON_REQUIRED`); with one → saved and listed first in the history → AC-13
 - [x] As a `warehouse` person without the cost grant, open the same style → no cost column, no history panel, no record cost action → AC-12, AC-16
 - [x] As a `support` person (no `catalog.edit`), open a style → no edit, add variant, or barcode actions; open `/seasons` by its address → the no access state → AC-16, AC-18
-- [ ] On a style created by the channel fixture, the name in the title's language and each variant's price show "From Shopify" read only → AC-15, AC-18
+- [x] On a style created by the channel fixture, the name in the title's language and each variant's price show "From Shopify" read only → AC-15, AC-18
 - [ ] Switch to Arabic → every catalog page is right to left with Arabic labels, codes stay left to right; keyboard only (Tab, Enter, Escape) edits a style and assigns a season; at phone width the tables show as cards; axe reports no violation in either language → AC-18
 
 ## Commands
@@ -24,9 +24,9 @@ _Steps derived from spec 0012 acceptance criteria and its Value sourcing table. 
 - [x] `pnpm --filter @ssdashboard/api exec vitest run src/catalog` → the search SQL builder cases (three branches, short words, escaping, 5 word cap) pass → AC-3
 - [x] `pnpm build && pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts test/styles.e2e-spec.ts test/seasons-groups.e2e-spec.ts` → search, filters, styles, options, barcodes, archive, seasons, and groups pass → AC-3, AC-4, AC-6 to AC-11
 - [x] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/cost.e2e-spec.ts` → `costForMany` equals `costFor` per id, inherited and override, backdating reason, no `cost` key without the grant → AC-12, AC-13, AC-16
-- [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/channel-sync.e2e-spec.ts` → idempotent second run with no audit rows, Default Title, Arabic title, `needs_sku`, `linked`, two stores in parallel, non source store, `sku_mismatch`, `barcode_conflict`, `option_conflict` → AC-14, AC-15, AC-17
+- [x] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/channel-sync.e2e-spec.ts` → idempotent second run with no audit rows, Default Title, Arabic title, `needs_sku`, `linked`, two stores in parallel, non source store, `sku_mismatch`, `barcode_conflict`, `option_conflict` → AC-14, AC-15, AC-17
 - [x] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/access-sweep.e2e-spec.ts` → every new route answers 403 exactly where the matrix says, no `COST_FIELD_KEYS` key without `cost.view` → AC-16
-- [ ] `pnpm test` → the audit registry test finds every new code with both labels and its proof file → AC-17
+- [x] `pnpm test` → the audit registry test finds every new code with both labels and its proof file → AC-17
 - [ ] `pnpm --filter @ssdashboard/api test:scale` → the six search reads under 150 ms at p95 with `product_variants_search_trgm_idx`, `product_variants_sku_c_idx`, and `barcodes_code_unique` in their plans; record the measured values below → AC-5
 - [ ] `pnpm --filter @ssdashboard/web test:e2e -- e2e/styles.spec.ts e2e/master-data.spec.ts` → both languages, keyboard, axe, phone width → AC-18
 - [ ] `pnpm lint` → no hard coded string, logical CSS only, READMEs present for the new web folders → AC-18
@@ -36,9 +36,9 @@ _Steps derived from spec 0012 acceptance criteria and its Value sourcing table. 
 - [x] Search `TEE-BLK` and `tee blk` → the same rows (both normalized by `ssd_search_normalize`) → AC-3 (one normalization)
 - [x] Search with Arabic Indic digits for a barcode → found (digits through `normalizeDigits`) → AC-3
 - [ ] At 23:30 Cairo time, record a cost dated today without a reason → accepted (today is `ssd_operating_day(now())`, not the UTC date) → AC-13
-- [ ] Set `catalog.store_product_groups` for store B to `COLLECTIVE` and apply a new fixture product from store B → the new style is in `COLLECTIVE`; with the group archived → `MAIN` → AC-14
-- [ ] Set `catalog.source_store_id` to store A and apply a price change from store B → price unchanged, outcome `unchanged` → AC-15
-- [ ] Apply a product titled in Arabic → `channel_name_language = 'ar'`; editing the Arabic name in the app answers 409 `FIELD_OWNED_BY_CHANNEL`, the English name saves → AC-15
+- [x] Set `catalog.store_product_groups` for store B to `COLLECTIVE` and apply a new fixture product from store B → the new style is in `COLLECTIVE`; with the group archived → `MAIN` → AC-14
+- [x] Set `catalog.source_store_id` to store A and apply a price change from store B → price unchanged, outcome `unchanged` → AC-15
+- [x] Apply a product titled in Arabic → `channel_name_language = 'ar'`; editing the Arabic name in the app answers 409 `FIELD_OWNED_BY_CHANNEL`, the English name saves → AC-15
 
 ## Measured
 _Filled by milestone 1 task 5: the p95 of each search read at 50,000 variants and the date of the run._

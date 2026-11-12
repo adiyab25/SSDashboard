@@ -2141,6 +2141,13 @@ export const en = {
       productGroupUnarchived: 'Product group unarchived',
       productGroupDeleted: 'Product group deleted',
       costRecordRecorded: 'Cost recorded for a style',
+      styleChannelCreated: 'Style created from a sales channel',
+      styleChannelUpdated: 'Style updated from a sales channel',
+      skuChannelCreated: 'SKU created from a sales channel',
+      skuChannelLinked: 'SKU linked to a sales channel',
+      skuChannelUpdated: 'SKU updated from a sales channel',
+      styleChannelUnlinked: 'Style unlinked from a sales channel',
+      skuChannelUnlinked: 'SKU unlinked from a sales channel',
     },
   },
   // The settings registry of spec 0009 (AC-1): one label and description per entry, and the
@@ -3326,6 +3333,28 @@ export const en = {
         NOT_FOUND: 'This SKU or barcode no longer exists. Close and look again.',
         generic: 'The barcode could not be saved. Try again.',
       },
+    },
+    // Fields a sales channel owns while a style is linked (spec 0012, AC-15, AC-18).
+    channel: {
+      fromShopify: 'From Shopify',
+      readOnlyHint: 'This comes from Shopify. Change it there; it updates here on the next sync.',
+      nameIn: {
+        en: 'Name in English (from Shopify)',
+        ar: 'Name in Arabic (from Shopify)',
+      },
+      owned: {
+        price: 'The price comes from Shopify and can only be changed there.',
+        'name.en': 'The English name comes from Shopify and can only be changed there.',
+        'name.ar': 'The Arabic name comes from Shopify and can only be changed there.',
+        tags: 'The tags come from Shopify and can only be changed there.',
+        barcode: 'This barcode comes from Shopify and can only be changed there.',
+        options:
+          'The options and their values come from Shopify. New ones can only be added there.',
+        generic: 'This field comes from Shopify and can only be changed there.',
+      },
+      optionsLocked:
+        'The options come from Shopify. Pick from the values that already exist; new ones are added in Shopify.',
+      noNewOptions: 'This style has no options. A new option can only be added in Shopify.',
     },
   },
 } as const;
