@@ -363,7 +363,7 @@ Tracer bullet: milestone 1 is one real order confirmed end to end through every 
 - [ ] Spec 0008 (Igris routes): route mapping rows and access sweep fixtures for every route in the API table (`settlement.work` for the deposit check routes).
 - [ ] Spec 0009 (Igris routes): the settings rows above; the new executing step `step.shopify_order_tags_write_back`; `orders.confirmation_queue` already exists.
 - [ ] Spec 0010 (Igris routes): register `order.duplicates_merged`, `order.deposit_recorded`, and `order.deposit_verified`.
-- [ ] Feature 21: apply `shipping_deposit_on_refusal`, post `prepayment_release` for prepaid shares of lines returned to origin or lost (D2 answer).
+- [ ] Feature 21 (spec 0019, lane D; agreed 2026-11-12): apply `shipping_deposit_on_refusal` with this spec's values (default `kept_as_delivery_fee`; a cancel before pickup owes the whole deposit back), and publish `PrepaidShareOwed` for the prepaid share of each line returned to origin or lost; the credit slice turns it into the refund request and the `prepayment_release` posting, and until that slice exists it opens spec 0016's `refund.unrecorded_payout` on the order (D2 answer).
 - [ ] Features 24 and 25: read `ConfirmationQueries.metrics`; leave gifted orders and duplicates out of the confirm rate; show the delivered and returned to origin rate by `confirmed_by` (review m11).
 - [ ] Feature 28: show "customer owes" (a negative credit balance) on the card (spec 0002 decided default 5) once the credit module exists.
 - [ ] Feature 26: the onboarding step "create the Shopify view confirmed and not held per store" and the Bosta app setting chosen in Q-18.1.
