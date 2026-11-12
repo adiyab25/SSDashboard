@@ -30,7 +30,9 @@ export type OrdersErrorCode =
   | 'OrderStoreMissing'
   | 'ChannelLineIdConflict'
   | 'LineAlreadyMapped'
-  | 'PaymentMethodLocked';
+  | 'PaymentMethodLocked'
+  | 'LineShort'
+  | 'LocationNotFound';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -324,5 +326,27 @@ export class PaymentMethodLocked extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('PaymentMethodLocked', 'The payment method of this order can no longer be corrected');
+  }
+}
+
+/**
+ * Packing refused: an open line is still short of stock after the top up (spec 0013 AC-7, AC-13,
+ * owner decision Q-16.5). Names no line, phone, or person.
+ */
+export class LineShort extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('LineShort', 'A line is short of stock, so the order cannot be packed yet');
+  }
+}
+
+/**
+ * `hold-open-orders` named a location that does not exist, is archived, or could never feed
+ * online stock (spec 0013 AC-26).
+ */
+export class LocationNotFound extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('LocationNotFound', 'No active location that can feed online stock has that id');
   }
 }

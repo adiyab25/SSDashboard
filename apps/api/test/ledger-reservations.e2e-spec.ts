@@ -3,7 +3,7 @@ import { personActor, type ReservedLine } from '@ssdashboard/contracts';
 import { APP_ROLE, sql, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AuditService } from '../src/audit/audit.service.js';
-import { CatalogService } from '../src/catalog/catalog.service.js';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { DATABASE } from '../src/database/database.module.js';
 import type { Transaction } from '../src/database/sql.js';
 import {
@@ -1389,7 +1389,7 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
 
   describe('catalog row locks (AC-18)', () => {
     it('locks SKU rows and answers kind, tracking, and archived; absent ids are absent', async () => {
-      const catalog = api.app.get(CatalogService);
+      const catalog = api.app.get(CatalogLocks);
       const plain = await make.variant();
       const serial = await make.variant({ tracking: 'serial' });
       const archived = await make.variant();
@@ -1401,7 +1401,8 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
         update: await catalog.lockForUpdate(tx, [archived]),
       }));
 
-      expect([...share.keys()].sort()).toEqual([plain, serial, archived].sort());
+      // Rows come back, and so are locked, in ascending id order (lowercase uuids sort the same in JS).
+      expect([...share.keys()]).toEqual([plain, serial, archived].sort());
       expect(share.get(serial)).toMatchObject({
         kind: 'stocked',
         tracking: 'serial',
@@ -1414,7 +1415,7 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
     });
 
     it('makes a share lock wait for an update lock held by another transaction', async () => {
-      const catalog = api.app.get(CatalogService);
+      const catalog = api.app.get(CatalogLocks);
       const variant = await make.variant();
       let release: () => void = () => undefined;
       const held = new Promise<void>((resolve) => (release = resolve));

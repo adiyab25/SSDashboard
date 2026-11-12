@@ -1524,6 +1524,10 @@ export const ar: Catalog = {
   },
   // المواصفة 0013: تسميات حالات الطلب ونتائجه وأسبابه وروابطه وتنبيهاته. تضيف الشاشات مفاتيحها بجانبها.
   orders: {
+    onlineGate: {
+      openOrdersHeld: 'كل طلب مفتوح يحجز قطعه في هذا الموقع',
+      holdOpenOrders: 'احجز الطلبات المفتوحة هنا',
+    },
     fulfillment: {
       new: 'جديد',
       confirmed: 'مؤكد',

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { PostingInput, PostingLine } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
-import { CatalogService } from '../src/catalog/catalog.service.js';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { SettingsService } from '../src/platform/settings/settings.service.js';
@@ -34,7 +34,7 @@ export async function ledgerHarness(): Promise<LedgerHarness> {
     app,
     new SettingsService(app),
     new DomainEvents(),
-    new CatalogService(app),
+    new CatalogLocks(app),
   );
   return {
     ledger,

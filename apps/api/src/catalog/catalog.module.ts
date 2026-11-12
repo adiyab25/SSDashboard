@@ -4,6 +4,7 @@ import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { BarcodesController } from './barcodes/barcodes.controller.js';
 import { BarcodesService } from './barcodes/barcodes.service.js';
 import { CatalogController } from './catalog.controller.js';
+import { CatalogLocks } from './catalog-locks.service.js';
 import { CatalogService } from './catalog.service.js';
 import { CostRecordsController } from './cost-records/cost-records.controller.js';
 import { CostRecordsService } from './cost-records/cost-records.service.js';
@@ -17,7 +18,8 @@ import { StylesService } from './styles/styles.service.js';
 
 /**
  * Products and SKUs (spec 0006), styles, seasons, product groups, barcodes, and cost records
- * (spec 0012). Imports nothing from inventory; inventory imports this. Imports `AuditModule` for
+ * (spec 0012). Imports nothing from inventory; inventory imports this and locks SKU rows through
+ * `CatalogLocks` (spec 0011 AC-18). Imports `AuditModule` for
  * the entries of its person actions and `StaffDirectoryModule` for "recorded by" names.
  */
 @Module({
@@ -32,6 +34,7 @@ import { StylesService } from './styles/styles.service.js';
   ],
   providers: [
     CatalogService,
+    CatalogLocks,
     CostService,
     StylesService,
     SeasonsService,
@@ -39,6 +42,6 @@ import { StylesService } from './styles/styles.service.js';
     BarcodesService,
     CostRecordsService,
   ],
-  exports: [CatalogService, CostService],
+  exports: [CatalogService, CatalogLocks, CostService],
 })
 export class CatalogModule {}

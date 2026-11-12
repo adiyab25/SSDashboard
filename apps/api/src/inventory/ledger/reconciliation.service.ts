@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { StockLevel } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
-import { CatalogService } from '../../catalog/catalog.service.js';
+import { CatalogLocks } from '../../catalog/catalog-locks.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray } from '../../database/sql.js';
 import { LedgerError } from './ledger.errors.js';
@@ -19,7 +19,7 @@ export class ReconciliationService {
   /** Takes the app database connection. */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
-    @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Inject(CatalogLocks) private readonly catalog: CatalogLocks,
   ) {}
 
   /**

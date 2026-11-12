@@ -24,6 +24,7 @@ import {
 } from '../src/orders/orders.events.js';
 import { OrderTransitions } from '../src/orders/transitions/order-transitions.service.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
+import { stockedOnline } from './order-stock.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 
 // Spec 0013 milestone 2 (AC-2, AC-7 to AC-10, AC-12, AC-18, AC-19): editing, confirming,
@@ -196,6 +197,8 @@ describe(
       skuM = await sku('ED-M');
       skuL = await sku('ED-L');
       skuXl = await sku('ED-XL');
+      // Spec 0013 milestone 4: orders reserve at creation and pack refuses a short line.
+      await stockedOnline(api, [skuM, skuL, skuXl]);
       const events = api.app.get(DomainEvents);
       events.on(OrderEdited, (_tx, event) => void edited.push(event), 'orders-edit-e2e');
       events.on(OrderCancelled, (_tx, event) => void cancelled.push(event), 'orders-edit-e2e');

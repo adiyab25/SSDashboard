@@ -23,7 +23,7 @@ import {
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
-import { CatalogService } from '../../catalog/catalog.service.js';
+import { CatalogLocks } from '../../catalog/catalog-locks.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import {
   pgArray,
@@ -274,7 +274,7 @@ export class LedgerService {
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(DomainEvents) private readonly events: DomainEvents,
-    @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Inject(CatalogLocks) private readonly catalog: CatalogLocks,
   ) {}
 
   /** Posts one atomic group of movements. Replaying the same key returns the stored result. */

@@ -45,7 +45,7 @@ const NOTHING_TO_COLLECT_JOB = 'orders.nothing_to_collect';
  * with `nextState` and the guards it leaves to the service, writes the row and its event rows
  * through `OrderWriter`, and publishes its events, all in the caller's order transaction. It never
  * writes an order table itself, never opens or commits a transaction, and never moves a state
- * outside the transition tables. Stock calls go through `OrderStock` (milestone 4).
+ * outside the transition tables. Stock calls go through `OrderStock` (reserve, release, top up).
  */
 @Injectable()
 export class OrderTransitions {
@@ -59,8 +59,8 @@ export class OrderTransitions {
   ) {}
 
   /**
-   * `new` to `confirmed` by a person (AC-7): sets `confirmed_at` and `confirmed_by` and writes one
-   * event. Throws `OrderNotFound`, `OrderStale` when `expectedUpdatedAt` is given and differs, or
+   * `new` to `confirmed` by a person (AC-7): sets `confirmed_at` and `confirmed_by`, writes one
+   * event, and tops the order's short lines up (AC-13, a shortage never refuses a confirm). Throws `OrderNotFound`, `OrderStale` when `expectedUpdatedAt` is given and differs, or
    * `InvalidTransition` from any other state.
    */
   async confirm(
@@ -227,7 +227,8 @@ export class OrderTransitions {
   /**
    * `confirmed` to `packed` by a person with `fulfillment.work` (AC-7). Refused with
    * `WriteBackOpen` while `ConnectorsService.openCommandsFor('order', id, tx)` answers any command,
-   * whatever `write_back_state` says (carried B2); `LINE_SHORT` arrives with milestone 4. Throws
+   * whatever `write_back_state` says (carried B2), and with `LineShort` (409 `LINE_SHORT`) when an
+   * open line is still short after the top up (AC-13, Q-16.5), which rolls the pack back. Throws
    * `OrderNotFound`, `OrderStale`, or `InvalidTransition` from any other state.
    */
   async markPacked(

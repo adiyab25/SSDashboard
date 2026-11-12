@@ -17,6 +17,7 @@ import {
   type DatabaseConnection,
 } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { CatalogService } from '../src/catalog/catalog.service.js';
 import type { Transaction } from '../src/database/sql.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
@@ -62,9 +63,9 @@ describe('master data api', { timeout: 90_000 }, () => {
       app,
       new SettingsService(app),
       new DomainEvents(),
-      new CatalogService(app),
+      new CatalogLocks(app),
     );
-    reconciliation = new ReconciliationService(app, new CatalogService(app));
+    reconciliation = new ReconciliationService(app, new CatalogLocks(app));
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
     api = start('main.js', {

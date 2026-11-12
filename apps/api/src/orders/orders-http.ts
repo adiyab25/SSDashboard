@@ -104,6 +104,10 @@ export function ordersHttpError(error: unknown, response?: Response): unknown {
       return new ConflictException({ code: 'LINE_ALREADY_MAPPED', message: error.message });
     case 'PaymentMethodLocked':
       return new ConflictException({ code: 'PAYMENT_METHOD_LOCKED', message: error.message });
+    case 'LineShort':
+      return new ConflictException({ code: 'LINE_SHORT', message: error.message });
+    case 'LocationNotFound':
+      return new NotFoundException({ code: 'LOCATION_NOT_FOUND', message: error.message });
     case 'OrderStoreMissing':
       logger.error('An order names a store that does not exist');
       return new InternalServerErrorException();

@@ -545,6 +545,69 @@ export class OrderWriter {
     return ids;
   }
 
+  /**
+   * Writes the short quantity the stock ledger answered for lines of an order the caller locked
+   * (spec 0013 AC-13: `short_quantity` from every `reserveLines` answer, its `unfilled`). Each value
+   * is capped at the line's quantity and written only to an open line, only when it differs; no
+   * event, `orders.updated_at` kept (a hold is not a business change of the order). Never decides
+   * the value: `OrderStock` passes what the ledger said.
+   */
+  async setShortQuantities(
+    tx: OrderTransaction,
+    orderId: string,
+    lines: readonly { lineId: string; shortQuantity: number }[],
+  ): Promise<void> {
+    for (const { lineId, shortQuantity } of lines) {
+      await tx.execute(sql`
+        UPDATE order_lines
+        SET short_quantity = LEAST(${shortQuantity}::int, quantity), updated_at = clock_timestamp()
+        WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND line_state = 'open'
+          AND short_quantity <> LEAST(${shortQuantity}::int, quantity)`);
+    }
+  }
+
+  /**
+   * Brings every line of a locked order to `short_quantity` 0 (spec 0013 AC-13: 0 once the order
+   * leaves `open`, written by a cancel after its reservations were released). No event,
+   * `orders.updated_at` kept.
+   */
+  async clearShortQuantities(tx: OrderTransaction, orderId: string): Promise<void> {
+    await tx.execute(sql`
+      UPDATE order_lines SET short_quantity = 0, updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid AND short_quantity > 0`);
+  }
+
+  /**
+   * Projects a reservation event of the stock ledger onto one order line (spec 0013 Who opens the
+   * transaction, Domain events): `ReservationFilled` sets `short_quantity` to the event's
+   * `stillUnfilled` (`{ to }`), `ReservationShortened` raises it by the event's quantity
+   * (`{ add }`), capped between 0 and the line's quantity. It writes only an open line of an order
+   * still in `new`, `confirmed`, or `packed`, and answers whether it wrote one.
+   *
+   * It runs in the ledger's own transaction (handed over through `orderTransactionFromLedger`) and
+   * must never take the order row lock: the ledger holds pair locks there, so it locks only the
+   * one line row it writes (a deadlock with an order write is broken by the ledger's single
+   * retry). No event, `orders.updated_at` kept.
+   */
+  async projectShortQuantity(
+    tx: OrderTransaction,
+    orderId: string,
+    lineId: string,
+    change: { to: number } | { add: number },
+  ): Promise<boolean> {
+    const next =
+      'to' in change
+        ? sql`LEAST(GREATEST(${change.to}::int, 0), quantity)`
+        : sql`LEAST(GREATEST(short_quantity + ${change.add}::int, 0), quantity)`;
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE order_lines SET short_quantity = ${next}, updated_at = clock_timestamp()
+      WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND line_state = 'open'
+        AND EXISTS (SELECT 1 FROM orders o WHERE o.id = ${orderId}::uuid
+                    AND o.fulfillment_state IN ('new', 'confirmed', 'packed'))
+      RETURNING id`);
+    return rows.length > 0;
+  }
+
   /** Locks an order row `FOR UPDATE` and answers whether it exists. Every write path calls it first. */
   async lockOrder(tx: OrderTransaction, orderId: string): Promise<boolean> {
     const { rows } = await tx.execute<{ id: string }>(

@@ -422,8 +422,10 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
         (await call('GET', `/api/locations/${id}/online-gate`)).body,
       );
       expect(after.canGoOnline).toBe(true);
+      // The orders module registers its own check at start (spec 0013 AC-26); no order is open here.
       expect(after.checks.map((check) => [check.key, check.passed])).toEqual([
         ['stock_counted', true],
+        ['orders.open_orders_held', true],
         ['fixture.orders_held', true],
       ]);
       expect(await auditActions(id)).toEqual(['location.stock_confirmed']);

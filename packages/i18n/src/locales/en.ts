@@ -1502,6 +1502,10 @@ export const en = {
   // Spec 0013: the labels of the order states, outcomes, reasons, relations, and attentions. The
   // screens add their own keys beside these.
   orders: {
+    onlineGate: {
+      openOrdersHeld: 'Every open order holds its pieces at this location',
+      holdOpenOrders: 'Hold the open orders here',
+    },
     fulfillment: {
       new: 'New',
       confirmed: 'Confirmed',

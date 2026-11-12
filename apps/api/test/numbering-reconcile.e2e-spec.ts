@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CatalogService } from '../src/catalog/catalog.service.js';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import { NumberingError, NumberingService } from '../src/platform/numbering.service.js';
 import { SettingsService } from '../src/platform/settings/settings.service.js';
@@ -17,7 +17,7 @@ describe('numbering and reconciliation', { timeout: 60_000 }, () => {
     h = await ledgerHarness();
     make = fixtures(h.owner);
     numbering = new NumberingService(new SettingsService(h.app));
-    reconciliation = new ReconciliationService(h.app, new CatalogService(h.app));
+    reconciliation = new ReconciliationService(h.app, new CatalogLocks(h.app));
   });
 
   afterAll(async () => {

@@ -48,7 +48,7 @@ Agent rules, locking and costing gotchas: [AGENTS.md](AGENTS.md).
 ## Never touches
 
 - Updating or deleting a stock movement. Correct with `reverse`.
-- Other modules' tables. SKU rows are locked and read only through `CatalogService.lockForShare`, `lockForUpdate`, and `serialTrackedVariantIds` (spec 0011 AC-18), so `KNOWN_BREACHES` of [../module-boundary.spec.ts](../module-boundary.spec.ts) holds no `product_variants` entry for inventory.
+- Other modules' tables. SKU rows are locked and read only through `CatalogLocks.lockForShare`, `lockForUpdate`, and `serialTrackedVariantIds` (`catalog/catalog-locks.service.ts`) (spec 0011 AC-18), so `KNOWN_BREACHES` of [../module-boundary.spec.ts](../module-boundary.spec.ts) holds no `product_variants` entry for inventory.
 - Ledger tables from any other folder. Other modules import `LedgerService`, `ReconciliationService`, `LocationPolicyService`, `OnlineStockService`, and `OnlineStockGate` from [inventory.module.ts](inventory.module.ts); files under `connectors/` and `channels/` import neither `LedgerService` nor `ReconciliationService` nor anything under `ledger/` ([ledger-callers.spec.ts](ledger-callers.spec.ts), spec 0011 AC-8). [../module-boundary.spec.ts](../module-boundary.spec.ts) (every module's tables, from `TABLE_OWNERSHIP` in `packages/db`) and a lint rule enforce this.
 - The service schemas `PostingInput` in controllers. Routes validate with `PostingRequest` or `ReverseRequest` from `@ssdashboard/contracts` ([controller-contracts.spec.ts](controller-contracts.spec.ts)).
 
