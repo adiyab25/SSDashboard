@@ -29,7 +29,7 @@ Products as the brand thinks of them: style, season, product group, and variants
   - [x] Arabic and English search through every layer
   - [x] Seasons, product groups, and styles
   - [x] Inherited cost, visible and recordable
-  - [ ] The channel upsert contract
+  - [x] The channel upsert contract
 - [ ] Verify it: `/check verify catalog, styles & variants`
 - [ ] Test it: `/test catalog, styles & variants`
 Spec [0012](../specs/0012-catalog-styles-variants/index.md) (Accepted 2026-11-07)
@@ -42,7 +42,7 @@ Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out fr
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
   - [ ] Recorded fixtures and one order through a signed webhook (tasks 2 to 7 built 2026-11-08 on synthetic fixtures: one order through a signed webhook works; task 1, recording from a Shopify development store, waits for the store)
-  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08) (tasks 9 to 12 built: orders in full and customer webhooks 2026-11-08, edit netting, exchange by edit, and the sync jobs 2026-11-09; task 8 products waits for spec 0012's catalog sync and task 9a for spec 0013's stock out)
+  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08) (tasks 9 to 12 built: orders in full and customer webhooks 2026-11-08, edit netting, exchange by edit, and the sync jobs 2026-11-09; task 8 products built 2026-11-12 on synthetic fixtures; task 9a waits for spec 0013's stock out)
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
   - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)

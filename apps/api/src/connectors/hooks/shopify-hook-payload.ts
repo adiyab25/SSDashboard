@@ -17,6 +17,17 @@ export const SHOPIFY_ORDER_TOPICS: readonly string[] = [
  */
 export const SHOPIFY_CUSTOMER_TOPICS: readonly string[] = ['customers/create', 'customers/update'];
 
+/**
+ * The product topics the inbox processes (spec 0015 task 8, AC-16): each sends one inbox job,
+ * which reads the product back and applies it through `CatalogChannelSync.applyProduct`; a
+ * product Shopify no longer answers (`products/delete`) marks its mappings removed.
+ */
+export const SHOPIFY_PRODUCT_TOPICS: readonly string[] = [
+  'products/create',
+  'products/update',
+  'products/delete',
+];
+
 /** The app topic milestone 1 processes: confirmed by the inbox job, then health `failing` (L1). */
 export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 
@@ -28,22 +39,29 @@ export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 export const PROCESSED_INBOX_TOPICS: readonly string[] = [
   ...SHOPIFY_ORDER_TOPICS,
   ...SHOPIFY_CUSTOMER_TOPICS,
+  ...SHOPIFY_PRODUCT_TOPICS,
   SHOPIFY_APP_UNINSTALLED_TOPIC,
 ];
 
 /** The subject types of the processed topics: the resend scan's index friendly filter. */
-export const PROCESSED_INBOX_SUBJECTS: readonly InboundSubject[] = ['order', 'customer', 'app'];
+export const PROCESSED_INBOX_SUBJECTS: readonly InboundSubject[] = [
+  'order',
+  'customer',
+  'product',
+  'app',
+];
 
 /**
  * Whether a verified topic gets an inbox job now: the order topics, the customer topics (task 11),
- * and `app/uninstalled` (D9). Every other verified topic (refunds, products, inventory levels,
- * bulk operations) is still recorded in the inbox with its minimized payload, but no job is sent:
+ * the product topics (task 8), and `app/uninstalled` (D9). Every other verified topic (refunds,
+ * inventory levels, bulk operations) is still recorded in the inbox with its minimized payload, but no job is sent:
  * it stays `received` until its milestone 2 or 3 task processes it.
  */
 export function topicIsProcessed(topic: string): boolean {
   return (
     SHOPIFY_ORDER_TOPICS.includes(topic) ||
     SHOPIFY_CUSTOMER_TOPICS.includes(topic) ||
+    SHOPIFY_PRODUCT_TOPICS.includes(topic) ||
     topic === SHOPIFY_APP_UNINSTALLED_TOPIC
   );
 }

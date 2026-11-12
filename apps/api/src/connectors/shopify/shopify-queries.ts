@@ -438,6 +438,148 @@ export const CUSTOMER_READ = `query CustomerRead($id: ID!) {
 /** The expected cost of `CUSTOMER_READ` in points, passed to the client's throttle (AC-25). */
 export const CUSTOMER_READ_EXPECTED_COST = 2;
 
+// --- Product read back (spec 0015 task 8, AC-16, `product-mapper.ts`) ------------------------
+// Read on `https://shopify.dev/docs/api/admin-graphql/2026-10/` (`objects/Product`,
+// `objects/ProductOption`, `objects/ProductVariant`, `objects/SelectedOption`,
+// `objects/InventoryItem`, `objects/InventoryItemMeasurement`, `objects/Weight`,
+// `enums/WeightUnit`, `queries/product`, `queries/productVariant`) on 2026-11-12: `Product.handle`,
+// `title`, `productType`, `vendor` are `String!`, `tags` `[String!]!`, `status` `ProductStatus!`,
+// `isGiftCard` `Boolean!`, `updatedAt` `DateTime!`, `options(first:)` `[ProductOption!]!`
+// (`name: String!`, `position: Int!`, `values: [String!]!`), `variants` a
+// `ProductVariantConnection!` sorted by `POSITION` by default; `ProductVariant.sku` `String`,
+// `price` `Money!`, `compareAtPrice` `Money`, `barcode` `String` (deprecated on `2026-10` in favour
+// of the `barcodes` connection, still served; a nested connection per variant would multiply the
+// page cost, so the deprecated scalar is read until task 1's recordings decide), `selectedOptions`
+// `[SelectedOption!]!` (`name`, `value: String!`), `inventoryItem` `InventoryItem!` (`tracked`,
+// `requiresShipping: Boolean!`, `measurement: InventoryItemMeasurement!` with `weight: Weight`,
+// `unit: WeightUnit!` of `GRAMS`, `KILOGRAMS`, `OUNCES`, `POUNDS`, `value: Float!`);
+// `product(id: ID!)` and `productVariant(id: ID!)` answer nullable objects, and
+// `ProductVariant.product` is `Product!`.
+
+/** Product options read per product: Shopify allows at most 3 (`MAX_CHANNEL_OPTIONS`). */
+export const PRODUCT_READ_OPTIONS_PAGE = 3;
+
+/**
+ * Variants read per page of one product. Spec 0015 AC-16 names 250 a page; by the cost rule this
+ * file uses (objects 1, scalars 0, a connection sized by `first`), a variant with its selected
+ * options (up to 3 objects), inventory item, measurement, and weight counts 7 points, so 250 would
+ * request about 1,750 points, above Shopify's 1,000 point single query limit (AC-25). 100 keeps
+ * the estimate at 708 (`PRODUCT_READ_ESTIMATED_COST`); task 1's recordings give Shopify's
+ * `requestedQueryCost`, and the page grows when they allow it. A 2,048 variant product takes 21
+ * pages.
+ */
+export const PRODUCT_READ_VARIANTS_PAGE = 100;
+
+/**
+ * The requested cost estimate of `PRODUCT_READ` (and of each `PRODUCT_VARIANTS_PAGE`) in points:
+ * the product and its options, plus 7 per variant (see `PRODUCT_READ_VARIANTS_PAGE`).
+ */
+export const PRODUCT_READ_ESTIMATED_COST =
+  1 + PRODUCT_READ_OPTIONS_PAGE + PRODUCT_READ_VARIANTS_PAGE * 7;
+
+/** The fields of one product every product read selects, variants apart. */
+const PRODUCT_FIELDS = `
+        id
+        handle
+        title
+        productType
+        vendor
+        tags
+        status
+        isGiftCard
+        updatedAt
+        options(first: ${PRODUCT_READ_OPTIONS_PAGE}) {
+          name
+          position
+          values
+        }`;
+
+/** The fields of one variant every product read selects (what `ShopifyProductVariant` parses). */
+const PRODUCT_VARIANT_FIELDS = `
+              id
+              sku
+              price
+              compareAtPrice
+              barcode
+              selectedOptions {
+                name
+                value
+              }
+              inventoryItem {
+                id
+                tracked
+                requiresShipping
+                measurement {
+                  weight {
+                    unit
+                    value
+                  }
+                }
+              }`;
+
+/** The operation name of `PRODUCT_READ`. */
+export const PRODUCT_READ_OPERATION = 'ProductRead';
+
+/**
+ * The read back of one product for `products/create`, `products/update`, and `products/delete`
+ * (AC-16) and for the product read before an order (AC-9, review M8): the product and its first
+ * `PRODUCT_READ_VARIANTS_PAGE` variants with the page info; further pages come from
+ * `PRODUCT_VARIANTS_PAGE`. Variables: `id` (the product gid). Nothing personal is selected.
+ */
+export const PRODUCT_READ = `query ProductRead($id: ID!) {
+  product(id: $id) {${PRODUCT_FIELDS}
+    variants(first: ${PRODUCT_READ_VARIANTS_PAGE}) {
+      nodes {${PRODUCT_VARIANT_FIELDS}
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}`;
+
+/** The operation name of `PRODUCT_VARIANTS_PAGE`. */
+export const PRODUCT_VARIANTS_PAGE_OPERATION = 'ProductVariantsPage';
+
+/**
+ * One further page of a product's variants (AC-16: paged until Shopify's 2,048 variant limit).
+ * Variables: `id` (the product gid) and `after` (the previous page's end cursor).
+ */
+export const PRODUCT_VARIANTS_PAGE = `query ProductVariantsPage($id: ID!, $after: String!) {
+  product(id: $id) {
+    id
+    variants(first: ${PRODUCT_READ_VARIANTS_PAGE}, after: $after) {
+      nodes {${PRODUCT_VARIANT_FIELDS}
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}`;
+
+/** The operation name of `PRODUCT_OF_VARIANT_READ`. */
+export const PRODUCT_OF_VARIANT_READ_OPERATION = 'ProductOfVariantRead';
+
+/**
+ * The product of one Shopify variant (AC-9, review M8): an order line names its variant only, so
+ * the product read before an order first asks which product the variant belongs to. Variables:
+ * `id` (the variant gid). The variant is null when Shopify no longer has it.
+ */
+export const PRODUCT_OF_VARIANT_READ = `query ProductOfVariantRead($id: ID!) {
+  productVariant(id: $id) {
+    id
+    product {
+      id
+    }
+  }
+}`;
+
+/** The expected cost of `PRODUCT_OF_VARIANT_READ`: the variant and its product, 2 points. */
+export const PRODUCT_OF_VARIANT_READ_EXPECTED_COST = 2;
+
 // --- Sweeps (spec 0015 task 12, AC-18, *Backfill, go live, and sweeps*) ----------------------
 
 /** Orders or products listed per sweep page (Shopify's page cap). */
@@ -496,8 +638,8 @@ export const PRODUCTS_SWEEP_OPERATION = 'ProductsSweep';
 
 /**
  * One page of the products sweep (AC-18, every 30 minutes): products updated since the filter,
- * with their id and `updatedAt` only. Variables as `ORDERS_SWEEP`. Until spec 0015 task 8 builds
- * the product read back, each found product is recorded `received` with no job.
+ * with their id and `updatedAt` only. Variables as `ORDERS_SWEEP`. Each found product newer than
+ * its applied version enters the inbox with its job, which reads it back (`PRODUCT_READ`, task 8).
  */
 export const PRODUCTS_SWEEP = `query ProductsSweep($query: String!, $after: String) {
   products(first: ${SWEEP_PAGE}, after: $after, sortKey: UPDATED_AT, query: $query) {
@@ -584,23 +726,18 @@ export function gatewayScanBulkQuery(sinceIso: string): string {
 }
 
 /**
- * The products backfill's bulk query (AC-17): every product with its `updatedAt`, and its variants
- * (a nested connection, one JSONL line each) with their inventory item ids, for spec 0015 task 8's
- * processor. Until task 8 each product is recorded in the inbox `received` with no job.
+ * The products backfill's bulk query (AC-17, task 8): every product with exactly the fields
+ * `PRODUCT_READ` selects, its variants as a nested connection (one JSONL line each, at most
+ * `MAX_CHANNEL_VARIANTS` per product), so `assembleBulkProduct` gives the product mapper the read
+ * back's shape and the backfill applies each product with no second read (AC-7).
  */
 export const PRODUCTS_BULK_QUERY = `{
   products {
     edges {
-      node {
-        id
-        updatedAt
+      node {${PRODUCT_FIELDS}
         variants {
           edges {
-            node {
-              id
-              inventoryItem {
-                id
-              }
+            node {${PRODUCT_VARIANT_FIELDS}
             }
           }
         }

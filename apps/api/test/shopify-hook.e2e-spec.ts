@@ -1112,11 +1112,12 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect(await health(a.id)).toEqual({ health: 'ok', health_reason: null });
   });
 
-  it('records a verified topic milestone 1 does not process, sending no job', async () => {
-    const reply = await deliver(a, 'products/update', {
-      id: 7770000000101,
-      admin_graphql_api_id: 'gid://shopify/Product/7770000000101',
-      title: 'Fixture Basic Tee',
+  it('records a verified topic no job processes yet, sending no job', async () => {
+    // Products get their job from task 8; inventory levels wait for milestone 3.
+    const reply = await deliver(a, 'inventory_levels/update', {
+      inventory_item_id: 2230000031001,
+      location_id: 4440000000001,
+      available: 3,
       updated_at: '2026-11-02T09:00:00Z',
     });
     expect(reply.status).toBe(200);
@@ -1124,9 +1125,12 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect(event).toMatchObject({
       status: 'received',
       payload: {
-        topic: 'products/update',
-        id: 'gid://shopify/Product/7770000000101',
+        topic: 'inventory_levels/update',
+        id: null,
         updatedAt: '2026-11-02T09:00:00.000Z',
+        inventoryItemId: '2230000031001',
+        locationId: '4440000000001',
+        available: 3,
       },
     });
     expect(
