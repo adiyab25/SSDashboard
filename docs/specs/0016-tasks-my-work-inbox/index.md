@@ -352,6 +352,10 @@ When the credit slice lands, `refund_needed` gives way to `refund_owed` on the c
 | `OutboundCommandOverdue` (connectors, new, M1) | `sync.write_back_late`, same linking and assignment | `outbound_command_late:<commandId>` | `synced`, `resolved`, or `became_failed` on the matching events |
 | `InboundEventFailed` (connectors) | `connector.inbound_failed` on the inbox event | `inbound_failed:<connectionId>:<subjectExternalId or eventId>` | a person after the retry on the connection screen |
 | `OrderAttentionRaised` (orders) | `order.<kind>` | `order_attention:<kind>:<orderId>` | a person, or the orders module with `cleared` |
+| `CarrierDeliveryNeedsAttention` (connectors, spec 0018, feature 19) | `carrier.attention` on the `shipment`, **only when the event's `opensTask` is true**: spec 0018 sets it false for the kinds that spec 0019's own delivery tasks replace (exception, repeated attempts, and the flags collected differs, terminated after pickup, no longer followed), so one Bosta event never opens two tasks | `carrier_attention:<kind>:<deliveryId>` | the system on `CarrierDeliveryAttentionCleared` |
+| `CarrierRecordStale` (connectors, spec 0018) | `carrier.record_stale` on the order, assigned and timed as spec 0018 requests (its *Task types requested*), then spec 0017's reconfirmation | `carrier_record_stale:<deliveryId>` | a person through spec 0018's record fix route, or the system with `updated` |
+
+The type rows of spec 0018 (`carrier.record_stale`, `carrier.attention`, `carrier.cancel_in_bosta`, `carrier.read_failed`) are spec 0018's to define, as spec 0017 defines its own; the two rows above only fix how the tasks module's listeners open them.
 | `OrderStateChanged` (orders), fulfillment to `cancelled` | cancels open tasks of types with `cancelWhenOrderEnds` on that order (m4) | | |
 | `ManagerTaskPort.open` (platform) | `platform.<kind>`, `subject_key` = the capability when given | `<kind>:<key>` (`once`) | the manager |
 
