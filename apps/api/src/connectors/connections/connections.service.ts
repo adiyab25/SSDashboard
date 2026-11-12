@@ -12,13 +12,17 @@ import {
   type ConnectionListResponse,
   type ConnectShopifyBody,
   type ConnectShopifyResponse,
+  type BackfillBody,
+  type SyncRunListQuery,
+  type SyncRunListResponse,
+  type SyncRunStarted,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { AuditService } from '../../audit/audit.service.js';
 import { ChannelsError } from '../../channels/channels.errors.js';
 import { ChannelsService } from '../../channels/channels.service.js';
 import { DATABASE } from '../../database/database.module.js';
-import { pgConstraint, pgErrorCode } from '../../database/sql.js';
+import { pgConstraint, pgErrorCode, type Transaction } from '../../database/sql.js';
 import type { Access } from '../../platform/access/access.js';
 import { JobSender } from '../../platform/jobs/job-sender.js';
 import {
@@ -28,11 +32,36 @@ import {
 } from '../../platform/keyset-cursor.js';
 import { ConnectionsError } from '../connectors.errors.js';
 import {
+  BACKFILL_JOB_PRIORITY,
   connectionGroup,
   CONNECTOR_SHOPIFY_QUEUE,
   type ShopifyJobData,
 } from '../shopify/connector-shopify.queue.js';
+import { gatewayKeyOf } from '../shopify/order-mapper.js';
+import { SyncRuns, type RunPosition, type SyncRunRow } from '../sync-runs/sync-runs.js';
 import { ConnectionSecrets, credentialsHint } from './connection-secrets.js';
+import { GoLiveClock, goLiveInRange } from './go-live-clock.js';
+
+/**
+ * Where a backfill run resumes (lead decision D11, AC-17): its recorded position with the step
+ * moved on (a job of the old step is then a duplicate and skipped). A bulk operation Shopify
+ * ended (`BULK_*`), whose result address it refused (`REQUEST_REJECTED`, an expired address), or
+ * whose result file the client refused as too large (`RESPONSE_TOO_LARGE`)
+ * cannot be read again: the run then starts a new bulk read from its first line, and the orders
+ * already applied are skipped as `stale` by their mappings' versions. A paged run keeps its page
+ * cursor.
+ */
+export function resumePositionOf(run: Pick<SyncRunRow, 'position' | 'errorCode'>): RunPosition {
+  const code = run.errorCode ?? '';
+  const bulkGone =
+    run.position.mode === 'bulk' &&
+    (code.startsWith('BULK_') || code === 'REQUEST_REJECTED' || code === 'RESPONSE_TOO_LARGE');
+  return {
+    ...run.position,
+    step: run.position.step + 1,
+    ...(bulkGone && { bulkId: null, line: 0 }),
+  };
+}
 
 /** Who asks: the signed in manager and their `Access`, for the audit actor. */
 export interface ConnectionCaller {
@@ -131,6 +160,8 @@ export class ConnectionsService {
     @Inject(ConnectionSecrets) private readonly secrets: ConnectionSecrets,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(JobSender) private readonly jobs: JobSender,
+    @Inject(SyncRuns) private readonly runs: SyncRuns,
+    @Inject(GoLiveClock) private readonly goLiveClock: GoLiveClock,
   ) {}
 
   /**
@@ -312,6 +343,212 @@ export class ConnectionsService {
       const data: ShopifyJobData = { kind: 'connect', connectionId: id };
       await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, connectionGroup(id));
     });
+  }
+
+  /**
+   * Starts a gateway scan (`POST /api/connections/:id/gateway-scan`, spec 0015 task 12, AC-17):
+   * under the connection's row lock, refuses an archived connection (`CONNECTION_ARCHIVED`), a
+   * paused one (`CONNECTION_PAUSED`, QA 3), and one whose gateway scan has not finished
+   * (`SCAN_RUNNING`), unless that run is stalled (`RUN_STALLED_AFTER_MS` without moving, code
+   * review Major 3): it is then ended `failed` `RUN_STALLED`. Then, in one transaction, it writes
+   * a `gateway_scan` run, records `connection.gateway_scan_started` with the run id (security
+   * review L7), and sends the run's first job. Answers the run id.
+   */
+  async startGatewayScan(id: string, caller: ConnectionCaller): Promise<SyncRunStarted> {
+    await this.jobs.prepare(CONNECTOR_SHOPIFY_QUEUE);
+    const correlationId = this.audit.newCorrelationId();
+    return this.connection.db.transaction(async (tx) => {
+      const row = await this.lockConnection(tx, id);
+      if (row.status === 'archived') {
+        throw new ConnectionsError('CONNECTION_ARCHIVED', 'An archived connection is not scanned');
+      }
+      if (row.status === 'paused') {
+        throw new ConnectionsError('CONNECTION_PAUSED', 'A paused connection is not scanned');
+      }
+      const open = await this.runs.unfinished(tx, id, ['gateway_scan']);
+      if (open) {
+        if (!(await this.runs.stalled(tx, open))) {
+          throw new ConnectionsError(
+            'SCAN_RUNNING',
+            'A gateway scan of this connection is running',
+          );
+        }
+        await this.runs.finish(tx, open.id, { status: 'failed', errorCode: 'RUN_STALLED' });
+      }
+      const runId = await this.runs.start(tx, { connectionId: id, kind: 'gateway_scan' });
+      await this.audit.record(tx, {
+        actor: personActor(caller.userId, caller.access.actingHat('settings.manage')),
+        action: 'connection.gateway_scan_started',
+        record: { type: 'connection', id, ...(await this.storeLabel(tx, row.store_id)) },
+        after: { runId },
+        correlationId,
+      });
+      const data: ShopifyJobData = { kind: 'gateway_scan', connectionId: id, runId, step: 0 };
+      await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, {
+        ...connectionGroup(id),
+        priority: BACKFILL_JOB_PRIORITY,
+      });
+      return { runId };
+    });
+  }
+
+  /**
+   * Starts, resumes, or redoes the first backfill (`POST /api/connections/:id/backfill`, spec
+   * 0015 task 12, AC-17, lead decision D11). Under the connection's row lock it refuses, in this
+   * order: a paused connection (`CONNECTION_PAUSED`, QA 3); one that is not `active` or whose
+   * health is not `ok` or `degraded` (`CONNECTION_NOT_READY`); one with a backfill run unfinished
+   * and not stalled (`BACKFILL_RUNNING`); a `goLiveAt` other than the `go_live_at` already set
+   * (`GO_LIVE_ALREADY_SET`: it is set once, by the first start); for a first start, a `goLiveAt`
+   * after the database clock plus 5 minutes or before it minus 60 days (`GO_LIVE_OUT_OF_RANGE`,
+   * `GoLiveClock`); a newest succeeded gateway scan that dropped names past 100
+   * (`GATEWAYS_TOO_MANY`, security review L3); and one that names a gateway with no payment
+   * method in `config.gatewayMethods`, or no succeeded scan yet (`GATEWAYS_UNMAPPED`, with the
+   * unmapped names). Then, in one transaction: the first start sets `go_live_at`; a newest
+   * backfill run that failed, or is stalled, is reopened at its recorded position (the step moves
+   * on, so a stray old job is skipped; a bulk operation Shopify ended or refused is read again
+   * from a new one), so a resume repeats nothing; otherwise (no run yet, or the last one
+   * succeeded) a new `backfill_products` run starts, idempotent by the inbox dedupe keys and the
+   * mappings' versions. It records `connection.backfill_started` (the go live instant, the run
+   * id, and `resumed`, never a credential) and sends the run's next job. Answers the run id.
+   */
+  async startBackfill(
+    id: string,
+    body: BackfillBody,
+    caller: ConnectionCaller,
+  ): Promise<SyncRunStarted> {
+    await this.jobs.prepare(CONNECTOR_SHOPIFY_QUEUE);
+    const correlationId = this.audit.newCorrelationId();
+    return this.connection.db.transaction(async (tx) => {
+      const row = await this.lockConnection(tx, id);
+      if (row.status === 'paused') {
+        throw new ConnectionsError('CONNECTION_PAUSED', 'A paused connection is not backfilled');
+      }
+      if (row.status !== 'active' || (row.health !== 'ok' && row.health !== 'degraded')) {
+        throw new ConnectionsError(
+          'CONNECTION_NOT_READY',
+          'The connection must be active and past its connect check',
+        );
+      }
+      const kinds = ['backfill_products', 'backfill_orders'] as const;
+      const open = await this.runs.unfinished(tx, id, kinds);
+      if (open && !(await this.runs.stalled(tx, open))) {
+        throw new ConnectionsError('BACKFILL_RUNNING', 'A backfill of this connection is running');
+      }
+      if (row.go_live_at !== null) {
+        const { rows } = await tx.execute<{ same: boolean }>(sql`
+          SELECT ${row.go_live_at}::timestamptz = ${body.goLiveAt}::timestamptz AS same`);
+        if (rows[0]?.same !== true) {
+          throw new ConnectionsError(
+            'GO_LIVE_ALREADY_SET',
+            'The go live instant is set once, by the first backfill',
+          );
+        }
+      } else if (!goLiveInRange(body.goLiveAt, await this.goLiveClock.now(tx))) {
+        throw new ConnectionsError(
+          'GO_LIVE_OUT_OF_RANGE',
+          'The go live instant must be at most 5 minutes ahead and 60 days back',
+        );
+      }
+      const scan = await this.runs.lastSucceeded(tx, id, 'gateway_scan');
+      if (scan?.counts['gatewayNamesTruncated'] === true) {
+        throw new ConnectionsError(
+          'GATEWAYS_TOO_MANY',
+          'The gateway scan found more payment gateways than it can list',
+        );
+      }
+      const config = ShopifyConnectionConfig.partial().safeParse(row.config);
+      const mapped = (config.success ? config.data.gatewayMethods : undefined) ?? {};
+      const scanned = Array.isArray(scan?.counts['gatewayNames'])
+        ? (scan.counts['gatewayNames'] as unknown[]).filter(
+            (name): name is string => typeof name === 'string',
+          )
+        : [];
+      // The scan stored keys (`scannedGatewayNames`); keying again is a no op for them.
+      const unmapped = scanned.filter((name) => {
+        const key = gatewayKeyOf(name);
+        return key !== null && !Object.hasOwn(mapped, key);
+      });
+      if (!scan || unmapped.length > 0) {
+        throw new ConnectionsError(
+          'GATEWAYS_UNMAPPED',
+          scan
+            ? 'Every scanned payment gateway needs a payment method first'
+            : 'Scan the payment gateways and map them first',
+          unmapped,
+        );
+      }
+      if (row.go_live_at === null) {
+        await tx.execute(sql`
+          UPDATE connections SET go_live_at = ${body.goLiveAt}::timestamptz, updated_at = now()
+          WHERE id = ${id}::uuid`);
+      }
+      const newest = open ?? (await this.runs.newest(tx, id, kinds));
+      const resume = newest && (!newest.finished || newest.status === 'failed') ? newest : null;
+      let runId: string;
+      let step = 0;
+      if (resume) {
+        const position = resumePositionOf(resume);
+        await this.runs.reopen(tx, resume.id, position);
+        runId = resume.id;
+        step = position.step;
+      } else {
+        runId = await this.runs.start(tx, {
+          connectionId: id,
+          kind: 'backfill_products',
+          counts: { goLiveAt: body.goLiveAt },
+        });
+      }
+      await this.audit.record(tx, {
+        actor: personActor(caller.userId, caller.access.actingHat('settings.manage')),
+        action: 'connection.backfill_started',
+        record: { type: 'connection', id, ...(await this.storeLabel(tx, row.store_id)) },
+        after: { goLiveAt: body.goLiveAt, runId, resumed: resume !== null },
+        correlationId,
+      });
+      const data: ShopifyJobData = { kind: 'backfill', connectionId: id, runId, step };
+      await this.jobs.sendIn(tx, CONNECTOR_SHOPIFY_QUEUE, data, {
+        ...connectionGroup(id),
+        priority: BACKFILL_JOB_PRIORITY,
+      });
+      return { runId };
+    });
+  }
+
+  /** The audit record's label: the store code, when the connection has a store. */
+  private async storeLabel(tx: Transaction, storeId: string | null): Promise<{ label?: string }> {
+    const store = storeId ? (await this.channels.stores([storeId], tx))[0] : undefined;
+    return store ? { label: store.code } : {};
+  }
+
+  /** A connection's sync runs, newest first (`GET /api/connections/:id/sync-runs`). */
+  async syncRuns(id: string, query: SyncRunListQuery): Promise<SyncRunListResponse> {
+    return this.runs.list(id, query);
+  }
+
+  /** The connection row under its lock, for the task 12 starts; throws `NOT_FOUND`. */
+  private async lockConnection(
+    tx: Transaction,
+    id: string,
+  ): Promise<{
+    status: string;
+    health: string;
+    config: unknown;
+    store_id: string | null;
+    go_live_at: string | null;
+  }> {
+    const { rows } = await tx.execute<{
+      status: string;
+      health: string;
+      config: unknown;
+      store_id: string | null;
+      go_live_at: string | null;
+    }>(sql`
+      SELECT status, health::text AS health, config, store_id,
+             to_char(go_live_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS go_live_at
+      FROM connections WHERE id = ${id}::uuid AND provider = 'shopify' FOR UPDATE`);
+    const row = rows[0];
+    if (!row) throw new ConnectionsError('NOT_FOUND', 'No connection has that id');
+    return row;
   }
 }
 

@@ -19,6 +19,12 @@ export interface FindOrCreateInput {
   name: string | null;
   /** When the caller saw the customer (the order's `placed_at`, the webhook's time). */
   seenAt: Date;
+  /**
+   * Whether the caller vouches for the phone (default true). A Shopify customer webhook passes
+   * false (owner ruling L1, option A): an unverified phone never links to an existing customer
+   * and is never added to one. See `findOrCreate` for what each rule then answers and writes.
+   */
+  phoneVerified?: boolean;
 }
 
 /** What `findOrCreate` answers: the canonical customer (null for `no_phone`) and what it did. */
@@ -169,6 +175,11 @@ export function cleanCustomerName(name: string | null): string | null {
  * between customers. It takes the phone lock, then the channel id lock, always in that order, so
  * twenty parallel calls for one new phone create one customer and a replay writes nothing new.
  *
+ * With `phoneVerified: false` (owner ruling L1): rule (b) (phone known, channel id unknown) writes
+ * nothing and answers `{ customerId: null, outcome: 'unverified_phone' }`; rule (c) (channel id
+ * known, phone new) adds no phone, still fills an empty name, and answers the channel id's
+ * customer with `unverified_phone`; (a), (d), (e), (f) are unchanged.
+ *
  * It must never open its own transaction, never see raw phone text, and never write a name over
  * an existing one. An empty outside id throws `INVALID_CHANNEL_CUSTOMER`.
  *
@@ -181,6 +192,7 @@ export async function findOrCreate(
   input: FindOrCreateInput,
 ): Promise<FindOrCreateResult> {
   const { phone, seenAt } = input;
+  const phoneVerified = input.phoneVerified ?? true;
   const channel =
     input.channelCustomer === null
       ? null
@@ -212,6 +224,8 @@ export async function findOrCreate(
     let outcome: FindOrCreateOutcome = 'matched';
     if (channel !== null) {
       if (byChannel === null) {
+        // Rule (b) under an unverified phone: the phone proves nothing, so link nothing, write nothing.
+        if (!phoneVerified) return { customerId: null, outcome: 'unverified_phone' };
         await insertExternalId(tx, byPhone.customerId, channel);
       } else if (byChannel.customerId !== byPhone.customerId) {
         await suggestChannelConflict(tx, byPhone.customerId, byChannel.customerId, byChannel.rowId);
@@ -224,9 +238,15 @@ export async function findOrCreate(
 
   if (byChannel !== null) {
     // Rule (c): the channel id is known, the phone is new (or the caller has none).
-    if (phone !== null) await insertPhone(tx, byChannel.customerId, phone, false, seenAt);
+    // Unverified: no phone is attached; the name rule (only when empty) still applies, it writes no phone.
+    if (phone !== null && phoneVerified) {
+      await insertPhone(tx, byChannel.customerId, phone, false, seenAt);
+    }
     await touch(tx, byChannel.customerId, name, null, seenAt);
-    return { customerId: byChannel.customerId, outcome: 'matched_by_channel_id' };
+    return {
+      customerId: byChannel.customerId,
+      outcome: phone !== null && !phoneVerified ? 'unverified_phone' : 'matched_by_channel_id',
+    };
   }
 
   if (phone === null) return { customerId: null, outcome: 'no_phone' };

@@ -512,6 +512,129 @@ export class ShopifyClient {
     }
   }
 
+  /**
+   * Streams the JSONL result of a bulk operation from its signed address (spec 0015 AC-17,
+   * *Backfill, go live, and sweeps*): line by line, never stored, never logged. Empty lines are
+   * skipped and not counted; the first `from` lines are skipped (a chunk resuming where the last
+   * one stopped), and every later line is handed to `onLine` with its index (from 0) until it
+   * answers `stop`, which ends the read at once. Resolves to whether the file ended and how many
+   * lines were passed (the next chunk's `from`).
+   *
+   * The address must be https (or start with `SHOPIFY_MOCK_ORIGIN` when set); no header is sent
+   * (the address is signed, so the access token never travels with it), no redirect is followed,
+   * a read idle for longer than the request timeout is a transient `TIMEOUT` (the idle timer is
+   * paused while `onLine` works, so database time never counts as network idle time), a stream
+   * open longer than `limits.wallClockMs` is aborted on the same controller (a transient
+   * `TIMEOUT`, security review L2), a line above 10 MB is `RESPONSE_TOO_LARGE` (counted as the
+   * bytes arrive, never by measuring the whole buffer again), a 5xx a transient `SERVER_ERROR`,
+   * and any other non 2xx `REQUEST_REJECTED` (an expired address answers that way). Errors carry
+   * codes only: never the address, which grants access to the result for a week.
+   */
+  async streamBulkResult(
+    url: string,
+    from: number,
+    onLine: (line: string, index: number) => Promise<'next' | 'stop'>,
+    limits: { readonly wallClockMs?: number } = {},
+  ): Promise<{ readonly ended: boolean; readonly lines: number }> {
+    const mock = this.options.mockOrigin?.replace(/\/+$/, '');
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch {
+      throw new ShopifyRejectedError('REQUEST_REJECTED');
+    }
+    const fromMock = mock !== undefined && `${target.origin}` === new URL(mock).origin;
+    if (target.protocol !== 'https:' && !fromMock) {
+      throw new ShopifyRejectedError('REQUEST_REJECTED');
+    }
+    const controller = new AbortController();
+    let timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const wall =
+      limits.wallClockMs === undefined
+        ? undefined
+        : setTimeout(() => controller.abort(), Math.max(0, limits.wallClockMs));
+    const idle = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    };
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let callbackFailed = false;
+    try {
+      const doFetch = this.options.fetch ?? globalThis.fetch;
+      const response = await doFetch(target.toString(), {
+        method: 'GET',
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      if (response.status < 200 || response.status >= 300) {
+        await response.body?.cancel().catch(() => undefined);
+        if (response.status >= 500)
+          throw new ShopifyTransientError('SERVER_ERROR', response.status);
+        throw new ShopifyRejectedError('REQUEST_REJECTED', response.status);
+      }
+      if (!response.body) return { ended: true, lines: 0 };
+      reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let pending = '';
+      let index = 0;
+      const hand = async (line: string): Promise<'next' | 'stop'> => {
+        if (line.trim() === '') return 'next';
+        const at = index;
+        index += 1;
+        if (at < from) return 'next';
+        // The idle timer measures the network only: paused while the caller applies the line.
+        clearTimeout(timer);
+        try {
+          return await onLine(line, at);
+        } catch (error) {
+          callbackFailed = true;
+          throw error;
+        } finally {
+          idle();
+        }
+      };
+      let pendingBytes = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        idle();
+        pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        pendingBytes += value?.byteLength ?? 0;
+        let cut = pending.indexOf('\n');
+        // After a cut only the tail of this read is left: it is measured once, never the whole.
+        if (cut >= 0) pendingBytes = -1;
+        while (cut >= 0) {
+          const line = pending.slice(0, cut).replace(/\r$/, '');
+          pending = pending.slice(cut + 1);
+          if ((await hand(line)) === 'stop') {
+            await reader.cancel().catch(() => undefined);
+            return { ended: false, lines: index };
+          }
+          cut = pending.indexOf('\n');
+        }
+        if (pendingBytes < 0) pendingBytes = Buffer.byteLength(pending, 'utf8');
+        if (pendingBytes > MAX_RESPONSE_BYTES) {
+          throw new ShopifyRejectedError('RESPONSE_TOO_LARGE', response.status);
+        }
+        if (done) {
+          const last = await hand(pending);
+          return { ended: last === 'next', lines: index };
+        }
+      }
+    } catch (error) {
+      await reader?.cancel().catch(() => undefined);
+      // A throw of `onLine` (a database failure of the caller) passes through unchanged.
+      if (callbackFailed) throw error;
+      if (error instanceof ShopifyClientError) throw error;
+      if (controller.signal.aborted) throw new ShopifyTransientError('TIMEOUT');
+      if (error instanceof Error && error.name === 'UnrecordedRequest') throw error;
+      if (isRedirectRefusal(error)) throw new ShopifyRejectedError('REQUEST_REJECTED');
+      throw new ShopifyTransientError('NETWORK_ERROR');
+    } finally {
+      clearTimeout(timer);
+      clearTimeout(wall);
+    }
+  }
+
   /** The origin calls go to: the mock origin, else the shop, after the shop domain shape check. */
   private baseUrl(shopDomain: string): string {
     if (!SHOP_DOMAIN.test(shopDomain)) throw new ShopifyRejectedError('INVALID_SHOP_DOMAIN');
