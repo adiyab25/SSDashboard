@@ -1,6 +1,8 @@
 # 0020 rationale: settlement and Bosta reconciliation
 
-The decision record for [index.md](index.md). `/develop` reads index.md; this file holds the why, the options, the Bosta evidence, and a worked month.
+The decision record for [index.md](index.md). `/develop` reads index.md; this file holds the why, the options, the Bosta evidence, a worked month, and how both domain review passes were closed.
+
+**Revised**: 2026-11-12 for the domain review (*Domain review*); 2026-11-12 for spec 0019's landed M9; 2026-11-12 for the second pass (*Domain review, second pass*).
 
 ## Context
 
@@ -111,9 +113,11 @@ Source URLs as listed by the report: S1 `http://docs.bosta.co/docs/how-to/get-de
 | T3 returned to origin | cod 0, shipping 60.00, VAT 8.40, deposited −68.40 | −60.00, −8.40 | stays `nothing_to_collect`; fees matched |
 | T4 refused with FlexShip | cod 150.00, FlexShip 10.00, shipping 60.00, VAT 9.80, deposited 70.20 | +150.00 `other_fee` `flex_ship_refusal`, −10.00, −60.00, −9.80 | stays `nothing_to_collect`; all charge lines matched; the +150.00 agrees with the `refusal_fee` leg and the rest with the other legs, so the period still agrees (review M4) |
 | T5 customer return pickup, refund 300.00 | cod 300.00, shipping 45.00, VAT 6.30, deposited −351.30 | refund branch A: −300.00 `customer_refund`, −45.00, −6.30; their signed sum −351.30 equals Bosta's deposit, so AC-5 passes (the first draft checked `cod − bosta_fees` = 248.70 and failed, review B2) | the refund line matches the `carrier_cash` refund record |
-| wallet sheet | Compensation 800.00 (no tracking), Cash-out 2,000.00, Packing Material Fees 120.00, Collected Cash Cycle for the day | +800.00 `compensation`, −2,000.00 `deposit`, −120.00 `other_fee` `packing_material`; the daily total is evidence | the claim closes `received`; deposit and packing accounted |
+| T6 one piece, 1,650.00 due, the courier collected 1,500.00 (review r2 N1) | cod 1,500.00, shipping 60.00, VAT 8.40, deposited 1,431.60 | +1,500.00 `cod_collected`, −60.00, −8.40 | `remitted`, blocked "claim with Bosta pending" while spec 0019's `short_collection` claim of 150.00 waits; the sheet's Compensation of 150.00 with T6's tracking number matches the claim (`claim_by_tracking`), the resolution becomes `claim_paid`, and 1,500.00 + 150.00 = 1,650.00 reconciles it |
+| T7 delivered on the period's last day, 900.00 due (review r2 N2) | deposited the next day, outside the period | none in this period | `collected_by_carrier` at `ends_on`; counted in "owed by Bosta at period end", not in "of which overdue" |
+| wallet sheet | Compensation 800.00 (no tracking), Compensation 150.00 (T6's tracking number), Cash-out 2,000.00, Packing Material Fees 120.00, Collected Cash Cycle for the day | +800.00 and +150.00 `compensation`, −2,000.00 `deposit`, −120.00 `other_fee` `packing_material`; the daily total is stored as day evidence | both claims close `received`; deposit and packing accounted |
 
-The period totals then show COD collected 3,300.00 on both sides, cash due 3,300.00 (no shortfall once T2 is split), fees with VAT against the five deliveries' charges, refund 300.00 against the refund record, compensation 800.00 against the claim, Bosta's deposited 2,813.70 against the sum of the cash cycle lines, cash outs 2,000.00 (received in bank 2,000.00), refusal fees 150.00 against the `refusal_fee` leg, and no unmatched line. With a recorded opening wallet balance of 1,000.00, the lines net 2,813.70 + 800.00 − 2,000.00 − 120.00 = 1,493.70, so the roll forward expects a closing balance of 2,493.70, which the balance the person records at the period's end must equal. Every figure is provisional.
+The period totals then show COD collected 4,800.00 on both sides (T1, T2, T6), cash due 4,950.00 with the 150.00 shortfall shown as compensation received on a `short_collection` claim, fees net of VAT and VAT on fees against the six deliveries' charges, refund 300.00 against the refund record, compensation 950.00 against the two claims, Bosta's deposited 1,581.60 + 1,581.60 − 68.40 + 70.20 − 351.30 + 1,431.60 = 4,245.30 against the sum of the cash cycle lines, cash outs 2,000.00 (received in bank 2,000.00), refusal fees 150.00 against the `refusal_fee` leg, and no unmatched line. With a recorded opening wallet balance of 1,000.00, the lines net 4,245.30 + 950.00 − 2,000.00 − 120.00 = 3,075.30 (the cash out is a negative line, counted once), so the roll forward expects a closing balance of 4,075.30, which the balance the person records at the period's end must equal. "Owed by Bosta at period end" is T7's 900.00 of COD not yet deposited, no compensation outstanding, the closing balance of 4,075.30 not cashed out, and no cash out missing from the bank. Every figure is provisional.
 
 ## Domain review
 
@@ -145,6 +149,37 @@ The domain review [domain-settlement-reconciliation](../../reviews/domain-settle
 | m8 | minor | AC-21 and Q-22.7: the shortcut "from the last period's end to the latest cash out". |
 | Q-22.1 to Q-22.7 | judgement | Kept, with Q-22.2's label (M2), Q-22.4's revision (M7), Q-22.6's sheet now required in AC-29, and Q-22.7's shortcut (m8). |
 | Brand questions 1 to 12 | | All twelve are in index.md *Follow-up*, replacing the first draft's seven. |
+
+## Domain review, second pass
+
+The second pass [domain-settlement-reconciliation-r2](../../reviews/domain-settlement-reconciliation-r2.md) (2026-11-12) found the revision ready to accept once N1 to N4 change. Every finding was folded in on 2026-11-12 with the lead's rulings on N1 to N8 and the slice 1a trim. Before it, spec 0019's landed M9 (collection recorded at 45, only the delivered move held) replaced the first revision's `awaiting_partial_split` reason and its second fixture.
+
+| # | Severity | How it was closed |
+|---|---|---|
+| N1 | major | Spec 0019 decides every cash difference; settlement reads `CashDifferences.resolutionOf` (spec 0019 AC-32) in `carrierCashTarget` (AC-17, AC-19, Q-22.4). Removed: the reconcile with difference route, the "raise a claim" action, settlement's call of `openShortCollection` (spec 0019 calls it itself), the `settlement.cash_short` task, and settlement's write off reasons. A paid `short_collection` claim reconciles when collected plus compensation equals due; `written_off` (`courier_shortfall_written_off` or `brand_side_write_off`) is the evidence; `over_collection_belongs_to_brand` puts the excess in "kept by the brand at the door"; during a held partial (`held_partial`) no claim is offered and the blocker links to spec 0019's task; a brand side difference (`brand_side_pending`: collected equals Bosta's `cod_amount`) reads "Bosta was never told the new amount". Names as landed in spec 0019's second pass (AC-32). T6 in the worked month asserts the paid claim. |
+| N2 | major | "Owed by Bosta at period end" counts every delivery final on or before `ends_on` with collected COD not deposited by then, read as of `ends_on` (`CarrierDeliveries.collectedNotDepositedAsOf`, requested), with "of which overdue" as a sub row; compensation not received is read as of `ends_on` too (`CarrierClaims.approvedNotReceivedAsOf`, requested). T7 in the worked month asserts it. |
+| N3 | major | Exactly `CarrierClaims.overdueCompensation({ connectionId, decidedBefore })` with spec 0019's `claim_compensation_overdue_days` (30); `settlement_compensation_overdue_days` and the "before the latest cash out" rule are dropped (AC-20). |
+| N4 | major | AC-30 and Q-22.9: every save or correction reruns the check over every fee line of open periods from the version's `effective_from`, rule matched lines included (a person's match counts as "accepted above contract"); a version is corrected for the same days by superseding it with a reason, audited; versions have no end date, so the table stays append only; one price per delivery type with optional zone overrides by carrier area id. |
+| N5 | major | AC-37: bulk `retry`, `account`, or `accept` on up to 500 lines of an Unmatched group, one match row per line, one audit entry. `accept` is added to the lead's two actions because the review's own example (a rate change the owner agreed) needs it. |
+| N6 | major | AC-29 and Q-22.12: partial deliveries and prepaid parcels get the refunds' fallback (a real one if the month has one, else the recorded fixture month proves the path and the runbook says why). The scope's slice done when line is out of this lane; the lead takes it (Follow-up). |
+| N7 | major | AC-9: a `wallet_only` fee row with a tracking number equal to that delivery's live `bosta_unitemized` line is `confirmed`, not added. Insurance stays `wallet_only` in the starting map with this exception, by the lead's ruling, rather than the review's switch to `cash_cycle_part`; brand question 17 settles it. |
+| N8 | major | AC-38 and rule 5: cash on a `prepaid` order, or `nothing_to_collect` with fulfillment delivered, is `collected_with_nothing_due` ("the customer may have paid twice"), linked to spec 0019's over collection (requested for this case, `over_collection_pending`), with its own totals row; matched once the resolution is `over_collection_refund_customer` or `over_collection_belongs_to_brand`. |
+| m1 | minor | AC-1: the account code uses the last 8 characters of the connection id. |
+| m2 | minor | Derivation table: any other type with `cod` not zero writes `cod_collected` `non_forward_cash`. With spec 0019's second pass, a customer return pickup with `cod` above 0 is always a refund (the first revision's branch C is gone). |
+| m3 | minor | Carried with the day comparison to feature 23 (*Later than slice 1a*) and brand question 19. |
+| m4 | minor | The refusal fee is off the rate card; a refusal fee below the brand's terms is spec 0019's check. |
+| m5 | minor | AC-32: a `settlement.close` holder accepts a bank difference with `bank_charge` or `other`, closing the task and showing it by reason. |
+| m6 | minor | AC-31: cash outs are negative lines, counted once; a negative balance reads "owed to Bosta". |
+| m7 | minor | AC-1: the balance shown is the roll forward's expected balance, or "opening balance not recorded". |
+| m8 | minor | AC-16: `reconciled` reads "checked against Bosta" on carrier orders; the Orders tab shows "cashed out, not yet seen in bank". |
+| m9 | minor | AC-34: the summary gains the opening balance and owed by Bosta at period end; text cells starting with `=`, `+`, `-`, or `@` get a leading apostrophe. |
+| m10 | minor | The spec 0018 request row is corrected: `CarrierCashCycleRecorded` already carries `deliveryType` and `beganAsSend`; `final_at` is no longer needed once the final state day grouping moved to feature 24. |
+| m11 | minor | AC-18: settlement is the writer of a corrected collection on a remitted order; spec 0013 clears `collection_changed_after_remittance` when that collection applies. |
+| m12 | minor | AC-17: the split sets `cod_due_amount` from the kept pieces, and any rest is spec 0019's `short_collection` claim. |
+| m13 | minor | `non_forward_cash` has its own totals row and a next step naming feature 34; the two cash cycles per tracking number question is brand question 13, before milestone 2 (AC-3). |
+| OQ-1 to OQ-5 | owner questions | OQ-1 is Q-22.4 revised; OQ-2 is settled by spec 0019's setting (AC-20); OQ-3 is Q-22.12; OQ-4 is Q-22.9 revised; OQ-5 is Q-22.13. |
+| Trim | | By the lead's ruling, moved to *Later than slice 1a*: AC-36 (convenience; `sources_disagree` and a corrected sheet cover it), the totals by final state day and the Other couriers tab (feature 24), and the live day total comparison (feature 23). Kept, against the review's list: the bank receipts (M2's leak check). |
+| Brand questions B1 to B8 | | Added to index.md *Follow-up* as questions 13 to 20. |
 
 ## References
 
