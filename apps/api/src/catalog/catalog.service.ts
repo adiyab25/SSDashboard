@@ -109,6 +109,14 @@ function toDetail(row: SkuRow, barcodes: SkuBarcode[]): SkuDetail {
   };
 }
 
+/** A SKU row as a stock posting needs it after a lock (spec 0011 AC-18). */
+export interface LockedVariant extends Record<string, unknown> {
+  id: string;
+  kind: string;
+  tracking: string;
+  archived: boolean;
+}
+
 /**
  * Products and their SKUs (spec 0006). Owns `products` and `product_variants`; imports nothing
  * from inventory. Stock dependent SKU actions live in inventory and call this service.
@@ -410,6 +418,54 @@ export class CatalogService {
         return [id, { fault: null, sku }];
       }),
     );
+  }
+
+  /**
+   * Locks SKU rows `FOR SHARE` in id order inside the caller's transaction and answers what a
+   * stock posting checks (spec 0011 AC-18): kind, tracking, and whether archived. An archive or
+   * code change, which takes `lockForUpdate`, waits for every holder, and the reverse. A SKU that
+   * does not exist is simply absent from the answer. Never changes a row and never opens a
+   * transaction of its own.
+   */
+  async lockForShare(
+    tx: Executor,
+    variantIds: readonly string[],
+  ): Promise<Map<string, LockedVariant>> {
+    const { rows } = await tx.execute<LockedVariant>(sql`
+      SELECT id, kind, tracking, archived_at IS NOT NULL AS archived
+      FROM product_variants WHERE id = ANY(${pgArray([...new Set(variantIds)])}::uuid[])
+      ORDER BY id
+      FOR SHARE`);
+    return new Map(rows.map((row) => [row.id, row]));
+  }
+
+  /**
+   * Locks SKU rows `FOR UPDATE` in id order inside the caller's transaction, for an archive,
+   * unarchive, or code change that must wait for every posting in flight (spec 0011 AC-18). Same
+   * answer as `lockForShare`; a SKU that does not exist is absent. Never changes a row and never
+   * opens a transaction of its own.
+   */
+  async lockForUpdate(
+    tx: Executor,
+    variantIds: readonly string[],
+  ): Promise<Map<string, LockedVariant>> {
+    const { rows } = await tx.execute<LockedVariant>(sql`
+      SELECT id, kind, tracking, archived_at IS NOT NULL AS archived
+      FROM product_variants WHERE id = ANY(${pgArray([...new Set(variantIds)])}::uuid[])
+      ORDER BY id
+      FOR UPDATE`);
+    return new Map(rows.map((row) => [row.id, row]));
+  }
+
+  /**
+   * The ids of every serial tracked SKU, read only, for the reconciliation's serial check (spec
+   * 0011 AC-18). Reads through `executor`, so a snapshot transaction sees one consistent answer.
+   */
+  async serialTrackedVariantIds(executor: Executor = this.connection.db): Promise<string[]> {
+    const { rows } = await executor.execute<{ id: string }>(
+      sql`SELECT id FROM product_variants WHERE tracking = 'serial'`,
+    );
+    return rows.map((row) => row.id);
   }
 
   /**

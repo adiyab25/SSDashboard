@@ -1,3 +1,4 @@
+import { CatalogService } from '../src/catalog/catalog.service.js';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
@@ -16,7 +17,7 @@ describe('numbering and reconciliation', { timeout: 60_000 }, () => {
     h = await ledgerHarness();
     make = fixtures(h.owner);
     numbering = new NumberingService(new SettingsService(h.app));
-    reconciliation = new ReconciliationService(h.app);
+    reconciliation = new ReconciliationService(h.app, new CatalogService(h.app));
   });
 
   afterAll(async () => {

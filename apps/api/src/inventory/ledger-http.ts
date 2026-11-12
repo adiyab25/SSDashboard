@@ -71,6 +71,7 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
       case 'QuantityTooLarge':
       case 'DiscrepancyClosed':
       case 'NotRebuildable':
+      case 'NestedStockTransaction':
         logger.error(`Unmapped ledger error ${error.code}: ${error.message}`);
         return new InternalServerErrorException();
     }
