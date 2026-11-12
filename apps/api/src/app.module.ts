@@ -8,6 +8,7 @@ import { ChannelsModule } from './channels/channels.module.js';
 import { ConfigModule } from './config/config.module.js';
 import { ConnectorsModule } from './connectors/connectors.module.js';
 import { CustomersModule } from './customers/customers.module.js';
+import { CustomerProfileModule } from './customers/profile/customer-profile.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { IdentityModule } from './identity/identity.module.js';
@@ -46,6 +47,9 @@ import { PlatformModule } from './platform/platform.module.js';
     InventoryModule,
     OrdersModule,
     PartnersModule,
+    // The customers leaf (profile, timeline, flag routes; spec 0014): after `CustomersModule`, so
+    // its `GET customers/:id` is matched after `GET customers/merge-suggestions`.
+    CustomerProfileModule,
   ],
 })
 export class AppModule {}

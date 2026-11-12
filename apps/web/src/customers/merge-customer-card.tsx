@@ -119,6 +119,11 @@ export function MergeCustomerCard({
             <p className="text-sm text-muted-foreground">
               {t('customers.merge.card.added', { date: format.date(profile.createdAt) })}
             </p>
+            {profile.orderCount !== undefined && (
+              <p className="text-sm text-muted-foreground">
+                {t('customers.merge.card.orders', { number: format.number(profile.orderCount) })}
+              </p>
+            )}
             {profile.flag === null && (
               <p className="text-sm text-muted-foreground">{t('customers.merge.card.noFlag')}</p>
             )}

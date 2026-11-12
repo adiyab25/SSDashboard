@@ -1,21 +1,22 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import type {
-  CustomerAbsorbedMerge,
-  CustomerChannelIdView,
-  CustomerFlagView,
-  CustomerPhoneView,
-  CustomerProfile,
-  LocalizedText,
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  CUSTOMER_PROFILE_GUARDED_FIELDS,
+  type CustomerAbsorbedMerge,
+  type CustomerChannelIdView,
+  type CustomerFlagView,
+  type CustomerPhoneView,
+  type CustomerProfile,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
-import { ChannelsError } from '../../channels/channels.errors.js';
-import { ChannelsService } from '../../channels/channels.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { StaffDirectory } from '../../identity/staff/staff-directory.js';
+import type { Access } from '../../platform/access/access.js';
 import { briefRows, FLAG_SEVERITY_SQL, utc } from '../customer-briefs.js';
 import { CustomersError } from '../customers.errors.js';
 import { CustomersService } from '../customers.service.js';
+import { ChannelLabels } from './channel-labels.js';
+import { CustomerRiskSignals } from './customer-risk-signals.js';
 
 interface CanonicalRow extends Record<string, unknown> {
   name: string | null;
@@ -60,30 +61,53 @@ interface MergeRow extends Record<string, unknown> {
  * ids of the canonical customer, the live merges she absorbed, and her flag by the canonical rule.
  * A merged id answers its survivor with `resolvedFrom` set. Read only: it must never write, and
  * it reads other modules' data only through their exported services (`ChannelsService` for store
- * and channel labels, `StaffDirectory` for the name of the person who set a flag).
+ * and channel labels through `ChannelLabels`, `StaffDirectory` for the name of the person who set a
+ * flag, and `OrderQueries.countsForCustomers` for the signal and the order count).
  */
 @Injectable()
 export class CustomerProfileService {
-  private readonly logger = new Logger('CustomerProfile');
-  private warnedStoresNotRegistered = false;
-
   /** Takes the database and the services the profile asks. */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     private readonly customers: CustomersService,
-    private readonly channels: ChannelsService,
+    private readonly labels: ChannelLabels,
+    private readonly signals: CustomerRiskSignals,
     private readonly staff: StaffDirectory,
   ) {}
 
-  /** The profile of the canonical customer behind `askedId`; throws `CUSTOMER_NOT_FOUND` for an unknown id. */
-  async profile(askedId: string): Promise<CustomerProfile> {
+  /**
+   * The profile of the canonical customer behind `askedId`; throws `CUSTOMER_NOT_FOUND` for an
+   * unknown id. The returner `signal` and the `orderCount` read order data, so they are added only
+   * for a viewer with `orders.view` (`CUSTOMER_PROFILE_GUARDED_FIELDS`, spec 0014 AC-15).
+   */
+  async profile(askedId: string, viewer: Access): Promise<CustomerProfile> {
     // One snapshot for every read, so a merge that commits half way never shows a phone of the
-    // old record beside the id set of the new one.
-    const read = await this.connection.db.transaction((tx) => this.readProfile(tx, askedId), {
-      isolationLevel: 'repeatable read',
-      accessMode: 'read only',
-    });
-    return { ...read.profile, flag: await this.flag(read.flagRow) };
+    // old record beside the id set of the new one, or counts orders of a record it no longer holds.
+    const read = await this.connection.db.transaction(
+      async (tx) => {
+        const profile = await this.readProfile(tx, askedId);
+        // Each guarded field asks its own permission, so a later split of the keys holds.
+        const showsSignal = viewer.has(CUSTOMER_PROFILE_GUARDED_FIELDS.signal);
+        const showsCount = viewer.has(CUSTOMER_PROFILE_GUARDED_FIELDS.orderCount);
+        if (!showsSignal && !showsCount) return { ...profile, orders: null };
+        const ids = await this.customers.idsOf(profile.profile.id, tx);
+        return {
+          ...profile,
+          orders: {
+            ...(showsSignal
+              ? { signal: await this.signals.signalOf(ids, profile.flagRow !== undefined, tx) }
+              : {}),
+            ...(showsCount ? { orderCount: await this.signals.orderCount(ids, tx) } : {}),
+          },
+        };
+      },
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
+    );
+    return {
+      ...read.profile,
+      flag: await this.flag(read.flagRow),
+      ...(read.orders ?? {}),
+    };
   }
 
   private async readProfile(
@@ -176,46 +200,17 @@ export class CustomerProfileService {
     db: Executor,
     rows: readonly ExternalIdRow[],
   ): Promise<CustomerChannelIdView[]> {
-    const connectionIds = [
-      ...new Set(rows.flatMap((row) => (row.connection_id === null ? [] : [row.connection_id]))),
-    ];
-    const channelIds = [
-      ...new Set(rows.flatMap((row) => (row.channel_id === null ? [] : [row.channel_id]))),
-    ];
-    const stores = new Map<string, { code: string; name: LocalizedText }>();
-    try {
-      for (const label of await this.channels.storeLabelsByConnection(connectionIds, db)) {
-        stores.set(label.connectionId, { code: label.storeCode, name: label.storeName });
-      }
-    } catch (error) {
-      // Until the connectors module registers its source, a Shopify id shows without a store label.
-      if (!(error instanceof ChannelsError) || error.code !== 'CONNECTION_STORES_NOT_REGISTERED') {
-        throw error;
-      }
-      if (!this.warnedStoresNotRegistered) {
-        this.warnedStoresNotRegistered = true;
-        this.logger.warn(
-          'CONNECTION_STORES_NOT_REGISTERED: Shopify customer ids are shown without a store label until the connectors module registers its source',
-        );
-      }
-    }
-    const channels = new Map(
-      (await this.channels.channels(channelIds, db)).map((channel) => [channel.id, channel]),
-    );
-    return rows.map((row) => {
-      const store = row.connection_id === null ? undefined : stores.get(row.connection_id);
-      const channel = row.channel_id === null ? undefined : channels.get(row.channel_id);
-      return {
-        id: row.id,
-        kind: row.kind,
-        externalId: row.external_id,
-        storeCode: store?.code ?? null,
-        storeName: store?.name ?? null,
-        channelCode: channel?.code ?? null,
-        channelName: channel?.name ?? null,
-        createdAt: row.created_at,
-      };
-    });
+    const labels = await this.labels.of(db, rows);
+    return rows.map((row, index) => ({
+      id: row.id,
+      kind: row.kind,
+      externalId: row.external_id,
+      storeCode: labels[index]?.storeCode ?? null,
+      storeName: labels[index]?.storeName ?? null,
+      channelCode: labels[index]?.channelCode ?? null,
+      channelName: labels[index]?.channelName ?? null,
+      createdAt: row.created_at,
+    }));
   }
 
   /** The merged record of each live merge, as a brief. */
