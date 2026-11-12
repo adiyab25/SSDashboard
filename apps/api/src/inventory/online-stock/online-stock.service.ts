@@ -13,7 +13,7 @@ import {
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { z } from 'zod';
 import { DATABASE } from '../../database/database.module.js';
-import { pgArray, type Executor } from '../../database/sql.js';
+import { pgArray, type Executor, type Transaction } from '../../database/sql.js';
 import { LedgerError } from '../ledger/ledger.errors.js';
 import { buildAvailabilitySql } from '../ledger/ledger.service.js';
 import { LocationPolicyService } from '../locations/location-policy.service.js';
@@ -27,6 +27,15 @@ import { OnlineStockError } from './online-stock.errors.js';
  * Assumed: no ledger transaction stays open 5 minutes.
  */
 export const ONLINE_FEED_LAG = '5 minutes';
+
+/**
+ * The transaction level advisory lock on "which location feeds online stock" (spec 0013 review M2,
+ * security L3): taken shared by every orders write that reads the online location to reserve
+ * there, and exclusive by the online flag moves (`makeOnline`, `stop`) before any row lock. So an
+ * order either reserves before a move starts (and the move's gate sees its hold) or waits and reads
+ * the moved flag; it never reserves at the old location after the gate passed.
+ */
+export const ONLINE_FLAG_LOCK = 'inventory.online_flag';
 
 /** Variants read per query when the gate counts a location's stock. */
 const GATE_CHUNK = 5000;
@@ -80,6 +89,25 @@ export class OnlineStockService {
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(LocationPolicyService) private readonly policy: LocationPolicyService,
   ) {}
+
+  /**
+   * Takes the online flag lock shared for the rest of the caller's transaction (see
+   * {@link ONLINE_FLAG_LOCK}). Call it before any other lock a stock write takes (the SKU and
+   * location rows, the pair locks), never inside a flag move, and never on the pool: outside a
+   * transaction the lock would end with the statement.
+   */
+  async shareOnlineFlag(tx: Transaction): Promise<void> {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock_shared(hashtext(${ONLINE_FLAG_LOCK}))`);
+  }
+
+  /**
+   * Takes the online flag lock exclusive for the rest of the caller's transaction: only the online
+   * flag moves call it, as their first lock, so every in flight order reservation finishes first
+   * and none starts until the move commits.
+   */
+  async lockOnlineFlag(tx: Transaction): Promise<void> {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${ONLINE_FLAG_LOCK}))`);
+  }
 
   /** The online location (`{ id, code, name }`), or null when no location feeds online stock. */
   async onlineLocation(executor: Executor = this.connection.db): Promise<OnlineLocationRef | null> {

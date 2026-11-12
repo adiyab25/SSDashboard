@@ -13,6 +13,8 @@ import {
 import { InvalidAmountError, InvalidTransition } from '@ssdashboard/contracts';
 import type { Response } from 'express';
 import type { z } from 'zod';
+import { ledgerHttpError } from '../inventory/ledger-http.js';
+import { LedgerError } from '../inventory/ledger/ledger.errors.js';
 import { DocumentPrefixesUnreadable } from '../platform/numbering.service.js';
 import { OrdersError } from './orders.errors.js';
 
@@ -26,7 +28,8 @@ const unprocessable = (code: string, message: string) =>
 
 /**
  * Maps an orders domain error to the stable HTTP answer of spec 0013's API table; any other error
- * is returned unchanged. A lock wait past its cap answers 503 `BUSY` with `Retry-After`. The
+ * is returned unchanged, except a `LedgerError`, which answers through `ledgerHttpError`. A lock
+ * wait past its cap answers 503 `BUSY` with `Retry-After`. The
  * messages are fixed text and never echo an address, phone, or note.
  */
 export function ordersHttpError(error: unknown, response?: Response): unknown {
@@ -44,6 +47,9 @@ export function ordersHttpError(error: unknown, response?: Response): unknown {
   if (error instanceof DocumentPrefixesUnreadable) {
     return new ConflictException({ code: 'DOCUMENT_PREFIXES_UNREADABLE', message: error.message });
   }
+  // A stock refusal that reaches an orders route (a ledger call inside the order transaction)
+  // answers with the ledger's own stable codes, never an unmapped 500 (review m3).
+  if (error instanceof LedgerError) return ledgerHttpError(error, response);
   if (!(error instanceof OrdersError)) return error;
   switch (error.code) {
     case 'OrderNotFound':

@@ -22,7 +22,7 @@ import {
   type ReservedLine,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { CatalogLocks } from '../../catalog/catalog-locks.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import {
@@ -1047,6 +1047,36 @@ export class LedgerService {
   }
 
   /**
+   * Where each document line of many documents holds its active reservation (spec 0013 AC-26: the
+   * orders gate check and `hold-open-orders`), in one set based read: one row per active
+   * reservation of `sourceType` whose `source_id` is in `sourceIds`, with its location. Read only and
+   * lock free, ids lower case; reads through `executor` when given (the caller's transaction sees
+   * its own uncommitted reservations). Never reads another module's table.
+   */
+  async activeReservationLocations(
+    sourceType: string,
+    sourceIds: readonly string[],
+    executor: Executor = this.connection.db,
+  ): Promise<{ sourceId: string; sourceLineId: string; locationId: string }[]> {
+    const type = parse(ReservationSource.shape.sourceType, sourceType);
+    const ids = parse(z.array(z.uuid()), [...new Set(sourceIds)]);
+    if (!ids.length) return [];
+    const { rows } = await executor.execute<{
+      source_id: string;
+      source_line_id: string;
+      location_id: string;
+    }>(sql`
+      SELECT source_id, source_line_id, location_id FROM reservations
+      WHERE status = 'active' AND source_type = ${type}
+        AND source_id = ANY(${pgArray(ids)}::uuid[])`);
+    return rows.map((row) => ({
+      sourceId: row.source_id,
+      sourceLineId: row.source_line_id,
+      locationId: row.location_id,
+    }));
+  }
+
+  /**
    * Books an `order_shipment` a carrier fact reported (spec 0011 AC-22) under the key
    * `order_shipment:<orderId>` (`:<n>` from generation 2). It is never refused for stock,
    * reservations, an archived SKU or location, or a locked period: each line fulfils its named
@@ -1410,7 +1440,7 @@ export class LedgerService {
       balance.changed = true;
       if (line.quantity < 0) {
         if (op.carrier) this.fulfilCarrierLine(line, op.sourceId, reservations, fulfilled);
-        else this.applyReservation(line, reservations, balances.byKey);
+        else this.applyReservation(line, op.sourceId, reservations, balances.byKey);
       }
       costed.push(result);
     }
@@ -1674,9 +1704,16 @@ export class LedgerService {
     }
   }
 
-  /** Fulfils the line's reservation, or checks it leaves enough on hand for the reserved quantity (AC-4). */
+  /**
+   * Fulfils the line's reservation, or checks it leaves enough on hand for the reserved quantity
+   * (AC-4). A named reservation must be an open one for this SKU, location, and lot and belong to
+   * this posting's document line (its `source_id` is the posting's `sourceId`, its
+   * `source_line_id` the line's `sourceLineId`), else `ReservationMismatch`: a posting never
+   * consumes another document's hold (security review L4).
+   */
   private applyReservation(
     line: Line,
+    sourceId: string,
     reservations: Map<string, ReservationRow>,
     balances: Map<string, { row: BalanceRow; state: BalanceState }>,
   ): void {
@@ -1693,6 +1730,15 @@ export class LedgerService {
         throw new LedgerError(
           'ReservationMismatch',
           `${at}: the reservation is not an open one for this SKU, location, and lot`,
+        );
+      }
+      if (
+        reservation.source_id.toLowerCase() !== sourceId.toLowerCase() ||
+        reservation.source_line_id.toLowerCase() !== (line.sourceLineId ?? '').toLowerCase()
+      ) {
+        throw new LedgerError(
+          'ReservationMismatch',
+          `${at}: the reservation belongs to another document line`,
         );
       }
       if (-line.quantity > reservation.open_quantity) {

@@ -83,7 +83,7 @@ export async function holdOpenOrdersIfAsked(
         (response) =>
           response.request().method() === 'GET' &&
           new URL(response.url()).pathname.endsWith('/online-gate'),
-        { timeout: 15_000 },
+        { timeout: 45_000 },
       )
       .catch(() => null);
     try {
@@ -92,7 +92,12 @@ export async function holdOpenOrdersIfAsked(
       // The button went away under the press (a re read already passed the check): look again.
       continue;
     }
-    await expect(dialog.getByRole('status', { name: words.heldTitle })).toBeVisible();
+    // The hold reads every open order of the shared database (about 12 ms per order on an idle
+    // machine, 2.4 s for 200; QA 2026-11-12), so under a full parallel run it outlasts the 5 s
+    // default; the button stays disabled until it answers.
+    await expect(dialog.getByRole('status', { name: words.heldTitle })).toBeVisible({
+      timeout: 30_000,
+    });
     await reread;
   }
   await expect(hold).toHaveCount(0);

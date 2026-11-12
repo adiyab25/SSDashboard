@@ -27,13 +27,6 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
   let counter = 0;
   /** A fixture check other modules would register: flips between passing and failing. */
   const fixtureCheck = { passes: true };
-  /** When set, the fixture check waits until `expected` moves have reached it. */
-  let latch: {
-    expected: number;
-    arrived: number;
-    release: () => void;
-    opened: Promise<void>;
-  } | null = null;
 
   beforeAll(async () => {
     api = await startInProcessApi();
@@ -42,15 +35,8 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
     online = api.app.get(OnlineStockService);
     api.app.get(OnlineStockGate).register({
       key: 'fixture.orders_held',
-      run: async () => {
-        // A test may hold every move at this point until `expected` moves have arrived, so two
-        // transactions are open at the same time (the unique index race, spec 0011 AC-1).
-        if (latch) {
-          latch.arrived += 1;
-          if (latch.arrived >= latch.expected) latch.release();
-          await latch.opened;
-        }
-        return {
+      run: () =>
+        Promise.resolve({
           label: 'inventory.onlineGate.checks.stockCounted',
           passed: fixtureCheck.passes,
           count: 3,
@@ -59,8 +45,7 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
             path: '/api/orders/hold-open-orders',
             label: 'inventory.onlineGate.checks.stockCounted',
           },
-        };
-      },
+        }),
     });
     cookie = await api.signIn((await api.addPerson(['manager'])).email);
     supportCookie = await api.signIn((await api.addPerson(['support'])).email);
@@ -214,29 +199,22 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       expect(['ONLINE_GATE_STALE', 'ALREADY_ONLINE']).toContain(loser.code);
     });
 
-    it('gives one success and one ONLINE_GATE_STALE for parallel moves of two different warehouses', async () => {
+    it('serializes parallel moves of two different warehouses on the online flag lock: one location online after both', async () => {
       const first = await warehouse({ verified: true });
       const second = await warehouse({ verified: true });
       const body = { confirmedVariantCount: 0, reason: 'Race' };
-      let release = () => {};
-      const opened = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      // Both moves read "no online location", lock their own row, and wait here until both are
-      // open: the second flag write then waits on the first and meets `locations_one_online`.
-      latch = { expected: 2, arrived: 0, release, opened };
-      try {
-        const replies = await Promise.all([
-          call('POST', `/api/locations/${first}/make-online`, body),
-          call('POST', `/api/locations/${second}/make-online`, body),
-        ]);
+      // Spec 0013 review M2: every move takes the online flag lock exclusive first, so the two
+      // never run their gates at the same time. The second reads the first's committed flag and
+      // moves it on (or meets the unique index guard and answers ONLINE_GATE_STALE).
+      const replies = await Promise.all([
+        call('POST', `/api/locations/${first}/make-online`, body),
+        call('POST', `/api/locations/${second}/make-online`, body),
+      ]);
 
-        expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
-        expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
-          code: 'ONLINE_GATE_STALE',
-        });
-      } finally {
-        latch = null;
+      expect(replies.some((reply) => reply.status === 200)).toBe(true);
+      for (const reply of replies.filter((r) => r.status !== 200)) {
+        expect(reply.status).toBe(409);
+        expect(reply.body).toMatchObject({ code: 'ONLINE_GATE_STALE' });
       }
       const online = await api.owner.pool.query<{ n: number }>(
         'SELECT count(*)::int AS n FROM locations WHERE sellable_online',

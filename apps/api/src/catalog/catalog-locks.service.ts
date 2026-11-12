@@ -32,9 +32,13 @@ export class CatalogLocks {
    * simply absent from the answer. Takes a `Transaction`, never the pool: outside a transaction the
    * lock would end with the statement. It must never lock variant rows in any order but ascending
    * id (duplicates dropped), and must never lock a style or product row after a variant row: the
-   * catalog's own writers lock a handle, then the style, then variants by ascending id, and the
-   * ledger takes these locks before its pair locks and reservation rows, so one order holds
-   * everywhere and no two paths deadlock.
+   * catalog's own channel sync locks a handle, then the style, then variants by ascending id, and
+   * the ledger takes these locks before its pair locks and reservation rows. One known exception:
+   * the SKU archive (`CatalogService.setArchived`, through inventory's archive path) locks the
+   * variant `FOR UPDATE` (here, `lockForUpdate`) and then its style (`products`)
+   * `FOR NO KEY UPDATE`, so it can wait on a channel sync holding the style while that sync
+   * waits on the variant; PostgreSQL then aborts one of the two, and the ledger's runner reruns
+   * the archive once.
    */
   async lockForShare(
     tx: Transaction,

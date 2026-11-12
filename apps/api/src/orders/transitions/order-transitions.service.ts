@@ -60,7 +60,8 @@ export class OrderTransitions {
 
   /**
    * `new` to `confirmed` by a person (AC-7): sets `confirmed_at` and `confirmed_by`, writes one
-   * event, and tops the order's short lines up (AC-13, a shortage never refuses a confirm). Throws `OrderNotFound`, `OrderStale` when `expectedUpdatedAt` is given and differs, or
+   * event, and tops the order's short lines up (AC-13, a shortage never refuses a confirm).
+   * Throws `OrderNotFound`, `OrderStale` when `expectedUpdatedAt` is given and differs, or
    * `InvalidTransition` from any other state.
    */
   async confirm(

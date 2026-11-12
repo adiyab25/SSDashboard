@@ -240,7 +240,10 @@ export class EditOverpaid extends OrdersError {
 export class EditInShopify extends OrdersError {
   /** Builds the error. */
   constructor() {
-    super('EditInShopify', 'Edit this order in Shopify; the change syncs back here');
+    super(
+      'EditInShopify',
+      'Edit this order in Shopify; the app reads the change back from Shopify and writes nothing to Shopify yet',
+    );
   }
 }
 
@@ -248,7 +251,10 @@ export class EditInShopify extends OrdersError {
 export class CancelInShopify extends OrdersError {
   /** Builds the error. */
   constructor() {
-    super('CancelInShopify', 'Cancel this order in Shopify; the cancel syncs back here');
+    super(
+      'CancelInShopify',
+      'Cancel this order in Shopify; the app reads the cancel back from Shopify and writes nothing to Shopify yet',
+    );
   }
 }
 

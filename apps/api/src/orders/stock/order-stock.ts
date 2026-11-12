@@ -91,6 +91,9 @@ export function holdBatchesOf<T extends { orderId: string }>(
   return batches;
 }
 
+/** Source ids per set based reservation read, so one bound array stays small. */
+const READ_CHUNK = 5_000;
+
 /**
  * The orders module's seam to the stock ledger (spec 0013 AC-13, AC-26, `stock/order-stock.ts`).
  * Every move that holds or frees stock calls it at its point in the order transaction:
@@ -99,16 +102,23 @@ export function holdBatchesOf<T extends { orderId: string }>(
  * lines up, a pack refusing a line still short with `LineShort` (409 `LINE_SHORT`, Q-16.5). Each
  * goes through spec 0011's `reserveLines` (`shortage: 'reserve_available'`), `releaseLines`, and
  * `releaseSource` with `sourceType: 'order'` at `OnlineStockService.onlineLocation()`, and writes
- * `short_quantity` from the answers through `OrderWriter`. It also registers the
- * `orders.open_orders_held` gate check and holds open orders at a location before it goes online.
+ * `short_quantity` from the answers through `OrderWriter`, after the unit's last `reserveLines`. It
+ * also registers the `orders.open_orders_held` gate check and holds open orders at a location
+ * before it goes online.
+ *
+ * Every operation first takes the online flag lock shared (`OnlineStockService.shareOnlineFlag`),
+ * so an order never reserves at a location while the online flag moves away from it (review M2).
+ * Then it locks the SKU rows (`CatalogLocks.lockForShare`) and decides what is reservable from that
+ * locked answer, so a SKU archived meanwhile is skipped, never a ledger refusal.
  *
  * It must never write an order table itself (the writer does), never read an inventory table (it
  * asks the ledger and the online stock service), and never open a transaction except one
  * `OrderTransactions.run` per hold batch. Lines without a variant, and lines whose SKU cannot hold
  * stock (archived, not a stocked kind, or lot tracked, which an order line cannot name), are neither
- * reserved nor short. With no online location nothing is reserved and every reservable line reads
- * short. A line whose active reservation sits at another location (the online flag moved) is left
- * there until `hold-open-orders` moves it.
+ * reserved nor short. With no online location nothing new is reserved: a line holding nothing reads
+ * short by its quantity, a held line keeps its stored short, and a pack is refused. A line whose
+ * active reservation sits at another location keeps it and ships from there (spec 0011 AC-19:
+ * reservations at the old location stay there).
  */
 @Injectable()
 export class OrderStock implements OnModuleInit {
@@ -142,6 +152,7 @@ export class OrderStock implements OnModuleInit {
     orderId: string,
     lineIds: readonly string[],
   ): Promise<void> {
+    await this.onlineStock.shareOnlineFlag(tx);
     await this.reserveAtOnline(tx, orderId, await this.openLines(tx, orderId, lineIds));
   }
 
@@ -150,15 +161,20 @@ export class OrderStock implements OnModuleInit {
    * `packed` (AC-25 b): reserves that line.
    */
   async afterLink(tx: OrderTransaction, orderId: string, lineId: string): Promise<void> {
+    await this.onlineStock.shareOnlineFlag(tx);
     await this.reserveAtOnline(tx, orderId, await this.openLines(tx, orderId, [lineId]));
   }
 
   /**
    * After an edit (AC-13): releases the reservations of the cancelled lines (their stock fills the
-   * oldest waiting demand) and reserves the added ones. The SKU rows of both are locked first, in
-   * ascending id, so the two ledger calls keep one lock order.
+   * oldest waiting demand) and reserves the added ones, writing the short quantities after the
+   * last `reserveLines`. The SKU rows of both sides are locked `FOR SHARE` up front in ascending
+   * id; the pair locks are still taken per ledger call (release, then reserve), so two edits that
+   * swap the same two sizes in opposite directions can deadlock, which the runner's single rerun
+   * breaks.
    */
   async afterEdit(tx: OrderTransaction, orderId: string, lines: EditedLines): Promise<void> {
+    await this.onlineStock.shareOnlineFlag(tx);
     const added = await this.openLines(tx, orderId, lines.addedLineIds);
     if (lines.cancelledLineIds.length > 0) {
       const cancelledVariants = await this.variantsOf(tx, orderId, lines.cancelledLineIds);
@@ -178,6 +194,7 @@ export class OrderStock implements OnModuleInit {
    * brings every line's `short_quantity` to 0.
    */
   async afterCancel(tx: OrderTransaction, orderId: string): Promise<void> {
+    await this.onlineStock.shareOnlineFlag(tx);
     await this.ledger.releaseSource(tx, { sourceType: SOURCE_TYPE, sourceId: orderId });
     await this.writer.clearShortQuantities(tx, orderId);
   }
@@ -185,20 +202,25 @@ export class OrderStock implements OnModuleInit {
   /**
    * On confirm and before pack (AC-13): calls `reserveLines` again for the order's open lines,
    * which tops their waiting demand up, and writes the new short quantities. For a pack, a line
-   * still short afterwards throws `LineShort` (409 `LINE_SHORT`), which rolls the pack back.
+   * still short afterwards (and every reservable line while no location is online) throws
+   * `LineShort` (409 `LINE_SHORT`), which rolls the pack back.
    */
   async topUp(tx: OrderTransaction, orderId: string, forPacking: boolean): Promise<void> {
+    await this.onlineStock.shareOnlineFlag(tx);
     const held = await this.reserveAtOnline(tx, orderId, await this.openLines(tx, orderId));
     if (forPacking && held.some((line) => line.unfilled > 0)) throw new LineShort();
   }
 
   /**
-   * The `orders.open_orders_held` gate check (AC-26): passes when every open line with a variant of
-   * an order in `new`, `confirmed`, or `packed` holds an active reservation at the candidate
-   * location; `count` is the lines that do not. Reads only, through `executor`.
+   * The `orders.open_orders_held` gate check (AC-26, spec 0011 AC-19): passes when every open line
+   * with a variant of an order in `new`, `confirmed`, or `packed` holds an active reservation at
+   * the candidate location or at the current online location (holds there stay there after the
+   * move); `count` is the lines that do not. Reads only, through `executor`, in a few set based
+   * statements whatever the number of open orders.
    */
   async openOrdersHeld(locationId: string, executor: Executor): Promise<OnlineGateCheckResult> {
-    const unheld = await this.unheldAt(locationId, executor);
+    const online = await this.onlineStock.onlineLocation(executor);
+    const unheld = await this.unheldAt(locationId, online?.id ?? null, executor);
     return {
       label: 'orders.onlineGate.openOrdersHeld',
       passed: unheld.length === 0,
@@ -212,18 +234,21 @@ export class OrderStock implements OnModuleInit {
   }
 
   /**
-   * `POST /api/orders/hold-open-orders` (AC-26): reserves every open line that does not yet hold an
-   * active reservation at `locationId` there, oldest order first, one `OrderTransactions.run` per
-   * batch of at most 200 lines, each order row locked first (ascending id). A line held at another
-   * location is released there first, because a line holds one active reservation. A shortage
-   * never refuses: the line waits for stock and counts in `linesShort`. A repeat holds nothing
-   * twice. Throws `LocationNotFound` for a missing or archived location or one that could never
-   * feed online stock, and `OrderLockTimeout` (503 `BUSY`) when a batch waits too long; batches
-   * already done stay done. Must not be called inside an order transaction.
+   * `POST /api/orders/hold-open-orders` (AC-26, spec 0011 AC-19): reserves at `locationId` every
+   * open line the gate check counts as unheld, oldest order first, one `OrderTransactions.run` per
+   * batch of at most 200 lines, each order row locked first (ascending id). A line holding nothing
+   * is reserved there; a line held at a location that does not feed online stock is released there
+   * and reserved here (releasing there cannot oversell); a line held at the current online location
+   * is never touched. A shortage never refuses: the line waits for stock and counts in
+   * `linesShort`. A repeat holds nothing twice. Throws `LocationNotFound` for a missing or archived
+   * location or one that could never feed online stock, and `OrderLockTimeout` (503 `BUSY`) when a
+   * batch waits too long; batches already done stay done. Must not be called inside an order
+   * transaction.
    */
   async holdOpenOrdersAt(locationId: string): Promise<HoldOpenOrdersResult> {
     await this.assertCandidate(locationId);
-    const unheld = await this.unheldAt(locationId, this.connection.db);
+    const online = await this.onlineStock.onlineLocation();
+    const unheld = await this.unheldAt(locationId, online?.id ?? null, this.connection.db);
     let linesHeld = 0;
     let linesShort = 0;
     for (const batch of holdBatchesOf(unheld, STOCK_BATCH_LINES)) {
@@ -231,49 +256,65 @@ export class OrderStock implements OnModuleInit {
       linesHeld += done.held;
       linesShort += done.short;
     }
-    const linesLeft = (await this.unheldAt(locationId, this.connection.db)).length;
-    return { linesHeld, linesShort, linesLeft };
+    const after = await this.onlineStock.onlineLocation();
+    const left = await this.unheldAt(locationId, after?.id ?? null, this.connection.db);
+    return { linesHeld, linesShort, linesLeft: left.length };
   }
 
-  /** Holds one batch at the location inside its order transaction; rerunnable, keeps no state. */
+  /**
+   * Holds one batch at the location inside its order transaction; rerunnable, keeps no state.
+   * Order rows first (ascending id), then the online flag lock, then the SKU rows, then the ledger
+   * calls (the releases, then one `reserveLines` per order), and the short quantities last, after
+   * the batch's last `reserveLines`, so line rows are written after every pair lock, as a restock
+   * does (security review L1).
+   */
   private async holdBatch(
     tx: OrderTransaction,
     batch: readonly StockLine[],
     locationId: string,
   ): Promise<{ held: number; short: number }> {
+    const at = locationId.toLowerCase();
     const orderIds = [...new Set(batch.map((line) => line.orderId.toLowerCase()))].sort();
     for (const orderId of orderIds) await this.writer.lockOrder(tx, orderId);
+    await this.onlineStock.shareOnlineFlag(tx);
+    const online = (await this.onlineStock.onlineLocation(tx))?.id.toLowerCase() ?? null;
     // Read again under the locks: an order may have moved on, or a line been cancelled.
     const { rows: holding } = await tx.execute<{ id: string }>(sql`
       SELECT id FROM orders WHERE id = ANY(${pgArray(orderIds)}::uuid[])
         AND fulfillment_state IN ('new', 'confirmed', 'packed')`);
     const holdingIds = new Set(holding.map((row) => row.id));
     const wanted = new Set(batch.map((line) => line.id));
-    const plan: { orderId: string; lines: StockLine[] }[] = [];
-    const elsewhere: string[] = [];
+    const open: StockLine[] = [];
     for (const orderId of orderIds) {
       if (!holdingIds.has(orderId)) continue;
-      const open = (await this.openLines(tx, orderId)).filter((line) => wanted.has(line.id));
-      const active = this.activeByLine(
-        await this.ledger.reservationsFor({ sourceType: SOURCE_TYPE, sourceId: orderId }, tx),
-      );
-      const lines = open.filter((line) => active.get(line.id) !== locationId.toLowerCase());
-      for (const line of lines) if (active.has(line.id)) elsewhere.push(line.id);
-      if (lines.length) plan.push({ orderId, lines });
+      open.push(...(await this.openLines(tx, orderId)).filter((line) => wanted.has(line.id)));
     }
-    const all = plan.flatMap((entry) => entry.lines);
-    if (!all.length) return { held: 0, short: 0 };
-    await this.catalogLocks.lockForShare(
-      tx,
-      all.map((line) => line.variantId),
-    );
+    const reservable = await this.reservable(open, tx, tx);
+    const active = await this.activeAt([...new Set(reservable.map((line) => line.orderId))], tx);
+    const elsewhere: string[] = [];
+    const toHold = reservable.filter((line) => {
+      const heldAt = active.get(line.id);
+      if (heldAt === at || (heldAt !== undefined && heldAt === online)) return false;
+      if (heldAt !== undefined) elsewhere.push(line.id);
+      return true;
+    });
+    if (!toHold.length) return { held: 0, short: 0 };
     if (elsewhere.length) {
       await this.ledger.releaseLines(tx, { sourceType: SOURCE_TYPE, sourceLineIds: elsewhere });
     }
+    const byOrder = new Map<string, StockLine[]>();
+    for (const line of toHold) {
+      byOrder.set(line.orderId, [...(byOrder.get(line.orderId) ?? []), line]);
+    }
+    const answers: { orderId: string; held: HeldLine[] }[] = [];
+    for (const [orderId, lines] of byOrder) {
+      answers.push({ orderId, held: await this.reserve(tx, orderId, lines, locationId) });
+    }
     let held = 0;
     let short = 0;
-    for (const entry of plan) {
-      for (const line of await this.reserve(tx, entry.orderId, entry.lines, locationId)) {
+    for (const answer of answers) {
+      await this.writeShorts(tx, answer.orderId, answer.held);
+      for (const line of answer.held) {
         if (line.unfilled > 0) short += 1;
         else held += 1;
       }
@@ -282,56 +323,54 @@ export class OrderStock implements OnModuleInit {
   }
 
   /**
-   * Reserves `lines` of one order at the online location and writes their short quantities;
-   * answers each reservable line's `unfilled` (a line held elsewhere answers its stored short).
+   * Reserves `lines` of one order at the online location and writes their short quantities after
+   * the reservation; answers each reservable line's `unfilled` as the pack check reads it. A line
+   * held at another location answers its stored short (it ships from where its pieces are). With no
+   * online location every reservable line answers its full quantity (a pack is refused), while only
+   * a line holding nothing is marked short by its quantity; a held line keeps its stored short,
+   * which still copies its reservation's `unfilled_quantity` (review M1).
    */
   private async reserveAtOnline(
     tx: OrderTransaction,
     orderId: string,
     lines: readonly StockLine[],
   ): Promise<HeldLine[]> {
-    const reservable = await this.reservable(lines, tx);
+    const reservable = await this.reservable(lines, tx, tx);
     if (!reservable.length) return [];
+    const active = await this.activeAt([orderId], tx);
     const online = await this.onlineStock.onlineLocation(tx);
     if (!online) {
-      await this.writer.setShortQuantities(
+      await this.writeShorts(
         tx,
         orderId,
-        reservable.map((line) => ({ lineId: line.id, shortQuantity: line.quantity })),
+        reservable
+          .filter((line) => !active.has(line.id))
+          .map((line) => ({ lineId: line.id, unfilled: line.quantity })),
       );
       return reservable.map((line) => ({ lineId: line.id, unfilled: line.quantity }));
     }
-    const active = this.activeByLine(
-      await this.ledger.reservationsFor({ sourceType: SOURCE_TYPE, sourceId: orderId }, tx),
-    );
+    const onlineId = online.id.toLowerCase();
     const here = reservable.filter((line) => {
-      const at = active.get(line.id);
-      return at === undefined || at === online.id.toLowerCase();
+      const heldAt = active.get(line.id);
+      return heldAt === undefined || heldAt === onlineId;
     });
     const kept = reservable
       .filter((line) => !here.includes(line))
       .map((line) => ({ lineId: line.id, unfilled: line.shortQuantity }));
-    return [...(await this.reserve(tx, orderId, here, online.id)), ...kept];
+    const held = await this.reserve(tx, orderId, here, online.id);
+    await this.writeShorts(tx, orderId, held);
+    return [...held, ...kept];
   }
 
-  /** `reserveLines` in runs of 200 at one location, then the short quantities from its answers. */
+  /** `reserveLines` in runs of 200 at one location; answers each line's `unfilled`, writes nothing. */
   private async reserve(
     tx: OrderTransaction,
     orderId: string,
     lines: readonly StockLine[],
     locationId: string,
   ): Promise<HeldLine[]> {
-    if (!lines.length) return [];
-    const chunks = chunksOf(lines, STOCK_BATCH_LINES);
-    if (chunks.length > 1) {
-      // Several ledger calls: lock every SKU row first, in ascending id, for one lock order.
-      await this.catalogLocks.lockForShare(
-        tx,
-        lines.map((line) => line.variantId),
-      );
-    }
     const held: HeldLine[] = [];
-    for (const chunk of chunks) {
+    for (const chunk of chunksOf(lines, STOCK_BATCH_LINES)) {
       const answers = await this.ledger.reserveLines(tx, {
         sourceType: SOURCE_TYPE,
         sourceId: orderId,
@@ -347,25 +386,58 @@ export class OrderStock implements OnModuleInit {
         held.push({ lineId: answer.sourceLineId, unfilled: answer.unfilled });
       }
     }
+    return held;
+  }
+
+  /** Writes the short quantity of each answered line through the writer, in one statement. */
+  private async writeShorts(
+    tx: OrderTransaction,
+    orderId: string,
+    held: readonly HeldLine[],
+  ): Promise<void> {
+    if (!held.length) return;
     await this.writer.setShortQuantities(
       tx,
       orderId,
       held.map((line) => ({ lineId: line.lineId, shortQuantity: line.unfilled })),
     );
-    return held;
   }
 
-  /** The lines whose SKU can hold stock: stocked, not archived, and not lot tracked. */
-  private async reservable(lines: readonly StockLine[], executor: Executor): Promise<StockLine[]> {
+  /**
+   * The lines whose SKU can hold stock: stocked, not archived, and not lot tracked. Inside an order
+   * transaction (`lockTx`) it locks the SKU rows `FOR SHARE` in ascending id first and decides on
+   * that locked answer, so an archive cannot slip in before `reserveLines` (review m3); a read only
+   * caller (the gate check) reads them without a lock.
+   */
+  private async reservable(
+    lines: readonly StockLine[],
+    executor: Executor,
+    lockTx?: OrderTransaction,
+  ): Promise<StockLine[]> {
     if (!lines.length) return [];
-    const skus = await this.catalog.getSkus(
-      lines.map((line) => line.variantId),
-      executor,
-    );
+    const ids = lines.map((line) => line.variantId);
+    const facts: ReadonlyMap<string, { archived: boolean; kind: string; tracking: string }> = lockTx
+      ? await this.catalogLocks.lockForShare(lockTx, ids)
+      : await this.catalog.getSkus(ids, executor);
     return lines.filter((line) => {
-      const sku = skus.get(line.variantId);
+      const sku = facts.get(line.variantId);
       return sku !== undefined && !sku.archived && sku.kind === 'stocked' && sku.tracking !== 'lot';
     });
+  }
+
+  /** The active reservation location (lower case) of each line of these orders, by line id. */
+  private async activeAt(
+    orderIds: readonly string[],
+    executor: Executor,
+  ): Promise<Map<string, string>> {
+    const active = new Map<string, string>();
+    for (const chunk of chunksOf(orderIds, READ_CHUNK)) {
+      const rows = await this.ledger.activeReservationLocations(SOURCE_TYPE, chunk, executor);
+      for (const row of rows) {
+        active.set(row.sourceLineId.toLowerCase(), row.locationId.toLowerCase());
+      }
+    }
+    return active;
   }
 
   /** The open lines with a variant of one order (all of them, or those in `lineIds`), by position. */
@@ -408,10 +480,16 @@ export class OrderStock implements OnModuleInit {
   }
 
   /**
-   * The open reservable lines of holding orders that hold no active reservation at `locationId`,
-   * oldest order first (`placed_at`, `id`, then line position). Reads only, through `executor`.
+   * The open reservable lines of holding orders that hold no active reservation at `locationId`
+   * nor at the online location `onlineId` (spec 0011 AC-19), oldest order first (`placed_at`,
+   * `id`, then line position). Reads only, through `executor`: one read of the lines, one of the
+   * SKUs, and one set based read of the reservations per 5,000 orders.
    */
-  private async unheldAt(locationId: string, executor: Executor): Promise<StockLine[]> {
+  private async unheldAt(
+    locationId: string,
+    onlineId: string | null,
+    executor: Executor,
+  ): Promise<StockLine[]> {
     const { rows } = await executor.execute<{
       id: string;
       order_id: string;
@@ -434,39 +512,22 @@ export class OrderStock implements OnModuleInit {
       })),
       executor,
     );
-    const at = locationId.toLowerCase();
-    const unheld: StockLine[] = [];
-    let orderId: string | null = null;
-    let active = new Map<string, string>();
-    for (const line of candidates) {
-      if (line.orderId !== orderId) {
-        orderId = line.orderId;
-        active = this.activeByLine(
-          await this.ledger.reservationsFor(
-            { sourceType: SOURCE_TYPE, sourceId: orderId },
-            executor,
-          ),
-        );
-      }
-      if (active.get(line.id) !== at) unheld.push(line);
-    }
-    return unheld;
-  }
-
-  /** Each line's active reservation location (lower case), from `reservationsFor`. */
-  private activeByLine(
-    reservations: readonly { sourceLineId: string; locationId: string; status: string }[],
-  ): Map<string, string> {
-    return new Map(
-      reservations
-        .filter((row) => row.status === 'active')
-        .map((row) => [row.sourceLineId.toLowerCase(), row.locationId.toLowerCase()]),
+    const active = await this.activeAt(
+      [...new Set(candidates.map((line) => line.orderId))],
+      executor,
     );
+    const at = locationId.toLowerCase();
+    const online = onlineId?.toLowerCase() ?? null;
+    return candidates.filter((line) => {
+      const heldAt = active.get(line.id);
+      return heldAt === undefined || (heldAt !== at && heldAt !== online);
+    });
   }
 
   /**
    * Refuses a location that is missing, archived, or could never feed online stock, with
-   * `LocationNotFound`, through the online stock service's candidate read.
+   * `LocationNotFound`, through the online stock service's candidate read (one variant row at
+   * most).
    */
   private async assertCandidate(locationId: string): Promise<void> {
     try {

@@ -10,7 +10,7 @@ export async function plantWarehouse(api: InProcessApi): Promise<string> {
   const { rows } = await api.owner.pool.query<{ id: string }>(
     `INSERT INTO locations (code, name, kind, allow_negative, is_sellable)
      VALUES ($1, '{"en": "Orders warehouse"}', 'warehouse', false, true) RETURNING id`,
-    [`OWH-${randomUUID().slice(0, 8)}`],
+    [`OWH-${randomUUID().slice(0, 8).toUpperCase()}`],
   );
   const id = rows[0]?.id;
   if (!id) throw new Error('No warehouse planted');

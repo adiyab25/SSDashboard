@@ -11,7 +11,7 @@ import {
   type OrderPaymentMethod,
 } from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
-import { pgConstraint, type Transaction } from '../../database/sql.js';
+import { pgArray, pgConstraint, type Transaction } from '../../database/sql.js';
 import { DomainEvents } from '../../platform/events/domain-events.js';
 import { actorIdOf, actorTypeOf, type OrderActor } from '../order-actor.js';
 import type { OrderTransaction } from '../order-transactions.js';
@@ -557,13 +557,15 @@ export class OrderWriter {
     orderId: string,
     lines: readonly { lineId: string; shortQuantity: number }[],
   ): Promise<void> {
-    for (const { lineId, shortQuantity } of lines) {
-      await tx.execute(sql`
-        UPDATE order_lines
-        SET short_quantity = LEAST(${shortQuantity}::int, quantity), updated_at = clock_timestamp()
-        WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND line_state = 'open'
-          AND short_quantity <> LEAST(${shortQuantity}::int, quantity)`);
-    }
+    if (!lines.length) return;
+    // One statement for every line of the answer.
+    await tx.execute(sql`
+      UPDATE order_lines l
+      SET short_quantity = LEAST(GREATEST(w.short, 0), l.quantity), updated_at = clock_timestamp()
+      FROM unnest(${pgArray(lines.map((line) => line.lineId))}::uuid[],
+                  ${pgArray(lines.map((line) => line.shortQuantity))}::int[]) AS w(id, short)
+      WHERE l.id = w.id AND l.order_id = ${orderId}::uuid AND l.line_state = 'open'
+        AND l.short_quantity <> LEAST(GREATEST(w.short, 0), l.quantity)`);
   }
 
   /**
@@ -584,10 +586,10 @@ export class OrderWriter {
    * (`{ add }`), capped between 0 and the line's quantity. It writes only an open line of an order
    * still in `new`, `confirmed`, or `packed`, and answers whether it wrote one.
    *
-   * It runs in the ledger's own transaction (handed over through `orderTransactionFromLedger`) and
-   * must never take the order row lock: the ledger holds pair locks there, so it locks only the
-   * one line row it writes (a deadlock with an order write is broken by the ledger's single
-   * retry). No event, `orders.updated_at` kept.
+   * It runs in the ledger's own transaction (handed over through the one sanctioned ledger
+   * adapter of `order-transactions.ts`) and must never take the order row lock: the ledger holds
+   * pair locks there, so it locks only the one line row it writes (a deadlock with an order write
+   * is broken by the ledger's single retry). No event, `orders.updated_at` kept.
    */
   async projectShortQuantity(
     tx: OrderTransaction,

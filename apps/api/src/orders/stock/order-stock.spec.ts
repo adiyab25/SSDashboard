@@ -23,6 +23,7 @@ interface Fixture {
   skus?: Partial<Record<string, Partial<StockableSku>>>;
   online?: boolean;
   unfilled?: Record<string, number>;
+  active?: { sourceId: string; sourceLineId: string; locationId: string }[];
 }
 
 interface ReserveCall {
@@ -39,9 +40,9 @@ function stockWith(fixture: Fixture = {}) {
     execute: vi.fn(() => Promise.resolve({ rows: lines })),
   } as never);
   const ledger = {
-    reservationsFor: vi.fn(
-      (): Promise<{ sourceLineId: string; locationId: string; status: string }[]> =>
-        Promise.resolve([]),
+    activeReservationLocations: vi.fn(
+      (): Promise<{ sourceId: string; sourceLineId: string; locationId: string }[]> =>
+        Promise.resolve(fixture.active ?? []),
     ),
     reserveLines: vi.fn((_tx: unknown, input: ReserveCall) =>
       Promise.resolve(
@@ -62,24 +63,23 @@ function stockWith(fixture: Fixture = {}) {
     releaseSource: vi.fn(() => Promise.resolve([])),
   };
   const onlineStock = {
+    shareOnlineFlag: vi.fn(() => Promise.resolve()),
     onlineLocation: vi.fn(() =>
       Promise.resolve(fixture.online === false ? null : { id: ONLINE, code: 'WH', name: {} }),
     ),
   };
   const gate = { register: vi.fn() };
-  const catalog = {
-    getSkus: vi.fn((ids: readonly string[]) =>
-      Promise.resolve(
-        new Map(
-          ids.map((id) => [
-            id,
-            { id, archived: false, kind: 'stocked', tracking: 'none', ...fixture.skus?.[id] },
-          ]),
-        ),
+  const facts = (ids: readonly string[]) =>
+    Promise.resolve(
+      new Map(
+        ids.map((id) => [
+          id,
+          { id, archived: false, kind: 'stocked', tracking: 'none', ...fixture.skus?.[id] },
+        ]),
       ),
-    ),
-  };
-  const locks = { lockForShare: vi.fn(() => Promise.resolve(new Map())) };
+    );
+  const catalog = { getSkus: vi.fn(facts) };
+  const locks = { lockForShare: vi.fn((_tx: unknown, ids: readonly string[]) => facts(ids)) };
   const writer = {
     setShortQuantities: vi.fn(() => Promise.resolve()),
     clearShortQuantities: vi.fn(() => Promise.resolve()),
@@ -95,7 +95,7 @@ function stockWith(fixture: Fixture = {}) {
     writer as unknown as OrderWriter,
     {} as OrderTransactions,
   );
-  return { stock, tx, ledger, writer, gate, locks };
+  return { stock, tx, ledger, writer, gate, locks, onlineStock, catalog };
 }
 
 describe('chunksOf and holdBatchesOf', () => {
@@ -191,7 +191,8 @@ describe('OrderStock (spec 0013 AC-13)', () => {
     });
     await stock.afterEdit(tx, ORDER, { addedLineIds: [LINE_B], cancelledLineIds: [LINE_A] });
 
-    expect(locks.lockForShare).toHaveBeenCalledTimes(1);
+    const locked = locks.lockForShare.mock.invocationCallOrder[0] ?? 0;
+    expect(locked).toBeLessThan(ledger.releaseLines.mock.invocationCallOrder[0] ?? 0);
     expect(ledger.releaseLines).toHaveBeenCalledWith(tx, {
       sourceType: 'order',
       sourceLineIds: [LINE_A],
@@ -210,11 +211,41 @@ describe('OrderStock (spec 0013 AC-13)', () => {
   });
 
   it('tops up only at the online location and keeps a line held elsewhere as it is', async () => {
-    const { stock, tx, ledger } = stockWith();
-    ledger.reservationsFor.mockResolvedValueOnce([
-      { sourceLineId: LINE_A, locationId: ELSEWHERE, status: 'active' },
-    ]);
+    const { stock, tx, ledger } = stockWith({
+      active: [{ sourceId: ORDER, sourceLineId: LINE_A, locationId: ELSEWHERE }],
+    });
     await stock.topUp(tx, ORDER, false);
+
+    const call = ledger.reserveLines.mock.calls[0]?.[1];
+    expect(call?.lines.map((line) => line.sourceLineId)).toEqual([LINE_B]);
+  });
+
+  it('with no online location marks only the lines holding nothing short, and refuses a pack (review M1)', async () => {
+    const { stock, tx, writer, ledger } = stockWith({
+      online: false,
+      active: [{ sourceId: ORDER, sourceLineId: LINE_A, locationId: ELSEWHERE }],
+    });
+    await expect(stock.topUp(tx, ORDER, true)).rejects.toBeInstanceOf(LineShort);
+
+    expect(ledger.reserveLines).not.toHaveBeenCalled();
+    expect(writer.setShortQuantities).toHaveBeenCalledWith(tx, ORDER, [
+      { lineId: LINE_B, shortQuantity: 1 },
+    ]);
+  });
+
+  it('takes the online flag lock before any other stock call, and locks the SKU rows to decide', async () => {
+    const { stock, tx, ledger, onlineStock, locks, catalog } = stockWith();
+    await stock.afterCreate(tx, ORDER, [LINE_A, LINE_B]);
+
+    const flag = onlineStock.shareOnlineFlag.mock.invocationCallOrder[0] ?? Infinity;
+    expect(flag).toBeLessThan(locks.lockForShare.mock.invocationCallOrder[0] ?? 0);
+    expect(flag).toBeLessThan(ledger.reserveLines.mock.invocationCallOrder[0] ?? 0);
+    expect(catalog.getSkus).not.toHaveBeenCalled();
+  });
+
+  it('skips a SKU the lock finds archived instead of calling the ledger for it (review m3)', async () => {
+    const { stock, tx, ledger } = stockWith({ skus: { [SKU_A]: { archived: true } } });
+    await stock.afterCreate(tx, ORDER, [LINE_A, LINE_B]);
 
     const call = ledger.reserveLines.mock.calls[0]?.[1];
     expect(call?.lines.map((line) => line.sourceLineId)).toEqual([LINE_B]);
