@@ -499,6 +499,88 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
     expect(remainingShopifyExchanges()).toEqual([]);
   });
 
+  it('lets a second store map the same SKUs without writing the catalog, and its archive unlinks nothing while the source store still maps (AC-16, spec 0012 AC-15)', async () => {
+    const source = await plant();
+    const second = await plant();
+    useShopifyScenarios('product-three-variants');
+    await arrive(source, 'products/create', LINEN, '2026-11-10T09:00:00Z');
+    const sourceRows = await mappingsOf(source);
+    const sourceVariants = sourceRows.filter((row) => row.entity === 'variant');
+    const style = sourceRows.find((row) => row.entity === 'product')?.local_id as string;
+    // The scenario's later reads (03 and 04) answer the second store's product read.
+    const entries = await catalogEntries();
+    // Only the first store is the source store; the second resolves by SKU and writes nothing.
+    await api.owner.pool.query(
+      `INSERT INTO settings (key, value) VALUES ('catalog.source_store_id', $1::jsonb)
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(source.storeId)],
+    );
+    try {
+      expect(await arrive(second, 'products/create', LINEN, '2026-11-10T09:30:00Z')).toMatchObject({
+        status: 'processed',
+        outcome: 'needs_attention',
+      });
+    } finally {
+      await api.owner.pool.query(`DELETE FROM settings WHERE key = 'catalog.source_store_id'`);
+    }
+    const secondRows = await mappingsOf(second);
+    expect(secondRows.find((row) => row.entity === 'product')?.local_id).toBe(style);
+    const secondVariants = secondRows.filter((row) => row.entity === 'variant');
+    expect(secondVariants.map((row) => row.local_id)).toEqual(
+      sourceVariants.map((row) => row.local_id),
+    );
+    expect(secondVariants.map((row) => row.state['lastOutcome'])).toEqual([
+      'linked',
+      'linked',
+      'linked',
+      'needs_sku',
+    ]);
+    expect(await catalogEntries()).toBe(entries);
+
+    // Archiving the second store gives back nothing: the source store still maps every variant.
+    const db = worker.get<DatabaseConnection>(DATABASE).db;
+    const counts = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`UPDATE connections SET status = 'archived' WHERE id = ${second.id}::uuid`,
+      );
+      return worker.get(ProductUnlink).forConnection(tx, second.id, {
+        kind: 'system_job',
+        name: 'connectors.archive',
+        jobId: randomUUID(),
+      });
+    });
+    expect(counts).toEqual({ styles: 0, variants: 0 });
+    expect(await styleLinked(style)).toBe(true);
+    for (const row of sourceVariants.slice(0, 3)) {
+      expect((await variantRow(row.local_id as string))?.linked).toBe(true);
+    }
+    // Only the reads the two stores made were consumed: 05 to 07 of the scenario are left.
+    expect(remainingShopifyExchanges()).toHaveLength(3);
+  });
+
+  it('marks a product removed when an update topic reads back no product, keeping the style link (sweep path of AC-16)', async () => {
+    const c = await plant();
+    useShopifyScenarios('product-three-variants');
+    await arrive(c, 'products/create', LINEN, '2026-11-10T09:00:00Z');
+    const style = (await mappingsOf(c)).find((row) => row.entity === 'product')?.local_id;
+    // The scenario's later fixtures: 03 and 04 are the update read, 05 and 06 a stale one, and
+    // 07 answers `product: null`: what a sweep row for a product deleted since reads back.
+    expect(await arrive(c, 'products/update', LINEN, '2026-11-10T10:00:00Z')).toMatchObject({
+      status: 'processed',
+    });
+    expect(await arrive(c, 'products/update', LINEN, '2026-11-10T11:00:00Z')).toMatchObject({
+      status: 'ignored',
+      outcome: 'stale',
+    });
+    expect(await arrive(c, 'products/update', LINEN, '2026-11-10T12:00:00Z')).toMatchObject({
+      status: 'processed',
+      outcome: 'product_removed',
+    });
+    expect((await mappingsOf(c)).every((row) => row.removed)).toBe(true);
+    expect((await mappingsOf(c)).find((row) => row.entity === 'product')?.local_id).toBe(style);
+    expect(remainingShopifyExchanges()).toEqual([]);
+  });
+
   it('keeps product events and log lines free of a product title, SKU, or secret, and publishes no failure', () => {
     expect(failedEvents).toEqual([]);
     const joined = logLines.join('\n');
