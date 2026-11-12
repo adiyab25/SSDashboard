@@ -164,6 +164,9 @@ The official API reference (a client rendered page) could not be read, so the of
 
 Applied additively, no name removed: spec 0019's AC-16 delivered hold with `deliveredHeld` and `heldAt` on `CarrierCollectionDiffers`, `connectionId` on `CarrierAttemptFailed`, `deliveryType` and `beganAsSend` on `CarrierCashCycleRecorded`, the 46 row naming spec 0019's returned parcel, and the pick list (spec 0019 AC-25, Q-21.8) as the warehouse hold; spec 0017's `shopify_province_code` on governorate rows, the *Area levels* mapping, and resolving `terminate_carrier_delivery` on 48 or 49.
 
+
+Later the same day, spec 0019's remaining requests, also additive: `opensTask` on `CarrierDeliveryNeedsAttention` (false for the kinds and flags spec 0019's own tasks replace, while `deliveries.carrier_failures` is runnable), `cancel_in_bosta` from `ManualHandoverRecorded`, and the 46, return pickup, and pick list wording.
+
 ## References
 
 **Project sources**:
