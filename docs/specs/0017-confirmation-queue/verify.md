@@ -1,6 +1,6 @@
 # Verify: confirmation queue · spec 0017 · written 2026-11-12
 
-_Steps derived from spec 0017 acceptance criteria and its Value sourcing table, revised the same day for the [domain review](../../reviews/domain-confirmation-queue.md). `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones add theirs. Nothing is ticked: the spec is Assumed._
+_Steps derived from spec 0017 acceptance criteria and its Value sourcing table, revised the same day for the [domain review](../../reviews/domain-confirmation-queue.md) and spec 0018's final "carrier record stale" contract. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones add theirs. Nothing is ticked: the spec is Assumed._
 
 ## UI / manual
 
@@ -48,9 +48,12 @@ Milestone 3:
 Milestone 4:
 
 - [ ] After a `message_sent` on line 2, open My work as the agent of line 2 at the reply wait's end → the `confirmation.callback` task is hers; after a call with no answer it sits in the support pool; its row opens the card; recording `confirmed` closes it → AC-17
-- [ ] An order with `carrier_delivery_created_at` → "Bosta already has this parcel" with the current tracking number, edits disabled with the Bosta dashboard instruction, confirm and cancel still offered → AC-20
-- [ ] Fire the "carrier record stale" set fixture with the address and COD amount mismatched → the order is held, no reconfirmation yet; fire the clear with `updated` → nothing to call; fire again and clear with `cannot_update` → the order enters Reconfirm listing "address" and "amount to collect", with the amount line in the script; `reconfirmed` records the accepted amount → AC-21
-- [ ] A stale fixture with only the second phone mismatched, cleared `cannot_update` → the script has no amount or pieces line → AC-21
+- [ ] An unconfirmed order with a Bosta delivery → "Bosta already has this parcel: any change you make here must also be made in Bosta", edits still allowed; confirm it → line and shipping edits now refused with the Bosta app instruction; the current tracking number shows → AC-20
+- [ ] Fire `CarrierRecordStale` with `receiver_address` and `receiver_phone`, both `merchant` fixable, `editedBy` you → your card shows "Change it in the Bosta app now: address, phone" at once and the order is held; after 30 minutes the `carrier.record_stale` task is with operations; fire the cleared event with `fixOutcome` `updated` → no reconfirmation, the hold clears → AC-19, AC-21
+- [ ] Fire `CarrierRecordStale` with `fixableBy` `nobody` → the banner says operations decides to cancel or deliver as is; fire the cleared event with `cannot_update` after a `cod` mismatch → the order enters Reconfirm listing "amount to collect" with both amounts in the script; `reconfirmed` records the accepted amount → AC-21
+- [ ] A `cod` mismatch with `origin` `at_creation` → reconfirmed like any other, the card saying "Bosta's amount differed from the start" → AC-21
+- [ ] A stale with only `receiver_phone`, cleared `cannot_update` → the script has no money or pieces line and shows no phone value → AC-21
+- [ ] A cleared event with reason `order_matches` and a null `fixOutcome` while a reconfirmation is open → it closes `cleared_by_carrier` → AC-21
 - [ ] Three counted no answers on a reconfirmation → the task moves to the manager hat and the order is not cancelled → AC-21
 - [ ] On a flagged customer, send the `deposit_request` template (it states the refusal rule), record `awaiting_transfer` → Later shows the deadline; past it the card is back in Due now marked "Deposit not received"; cancel with `deposit_not_paid` → AC-8, AC-22
 - [ ] On an internal store order of 1,000.00 plus 50.00, record a 50.00 InstaPay deposit with its reference → shipping prepaid 50.00, COD expected 1,000.00, "Deposit claimed, not yet checked", `order.deposit_recorded` on `/audit`; as operations, check it from "Deposits to check" → the stamp shows → AC-22, AC-23
