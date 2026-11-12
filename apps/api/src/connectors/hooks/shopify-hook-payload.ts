@@ -28,6 +28,18 @@ export const SHOPIFY_PRODUCT_TOPICS: readonly string[] = [
   'products/delete',
 ];
 
+/**
+ * Shopify's mandatory compliance topics (`customers/data_request`, `customers/redact`,
+ * `shop/redact`): their bodies name the customer or shop in their own fields, never with a top
+ * level `id` or `admin_graphql_api_id`, so the hook's `no_subject` rule leaves them out and keeps
+ * them `received` for the task that scopes them (none yet; re-review Minor D).
+ */
+export const SHOPIFY_COMPLIANCE_TOPICS: readonly string[] = [
+  'customers/data_request',
+  'customers/redact',
+  'shop/redact',
+];
+
 /** The app topic milestone 1 processes: confirmed by the inbox job, then health `failing` (L1). */
 export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 

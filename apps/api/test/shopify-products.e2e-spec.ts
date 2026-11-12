@@ -4,6 +4,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { SkuDetail } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ChannelSyncError } from '../src/catalog/channel-sync/channel-sync-error.js';
 import { ProductUnlink } from '../src/connectors/connections/product-unlink.js';
 import {
   ChannelProductNeedsAttention,
@@ -804,6 +805,8 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
     } finally {
       apply.mockRestore();
     }
+    // An apply failure says nothing about the product: no refusal is recorded (re-review Major A).
+    expect(await mappingsOf(c)).toEqual([]);
     expect(logLines.join('\n')).not.toContain('boom');
   });
 
@@ -860,6 +863,98 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
     } finally {
       await api.owner.pool.query(`DELETE FROM settings WHERE key = 'catalog.source_store_id'`);
     }
+  });
+
+  it('keeps a refusal off the applied version, so the same version applies on its next read (re-review Major A)', async () => {
+    useShopifyScenarios('product-refused-then-applied');
+    const c = await plant();
+    const gid = 'gid://shopify/Product/2220000083001';
+    const sync = worker.get(ProductSync);
+    const apply = vi
+      .spyOn(sync, 'apply')
+      .mockRejectedValueOnce(new ChannelSyncError('StyleCodeExhausted', 'fixture refusal'));
+    try {
+      expect(await arrive(c, 'products/create', gid, '2026-11-10T09:00:00Z')).toMatchObject({
+        status: 'failed',
+        failure_code: 'STYLE_CODE_EXHAUSTED',
+      });
+    } finally {
+      apply.mockRestore();
+    }
+    const refused = await api.owner.pool.query<{
+      entity: string;
+      local_id: string | null;
+      version: Date | null;
+      state: Record<string, unknown>;
+    }>(
+      `SELECT entity, local_id, external_version AS version, state FROM connection_external_ids
+       WHERE connection_id = $1::uuid ORDER BY entity`,
+      [c.id],
+    );
+    expect(refused.rows.map((row) => [row.entity, row.local_id, row.version])).toEqual([
+      ['product', null, null],
+      ['variant', null, null],
+    ]);
+    for (const row of refused.rows) {
+      expect(row.state).toMatchObject({
+        lastOutcome: 'STYLE_CODE_EXHAUSTED',
+        refusedVersion: '2026-11-10T09:00:00.000Z',
+      });
+    }
+
+    // The same version again (a redelivery, the sweep): applied, not stale; the refusal clears.
+    expect(await arrive(c, 'products/update', gid, '2026-11-10T09:00:00Z')).toMatchObject({
+      status: 'processed',
+      outcome: null,
+    });
+    const applied = await mappingsOf(c);
+    expect(applied.map((row) => [row.entity, row.local_id !== null])).toEqual([
+      ['product', true],
+      ['variant', true],
+    ]);
+    for (const row of applied) expect(row.state['refusedVersion']).toBeUndefined();
+    expect(remainingShopifyExchanges()).toEqual([]);
+  });
+
+  it('runs two events of one product in parallel without a deadlock: one applies, the other ends on its own (re-review Minor B)', async () => {
+    useShopifyScenarios('product-two-events');
+    const c = await plant();
+    const gid = 'gid://shopify/Product/2220000083002';
+    const event = async (topic: string) =>
+      (
+        await api.owner.pool.query<{ id: string }>(
+          `INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,
+                                       subject_external_id, subject_version, payload)
+           VALUES ($1::uuid, 'webhook', $2, $3, 'product', $4, '2026-11-10T09:00:00Z', '{}'::jsonb)
+           RETURNING id`,
+          [c.id, topic, randomUUID(), gid],
+        )
+      ).rows[0]?.id as string;
+    const ids = [await event('products/create'), await event('products/update')];
+    const deadlocks = async () =>
+      Number(
+        (
+          await api.owner.pool.query<{ n: string }>(
+            `SELECT deadlocks AS n FROM pg_stat_database WHERE datname = current_database()`,
+          )
+        ).rows[0]?.n,
+      );
+    const before = await deadlocks();
+    const inbox = worker.get(InboxJob);
+    const outcomes = await Promise.all(
+      ids.map((eventId) => inbox.run({ connectionId: c.id, eventId }, randomUUID(), 0)),
+    );
+    expect(outcomes.filter((outcome) => outcome.status === 'processed')).toHaveLength(1);
+    const ends = await api.owner.pool.query<{ status: string; outcome: string | null }>(
+      `SELECT status, outcome FROM inbound_events WHERE id = ANY($1::uuid[]) ORDER BY status`,
+      [ids],
+    );
+    expect(ends.rows.every((row) => row.status !== 'received')).toBe(true);
+    // Statistics reach the view once the backends flush them (at most every second when idle).
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await api.owner.pool.query('SELECT pg_stat_clear_snapshot()');
+    expect(await deadlocks()).toBe(before);
+    expect(attention.filter((item) => item.connectionId === c.id)).toEqual([]);
   });
 
   it('keeps product events and log lines free of a product title, SKU, or secret; failures carry ids and codes only', () => {

@@ -1113,6 +1113,41 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect(await health(a.id)).toEqual({ health: 'ok', health_reason: null });
   });
 
+  it('records a delivery whose admin_graphql_api_id is a gid of another resource ignored no_subject, with no job (security review L5, re-review Minor D)', async () => {
+    const reply = await deliver(a, 'products/delete', {
+      id: 5550000001001,
+      admin_graphql_api_id: 'gid://shopify/Order/5550000001001',
+    });
+    expect(reply.status).toBe(200);
+    const event = await eventOf(a.id, reply.webhookId);
+    expect(event).toMatchObject({
+      status: 'ignored',
+      outcome: 'no_subject',
+      subject_external_id: null,
+    });
+    const processed = await api.owner.pool.query<{ processed_at: Date | null }>(
+      'SELECT processed_at FROM inbound_events WHERE id = $1::uuid',
+      [event.id],
+    );
+    expect(processed.rows[0]?.processed_at).not.toBeNull();
+    expect(
+      await count(`SELECT count(*) AS n FROM pgboss.job WHERE data->>'eventId' = $1`, [event.id]),
+    ).toBe(0);
+
+    // A compliance topic names its customer in its own fields: kept received, never no_subject.
+    const redact = await deliver(a, 'customers/redact', {
+      shop_id: 1,
+      shop_domain: a.shopDomain,
+      customer: { id: 9, email: 'redact@example.test', phone: '+201000000999' },
+    });
+    expect(redact.status).toBe(200);
+    expect(await eventOf(a.id, redact.webhookId)).toMatchObject({
+      status: 'received',
+      outcome: null,
+      subject_external_id: null,
+    });
+  });
+
   it('records a verified topic no job processes yet, sending no job', async () => {
     // Products get their job from task 8; inventory levels wait for milestone 3.
     const reply = await deliver(a, 'inventory_levels/update', {

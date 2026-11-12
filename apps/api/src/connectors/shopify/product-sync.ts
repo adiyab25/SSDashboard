@@ -5,7 +5,11 @@ import { CatalogChannelSync } from '../../catalog/channel-sync/catalog-channel-s
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { OrderIntake } from '../../orders/intake/order-intake.service.js';
-import { OrderTransactions, type OrderTransaction } from '../../orders/order-transactions.js';
+import {
+  ORDER_LOCK_TIMEOUT_MS,
+  OrderTransactions,
+  type OrderTransaction,
+} from '../../orders/order-transactions.js';
 import {
   InvalidOrderInput,
   LineAlreadyMapped,
@@ -104,8 +108,10 @@ interface VariantState {
   readonly inventoryItemId: string;
   /** Whether Shopify tracks the item's inventory. */
   readonly tracked: boolean;
-  /** The catalog's last outcome for the variant (`ChannelVariantOutcome`). */
+  /** The catalog's last outcome for the variant (`ChannelVariantOutcome`), or a refusal code. */
   readonly lastOutcome: string;
+  /** The `updatedAt` of a refused read (re-review Major A), kept beside its code. */
+  readonly refusedVersion?: string;
 }
 
 /** The `lastOutcome` of a mapping state, or null. */
@@ -322,7 +328,7 @@ export class ProductSync {
       return ignored('stale', await this.mappedVariantsOf(tx, target.connectionId, productGid));
     }
     if (product.isGiftCard) {
-      await this.recordUnapplied(tx, target.connectionId, product, 'gift_card');
+      await this.recordUnapplied(tx, target.connectionId, product, 'gift_card', true);
       return ignored('gift_card');
     }
 
@@ -353,8 +359,8 @@ export class ProductSync {
               ${JSON.stringify({ lastOutcome: result.styleOutcome, status: product.status })}::jsonb)
       ON CONFLICT ON CONSTRAINT connection_external_ids_unique DO UPDATE
         SET local_id = EXCLUDED.local_id, external_version = EXCLUDED.external_version,
-            state = connection_external_ids.state || EXCLUDED.state, removed_at = NULL,
-            updated_at = now()`);
+            state = (connection_external_ids.state - 'refusedVersion') || EXCLUDED.state,
+            removed_at = NULL, updated_at = now()`);
 
     const variantsByGid = new Map(product.variants.map((variant) => [variant.id, variant]));
     const newlyMapped: string[] = [];
@@ -421,32 +427,40 @@ export class ProductSync {
   }
 
   /**
-   * Records a product the app did not apply (code review minor 1): the product mapping takes
-   * `outcome` (`gift_card`, or a failure code such as `PRICE_UNREADABLE`) and the version, and
-   * every variant without a mapping gets one with no local id and that outcome, so the product
-   * read before an order counts those variants as known and never reads the product again until
-   * a newer read (a webhook or the sweep) changes it. A variant or style already mapped keeps its
-   * local id. Runs in the caller's transaction (`recordRefused` opens one for a failed apply).
+   * Records a product the app did not apply (code review minor 1), so the product read before an
+   * order counts its variants as known and never reads it again for the next order: every
+   * variant without a mapping gets one with no local id and `outcome`, and the product mapping
+   * takes `outcome` in its state. A variant or style already mapped keeps its local id.
+   * - A gift card (`holdsVersion` true) is a settled answer: the product mapping takes the
+   *   version too, so the same version read again is `stale`.
+   * - A refusal (a failure code such as `PRICE_UNREADABLE`, `holdsVersion` false; re-review Major
+   *   A) never moves `external_version`, the version last applied: the product and variant
+   *   mappings keep `state.refusedVersion` (the refused read's `updatedAt`) beside the code, and
+   *   the next read of that same version (a webhook again, the sweep, the backfill) applies again.
+   * Runs in the caller's transaction (`recordRefused` opens one for a failed apply).
    */
   private async recordUnapplied(
     tx: Executor,
     connectionId: string,
     product: ShopifyProduct,
     outcome: string,
+    holdsVersion: boolean,
   ): Promise<void> {
+    const version = holdsVersion ? isoOf(product.updatedAt) : null;
+    const refused = holdsVersion ? {} : { refusedVersion: isoOf(product.updatedAt) };
     await tx.execute(sql`
       INSERT INTO connection_external_ids (connection_id, entity, external_id, external_version,
                                            state)
-      VALUES (${connectionId}::uuid, 'product', ${product.id},
-              ${isoOf(product.updatedAt)}::timestamptz,
-              ${JSON.stringify({ lastOutcome: outcome, status: product.status })}::jsonb)
+      VALUES (${connectionId}::uuid, 'product', ${product.id}, ${version}::timestamptz,
+              ${JSON.stringify({ lastOutcome: outcome, status: product.status, ...refused })}::jsonb)
       ON CONFLICT ON CONSTRAINT connection_external_ids_unique DO UPDATE
-        SET external_version = EXCLUDED.external_version,
+        SET external_version = coalesce(EXCLUDED.external_version,
+                                        connection_external_ids.external_version),
             state = connection_external_ids.state || EXCLUDED.state, updated_at = now()`);
     await this.upsertVariants(
       tx,
       connectionId,
-      product.updatedAt,
+      version,
       product.variants.map((variant) => ({
         external_id: variant.id,
         local_id: null,
@@ -455,6 +469,7 @@ export class ProductSync {
           inventoryItemId: variant.inventoryItem.id,
           tracked: variant.inventoryItem.tracked,
           lastOutcome: outcome,
+          ...refused,
         },
       })),
       'keep',
@@ -462,16 +477,22 @@ export class ProductSync {
   }
 
   /**
-   * After an apply failed with `code` (its unit rolled back), records the product as not applied
-   * in a transaction of its own (see `recordUnapplied`), under the same advisory lock. Best
-   * effort for the read before an order: the caller logs the failure either way.
+   * After an apply refused with a product failure code (its unit rolled back), records the
+   * refusal in a transaction of its own (see `recordUnapplied`; the version is never held),
+   * under the same advisory lock and the orders lock timeout (`ORDER_LOCK_TIMEOUT_MS`), so it
+   * never waits longer than a unit would. Never called for `PRODUCT_APPLY_FAILED`, an error
+   * that says nothing about the product. Best effort for the read before an order: the caller
+   * logs the failure either way.
    */
   async recordRefused(connectionId: string, product: ShopifyProduct, code: string): Promise<void> {
     await this.connection.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('lock_timeout', ${`${ORDER_LOCK_TIMEOUT_MS}ms`}, true)`,
+      );
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(${PRODUCT_APPLY_LOCK}::int,
                                      hashtext(${`${connectionId}:${product.id}`}))`);
-      await this.recordUnapplied(tx, connectionId, product, code);
+      await this.recordUnapplied(tx, connectionId, product, code, false);
     });
   }
 
@@ -483,7 +504,7 @@ export class ProductSync {
   private async upsertVariants(
     tx: Executor,
     connectionId: string,
-    version: string,
+    version: string | null,
     rows: readonly { external_id: string; local_id: string | null; state: VariantState }[],
     mode: 'replace' | 'keep',
   ): Promise<void> {
@@ -492,14 +513,14 @@ export class ProductSync {
       mode === 'replace'
         ? sql`DO UPDATE
             SET local_id = EXCLUDED.local_id, external_version = EXCLUDED.external_version,
-                state = connection_external_ids.state || EXCLUDED.state, removed_at = NULL,
-                updated_at = now()`
+                state = (connection_external_ids.state - 'refusedVersion') || EXCLUDED.state,
+                removed_at = NULL, updated_at = now()`
         : sql`DO NOTHING`;
     await tx.execute(sql`
       INSERT INTO connection_external_ids (connection_id, entity, external_id, local_id,
                                            external_version, state)
       SELECT ${connectionId}::uuid, 'variant', r.external_id, r.local_id,
-             ${isoOf(version)}::timestamptz, r.state
+             ${version === null ? null : isoOf(version)}::timestamptz, r.state
       FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb)
            AS r(external_id text, local_id uuid, state jsonb)
       ON CONFLICT ON CONSTRAINT connection_external_ids_unique ${onConflict}`);

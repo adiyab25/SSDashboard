@@ -136,6 +136,8 @@ interface EventRow extends Record<string, unknown> {
   subject_type: InboundSubject;
   subject_external_id: string | null;
   status: string;
+  /** Its outcome (`stale`, `coalesced`, ...), or null. */
+  outcome: string | null;
   /** When this run first read the event (before the read back), exact to the microsecond. */
   read_started_at: string;
 }
@@ -246,15 +248,38 @@ function productFailureCodeOf(error: unknown): string | null {
   return failureCodeOf(error);
 }
 
+/** The node socket error codes the pg driver passes through, each a lost or refused connection. */
+const SOCKET_ERRORS: readonly string[] = ['ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ECONNREFUSED'];
+
+/** The message the pg driver gives a connection that ended mid query (it carries no code). */
+const CONNECTION_ENDED = 'Connection terminated unexpectedly';
+
 /**
- * An error the product paths throw for pg-boss to retry rather than record (security review
- * L2): an order lock timeout, a deadlock or serialization failure the unit already reran once, a
- * lost connection (SQLSTATE class 08), or a server shutting down (57P).
+ * An error the product paths throw for pg-boss to retry rather than record (security review L2,
+ * re-review nit): an order lock timeout, a deadlock or serialization failure the unit already
+ * reran once, a statement timeout or cancel (57014), a lost connection (SQLSTATE class 08, a node
+ * socket error, or the driver's "connection terminated" with no code), insufficient resources
+ * (class 53: too many connections, out of memory, disk full), or a server shutting down (57P).
+ * Reads the error's code and, for the driver's codeless case, its fixed message only.
  */
 function throwsForRetry(error: unknown): boolean {
   if (error instanceof OrderLockTimeout || isRetryable(error)) return true;
   const code = pgErrorCode(error);
-  return code !== undefined && (code.startsWith('08') || code.startsWith('57P'));
+  if (code !== undefined) {
+    return (
+      code === '57014' ||
+      code.startsWith('08') ||
+      code.startsWith('53') ||
+      code.startsWith('57P') ||
+      SOCKET_ERRORS.includes(code)
+    );
+  }
+  let current: unknown = error;
+  for (let depth = 0; depth < 3 && current instanceof Error; depth += 1) {
+    if (current.message === CONNECTION_ENDED) return true;
+    current = current.cause;
+  }
+  return false;
 }
 
 /** An error's class name for a log line (never its message, which may hold a value). */
@@ -368,7 +393,7 @@ export class InboxJob {
     const event = await this.eventOf(data);
     if (!event) return { skipped: 'NOT_RECEIVED' };
     if (event.status !== 'received') {
-      await this.relinkProduct(event);
+      await this.relinkProduct(event, retryCount);
       return { skipped: 'NOT_RECEIVED' };
     }
     const connection = await this.connectionOf(data.connectionId);
@@ -495,7 +520,7 @@ export class InboxJob {
   }): Promise<EventRow | undefined> {
     return (
       await this.connection.db.execute<EventRow>(sql`
-        SELECT id, connection_id, topic, subject_type, subject_external_id, status,
+        SELECT id, connection_id, topic, subject_type, subject_external_id, status, outcome,
                to_char(clock_timestamp() AT TIME ZONE 'UTC',
                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_started_at
         FROM inbound_events
@@ -786,7 +811,11 @@ export class InboxJob {
         code = 'PRODUCT_APPLY_FAILED';
       }
       if (code === null) throw error;
-      if (product) await this.products.recordRefused(event.connection_id, product, code);
+      // A refusal is kept so the read before an order skips the product; an apply failure says
+      // nothing about the product, so it records nothing (re-review Major A).
+      if (product && code !== 'PRODUCT_APPLY_FAILED') {
+        await this.products.recordRefused(event.connection_id, product, code);
+      }
       return this.fail(event, code, label);
     }
     if (linksDue && mapped.length > 0) {
@@ -797,12 +826,19 @@ export class InboxJob {
 
   /**
    * After a crash between a product unit and its late links (code review minor 3): pg-boss
-   * retries the job, the event is no longer `received`, and this links the waiting order lines of
-   * every variant of the product that maps now, so the retry finishes what the run began.
+   * retries the job (`retryCount` above 0), the event is no longer `received` (`processed`, or
+   * `ignored` `stale`; never `coalesced`, whose links its own read made), and this links the
+   * waiting order lines of every variant of the product that maps now, so the retry finishes what
+   * the run began.
    */
-  private async relinkProduct(event: EventRow): Promise<void> {
-    if (event.subject_type !== 'product' || !event.subject_external_id) return;
-    if (event.status !== 'processed') return;
+  private async relinkProduct(event: EventRow, retryCount: number): Promise<void> {
+    // Only pg-boss's retry of this job (re-review Minor C): a first run on an event already
+    // closed (a coalesced event's own job, a duplicate) has no links to finish.
+    if (retryCount === 0 || event.subject_type !== 'product' || !event.subject_external_id) return;
+    const linked =
+      (event.status === 'processed' && event.outcome !== 'coalesced') ||
+      (event.status === 'ignored' && event.outcome === 'stale');
+    if (!linked) return;
     const connection = await this.connectionOf(event.connection_id);
     if (connection?.status !== 'active') return;
     const mapped = await this.products.mappedVariantsOf(
@@ -1426,7 +1462,8 @@ export class InboxJob {
   /**
    * Ends the event and coalesces: the event takes its status, outcome, label, and processed time,
    * and every other `received` event of the same subject and processed topics received before
-   * this run's read back started is `processed` `coalesced` (AC-7). A later event (a change after
+   * this run's read back started, and not locked by another job right now, is `processed`
+   * `coalesced` (AC-7). A later event (a change after
    * the read) and other topics (refunds, which wait for their own task) are left alone. A held
    * edit passes `coalesce` false (security review L2): the other events keep their own jobs.
    */
@@ -1444,16 +1481,22 @@ export class InboxJob {
       WHERE id = ${event.id}::uuid`);
     const topics = COALESCED_TOPICS[event.subject_type];
     if (coalesce && event.subject_external_id && topics) {
+      // SKIP LOCKED (re-review Minor B): an event another job holds (its own unit has it locked)
+      // is left alone, never waited for, so two jobs of one subject cannot deadlock on each
+      // other's event rows; the skipped event ends on its own (usually `stale`).
       await tx.execute(sql`
         UPDATE inbound_events
         SET status = 'processed', outcome = 'coalesced',
             subject_label = coalesce(${label}, subject_label), processed_at = now()
-        WHERE connection_id = ${event.connection_id}::uuid
-          AND subject_type = ${event.subject_type}::inbound_subject
-          AND subject_external_id = ${event.subject_external_id}
-          AND topic = ANY(${pgArray([...topics])}::text[])
-          AND received_at <= ${event.read_started_at}::timestamptz
-          AND status = 'received' AND id <> ${event.id}::uuid`);
+        WHERE id IN (
+          SELECT id FROM inbound_events
+          WHERE connection_id = ${event.connection_id}::uuid
+            AND subject_type = ${event.subject_type}::inbound_subject
+            AND subject_external_id = ${event.subject_external_id}
+            AND topic = ANY(${pgArray([...topics])}::text[])
+            AND received_at <= ${event.read_started_at}::timestamptz
+            AND status = 'received' AND id <> ${event.id}::uuid
+          FOR UPDATE SKIP LOCKED)`);
     }
     return { status: end.status, code: end.outcome };
   }
