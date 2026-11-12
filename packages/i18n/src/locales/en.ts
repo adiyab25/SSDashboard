@@ -1795,9 +1795,9 @@ export const en = {
       stale:
         'This order changed while you were working. The page now shows the latest version; check it and try again.',
       editInShopify:
-        'This order comes from Shopify. Edit it in Shopify: the app reads the change from Shopify and updates this order. Nothing is sent to Shopify from here yet.',
+        'This order comes from Shopify. Edit it in Shopify: the app reads the change from Shopify. Nothing is sent to Shopify from here yet.',
       cancelInShopify:
-        'This order comes from Shopify. Cancel it in Shopify: the app reads the cancellation from Shopify and updates this order. Nothing is sent to Shopify from here yet.',
+        'This order comes from Shopify. Cancel it in Shopify: the app reads the cancellation from Shopify. Nothing is sent to Shopify from here yet.',
       busy: 'The system is busy. Wait a moment and try again.',
       forbidden: 'You do not have permission to do this.',
       generic: 'That did not work. Try again.',
@@ -1925,9 +1925,9 @@ export const en = {
         EDIT_OVERPAID:
           'The new total would be lower than what the customer already paid. Refunds are not handled here.',
         EDIT_IN_SHOPIFY:
-          'This order is edited in Shopify. Make the change there: the app reads it from Shopify and updates this order.',
+          'This order is edited in Shopify. Make the change there: the app reads it from Shopify.',
         CANCEL_IN_SHOPIFY:
-          'This order is cancelled in Shopify. Cancel it there: the app reads the cancellation from Shopify and updates this order.',
+          'This order is cancelled in Shopify. Cancel it there: the app reads the cancellation from Shopify.',
         WRITE_BACK_OPEN:
           'A change to this order has not reached the sales channel yet. Wait for it to sync before packing.',
         LINE_SHORT: 'A line is short of stock, so the order cannot be packed yet.',
