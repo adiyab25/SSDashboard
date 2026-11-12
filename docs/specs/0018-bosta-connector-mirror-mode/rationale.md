@@ -153,12 +153,16 @@ The official API reference (a client rendered page) could not be read, so the of
 | m2 | Applied: terminated after pickup stays on the open cadence (AC-17). |
 | m3 | Applied: `return_stalled` with its own threshold (Q-19.8). |
 | m4 | Applied: `no_longer_followed`, the task stays open, a list change follows again (AC-22). |
-| m5 | Applied on this spec's side: `cancel_in_bosta` owns the task; suppressing spec 0013's `terminate_carrier_delivery` for a mirrored delivery is requested from spec 0013. |
+| m5 | Applied, then adjusted the same day for spec 0017 (its review m12): one cancel opens one task. Spec 0013's `terminate_carrier_delivery` stays the task when the delivery was known at the cancel, and this spec's `cancel_in_bosta` opens one only for a delivery found later; when Bosta reports 48 or 49 the connector resolves spec 0013's attention (`OrderAttentions.resolve`, requested), instead of the earlier request to suppress it. |
 | m6 | Applied: relink on `OrderPlaced` (AC-12, AC-13). |
 | m7 | Applied: latest attempt reason for `orders.confirm`, sorted by `attention_since`, state names from the catalog by code (AC-28). |
 | m8 | Applied: COD totals by phase on the `/deliveries` header (AC-28), carried to feature 24. |
 | m9 | Partly in lane: renewal backfill hook and the 60 day limit stated (AC-6); the scope feature 16 line is out of this lane and listed in Follow-up. |
 | Brand questions 1 to 8 | Listed in Follow-up. |
+
+### Change requests from specs 0019 and 0017 (2026-11-12)
+
+Applied additively, no name removed: spec 0019's AC-16 delivered hold with `deliveredHeld` and `heldAt` on `CarrierCollectionDiffers`, `connectionId` on `CarrierAttemptFailed`, `deliveryType` and `beganAsSend` on `CarrierCashCycleRecorded`, the 46 row naming spec 0019's returned parcel, and the pick list (spec 0019 AC-25, Q-21.8) as the warehouse hold; spec 0017's `shopify_province_code` on governorate rows, the *Area levels* mapping, and resolving `terminate_carrier_delivery` on 48 or 49.
 
 ## References
 
