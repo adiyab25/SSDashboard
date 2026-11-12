@@ -83,7 +83,10 @@ export async function markStockUnit<T>(
   }
 }
 
-/** Throws `InvalidInput` unless `tx` was opened by `LedgerService.transaction` and is still running. */
+/**
+ * Throws `InvalidInput` unless `tx` was marked a stock unit (opened by `LedgerService.transaction`,
+ * or handed to a posting's `within` callback) and that unit is still running.
+ */
 export function assertStockTransaction(tx: Transaction): asserts tx is StockTransaction {
   if (!opened.has(tx)) {
     throw new LedgerError(

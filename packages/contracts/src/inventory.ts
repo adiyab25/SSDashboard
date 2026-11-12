@@ -314,7 +314,11 @@ export const CarrierShipmentLine = z.object({
   locationId: Uuid,
   /** Whole units shipped, at least 1; the posting writes it as an outbound movement. */
   quantity: z.number().int().min(1).max(MAX_INT),
-  /** The line's reservation, fulfilled first. A missing or closed one is ignored: a carrier fact is never refused. */
+  /**
+   * The line's reservation, fulfilled first. It counts only when it is the order's own line (`order`
+   * source, this order id, this `sourceLineId`); a missing, closed, or other one is ignored: a
+   * carrier fact is never refused. It is not part of the request hash.
+   */
   reservationId: Uuid.optional(),
 });
 /** What a caller passes for `CarrierShipmentLine`, before defaults and transforms are applied. */
@@ -327,7 +331,10 @@ export type CarrierShipmentLine = z.input<typeof CarrierShipmentLine>;
 export const CarrierShipmentInput = z.object({
   orderId: Uuid,
   generation: z.number().int().min(1).max(1000).default(1),
-  /** The carrier's time; moved to now when its operating day is on or before the inventory lock date. */
+  /**
+   * The carrier's time; moved to now when its operating day is on or before the inventory lock date
+   * or it is more than 5 minutes ahead. It is not part of the request hash.
+   */
   effectiveAt: z.coerce.date().optional(),
   /** Null (the default) only for system jobs with no signed in user. */
   postedBy: Uuid.nullable().default(null),

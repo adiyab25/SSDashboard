@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { personActor, type ReservedLine } from '@ssdashboard/contracts';
-import { APP_ROLE, sql } from '@ssdashboard/db';
+import { APP_ROLE, sql, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AuditService } from '../src/audit/audit.service.js';
 import { CatalogService } from '../src/catalog/catalog.service.js';
 import { DATABASE } from '../src/database/database.module.js';
+import type { Transaction } from '../src/database/sql.js';
 import {
   ReservationFilled,
   ReservationShortened,
@@ -15,9 +16,8 @@ import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import type { StockTransaction } from '../src/inventory/ledger/stock-transaction.js';
 import { OnlineStockService } from '../src/inventory/online-stock/online-stock.service.js';
-import type { Transaction } from '../src/database/sql.js';
+import { SkuLifecycleService } from '../src/inventory/sku-lifecycle/sku-lifecycle.service.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
-import type { DatabaseConnection } from '@ssdashboard/db';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { driftedBalances, fixtures, level, posting } from './ledger.js';
 
@@ -1001,20 +1001,38 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
       expect((await level(api.owner, at)).onHand).toBe(1);
     });
 
-    it('refuses nesting from the other ledger transaction callers too', async () => {
+    it('refuses a real SKU lifecycle write nested inside a running ledger transaction', async () => {
       const at = await key();
+      const caller = { id: userId, access: { actingHat: () => 'manager' as const } };
+
       const error = await failure(
         ledger.transaction(async () => {
-          await ledger.reverse({
-            groupId: randomUUID(),
-            idempotencyKey: randomUUID(),
-            postedBy: null,
-            reasonCode: 'test',
-          });
-          await ledger.postingFor(`k-${at.variantId}`);
+          await api.app.get(SkuLifecycleService).archive(at.variantId, caller);
         }),
       );
+
       expect(error.code).toBe('NestedStockTransaction');
+      const { rows: found } = await api.owner.pool.query<{ archived: boolean }>(
+        'SELECT archived_at IS NOT NULL AS archived FROM product_variants WHERE id = $1',
+        [at.variantId],
+      );
+      expect(found).toEqual([{ archived: false }]);
+    });
+
+    it('does not refuse a continuation that outlives its unit', async () => {
+      const at = await key();
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let detached: Promise<unknown> = Promise.resolve();
+
+      await ledger.transaction(() => {
+        detached = gate.then(() => stock(at, 1));
+        return Promise.resolve();
+      });
+      release();
+
+      await expect(detached).resolves.toMatchObject({ replayed: false });
+      expect((await level(api.owner, at)).onHand).toBe(1);
     });
 
     it('keeps the reservation functions refused outside the runner after a unit ended', async () => {
@@ -1102,35 +1120,124 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
       expect(noTime.groupId).toBe(first.groupId);
     });
 
-    it("ignores a named reservation that is another order's, closed, missing, or on another key", async () => {
+    it("ignores a named reservation that is another order's, another line's, another source's, closed, missing, or on another key", async () => {
       const at = await key();
-      await stock(at, 4);
+      await stock(at, 10);
       const other = await key();
       await stock(other, 4);
-      const otherOrder = randomUUID();
-      const [theirs] = await reserve(otherOrder, 'refuse', [{ ...at, quantity: 1 }]);
-      const [elsewhere] = await reserve(randomUUID(), 'refuse', [{ ...other, quantity: 1 }]);
+      const [orderA, orderC, orderD, orderE] = [
+        randomUUID(),
+        randomUUID(),
+        randomUUID(),
+        randomUUID(),
+      ];
+      const [theirs] = await reserve(orderA, 'refuse', [{ ...at, quantity: 1 }]);
+      const [elsewhere] = await reserve(orderC, 'refuse', [{ ...other, quantity: 1 }]);
       const closedOrder = randomUUID();
       const [closed] = await reserve(closedOrder, 'refuse', [{ ...at, quantity: 1 }]);
       await ledger.transaction((tx) =>
         ledger.releaseSource(tx, { sourceType: 'order', sourceId: closedOrder }),
       );
+      // The shipping order's own reservation, but of another line than the shipment names.
+      const [otherLine] = await reserve(orderD, 'refuse', [{ ...at, quantity: 1 }]);
+      // Same order id and line id, but another source type.
+      const lineE = randomUUID();
+      const [otherSource] = await ledger.transaction((tx) =>
+        ledger.reserveLines(tx, {
+          sourceType: 'consignment',
+          sourceId: orderE,
+          shortage: 'refuse',
+          lines: [{ sourceLineId: lineE, ...at, quantity: 1 }],
+        }),
+      );
 
-      for (const reservationId of [
-        theirs?.reservationId,
-        elsewhere?.reservationId,
-        closed?.reservationId,
-        randomUUID(),
-      ]) {
-        await ledger.postCarrierShipment(shipment(randomUUID(), at, 1, { reservationId }));
+      const naming: [string, { reservationId?: string; sourceLineId?: string }][] = [
+        [randomUUID(), { reservationId: theirs?.reservationId }],
+        [randomUUID(), { reservationId: elsewhere?.reservationId }],
+        [randomUUID(), { reservationId: closed?.reservationId }],
+        [orderD, { reservationId: otherLine?.reservationId }],
+        [orderE, { reservationId: otherSource?.reservationId, sourceLineId: lineE }],
+        [randomUUID(), { reservationId: randomUUID() }],
+      ];
+      for (const [orderId, extra] of naming) {
+        await ledger.postCarrierShipment(shipment(orderId, at, 1, extra));
       }
 
-      // The other order's hold was never consumed by a shipment naming it; stock fell by 4 and
-      // the one real hold was then shortened to fit what is left.
-      expect((await level(api.owner, at)).onHand).toBe(0);
-      expect(await rows(otherOrder)).toMatchObject([
-        { status: 'active', open_quantity: 0, unfilled_quantity: 1 },
+      // Nothing the shipments named was consumed: stock fell by six, the holds all still stand.
+      expect((await level(api.owner, at)).onHand).toBe(4);
+      expect(await rows(orderA)).toMatchObject([{ status: 'active', open_quantity: 1 }]);
+      expect(await rows(orderC)).toMatchObject([{ status: 'active', open_quantity: 1 }]);
+      expect(await rows(closedOrder)).toMatchObject([{ status: 'released' }]);
+      expect(await rows(orderD)).toMatchObject([{ status: 'active', open_quantity: 1 }]);
+      expect(await rows(orderE)).toMatchObject([{ status: 'active', open_quantity: 1 }]);
+      expect(shortened).toEqual([]);
+    });
+
+    it('compares ids case blind: an upper case order and line id still fulfil their own hold', async () => {
+      const at = await key();
+      await stock(at, 2);
+      const orderId = randomUUID();
+      const lineId = randomUUID();
+      const [own] = await reserve(orderId, 'refuse', [
+        { sourceLineId: lineId, ...at, quantity: 1 },
       ]);
+      // A repeat with the same ids in upper case finds the same reservation and writes nothing.
+      const [again] = await reserve(orderId.toUpperCase(), 'refuse', [
+        { sourceLineId: lineId.toUpperCase(), ...at, quantity: 1 },
+      ]);
+      expect(again?.reservationId).toBe(own?.reservationId);
+
+      await ledger.postCarrierShipment(
+        shipment(orderId.toUpperCase(), at, 1, {
+          sourceLineId: lineId.toUpperCase(),
+          reservationId: own?.reservationId,
+        }),
+      );
+
+      expect(await rows(orderId)).toMatchObject([{ status: 'fulfilled' }]);
+    });
+
+    it('holds a new reservation once the old one closed, and replays a retry that names another reservation', async () => {
+      const at = await key();
+      await stock(at, 3);
+      const orderId = randomUUID();
+      const lineId = randomUUID();
+      const [first] = await reserve(orderId, 'refuse', [
+        { sourceLineId: lineId, ...at, quantity: 1 },
+      ]);
+      const input = shipment(orderId, at, 1, {
+        sourceLineId: lineId,
+        reservationId: first?.reservationId,
+      });
+      const posted = await ledger.postCarrierShipment(input);
+      expect(await rows(orderId)).toMatchObject([{ status: 'fulfilled' }]);
+
+      // The retry names another reservation id: the lines (not the id) define the shipment.
+      const replay = await ledger.postCarrierShipment(
+        shipment(orderId, at, 1, { sourceLineId: lineId, reservationId: randomUUID() }),
+      );
+      expect(replay).toEqual({ ...posted, replayed: true });
+
+      // The closed reservation no longer blocks the line: a call now holds a new one.
+      const [again] = await reserve(orderId, 'refuse', [
+        { sourceLineId: lineId, ...at, quantity: 1 },
+      ]);
+      expect(again?.reservationId).not.toBe(first?.reservationId);
+      expect(await rows(orderId)).toMatchObject([{ status: 'fulfilled' }, { status: 'active' }]);
+    });
+
+    it('keeps a carrier time 4 minutes ahead as given', async () => {
+      const at = await key();
+      await stock(at, 1);
+
+      const result = await ledger.postCarrierShipment({
+        ...shipment(randomUUID(), at),
+        effectiveAt: new Date(Date.now() + 4 * 60_000),
+      });
+
+      const ahead = Date.parse(result.effectiveAt) - Date.now();
+      expect(ahead).toBeGreaterThan(3 * 60_000);
+      expect(ahead).toBeLessThan(5 * 60_000);
     });
 
     it('lets a carrier line fulfil its own reservation without shortening the others', async () => {

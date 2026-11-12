@@ -204,6 +204,12 @@ function compareLines(a: Line, b: Line): number {
  * written (spec 0006). It writes only the caller's own rows and issues the document number
  * last. A throw rolls the whole posting back. On the one deadlock retry the transaction reruns,
  * this callback included, so it must keep no state across attempts. It never runs on a replay.
+ *
+ * It receives a stock unit, so it may call `releaseLines`, `releaseSource`, and `reserveLines`. Lock
+ * order: those calls take their master and pair locks after the posting's own, so a `within` that
+ * reserves or releases on keys other than the posting's can deadlock with a concurrent posting that
+ * does the reverse; the single retry breaks it and a second deadlock reaches the caller as an error
+ * to retry. Prefer touching only the posting's own keys.
  */
 export type WithinPosting = (tx: StockTransaction, result: PostingResult) => Promise<void>;
 
@@ -783,21 +789,24 @@ export class LedgerService {
    * raises `InsufficientStock` listing each short line (`index`, `available`, `requested`) and
    * writes nothing. Lines on one SKU, location, and lot share the free stock in input order after
    * older waiting demand. `quantity` is the requested total still to ship: a repeat raises a line
-   * toward it and never lowers it, so never call this again for a line after a shipment fulfilled
-   * part of it (the shipped units would be held again). Another key for the same line, or a line id
-   * another document holds, raises `DuplicateReservation`. `InsufficientStock.details.lines[].index`
+   * toward it and never lowers it, so never call this for a line whose reservation is still active
+   * after a shipment fulfilled part of it (the shipped units would be held again); once the
+   * reservation has closed (fulfilled or released), a call holds a new one. Another key for the
+   * same line, or a line id another document holds, raises `DuplicateReservation`. `InsufficientStock.details.lines[].index`
    * is the zero based position in `lines`. A location that allows negative stock holds the full
    * request. Never reads or writes a table of another module.
    */
   async reserveLines(tx: StockTransaction, input: ReserveLinesInput): Promise<ReservedLine[]> {
     assertStockTransaction(tx);
     const parsed = parse(ReserveLinesInput, input);
+    // Ids compare as the database stores them: lower case.
+    const sourceId = parsed.sourceId.toLowerCase();
     const lines = parsed.lines.map((line, index) => ({
       index,
-      sourceLineId: line.sourceLineId,
-      variantId: line.variantId,
-      locationId: line.locationId,
-      lotId: line.lotId ?? null,
+      sourceLineId: line.sourceLineId.toLowerCase(),
+      variantId: line.variantId.toLowerCase(),
+      locationId: line.locationId.toLowerCase(),
+      lotId: line.lotId?.toLowerCase() ?? null,
       quantity: line.quantity,
     }));
     const master = await this.loadMaster(
@@ -843,7 +852,7 @@ export class LedgerService {
       const held = existing.get(line.sourceLineId);
       if (
         held &&
-        (held.source_id !== parsed.sourceId ||
+        (held.source_id !== sourceId ||
           held.variant_id !== line.variantId ||
           held.location_id !== line.locationId ||
           held.lot_id !== line.lotId)
@@ -855,8 +864,9 @@ export class LedgerService {
       }
     }
 
-    // Free stock per key: on hand less held, less the waiting demand of other documents (older
-    // than this call), floored at 0 when used, then shared by this call's lines in input order.
+    // Free stock per key: on hand less held, less the waiting demand of the other documents at the
+    // key (all of it, not only the older; in steady state free stock and waiting demand never
+    // coexist), floored at 0 when used, then shared by this call's lines in input order.
     const free = new Map<string, number>();
     for (const row of await this.availability(tx, pairs)) {
       free.set(reservationKeyOf(row), row.available);
@@ -1072,8 +1082,8 @@ export class LedgerService {
     }));
     const operation: Operation = {
       idempotencyKey: carrierShipmentKey(parsed.orderId, parsed.generation),
-      // The key, generation, and lines define a shipment; the carrier's time is not part of it, so
-      // a replay never conflicts because the time was moved to now.
+      // The key, generation, and lines define a shipment; neither the carrier's time (a replay never
+      // conflicts because it was moved to now) nor a named reservation (the line id pins it) is part of it.
       requestHash: requestHash({
         operation: 'carrier',
         sourceType: 'order_shipment',
@@ -1084,7 +1094,6 @@ export class LedgerService {
           locationId: line.locationId,
           quantity: line.quantity,
           sourceLineId: line.sourceLineId ?? undefined,
-          reservationId: line.reservationId ?? undefined,
         })),
       }),
       sourceType: 'order_shipment',
@@ -1222,7 +1231,9 @@ export class LedgerService {
    * `min(held, excess)` from held to waiting, and
    * each publishes `ReservationShortened` with `cause` and the posting's `groupId`. Built to be
    * reused by every posting that may take stock below the reservations (the carrier shipment now,
-   * a `damaged` or `missing` adjustment later). Skips locations that allow negative stock. Never publishes when nothing is in excess.
+   * a `damaged` or `missing` adjustment later). Skips the locations in `negativeLocations` (where
+   * negative stock is allowed `reserveLines` holds the full request, so held may exceed on hand).
+   * Never publishes when nothing is in excess.
    */
   private async shortenExcess(
     tx: Transaction,
@@ -1230,22 +1241,14 @@ export class LedgerService {
     cause: ReservationShortenedCause,
     groupId: string,
     exclude: ReadonlySet<string>,
+    negativeLocations: ReadonlySet<string>,
   ): Promise<void> {
     if (!keys.length) return;
-    // Where negative stock is allowed `reserveLines` holds the full request, so held may exceed
-    // on hand there and nothing is shortened (the overdraw event still fires).
-    const negative = new Set(
-      (
-        await tx.execute<{ id: string }>(sql`
-          SELECT id FROM locations
-          WHERE allow_negative AND id = ANY(${pgArray([...new Set(keys.map((k) => k.locationId))])}::uuid[])`)
-      ).rows.map((row) => row.id),
-    );
     const levels = new Map(
       (await this.availability(tx, distinctPairs(keys))).map((row) => [reservationKeyOf(row), row]),
     );
     for (const key of new Map(keys.map((k) => [reservationKeyOf(k), k])).values()) {
-      if (negative.has(key.locationId)) continue;
+      if (negativeLocations.has(key.locationId)) continue;
       const level = levels.get(reservationKeyOf(key));
       if (!level) continue;
       let excess = level.reserved - Math.max(level.onHand, 0);
@@ -1414,7 +1417,19 @@ export class LedgerService {
 
     await this.write(tx, inserted.id, lines, costed, balances.byKey, reservations, serials);
     if (op.carrier) {
-      await this.shortenExcess(tx, lines, 'carrier_shipment', inserted.id, fulfilled);
+      const negativeLocations = new Set(
+        lines
+          .map((line) => line.locationId)
+          .filter((id) => master.locations.get(id)?.allowNegative),
+      );
+      await this.shortenExcess(
+        tx,
+        lines,
+        'carrier_shipment',
+        inserted.id,
+        fulfilled,
+        negativeLocations,
+      );
       await this.announceOverdraw(tx, lines, balances.byKey, inserted.id);
     } else {
       // AC-21: stock this posting freed fills the waiting demand at that key, oldest first.
@@ -1621,8 +1636,8 @@ export class LedgerService {
       !reservation ||
       reservation.status !== 'active' ||
       reservation.source_type !== ORDER_SOURCE_TYPE ||
-      reservation.source_id !== orderId ||
-      reservation.source_line_id !== line.sourceLineId ||
+      reservation.source_id.toLowerCase() !== orderId.toLowerCase() ||
+      reservation.source_line_id.toLowerCase() !== (line.sourceLineId ?? '').toLowerCase() ||
       reservation.variant_id !== line.variantId ||
       reservation.location_id !== line.locationId ||
       reservation.lot_id !== line.lotId
