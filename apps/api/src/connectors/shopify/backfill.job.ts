@@ -469,7 +469,8 @@ export class BackfillJob {
 
   /**
    * Records one product's inbox row and applies it through `InboxJob.applyProductRead` (task 8),
-   * the same unit and mapper as a webhook's read back, with no second read. Answers the inbox
+   * the same unit and mapper as a webhook's read back, with no second read; one product's
+   * failure fails its own event and the run goes on (security review L2). Answers the inbox
    * outcome, or null when the object is not a product or its row is already past `received`.
    */
   private async applyProduct(
@@ -495,6 +496,8 @@ export class BackfillJob {
       object,
       jobId,
       BACKFILL_JOB_NAME,
+      // The bulk snapshot is no older than the run: a mapping removed since stays removed (L3).
+      run.startedAt,
     );
   }
 

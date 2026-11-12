@@ -3,6 +3,7 @@ import type { AuditActor } from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
 import { CatalogChannelSync } from '../../catalog/channel-sync/catalog-channel-sync.js';
 import { pgArray, type Transaction } from '../../database/sql.js';
+import { SettingsService } from '../../platform/settings/settings.service.js';
 
 /** How many catalog ids one `unlink` call takes (well inside its 10,000 and 100,000 caps). */
 const UNLINK_CHUNK = 5_000;
@@ -19,9 +20,12 @@ export interface UnlinkCounts {
  * Gives a connection's catalog fields back to the app (spec 0015 AC-16, *State machines*
  * `connections.status`; spec 0012 AC-15 and its Follow-up): `CatalogChannelSync.unlink` for the
  * styles and variants the connection's product and variant mappings name and that no other live
- * mapping holds (a mapping not removed, of a connection that is not archived), so a style two
- * stores sell keeps the other store's link. Runs in the caller's transaction and writes no
- * mapping row: the mappings stay for history.
+ * mapping holds the link of (a mapping not removed, of a connection that is not archived). Lead
+ * ruling 2026-11-12: unlinking mirrors linking, so when `catalog.source_store_id` is set only a
+ * mapping of a connection of that store keeps the link (a non source store never sets one); when
+ * it is null any such mapping does. A non source store's mappings stay for order and stock
+ * matching; they just hold no link. Runs in the caller's transaction and writes no mapping row:
+ * the mappings stay for history.
  *
  * - `forConnection` is the archive step (task 16's archive route calls it in the transaction that
  *   archives the connection).
@@ -32,8 +36,11 @@ export interface UnlinkCounts {
  */
 @Injectable()
 export class ProductUnlink {
-  /** Takes the catalog's channel contract. */
-  constructor(@Inject(CatalogChannelSync) private readonly catalog: CatalogChannelSync) {}
+  /** Takes the catalog's channel contract and the settings reader (`catalog.source_store_id`). */
+  constructor(
+    @Inject(CatalogChannelSync) private readonly catalog: CatalogChannelSync,
+    @Inject(SettingsService) private readonly settings: SettingsService,
+  ) {}
 
   /**
    * The archive step: every style and variant the connection's product and variant mappings name
@@ -80,6 +87,13 @@ export class ProductUnlink {
     others: SQL,
     actor: AuditActor,
   ): Promise<UnlinkCounts> {
+    // Unlinking mirrors linking (lead ruling 2026-11-12): with a source store set, only that
+    // store's mappings keep the link, as only it sets the link (spec 0012); read in the caller's
+    // transaction, as the catalog reads it.
+    const source = (await this.settings.read(['catalog.source_store_id'], tx))[
+      'catalog.source_store_id'
+    ];
+    const holder = source === null ? sql`TRUE` : sql`c.store_id = ${source.toLowerCase()}::uuid`;
     const { rows } = await tx.execute<{ entity: 'product' | 'variant'; local_id: string }>(sql`
       SELECT DISTINCT m.entity, m.local_id FROM connection_external_ids m
       WHERE ${scope} AND m.entity IN ('product', 'variant') AND m.local_id IS NOT NULL
@@ -87,7 +101,7 @@ export class ProductUnlink {
           SELECT 1 FROM connection_external_ids o
           JOIN connections c ON c.id = o.connection_id
           WHERE o.entity = m.entity AND o.local_id = m.local_id AND o.removed_at IS NULL
-            AND c.status <> 'archived' AND ${others})
+            AND c.status <> 'archived' AND ${holder} AND ${others})
       ORDER BY m.local_id`);
     const styleIds = rows.filter((row) => row.entity === 'product').map((row) => row.local_id);
     const variantIds = rows.filter((row) => row.entity === 'variant').map((row) => row.local_id);

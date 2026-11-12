@@ -46,19 +46,32 @@ describe('minimizeShopifyWebhook (AC-6)', () => {
     }
   });
 
-  it('builds the gid from the REST id when no admin_graphql_api_id is sent, or a wrong type is', () => {
+  it('builds the gid from the REST id when no admin_graphql_api_id is sent', () => {
     expect(minimizeShopifyWebhook('orders/updated', { id: 42 }).subjectExternalId).toBe(
       'gid://shopify/Order/42',
     );
+    expect(minimizeShopifyWebhook('products/update', { id: '77' }).subjectExternalId).toBe(
+      'gid://shopify/Product/77',
+    );
+  });
+
+  it('names no subject when admin_graphql_api_id is a gid of another resource or not a gid (security review L5)', () => {
+    for (const sent of [
+      'gid://shopify/Order/42',
+      'gid://shopify/ProductVariant/42',
+      'not a gid',
+      42,
+    ]) {
+      expect(
+        minimizeShopifyWebhook('products/delete', { id: 42, admin_graphql_api_id: sent }),
+      ).toMatchObject({ subjectType: 'product', subjectExternalId: null });
+    }
     expect(
       minimizeShopifyWebhook('orders/updated', {
         id: 42,
         admin_graphql_api_id: 'gid://shopify/Product/42',
       }).subjectExternalId,
-    ).toBe('gid://shopify/Order/42');
-    expect(minimizeShopifyWebhook('products/update', { id: '77' }).subjectExternalId).toBe(
-      'gid://shopify/Product/77',
-    );
+    ).toBe(null);
   });
 
   it('names a refund by its order, an app message by no id, and an unknown topic by no subject', () => {

@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import type { LoggerService } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { SkuDetail } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ProductUnlink } from '../src/connectors/connections/product-unlink.js';
@@ -9,7 +10,14 @@ import {
   InboundEventFailed,
 } from '../src/connectors/connectors.events.js';
 import { ConnectionSecrets } from '../src/connectors/connections/connection-secrets.js';
+import { InboxJob } from '../src/connectors/shopify/inbox.job.js';
+import {
+  parseShopifyProductPage,
+  parseShopifyVariantsPage,
+} from '../src/connectors/shopify/product-mapper.js';
+import { ProductSync } from '../src/connectors/shopify/product-sync.js';
 import { OrderIntake } from '../src/orders/intake/order-intake.service.js';
+import { OrderTransactions } from '../src/orders/order-transactions.js';
 import { DATABASE } from '../src/database/database.module.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { WorkerModule } from '../src/worker.module.js';
@@ -414,7 +422,7 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
     expect(remainingShopifyExchanges()).toEqual([]);
   });
 
-  it('ignores a gift card as gift_card, making no style (spec 0012 Follow-up)', async () => {
+  it('ignores a gift card as gift_card, making no style and recording it unapplied (spec 0012 Follow-up)', async () => {
     useShopifyScenarios('product-gift-card');
     const c = await plant();
     expect(
@@ -425,7 +433,13 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
         '2026-11-10T09:00:00Z',
       ),
     ).toMatchObject({ status: 'ignored', outcome: 'gift_card' });
-    expect(await mappingsOf(c)).toEqual([]);
+    // Recorded with no style and no variant (code review minor 1): an order of it reads it no more.
+    expect(
+      (await mappingsOf(c)).map((row) => [row.entity, row.local_id, row.state['lastOutcome']]),
+    ).toEqual([
+      ['product', null, 'gift_card'],
+      ['variant', null, 'gift_card'],
+    ]);
     expect(remainingShopifyExchanges()).toEqual([]);
   });
 
@@ -581,8 +595,278 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
     expect(remainingShopifyExchanges()).toEqual([]);
   });
 
-  it('keeps product events and log lines free of a product title, SKU, or secret, and publishes no failure', () => {
-    expect(failedEvents).toEqual([]);
+  it('publishes one ChannelProductNeedsAttention per variant and outcome when two applies of a new product run in parallel (code review major 1)', async () => {
+    const c = await plant();
+    attention.length = 0;
+    const first = parseShopifyProductPage(
+      (
+        readShopifyFixture('product-three-variants/01-product-read.json').response.body as {
+          data: unknown;
+        }
+      ).data,
+    );
+    const next = parseShopifyVariantsPage(
+      (
+        readShopifyFixture('product-three-variants/02-product-variants-page.json').response
+          .body as { data: unknown }
+      ).data,
+      LINEN,
+    );
+    if (!first || !next) throw new Error('fixture');
+    const product = { ...first.product, variants: [...first.product.variants, ...next.variants] };
+    const sync = worker.get(ProductSync);
+    const transactions = worker.get(OrderTransactions);
+    const apply = () =>
+      transactions.run((tx) =>
+        sync.apply(tx, { connectionId: c.id, storeId: c.storeId }, LINEN, product, {
+          kind: 'system_job',
+          name: 'connectors.shopify.inbox',
+          jobId: randomUUID(),
+        }),
+      );
+    const outcomes = await Promise.all([apply(), apply()]);
+    expect(outcomes.map((applied) => applied.outcome).sort()).toEqual(['needs_attention', 'stale']);
+    expect(attention.filter((event) => event.connectionId === c.id)).toEqual([
+      expect.objectContaining({ externalVariantId: variantGid(14), outcome: 'needs_sku' }),
+    ]);
+  });
+
+  it('treats a backfill snapshot of a product removed after the run started as stale (security review L3)', async () => {
+    const c = await plant();
+    useShopifyScenarios('product-three-variants');
+    await arrive(c, 'products/create', LINEN, '2026-11-10T09:00:00Z');
+    const started = new Date().toISOString();
+    await api.owner.pool.query(
+      `UPDATE connection_external_ids SET removed_at = now()
+       WHERE connection_id = $1::uuid AND entity IN ('product', 'variant')`,
+      [c.id],
+    );
+    const page = parseShopifyProductPage(
+      (
+        readShopifyFixture('product-three-variants/03-product-read.json').response.body as {
+          data: unknown;
+        }
+      ).data,
+    );
+    if (!page) throw new Error('fixture');
+    const applied = await worker
+      .get(OrderTransactions)
+      .run((tx) =>
+        worker
+          .get(ProductSync)
+          .apply(
+            tx,
+            { connectionId: c.id, storeId: c.storeId },
+            LINEN,
+            page.product,
+            { kind: 'system_job', name: 'connectors.shopify.backfill', jobId: randomUUID() },
+            { snapshotAt: started },
+          ),
+      );
+    expect(applied).toMatchObject({ status: 'ignored', outcome: 'stale' });
+    expect((await mappingsOf(c)).every((row) => row.removed)).toBe(true);
+  });
+
+  it('fails a product event with its code and InboundEventFailed, recording the product as not applied (code review minor 5)', async () => {
+    useShopifyScenarios('product-failures');
+    const c = await plant();
+    const cases: [string, string][] = [
+      ['gid://shopify/Product/2220000082001', 'PRICE_UNREADABLE'],
+      ['gid://shopify/Product/2220000082002', 'VARIANTS_TRUNCATED'],
+      ['gid://shopify/Product/2220000082003', 'PRODUCT_INPUT_INVALID'],
+      ['gid://shopify/Product/2220000082004', 'READ_BACK_MISMATCH'],
+    ];
+    for (const [gid, code] of cases) {
+      expect(await arrive(c, 'products/update', gid, '2026-11-10T09:00:00Z')).toMatchObject({
+        status: 'failed',
+        failure_code: code,
+      });
+      expect(failedEvents.at(-1)).toMatchObject({
+        connectionId: c.id,
+        subjectType: 'product',
+        subjectExternalId: gid,
+        failureCode: code,
+      });
+    }
+    // The mapper's refusal is recorded on a product mapping (the read before an order skips it).
+    const rows = await mappingsOf(c);
+    const priced = rows.filter((row) => row.state['productId'] === cases[0]?.[0]);
+    expect(priced.map((row) => [row.local_id, row.state['lastOutcome']])).toEqual([
+      [null, 'PRICE_UNREADABLE'],
+    ]);
+    expect(
+      rows.find((row) => row.entity === 'product' && row.external_id === cases[0]?.[0])?.state,
+    ).toMatchObject({ lastOutcome: 'PRICE_UNREADABLE', status: 'ACTIVE' });
+    expect(remainingShopifyExchanges()).toEqual([]);
+  });
+
+  it('leaves the lines of a refused product unmapped and creates the order, and never reads that product again for the next order (security review L2, code review minor 1)', async () => {
+    useShopifyScenarios('order-product-refused');
+    const c = await plant({ productsSwept: true });
+    const first = 'gid://shopify/Order/5550000082001';
+    expect(await arrive(c, 'orders/create', first, '2026-11-02T09:15:04Z')).toMatchObject({
+      status: 'processed',
+    });
+    expect(await lineVariants((await orderOf(c, first))?.id as string)).toEqual([null, null]);
+    // The second order of the same product reads the order only (04): no product read.
+    const second = 'gid://shopify/Order/5550000082002';
+    expect(await arrive(c, 'orders/create', second, '2026-11-02T09:15:04Z')).toMatchObject({
+      status: 'processed',
+    });
+    expect(await lineVariants((await orderOf(c, second))?.id as string)).toEqual([null, null]);
+    expect(remainingShopifyExchanges()).toEqual([]);
+  });
+
+  it("links another order's waiting lines when an order's read before mapping maps their product (code review major 2)", async () => {
+    useShopifyScenarios('product-late-link');
+    const c = await plant();
+    const waiting = 'gid://shopify/Order/5550000081002';
+    await arrive(c, 'orders/create', waiting, '2026-11-02T09:15:04Z');
+    const before = await orderOf(c, waiting);
+    expect(await lineVariants(before?.id as string)).toEqual([null, null]);
+    // The products backfill ran since; the wool tee's own webhook never arrived.
+    resetShopifyScenarios();
+    await api.owner.pool.query(
+      `UPDATE connections SET products_swept_through = now() WHERE id = $1::uuid`,
+      [c.id],
+    );
+    useShopifyScenarios('order-product-links-waiting');
+    const next = 'gid://shopify/Order/5550000081003';
+    await arrive(c, 'orders/create', next, '2026-11-02T09:15:04Z');
+    const mapped = (await mappingsOf(c)).filter((row) => row.entity === 'variant');
+    const ids = mapped.map((row) => row.local_id);
+    expect(await lineVariants((await orderOf(c, next))?.id as string)).toEqual(ids);
+    expect(await lineVariants(before?.id as string)).toEqual(ids);
+    expect(await auditActions(before?.id as string)).not.toContain('order.edited');
+    expect((await orderOf(c, waiting))?.updated_at).toEqual(before?.updated_at);
+    expect(remainingShopifyExchanges()).toEqual([]);
+  });
+
+  it('links the waiting lines on the retry of a product job whose links a crash lost (code review minor 3)', async () => {
+    useShopifyScenarios('product-late-link');
+    const c = await plant();
+    const gid = 'gid://shopify/Order/5550000081002';
+    await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+    const order = await orderOf(c, gid);
+    const sync = worker.get(ProductSync);
+    const links = vi.spyOn(sync, 'linkWaitingOrders').mockResolvedValueOnce(0);
+    let event: EventRow;
+    try {
+      event = await arrive(
+        c,
+        'products/create',
+        'gid://shopify/Product/2220000081003',
+        '2026-11-10T08:30:00Z',
+      );
+    } finally {
+      links.mockRestore();
+    }
+    expect(event).toMatchObject({ status: 'processed' });
+    expect(await lineVariants(order?.id as string)).toEqual([null, null]);
+    // pg-boss runs the job again: the event is no longer received, the links are made.
+    await worker.get(InboxJob).run({ connectionId: c.id, eventId: event.id }, randomUUID(), 1);
+    const variants = (await mappingsOf(c)).filter((row) => row.entity === 'variant');
+    expect(await lineVariants(order?.id as string)).toEqual(variants.map((row) => row.local_id));
+  });
+
+  it('fails one bulk product with PRODUCT_APPLY_FAILED on an error without a code, so the backfill goes on (security review L2)', async () => {
+    const c = await plant();
+    const { rows } = await api.owner.pool.query<{ id: string }>(
+      `INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,
+                                   subject_external_id, subject_version, payload)
+       VALUES ($1::uuid, 'backfill', 'products/update', $2, 'product', $3,
+               '2026-11-10T09:00:00Z', '{}'::jsonb)
+       RETURNING id`,
+      [c.id, `backfill:fixture:${randomUUID()}`, LINEN],
+    );
+    const page = parseShopifyProductPage(
+      (
+        readShopifyFixture('product-three-variants/01-product-read.json').response.body as {
+          data: unknown;
+        }
+      ).data,
+    );
+    if (!page) throw new Error('fixture');
+    const { variants, ...root } = page.product;
+    const sync = worker.get(ProductSync);
+    const apply = vi.spyOn(sync, 'apply').mockRejectedValueOnce(new Error('boom'));
+    try {
+      const outcome = await worker
+        .get(InboxJob)
+        .applyProductRead(
+          { connectionId: c.id, eventId: rows[0]?.id as string },
+          { root, children: variants.map((variant) => ({ ...variant })), line: 0 },
+          randomUUID(),
+          'connectors.shopify.backfill',
+          new Date().toISOString(),
+        );
+      expect(outcome).toEqual({ status: 'failed', code: 'PRODUCT_APPLY_FAILED' });
+    } finally {
+      apply.mockRestore();
+    }
+    expect(logLines.join('\n')).not.toContain('boom');
+  });
+
+  it('unlinks the source store link when the source store archives while only a non source store still maps, so staff can edit the price again (lead ruling 2026-11-12)', async () => {
+    const source = await plant();
+    const second = await plant();
+    await api.owner.pool.query(
+      `INSERT INTO settings (key, value) VALUES ('catalog.source_store_id', $1::jsonb)
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value`,
+      [JSON.stringify(source.storeId)],
+    );
+    try {
+      useShopifyScenarios('product-three-variants');
+      await arrive(source, 'products/create', LINEN, '2026-11-10T09:00:00Z');
+      // The second store resolves the same SKUs (03 and 04) and holds no link of its own.
+      await arrive(second, 'products/create', LINEN, '2026-11-10T09:30:00Z');
+      const rows = await mappingsOf(source);
+      const style = rows.find((row) => row.entity === 'product')?.local_id ?? '';
+      const variants = rows
+        .filter((row) => row.entity === 'variant' && row.local_id !== null)
+        .map((row) => row.local_id ?? '');
+      expect(variants).toHaveLength(3);
+      expect((await mappingsOf(second)).filter((row) => row.local_id !== null)).toHaveLength(4);
+      expect(await styleLinked(style)).toBe(true);
+
+      const db = worker.get<DatabaseConnection>(DATABASE).db;
+      const counts = await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`UPDATE connections SET status = 'archived' WHERE id = ${source.id}::uuid`,
+        );
+        return worker.get(ProductUnlink).forConnection(tx, source.id, {
+          kind: 'system_job',
+          name: 'connectors.archive',
+          jobId: randomUUID(),
+        });
+      });
+      expect(counts).toEqual({ styles: 1, variants: 3 });
+      expect(await styleLinked(style)).toBe(false);
+      for (const id of variants) expect((await variantRow(id))?.linked).toBe(false);
+      // The non source store's mappings stay for order and stock matching.
+      expect((await mappingsOf(second)).every((row) => !row.removed)).toBe(true);
+
+      const variantId = variants[0] ?? '';
+      const detail = await api.call(manager, 'GET', `/api/skus/${variantId}`);
+      expect(detail.status).toBe(200);
+      const sku = SkuDetail.parse(detail.body);
+      expect(sku.channelLinked).toBe(false);
+      const edited = await api.call(manager, 'PATCH', `/api/skus/${variantId}`, {
+        updatedAt: sku.updatedAt,
+        price: '700.00',
+      });
+      expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+      expect((await variantRow(variantId))?.price).toBe('700.00');
+    } finally {
+      await api.owner.pool.query(`DELETE FROM settings WHERE key = 'catalog.source_store_id'`);
+    }
+  });
+
+  it('keeps product events and log lines free of a product title, SKU, or secret; failures carry ids and codes only', () => {
+    for (const event of failedEvents) {
+      expect(event.subjectType).toBe('product');
+      expect(JSON.stringify(event)).not.toContain('Fixture');
+    }
     const joined = logLines.join('\n');
     for (const value of ['Fixture Linen Shirt', 'PX-LIN-M', SECRET]) {
       expect(joined).not.toContain(value);

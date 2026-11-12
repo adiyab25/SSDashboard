@@ -128,7 +128,8 @@ export interface MinimizedShopifyWebhook {
 /**
  * Reduces a verified, parsed Shopify webhook body to what the inbox may keep (spec 0015 AC-6,
  * *Value sourcing* "hook" rows): the topic, the subject's Shopify id (`admin_graphql_api_id` when
- * present, else the gid built from `id`; for a refund, its order's id from `order_id`), and
+ * present, else the gid built from `id`; for a refund, its order's id from `order_id`; none when
+ * `admin_graphql_api_id` is sent but is not a gid of the topic's resource), and
  * `updated_at`. For an inventory level message it also keeps the item id, the location id, and the
  * `available` quantity, numbers only (AC-6; their field names are Shopify's REST names, not yet
  * checked against a recording). Never a name, phone, email, address, note, line text, or any other
@@ -144,13 +145,17 @@ export function minimizeShopifyWebhook(topic: string, body: unknown): MinimizedS
     if (topic.startsWith('refunds/')) {
       const orderId = numericId(fields['order_id']);
       subjectExternalId = orderId ? `gid://shopify/Order/${orderId}` : null;
-    } else if (
-      typeof sent === 'string' &&
-      GID.test(sent) &&
-      typeName &&
-      sent.startsWith(`gid://shopify/${typeName}/`)
-    ) {
-      subjectExternalId = sent;
+    } else if (sent !== undefined && sent !== null) {
+      // A gid of another type than the topic's resource (security review L5: the topic header is
+      // not signed, so a signed body of one resource replayed under another topic) names no
+      // subject, never a gid built from the body's numeric id.
+      subjectExternalId =
+        typeof sent === 'string' &&
+        GID.test(sent) &&
+        typeName &&
+        sent.startsWith(`gid://shopify/${typeName}/`)
+          ? sent
+          : null;
     } else {
       const restId = numericId(fields['id']);
       subjectExternalId = restId && typeName ? `gid://shopify/${typeName}/${restId}` : null;

@@ -69,6 +69,22 @@ export type ShopifyProductVariant = z.infer<typeof ShopifyProductVariant>;
 /** A connection page's info. */
 const PageInfo = z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() });
 
+/** `ProductStatus` values the app knows (`2026-10`); anything else is kept as `UNKNOWN`. */
+export const SHOPIFY_PRODUCT_STATUSES = ['ACTIVE', 'ARCHIVED', 'DRAFT', 'UNLISTED'] as const;
+
+/**
+ * Shopify's `ProductStatus!` as stored in a product mapping's `state.status` (security review
+ * L4): one of `SHOPIFY_PRODUCT_STATUSES`, else `UNKNOWN`, so a value Shopify adds later neither
+ * fails the read nor stores unbounded text.
+ */
+const ProductStatus = z
+  .string()
+  .transform((value): (typeof SHOPIFY_PRODUCT_STATUSES)[number] | 'UNKNOWN' =>
+    (SHOPIFY_PRODUCT_STATUSES as readonly string[]).includes(value)
+      ? (value as (typeof SHOPIFY_PRODUCT_STATUSES)[number])
+      : 'UNKNOWN',
+  );
+
 /** The product fields of `PRODUCT_READ`, variants apart. */
 const ShopifyProductCore = z.object({
   id: StorableShopifyId,
@@ -77,7 +93,7 @@ const ShopifyProductCore = z.object({
   productType: z.string(),
   vendor: z.string(),
   tags: z.array(z.string()),
-  status: z.string(),
+  status: ProductStatus,
   isGiftCard: z.boolean(),
   updatedAt: Instant,
   options: z.array(

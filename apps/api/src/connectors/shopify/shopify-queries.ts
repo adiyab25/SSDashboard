@@ -460,8 +460,8 @@ export const CUSTOMER_READ_EXPECTED_COST = 2;
 export const PRODUCT_READ_OPTIONS_PAGE = 3;
 
 /**
- * Variants read per page of one product. Spec 0015 AC-16 names 250 a page; by the cost rule this
- * file uses (objects 1, scalars 0, a connection sized by `first`), a variant with its selected
+ * Variants read per page of one product (spec 0015 AC-16, amended 2026-11-12 from 250): by the
+ * cost rule this file uses (objects 1, scalars 0, a connection sized by `first`), a variant with its selected
  * options (up to 3 objects), inventory item, measurement, and weight counts 7 points, so 250 would
  * request about 1,750 points, above Shopify's 1,000 point single query limit (AC-25). 100 keeps
  * the estimate at 708 (`PRODUCT_READ_ESTIMATED_COST`); task 1's recordings give Shopify's

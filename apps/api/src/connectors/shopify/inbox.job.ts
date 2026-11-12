@@ -6,12 +6,21 @@ import {
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { ZodError } from 'zod';
-import { ChannelSyncError } from '../../catalog/channel-sync/channel-sync-error.js';
+import {
+  ChannelSyncError,
+  type ChannelSyncErrorCode,
+} from '../../catalog/channel-sync/channel-sync-error.js';
 import { ChannelsService } from '../../channels/channels.service.js';
 import { CustomersError } from '../../customers/customers.errors.js';
 import { CustomersService } from '../../customers/customers.service.js';
 import { DATABASE } from '../../database/database.module.js';
-import { pgArray, type Executor, type Transaction } from '../../database/sql.js';
+import {
+  isRetryable,
+  pgArray,
+  pgErrorCode,
+  type Executor,
+  type Transaction,
+} from '../../database/sql.js';
 import type { ChannelActor, ChannelCreateActor } from '../../orders/intake/order-intake.service.js';
 import { OrderIntake } from '../../orders/intake/order-intake.service.js';
 import { OrderTransactions, type OrderTransaction } from '../../orders/order-transactions.js';
@@ -101,7 +110,10 @@ export const INBOX_JOB_NAME = 'connectors.shopify.inbox';
 export const PRODUCTS_BEFORE_ORDER_MAX = 10;
 
 /** The `ChannelSyncError` codes a product event fails with; the others are defects and throw. */
-const CHANNEL_SYNC_FAILURES: readonly string[] = ['StyleCodeExhausted', 'UnknownConflict'];
+const CHANNEL_SYNC_FAILURES: readonly ChannelSyncErrorCode[] = [
+  'StyleCodeExhausted',
+  'UnknownConflict',
+];
 
 /** Transient read failures on a connection for this long set `degraded` `READS_FAILING` (AC-8). */
 export const READS_FAILING_AFTER_MS = 3 * 60 * 60_000;
@@ -215,14 +227,39 @@ function isoOf(instant: string): string {
 function failureCodeOf(error: unknown): string | null {
   if (error instanceof ShopifyCustomerMappingError) return error.code;
   if (error instanceof ShopifyProductMappingError) return error.code;
-  if (error instanceof ChannelSyncError && CHANNEL_SYNC_FAILURES.includes(error.code)) {
-    return upperCode(error.code);
-  }
-  // The catalog refused the mapped input (a rule the mapper did not foresee): never a retry.
-  if (error instanceof ZodError) return 'PRODUCT_INPUT_INVALID';
   if (error instanceof CustomersError) return upperCode(error.code);
   if (error instanceof OrderLockTimeout || error instanceof OrderTransactionNested) return null;
   return orderErrorCodeOf(error);
+}
+
+/**
+ * The failure code of a product apply (task 8): the codes of `failureCodeOf`, the channel sync's
+ * `StyleCodeExhausted` and `UnknownConflict`, and `PRODUCT_INPUT_INVALID` for a mapped input the
+ * catalog's schema refused (a rule the mapper did not foresee: never a retry). Only the product
+ * paths use it, so an order's or customer's `ZodError` still throws (security review L1).
+ */
+function productFailureCodeOf(error: unknown): string | null {
+  if (error instanceof ChannelSyncError) {
+    return CHANNEL_SYNC_FAILURES.includes(error.code) ? upperCode(error.code) : null;
+  }
+  if (error instanceof ZodError) return 'PRODUCT_INPUT_INVALID';
+  return failureCodeOf(error);
+}
+
+/**
+ * An error the product paths throw for pg-boss to retry rather than record (security review
+ * L2): an order lock timeout, a deadlock or serialization failure the unit already reran once, a
+ * lost connection (SQLSTATE class 08), or a server shutting down (57P).
+ */
+function throwsForRetry(error: unknown): boolean {
+  if (error instanceof OrderLockTimeout || isRetryable(error)) return true;
+  const code = pgErrorCode(error);
+  return code !== undefined && (code.startsWith('08') || code.startsWith('57P'));
+}
+
+/** An error's class name for a log line (never its message, which may hold a value). */
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name.replace(/[^A-Za-z0-9_]/g, '').slice(0, 64) : 'unknown';
 }
 
 /** Whether a read order lacks a ship to name, phone, or address line (the protected data check). */
@@ -329,7 +366,11 @@ export class InboxJob {
     retryCount = 0,
   ): Promise<InboxOutcome> {
     const event = await this.eventOf(data);
-    if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
+    if (!event) return { skipped: 'NOT_RECEIVED' };
+    if (event.status !== 'received') {
+      await this.relinkProduct(event);
+      return { skipped: 'NOT_RECEIVED' };
+    }
     const connection = await this.connectionOf(data.connectionId);
     if (!connection) return { skipped: 'CONNECTION_NOT_LIVE' };
     // Paused: recorded, left `received`; resume (task 16) sends the work again.
@@ -652,21 +693,29 @@ export class InboxJob {
     if (product !== null && product.id !== gid) {
       return this.fail(event, 'READ_BACK_MISMATCH', productLabelOf(product));
     }
-    return this.applyProduct(event, storeId, gid, product, jobId, INBOX_JOB_NAME, true);
+    return this.applyProduct(event, storeId, gid, product, jobId, INBOX_JOB_NAME, {
+      coalesce: true,
+      snapshotAt: null,
+    });
   }
 
   /**
    * Applies one product the backfill read in bulk (spec 0015 tasks 8 and 12, AC-7, AC-17): the
    * same unit and mapper as a webhook's read back, with no second Shopify call. `object` is the
    * product's bulk object (`assembleBulkProduct`); `jobName` names the backfill in the
-   * `system_job` actor. A backfill read coalesces nothing (its snapshot may predate webhook
-   * events). The event must still be `received` and the connection `active`.
+   * `system_job` actor; `snapshotAt` is when the products run started (the bulk snapshot is no
+   * older), so a product whose mapping was removed since is `stale` (security review L3). A
+   * backfill read coalesces nothing (its snapshot may predate webhook events). Any error but a
+   * lock timeout or a transient database error fails this product's event with a code
+   * (`PRODUCT_APPLY_FAILED` when it has none), so one product never stops the run (security
+   * review L2). The event must still be `received` and the connection `active`.
    */
   async applyProductRead(
     data: { connectionId: string; eventId: string },
     object: BulkObject,
     jobId: string,
     jobName: string,
+    snapshotAt: string,
   ): Promise<InboxOutcome> {
     const event = await this.eventOf(data);
     if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
@@ -685,10 +734,22 @@ export class InboxJob {
       return this.fail(event, error.code, null);
     }
     if (product.id !== gid) return this.fail(event, 'READ_BACK_MISMATCH', productLabelOf(product));
-    return this.applyProduct(event, connection.store_id, gid, product, jobId, jobName, false);
+    return this.applyProduct(event, connection.store_id, gid, product, jobId, jobName, {
+      coalesce: false,
+      snapshotAt,
+      failUnknown: true,
+    });
   }
 
-  /** The product unit (see `product`), then the late links of the variants it mapped. */
+  /**
+   * The product unit (see `product`), then the late links of every variant of the product that
+   * maps now (`ProductSync.linkWaitingOrders`, on a `processed` or `stale` end, so a later event
+   * of the product retries links an earlier run lost). A product failure code (see
+   * `productFailureCodeOf`) fails the event and records the product as not applied
+   * (`ProductSync.recordRefused`), so the read before an order skips it until it changes. With
+   * `failUnknown` (the backfill), any other error but a lock timeout or a transient database
+   * error fails the event `PRODUCT_APPLY_FAILED`, logged by the error's name.
+   */
   private async applyProduct(
     event: EventRow,
     storeId: string,
@@ -696,10 +757,11 @@ export class InboxJob {
     product: ShopifyProduct | null,
     jobId: string,
     jobName: string,
-    coalesce: boolean,
+    options: { coalesce: boolean; snapshotAt: string | null; failUnknown?: boolean },
   ): Promise<InboxOutcome> {
     const label = product ? productLabelOf(product) : null;
     let mapped: readonly string[] = [];
+    let linksDue = false;
     let outcome: InboxOutcome;
     try {
       outcome = await this.unit(event, async (tx) => {
@@ -709,31 +771,63 @@ export class InboxJob {
           gid,
           product,
           { kind: 'system_job', name: jobName, jobId },
+          { snapshotAt: options.snapshotAt },
         );
-        mapped = applied.newlyMapped;
-        return this.end(tx, event, label, applied, coalesce);
+        mapped = applied.mappedVariants;
+        linksDue = applied.status === 'processed' || applied.outcome === 'stale';
+        return this.end(tx, event, label, applied, options.coalesce);
       });
     } catch (error) {
-      const code = failureCodeOf(error);
+      let code = productFailureCodeOf(error);
+      if (code === null && options.failUnknown && !throwsForRetry(error)) {
+        this.logger.warn(
+          `inbox event=${event.id} product apply error=${errorName(error)} failed=PRODUCT_APPLY_FAILED`,
+        );
+        code = 'PRODUCT_APPLY_FAILED';
+      }
       if (code === null) throw error;
+      if (product) await this.products.recordRefused(event.connection_id, product, code);
       return this.fail(event, code, label);
     }
-    if (outcome.status === 'processed' && mapped.length > 0) {
+    if (linksDue && mapped.length > 0) {
       await this.products.linkWaitingOrders(event.connection_id, mapped);
     }
     return outcome;
   }
 
   /**
+   * After a crash between a product unit and its late links (code review minor 3): pg-boss
+   * retries the job, the event is no longer `received`, and this links the waiting order lines of
+   * every variant of the product that maps now, so the retry finishes what the run began.
+   */
+  private async relinkProduct(event: EventRow): Promise<void> {
+    if (event.subject_type !== 'product' || !event.subject_external_id) return;
+    if (event.status !== 'processed') return;
+    const connection = await this.connectionOf(event.connection_id);
+    if (connection?.status !== 'active') return;
+    const mapped = await this.products.mappedVariantsOf(
+      this.connection.db,
+      event.connection_id,
+      event.subject_external_id,
+    );
+    if (mapped.length > 0) await this.products.linkWaitingOrders(event.connection_id, mapped);
+  }
+
+  /**
    * The product read before an order (AC-9, review M8; Inbound processing item 4): before the
    * order's unit, every line naming a Shopify variant the connection has no live mapping for gets
    * its product read (`PRODUCT_OF_VARIANT_READ`, then `ProductSync.read`) and applied in its own
-   * unit, at most `PRODUCTS_BEFORE_ORDER_MAX` products, so the order then maps those lines. Only
-   * once the first products backfill ran (`products_swept_through` set): before it every variant
-   * is unknown and the backfill maps the catalog, after which the waiting lines are linked. A
-   * transient error retries the whole job and a token refusal ends it, as for the order read; a
-   * Shopify refusal, an unreadable or gone product, or a catalog refusal only leaves the line
-   * unmapped (logged by code) and the order goes on. Answers how the job ended, or null to go on.
+   * unit, at most `PRODUCTS_BEFORE_ORDER_MAX` products, so the order then maps those lines; then
+   * the other known orders waiting for a variant those products map are linked too
+   * (`ProductSync.linkWaitingOrders`, code review major 2). Only once the first products backfill
+   * ran (`products_swept_through` set): before it every variant is unknown and the backfill maps
+   * the catalog, after which the waiting lines are linked. A transient Shopify error retries the
+   * whole job and a token refusal ends it, as for the order read; a lock timeout or a transient
+   * database error throws for the retry. Anything else (a Shopify refusal, an unreadable or gone
+   * product, a catalog refusal, or an error with no code, logged by its name: security review L2)
+   * leaves that product's lines unmapped and the order goes on; a product failure code also
+   * records the product as not applied, so the next order does not read it again. Answers how
+   * the job ended, or null to go on.
    */
   private async productsBeforeOrder(
     event: EventRow,
@@ -761,13 +855,20 @@ export class InboxJob {
     const unknown = await this.products.unknownVariants(this.connection.db, connection.id, gids);
     const covered = new Set<string>();
     const readProducts = new Set<string>();
+    const mapped = new Set<string>();
+    const link = async () => {
+      if (mapped.size > 0) await this.products.linkWaitingOrders(connection.id, [...mapped]);
+    };
     for (const variantGid of unknown) {
       if (covered.has(variantGid)) continue;
       if (readProducts.size >= PRODUCTS_BEFORE_ORDER_MAX) break;
       const owner = await this.guarded(event, connection.id, retryCount, async () =>
         this.products.productOfVariant(access, variantGid),
       );
-      if ('done' in owner) return owner.done;
+      if ('done' in owner) {
+        await link();
+        return owner.done;
+      }
       if ('refused' in owner) {
         this.logger.warn(`inbox event=${event.id} product_before_order refused=${owner.refused}`);
         continue;
@@ -778,7 +879,10 @@ export class InboxJob {
       const answer = await this.guarded(event, connection.id, retryCount, async () =>
         this.products.read(access, productGid),
       );
-      if ('done' in answer) return answer.done;
+      if ('done' in answer) {
+        await link();
+        return answer.done;
+      }
       if ('refused' in answer) {
         this.logger.warn(`inbox event=${event.id} product_before_order refused=${answer.refused}`);
         continue;
@@ -794,15 +898,24 @@ export class InboxJob {
             jobId,
           }),
         );
+        for (const gidMapped of applied.mappedVariants) mapped.add(gidMapped);
         this.logger.log(
           `inbox event=${event.id} product_before_order status=${applied.status} code=${applied.outcome ?? 'none'}`,
         );
       } catch (error) {
-        const code = failureCodeOf(error);
-        if (code === null) throw error;
-        this.logger.warn(`inbox event=${event.id} product_before_order failed=${code}`);
+        if (throwsForRetry(error)) throw error;
+        const code = productFailureCodeOf(error);
+        if (code !== null) {
+          await this.products.recordRefused(connection.id, product, code);
+          this.logger.warn(`inbox event=${event.id} product_before_order failed=${code}`);
+        } else {
+          this.logger.warn(
+            `inbox event=${event.id} product_before_order error=${errorName(error)} left_unmapped`,
+          );
+        }
       }
     }
+    await link();
     return null;
   }
 

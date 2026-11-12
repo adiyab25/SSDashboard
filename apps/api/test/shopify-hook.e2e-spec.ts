@@ -671,10 +671,11 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
       admin_graphql_api_id: 'gid://shopify/Product/7770000000101',
       updated_at: '2026-11-02T09:00:00Z',
     };
-    const reply = await deliver(rotating, 'products/update', product);
+    // A topic no job processes yet (products get a job since task 8), so the row stays received.
+    const reply = await deliver(rotating, 'inventory_levels/update', product);
     expect(reply.status).toBe(200);
     expect((await eventOf(rotating.id, reply.webhookId)).status).toBe('received');
-    const tampered = await deliver(rotating, 'products/update', product, { tamper: true });
+    const tampered = await deliver(rotating, 'inventory_levels/update', product, { tamper: true });
     expect([tampered.status, tampered.text]).toEqual([401, '']);
   });
 

@@ -42,6 +42,13 @@ import {
   PRODUCT_VARIANTS_PAGE_OPERATION,
 } from './shopify-queries.js';
 
+/**
+ * The advisory lock class of one product apply, taken first in the apply's unit with the key
+ * `hashtext` of the connection id and the product gid joined by a colon; the catalog's own
+ * classes are 727_020 and 727_021.
+ */
+export const PRODUCT_APPLY_LOCK = 727_030;
+
 /** The most waiting orders one product apply links in a run; the next read back links the rest. */
 export const LATE_LINK_ORDERS_MAX = 500;
 
@@ -64,6 +71,11 @@ export interface ProductApplied {
   readonly outcome: string | null;
   /** Shopify variant gids that map to an app variant now and did not before (late links). */
   readonly newlyMapped: readonly string[];
+  /**
+   * Every Shopify variant gid of the product that maps now (on `processed` and `stale`), so a
+   * later event of the product retries the late links a crash may have lost.
+   */
+  readonly mappedVariants: readonly string[];
 }
 
 /** Where a product applies: the connection and its store. */
@@ -79,6 +91,8 @@ interface MappingRow extends Record<string, unknown> {
   local_id: string | null;
   external_version: string | null;
   removed: boolean;
+  /** When the mapping was removed (UTC ISO), or null. */
+  removed_at: string | null;
   state: unknown;
 }
 
@@ -220,19 +234,29 @@ export class ProductSync {
 
   /**
    * Applies one read product inside the caller's unit (see the class), in this order:
-   * 1. locks the product mapping; a product Shopify no longer answers marks the product mapping
-   *    and its variant mappings removed (outcome `product_removed`; the catalog keeps its link,
-   *    AC-16: archive unlinks), or is `ignored` `not_visible` when nothing was mapped;
-   * 2. a gift card is `ignored` `gift_card` (spec 0012 Follow-up: never a style);
-   * 3. a read not newer than the version last applied is `ignored` `stale` (AC-7);
-   * 4. `CatalogChannelSync.applyProduct` with the style and variant ids the mappings hold, as
+   * 1. takes the transaction advisory lock of (connection, product) (`PRODUCT_APPLY_LOCK`), so two
+   *    applies of one product (a `products/create` and `products/update` job, a read before an
+   *    order) run one after the other and the second sees the first one's rows (code review
+   *    major 1: never two attention events for one variant and outcome), then locks the product
+   *    mapping;
+   * 2. a product Shopify no longer answers marks the product mapping and its variant mappings
+   *    removed (outcome `product_removed`; the catalog keeps its link until the archive, AC-16),
+   *    or is `ignored` `not_visible` when nothing was mapped;
+   * 3. a read not newer than the version last applied is `ignored` `stale` (AC-7); a backfill
+   *    snapshot (`options.snapshotAt`) of a product whose mapping was removed at or after that
+   *    instant is `stale` too, so a bulk line never brings back a product deleted since
+   *    (security review L3);
+   * 4. a gift card is `ignored` `gift_card` (spec 0012 Follow-up: never a style), and its product
+   *    and variant mappings are recorded with that outcome and no local id, so the read before an
+   *    order never reads it again until the product changes (code review minor 1);
+   * 5. `CatalogChannelSync.applyProduct` with the style and variant ids the mappings hold, as
    *    `actor` (a `system_job`);
-   * 5. the product mapping takes the style id (kept when the catalog answers none), the version,
+   * 6. the product mapping takes the style id (kept when the catalog answers none), the version,
    *    the style outcome, and Shopify's status; each variant mapping takes its variant id (kept
    *    when the catalog answers none), its inventory item id, tracked, and outcome;
-   * 6. `ChannelProductNeedsAttention` for each variant whose attention outcome differs from its
+   * 7. `ChannelProductNeedsAttention` for each variant whose attention outcome differs from its
    *    last one, so an identical apply publishes nothing;
-   * 7. variant mappings of the product that the read no longer lists are marked removed, and
+   * 8. variant mappings of the product that the read no longer lists are marked removed, and
    *    `ProductUnlink.forGone` gives their variants back to the app unless another live mapping
    *    holds them.
    * Rerunnable: it reads its rows again under their locks and keeps no state.
@@ -243,43 +267,69 @@ export class ProductSync {
     productGid: string,
     product: ShopifyProduct | null,
     actor: AuditActor,
+    options: { readonly snapshotAt?: string | null } = {},
   ): Promise<ProductApplied> {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(${PRODUCT_APPLY_LOCK}::int,
+                                   hashtext(${`${target.connectionId}:${productGid}`}))`);
     const productRow = (
       await tx.execute<MappingRow>(sql`
         SELECT id, external_id, local_id, removed_at IS NOT NULL AS removed, state,
                to_char(external_version AT TIME ZONE 'UTC',
-                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS external_version
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS external_version,
+               to_char(removed_at AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS removed_at
         FROM connection_external_ids
         WHERE connection_id = ${target.connectionId}::uuid AND entity = 'product'
           AND external_id = ${productGid}
         FOR UPDATE`)
     ).rows[0];
+    const ignored = (outcome: string, mappedVariants: readonly string[] = []): ProductApplied => ({
+      status: 'ignored',
+      outcome,
+      newlyMapped: [],
+      mappedVariants,
+    });
 
     if (product === null) {
-      if (!productRow || productRow.removed) {
-        return { status: 'ignored', outcome: 'not_visible', newlyMapped: [] };
-      }
+      if (!productRow || productRow.removed) return ignored('not_visible');
       await tx.execute(sql`
         UPDATE connection_external_ids SET removed_at = now(), updated_at = now()
         WHERE connection_id = ${target.connectionId}::uuid AND removed_at IS NULL
           AND ((entity = 'product' AND external_id = ${productGid})
                OR (entity = 'variant' AND state->>'productId' = ${productGid}))`);
-      return { status: 'processed', outcome: 'product_removed', newlyMapped: [] };
+      return {
+        status: 'processed',
+        outcome: 'product_removed',
+        newlyMapped: [],
+        mappedVariants: [],
+      };
     }
-    if (product.isGiftCard) return { status: 'ignored', outcome: 'gift_card', newlyMapped: [] };
+    if (
+      productRow?.removed &&
+      options.snapshotAt &&
+      productRow.removed_at !== null &&
+      Date.parse(productRow.removed_at) >= Date.parse(options.snapshotAt)
+    ) {
+      return ignored('stale');
+    }
     if (
       productRow &&
       !productRow.removed &&
       productRow.external_version !== null &&
       Date.parse(product.updatedAt) <= Date.parse(productRow.external_version)
     ) {
-      return { status: 'ignored', outcome: 'stale', newlyMapped: [] };
+      return ignored('stale', await this.mappedVariantsOf(tx, target.connectionId, productGid));
+    }
+    if (product.isGiftCard) {
+      await this.recordUnapplied(tx, target.connectionId, product, 'gift_card');
+      return ignored('gift_card');
     }
 
     const readGids = product.variants.map((variant) => variant.id);
     const { rows: variantRows } = await tx.execute<MappingRow>(sql`
       SELECT id, external_id, local_id, removed_at IS NOT NULL AS removed, state,
-             NULL::text AS external_version
+             NULL::text AS external_version, NULL::text AS removed_at
       FROM connection_external_ids
       WHERE connection_id = ${target.connectionId}::uuid AND entity = 'variant'
         AND (external_id = ANY(${pgArray(readGids)}::text[]) OR state->>'productId' = ${productGid})
@@ -306,13 +356,16 @@ export class ProductSync {
             state = connection_external_ids.state || EXCLUDED.state, removed_at = NULL,
             updated_at = now()`);
 
+    const variantsByGid = new Map(product.variants.map((variant) => [variant.id, variant]));
     const newlyMapped: string[] = [];
+    const mappedVariants: string[] = [];
     let attention = false;
-    const records = result.variants.map((answer, i) => {
-      const variant = product.variants[i];
+    const records = result.variants.map((answer) => {
+      const variant = variantsByGid.get(answer.externalVariantId);
       const previous = byGid.get(answer.externalVariantId);
       const previousLocal = previous && !previous.removed ? previous.local_id : null;
       const localId = answer.variantId ?? previousLocal;
+      if (localId !== null) mappedVariants.push(answer.externalVariantId);
       if (localId !== null && localId !== previousLocal) newlyMapped.push(answer.externalVariantId);
       const state: VariantState = {
         productId: productGid,
@@ -325,24 +378,17 @@ export class ProductSync {
       const publish = needs && lastOutcomeOf(previous?.state) !== answer.outcome;
       return { answer, localId, state, publish };
     });
-    if (records.length > 0) {
-      const rows = records.map((record) => ({
+    await this.upsertVariants(
+      tx,
+      target.connectionId,
+      product.updatedAt,
+      records.map((record) => ({
         external_id: record.answer.externalVariantId,
         local_id: record.localId,
         state: record.state,
-      }));
-      await tx.execute(sql`
-        INSERT INTO connection_external_ids (connection_id, entity, external_id, local_id,
-                                             external_version, state)
-        SELECT ${target.connectionId}::uuid, 'variant', r.external_id, r.local_id,
-               ${isoOf(product.updatedAt)}::timestamptz, r.state
-        FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb)
-             AS r(external_id text, local_id uuid, state jsonb)
-        ON CONFLICT ON CONSTRAINT connection_external_ids_unique DO UPDATE
-          SET local_id = EXCLUDED.local_id, external_version = EXCLUDED.external_version,
-              state = connection_external_ids.state || EXCLUDED.state, removed_at = NULL,
-              updated_at = now()`);
-    }
+      })),
+      'replace',
+    );
     for (const record of records) {
       if (!record.publish) continue;
       await this.events.publish(
@@ -370,7 +416,111 @@ export class ProductSync {
       status: 'processed',
       outcome: attention ? 'needs_attention' : null,
       newlyMapped,
+      mappedVariants,
     };
+  }
+
+  /**
+   * Records a product the app did not apply (code review minor 1): the product mapping takes
+   * `outcome` (`gift_card`, or a failure code such as `PRICE_UNREADABLE`) and the version, and
+   * every variant without a mapping gets one with no local id and that outcome, so the product
+   * read before an order counts those variants as known and never reads the product again until
+   * a newer read (a webhook or the sweep) changes it. A variant or style already mapped keeps its
+   * local id. Runs in the caller's transaction (`recordRefused` opens one for a failed apply).
+   */
+  private async recordUnapplied(
+    tx: Executor,
+    connectionId: string,
+    product: ShopifyProduct,
+    outcome: string,
+  ): Promise<void> {
+    await tx.execute(sql`
+      INSERT INTO connection_external_ids (connection_id, entity, external_id, external_version,
+                                           state)
+      VALUES (${connectionId}::uuid, 'product', ${product.id},
+              ${isoOf(product.updatedAt)}::timestamptz,
+              ${JSON.stringify({ lastOutcome: outcome, status: product.status })}::jsonb)
+      ON CONFLICT ON CONSTRAINT connection_external_ids_unique DO UPDATE
+        SET external_version = EXCLUDED.external_version,
+            state = connection_external_ids.state || EXCLUDED.state, updated_at = now()`);
+    await this.upsertVariants(
+      tx,
+      connectionId,
+      product.updatedAt,
+      product.variants.map((variant) => ({
+        external_id: variant.id,
+        local_id: null,
+        state: {
+          productId: product.id,
+          inventoryItemId: variant.inventoryItem.id,
+          tracked: variant.inventoryItem.tracked,
+          lastOutcome: outcome,
+        },
+      })),
+      'keep',
+    );
+  }
+
+  /**
+   * After an apply failed with `code` (its unit rolled back), records the product as not applied
+   * in a transaction of its own (see `recordUnapplied`), under the same advisory lock. Best
+   * effort for the read before an order: the caller logs the failure either way.
+   */
+  async recordRefused(connectionId: string, product: ShopifyProduct, code: string): Promise<void> {
+    await this.connection.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        SELECT pg_advisory_xact_lock(${PRODUCT_APPLY_LOCK}::int,
+                                     hashtext(${`${connectionId}:${product.id}`}))`);
+      await this.recordUnapplied(tx, connectionId, product, code);
+    });
+  }
+
+  /**
+   * Writes variant mappings in one statement. `replace` sets the local id and outcome of an
+   * applied read (and clears `removed_at`); `keep` only adds missing rows and leaves an existing
+   * mapping as it is (a product that was not applied never unmaps a variant).
+   */
+  private async upsertVariants(
+    tx: Executor,
+    connectionId: string,
+    version: string,
+    rows: readonly { external_id: string; local_id: string | null; state: VariantState }[],
+    mode: 'replace' | 'keep',
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const onConflict =
+      mode === 'replace'
+        ? sql`DO UPDATE
+            SET local_id = EXCLUDED.local_id, external_version = EXCLUDED.external_version,
+                state = connection_external_ids.state || EXCLUDED.state, removed_at = NULL,
+                updated_at = now()`
+        : sql`DO NOTHING`;
+    await tx.execute(sql`
+      INSERT INTO connection_external_ids (connection_id, entity, external_id, local_id,
+                                           external_version, state)
+      SELECT ${connectionId}::uuid, 'variant', r.external_id, r.local_id,
+             ${isoOf(version)}::timestamptz, r.state
+      FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb)
+           AS r(external_id text, local_id uuid, state jsonb)
+      ON CONFLICT ON CONSTRAINT connection_external_ids_unique ${onConflict}`);
+  }
+
+  /**
+   * The Shopify variant gids of a product that map to an app variant now (live mappings): the
+   * late links a later event of the product retries (code review minor 3).
+   */
+  async mappedVariantsOf(
+    tx: Executor,
+    connectionId: string,
+    productGid: string,
+  ): Promise<string[]> {
+    const { rows } = await tx.execute<{ external_id: string }>(sql`
+      SELECT external_id FROM connection_external_ids
+      WHERE connection_id = ${connectionId}::uuid AND entity = 'variant'
+        AND state->>'productId' = ${productGid}
+        AND local_id IS NOT NULL AND removed_at IS NULL
+      ORDER BY external_id`);
+    return rows.map((row) => row.external_id);
   }
 
   /**
