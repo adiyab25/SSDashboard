@@ -91,13 +91,31 @@ Spec [0013](../specs/0013-orders-state-machines/index.md) (Accepted 2026-11-07; 
 ### 17. Tasks & My work inbox · needs a decision
 One task primitive (type, linked record, owner, due time, outcome code) that every process creates as it moves, and one inbox that shows each person their work.
 **Done when:** a process can open, assign, and close tasks with an outcome code; each person's "My work" shows their tasks filtered by permission and sorted by due time; overdue tasks stand out; there is no workflow designer.
-- [ ] Design it (spec): `/architect tasks & my work inbox`
+Also from spec 0016 (independent audit of 2026-11-11, section 4, items 7 and 8): support cases (wrong item, late delivery, carrier ticket, reorder, damaged or missing piece) with a required follow up time are task types here; a refund owed stays an open `refund.unrecorded_payout` task until the refund record lands in the `credit` module (owner question 2); one brand working hours setting (`operations.working_hours`) drives every due time.
+- [x] Design it (spec): `/architect tasks & my work inbox`
+- [ ] Build it: `/develop tasks & my work inbox`
+  - [ ] One failed write back, from event to My work
+  - [ ] The full service, working hours, and the interface for feature 18
+  - [ ] Every existing producer
+  - [ ] Support cases, money owed, notes, and the phone pass
+Spec [0016](../specs/0016-tasks-my-work-inbox/index.md) (Assumed 2026-11-12, owner questions open; domain review [domain-tasks-my-work](../reviews/domain-tasks-my-work.md): accept with changes, folded in)
 
 ### 18. Confirmation queue · GA · needs a decision
 Where support confirms every order before it ships: oldest first, grouped by phone, with a WhatsApp deep link, outcome codes, callbacks, address zones, and edits written back to Shopify.
 **Done when:** an agent opens WhatsApp with a prefilled message or calls, records one outcome (confirmed, no answer with an automatic callback, call back at a time, cancelled with reason, duplicate, fake); three no answers close the order; duplicates merge in one tap and cancel on Shopify with a reason; the address is fixed into the carrier's governorate, city, and zone with suggestions from past orders; size changes and added pieces write back to Shopify; confirmed orders move on to fulfillment.
 The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
-- [ ] Design it (spec): `/architect confirmation queue`
+Also from spec 0017: the queue writes a confirmed and a held tag to Shopify, and the pilot sends to Bosta only from the Shopify view "confirmed and not held" (owner question Q-18.1, before milestone 2); a confirmation edit after Bosta created the delivery reconfirms only after operations has fixed the delivery, while feature 19 owns the Bosta side ("carrier record stale", audit item 9); the pilot acceptance includes one deliberately failed write back caught by the warehouse before pickup ([stack review](../reviews/domain-stack.md) n1).
+- [x] Design it (spec): `/architect confirmation queue`
+- [ ] Build it: `/develop confirmation queue`
+  - [ ] One order confirmed through the queue, the way the desk works
+  - [ ] Duplicates and the address
+  - [ ] The queue's result reaches Shopify, and the hold
+  - [ ] Callbacks in My work, reconfirmation, deposits, and the numbers
+- [ ] Verify it: `/check verify confirmation queue`
+- [ ] Test it: `/test confirmation queue`
+- [ ] Review it (fresh model): `/check review confirmation queue`
+- [ ] Document it: `/document confirmation queue`
+Spec [0017](../specs/0017-confirmation-queue/index.md) (Assumed 2026-11-12, owner questions open; domain review [domain-confirmation-queue](../reviews/domain-confirmation-queue.md): accept with changes, folded in)
 
 ### 19. Bosta connector, mirror mode · GA · needs a decision
 Read the deliveries the carrier's own Shopify app created, with their states, fees, and cash cycles, without executing anything.
