@@ -102,18 +102,43 @@ function personalDataIn(body: unknown, allowed: readonly string[]): string[] {
 }
 
 /**
+ * Whether one line of text names `key`, in any spelling `normalKey` treats as the same (security
+ * review AS34). The short key `cost` (spec 0012) matches as a whole word only, else it would hit
+ * inside any word such as an action code (`planted.costed`); every other key matches as a
+ * substring, so `unit_cost_egp` and `variantUnitCost` still flag `unitCost`.
+ */
+function lineNamesCostKey(line: string, key: string): boolean {
+  const text = normalKey(line);
+  const wanted = normalKey(key);
+  if (wanted === 'cost') return /(?<![a-z0-9])cost(?![a-z0-9])/.test(text);
+  return text.includes(wanted);
+}
+
+/**
  * The `COST_FIELD_KEYS` an answer holds, at any depth. A text answer (the CSV export, whose
- * `before` and `after` cells are JSON text) counts a key named anywhere in it, in any spelling
- * `normalKey` treats as the same (security review AS34).
+ * `before` and `after` cells are JSON text) is checked line by line, so a line break never
+ * glues a header to the next word (`lineNamesCostKey`).
  */
 function costKeysIn(body: unknown): string[] {
   if (typeof body === 'string') {
-    const text = normalKey(body);
-    return COST_FIELD_KEYS.filter((key) => text.includes(normalKey(key)));
+    const lines = body.split(/\r\n|\r|\n/);
+    return COST_FIELD_KEYS.filter((key) => lines.some((line) => lineNamesCostKey(line, key)));
   }
   const keys = new Set(keyPaths(body).map((path) => path.at(-1)));
   return COST_FIELD_KEYS.filter((key) => keys.has(normalKey(key)));
 }
+
+describe('costKeysIn on text', () => {
+  it('flags compound keys and a bare cost header, not a word that merely contains cost', () => {
+    expect(costKeysIn('a,unit_cost_egp,b')).toContain('unitCost');
+    expect(costKeysIn('{"variantUnitCost":"5"}')).toContain('unitCost');
+    expect(costKeysIn('sku,price,cost\r\n1,2,3')).toContain('cost');
+    expect(costKeysIn('sku,cost\nnext')).toContain('cost');
+    expect(costKeysIn('"cost":"9"')).toContain('cost');
+    expect(costKeysIn('planted.costed')).not.toContain('cost');
+    expect(costKeysIn('cost_record.recorded')).not.toContain('cost');
+  });
+});
 
 describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, () => {
   let api: InProcessApi;
@@ -142,6 +167,12 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     auditDay: '',
     customer: '',
     order: '',
+    connection: '',
+    style: '',
+    season: '',
+    seasonToArchive: '',
+    productGroup: '',
+    productGroupToArchive: '',
   };
   const STALE = '2000-01-01T00:00:00.000Z';
   const PEOPLE_MANAGE: Needs = ['people.manage'];
@@ -189,11 +220,127 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'GET /stock': { needs: ['stock.view'] },
     'GET /skus/:id/stock': { needs: ['stock.view'], path: () => `/skus/${ids.sku}/stock` },
     'GET /skus/:id/movements': { needs: ['stock.view'], path: () => `/skus/${ids.sku}/movements` },
+    // Spec 0012 milestone 2 (AC-16): styles, barcodes, seasons, and product groups. Edits are
+    // stale (409) or name an unknown id (404) for a person allowed, so the sweep changes nothing
+    // the next persona relies on; creates make fresh rows, and archive and unarchive toggle a row
+    // of their own.
+    'GET /styles': { needs: ['stock.view'] },
+    'GET /styles/:id': { needs: ['stock.view'], path: () => `/styles/${ids.style}` },
+    'PATCH /styles/:id': {
+      needs: ['catalog.edit'],
+      path: () => `/styles/${ids.style}`,
+      body: () => ({ updatedAt: STALE }),
+    },
+    'POST /styles/assign': {
+      needs: ['catalog.edit'],
+      body: () => ({ styleIds: [randomUUID()], seasonId: null }),
+    },
+    'PATCH /styles/:id/code': {
+      needs: ['catalog.manage'],
+      path: () => `/styles/${ids.style}/code`,
+      body: () => ({ updatedAt: STALE, code: 'SWEEP-STYLE' }),
+    },
+    'POST /styles/:id/variants': {
+      needs: ['catalog.edit'],
+      path: () => `/styles/${ids.style}/variants`,
+      body: () => ({
+        sku: unique('SWV'),
+        options: [{ name: { en: 'Size' }, value: { en: unique('v') } }],
+      }),
+    },
+    'POST /skus/:id/barcodes': {
+      needs: ['catalog.edit'],
+      path: () => `/skus/${ids.sku}/barcodes`,
+      body: () => ({ code: unique('BC') }),
+    },
+    'DELETE /skus/:id/barcodes/:barcodeId': {
+      needs: ['catalog.edit'],
+      path: () => `/skus/${ids.sku}/barcodes/${randomUUID()}`,
+    },
+    'GET /seasons': { needs: ['stock.view'] },
+    'POST /seasons': {
+      needs: ['catalog.manage'],
+      body: () => ({ code: unique('SN').slice(0, 16), name: { en: 'Sweep season' } }),
+    },
+    'PATCH /seasons/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${ids.season}`,
+      body: () => ({ updatedAt: STALE }),
+    },
+    'POST /seasons/:id/archive': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${ids.seasonToArchive}/archive`,
+    },
+    'POST /seasons/:id/unarchive': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${ids.seasonToArchive}/unarchive`,
+    },
+    'DELETE /seasons/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/seasons/${randomUUID()}`,
+    },
+    'GET /product-groups': { needs: ['stock.view'] },
+    'POST /product-groups': {
+      needs: ['catalog.manage'],
+      body: () => ({ code: unique('PG').slice(0, 16), name: { en: 'Sweep group' } }),
+    },
+    'PATCH /product-groups/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${ids.productGroup}`,
+      body: () => ({ updatedAt: STALE }),
+    },
+    'POST /product-groups/:id/archive': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${ids.productGroupToArchive}/archive`,
+    },
+    'POST /product-groups/:id/unarchive': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${ids.productGroupToArchive}/unarchive`,
+    },
+    'DELETE /product-groups/:id': {
+      needs: ['catalog.manage'],
+      path: () => `/product-groups/${randomUUID()}`,
+    },
     'POST /customers/search': {
       needs: ['customers.view'],
       body: () => ({ phone: '01001234567' }),
     },
     'GET /customers/:id': { needs: ['customers.view'], path: () => `/customers/${ids.customer}` },
+    // Spec 0014 milestone 4: the timeline, then per kind through the lens.
+    'GET /customers/:id/timeline': {
+      needs: ['customers.view'],
+      path: () => `/customers/${ids.customer}/timeline`,
+    },
+    // Spec 0014 milestone 2: bodies naming unknown ids, so a permitted call answers 404 or 422.
+    'POST /customers/merges': {
+      needs: ['customers.merge'],
+      body: () => ({ survivorId: ids.customer, mergedId: randomUUID() }),
+    },
+    'POST /customers/merges/:id/undo': {
+      needs: ['customers.merge'],
+      path: () => `/customers/merges/${randomUUID()}/undo`,
+      body: () => ({ reasonCode: 'wrong_merge' }),
+    },
+    'GET /customers/merge-suggestions': { needs: ['customers.view'] },
+    'POST /customers/merge-suggestions/:id/dismiss': {
+      needs: ['customers.merge'],
+      path: () => `/customers/merge-suggestions/${randomUUID()}/dismiss`,
+      body: () => ({}),
+    },
+    // Spec 0014 milestone 3: an unknown customer, so a permitted call answers 404 and flags nobody.
+    'PUT /customers/:id/flag': {
+      needs: ['customers.flag'],
+      path: () => `/customers/${randomUUID()}/flag`,
+      body: () => ({ kind: 'refuser', expectedUpdatedAt: '2026-11-08T10:00:00.000000Z' }),
+    },
+    'POST /customers/:id/flag/clear': {
+      needs: ['customers.flag'],
+      path: () => `/customers/${randomUUID()}/flag/clear`,
+      body: () => ({
+        reasonCode: 'flag_mistaken',
+        expectedUpdatedAt: '2026-11-08T10:00:00.000000Z',
+      }),
+    },
     'GET /orders': { needs: ['orders.view'] },
     'POST /orders/search': { needs: ['orders.view'], body: () => ({}) },
     'GET /orders/options': { needs: ['orders.confirm'] },
@@ -253,6 +400,28 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['catalog.manage'],
       path: () => `/locations/${ids.locationToChange}`,
     },
+    // Spec 0011 milestone 1 (AC-17, AC-19, AC-20): the online gate routes and the status read. The
+    // bodies are empty, so a person with the permission gets a validation or rule answer, never 5xx.
+    'GET /locations/:id/online-gate': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.location}/online-gate`,
+    },
+    'POST /locations/:id/confirm-stock': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.locationToChange}/confirm-stock`,
+      body: () => ({}),
+    },
+    'POST /locations/:id/make-online': {
+      needs: ['catalog.manage'],
+      path: () => `/locations/${ids.locationToChange}/make-online`,
+      body: () => ({}),
+    },
+    'POST /locations/online/stop': {
+      needs: ['catalog.manage'],
+      path: () => '/locations/online/stop',
+      body: () => ({}),
+    },
+    'GET /stock/online-status': { needs: ['stock.view'] },
     'POST /stock-receipts': {
       needs: ['stock.receive'],
       body: () => ({
@@ -355,6 +524,54 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: ['settings.manage'],
       body: () => ({ envelope: 'not a license' }),
     },
+    // Spec 0015 task 6: the connections, settings.manage. The connect body has a bad shop domain,
+    // so a manager gets 422 INVALID_SHOP_DOMAIN and nothing is created; the read names a planted
+    // connection (200), and the check an unknown one, so a manager gets 404 and no job is sent.
+    'GET /connections': { needs: ['settings.manage'] },
+    'POST /connections/shopify': {
+      needs: ['settings.manage'],
+      body: () => ({
+        label: 'Sweep store',
+        storeCode: unique('SWC').toUpperCase().slice(0, 32),
+        shopDomain: 'not-a-shop.example.com',
+        clientId: 'sweep-client',
+        clientSecret: 'sweep-secret',
+        appOwner: 'organization',
+      }),
+    },
+    'GET /connections/:id': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${ids.connection}`,
+    },
+    'POST /connections/:id/check': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${randomUUID()}/check`,
+    },
+    // Spec 0015 task 12: the gateway scan and the backfill name an unknown connection (a manager
+    // gets 404, or 422 for the backfill's bad instant, and no job is sent); the sync runs read a
+    // planted connection (200). The freshness line is `orders.view`, not `settings.manage`.
+    'POST /connections/:id/gateway-scan': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${randomUUID()}/gateway-scan`,
+    },
+    'POST /connections/:id/backfill': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${randomUUID()}/backfill`,
+      body: () => ({ goLiveAt: 'not an instant' }),
+    },
+    'GET /connections/:id/sync-runs': {
+      needs: ['settings.manage'],
+      path: () => `/connections/${ids.connection}/sync-runs`,
+    },
+    'GET /connections/freshness': { needs: ['orders.view'] },
+    // Spec 0015 task 7: the Shopify hook, audience `hook` with no permission (spec 0008 route
+    // mapping: "none, proves itself by signature"). A signed in hat without a Shopify signature
+    // gets the hook's own empty 401 (AC-4) before any guard, so nobody "reaches" it.
+    'POST /hooks/shopify/:connectionId': {
+      needs: 'open',
+      path: () => `/hooks/shopify/${randomUUID()}`,
+      body: () => ({ id: 1 }),
+    },
     'GET /staff': { needs: PEOPLE_MANAGE },
     'POST /staff': {
       needs: PEOPLE_MANAGE,
@@ -449,6 +666,24 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     'POST /partner-users/:id/revoke-sessions': {
       needs: PEOPLE_MANAGE,
       path: () => `/partner-users/${ids.partnerTarget}/revoke-sessions`,
+    },
+    // Spec 0012 milestone 3 (AC-13, AC-16): a style's cost records, read with stock.view and
+    // cost.view, added with catalog.edit and cost.view (both required). The add names an unknown
+    // season, so a person allowed gets 404 NOT_FOUND and no record is ever added.
+    'GET /styles/:id/cost-records': {
+      needs: ['stock.view', 'cost.view'],
+      path: () => `/styles/${ids.style}/cost-records`,
+    },
+    'POST /styles/:id/cost-records': {
+      needs: ['catalog.edit', 'cost.view'],
+      path: () => `/styles/${ids.style}/cost-records`,
+      body: () => ({
+        seasonId: randomUUID(),
+        costBasis: 'estimate',
+        unitCost: '1.00',
+        effectiveFrom: '2026-01-01',
+        reason: 'sweep',
+      }),
     },
   };
 
@@ -554,6 +789,21 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     ids.location = await location();
     ids.locationToChange = await location();
     ids.sku = await sku();
+    ids.style = SkuDetail.parse(
+      (await api.call(boss.cookie, 'GET', `/api/skus/${ids.sku}`)).body,
+    ).productId;
+    const grouping = async (path: string, prefix: string) => {
+      const reply = await api.call(boss.cookie, 'POST', path, {
+        code: unique(prefix).slice(0, 16),
+        name: { en: 'Sweep grouping' },
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      return (reply.body as { id: string }).id;
+    };
+    ids.season = await grouping('/api/seasons', 'SS');
+    ids.seasonToArchive = await grouping('/api/seasons', 'SA');
+    ids.productGroup = await grouping('/api/product-groups', 'GG');
+    ids.productGroupToArchive = await grouping('/api/product-groups', 'GA');
     ids.skuToDelete = await sku();
     ids.skuToArchive = await sku();
     ids.receipt = await receipt();
@@ -582,6 +832,16 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     });
     expect(order.status, JSON.stringify(order.body)).toBe(201);
     ids.order = (order.body as { id: string }).id;
+    // A Shopify connection with its store, planted as the owner (no credentials, no job), so the
+    // connection read answers 200 to a manager.
+    const connection = await api.owner.pool.query<{ id: string }>(
+      `WITH store AS (INSERT INTO stores (code, name, public_name, kind)
+                      VALUES ('SWEEPSHOP', '{"en":"Sweep shop"}', '{"en":"Sweep shop"}', 'shopify')
+                      RETURNING id)
+       INSERT INTO connections (provider, label, store_id, shop_domain)
+       SELECT 'shopify', 'Sweep shop', id, 'sweep-shop.myshopify.com' FROM store RETURNING id`,
+    );
+    ids.connection = connection.rows[0]?.id ?? '';
     ids.staffTarget = (await api.addPerson(['support'])).id;
     ids.partnerTarget = (await api.addPerson(['partner'], { partnerAccountId: ids.accountA })).id;
     // An entry of the planted receipt whose diff carries cost fields, written as the owner (the
@@ -663,7 +923,15 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         // What the spec says, never what the code declares: a route whose declaration drifted
         // from the mapping fails here too, not only in `permission.spec.ts`.
         let denied: string | undefined;
-        if (route.audience === 'portal' || route.audience === 'hook') denied = 'WRONG_AUDIENCE';
+        if (route.audience === 'hook') {
+          // A hook proves itself by signature only (spec 0015 AC-4): without one, the same empty
+          // 401 for every caller, a session cookie or not.
+          if (reply.status !== 401 || reply.body !== null) {
+            problems.push(`expected an empty 401 from a hook: ${where}`);
+          }
+          continue;
+        }
+        if (route.audience === 'portal') denied = 'WRONG_AUDIENCE';
         else if (route.audience === 'staff' || route.audience === 'partner') {
           if (route.audience !== personaAudience) denied = 'WRONG_AUDIENCE';
           else if (
@@ -727,6 +995,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         'GET /audit/entries/:id',
         'GET /audit/records/:type/:id/entries',
         'POST /audit/entries/export',
+        // Spec 0012, AC-12: each variant's `cost` on the style page.
+        'GET /styles/:id',
       ]),
     );
   });

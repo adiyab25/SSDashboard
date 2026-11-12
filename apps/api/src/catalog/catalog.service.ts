@@ -4,36 +4,85 @@ import {
   UpdateSkuRequest,
   type LocalizedText,
   type SkuDetail,
+  type SkuBarcode,
   type SkuListQuery,
   type SkuListResponse,
-  type SkuSummary,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
 import { isStillReferenced, pgArray, pgConstraint, type Executor } from '../database/sql.js';
-import { decodeKeyset, encodeKeyset } from '../platform/keyset-cursor.js';
+import { encodeKeyset } from '../platform/keyset-cursor.js';
+import { catalogTransaction } from './catalog-transaction.js';
+import {
+  buildSkuListSql,
+  ISO_UTC,
+  SKU_ROW_COLUMNS,
+  SKU_ROW_FROM,
+  searchWords,
+  toSkuSummary,
+  type SkuRow,
+} from './search/sku-list-sql.js';
 
-/** `to_char` format of `updatedAt`: microseconds, UTC (spec 0006, Value sourcing). */
-const ISO_UTC = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
+export { escapeLike } from './search/sku-list-sql.js';
 
 /**
  * The catalog rules a caller can break: code already used, SKU missing, edited by someone else
  * since it was read, or still referenced and so not deletable.
  */
-export type CatalogErrorCode = 'SkuTaken' | 'StyleCodeTaken' | 'NotFound' | 'Stale' | 'InUse';
+export type CatalogErrorCode =
+  | 'SkuTaken'
+  | 'StyleCodeTaken'
+  | 'NotFound'
+  | 'Stale'
+  | 'InUse'
+  // Spec 0012 milestone 2: seasons, product groups, styles, variants, and barcodes.
+  | 'Archived'
+  | 'InvalidInput'
+  | 'SeasonCodeTaken'
+  | 'SeasonProtected'
+  | 'ProductGroupCodeTaken'
+  | 'ProductGroupProtected'
+  | 'TooManyOptions'
+  | 'OptionCombinationTaken'
+  | 'BarcodeTaken'
+  // Spec 0012 milestone 3: a cost record from before today's operating day without a reason.
+  | 'ReasonRequired';
+
+/**
+ * What an answer names beside its code: the ids a bulk assign did not find (`missingIds`), or
+ * the SKU code that already holds a barcode (`skuCode`). Codes and ids only, never personal data.
+ */
+export interface CatalogErrorDetails {
+  missingIds?: string[];
+  skuCode?: string;
+}
 
 /** A catalog rule the caller broke; the controller maps `code` to an HTTP answer. */
 export class CatalogError extends Error {
-  /** Takes the stable `code` the controller maps to an HTTP answer, and a message safe to show. */
+  /**
+   * Takes the stable `code` the controller maps to an HTTP answer, a message safe to show, and
+   * any details the answer carries.
+   */
   constructor(
     readonly code: CatalogErrorCode,
     message: string,
+    readonly details: CatalogErrorDetails = {},
   ) {
     super(message);
     this.name = 'CatalogError';
   }
 }
+
+/** The partial unique index that keeps two active variants of a style apart (spec 0012, AC-10). */
+export const OPTIONS_UNIQUE = 'product_variants_options_unique';
+
+/** The error a clash on `OPTIONS_UNIQUE` becomes. */
+export const optionCombinationTaken = () =>
+  new CatalogError(
+    'OptionCombinationTaken',
+    'Another active variant of this style has the same option values',
+  );
 
 /** What a stock document needs to know about a SKU before it posts. */
 export interface StockableSku {
@@ -53,92 +102,13 @@ export interface StockableSku {
 export type StockableCheck =
   { fault: 'UNKNOWN_SKU' } | { fault: 'ARCHIVED' | 'NOT_STOCKABLE' | null; sku: StockableSku };
 
-interface SkuRow extends Record<string, unknown> {
-  id: string;
-  product_id: string;
-  sku: string;
-  name: LocalizedText;
-  price: string | null;
-  archived: boolean;
-  updated_at: string;
-}
-
-/**
- * A SKU code clash: the variant code, or the style code a new product takes from it.
- */
-function isSkuTaken(error: unknown): boolean {
-  const constraint = pgConstraint(error);
-  return (
-    constraint === 'product_variants_sku_unique' || constraint === 'products_style_code_unique'
-  );
-}
-
-/** `%`, `_`, and `\` match themselves in a LIKE pattern. */
-export function escapeLike(text: string): string {
-  return text.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
-
-function toSummary(row: SkuRow): SkuSummary {
+function toDetail(row: SkuRow, barcodes: SkuBarcode[]): SkuDetail {
   return {
-    id: row.id,
-    productId: row.product_id,
-    code: row.sku,
-    name: { en: row.name.en, ar: row.name.ar },
-    price: row.price,
-    archived: row.archived,
-  };
-}
-
-function toDetail(row: SkuRow): SkuDetail {
-  return {
-    ...toSummary(row),
+    ...toSkuSummary(row),
     status: row.archived ? 'archived' : 'active',
     updatedAt: row.updated_at,
+    barcodes,
   };
-}
-
-const SKU_COLUMNS = sql`
-  v.id, v.product_id, v.sku, p.name, v.price, v.archived_at IS NOT NULL AS archived,
-  to_char(v.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
-
-/**
- * The SQL behind `list()`. With a search `q` it is the union of two ordered, limited branches
- * (code prefix, name contains), so the prefix branch walks `product_variants_sku_c_idx` instead
- * of the OR forcing a scan of every row. UNION (not ALL) keeps a SKU matching both once.
- */
-export function buildSkuListSql(query: SkuListQuery): SQL {
-  const filters: SQL[] = [
-    query.status === 'archived' ? sql`v.archived_at IS NOT NULL` : sql`v.archived_at IS NULL`,
-  ];
-  if (query.cursor) {
-    const [after] = decodeKeyset(query.cursor, 1);
-    filters.push(sql`v.sku COLLATE "C" > ${after} COLLATE "C"`);
-  }
-  const limit = query.limit + 1;
-  if (!query.q) {
-    return sql`
-      SELECT ${SKU_COLUMNS}
-      FROM product_variants v JOIN products p ON p.id = v.product_id
-      WHERE ${sql.join(filters, sql` AND `)}
-      ORDER BY v.sku COLLATE "C"
-      LIMIT ${limit}`;
-  }
-  const where = sql.join(filters, sql` AND `);
-  const prefix = `${escapeLike(query.q.toUpperCase())}%`;
-  const contains = `%${escapeLike(query.q)}%`;
-  return sql`
-    SELECT ${SKU_COLUMNS}
-    FROM product_variants v JOIN products p ON p.id = v.product_id
-    WHERE v.id IN (
-      (SELECT v.id FROM product_variants v
-        WHERE ${where} AND v.sku COLLATE "C" LIKE ${prefix}
-        ORDER BY v.sku COLLATE "C" LIMIT ${limit})
-      UNION
-      (SELECT v.id FROM product_variants v JOIN products p ON p.id = v.product_id
-        WHERE ${where} AND (p.name->>'en' ILIKE ${contains} OR p.name->>'ar' ILIKE ${contains})
-        ORDER BY v.sku COLLATE "C" LIMIT ${limit}))
-    ORDER BY v.sku COLLATE "C"
-    LIMIT ${limit}`;
 }
 
 /**
@@ -152,17 +122,29 @@ export class CatalogService {
 
   /**
    * Creates one active product with one stocked SKU (AC-1). The product is a style whose style
-   * code is the SKU code, in the seeded `MAIN` product group (spec 0002, A12).
+   * code is the given `styleCode`, else the SKU code, in the given product group, else the seeded
+   * `MAIN` (spec 0002, A12), and the given season, else none (spec 0012, AC-10). An unknown
+   * season or group is `NotFound`, an archived one `Archived`. A SKU code another SKU holds is
+   * `SkuTaken`; a style code another style holds is `StyleCodeTaken`, also when it defaulted to
+   * the SKU code and no SKU holds that code (a style recoded to `POLO` holds `POLO` while no SKU
+   * does, review M2 minor 4).
    */
   async createProduct(input: z.output<typeof CreateProductRequest>): Promise<SkuDetail> {
     const variant = input.variants[0];
     if (!variant) throw new Error('The contract allows exactly one variant');
     try {
-      return await this.connection.db.transaction(async (tx) => {
+      return await catalogTransaction(this.connection.db, async (tx) => {
+        const seasonId = input.seasonId
+          ? (await this.assignableGrouping(tx, 'seasons', input.seasonId)).id
+          : null;
+        const groupId = input.productGroupId
+          ? (await this.assignableGrouping(tx, 'product_groups', input.productGroupId)).id
+          : null;
         const product = (
           await tx.execute<{ id: string }>(sql`
-            INSERT INTO products (style_code, product_group_id, name, status)
-            VALUES (${variant.sku}, (SELECT id FROM product_groups WHERE code = 'MAIN'),
+            INSERT INTO products (style_code, season_id, product_group_id, name, status)
+            VALUES (${input.styleCode ?? variant.sku}, ${seasonId},
+                    coalesce(${groupId}::uuid, (SELECT id FROM product_groups WHERE code = 'MAIN')),
                     ${JSON.stringify(input.name)}::jsonb, 'active')
             RETURNING id`)
         ).rows[0];
@@ -180,11 +162,51 @@ export class CatalogService {
         return detail;
       });
     } catch (error) {
-      if (isSkuTaken(error)) {
-        throw new CatalogError('SkuTaken', `SKU ${variant.sku} is already in use`);
+      const constraint = pgConstraint(error);
+      // The style insert runs first, so a defaulted style code clashes before the SKU would:
+      // the SKU is taken only when a SKU holds it.
+      const skuTaken =
+        constraint === 'product_variants_sku_unique' ||
+        (constraint === 'products_style_code_unique' &&
+          input.styleCode === undefined &&
+          (await this.skuExists(variant.sku)));
+      if (skuTaken) throw new CatalogError('SkuTaken', `SKU ${variant.sku} is already in use`);
+      if (constraint === 'products_style_code_unique') {
+        const styleCode = input.styleCode ?? variant.sku;
+        throw new CatalogError('StyleCodeTaken', `Style code ${styleCode} is already in use`);
       }
       throw error;
     }
+  }
+
+  /** Whether any SKU, archived ones included, holds this code. Read after the failed write. */
+  private async skuExists(code: string): Promise<boolean> {
+    const { rows } = await this.connection.db.execute(sql`
+      SELECT 1 FROM product_variants WHERE sku = ${code}`);
+    return rows.length > 0;
+  }
+
+  /**
+   * The id and code of a season or product group a style may newly take (spec 0012, AC-6,
+   * AC-7): it exists (`NotFound` otherwise) and is not archived (`Archived` otherwise). Reads it
+   * `FOR SHARE`, so an archive or delete of it waits until the caller commits, and a caller that
+   * waited on an archive in flight sees it archived. The code goes beside the id in audit diffs.
+   */
+  async assignableGrouping(
+    tx: Executor,
+    table: 'seasons' | 'product_groups',
+    id: string,
+  ): Promise<{ id: string; code: string }> {
+    const { rows } = await tx.execute<{ archived: boolean; code: string }>(sql`
+      SELECT archived_at IS NOT NULL AS archived, code FROM ${sql.identifier(table)}
+      WHERE id = ${id} FOR SHARE`);
+    const row = rows[0];
+    const what = table === 'seasons' ? 'Season' : 'Product group';
+    if (!row) throw new CatalogError('NotFound', `${what} not found`, { missingIds: [id] });
+    if (row.archived) {
+      throw new CatalogError('Archived', `${what} is archived and cannot be given to a style`);
+    }
+    return { id, code: row.code };
   }
 
   /** One SKU, or `NotFound`. */
@@ -195,15 +217,18 @@ export class CatalogService {
   }
 
   /**
-   * A page of SKUs ordered by code (`COLLATE "C"`, keyset on the code). `q` matches a code
-   * starting with `q` (uppercased) or an English or Arabic name containing it (AC-13).
+   * A page of SKUs ordered by code (`COLLATE "C"`, keyset on the code), filtered by status,
+   * season, product group, and style. `q` matches an exact barcode, a code prefix, or every
+   * normalized word in the variant's search text (spec 0012, AC-3 and AC-4; `buildSkuListSql`).
    */
   async list(query: SkuListQuery): Promise<SkuListResponse> {
-    const { rows } = await this.connection.db.execute<SkuRow>(buildSkuListSql(query));
+    const db = this.connection.db;
+    const words = query.q ? await searchWords(db, query.q) : [];
+    const { rows } = await db.execute<SkuRow>(buildSkuListSql(query, words));
     const page = rows.slice(0, query.limit);
     const last = page.at(-1);
     return {
-      items: page.map(toSummary),
+      items: page.map(toSkuSummary),
       nextCursor: rows.length > query.limit && last ? encodeKeyset([last.sku]) : null,
     };
   }
@@ -213,7 +238,7 @@ export class CatalogService {
    * stored `updated_at` to the microsecond string the caller read; a mismatch is `Stale`.
    */
   async updateSku(id: string, input: z.output<typeof UpdateSkuRequest>): Promise<SkuDetail> {
-    return this.connection.db.transaction(async (tx) => {
+    return catalogTransaction(this.connection.db, async (tx) => {
       const sets: SQL[] = [sql`updated_at = now()`];
       if (input.price !== undefined) sets.push(sql`price = ${input.price}`);
       const updated = await this.touchVariant(tx, id, input.updatedAt, sets);
@@ -263,34 +288,63 @@ export class CatalogService {
   }
 
   /**
-   * Archives or unarchives a SKU and its product (AC-3). Inventory calls this inside its locked
-   * transaction after the stock checks. Archiving an archived SKU keeps the first date.
+   * Archives or unarchives a SKU (AC-3) and, with it, its style (spec 0012, AC-11): archiving
+   * archives the style only when no other variant of it stays active; unarchiving unarchives the
+   * style. Inventory calls this inside its locked transaction after the stock checks. Archiving an
+   * archived SKU keeps the first date. Both branches lock the style row (`FOR NO KEY UPDATE`, in
+   * its own statement) before the conditional style update, the lock adding a variant takes
+   * first: archives, unarchives, and variant adds of one style queue, and the later one's next
+   * statement (READ COMMITTED: a new snapshot) sees the earlier one's variants, so the style is
+   * never left archived with an active variant (AC-11, review M2 minor 1). An unarchive that
+   * would give the style two active variants with the same option values is
+   * `OptionCombinationTaken`. Takes the variant before the style (inventory's lock order); the
+   * style writers take the style first and run again once on the deadlock that can follow.
    */
   async setArchived(tx: Executor, id: string, archived: boolean): Promise<SkuDetail> {
     const archivedAt = archived ? sql`coalesce(archived_at, now())` : sql`NULL`;
-    const { rows } = await tx.execute<{ product_id: string }>(sql`
-      UPDATE product_variants SET archived_at = ${archivedAt}, updated_at = now()
-      WHERE id = ${id}
-      RETURNING product_id`);
+    let rows: { product_id: string }[];
+    try {
+      ({ rows } = await tx.execute<{ product_id: string }>(sql`
+        UPDATE product_variants SET archived_at = ${archivedAt}, updated_at = now()
+        WHERE id = ${id}
+        RETURNING product_id`));
+    } catch (error) {
+      if (pgConstraint(error) === OPTIONS_UNIQUE) throw optionCombinationTaken();
+      throw error;
+    }
     const row = rows[0];
     if (!row) throw new CatalogError('NotFound', 'SKU not found');
-    await tx.execute(sql`
-      UPDATE products SET archived_at = ${archivedAt}, updated_at = now()
-      WHERE id = ${row.product_id}`);
+    await tx.execute(sql`SELECT 1 FROM products WHERE id = ${row.product_id} FOR NO KEY UPDATE`);
+    if (archived) {
+      await tx.execute(sql`
+        UPDATE products p SET archived_at = now(), updated_at = now()
+        WHERE p.id = ${row.product_id} AND p.archived_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM product_variants v
+                          WHERE v.product_id = p.id AND v.archived_at IS NULL)`);
+    } else {
+      await tx.execute(sql`
+        UPDATE products SET archived_at = NULL, updated_at = now()
+        WHERE id = ${row.product_id} AND archived_at IS NOT NULL`);
+    }
     return this.mustFind(tx, id);
   }
 
   /**
-   * Deletes a SKU nothing references, and its product once it has no other SKU (AC-3). Any
+   * Deletes a SKU nothing references, and its product (with its options) once it has no other
+   * SKU (AC-3). Any
    * reference (movements, balances, receipt lines, lots, serial numbers, barcodes) is `InUse`.
    */
   async deleteSku(id: string): Promise<void> {
     try {
-      await this.connection.db.transaction(async (tx) => {
+      await catalogTransaction(this.connection.db, async (tx) => {
         const { rows } = await tx.execute<{ product_id: string }>(sql`
           DELETE FROM product_variants WHERE id = ${id} RETURNING product_id`);
         const row = rows[0];
         if (!row) throw new CatalogError('NotFound', 'SKU not found');
+        // A style that has lost its last variant goes with its options (spec 0012, AC-11).
+        await tx.execute(sql`
+          DELETE FROM product_options o WHERE o.product_id = ${row.product_id}
+            AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = o.product_id)`);
         await tx.execute(sql`
           DELETE FROM products p WHERE p.id = ${row.product_id}
             AND NOT EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id)`);
@@ -391,10 +445,13 @@ export class CatalogService {
 
   private async findSku(executor: Executor, id: string): Promise<SkuDetail | null> {
     const { rows } = await executor.execute<SkuRow>(sql`
-      SELECT ${SKU_COLUMNS}
-      FROM product_variants v JOIN products p ON p.id = v.product_id
+      SELECT ${SKU_ROW_COLUMNS}
+      FROM ${SKU_ROW_FROM}
       WHERE v.id = ${id}`);
     const row = rows[0];
-    return row ? toDetail(row) : null;
+    if (!row) return null;
+    const barcodes = await executor.execute<SkuBarcode>(sql`
+      SELECT id, code FROM barcodes WHERE variant_id = ${id} ORDER BY code COLLATE "C"`);
+    return toDetail(row, barcodes.rows);
   }
 }

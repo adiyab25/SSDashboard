@@ -10,7 +10,7 @@ The single writer of stock movements, and the locations it moves stock between. 
 Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner decision Q-11.6): a minimal consignment partner record and numbered send to and return from a showroom, so partner stock leaves the online count from the first move.
 - [x] Design it (spec): `/architect stock ledger & locations`
 - [ ] Build it: `/develop stock ledger & locations`
-  - [ ] The gated online location and the online stock read
+  - [x] The gated online location and the online stock read
   - [ ] Reservations, waiting demand, carrier shipments, and catalog locks
   - [ ] Partners, owner type screens, and showroom moves
   - [ ] Adjustments, adjustment requests, and the receipt cost rule
@@ -26,9 +26,9 @@ Products as the brand thinks of them: style, season, product group, and variants
 **Done when:** staff can find any variant by name, SKU, or barcode in Arabic or English in well under a second at 10,000 SKUs (tested at 50,000), see its style, season, and group, and every variant inherits its style's cost unless overridden.
 - [x] Design it (spec): `/architect catalog, styles & variants`
 - [ ] Build it: `/develop catalog, styles & variants`
-  - [ ] Arabic and English search through every layer
-  - [ ] Seasons, product groups, and styles
-  - [ ] Inherited cost, visible and recordable
+  - [x] Arabic and English search through every layer
+  - [x] Seasons, product groups, and styles
+  - [x] Inherited cost, visible and recordable
   - [ ] The channel upsert contract
 - [ ] Verify it: `/check verify catalog, styles & variants`
 - [ ] Test it: `/test catalog, styles & variants`
@@ -41,8 +41,8 @@ Also from spec 0007: one store per Shopify connection, order numbers unique per 
 Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out from Shopify fulfillment (`connectors.shopify.fulfillment_stock_out`) as a task of spec 0015, the Warehouse only stock out source the stock push waits for; and before go live the gift tag pattern (`shopify_gift_tags`) is compared with the pilot brand's real Shopify tags ("Accept, check with brand").
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
-  - [ ] Recorded fixtures and one order through a signed webhook
-  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08)
+  - [ ] Recorded fixtures and one order through a signed webhook (tasks 2 to 7 built 2026-11-08 on synthetic fixtures: one order through a signed webhook works; task 1, recording from a Shopify development store, waits for the store)
+  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08) (tasks 9 to 12 built: orders in full and customer webhooks 2026-11-08, edit netting, exchange by edit, and the sync jobs 2026-11-09; task 8 products waits for spec 0012's catalog sync and task 9a for spec 0013's stock out)
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
   - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)
@@ -58,13 +58,13 @@ Spec [0015](../specs/0015-shopify-connector/index.md) (Accepted 2026-11-07; doma
 One customer record keyed on a normalized Egyptian phone number, holding many phones and channel ids, with merge as routine daily work and one timeline per customer.
 **Done when:** 010, 0010, +2010, and Arabic digit forms normalize to one number; one customer holds several phones and Shopify ids across stores; merge is a fast audited screen that can be undone; a repeat returner flag shows on the record; the timeline reads the same records through each role's lens.
 - [x] Design it (spec): `/architect customers by phone`
-- [ ] Build it: `/develop customers by phone`
+- [x] Build it: `/develop customers by phone`
   - [x] One phone, one customer, end to end
-  - [ ] Merge and undo as daily work
-  - [ ] The repeat returner flag
-  - [ ] One timeline through each lens
-- [ ] Verify it: `/check verify customers by phone`
-- [ ] Test it: `/test customers by phone`
+  - [x] Merge and undo as daily work
+  - [x] The repeat returner flag
+  - [x] One timeline through each lens
+- [x] Verify it: `/check verify customers by phone`
+- [x] Test it: `/test customers by phone`
 Spec [0014](../specs/0014-customers-by-phone/index.md) (Accepted 2026-11-07)
 
 ### 15. Onboarding imports · GA · needs a decision

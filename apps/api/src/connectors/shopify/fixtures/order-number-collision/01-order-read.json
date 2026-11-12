@@ -32,7 +32,13 @@
       "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderActionType",
       "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderTransactionKind",
       "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/OrderTransactionStatus",
-      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/RefundLineItemRestockType"
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/RefundLineItemRestockType",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/CustomerPhoneNumber",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/interfaces/DiscountApplication",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/DiscountCodeApplication",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/DiscountApplicationTargetType",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/connections/DiscountApplicationConnection",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/PageInfo"
     ]
   },
   "request": {
@@ -154,6 +160,18 @@
             ]
           },
           "discountCodes": ["WELCOME10"],
+          "discountApplications": {
+            "nodes": [
+              {
+                "__typename": "DiscountCodeApplication",
+                "targetType": "LINE_ITEM",
+                "code": "WELCOME10"
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
+          },
           "note": null,
           "tags": [],
           "sourceName": "web",
@@ -161,6 +179,9 @@
           "phone": "+201000000101",
           "customer": {
             "id": "gid://shopify/Customer/8880000001001",
+            "defaultPhoneNumber": {
+              "phoneNumber": "+201000000101"
+            },
             "phone": "+201000000101"
           },
           "shippingAddress": {
@@ -264,7 +285,10 @@
                   }
                 ]
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           },
           "fulfillments": [],
           "transactions": [],
@@ -285,11 +309,11 @@
                       "quantity": 1,
                       "totalAmount": {
                         "shopMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         },
                         "presentmentMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         }
                       },
@@ -297,10 +321,16 @@
                         "id": "gid://shopify/LineItem/55500000070011"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },

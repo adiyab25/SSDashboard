@@ -73,8 +73,8 @@ export const LocationName = z
 /**
  * `POST /api/locations` (`catalog.manage`). `ownerType` defaults to `own`; a partner or wholesale owner
  * needs the `partyId` of a party with the matching role (422 `PARTY_ROLE_MISMATCH`), and an own
- * location takes none. `sellableOnline` defaults to false and is refused where the owner type's
- * policy forbids it (422 `NOT_SELLABLE_ONLINE`).
+ * location takes none. A new location is never online: `sellable_online` changes only through the
+ * gated actions of spec 0011 AC-19 (`MakeLocationOnlineRequest`, `StopOnlineRequest`).
  */
 export const CreateLocationRequest = z
   .object({
@@ -83,7 +83,6 @@ export const CreateLocationRequest = z
     kind: WorkLocationKind,
     ownerType: LocationOwnerType.optional(),
     partyId: z.uuid().optional(),
-    sellableOnline: z.boolean().optional(),
   })
   .strict();
 /** What a caller passes for `CreateLocationRequest`, before defaults and transforms are applied. */
@@ -96,6 +95,10 @@ export const LocationDetail = LocationSummary.extend({
   updatedAt: z.string(),
   /** True once stock was posted or a receipt was recorded there: the code is read only. */
   codeLocked: z.boolean(),
+  /** True for the one active location that feeds online stock (spec 0011 AC-1, AC-12). */
+  online: z.boolean(),
+  /** When a person confirmed the location's stock counted, or null (spec 0011 AC-19). */
+  stockVerifiedAt: z.string().nullable(),
 });
 /** The validated shape of `LocationDetail`, as the api and web see it after parsing. */
 export type LocationDetail = z.infer<typeof LocationDetail>;
@@ -119,7 +122,6 @@ export const UpdateLocationRequest = z
     code: LocationCode.optional(),
     name: LocationName.optional(),
     kind: WorkLocationKind.optional(),
-    sellableOnline: z.boolean().optional(),
   })
   .strict();
 /** What a caller passes for `UpdateLocationRequest`, before defaults and transforms are applied. */

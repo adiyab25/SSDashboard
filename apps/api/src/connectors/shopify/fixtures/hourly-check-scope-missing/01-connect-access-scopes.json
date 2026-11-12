@@ -1,0 +1,71 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "hourly-check-scope-missing",
+    "step": "write_inventory no longer granted (a release needs it)",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/AppInstallation",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/AccessScope",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/currentAppInstallation"
+    ]
+  },
+  "request": {
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    },
+    "shopDomain": "fixture-store.myshopify.com",
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "operationName": "ConnectAccessScopes",
+    "variables": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "currentAppInstallation": {
+          "accessScopes": [
+            {
+              "handle": "read_orders"
+            },
+            {
+              "handle": "write_orders"
+            },
+            {
+              "handle": "write_order_edits"
+            },
+            {
+              "handle": "read_products"
+            },
+            {
+              "handle": "read_customers"
+            },
+            {
+              "handle": "read_inventory"
+            },
+            {
+              "handle": "read_locations"
+            }
+          ]
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 2,
+          "actualQueryCost": 2,
+          "throttleStatus": {
+            "maximumAvailable": 1000,
+            "currentlyAvailable": 990,
+            "restoreRate": 50
+          }
+        }
+      }
+    }
+  }
+}

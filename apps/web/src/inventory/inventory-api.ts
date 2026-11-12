@@ -1,5 +1,8 @@
 import {
   LocationDetail,
+  OnlineGateView,
+  OnlineStatusResponse,
+  StopOnlineResponse,
   LocationListResponse,
   SkuDetail,
   SkuListResponse,
@@ -12,14 +15,26 @@ import {
   type CreateLocationRequest,
   type CreateProductRequest,
   type CreateStockReceiptRequest,
+  type MakeLocationOnlineRequest,
+  type OnlineGateAction,
   type ChangeSkuCodeRequest,
   type LocationStatus,
+  type SeasonFilter,
   type SkuStatus,
   type UpdateLocationRequest,
   type UpdateSkuRequest,
 } from '@ssdashboard/contracts';
 import { apiRequest, withBusyRetry } from '@/api/client';
 import type { LocationChoice } from '@/shell/current-location-provider';
+
+/** What the SKU list page asks for (spec 0012, AC-3 and AC-4); an empty `q` and an absent filter are not sent. */
+export interface SkuListFilters {
+  q: string;
+  status: SkuStatus;
+  /** A season id, or `none` for styles with no season. */
+  seasonId?: SeasonFilter;
+  productGroupId?: string;
+}
 
 /** Query keys, so a write invalidates exactly what it changed. */
 export const inventoryKeys = {
@@ -30,8 +45,9 @@ export const inventoryKeys = {
   /** The receipt line picker's search results for one query. */
   skuSearch: (q: string) => ['skus', 'search', q] as const,
   skus: ['skus'] as const,
-  /** The SKU list page for one search and status. */
-  skuList: (q: string, status: SkuStatus) => ['skus', 'list', q, status] as const,
+  /** The SKU list page for one search, status, and season and group filter. */
+  skuList: (filters: SkuListFilters) =>
+    ['skus', 'list', filters.q, filters.status, filters.seasonId, filters.productGroupId] as const,
   /** One SKU's detail. */
   sku: (id: string) => ['skus', 'detail', id] as const,
   /** What a SKU is used by, for the delete check. */
@@ -50,6 +66,10 @@ export const inventoryKeys = {
   receipts: (locationId: LocationChoice, q: string) =>
     ['stock-receipts', 'list', locationId, q] as const,
   receiptsAll: ['stock-receipts', 'list'] as const,
+  /** Which location feeds online stock, or none (spec 0011 AC-20). */
+  onlineStatus: ['online-status'] as const,
+  /** One location's online gate. */
+  onlineGate: (locationId: string) => ['locations', 'online-gate', locationId] as const,
 };
 
 /** The Stock page filters (AC-9): `skuId` narrows to one SKU, `includeZero` adds rows back at 0. */
@@ -129,15 +149,19 @@ const noContent = { parse: (): void => undefined };
 const skuPath = (id: string) => `/api/skus/${encodeURIComponent(id)}`;
 const locationPath = (id: string) => `/api/locations/${encodeURIComponent(id)}`;
 
-/** The SKU list page: search by code prefix or name, active or archived, 50 a page (AC-13). */
+/**
+ * The SKU list page: search by name, SKU code, or barcode, filtered by status, season, and
+ * product group, 50 a page (spec 0006 AC-13, spec 0012 AC-3 and AC-4).
+ */
 export function listSkus(
-  q: string,
-  status: SkuStatus,
+  filters: SkuListFilters,
   cursor: string | undefined,
   signal?: AbortSignal,
 ) {
-  const params = new URLSearchParams({ limit: '50', status });
-  if (q.trim()) params.set('q', q.trim());
+  const params = new URLSearchParams({ limit: '50', status: filters.status });
+  if (filters.q.trim()) params.set('q', filters.q.trim());
+  if (filters.seasonId) params.set('seasonId', filters.seasonId);
+  if (filters.productGroupId) params.set('productGroupId', filters.productGroupId);
   if (cursor) params.set('cursor', cursor);
   return apiRequest('GET', `/api/skus?${params}`, SkuListResponse, { signal });
 }
@@ -203,3 +227,27 @@ export const setLocationArchived = (id: string, archived: boolean) =>
 
 /** Deletes a location with no stock or documents (`catalog.manage`). */
 export const deleteLocation = (id: string) => apiRequest('DELETE', locationPath(id), noContent);
+
+/** `GET /api/stock/online-status` (`stock.view`): the online location, or null (spec 0011 AC-20). */
+export const getOnlineStatus = (signal?: AbortSignal) =>
+  apiRequest('GET', '/api/stock/online-status', OnlineStatusResponse, { signal });
+
+/** `GET /api/locations/:id/online-gate` (`catalog.manage`): the checks and counts (spec 0011 AC-19). */
+export const getOnlineGate = (id: string, signal?: AbortSignal) =>
+  apiRequest('GET', `${locationPath(id)}/online-gate`, OnlineGateView, { signal });
+
+/** `POST /api/locations/:id/confirm-stock`: a manager confirms the location's stock is counted. */
+export const confirmLocationStock = (id: string) =>
+  apiRequest('POST', `${locationPath(id)}/confirm-stock`, LocationDetail, { body: {} });
+
+/** `POST /api/locations/:id/make-online`: moves the online flag here, with the count the manager saw. */
+export const makeLocationOnline = (id: string, body: MakeLocationOnlineRequest) =>
+  apiRequest('POST', `${locationPath(id)}/make-online`, LocationDetail, { body });
+
+/** `POST /api/locations/online/stop`: turns online stock off, with a written reason. */
+export const stopOnlineStock = (reason: string) =>
+  apiRequest('POST', '/api/locations/online/stop', StopOnlineResponse, { body: { reason } });
+
+/** Runs the route a failed gate check points to; the answer is ignored, the gate is read again. */
+export const runGateAction = (action: Pick<OnlineGateAction, 'method' | 'path'>) =>
+  apiRequest(action.method, action.path, noContent, { body: {} });

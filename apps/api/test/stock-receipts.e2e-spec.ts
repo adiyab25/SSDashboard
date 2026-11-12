@@ -374,17 +374,25 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
     });
   });
 
-  it('finds SKUs by code prefix and by Arabic name, escaping LIKE wildcards (AC-13)', async () => {
+  // AC-13 (spec 0006), reshaped by spec 0012 AC-3: search is an exact barcode, a code prefix
+  // (LIKE escaped), or every word contained in the normalized text (words of 3+ letters only).
+  // `%`, `_`, and `\` are literal only in the prefix branch and word breaks in the contains one.
+  it('finds SKUs by code prefix and by Arabic name, escaping LIKE wildcards (AC-13, spec 0012 AC-3)', async () => {
     await newSku('SRCH-ALPHA', { ar: 'قميص أزرق' });
     await newSku('SRCH-BETA', { en: '100% cotton' });
+    await newSku('SR_1', { en: 'Under score' });
+    await newSku('SRX1', { en: 'Plain one' });
     const search = async (q: string) =>
       SkuListResponse.parse(
         (await call('GET', `/skus?limit=20&q=${encodeURIComponent(q)}`, { cookie: staff })).body,
       ).items.map((item) => item.code);
-    expect(await search('srch-a')).toEqual(['SRCH-ALPHA']);
+    expect(await search('srch-al')).toEqual(['SRCH-ALPHA']);
     expect(await search('أزرق')).toEqual(['SRCH-ALPHA']);
-    expect(await search('0%')).toEqual(['SRCH-BETA']);
-    expect(await search('%')).toEqual(['SRCH-BETA']);
+    expect(await search('100%')).toEqual(['SRCH-BETA']);
+    // The prefix branch takes the underscore literally (SRX1 must not match `sr_`); no word has
+    // 3 letters, so the contains branch stays off.
+    expect(await search('sr_')).toEqual(['SR_1']);
+    expect(await search('%')).toEqual([]);
   });
 
   async function receiveOne(

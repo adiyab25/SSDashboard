@@ -12,6 +12,7 @@ import {
   Patch,
   Post,
   Query,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import {
   CreateProductRequest,
@@ -24,12 +25,12 @@ import type { z } from 'zod';
 import { Permission } from '../platform/access/permission.decorator.js';
 import { Audience } from '../platform/audience/audience.decorator.js';
 import { InvalidCursorError } from '../platform/keyset-cursor.js';
-import { INVALID_INPUT, ZodBodyPipe } from '../platform/zod-body.pipe.js';
+import { INVALID_INPUT, ZodBodyPipe, type ZodBodyPipeOptions } from '../platform/zod-body.pipe.js';
 import { ZodQueryPipe } from '../platform/zod-query.pipe.js';
 import { CatalogError, CatalogService } from './catalog.service.js';
 import { RequiresModule } from '../platform/modules/requires-module.decorator.js';
 
-/** Maps catalog errors to the stable codes of spec 0006. */
+/** Maps catalog errors to the stable codes of specs 0006 and 0012. */
 export function catalogHttpError(error: unknown): unknown {
   if (error instanceof CatalogError) {
     switch (error.code) {
@@ -38,11 +39,45 @@ export function catalogHttpError(error: unknown): unknown {
       case 'SkuTaken':
         return new ConflictException({ code: 'SKU_TAKEN', message: error.message });
       case 'NotFound':
-        return new NotFoundException({ code: 'NOT_FOUND', message: error.message });
+        return new NotFoundException({
+          code: 'NOT_FOUND',
+          message: error.message,
+          ...(error.details.missingIds ? { missingIds: error.details.missingIds } : {}),
+        });
       case 'Stale':
         return new ConflictException({ code: 'STALE_RECORD', message: error.message });
       case 'InUse':
         return new ConflictException({ code: 'IN_USE', message: error.message });
+      case 'Archived':
+        return new UnprocessableEntityException({ code: 'ARCHIVED', message: error.message });
+      case 'InvalidInput':
+        return new UnprocessableEntityException({ code: 'INVALID_INPUT', message: error.message });
+      case 'SeasonCodeTaken':
+        return new ConflictException({ code: 'SEASON_CODE_TAKEN', message: error.message });
+      case 'SeasonProtected':
+        return new ConflictException({ code: 'SEASON_PROTECTED', message: error.message });
+      case 'ProductGroupCodeTaken':
+        return new ConflictException({ code: 'PRODUCT_GROUP_CODE_TAKEN', message: error.message });
+      case 'ProductGroupProtected':
+        return new ConflictException({ code: 'PRODUCT_GROUP_PROTECTED', message: error.message });
+      case 'TooManyOptions':
+        return new UnprocessableEntityException({
+          code: 'TOO_MANY_OPTIONS',
+          message: error.message,
+        });
+      case 'OptionCombinationTaken':
+        return new ConflictException({ code: 'OPTION_COMBINATION_TAKEN', message: error.message });
+      case 'BarcodeTaken':
+        return new ConflictException({
+          code: 'BARCODE_TAKEN',
+          message: error.message,
+          ...error.details,
+        });
+      case 'ReasonRequired':
+        return new UnprocessableEntityException({
+          code: 'REASON_REQUIRED',
+          message: error.message,
+        });
     }
   }
   if (error instanceof InvalidCursorError) {
@@ -50,6 +85,12 @@ export function catalogHttpError(error: unknown): unknown {
   }
   return error;
 }
+
+/**
+ * The bad body answer spec 0012 names for seasons, product groups, and the bulk assign: 422
+ * `INVALID_INPUT` (the spec 0006 routes keep 400).
+ */
+export const UNPROCESSABLE_INPUT: ZodBodyPipeOptions = { status: 422, code: 'INVALID_INPUT' };
 
 /** A malformed id is a SKU that does not exist: 404, never 400. Inventory's `/skus` routes reuse it. */
 export const notFoundId = () =>

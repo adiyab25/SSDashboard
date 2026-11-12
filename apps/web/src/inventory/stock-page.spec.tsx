@@ -2,11 +2,15 @@ import type { StockRow } from '@ssdashboard/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithQuery } from '@/shared/render-with-query';
 import { StockPage } from './stock-page';
 
-const api = vi.hoisted(() => ({ listStock: vi.fn(), searchSkus: vi.fn() }));
+const api = vi.hoisted(() => ({
+  listStock: vi.fn(),
+  searchSkus: vi.fn(),
+  getOnlineStatus: vi.fn(),
+}));
 vi.mock('./inventory-api', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   ...api,
@@ -63,6 +67,17 @@ const called = (location: string, skuIdValue: string | null, includeZero: boolea
   undefined,
   expect.anything() as unknown,
 ];
+
+beforeEach(() => {
+  // The online status line is not what these specs are about: a location feeds online stock.
+  api.getOnlineStatus.mockResolvedValue({
+    onlineLocation: {
+      id: '50000000-0000-4000-8000-000000000001',
+      code: 'MAIN',
+      name: { en: 'Main' },
+    },
+  });
+});
 
 afterEach(() => {
   for (const mock of Object.values(api)) mock.mockReset();

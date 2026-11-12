@@ -227,7 +227,7 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await openShell(page);
       // On a phone the navigation sits behind the menu button.
       if (isMobile) await page.getByRole('button', { name: t('shell.topbar.menu') }).click();
-      const link = page.getByRole('link', { name: t('shell.nav.items.customers') });
+      const link = page.getByRole('link', { name: t('shell.nav.items.customers'), exact: true });
       await expect(link).toBeVisible();
       await link.focus();
       await page.keyboard.press('Enter');

@@ -92,6 +92,55 @@
       "when": 1794138202431,
       "tag": "0012_owner_policy_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794182610707,
+      "tag": "0013_catalog_search_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794182625472,
+      "tag": "0014_catalog_search_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794188706617,
+      "tag": "0015_catalog_styles",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794188737071,
+      "tag": "0016_catalog_option_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794435031808,
+      "tag": "0017_online_flag_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794435034061,
+      "tag": "0018_online_location_and_transfer_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794435036261,
+      "tag": "0019_stock_transfer_rules",
+      "breakpoints": true
     }
   ]
 }

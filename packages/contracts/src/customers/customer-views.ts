@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Permission } from '../access.js';
 import { LocalizedText } from '../localized-text.js';
 import {
   CustomerExternalIdKind,
@@ -77,9 +78,55 @@ export const CustomerFlagView = z.object({
 export type CustomerFlagView = z.infer<typeof CustomerFlagView>;
 
 /**
+ * The returner signal of the profile (spec 0014 AC-13): how many of the customer's orders were
+ * refused at the door and how many came back after delivery within the last `windowDays`
+ * operating days (gifted orders left out), and the flag kind the header suggests, or null. A kind
+ * is suggested only when the customer has no flag: `refuser` when refusals reach the setting's
+ * `refusalsToSuggest`, else `returner` when returns reach `returnsToSuggest` (setting
+ * `customer_risk_signal`). Computed on each read, never stored.
+ */
+export const CustomerRiskSignal = z.object({
+  refusals: z.number().int().min(0),
+  returns: z.number().int().min(0),
+  windowDays: z.number().int().min(1),
+  suggestedKind: z.enum(['refuser', 'returner']).nullable(),
+});
+/** The validated shape of `CustomerRiskSignal`. */
+export type CustomerRiskSignal = z.infer<typeof CustomerRiskSignal>;
+
+/**
+ * The one rule of the suggested flag kind (AC-13), shared by the profile read and the server side
+ * check of a `suggestion_applied` flag set: nothing when the customer is flagged; refusals are
+ * checked first, so a customer at both thresholds is suggested `refuser`.
+ */
+export function suggestedRiskFlag(
+  counts: { refusals: number; returns: number },
+  thresholds: { refusalsToSuggest: number; returnsToSuggest: number },
+  flagged: boolean,
+): CustomerRiskSignal['suggestedKind'] {
+  if (flagged) return null;
+  if (counts.refusals >= thresholds.refusalsToSuggest) return 'refuser';
+  if (counts.returns >= thresholds.returnsToSuggest) return 'returner';
+  return null;
+}
+
+/**
+ * The profile fields that read order data, each with the permission it needs (spec 0014 AC-15:
+ * order data needs `orders.view`). The api leaves a field out of the answer for a viewer without
+ * it, so the keys are optional in `CustomerProfile`.
+ */
+export const CUSTOMER_PROFILE_GUARDED_FIELDS = {
+  signal: 'orders.view',
+  orderCount: 'orders.view',
+} as const satisfies Readonly<Record<string, Permission>>;
+
+/**
  * `GET /api/customers/:id` (spec 0014 AC-4): the canonical customer with the union of phones and
  * channel ids over all her ids. `resolvedFrom` is the id that was asked when it was a merged
- * record, else null. `updatedAt` is the canonical row's stamp (the flag routes check it).
+ * record, else null. `updatedAt` is the customer's stamp, the greatest `updated_at` over all her
+ * ids, so absorbing a record moves it (the flag routes check it). From milestone 4 it carries the
+ * returner `signal` and the `orderCount`, both only for a viewer with `orders.view`
+ * (`CUSTOMER_PROFILE_GUARDED_FIELDS`).
  */
 export const CustomerProfile = z.object({
   id: z.uuid(),
@@ -91,6 +138,10 @@ export const CustomerProfile = z.object({
   flag: CustomerFlagView.nullable(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
+  /** The returner signal (AC-13); present only for a viewer with `orders.view`. */
+  signal: CustomerRiskSignal.optional(),
+  /** Every order of every id of the customer, all time, any type (the merge compare, AC-7); `orders.view` only. */
+  orderCount: z.number().int().min(0).optional(),
 });
 /** The validated shape of `CustomerProfile`. */
 export type CustomerProfile = z.infer<typeof CustomerProfile>;

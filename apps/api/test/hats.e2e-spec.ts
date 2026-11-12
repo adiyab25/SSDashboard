@@ -24,7 +24,13 @@ import {
 } from '../src/identity/audit-port/identity-audit.js';
 import { ADMIN_RULE_LOCK } from '../src/identity/sign-in/locks.js';
 import type { HatsChanged } from '../src/platform/events/auth-events.js';
-import { createScratchDatabase, dropScratchDatabase, eventually, freePort } from './support.js';
+import {
+  TEST_CONNECTOR_SECRET_KEY,
+  createScratchDatabase,
+  dropScratchDatabase,
+  eventually,
+  freePort,
+} from './support.js';
 
 const PASSWORD = 'Correct-Horse-1';
 const NEW_PASSWORD = 'Battery-Staple-2';
@@ -111,6 +117,7 @@ describe('giving and taking hats', { timeout: 300_000 }, () => {
       DATABASE_URL: appUrl.toString(),
       PUBLIC_URL: base,
       BETTER_AUTH_SECRET: randomBytes(32).toString('base64url'),
+      CONNECTOR_SECRET_KEY: TEST_CONNECTOR_SECRET_KEY,
       MAIL_DRIVER: 'none',
       PORT: String(port),
     });

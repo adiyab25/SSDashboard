@@ -25,6 +25,8 @@ export const DOCUMENT_PREFIX_DEFAULTS = {
   CNT: 'CNT',
   MO: 'MO',
   stock_receipt: 'SR',
+  // Showroom moves (spec 0011 AC-25), `TR-YYYY-NNNNNN`; migration 0015 merges it into stored prefixes.
+  stock_transfer: 'TR',
 } as const;
 
 /** A document type that takes a number. */
@@ -127,8 +129,9 @@ export const BRAND_SETTINGS = [
     /**
      * The VAT rate in percent as `numeric(5,2)` text, 0 to 100 (spec 0013, Configuration
      * required): the rate of manual order lines, and of the shipping of an order whose channel
-     * sends no tax rate. Shopify order lines never use it (they keep the rate Shopify gave each
-     * line), and a recorded order keeps the rate it was priced with. Typed confirmation, and the
+     * sends no tax rate. A Shopify order line keeps the rate Shopify gave it and takes this one only
+     * when Shopify sent no tax line (spec 0015 Value sourcing), and a recorded order keeps the rate
+     * it was priced with. Typed confirmation, and the
      * change dialog shows a worked split that follows `prices_include_vat`.
      */
     schema: TaxRateString.refine((rate) => Number(rate) <= 100, 'A rate from 0 to 100'),

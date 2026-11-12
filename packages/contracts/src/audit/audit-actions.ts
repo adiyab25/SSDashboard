@@ -6,6 +6,15 @@ import {
   ORDER_PARTIAL_DELIVERY_REASONS,
   ORDER_PAYMENT_METHOD_REDERIVED_REASONS,
 } from '../orders/order-reasons.js';
+import { CustomerUndoRefusalCode } from '../customers/customer-merges.js';
+import {
+  CustomerDismissReasonCode,
+  CustomerFlagReasonCode,
+  CustomerMergeReasonCode,
+  CustomerPhoneAddedReasonCode,
+  CustomerUnflagReasonCode,
+  CustomerUnmergeReasonCode,
+} from '../customers/customer-reason-codes.js';
 
 /** Whether an action needs a typed reason (spec 0010, AC-5). */
 export type AuditReasonPolicy = 'required' | 'optional';
@@ -26,6 +35,13 @@ export interface AuditActionDefinition {
   readonly automatic: boolean;
   /** True when the owning module registers an undo handler for it. */
   readonly undoable: boolean;
+  /**
+   * True when the whole entry is a cost (spec 0012 AC-17): its diff carries an amount and a
+   * reason typed next to it, so a reader without `cost.view` never sees the entry, and an
+   * `audit.exported` entry whose export could have included it is shown redacted. The api derives
+   * its `COST_ENTRY_ACTIONS` from this flag; set it on any action that records a cost.
+   */
+  readonly costEntry?: true;
   /**
    * The code of the undo handler the owning module registers (milestone 4,
    * `AuditUndoRegistry`). Required exactly when `undoable`; the registry test refuses an undoable
@@ -64,8 +80,23 @@ export interface AuditActionDefinition {
 /** The proof test of the orders actions (spec 0013). */
 const ORDERS_PROOF = 'apps/api/test/orders-audit.e2e-spec.ts';
 
+/** The proof test of the customers actions (spec 0014). */
+const CUSTOMERS_PROOF = 'apps/api/test/customers-audit.e2e-spec.ts';
+
 /** The proof test of the inventory master data actions (SKUs and locations). */
 const INVENTORY_PROOF = 'apps/api/test/audit-inventory.e2e-spec.ts';
+
+/** The proof test of the online location actions (spec 0011). */
+const ONLINE_STOCK_PROOF = 'apps/api/test/online-stock.e2e-spec.ts';
+
+/** The proof test of the style, variant, and barcode actions (spec 0012). */
+const STYLES_PROOF = 'apps/api/test/styles.e2e-spec.ts';
+
+/** The proof test of the season and product group actions (spec 0012). */
+const GROUPINGS_PROOF = 'apps/api/test/seasons-groups.e2e-spec.ts';
+
+/** The proof test of the cost record action (spec 0012 milestone 3). */
+const COST_PROOF = 'apps/api/test/cost.e2e-spec.ts';
 
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
@@ -204,6 +235,36 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.locationUnarchived',
     proof: INVENTORY_PROOF,
   },
+  // Spec 0011 AC-19: the gated actions that decide which location feeds online stock. The label is
+  // the location code. The stock confirmation is the gate's "stock counted" fact; moving and
+  // stopping need a written reason. Proven by the online stock e2e suite.
+  'location.stock_confirmed': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationStockConfirmed',
+    proof: ONLINE_STOCK_PROOF,
+  },
+  'location.online_moved': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationOnlineMoved',
+    proof: ONLINE_STOCK_PROOF,
+  },
+  'location.online_stopped': {
+    module: 'inventory',
+    recordType: 'location',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.locationOnlineStopped',
+    proof: ONLINE_STOCK_PROOF,
+  },
   // Spec 0009, AC-3: every settings write, module toggle, and step switch. The record id is the
   // setting's stable uuid (`settingRecordId`, from its key) and the label is the key. Optional
   // here: `SettingsService.write` passes `reasonRequired` from the registry entry.
@@ -315,6 +376,263 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.orderPaymentMethodRederived',
     proof: ORDERS_PROOF,
   },
+  // Spec 0015 AC-1 (task 6): a manager connects a Shopify store. The record id is
+  // `connections.id`, the label the store code; the diff holds the label, store code, shop
+  // domain, and app owner, never a credential or a token (AC-2).
+  'connection.created': {
+    module: 'connectors',
+    recordType: 'connection',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.connectionCreated',
+    proof: 'apps/api/test/shopify-connect.e2e-spec.ts',
+  },
+  // Spec 0014 milestone 2: the record id is `customers.id` (no label: a customer has no code that
+  // is not personal), the reason a code, `before` and `after` ids and codes only. A merge writes
+  // one entry per changed customer record under one correlation id; only the merged record's
+  // entry carries the undo (`customers.merge_undo` with `{ mergeId }`).
+  'customer.merged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: true,
+    undoHandler: 'customers.merge_undo',
+    reasonCodes: CustomerMergeReasonCode.options,
+    undoReasonCodes: CustomerUnmergeReasonCode.options,
+    undoRefusalCodes: CustomerUndoRefusalCode.options,
+    label: 'audit.actions.customerMerged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.unmerged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerUnmergeReasonCode.options,
+    label: 'audit.actions.customerUnmerged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.merge_suggestion_dismissed': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerDismissReasonCode.options,
+    label: 'audit.actions.customerMergeSuggestionDismissed',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.phone_added': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerPhoneAddedReasonCode.options,
+    label: 'audit.actions.customerPhoneAdded',
+    proof: CUSTOMERS_PROOF,
+  },
+  // Spec 0014 milestone 3: `before` and `after` carry the flag kind and source only, never the
+  // note (Law 151). A clear writes one entry per changed record under one correlation id; an
+  // import (`setFlagFromImport`) writes none here, feature 15 writes its own.
+  'customer.flagged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerFlagReasonCode.options,
+    label: 'audit.actions.customerFlagged',
+    proof: CUSTOMERS_PROOF,
+  },
+  'customer.unflagged': {
+    module: 'customers',
+    recordType: 'customer',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: CustomerUnflagReasonCode.options,
+    label: 'audit.actions.customerUnflagged',
+    proof: CUSTOMERS_PROOF,
+  },
+  // Spec 0012 milestone 2 (AC-17): style edits, a style's code, a variant added to a style, a
+  // SKU's barcodes, and every season and product group write, each a person's action in its own
+  // transaction. The record id is the style, SKU, season, or group id; the label its code. A bulk
+  // assign writes one `style.edited` per changed style under one correlation id.
+  'style.edited': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleEdited',
+    proof: STYLES_PROOF,
+  },
+  'style.code_changed': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleCodeChanged',
+    proof: STYLES_PROOF,
+  },
+  'style.variant_added': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.styleVariantAdded',
+    proof: STYLES_PROOF,
+  },
+  'sku.barcode_added': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuBarcodeAdded',
+    proof: STYLES_PROOF,
+  },
+  'sku.barcode_removed': {
+    module: 'catalog',
+    recordType: 'sku',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.skuBarcodeRemoved',
+    proof: STYLES_PROOF,
+  },
+  'season.created': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonCreated',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.edited': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonEdited',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.archived': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonArchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.unarchived': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonUnarchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'season.deleted': {
+    module: 'catalog',
+    recordType: 'season',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.seasonDeleted',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.created': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupCreated',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.edited': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupEdited',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.archived': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupArchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.unarchived': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupUnarchived',
+    proof: GROUPINGS_PROOF,
+  },
+  'product_group.deleted': {
+    module: 'catalog',
+    recordType: 'product_group',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.productGroupDeleted',
+    proof: GROUPINGS_PROOF,
+  },
+  // Spec 0015 task 12 (AC-17): a manager started a connection's first backfill with its go live
+  // instant. Record type `connection`, the label the store code; the diff holds the go live
+  // instant and the products run id, never a credential.
+  'connection.backfill_started': {
+    module: 'connectors',
+    recordType: 'connection',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.connectionBackfillStarted',
+    proof: 'apps/api/test/shopify-sync-jobs.e2e-spec.ts',
+  },
+  // Spec 0015 task 12 (security review L7): a manager started a gateway scan of a connection.
+  // Record type `connection`, the label the store code; the diff holds the scan run id only.
+  'connection.gateway_scan_started': {
+    module: 'connectors',
+    recordType: 'connection',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    label: 'audit.actions.connectionGatewayScanStarted',
+    proof: 'apps/api/test/shopify-sync-jobs.e2e-spec.ts',
+  },
+  // Spec 0012 milestone 3 (AC-13, AC-17): a cost record added to a style or one of its variants,
+  // recorded on the style. The reason is optional, and required for this call
+  // (`reasonRequired: true`) when the record applies from before today's operating day.
+  'cost_record.recorded': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    costEntry: true,
+    label: 'audit.actions.costRecordRecorded',
+    proof: COST_PROOF,
+  },
 } as const satisfies Record<string, AuditActionDefinition>;
 
 /** A code in the registry. */
@@ -338,12 +656,12 @@ export const AUDIT_UNDONE_SUFFIX = '_undone';
 /** The one label every undone entry shows; the screen names the undone action beside it. */
 const UNDONE_LABEL: MessageKey = 'audit.actions.actionUndone';
 
-/** An undoable code of the registry (none today). */
+/** An undoable code of the registry (`customer.merged` today). */
 export type AuditUndoableActionCode = {
   [Code in AuditActionCode]: (typeof AUDIT_ACTIONS)[Code]['undoable'] extends true ? Code : never;
 }[AuditActionCode];
 
-/** The undone code of an undoable code, `<noun>.<verb>_undone` (none today). */
+/** The undone code of an undoable code, `<noun>.<verb>_undone` (`customer.merged_undone` today). */
 export type AuditUndoneActionCode = `${AuditUndoableActionCode}${typeof AUDIT_UNDONE_SUFFIX}`;
 
 /** The undone code an undo of `code` records. Pure; never checks the registry. */

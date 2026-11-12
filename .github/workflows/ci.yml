@@ -117,16 +117,20 @@ jobs:
       DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:4932/ssdashboard
       MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:4932/ssdashboard
       APP_DB_PASSWORD: ssdashboard_app
+      # Playwright (apps/web/playwright.config.ts) starts the api from its build (`node dist/main.js`,
+      # never the `nest start --watch` watcher) on E2E_API_PORT, `next dev` on E2E_WEB_PORT, and
+      # `next start` on E2E_PROD_PORT, all in the reserved CI block 4900-4949 so a self-hosted run
+      # never collides with dev servers. The api's Origin check for sign in must match PUBLIC_URL.
       API_INTERNAL_URL: http://localhost:4901
-      # The address Playwright opens (apps/web/playwright.config.ts); the api's Origin check
-      # for sign in must match it. Setting the E2E_*_PORT values makes Playwright start the api on
-      # E2E_API_PORT, the dev web on E2E_WEB_PORT and the production web on E2E_PROD_PORT.
       PUBLIC_URL: http://localhost:4900
       E2E_WEB_PORT: 4900
       E2E_API_PORT: 4901
       E2E_PROD_PORT: 4910
       # A public, test only value for this throwaway CI database. Never use it anywhere real.
       BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
+      # A public, test only 32 byte key (64 hex characters) that seals connection credentials in
+      # these tests. Never use it anywhere real.
+      CONNECTOR_SECRET_KEY: ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -176,9 +180,13 @@ jobs:
       DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:4932/ssdashboard
       MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:4932/ssdashboard
       APP_DB_PASSWORD: ssdashboard_app
-      # No API_INTERNAL_URL, PUBLIC_URL or BETTER_AUTH_SECRET: the suite starts no server and reads only the
-      # two database URLs (apps/api/test/ledger.ts, support.ts). DATABASE_URL and MIGRATION_DATABASE_URL stay
-      # for those; APP_DB_PASSWORD stays because the migrate step sets the application role's password from it.
+      API_INTERNAL_URL: http://localhost:4901
+      PUBLIC_URL: http://localhost:4900
+      # A public, test only value for this throwaway CI database. Never use it anywhere real.
+      BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
+      # A public, test only 32 byte key (64 hex characters) that seals connection credentials in
+      # these tests. Never use it anywhere real.
+      CONNECTOR_SECRET_KEY: ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4

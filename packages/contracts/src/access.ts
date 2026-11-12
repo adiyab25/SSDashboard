@@ -34,6 +34,7 @@ export const Permission = z.enum([
   'orders.gift',
   'customers.view',
   'customers.merge',
+  'customers.flag',
   'exchanges.handle',
   'refunds.approve',
   'fulfillment.work',
@@ -83,6 +84,7 @@ export const PERMISSIONS: Readonly<Record<Permission, PermissionTraits>> = {
   'orders.gift': staff(false),
   'customers.view': staff(true),
   'customers.merge': staff(true),
+  'customers.flag': staff(true),
   'exchanges.handle': staff(true),
   'refunds.approve': staff(true),
   'fulfillment.work': staff(true),
@@ -131,6 +133,7 @@ export const HAT_PERMISSIONS: Readonly<Record<Hat, readonly Permission[]>> = {
     'orders.confirm',
     'customers.view',
     'customers.merge',
+    'customers.flag',
     'exchanges.handle',
     'stock.view',
     'tasks.work',
@@ -140,6 +143,7 @@ export const HAT_PERMISSIONS: Readonly<Record<Hat, readonly Permission[]>> = {
     'orders.confirm',
     'customers.view',
     'customers.merge',
+    'customers.flag',
     'exchanges.handle',
     'refunds.approve',
     'fulfillment.work',
@@ -170,6 +174,7 @@ export const HAT_PERMISSIONS: Readonly<Record<Hat, readonly Permission[]>> = {
     'orders.gift',
     'customers.view',
     'customers.merge',
+    'customers.flag',
     'exchanges.handle',
     'refunds.approve',
     'fulfillment.work',
@@ -230,6 +235,8 @@ export const COST_FIELD_KEYS = [
   'avgUnitCost',
   'totalValue',
   'totalCost',
+  // Spec 0012, AC-12 and AC-16: a variant's cost in force on the style page (an object).
+  'cost',
 ] as const;
 /** One of {@link COST_FIELD_KEYS}. */
 export type CostFieldKey = (typeof COST_FIELD_KEYS)[number];

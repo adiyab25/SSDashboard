@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import type { LicenseSummary, ModuleStatesResponse } from '@ssdashboard/contracts';
 import { createDatabase } from '@ssdashboard/db';
 import type { MessageKey } from '@ssdashboard/i18n';
 import { ar } from '@ssdashboard/i18n/ar';
@@ -76,6 +77,65 @@ export async function stubConfig(
 }
 
 /**
+ * Answers the two license dependent shell calls from the browser as a fully licensed install with
+ * no notice: `GET /api/platform/license` (the manager's license banner) and
+ * `GET /api/platform/modules` (every module on, so no entry hides, and no staff or license notice).
+ * Why: the real answers follow the database's license state, which other specs change (a license
+ * upload, a lapse), and a banner or notice adds links to the shell's tab order. Never use it in a
+ * spec that tests the license or the module states themselves.
+ */
+export async function stubLicensedInstall(page: Page) {
+  await page.route('**/api/platform/license', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({
+          json: {
+            bundles: [
+              {
+                bundle: 'warehouse',
+                phase: 'active',
+                perpetual: true,
+                expiresOn: null,
+                daysLeft: null,
+                lapsesAt: null,
+              },
+              {
+                bundle: 'operations',
+                phase: 'active',
+                perpetual: true,
+                expiresOn: null,
+                daysLeft: null,
+                lapsesAt: null,
+              },
+            ],
+            lastCheck: {
+              checkedAt: '2026-11-07T10:00:00.000Z',
+              trigger: 'api_start',
+              outcome: 'valid',
+              clockBehind: false,
+            },
+            licenses: [],
+            notices: [],
+            resumingSteps: [],
+          } satisfies LicenseSummary,
+        })
+      : route.fallback(),
+  );
+  // An empty list means no module reports a state, which the shell reads as on (`nav.ts`).
+  await page.route('**/api/platform/modules', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({
+          json: {
+            modules: [],
+            capabilities: [],
+            staffNotices: [],
+            licenseNotices: null,
+          } satisfies ModuleStatesResponse,
+        })
+      : route.fallback(),
+  );
+}
+
+/**
  * Opens a page and waits until the shell has hydrated and loaded its locations (the
  * request only starts after hydration, so shortcuts and menus work once it answers).
  */
@@ -88,39 +148,60 @@ export async function openShell(page: Page, path = '/') {
   await expect(page.getByRole('main')).toBeVisible();
 }
 
+// Each hydration wait below also waits for the page to show. For a saved language other than
+// English the head script hides the body (`<html data-i18n="pending">`, `visibility: hidden`) until
+// `/api/config` and the catalog chunk have loaded, and a client rendered form can hydrate first.
+// The browser does not focus a hidden element, so `focus()` left the focus on the body and the
+// first Tab went to the skip link (connections.spec.ts keyboard test in Arabic, under load; held
+// `/api/config` for 3 s reproduced it every time). The attribute always goes: the language
+// provider removes it when it settles, and the head script after `HIDE_CAP_MS` at the latest.
+
 /**
- * Waits until React has taken over the form on the page. A click or Enter before that submits
- * the form natively (a full page post), which no person with a fast hand would notice but a
- * test does.
+ * Waits until React has taken over the form on the page and the page shows. A click or Enter
+ * before that submits the form natively (a full page post), which no person with a fast hand
+ * would notice but a test does; focus and typing on a page still hidden go nowhere.
  */
 export async function waitForFormHydration(page: Page) {
   await page.waitForFunction(() => {
     const form = document.querySelector('main form');
-    return form !== null && Object.keys(form).some((key) => key.startsWith('__reactProps'));
+    return (
+      !document.documentElement.hasAttribute('data-i18n') &&
+      form !== null &&
+      Object.keys(form).some((key) => key.startsWith('__reactProps'))
+    );
   });
 }
 
 /**
- * Waits until React has taken over the page's controls (for a page with no form, like a list
- * with a search box). Text typed before this is lost when hydration resets the input.
+ * Waits until React has taken over the page's controls and the page shows (for a page with no
+ * form, like a list with a search box). Text typed before this is lost when hydration resets the
+ * input, or never lands while the page is hidden.
  */
 export async function waitForPageHydration(page: Page) {
   await page.waitForFunction(() => {
     const control = document.querySelector('main input, main button');
-    return control !== null && Object.keys(control).some((key) => key.startsWith('__reactProps'));
+    return (
+      !document.documentElement.hasAttribute('data-i18n') &&
+      control !== null &&
+      Object.keys(control).some((key) => key.startsWith('__reactProps'))
+    );
   });
 }
 
 /**
- * Waits until React has taken over one element of the page, found by a CSS selector (for a read
- * only page with no control of its own, such as the cost rules for a reader, where
- * `waitForPageHydration` would wait for a button that never comes). React tags every element it
- * renders with its props, so the tag on a server or first rendered element marks hydration.
+ * Waits until React has taken over one element of the page, found by a CSS selector, and the page
+ * shows (for a read only page with no control of its own, such as the cost rules for a reader,
+ * where `waitForPageHydration` would wait for a button that never comes). React tags every element
+ * it renders with its props, so the tag on a server or first rendered element marks hydration.
  */
 export async function waitForElementHydration(page: Page, selector: string) {
   await page.waitForFunction((css) => {
     const element = document.querySelector(css);
-    return element !== null && Object.keys(element).some((key) => key.startsWith('__reactProps'));
+    return (
+      !document.documentElement.hasAttribute('data-i18n') &&
+      element !== null &&
+      Object.keys(element).some((key) => key.startsWith('__reactProps'))
+    );
   }, selector);
 }
 

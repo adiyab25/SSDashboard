@@ -6,6 +6,7 @@ The one place the api reads its environment. Variables are checked with a Zod sc
 
 - The env schema and the `Env` type, read by `loadEnv` (api, worker, `create-admin`), and the `migrate` entry point's own subset, `MigrateEnv` and `loadMigrateEnv` (only `MIGRATION_DATABASE_URL`, `APP_DB_PASSWORD`, `TENANT_ID`, `APP_DB_ROLE` and `NODE_ENV`, from the same field definitions): [env.ts](env.ts)
 - The one staff origin, `staffOrigin(env)`, and `staffBase(env)` (that origin plus `STAFF_BASE_PATH`), which Better Auth, the session guard and the mail links read (spec 0005, AC-30): [env.ts](env.ts)
+- `connectorKeyBytes(text)`, the one reading of `CONNECTOR_SECRET_KEY` and `CONNECTOR_SECRET_KEY_PREVIOUS` (32 bytes, base64 or hex; the key is required in every environment, CI supplies a public test key), and the refusal of `SHOPIFY_MOCK_ORIGIN` in production (spec 0015, AC-2, AC-26): [env.ts](env.ts)
 - The module that provides it through the `ENV` token: [config.module.ts](config.module.ts)
 
 ## Never touches

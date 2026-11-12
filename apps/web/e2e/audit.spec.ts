@@ -4,7 +4,13 @@ import { AUDIT_EXPORT_COLUMNS, type AuditEntryView } from '@ssdashboard/contract
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { api, createLocation, createSku, findRow, receive, voidReceipt } from './master-data-api';
-import { expectNoAxeViolations, textFor, useBrowserState, type TextDirection } from './support';
+import {
+  expectNoAxeViolations,
+  textFor,
+  useBrowserState,
+  waitForPageHydration,
+  type TextDirection,
+} from './support';
 
 // Spec 0010 milestones 1 and 3: the /audit page (AC-12, AC-13, AC-15, AC-18). A manager voids a
 // stock receipt with a reason and finds the entry on the page, in English and Arabic; each filter
@@ -17,12 +23,17 @@ const LANGUAGES = [
   { dir: 'rtl', name: 'Arabic' },
 ] as const satisfies readonly { dir: TextDirection; name: string }[];
 
-/** Waits for the page to leave its loading state. */
+/**
+ * Waits for the page to leave its loading state and for React to take over its filters: the
+ * filter bar is server markup first, and text typed before hydration is lost (a mobile run lost
+ * a typed record type and id on 2026-11-08).
+ */
 async function openAudit(page: Page, dir: TextDirection) {
   await page.goto('/audit');
   await expect(
     page.getByRole('heading', { level: 1, name: textFor(dir, 'audit.title') }),
   ).toBeVisible();
+  await waitForPageHydration(page);
 }
 
 /** A stock receipt received and voided with `reason`, voided by `voider` when given. */
@@ -493,6 +504,8 @@ test.describe('as a manager', () => {
     const mine = await voidedReceipt(request, tag, `Keys ${tag}`);
     await page.goto('/audit');
     await expect(page.getByLabel('Record type', { exact: true })).toBeVisible();
+    // Typed text before hydration is lost (see `openAudit`).
+    await waitForPageHydration(page);
 
     await page.getByLabel('Record type', { exact: true }).focus();
     await page.keyboard.type('Stock');
@@ -519,6 +532,7 @@ test.describe('as a manager', () => {
     await page.goto('/audit');
     const recordId = page.getByLabel('Record ID', { exact: true });
     await expect(recordId).toBeVisible();
+    await waitForPageHydration(page);
     await recordId.focus();
     await page.keyboard.type('00000000-0000-4000-8000-000000000001');
     await page.keyboard.press('Enter');
@@ -581,12 +595,18 @@ test.describe('as a manager', () => {
     await page.goto('/audit');
     await expect(page.getByText('Choose both days to export.')).toBeVisible();
     await expect(page.getByText(/at most 366 days/)).toBeVisible();
-    await page.getByRole('button', { name: 'Export CSV' }).click({ force: true });
+    // The button is aria-disabled, so the click is forced, which also skips the wait for the button
+    // to stop moving: a mobile run clicked while the page still shifted ("Element is outside of the
+    // viewport", 2026-11-08). Scrolling it into view first waits until it is visible and stable.
+    const exportButton = page.getByRole('button', { name: 'Export CSV' });
+    await exportButton.scrollIntoViewIfNeeded();
+    await exportButton.click({ force: true });
     expect(calls).toBe(0);
 
     await page.goto('/audit?dayFrom=2020-01-01&dayTo=2022-01-01');
     await expect(page.getByText('The day range is more than 366 days.')).toBeVisible();
-    await page.getByRole('button', { name: 'Export CSV' }).click({ force: true });
+    await exportButton.scrollIntoViewIfNeeded();
+    await exportButton.click({ force: true });
     expect(calls).toBe(0);
 
     await page.goto('/audit?dayFrom=2026-01-01&dayTo=2026-02-01');

@@ -7,6 +7,23 @@ export const ConnectionHealth = z.enum(['connecting', 'ok', 'degraded', 'failing
 /** One ConnectionHealth value. */
 export type ConnectionHealth = z.infer<typeof ConnectionHealth>;
 
+/** Which outside account a connection talks to. Matches `connections.provider`. */
+export const ConnectionProvider = z.enum([
+  'shopify',
+  'bosta',
+  'gateway',
+  'meta',
+  'whatsapp',
+  'telegram',
+]);
+/** One ConnectionProvider value. */
+export type ConnectionProvider = z.infer<typeof ConnectionProvider>;
+
+/** Whether a connection is in use (`restricted`: the provider limited it). Matches `connections.status`. */
+export const ConnectionStatus = z.enum(['active', 'paused', 'restricted', 'archived']);
+/** One ConnectionStatus value. */
+export type ConnectionStatus = z.infer<typeof ConnectionStatus>;
+
 /** What an outbound command is about. Matches `outbound_commands.linked_type`. */
 export const OutboundLinkedType = z.enum([
   'order',

@@ -48,6 +48,111 @@ export const SPEC_SCALE: ScaleSeed = {
   creditEntries: 20_000,
 };
 
+/** The seasons styles are spread over; style `g` is in season `g % 9`, none when that is 0. */
+export const SCALE_SEASONS = 8;
+
+/** The barcode of a seeded variant: `622` and its SKU number, 13 digits (spec 0012, AC-5). */
+export const SCALE_BARCODE_SQL = `'622' || lpad(substr(v.sku, 7), 10, '0')`;
+
+/** The first word of a seeded style name, in English and Arabic (25 of them). */
+export const STYLE_WORDS: readonly { en: string; ar: string }[] = [
+  { en: 'Classic', ar: 'كلاسيك' },
+  { en: 'Linen', ar: 'كتان' },
+  { en: 'Oversized', ar: 'أوفرسايز' },
+  { en: 'Cropped', ar: 'قصير' },
+  { en: 'Relaxed', ar: 'مريح' },
+  { en: 'Slim', ar: 'ضيق' },
+  { en: 'Basic', ar: 'أساسي' },
+  { en: 'Printed', ar: 'مطبوع' },
+  { en: 'Striped', ar: 'مقلم' },
+  { en: 'Washed', ar: 'مغسول' },
+  { en: 'Cotton', ar: 'قطن' },
+  { en: 'Wool', ar: 'صوف' },
+  { en: 'Knit', ar: 'تريكو' },
+  { en: 'Denim', ar: 'دنيم' },
+  { en: 'Satin', ar: 'ساتان' },
+  { en: 'Velvet', ar: 'قطيفة' },
+  { en: 'Pleated', ar: 'بليسيه' },
+  { en: 'Ribbed', ar: 'مضلع' },
+  { en: 'Embroidered', ar: 'مطرز' },
+  { en: 'Hooded', ar: 'بكابيشون' },
+  { en: 'Long', ar: 'طويل' },
+  { en: 'Wide', ar: 'واسع' },
+  { en: 'Soft', ar: 'ناعم' },
+  { en: 'Light', ar: 'خفيف' },
+  { en: 'Summer', ar: 'صيفي' },
+];
+
+/** The garment of a seeded style name, in English and Arabic (20 of them). */
+export const GARMENTS: readonly { en: string; ar: string }[] = [
+  { en: 'Tee', ar: 'تيشيرت' },
+  { en: 'Shirt', ar: 'قميص' },
+  { en: 'Hoodie', ar: 'هودي' },
+  { en: 'Jacket', ar: 'جاكيت' },
+  { en: 'Dress', ar: 'فستان' },
+  { en: 'Skirt', ar: 'تنورة' },
+  { en: 'Pants', ar: 'بنطلون' },
+  { en: 'Shorts', ar: 'شورت' },
+  { en: 'Blouse', ar: 'بلوزة' },
+  { en: 'Cardigan', ar: 'كارديجان' },
+  { en: 'Sweater', ar: 'سويتر' },
+  { en: 'Coat', ar: 'معطف' },
+  { en: 'Jeans', ar: 'جينز' },
+  { en: 'Abaya', ar: 'عباية' },
+  { en: 'Jumpsuit', ar: 'أوفرول' },
+  { en: 'Vest', ar: 'صديري' },
+  { en: 'Polo', ar: 'بولو' },
+  { en: 'Tunic', ar: 'تونيك' },
+  { en: 'Kaftan', ar: 'قفطان' },
+  { en: 'Pajama', ar: 'بيجامة' },
+];
+
+/** The color values; style `g` has colors `(g - 1) % 10` and `(g + 2) % 10`. */
+export const COLORS: readonly { en: string; ar: string }[] = [
+  { en: 'Black', ar: 'أسود' },
+  { en: 'White', ar: 'أبيض' },
+  { en: 'Navy', ar: 'كحلي' },
+  { en: 'Olive', ar: 'زيتي' },
+  { en: 'Beige', ar: 'بيج' },
+  { en: 'Grey', ar: 'رمادي' },
+  { en: 'Red', ar: 'أحمر' },
+  { en: 'Blue', ar: 'أزرق' },
+  { en: 'Green', ar: 'أخضر' },
+  { en: 'Brown', ar: 'بني' },
+];
+
+/**
+ * The syllables of a seeded style's model name, as brands name their pieces ("Karimo"): three
+ * syllables give 512 names, each on about 10 styles, so a model name is a selective fragment
+ * the way real catalog names are. Two Arabic syllables carry a hamza (`أد`, `إم`), so a model
+ * name can be typed without it.
+ */
+export const MODEL_SYLLABLES: readonly { en: string; ar: string }[] = [
+  { en: 'ka', ar: 'كا' },
+  { en: 'ri', ar: 'ري' },
+  { en: 'mo', ar: 'مو' },
+  { en: 'la', ar: 'لا' },
+  { en: 'na', ar: 'نا' },
+  { en: 'su', ar: 'سو' },
+  { en: 'ad', ar: 'أد' },
+  { en: 'im', ar: 'إم' },
+];
+
+/** The model name of model number `m` (0 to 511), in English and Arabic. */
+export function modelName(m: number): { en: string; ar: string } {
+  const n = MODEL_SYLLABLES.length;
+  const parts = [m % n, Math.floor(m / n) % n, Math.floor(m / (n * n)) % n].map(
+    (i) => MODEL_SYLLABLES[i] ?? { en: '', ar: '' },
+  );
+  return { en: parts.map((p) => p.en).join(''), ar: parts.map((p) => p.ar).join('') };
+}
+
+/** How many model names there are; style `g` has model `(g - 1) % MODEL_NAMES`. */
+export const MODEL_NAMES = MODEL_SYLLABLES.length ** 3;
+
+/** The size values of every seeded style; variant `k` has size `(k - 1) % 5`. */
+export const SIZES: readonly string[] = ['XS', 'S', 'M', 'L', 'XL'];
+
 /** How long one seeding step took, in seconds. */
 export interface SeedStep {
   name: string;
@@ -107,19 +212,56 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
       steps.push({ name, seconds: (performance.now() - started) / 1000 });
     };
 
+    const words = (list: readonly string[]) => `ARRAY[${list.map((w) => `'${w}'`).join(', ')}]`;
+    const pick = (list: readonly { en: string; ar: string }[], lang: 'en' | 'ar', index: string) =>
+      `(${words(list.map((w) => w[lang]))})[1 + (${index}) % ${list.length}]`;
+    const scaleStyles = `(SELECT id, substr(style_code, 13)::int AS style FROM products
+                          WHERE style_code LIKE 'SCALE-STYLE-%')`;
+    const wordOf = `g - 1`;
+    const garmentOf = `(g - 1) / ${STYLE_WORDS.length}`;
+    const syllable = (lang: 'en' | 'ar', divisor: number) =>
+      pick(MODEL_SYLLABLES, lang, `((g - 1) % ${MODEL_NAMES}) / ${divisor}`);
+    const modelOf = (lang: 'en' | 'ar') => {
+      const n = MODEL_SYLLABLES.length;
+      return `${syllable(lang, 1)} || ${syllable(lang, n)} || ${syllable(lang, n * n)}`;
+    };
+    // Spec 0012 AC-5: every style is named in English and Arabic (a style word, a garment, and a
+    // model name: "Linen Shirt Karimo"), eight styles in nine are in one of eight seasons, and every
+    // variant has a size and a color value (5 sizes by the style's 2 colors) and one barcode.
     await step(
       'catalog',
-      `WITH p AS (
-         INSERT INTO products (style_code, product_group_id, name, status)
-         SELECT 'SCALE-STYLE-' || g, (SELECT id FROM product_groups WHERE code = 'MAIN'),
-                jsonb_build_object('en', 'Scale product ' || g), 'active'
-         FROM generate_series(1, ${styles}) g
-         RETURNING id, substr(style_code, 13)::int AS style
-       )
-       INSERT INTO product_variants (product_id, sku, base_uom_id, price)
+      `INSERT INTO seasons (code, name)
+       SELECT 'SCALE-S' || g, jsonb_build_object('en', 'Scale season ' || g)
+       FROM generate_series(1, ${SCALE_SEASONS}) g;
+       INSERT INTO products (style_code, product_group_id, season_id, name, status)
+       SELECT 'SCALE-STYLE-' || g, (SELECT id FROM product_groups WHERE code = 'MAIN'),
+              (SELECT id FROM seasons WHERE code = 'SCALE-S' || (g % ${SCALE_SEASONS + 1})),
+              jsonb_build_object(
+                'en', ${pick(STYLE_WORDS, 'en', wordOf)} || ' ' || ${pick(GARMENTS, 'en', garmentOf)}
+                      || ' ' || initcap(${modelOf('en')}),
+                'ar', ${pick(GARMENTS, 'ar', garmentOf)} || ' ' || ${pick(STYLE_WORDS, 'ar', wordOf)}
+                      || ' ' || ${modelOf('ar')}),
+              'active'
+       FROM generate_series(1, ${styles}) g;
+       INSERT INTO product_options (product_id, name, position, values)
+       SELECT p.id, '{"en": "Size", "ar": "المقاس"}'::jsonb, 0,
+              '${JSON.stringify(SIZES.map((size) => ({ en: size })))}'::jsonb
+       FROM ${scaleStyles} p;
+       INSERT INTO product_options (product_id, name, position, values)
+       SELECT p.id, '{"en": "Color", "ar": "اللون"}'::jsonb, 1, jsonb_build_array(
+                jsonb_build_object('en', ${pick(COLORS, 'en', 'p.style - 1')},
+                                   'ar', ${pick(COLORS, 'ar', 'p.style - 1')}),
+                jsonb_build_object('en', ${pick(COLORS, 'en', 'p.style + 2')},
+                                   'ar', ${pick(COLORS, 'ar', 'p.style + 2')}))
+       FROM ${scaleStyles} p;
+       INSERT INTO product_variants (product_id, sku, option_values, base_uom_id, price)
        SELECT p.id, ${sku(`(p.style - 1) * ${seed.variantsPerStyle} + k`)},
+              jsonb_build_object('0', (k - 1) % ${SIZES.length}, '1', (k - 1) / ${SIZES.length}),
               (SELECT id FROM uoms WHERE code = 'pc'), 100 + k * 25
-       FROM p CROSS JOIN generate_series(1, ${seed.variantsPerStyle}) k`,
+       FROM ${scaleStyles} p CROSS JOIN generate_series(1, ${seed.variantsPerStyle}) k;
+       INSERT INTO barcodes (variant_id, uom_id, code)
+       SELECT v.id, v.base_uom_id, ${SCALE_BARCODE_SQL}
+       FROM product_variants v WHERE v.sku LIKE 'SCALE-%'`,
     );
     await step(
       'locations',

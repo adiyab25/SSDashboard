@@ -4,6 +4,7 @@ import {
   expectNoAxeViolations,
   openShell,
   seedLocations,
+  stubLicensedInstall,
   textFor,
   useBrowserState,
   waitForPageHydration,
@@ -102,6 +103,9 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
         },
       }),
     );
+    // The license banner and the module notices add links to the tab order, and the real answers
+    // follow whatever license state earlier specs left in the database.
+    await stubLicensedInstall(page);
     await openShell(page);
     // The Staff entry joins the sidebar once /api/me has told the shell the role.
     await expect(page.getByRole('button', { name: /User menu: E2E Admin/ })).toBeVisible();
@@ -119,6 +123,8 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Audit trail',
       // Settings needs settings.manage, which the administrator holds (spec 0009, AC-25).
       'Settings',
+      // Connections (spec 0015) also needs settings.manage and sits right after Settings.
+      'Connections',
       // Cost rules follows Settings in the general group: cost.view, which the suite's
       // administrator holds as a grant (spec 0009, AC-25, D15).
       'Cost rules',
@@ -128,10 +134,17 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
       'Stock on hand',
       'Stock receipts',
       'SKUs',
+      // The catalog pages of spec 0012: Styles (stock.view), Seasons and Product groups
+      // (catalog.manage, which the administrator's manager hat holds).
+      'Styles',
+      'Seasons',
+      'Product groups',
       // Locations is admin only (spec 0006, AC-15); the suite signs in as an administrator.
       'Locations',
       // The customers group (spec 0014); the administrator's manager hat holds customers.view.
       'Customers',
+      // Merge customers needs customers.merge, which the manager hat holds too (spec 0014, AC-18).
+      'Merge customers',
       'Toggle sidebar',
       /^Location:/,
       /Search pages/,

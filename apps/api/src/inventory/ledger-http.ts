@@ -12,6 +12,7 @@ import type { Response } from 'express';
 import { InvalidCursorError as KeysetCursorError } from '../platform/keyset-cursor.js';
 import { DocumentPrefixesUnreadable, NumberingError } from '../platform/numbering.service.js';
 import { LedgerError } from './ledger/ledger.errors.js';
+import { OnlineStockError } from './online-stock/online-stock.errors.js';
 import { InvalidCursorError as LocationCursorError } from './locations/locations.service.js';
 
 const logger = new Logger('LedgerHttp');
@@ -73,6 +74,13 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
         logger.error(`Unmapped ledger error ${error.code}: ${error.message}`);
         return new InternalServerErrorException();
     }
+  }
+  if (error instanceof OnlineStockError) {
+    // Only the connector reads online stock through code; a route that surfaces it asks to go online first.
+    if (error.code === 'NotOnlineCandidate') {
+      return unprocessable('NOT_ONLINE_CANDIDATE', error.message);
+    }
+    return new ConflictException({ code: 'NO_ONLINE_LOCATION', message: error.message });
   }
   if (error instanceof InvalidAmountError) {
     return unprocessable('AMOUNT_TOO_LARGE', error.message);

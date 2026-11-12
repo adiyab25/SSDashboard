@@ -460,6 +460,26 @@ describe('core data model schema (spec 0002)', () => {
           params: [receipt.id],
         };
       },
+      stock_transfers: async () => {
+        const { groupId } = await makeMovement();
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('T', $1) RETURNING id",
+          [`transfer-${counter}@example.test`],
+        );
+        const transfer = await one<{ id: string }>(
+          owner,
+          `INSERT INTO stock_transfers (id, number, kind, from_location_id, to_location_id, request_hash, movement_group_id, effective_at, posted_by)
+           VALUES (gen_random_uuid(), $1, 'send_to_partner', $2, $3, 'h', $4, now(), $5) RETURNING id`,
+          [`TR-T-${counter}`, await makeLocation(), await makeLocation(), groupId, user.id],
+        );
+        return {
+          update: "UPDATE stock_transfers SET reference = 'x' WHERE id = $1",
+          remove: 'DELETE FROM stock_transfers WHERE id = $1',
+          params: [transfer.id],
+        };
+      },
       order_events: async () => {
         counter += 1;
         const order = await one<{ id: string }>(
@@ -763,6 +783,22 @@ describe('core data model schema (spec 0002)', () => {
           [period.id, FUTURE],
         );
       },
+      stock_transfers: async () => {
+        const { groupId } = await makeMovement();
+        counter += 1;
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('T', $1) RETURNING id",
+          [`transfer-stamp-${counter}@example.test`],
+        );
+        return one(
+          app,
+          `INSERT INTO stock_transfers (id, number, kind, from_location_id, to_location_id, request_hash, movement_group_id, effective_at, posted_by, recorded_at)
+           VALUES (gen_random_uuid(), $1, 'send_to_partner', $2, $3, 'h', $4, now(), $5, $6)
+           RETURNING recorded_at = now() AS stamped`,
+          [`TR-S-${counter}`, await makeLocation(), await makeLocation(), groupId, user.id, FUTURE],
+        );
+      },
       // Spec 0009: a recorded license's instant is the database's too.
       licenses: async () => {
         const { stamped } = await makeLicense(app, FUTURE);
@@ -1030,6 +1066,48 @@ describe('core data model schema (spec 0002)', () => {
       await expect(
         owner.query("INSERT INTO parties (code, name) VALUES ('NOROLE', 'x')"),
       ).rejects.toThrow(/parties_has_a_role/);
+    });
+  });
+
+  // Spec 0011 review R1: an active reservation holds or waits for something, but a closed one may
+  // be empty, so a line that never held a piece (quantity 0, all unfilled) can still be released.
+  describe('reservations with waiting demand (spec 0011)', () => {
+    const insert = (variantId: string, locationId: string, held: number, unfilled: number) =>
+      one<{ id: string }>(
+        owner,
+        `INSERT INTO reservations (variant_id, location_id, quantity, open_quantity, unfilled_quantity,
+                                   source_type, source_id, source_line_id)
+         VALUES ($1, $2, $3, $3, $4, 'order', gen_random_uuid(), gen_random_uuid()) RETURNING id`,
+        [variantId, locationId, held, unfilled],
+      );
+
+    it('releases a reservation that held nothing and only waited', async () => {
+      const row = await insert(await makeVariant(), await makeLocation(), 0, 2);
+
+      await owner.query(
+        `UPDATE reservations SET open_quantity = 0, unfilled_quantity = 0, status = 'released',
+                closed_at = now() WHERE id = $1`,
+        [row.id],
+      );
+
+      const after = await one<{ status: string; quantity: number }>(
+        owner,
+        'SELECT status, quantity FROM reservations WHERE id = $1',
+        [row.id],
+      );
+      expect(after).toEqual({ status: 'released', quantity: 0 });
+    });
+
+    it('refuses an active reservation with nothing held and nothing waiting', async () => {
+      await expect(insert(await makeVariant(), await makeLocation(), 0, 0)).rejects.toThrow(
+        /reservations_has_demand|reservations_open_while_active/,
+      );
+      const row = await insert(await makeVariant(), await makeLocation(), 1, 0);
+      await expect(
+        owner.query('UPDATE reservations SET quantity = 0, open_quantity = 0 WHERE id = $1', [
+          row.id,
+        ]),
+      ).rejects.toThrow(/reservations_has_demand|reservations_open_while_active/);
     });
   });
 

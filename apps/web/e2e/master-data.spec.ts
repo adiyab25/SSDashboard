@@ -40,7 +40,7 @@ const skuDialog = (page: Page, skuCode: string) =>
 /** Opens the SKU list filtered to one code, so the row is on the first page. */
 async function openSkus(page: Page, search: string, status: 'Active' | 'Archived' = 'Active') {
   await openShell(page, '/skus');
-  await page.getByLabel('Search SKUs').fill(search);
+  await page.getByLabel('Name, SKU or barcode').fill(search);
   if (status === 'Archived') await page.getByRole('button', { name: 'Archived' }).click();
   // The search is debounced and replaces the rows: wait until only the match is left.
   await expect(page.getByRole('table', { name: 'SKUs' }).getByRole('row')).toHaveCount(2);
@@ -55,7 +55,7 @@ async function searchSkus(page: Page, text: string) {
     const url = new URL(response.url());
     return url.pathname === '/api/skus' && url.searchParams.get('q') === text.trim();
   });
-  await page.getByLabel('Search SKUs').fill(text);
+  await page.getByLabel('Name, SKU or barcode').fill(text);
   await answered;
 }
 
@@ -132,7 +132,7 @@ test.describe('admin thread: create, receive, detail with cost; staff without co
     await newSku.getByLabel('Selling price').fill('19.5');
     await newSku.getByRole('button', { name: 'Create SKU' }).click();
     await expect(page.getByText(`SKU ${skuCode} created.`)).toBeVisible();
-    await page.getByLabel('Search SKUs').fill(skuCode);
+    await page.getByLabel('Name, SKU or barcode').fill(skuCode);
     const listRow = page.getByRole('row', { name: new RegExp(skuCode) });
     await expect(listRow).toContainText('Master tee');
     await expect(listRow).toContainText('19.50');
@@ -215,7 +215,7 @@ test.describe('admin thread: create, receive, detail with cost; staff without co
 
     // Staff edit a name and price but get no administrator actions (AC-2, AC-3).
     await openAsPerson(clerkPage, '/skus');
-    await clerkPage.getByLabel('Search SKUs').fill(skuCode);
+    await clerkPage.getByLabel('Name, SKU or barcode').fill(skuCode);
     await clerkPage.getByRole('button', { name: `Edit ${skuCode}` }).click();
     const clerkDialog = skuDialog(clerkPage, skuCode);
     await expect(clerkDialog.getByLabel('Name in English')).toHaveValue('Master tee');
@@ -353,9 +353,9 @@ test.describe('SKU list: search, archived filter, Load more (AC-13)', () => {
 
   test('an empty archived list and a failing list each say so (AC-16 states)', async ({ page }) => {
     await openShell(page, '/skus');
-    await page.getByLabel('Search SKUs').fill(`NOPE${tag}`);
+    await page.getByLabel('Name, SKU or barcode').fill(`NOPE${tag}`);
     await expect(page.getByText('No SKU matches this search.')).toBeVisible();
-    await page.getByLabel('Search SKUs').fill('');
+    await page.getByLabel('Name, SKU or barcode').fill('');
     await page.route('**/api/skus?**', (route) => route.fulfill({ status: 500, json: {} }));
     await page.getByRole('button', { name: 'Archived' }).click();
     const alert = page.getByRole('alert').or(page.getByText('The SKUs could not be loaded.'));
@@ -892,7 +892,7 @@ test.describe('keyboard use of the edit dialog (AC-16)', () => {
     await expect(trigger).toBeVisible();
 
     // Reach the Edit button by keyboard alone: Tab forward from the search field.
-    await page.getByLabel('Search SKUs').focus();
+    await page.getByLabel('Name, SKU or barcode').focus();
     for (let step = 0; step < 12; step += 1) {
       await page.keyboard.press('Tab');
       if (await trigger.evaluate((node) => node === document.activeElement)) break;
@@ -1195,7 +1195,7 @@ test.describe('accessibility on the new pages, both languages (AC-16)', () => {
     page,
   }) => {
     await openShell(page, '/skus');
-    await page.getByLabel('Search SKUs').fill(`NONE${tag}`);
+    await page.getByLabel('Name, SKU or barcode').fill(`NONE${tag}`);
     await expect(page.getByText('No SKU matches this search.')).toBeVisible();
     await expectNoAxeViolations(page);
 

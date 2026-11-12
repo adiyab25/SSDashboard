@@ -36,6 +36,7 @@ export const FindOrCreateOutcome = z.enum([
   'matched_with_conflict',
   'created',
   'no_phone',
+  'unverified_phone',
 ]);
 /** One `findOrCreate` outcome. */
 export type FindOrCreateOutcome = z.infer<typeof FindOrCreateOutcome>;

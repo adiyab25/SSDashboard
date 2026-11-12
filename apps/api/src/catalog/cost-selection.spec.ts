@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectCost, type CostRecordCandidate } from './cost-selection.js';
+import { pickCostRecord, selectCost, type CostRecordCandidate } from './cost-selection.js';
 
 const VARIANT = 'v-1';
 let sequence = 0;
@@ -73,5 +73,31 @@ describe('selectCost', () => {
   it('is not set before the first record and with no record, never zero', () => {
     expect(selectCost(worked, '2026-02-28')).toEqual({ status: 'not_set' });
     expect(selectCost([], '2026-03-01')).toEqual({ status: 'not_set' });
+  });
+});
+
+// Spec 0012, AC-12: `costForMany` reads the chosen record itself (its date, and style or override).
+describe('pickCostRecord', () => {
+  it('picks the record selectCost decides by, so the two never disagree', () => {
+    for (const day of ['2026-02-28', '2026-03-15', '2026-05-01', '2027-03-02']) {
+      const picked = pickCostRecord(worked, day);
+      expect(selectCost(worked, day)).toEqual(
+        picked
+          ? { status: 'set', unitCost: picked.unitCost, costBasis: picked.costBasis }
+          : { status: 'not_set' },
+      );
+    }
+  });
+
+  it('names the override on its day and the style record otherwise', () => {
+    expect(pickCostRecord(worked, '2026-05-01')).toMatchObject({
+      variantId: VARIANT,
+      effectiveFrom: '2026-04-01',
+    });
+    expect(pickCostRecord(worked, '2027-03-02')).toMatchObject({
+      variantId: null,
+      effectiveFrom: '2027-03-01',
+    });
+    expect(pickCostRecord([], '2026-03-01')).toBeUndefined();
   });
 });

@@ -22,7 +22,7 @@ export function SkuDetailView({ enabled }: { enabled: boolean }) {
   });
 
   if (query.isPending) return <SkuDetailSkeleton />;
-  if (query.isError) {
+  if (query.isError && !query.data) {
     const notFound = query.error instanceof ApiError && query.error.status === 404;
     return (
       <div className="flex flex-col gap-4">
