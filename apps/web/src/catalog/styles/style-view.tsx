@@ -5,7 +5,7 @@ import { Badge } from '@ssdashboard/ui/components/badge';
 import { Button } from '@ssdashboard/ui/components/button';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { CollapsingTable } from '@ssdashboard/ui/dashboard/collapsing-table';
-import { BarcodeIcon, PencilIcon, PlusIcon } from 'lucide-react';
+import { BarcodeIcon, CoinsIcon, PencilIcon, PlusIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,19 +13,28 @@ import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { AddVariantDialog } from './add-variant-dialog';
+import { RecordCostDialog } from './record-cost-dialog';
+import { StyleCostHistory } from './style-cost-history';
+import { VariantCostCell } from './variant-cost-cell';
 import { StyleCodeDialog } from './style-code-dialog';
 import { StyleEditDialog } from './style-edit-dialog';
 import { VariantBarcodesDialog } from './variant-barcodes-dialog';
 
 /** The dialog open on the page, if any. */
 type Open =
-  { kind: 'edit' } | { kind: 'code' } | { kind: 'add' } | { kind: 'barcodes'; id: string };
+  | { kind: 'edit' }
+  | { kind: 'code' }
+  | { kind: 'add' }
+  | { kind: 'cost' }
+  | { kind: 'barcodes'; id: string };
 
 /**
  * One loaded style (spec 0012, AC-8 to AC-10): code, name, season, group, tags, and description,
  * its options with their roles and values, and its SKUs with options, price, barcodes, and
  * status. `catalog.edit` adds Edit, Add SKU, and the barcode buttons; `catalog.manage` adds
- * Change code. Without them the page is read only (the api enforces it too).
+ * Change code. `cost.view` adds each SKU's cost in force and the cost history (AC-12, AC-13),
+ * and with `catalog.edit` Record cost; without `cost.view` no cost is drawn or asked for.
+ * Without them the page is read only (the api enforces it too).
  */
 export function StyleView({
   style,
@@ -39,6 +48,7 @@ export function StyleView({
   const access = useAccess();
   const canEdit = access.can('catalog.edit');
   const canManage = access.can('catalog.manage');
+  const canSeeCost = access.can('cost.view');
   const format = useFormat();
   const text = useLocalizedText();
   const [open, setOpen] = useState<Open | null>(null);
@@ -83,6 +93,16 @@ export function StyleView({
           format.money(variant.price, 2)
         ),
     },
+    ...(canSeeCost
+      ? [
+          {
+            id: 'cost',
+            header: t('catalog.style.columns.cost'),
+            align: 'end' as const,
+            cell: (variant: StyleVariant) => <VariantCostCell cost={variant.cost} />,
+          },
+        ]
+      : []),
     {
       id: 'barcodes',
       header: t('catalog.style.columns.barcodes'),
@@ -157,6 +177,12 @@ export function StyleView({
             <Button variant="outline" onClick={() => setOpen({ kind: 'edit' })}>
               <PencilIcon aria-hidden data-icon="inline-start" />
               {t('catalog.style.edit')}
+            </Button>
+          )}
+          {canEdit && canSeeCost && (
+            <Button variant="outline" onClick={() => setOpen({ kind: 'cost' })}>
+              <CoinsIcon aria-hidden data-icon="inline-start" />
+              {t('catalog.style.recordCost')}
             </Button>
           )}
           {canEdit && !style.archived && (
@@ -271,8 +297,13 @@ export function StyleView({
         )}
       </section>
 
+      {canSeeCost && <StyleCostHistory styleId={style.id} />}
+
       {open?.kind === 'edit' && <StyleEditDialog style={style} reload={reload} onClose={close} />}
       {open?.kind === 'code' && <StyleCodeDialog style={style} reload={reload} onClose={close} />}
+      {open?.kind === 'cost' && canEdit && canSeeCost && (
+        <RecordCostDialog style={style} onClose={close} />
+      )}
       {open?.kind === 'add' && <AddVariantDialog style={style} onClose={close} />}
       {barcodesOf && (
         <VariantBarcodesDialog styleId={style.id} variant={barcodesOf} onClose={close} />

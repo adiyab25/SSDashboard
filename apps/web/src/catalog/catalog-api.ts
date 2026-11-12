@@ -1,5 +1,7 @@
 import {
   AssignStylesResponse,
+  CostRecordListResponse,
+  RecordCostResponse,
   ProductGroup,
   ProductGroupListResponse,
   Season,
@@ -12,6 +14,7 @@ import {
   type AssignStylesRequest,
   type ChangeStyleCodeRequest,
   type CreateSeasonRequest,
+  type RecordCostRequest,
   type GroupingListStatus,
   type SeasonFilter,
   type SkuStatus,
@@ -60,6 +63,10 @@ export const catalogKeys = {
     ] as const,
   /** One style's detail. */
   style: (id: string) => ['styles', 'detail', id] as const,
+  /** One style's cost records (`cost.view`), newest first. */
+  costRecords: (styleId: string) => ['styles', 'cost-records', styleId] as const,
+  /** Every season, archived ones too, for the record cost picker. */
+  allSeasons: ['seasons', 'all-choices'] as const,
   /** The root of the seasons or the product groups queries. */
   groupings: (kind: GroupingKind) =>
     kind === 'season' ? (['seasons'] as const) : (['product-groups'] as const),
@@ -90,6 +97,23 @@ export function listStyles(
   if (cursor) params.set('cursor', cursor);
   return apiRequest('GET', `/api/styles?${params}`, StyleListResponse, { signal });
 }
+
+/** One page of a style's cost records, newest first, 20 a page (AC-13, `cost.view`). */
+export const listCostRecords = (
+  styleId: string,
+  cursor: string | undefined,
+  signal?: AbortSignal,
+) => {
+  const params = new URLSearchParams({ limit: '20' });
+  if (cursor) params.set('cursor', cursor);
+  return apiRequest('GET', `${stylePath(styleId)}/cost-records?${params}`, CostRecordListResponse, {
+    signal,
+  });
+};
+
+/** Records a cost for a style or one variant; answers the record and every variant's cost now (AC-13). */
+export const recordCost = (styleId: string, body: RecordCostRequest) =>
+  apiRequest('POST', `${stylePath(styleId)}/cost-records`, RecordCostResponse, { body });
 
 /** One style with its options and variants, and the `updatedAt` an edit must send back. */
 export const getStyle = (id: string, signal?: AbortSignal) =>
@@ -141,16 +165,18 @@ const MAX_CHOICE_PAGES = 20;
 
 /**
  * Every active season or product group, ordered by code, for a picker or a filter. An archived
- * row leaves the pickers (AC-6), so it is never offered here.
+ * row leaves the pickers (AC-6), so it is never offered here unless `status` asks for `all` (the
+ * record cost picker, which may name an archived season, AC-13).
  */
 export async function listGroupingChoices(
   kind: GroupingKind,
   signal?: AbortSignal,
+  status: GroupingListStatus = 'active',
 ): Promise<GroupingRow[]> {
   const rows: GroupingRow[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < MAX_CHOICE_PAGES; page += 1) {
-    const answer = await listGroupings(kind, 'active', cursor, signal);
+    const answer = await listGroupings(kind, status, cursor, signal);
     rows.push(...answer.items);
     if (!answer.nextCursor) break;
     cursor = answer.nextCursor;

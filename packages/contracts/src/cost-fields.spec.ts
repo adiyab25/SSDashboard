@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { COST_FIELD_KEYS } from './access.js';
 import * as contracts from './index.js';
+import { StyleVariant } from './catalog/styles.js';
 import { MoneyString, UnitCostString } from './money.js';
 import { SkuMovementsResponse, SkuStockResponse, StockListResponse } from './stock.js';
 import { StockReceiptDetail, StockReceiptListResponse } from './stock-receipts.js';
@@ -53,6 +54,12 @@ function moneyFieldsOf(schema: unknown, path: string): MoneyField[] {
   return found;
 }
 
+/**
+ * The `COST_FIELD_KEYS` that name an object rather than a money field: the style page's `cost`
+ * of a variant (spec 0012, AC-12), dropped whole for a caller without `cost.view`.
+ */
+const COST_OBJECT_KEYS: readonly string[] = ['cost'];
+
 /** The stock and receipt answers of spec 0006 that carry cost (AC-11). */
 const COST_ANSWERS = {
   StockListResponse,
@@ -75,10 +82,25 @@ describe('cost fields in the contracts (spec 0008, AC-6)', () => {
     expect(fields.length).toBeGreaterThan(0);
     expect(unlisted, 'a cost field missing from COST_FIELD_KEYS').toEqual([]);
     expect(required, 'a cost field the serializer cannot leave out').toEqual([]);
-    // No stale name: every listed key is a field of one of these answers.
+    // No stale name: every listed money key is a field of one of these answers (the object keys
+    // of COST_OBJECT_KEYS are checked by their own test below).
     expect([...new Set(fields.map((field) => field.key))].sort()).toEqual(
-      [...COST_FIELD_KEYS].sort(),
+      COST_FIELD_KEYS.filter((key) => !COST_OBJECT_KEYS.includes(key)).sort(),
     );
+  });
+
+  it('keeps the style page cost (spec 0012, AC-12) an optional object holding unit cost', () => {
+    const cost = StyleVariant.shape.cost;
+    expect(
+      COST_OBJECT_KEYS.every((key) => (COST_FIELD_KEYS as readonly string[]).includes(key)),
+    ).toBe(true);
+    expect(cost).toBeInstanceOf(z.ZodOptional);
+    // The walk reaches the unit cost inside it, so the serializer that drops `cost` drops it too.
+    expect(moneyFieldsOf(StyleVariant, 'StyleVariant')).toContainEqual({
+      path: 'StyleVariant.cost.unitCost',
+      key: 'unitCost',
+      optional: false,
+    });
   });
 
   it('names every optional money or unit cost field of any contract in COST_FIELD_KEYS', () => {

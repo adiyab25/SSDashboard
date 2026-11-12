@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftIcon, GitMergeIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
 import { ApiError } from '@/api/client';
@@ -18,6 +18,8 @@ import { CustomerFlagBadge } from './customer-flag-badge';
 import { CustomerFlagSection } from './customer-flag-section';
 import { CustomerMergesSection } from './customer-merges-section';
 import { CustomerPhonesSection } from './customer-phones-section';
+import { CustomerSignalSuggestion, type SignalFailureKey } from './customer-signal-suggestion';
+import { CustomerTimelineSection } from './customer-timeline-section';
 import { customerKeys, getCustomer } from './customers-api';
 import { mergePageHref } from './merge-page-href';
 
@@ -34,6 +36,10 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
   const access = useAccess();
   const { id } = useParams<{ id: string }>();
   const [mergedNotice, setMergedNotice] = useState(false);
+  const [signalFailure, setSignalFailure] = useState<SignalFailureKey | null>(null);
+  const flagHeading = useRef<HTMLHeadingElement>(null);
+  /** Set when the suggestion was applied, until the flag card shows and takes focus. */
+  const focusFlagCard = useRef(false);
   const query = useQuery({
     queryKey: customerKeys.profile(id),
     queryFn: ({ signal }) => getCustomer(id, signal),
@@ -43,6 +49,14 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
 
   // Remember the merged notice for as long as the page stays open (adjusting state while rendering).
   if (profile?.resolvedFrom && !mergedNotice) setMergedNotice(true);
+
+  const flagSet = profile?.flag != null;
+  useEffect(() => {
+    // The box that held focus left; move focus to the flag card once the profile shows the flag.
+    if (!flagSet || !focusFlagCard.current) return;
+    focusFlagCard.current = false;
+    flagHeading.current?.focus();
+  }, [flagSet]);
 
   const survivor = profile?.resolvedFrom ? profile : null;
   useEffect(() => {
@@ -117,13 +131,26 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
           )}
           {access.can('customers.flag') && <CustomerFlagActions profile={profile} />}
         </div>
+        <CustomerSignalSuggestion
+          profile={profile}
+          onApplied={() => {
+            focusFlagCard.current = true;
+          }}
+          onFailed={setSignalFailure}
+        />
+        {signalFailure && (
+          <Alert variant="destructive" role="alert" className="mt-2">
+            <AlertDescription>{t(signalFailure)}</AlertDescription>
+          </Alert>
+        )}
       </header>
 
-      <CustomerFlagSection flag={profile.flag} />
+      <CustomerFlagSection flag={profile.flag} headingRef={flagHeading} />
 
       <CustomerPhonesSection phones={profile.phones} />
       <CustomerChannelIdsSection ids={profile.channelIds} />
       <CustomerMergesSection merges={profile.merges} />
+      <CustomerTimelineSection customerId={profile.id} />
     </div>
   );
 }

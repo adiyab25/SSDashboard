@@ -2,9 +2,14 @@ import type { DatabaseConnection } from '@ssdashboard/db';
 import { describe, expect, it, vi } from 'vitest';
 import type { StaffDirectory } from '../identity/staff/staff-directory.js';
 import { encodeKeyset } from '../platform/keyset-cursor.js';
-import { AuditReadForbidden } from './audit.errors.js';
+import { AuditEntryNotFound, AuditReadForbidden } from './audit.errors.js';
 import { csvCell, csvLine, exportCells, exportFileName } from './audit-export.service.js';
-import { AuditQueryService, fieldChanges, type EntryRow } from './audit-query.service.js';
+import {
+  AuditQueryService,
+  fieldChanges,
+  visibleEntries,
+  type EntryRow,
+} from './audit-query.service.js';
 
 const ID = '01937f3a-0000-7000-8000-000000000001';
 
@@ -392,5 +397,71 @@ describe('audit day range bound (spec 0010, AC-17)', () => {
       expect(text).toContain(FROM);
       expect(text).toContain(TO);
     }
+  });
+});
+
+// Spec 0012 AC-17, the owner's ruling of 2026-11-11 "Hide whole entry": every reader leaves out
+// cost entries in SQL for a viewer without cost.view, so pages, the detail, and the export's
+// bound, count, and batches never meet one; a viewer with it reads them as before.
+describe('cost entries hidden whole without cost.view (spec 0012, AC-17)', () => {
+  const HIDE = `NOT (audit_entries.action = ANY('{"cost_record.recorded"}'::text[]))`;
+
+  function reader() {
+    const statements: string[] = [];
+    const execute = vi.fn((query: unknown) => {
+      statements.push(sqlText(query).replace(/\s+/g, ' '));
+      return Promise.resolve({ rows: [] });
+    });
+    const service = new AuditQueryService(
+      { db: { execute } } as unknown as DatabaseConnection,
+      { namesByIds: vi.fn(() => Promise.resolve(new Map())) } as unknown as StaffDirectory,
+    );
+    return { service, statements };
+  }
+
+  /** Every reader once: list, next page, history, detail, view, export bound, size, batches. */
+  async function readAll(viewer: {
+    userId: string;
+    has: (p: string) => boolean;
+    actingHat: () => string;
+  }) {
+    const { service, statements } = reader();
+    const query = { dayFrom: '2026-11-01', dayTo: '2026-11-07' };
+    const key = { at: '2026-11-07T10:00:00.000001Z', id: ID };
+    await service.list({ limit: 50 }, viewer);
+    const cursor = encodeKeyset(['2026-11-07T10:00:00.000001Z', ID]);
+    await service.list({ action: 'cost_record.recorded', cursor, limit: 50 }, viewer);
+    await service.forRecord(viewer, 'style', ID, undefined, 50);
+    await expect(service.get(ID, viewer)).rejects.toBeInstanceOf(AuditEntryNotFound);
+    await expect(service.view(ID, viewer)).rejects.toBeInstanceOf(AuditEntryNotFound);
+    await service.exportBound(query, viewer);
+    await service.exportSize(query, viewer, key, 200_001);
+    for await (const batch of service.exportBatches(query, viewer, 'UTC', key, 1_000, 10)) {
+      expect(batch).toEqual([]);
+    }
+    return statements;
+  }
+
+  it('adds the hiding condition to every read for a viewer without cost.view', async () => {
+    const statements = await readAll({
+      userId: ID,
+      has: (permission) => permission !== 'cost.view',
+      actingHat: () => 'manager',
+    });
+
+    expect(statements).toHaveLength(8);
+    for (const text of statements) expect(text).toContain(HIDE);
+  });
+
+  it('adds nothing for a viewer with cost.view', async () => {
+    const statements = await readAll({ userId: ID, has: () => true, actingHat: () => 'manager' });
+
+    expect(statements).toHaveLength(8);
+    for (const text of statements) expect(text).not.toContain('NOT (audit_entries.action');
+  });
+
+  it('is one condition without cost.view and none with it', () => {
+    expect(visibleEntries({ has: () => false }).map(sqlText)).toEqual([HIDE]);
+    expect(visibleEntries({ has: () => true })).toEqual([]);
   });
 });

@@ -126,12 +126,19 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await expect(dialog).toBeVisible();
       await expect(dialog.getByLabel(t('customers.flagging.set.note'))).toHaveValue(note);
       await expect(dialog.getByRole('radio', { name: t('customers.flag.refuser') })).toBeChecked();
+      // The alert shows before the profile reload ends, and the buttons stay disabled until it
+      // does; axe run meanwhile measured them mid fade back from half opacity (color-contrast).
+      const submit = dialog.getByRole('button', { name: t('customers.flagging.set.submit') });
+      await expect(submit).toBeEnabled();
+      await expect(submit).toHaveAttribute('aria-busy', 'false');
       await expectNoAxeViolations(page);
 
       // The profile reloaded behind it, so the same input now saves.
       await dialog.getByRole('button', { name: t('customers.flagging.set.submit') }).click();
       await expect(dialog).toHaveCount(0);
-      await expect(page.getByText(note)).toBeVisible();
+      await expect(
+        page.getByRole('region', { name: t('customers.profile.flagCard.title') }).getByText(note),
+      ).toBeVisible();
       // The header names who set it and when, and the search row carries the badge.
       const card = page.getByRole('region', { name: t('customers.profile.flagCard.title') });
       await expect(card.getByText(agent?.name ?? 'missing')).toBeVisible();

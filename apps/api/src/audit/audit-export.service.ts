@@ -10,7 +10,7 @@ import {
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { en, flatten } from '@ssdashboard/i18n';
 import { DATABASE } from '../database/database.module.js';
-import { auditDiffFor } from './audit-cost-fields.js';
+import { auditDiffsFor } from './audit-cost-fields.js';
 import { AuditExportTooLarge } from './audit.errors.js';
 import {
   AuditQueryService,
@@ -112,7 +112,9 @@ export class AuditExportCutOff extends Error {
  * only the entries at or below that key, at most the counted number, in keyset batches of 1,000,
  * so the file holds exactly `after.rows` rows and never the export's own entry, which is newer
  * (review M3R2). The file holds no personal data because the table holds none, and no cost
- * field for a reader without `cost.view` (`AuditExportPlan.showCost`, spec 0008 AC-6). It reads no
+ * field for a reader without `cost.view` (`AuditExportPlan.showCost`, spec 0008 AC-6), nor any
+ * cost entry (`COST_ENTRY_ACTIONS`: the reader's bound, count, and batches leave them out, so
+ * `rows` never counts one). It reads no
  * setting: the caller passes the install time zone, so this module never imports the platform
  * module (review M3R6).
  */
@@ -141,7 +143,8 @@ export class AuditExportService {
       : 0;
     if (rows > AUDIT_EXPORT_MAX_ROWS) throw new AuditExportTooLarge(AUDIT_EXPORT_MAX_ROWS);
     const exportId = this.audit.newCorrelationId();
-    // The filter, without the fields the caller left out, is the entry's `after`.
+    // The filter, without the fields the caller left out, is the entry's `after`, with `rows` and
+    // `costVisible` (the export ran with cost visibility, so it could hold cost entries).
     const given = Object.fromEntries(
       Object.entries(query).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
@@ -150,7 +153,11 @@ export class AuditExportService {
         actor: personActor(viewer.userId, viewer.actingHat('audit.export')),
         action: 'audit.exported',
         record: { type: 'audit_entry', id: exportId },
-        after: { ...given, rows } satisfies JsonObject,
+        after: {
+          ...given,
+          rows,
+          ...(viewer.has('cost.view') ? { costVisible: true } : {}),
+        } satisfies JsonObject,
         ...(reason ? { reason } : {}),
         correlationId: exportId,
       }),
@@ -195,8 +202,7 @@ export class AuditExportService {
               exportCells(
                 {
                   ...row,
-                  before: auditDiffFor(row.before, plan.showCost),
-                  after: auditDiffFor(row.after, plan.showCost),
+                  ...auditDiffsFor(row, plan.showCost),
                 },
                 localAt,
                 actorName,

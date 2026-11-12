@@ -51,7 +51,9 @@ export type CatalogErrorCode =
   | 'ProductGroupProtected'
   | 'TooManyOptions'
   | 'OptionCombinationTaken'
-  | 'BarcodeTaken';
+  | 'BarcodeTaken'
+  // Spec 0012 milestone 3: a cost record from before today's operating day without a reason.
+  | 'ReasonRequired';
 
 /**
  * What an answer names beside its code: the ids a bulk assign did not find (`missingIds`), or

@@ -25,6 +25,7 @@ export function customersHttpError(error: unknown): unknown {
     case 'INVALID_CURSOR':
       return new BadRequestException({ code: error.code, message: error.message });
     case 'INVALID_CHANNEL_CUSTOMER':
+    case 'REASON_INVALID':
       return new UnprocessableEntityException({ code: error.code, message: error.message });
     case 'SAME_CUSTOMER':
     case 'CUSTOMER_MERGED':

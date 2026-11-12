@@ -2,6 +2,7 @@ import {
   CustomerMergeResponse,
   CustomerSetFlagResponse,
   CustomerProfile,
+  CustomerTimelinePage,
   CustomerSearchResponse,
   CustomerUndoMergeResponse,
   MergeSuggestionPage,
@@ -25,6 +26,8 @@ export const customerKeys = {
     ['customers', 'search', kind, text] as const,
   /** One customer's profile, by the id asked. */
   profile: (id: string) => ['customers', 'profile', id] as const,
+  /** One customer's timeline pages, by the canonical id shown. */
+  timeline: (id: string) => ['customers', 'timeline', id] as const,
 };
 
 /**
@@ -93,3 +96,14 @@ export const clearCustomerFlag = (id: string, body: CustomerClearFlagRequest) =>
     { parse: () => undefined },
     { body },
   );
+
+/** `GET /api/customers/:id/timeline`: one page of entries newest first (25 a page); the api leaves out what the viewer's hat does not reach. */
+export function listCustomerTimeline(id: string, cursor: string | undefined, signal?: AbortSignal) {
+  const query = new URLSearchParams({ limit: '25', ...(cursor && { cursor }) });
+  return apiRequest(
+    'GET',
+    `/api/customers/${encodeURIComponent(id)}/timeline?${query.toString()}`,
+    CustomerTimelinePage,
+    { signal },
+  );
+}

@@ -1,5 +1,16 @@
+import { randomUUID } from 'node:crypto';
+import {
+  AuditEntryDetail,
+  AuditEntryListResponse,
+  CostRecordListResponse,
+  RecordCostResponse,
+  Season,
+  SkuDetail,
+  StyleDetail,
+} from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CostService } from '../src/catalog/cost.service.js';
+import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { fixtures, ledgerHarness, posting, type LedgerHarness } from './ledger.js';
 
 // Spec 0002, A12 (AC-30): the cost lookup against PostgreSQL, with the spec's worked example.
@@ -87,4 +98,736 @@ describe('CostService.costFor', { timeout: 60_000 }, () => {
       status: 'not_set',
     });
   });
+
+  // Spec 0012, AC-12: many in one query equals one at a time, for every id and day.
+  it('answers costForMany exactly as costFor for every id, plus the date and inherited or override', async () => {
+    const worked = await make.variant();
+    await record(worked, { cost: '120.0000', from: '2026-03-01' });
+    await record(worked, { override: true, cost: '130.0000', from: '2026-04-01' });
+    await record(worked, { cost: '140.0000', from: '2027-03-01', basis: 'production_run' });
+    const estimate = await make.variant();
+    await record(estimate, { cost: '12.0000', from: '2026-03-01', basis: 'estimate' });
+    await record(estimate, { cost: '15.0000', from: '2026-03-01', basis: 'estimate' });
+    const bare = await make.variant();
+    const unknown = '00000000-0000-7000-8000-000000000000';
+    const ids = [worked, estimate, bare, unknown];
+
+    for (const day of ['2026-02-28', '2026-03-15', '2026-05-01', '2027-03-02']) {
+      const many = await costs.costForMany(ids, day);
+      expect([...many.keys()]).toEqual(ids);
+      for (const id of ids) {
+        const one = await costs.costFor(id, day);
+        const answer = many.get(id);
+        if (one.status === 'not_set') expect(answer).toEqual(one);
+        else expect(answer).toMatchObject(one);
+      }
+    }
+    const may = await costs.costForMany(ids, '2026-05-01');
+    expect(may.get(worked)).toEqual({
+      status: 'set',
+      unitCost: '130.0000',
+      costBasis: 'factory_invoice',
+      effectiveFrom: '2026-04-01',
+      inheritedFrom: 'variant',
+    });
+    expect(may.get(estimate)).toEqual({
+      status: 'set',
+      unitCost: '15.0000',
+      costBasis: 'estimate',
+      effectiveFrom: '2026-03-01',
+      inheritedFrom: 'style',
+    });
+    expect(may.get(bare)).toEqual({ status: 'not_set' });
+    expect((await costs.costForMany(ids, '2027-03-02')).get(worked)).toMatchObject({
+      unitCost: '140.0000',
+      inheritedFrom: 'style',
+    });
+    expect((await costs.costForMany([], '2026-05-01')).size).toBe(0);
+  });
 });
+
+// Spec 0012 milestone 3 (AC-12, AC-13, AC-16, AC-17): the style page's cost and the cost record
+// routes through the running api. This file is the registry `proof` of cost_record.recorded.
+describe(
+  'style cost, visible and recordable (spec 0012, AC-12, AC-13)',
+  { timeout: 120_000 },
+  () => {
+    let api: InProcessApi;
+    let owner: string;
+    let ownerId: string;
+    let warehouse: string;
+    let editorWithoutCost: string;
+    let managerWithoutCost: string;
+    let today: string;
+    let n = 0;
+    const code = (prefix: string) => `${prefix}-${(n += 1)}-${randomUUID().slice(0, 4)}`;
+
+    beforeAll(async () => {
+      api = await startInProcessApi();
+      const boss = await api.addPerson(['manager'], { costView: true });
+      ownerId = boss.id;
+      owner = await api.signIn(boss.email);
+      warehouse = await api.signIn((await api.addPerson(['warehouse'])).email);
+      editorWithoutCost = await api.signIn((await api.addPerson(['operations'])).email);
+      managerWithoutCost = await api.signIn((await api.addPerson(['manager'])).email);
+      const { rows } = await api.owner.pool.query<{ day: string }>(
+        `SELECT to_char(ssd_operating_day(now()), 'YYYY-MM-DD') AS day`,
+      );
+      today = rows[0]?.day as string;
+    });
+
+    afterAll(async () => {
+      await api?.close();
+    });
+
+    async function newStyle(): Promise<SkuDetail> {
+      const reply = await api.call(owner, 'POST', '/api/products', {
+        name: { en: 'Cost Tee' },
+        variants: [{ sku: code('CT'), price: '250.00' }],
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      return SkuDetail.parse(reply.body);
+    }
+
+    async function addVariant(styleId: string): Promise<SkuDetail> {
+      const reply = await api.call(owner, 'POST', `/api/styles/${styleId}/variants`, {
+        sku: code('CTV'),
+        options: [{ name: { en: 'Size' }, value: { en: code('S') } }],
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      return SkuDetail.parse(reply.body);
+    }
+
+    async function newSeason(): Promise<Season> {
+      const reply = await api.call(owner, 'POST', '/api/seasons', {
+        code: `SS${(n += 1)}`,
+        name: { en: 'Spring summer' },
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      return Season.parse(reply.body);
+    }
+
+    async function style(id: string, cookie = owner) {
+      const reply = await api.call(cookie, 'GET', `/api/styles/${id}`);
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      return { parsed: StyleDetail.parse(reply.body), raw: reply.body as StyleDetail };
+    }
+
+    const recordCost = (styleId: string, body: Record<string, unknown>, cookie = owner) =>
+      api.call(cookie, 'POST', `/api/styles/${styleId}/cost-records`, body);
+
+    /** The cost record entries of one style, oldest first. */
+    async function costEntriesOf(styleId: string) {
+      const { rows } = await api.owner.pool.query<{
+        action: string;
+        record_type: string;
+        record_label: string;
+        actor_user_id: string;
+        reason: string | null;
+        after: Record<string, unknown>;
+      }>(
+        `SELECT action, record_type, record_label, actor_user_id, reason, after
+       FROM audit_entries WHERE record_id = $1 AND action = 'cost_record.recorded'
+       ORDER BY recorded_at, id`,
+        [styleId],
+      );
+      return rows;
+    }
+
+    it('shows Not set, never 0, on a new style, and no cost key without cost.view', async () => {
+      const sku = await newStyle();
+
+      const held = await style(sku.productId);
+      const plain = await style(sku.productId, warehouse);
+
+      expect(held.parsed.variants.map((variant) => variant.cost)).toEqual([{ status: 'not_set' }]);
+      expect(plain.raw.variants.every((variant) => !('cost' in variant))).toBe(true);
+      expect(JSON.stringify(plain.raw)).not.toContain('unitCost');
+    });
+
+    it('records a style cost (SS26) every variant inherits, and an override for one variant', async () => {
+      const first = await newStyle();
+      const second = await addVariant(first.productId);
+      const season = await newSeason();
+
+      const styleRecord = await recordCost(first.productId, {
+        seasonId: season.id,
+        costBasis: 'factory_invoice',
+        unitCost: '١٢٠',
+        effectiveFrom: today,
+        source: 'INV-26-001',
+      });
+      expect(styleRecord.status, JSON.stringify(styleRecord.body)).toBe(201);
+      const added = RecordCostResponse.parse(styleRecord.body);
+      expect(added.record).toMatchObject({
+        variant: null,
+        season: { id: season.id, code: season.code },
+        costBasis: 'factory_invoice',
+        unitCost: '120.0000',
+        effectiveFrom: today,
+        source: 'INV-26-001',
+        recordedBy: { id: ownerId },
+      });
+      const inherited = {
+        status: 'set',
+        unitCost: '120.0000',
+        costBasis: 'factory_invoice',
+        effectiveFrom: today,
+        inheritedFrom: 'style',
+      };
+      expect(added.variants.map((variant) => variant.cost)).toEqual([inherited, inherited]);
+
+      const override = await recordCost(first.productId, {
+        variantId: second.id,
+        seasonId: season.id,
+        costBasis: 'estimate',
+        unitCost: '130.5',
+        effectiveFrom: today,
+      });
+      expect(override.status, JSON.stringify(override.body)).toBe(201);
+      expect(RecordCostResponse.parse(override.body).record.variant).toEqual({
+        id: second.id,
+        code: second.code,
+      });
+
+      const page = await style(first.productId);
+      const byId = new Map(page.parsed.variants.map((variant) => [variant.id, variant.cost]));
+      expect(byId.get(first.id)).toEqual(inherited);
+      expect(byId.get(second.id)).toEqual({
+        status: 'set',
+        unitCost: '130.5000',
+        costBasis: 'estimate',
+        effectiveFrom: today,
+        inheritedFrom: 'variant',
+      });
+
+      // The style page reads costForMany, which equals costFor for every id.
+      const costs = api.app.get(CostService);
+      const many = await costs.costForMany([first.id, second.id], today);
+      for (const id of [first.id, second.id]) {
+        expect(many.get(id)).toMatchObject(await costs.costFor(id, today));
+      }
+
+      const entries = await costEntriesOf(first.productId);
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({
+        action: 'cost_record.recorded',
+        record_type: 'style',
+        record_label: first.style.code,
+        actor_user_id: ownerId,
+        reason: null,
+        after: {
+          costRecordId: added.record.id,
+          variantId: null,
+          seasonCode: season.code,
+          unitCost: '120.0000',
+          effectiveFrom: today,
+          source: 'INV-26-001',
+        },
+      });
+      expect(entries[1]?.after).toMatchObject({ variantId: second.id, variantCode: second.code });
+    });
+
+    it('needs a reason for a backdated record (422 REASON_REQUIRED) and saves one given', async () => {
+      const sku = await newStyle();
+      const season = await newSeason();
+      const body = {
+        seasonId: season.id,
+        costBasis: 'purchase_landed',
+        unitCost: '90',
+        effectiveFrom: '2000-01-01',
+      };
+
+      const refused = await recordCost(sku.productId, body);
+      const blank = await recordCost(sku.productId, { ...body, reason: '   ' });
+      const saved = await recordCost(sku.productId, { ...body, reason: 'Invoice found late' });
+
+      expect(refused.status).toBe(422);
+      expect(refused.body).toMatchObject({ code: 'REASON_REQUIRED' });
+      expect(blank.status).toBe(422);
+      expect(blank.body).toMatchObject({ code: 'REASON_REQUIRED' });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+      const entries = await costEntriesOf(sku.productId);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ reason: 'Invoice found late' });
+      const { rows } = await api.owner.pool.query<{ count: string }>(
+        'SELECT count(*) FROM cost_records WHERE product_id = $1',
+        [sku.productId],
+      );
+      expect(rows[0]?.count).toBe('1');
+    });
+
+    it('takes an archived season, refuses a variant of another style, an unknown season, and a bad body', async () => {
+      const sku = await newStyle();
+      const other = await newStyle();
+      const season = await newSeason();
+      const archived = await api.call(owner, 'POST', `/api/seasons/${season.id}/archive`);
+      expect(archived.status, JSON.stringify(archived.body)).toBe(200);
+      const body = {
+        seasonId: season.id,
+        costBasis: 'estimate',
+        unitCost: '1',
+        effectiveFrom: today,
+      };
+
+      const onArchived = await recordCost(sku.productId, body);
+      const foreignVariant = await recordCost(sku.productId, { ...body, variantId: other.id });
+      const unknownSeason = await recordCost(sku.productId, { ...body, seasonId: randomUUID() });
+      const unknownStyle = await recordCost(randomUUID(), body);
+      const fiveDecimals = await recordCost(sku.productId, { ...body, unitCost: '1.00001' });
+      const tooBig = await recordCost(sku.productId, { ...body, unitCost: '10000000000' });
+      const longSource = await recordCost(sku.productId, { ...body, source: 'x'.repeat(201) });
+      const longReason = await recordCost(sku.productId, { ...body, reason: 'x'.repeat(501) });
+      const noSeason = await recordCost(sku.productId, { ...body, seasonId: undefined });
+
+      expect(onArchived.status, JSON.stringify(onArchived.body)).toBe(201);
+      for (const reply of [foreignVariant, unknownSeason, unknownStyle]) {
+        expect(reply.status).toBe(404);
+        expect(reply.body).toMatchObject({ code: 'NOT_FOUND' });
+      }
+      for (const reply of [fiveDecimals, tooBig, longSource, longReason, noSeason]) {
+        expect(reply.status).toBe(422);
+        expect(reply.body).toMatchObject({ code: 'INVALID_INPUT' });
+      }
+      const max = await recordCost(sku.productId, { ...body, unitCost: '9999999999.9999' });
+      expect(max.status, JSON.stringify(max.body)).toBe(201);
+    });
+
+    it('lists the records newest recorded first, page by page', async () => {
+      const sku = await newStyle();
+      const season = await newSeason();
+      for (const unitCost of ['10', '20', '30']) {
+        const reply = await recordCost(sku.productId, {
+          seasonId: season.id,
+          costBasis: 'estimate',
+          unitCost,
+          effectiveFrom: today,
+        });
+        expect(reply.status).toBe(201);
+      }
+
+      const first = await api.call(
+        owner,
+        'GET',
+        `/api/styles/${sku.productId}/cost-records?limit=2`,
+      );
+      expect(first.status, JSON.stringify(first.body)).toBe(200);
+      const one = CostRecordListResponse.parse(first.body);
+      const second = await api.call(
+        owner,
+        'GET',
+        `/api/styles/${sku.productId}/cost-records?limit=2&cursor=${one.nextCursor}`,
+      );
+      const two = CostRecordListResponse.parse(second.body);
+      const missing = await api.call(owner, 'GET', `/api/styles/${randomUUID()}/cost-records`);
+      const badCursor = await api.call(
+        owner,
+        'GET',
+        `/api/styles/${sku.productId}/cost-records?cursor=nope`,
+      );
+
+      expect([...one.items, ...two.items].map((row) => row.unitCost)).toEqual([
+        '30.0000',
+        '20.0000',
+        '10.0000',
+      ]);
+      expect(two.nextCursor).toBeNull();
+      expect(one.items[0]?.recordedBy?.name).toEqual(expect.any(String));
+      expect(missing.status).toBe(404);
+      expect(badCursor.status).toBe(400);
+    });
+
+    /** A style whose one variant carries a cost record dated today, so a leak would show. */
+    async function costedStyle(reason?: string): Promise<SkuDetail> {
+      const sku = await newStyle();
+      const season = await newSeason();
+      const reply = await recordCost(sku.productId, {
+        seasonId: season.id,
+        costBasis: 'factory_invoice',
+        unitCost: '77.7',
+        effectiveFrom: today,
+        ...(reason ? { reason } : {}),
+      });
+      expect(reply.status, JSON.stringify(reply.body)).toBe(201);
+      return sku;
+    }
+
+    it('records a cost dated exactly today without a reason', async () => {
+      const sku = await costedStyle();
+      expect(await costEntriesOf(sku.productId)).toHaveLength(1);
+    });
+
+    it('drops cost from a PATCH style answer for an editor without cost.view', async () => {
+      const sku = await costedStyle();
+      const { parsed } = await style(sku.productId);
+
+      const reply = await api.call(editorWithoutCost, 'PATCH', `/api/styles/${sku.productId}`, {
+        updatedAt: parsed.updatedAt,
+        tags: ['edited'],
+      });
+
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      const raw = reply.body as StyleDetail;
+      expect(raw.tags).toEqual(['edited']);
+      expect(raw.variants.length).toBeGreaterThan(0);
+      expect(raw.variants.every((variant) => !('cost' in variant))).toBe(true);
+      expect(JSON.stringify(raw)).not.toMatch(/unitCost|77\.7/);
+    });
+
+    it('drops cost from a PATCH style code answer for catalog.manage without cost.view', async () => {
+      const sku = await costedStyle();
+      const { parsed } = await style(sku.productId);
+
+      const reply = await api.call(
+        managerWithoutCost,
+        'PATCH',
+        `/api/styles/${sku.productId}/code`,
+        { updatedAt: parsed.updatedAt, code: code('NEWSTYLE').toUpperCase() },
+      );
+
+      expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+      const raw = reply.body as StyleDetail;
+      expect(raw.variants.length).toBeGreaterThan(0);
+      expect(raw.variants.every((variant) => !('cost' in variant))).toBe(true);
+      expect(JSON.stringify(raw)).not.toMatch(/unitCost|77\.7/);
+    });
+
+    // The owner's ruling of 2026-11-11 "Hide whole entry" (spec 0012 AC-17): an audit reader
+    // without cost.view sees no cost_record.recorded entry anywhere, backdated or not, and a
+    // reader with it sees every one, reason included.
+    describe('cost entries hidden whole from an audit reader without cost.view', () => {
+      const reason = 'was 120.00 and now 95.50';
+      const lateReason = 'Invoice found late at 88.25';
+      const CRLF = '\r\n';
+      const LEAK = /cost_record|unitCost|77\.7|88\.25|95\.50|was 120/;
+      let styleId: string;
+      let costIds: string[];
+      let ownIds: string[];
+      let noCostId: string;
+      let noCost: string;
+
+      const historyPath = (limit: number, cursor?: string) =>
+        `/api/audit/records/style/${styleId}/entries?limit=${limit}` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+
+      /** Every entry id of the style's history, walking pages of `limit`. */
+      async function walk(cookie: string, limit: number): Promise<string[]> {
+        const ids: string[] = [];
+        let cursor: string | undefined;
+        for (let pages = 0; pages < 50; pages += 1) {
+          const reply = await api.call(cookie, 'GET', historyPath(limit, cursor));
+          expect(reply.status, JSON.stringify(reply.body)).toBe(200);
+          const page = AuditEntryListResponse.parse(reply.body);
+          ids.push(...page.items.map((item) => item.id));
+          if (!page.nextCursor) return ids;
+          // A full page before every cursor: a hidden entry never leaves a short page.
+          expect(page.items).toHaveLength(limit);
+          cursor = page.nextCursor;
+        }
+        throw new Error('the history did not end');
+      }
+
+      const exportOf = async (cookie: string) =>
+        (
+          await fetch(
+            `${api.base}/api/audit/entries/export?recordType=style&recordId=${styleId}&dayFrom=${today}&dayTo=${today}`,
+            { method: 'POST', headers: { cookie, origin: api.base } },
+          )
+        ).text();
+
+      /** The `rows` the newest `audit.exported` entry of `userId` counted. */
+      async function exportedRows(userId: string): Promise<unknown> {
+        const { rows } = await api.owner.pool.query<{ after: { rows: unknown } }>(
+          `SELECT after FROM audit_entries WHERE action = 'audit.exported' AND actor_user_id = $1
+           ORDER BY recorded_at DESC, id DESC LIMIT 1`,
+          [userId],
+        );
+        return rows[0]?.after.rows;
+      }
+
+      beforeAll(async () => {
+        const person = await api.addPerson(['manager']);
+        noCostId = person.id;
+        noCost = await api.signIn(person.email);
+        // Newest first the style holds: two edits, a backdated cost record, a cost record dated
+        // today, and its own earlier entries, so page boundaries fall on and around cost entries.
+        const sku = await costedStyle(reason);
+        styleId = sku.productId;
+        const season = await newSeason();
+        const late = await recordCost(styleId, {
+          seasonId: season.id,
+          costBasis: 'purchase_landed',
+          unitCost: '88.25',
+          effectiveFrom: '2000-01-01',
+          reason: lateReason,
+        });
+        expect(late.status, JSON.stringify(late.body)).toBe(201);
+        for (const tag of ['first', 'second']) {
+          const { parsed } = await style(styleId);
+          const edit = await api.call(owner, 'PATCH', `/api/styles/${styleId}`, {
+            updatedAt: parsed.updatedAt,
+            tags: [tag],
+          });
+          expect(edit.status, JSON.stringify(edit.body)).toBe(200);
+        }
+        const { rows } = await api.owner.pool.query<{ id: string }>(
+          `SELECT id FROM audit_entries WHERE record_id = $1 AND action = 'cost_record.recorded'
+           ORDER BY recorded_at DESC, id DESC`,
+          [styleId],
+        );
+        costIds = rows.map((row) => row.id);
+        expect(costIds).toHaveLength(2);
+        ownIds = await walk(owner, 100);
+      });
+
+      it('leaves them out of the record history, with no gap or repeat across pages', async () => {
+        expect(ownIds).toEqual(expect.arrayContaining(costIds));
+        const expected = ownIds.filter((id) => !costIds.includes(id));
+        expect(expected.length).toBeGreaterThanOrEqual(2);
+
+        for (const limit of [1, 2, 3]) {
+          expect(await walk(noCost, limit), `limit ${limit}`).toEqual(expected);
+          expect(await walk(owner, limit), `limit ${limit}`).toEqual(ownIds);
+        }
+        const hidden = await api.call(noCost, 'GET', historyPath(100));
+        expect(JSON.stringify(hidden.body)).not.toMatch(LEAK);
+      });
+
+      it('leaves them out of the audit list under every filter, the cost action included', async () => {
+        const { rows } = await api.owner.pool.query<{ correlation_id: string }>(
+          'SELECT correlation_id FROM audit_entries WHERE id = $1',
+          [costIds[0]],
+        );
+        for (const filter of [
+          `recordType=style&recordId=${styleId}`,
+          'action=cost_record.recorded',
+          `correlationId=${rows[0]?.correlation_id}`,
+          `actorUserId=${ownerId}&dayFrom=${today}&dayTo=${today}`,
+        ]) {
+          const path = `/api/audit/entries?${filter}&limit=100`;
+          const hidden = await api.call(noCost, 'GET', path);
+          const seen = await api.call(owner, 'GET', path);
+          expect(hidden.status, JSON.stringify(hidden.body)).toBe(200);
+          const hiddenIds = AuditEntryListResponse.parse(hidden.body).items.map((item) => item.id);
+          const seenIds = AuditEntryListResponse.parse(seen.body).items.map((item) => item.id);
+          expect(
+            hiddenIds.some((id) => costIds.includes(id)),
+            filter,
+          ).toBe(false);
+          expect(JSON.stringify(hidden.body), filter).not.toMatch(LEAK);
+          expect(
+            seenIds.some((id) => costIds.includes(id)),
+            filter,
+          ).toBe(true);
+        }
+        const seen = await api.call(owner, 'GET', `/api/audit/records/style/${styleId}/entries`);
+        const reasons = AuditEntryListResponse.parse(seen.body)
+          .items.filter((item) => costIds.includes(item.id))
+          .map((item) => item.reason);
+        expect(reasons).toEqual([lateReason, reason]);
+      });
+
+      it('answers the detail of one as a missing entry; the holder sees it whole', async () => {
+        const missing = await api.call(noCost, 'GET', `/api/audit/entries/${randomUUID()}`);
+        expect(missing.status).toBe(404);
+        for (const id of costIds) {
+          const hidden = await api.call(noCost, 'GET', `/api/audit/entries/${id}`);
+          expect(hidden.status).toBe(404);
+          expect(hidden.body).toEqual(missing.body);
+        }
+        const seen = await api.call(owner, 'GET', `/api/audit/entries/${costIds[0]}`);
+        expect(seen.status).toBe(200);
+        const detail = AuditEntryDetail.parse(seen.body);
+        expect(detail.reason).toBe(lateReason);
+        expect(JSON.stringify(detail.after)).toContain('unitCost');
+      });
+
+      it('answers an undo of one as a missing entry, never as not undoable', async () => {
+        const body = { reason: 'mistake' };
+        const undo = (cookie: string, id: string) =>
+          api.call(cookie, 'POST', `/api/audit/entries/${id}/undo`, body);
+
+        const missing = await undo(noCost, randomUUID());
+        const hidden = await undo(noCost, costIds[0] as string);
+        const seen = await undo(owner, costIds[0] as string);
+
+        expect(missing.status).toBe(404);
+        expect(hidden.status).toBe(404);
+        expect(hidden.body).toEqual(missing.body);
+        expect(seen.status).toBe(409);
+        expect(seen.body).toMatchObject({ code: 'NOT_UNDOABLE' });
+      });
+
+      it('leaves them out of the CSV and of the count its export entry records', async () => {
+        const fileHidden = await exportOf(noCost);
+        const fileSeen = await exportOf(owner);
+        const rowsOf = (file: string) => file.trim().split('\r\n').length - 1;
+
+        expect(fileHidden).not.toMatch(LEAK);
+        for (const id of costIds) {
+          expect(fileHidden).not.toContain(id);
+          expect(fileSeen).toContain(id);
+        }
+        expect(fileSeen).toContain(reason);
+        expect(fileSeen).toContain(lateReason);
+        expect(rowsOf(fileSeen) - rowsOf(fileHidden)).toBe(costIds.length);
+        expect(await exportedRows(noCostId)).toBe(rowsOf(fileHidden));
+        expect(await exportedRows(ownerId)).toBe(rowsOf(fileSeen));
+      });
+
+      // Security review M1, the lead's ruling of 2026-11-11: a holder's export stays visible
+      // (who and when), but a reader without cost.view gets its filter and rows redacted when
+      // the export could have held a cost entry (a cost action filter, or no action filter).
+      it('shows a holder export to a reader without cost.view, redacted when it could hold cost entries', async () => {
+        const exportWith = async (cookie: string, extra: string) => {
+          const reply = await fetch(
+            `${api.base}/api/audit/entries/export?recordType=style&recordId=${styleId}&dayFrom=${today}&dayTo=${today}${extra}`,
+            { method: 'POST', headers: { cookie, origin: api.base } },
+          );
+          expect(reply.status).toBe(200);
+          await reply.text();
+        };
+        await exportWith(owner, '&action=cost_record.recorded');
+        await exportWith(owner, '');
+        await exportWith(owner, '&action=style.updated');
+
+        const { rows } = await api.owner.pool.query<{
+          id: string;
+          after: Record<string, unknown>;
+        }>(
+          `SELECT id, after FROM audit_entries
+           WHERE action = 'audit.exported' AND actor_user_id = $1 AND after->>'recordId' = $2
+           ORDER BY recorded_at, id`,
+          [ownerId, styleId],
+        );
+        const redacted = rows.filter(
+          (row) =>
+            row.after['action'] === undefined || row.after['action'] === 'cost_record.recorded',
+        );
+        const complete = rows.filter((row) => !redacted.includes(row));
+        expect(redacted.length).toBeGreaterThanOrEqual(2);
+        expect(complete.length).toBeGreaterThanOrEqual(1);
+        const idsOf = (list: { id: string }[]) => list.map((row) => row.id);
+
+        for (const row of rows) {
+          const seen = await api.call(owner, 'GET', `/api/audit/entries/${row.id}`);
+          const shown = await api.call(noCost, 'GET', `/api/audit/entries/${row.id}`);
+          expect(seen.status).toBe(200);
+          expect(shown.status).toBe(200);
+          const holder = AuditEntryDetail.parse(seen.body);
+          const reader = AuditEntryDetail.parse(shown.body);
+          expect(holder.after).toEqual(row.after);
+          expect(reader.actor).toEqual(holder.actor);
+          expect(reader.recordedAt).toBe(holder.recordedAt);
+          if (redacted.includes(row)) {
+            expect(reader.after).toEqual({ redacted: true });
+            expect(reader.changes.map((change) => change.field)).toEqual(['redacted']);
+            expect(JSON.stringify(shown.body)).not.toMatch(/cost_record|recordId|"rows"/);
+          } else {
+            expect(reader.after).toEqual(row.after);
+          }
+        }
+
+        // The list and a record's history answer the same redaction.
+        const list = await api.call(
+          noCost,
+          'GET',
+          `/api/audit/entries?action=audit.exported&actorUserId=${ownerId}&limit=100`,
+        );
+        const listed = AuditEntryListResponse.parse(list.body).items;
+        expect(listed.map((item) => item.id)).toEqual(expect.arrayContaining(idsOf(rows)));
+        for (const item of listed.filter((entry) => idsOf(redacted).includes(entry.id))) {
+          expect(item.after).toEqual({ redacted: true });
+        }
+        for (const item of listed.filter((entry) => idsOf(complete).includes(entry.id))) {
+          expect(item.after).toMatchObject({ action: 'style.updated' });
+        }
+        const exportId = (redacted[0] as { id: string }).id;
+        const { rows: record } = await api.owner.pool.query<{ record_id: string }>(
+          'SELECT record_id FROM audit_entries WHERE id = $1',
+          [exportId],
+        );
+        const history = await api.call(
+          noCost,
+          'GET',
+          `/api/audit/records/audit_entry/${record[0]?.record_id}/entries`,
+        );
+        expect(AuditEntryListResponse.parse(history.body).items[0]?.after).toEqual({
+          redacted: true,
+        });
+
+        // A non-holder's CSV that holds those entries leaks neither the filter nor the rows.
+        const csv = await (
+          await fetch(
+            `${api.base}/api/audit/entries/export?action=audit.exported&actorUserId=${ownerId}&dayFrom=${today}&dayTo=${today}`,
+            { method: 'POST', headers: { cookie: noCost, origin: api.base } },
+          )
+        ).text();
+        for (const row of redacted) {
+          const line = csv.split(CRLF).find((candidate) => candidate.includes(row.id));
+          expect(line, row.id).toBeDefined();
+          expect(line).toContain('redacted');
+          expect(line).not.toMatch(/cost_record|recordId|rows/);
+        }
+        for (const row of complete) {
+          const line = csv.split(CRLF).find((candidate) => candidate.includes(row.id));
+          expect(line).toContain('style.updated');
+        }
+
+        // A non-holder's export could never hold a cost entry: it stays complete for everyone,
+        // an unfiltered one included, and carries no cost marker.
+        await exportWith(noCost, '');
+        const { rows: ownExports } = await api.owner.pool.query<{
+          id: string;
+          after: Record<string, unknown>;
+        }>(
+          `SELECT id, after FROM audit_entries
+           WHERE action = 'audit.exported' AND actor_user_id = $1 AND after->>'recordId' = $2`,
+          [noCostId, styleId],
+        );
+        expect(ownExports.length).toBeGreaterThanOrEqual(1);
+        const otherReader = await api.signIn((await api.addPerson(['manager'])).email);
+        for (const row of ownExports) {
+          expect(row.after['costVisible']).toBeUndefined();
+          for (const cookie of [otherReader, owner]) {
+            const reply = await api.call(cookie, 'GET', `/api/audit/entries/${row.id}`);
+            expect(reply.status).toBe(200);
+            expect(AuditEntryDetail.parse(reply.body).after).toEqual(row.after);
+          }
+        }
+
+        // The audit list of a holder shows every one whole.
+        const holderList = await api.call(
+          owner,
+          'GET',
+          `/api/audit/entries?action=audit.exported&actorUserId=${ownerId}&limit=100`,
+        );
+        for (const item of AuditEntryListResponse.parse(holderList.body).items) {
+          const row = rows.find((candidate) => candidate.id === item.id);
+          if (row) expect(item.after).toEqual(row.after);
+        }
+      });
+    });
+
+    it('answers 403 on the cost records without cost.view, and records nothing', async () => {
+      const sku = await newStyle();
+      const season = await newSeason();
+      const body = {
+        seasonId: season.id,
+        costBasis: 'estimate',
+        unitCost: '5',
+        effectiveFrom: today,
+      };
+
+      const read = await api.call(warehouse, 'GET', `/api/styles/${sku.productId}/cost-records`);
+      const add = await recordCost(sku.productId, body, warehouse);
+      const addByEditor = await recordCost(sku.productId, body, editorWithoutCost);
+
+      for (const reply of [read, add, addByEditor]) {
+        expect(reply.status).toBe(403);
+        expect(reply.body).toMatchObject({ code: 'FORBIDDEN' });
+      }
+      expect(await costEntriesOf(sku.productId)).toEqual([]);
+    });
+  },
+);

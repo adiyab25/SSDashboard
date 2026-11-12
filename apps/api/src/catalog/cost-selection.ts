@@ -34,13 +34,26 @@ export type CostResult = CostSet | NotSet;
  * Pure: it never reads the database and never returns 0 for a missing cost.
  */
 export function selectCost(records: readonly CostRecordCandidate[], onDate: string): CostResult {
+  const best = pickCostRecord(records, onDate);
+  if (!best) return { status: 'not_set' };
+  return { status: 'set', unitCost: best.unitCost, costBasis: best.costBasis };
+}
+
+/**
+ * The record `selectCost` decides by, by the same rule, or undefined when none applies on
+ * `onDate`. `CostService.costForMany` reads its `effectiveFrom` and whether it is the style's or
+ * an override (spec 0012, AC-12). Pure: it never reads the database.
+ */
+export function pickCostRecord(
+  records: readonly CostRecordCandidate[],
+  onDate: string,
+): CostRecordCandidate | undefined {
   let best: CostRecordCandidate | undefined;
   for (const record of records) {
     if (record.effectiveFrom > onDate) continue;
     if (!best || outranks(record, best)) best = record;
   }
-  if (!best) return { status: 'not_set' };
-  return { status: 'set', unitCost: best.unitCost, costBasis: best.costBasis };
+  return best;
 }
 
 function outranks(a: CostRecordCandidate, b: CostRecordCandidate): boolean {

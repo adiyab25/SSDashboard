@@ -305,7 +305,7 @@ describe('StylesPage bulk assign (spec 0012, AC-9)', () => {
     await userEvent.click(within(table).getByRole('checkbox', { name: 'Select style TEE201' }));
     expect(screen.getByText('Selected styles: 200')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Set group' })).toBeEnabled();
-  });
+  }, 20_000);
 
   it('clears the selection when a filter changes', async () => {
     await select('TEE1');

@@ -28,7 +28,7 @@ Products as the brand thinks of them: style, season, product group, and variants
 - [ ] Build it: `/develop catalog, styles & variants`
   - [x] Arabic and English search through every layer
   - [x] Seasons, product groups, and styles
-  - [ ] Inherited cost, visible and recordable
+  - [x] Inherited cost, visible and recordable
   - [ ] The channel upsert contract
 - [ ] Verify it: `/check verify catalog, styles & variants`
 - [ ] Test it: `/test catalog, styles & variants`
@@ -58,13 +58,13 @@ Spec [0015](../specs/0015-shopify-connector/index.md) (Accepted 2026-11-07; doma
 One customer record keyed on a normalized Egyptian phone number, holding many phones and channel ids, with merge as routine daily work and one timeline per customer.
 **Done when:** 010, 0010, +2010, and Arabic digit forms normalize to one number; one customer holds several phones and Shopify ids across stores; merge is a fast audited screen that can be undone; a repeat returner flag shows on the record; the timeline reads the same records through each role's lens.
 - [x] Design it (spec): `/architect customers by phone`
-- [ ] Build it: `/develop customers by phone`
+- [x] Build it: `/develop customers by phone`
   - [x] One phone, one customer, end to end
   - [x] Merge and undo as daily work
   - [x] The repeat returner flag
-  - [ ] One timeline through each lens
-- [ ] Verify it: `/check verify customers by phone`
-- [ ] Test it: `/test customers by phone`
+  - [x] One timeline through each lens
+- [x] Verify it: `/check verify customers by phone`
+- [x] Test it: `/test customers by phone`
 Spec [0014](../specs/0014-customers-by-phone/index.md) (Accepted 2026-11-07)
 
 ### 15. Onboarding imports · GA · needs a decision

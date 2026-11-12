@@ -8,3 +8,4 @@ export * from './seasons.js';
 export * from './product-groups.js';
 export * from './barcodes.js';
 export * from './styles.js';
+export * from './cost-records.js';
