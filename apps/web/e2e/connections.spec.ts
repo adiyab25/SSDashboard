@@ -404,6 +404,12 @@ for (const { dir, name: languageName } of LANGUAGES) {
           const asked: string[] = [];
           page.on('request', (request) => {
             const url = new URL(request.url());
+            // The shell's Shopify freshness line is shown to every hat with orders.view
+            // (spec 0015 AC-18, AC-27), so its read is allowed; every other
+            // connections call stays refused.
+            if (request.method() === 'GET' && url.pathname === '/api/connections/freshness') {
+              return;
+            }
             if (url.pathname.startsWith('/api/connections')) {
               asked.push(`${request.method()} ${url.pathname}`);
             }

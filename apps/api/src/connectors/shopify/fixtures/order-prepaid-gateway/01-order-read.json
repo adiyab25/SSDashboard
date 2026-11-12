@@ -352,6 +352,7 @@
           "transactions": [
             {
               "id": "gid://shopify/OrderTransaction/2220000005001",
+              "parentTransaction": null,
               "kind": "SALE",
               "status": "SUCCESS",
               "gateway": "Fixture Card Gateway",
@@ -386,11 +387,11 @@
                       "quantity": 1,
                       "totalAmount": {
                         "shopMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         },
                         "presentmentMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         }
                       },
@@ -406,11 +407,11 @@
                       "quantity": 1,
                       "totalAmount": {
                         "shopMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         },
                         "presentmentMoney": {
-                          "amount": "450.00",
+                          "amount": "405.00",
                           "currencyCode": "EGP"
                         }
                       },
@@ -418,10 +419,16 @@
                         "id": "gid://shopify/LineItem/6660000005002"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },

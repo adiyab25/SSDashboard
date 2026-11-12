@@ -37,9 +37,10 @@ export type HookRecordOutcome = 'recorded' | 'repeat' | 'unknown_topic';
  * `ModuleStateService.acceptsHook` (always `process` for this core capability today; a row is
  * recorded `ignored_unlicensed` when told otherwise), then in one transaction inserts the
  * `inbound_events` row with its minimized payload (dedupe on `X-Shopify-Webhook-Id`,
- * `ON CONFLICT DO NOTHING`) and, for a new row of a topic milestone 1 processes (the four order
- * topics and `app/uninstalled`, lead decision D9), sends its `inbox` job through the same
- * transaction. Every other topic is recorded and waits `received` for its later task. A paused
+ * `ON CONFLICT DO NOTHING`) and, for a new row of a topic the inbox processes (the four order
+ * topics and `app/uninstalled`, lead decision D9, and the two customer topics, task 11), sends its
+ * `inbox` job through the same transaction. Every other topic is recorded and waits `received`
+ * for its later task. A paused
  * connection still records (its job leaves the event `received`; resume is task 16).
  * `last_inbound_at` moves at most every 30 seconds per connection.
  *

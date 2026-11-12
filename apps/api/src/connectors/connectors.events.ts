@@ -55,3 +55,41 @@ export class InboundEventFailed {
     readonly failureCode: string,
   ) {}
 }
+
+/**
+ * A Shopify removal and addition of the same variant, on the same operating day, for the same
+ * absolute amount were netted (spec 0015 AC-11, Inbound processing item 5, its exported service
+ * table): the metric dictionary (feature 24) counts neither half. Published once per pair with
+ * `DomainEvents.publish(tx, event)` in the inbox job's unit of work. It never changes the order:
+ * the lines stay as Shopify's line items say. Ids and the day only (Law 151).
+ */
+export class ChannelEditNetted {
+  /** Takes the app order, the Shopify line item ids of the pair, and the operating day. */
+  constructor(
+    readonly orderId: string,
+    /** The removal's then the addition's Shopify line item id, each once. */
+    readonly channelLineIds: readonly string[],
+    /** The operating day of both sales, `YYYY-MM-DD` (`ssd_operating_day`). */
+    readonly operatingDay: string,
+  ) {}
+}
+
+/**
+ * A Shopify refund was seen on an order (spec 0015 AC-11, AC-12, its exported service table): the
+ * `RETURN` sales of one refund agreement, published once per refund id with
+ * `DomainEvents.publish(tx, event)` in the inbox job's unit of work. Refunds (35) and returns
+ * write back (37) listen. It never changes the order or the stock. Ids, an amount, and a time
+ * only, never a line text or a person (Law 151).
+ */
+export class ChannelRefundRecorded {
+  /** Takes the app order, the Shopify refund gid, the amount, and when it happened. */
+  constructor(
+    readonly orderId: string,
+    /** The Shopify refund gid (`gid://shopify/Refund/...`). */
+    readonly externalRefundId: string,
+    /** The sum of the refund's `RETURN` sales as a positive amount with two decimals. */
+    readonly amount: string,
+    /** When Shopify recorded the refund (`happenedAt`), an ISO instant. */
+    readonly occurredAt: string,
+  ) {}
+}

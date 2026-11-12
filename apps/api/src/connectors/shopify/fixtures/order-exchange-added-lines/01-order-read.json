@@ -281,6 +281,7 @@
           "transactions": [
             {
               "id": "gid://shopify/OrderTransaction/2220000008001",
+              "parentTransaction": null,
               "kind": "SALE",
               "status": "SUCCESS",
               "gateway": "manual",
@@ -327,10 +328,16 @@
                         "id": "gid://shopify/LineItem/6660000008001"
                       }
                     }
-                  ]
+                  ],
+                  "pageInfo": {
+                    "hasNextPage": false
+                  }
                 }
               }
-            ]
+            ],
+            "pageInfo": {
+              "hasNextPage": false
+            }
           }
         }
       },

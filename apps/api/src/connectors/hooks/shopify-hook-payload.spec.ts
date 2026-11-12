@@ -107,13 +107,15 @@ describe('minimizeShopifyWebhook (AC-6)', () => {
   });
 });
 
-describe('topicIsProcessed (D9)', () => {
-  it('sends a job for the four order topics and app/uninstalled only', () => {
+describe('topicIsProcessed (D9, task 11)', () => {
+  it('sends a job for the four order topics, the two customer topics, and app/uninstalled only', () => {
     for (const topic of [
       'orders/create',
       'orders/updated',
       'orders/edited',
       'orders/cancelled',
+      'customers/create',
+      'customers/update',
       'app/uninstalled',
     ]) {
       expect(topicIsProcessed(topic)).toBe(true);
@@ -121,7 +123,7 @@ describe('topicIsProcessed (D9)', () => {
     for (const topic of [
       'refunds/create',
       'products/update',
-      'customers/create',
+      'customers/delete',
       'inventory_levels/update',
       'bulk_operations/finish',
     ]) {

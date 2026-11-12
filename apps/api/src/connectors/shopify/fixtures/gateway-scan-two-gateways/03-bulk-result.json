@@ -1,0 +1,32 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "gateway-scan-two-gateways",
+    "step": "the JSONL result: two COD orders and one card order",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/usage/bulk-operations/queries",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/bulkOperationRunQuery",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/bulkOperation",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/BulkOperation"
+    ]
+  },
+  "request": {
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    },
+    "shopDomain": "fixture-store.myshopify.com",
+    "method": "GET",
+    "url": "https://storage.fixture.example/bulk/gateway-scan-two-gateways.jsonl",
+    "operationName": null,
+    "variables": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/jsonl"
+    },
+    "body": "{\"id\":\"gid://shopify/Order/5550001031001\",\"paymentGatewayNames\":[\"Cash on Delivery (COD)\"]}\n{\"id\":\"gid://shopify/Order/5550001032001\",\"paymentGatewayNames\":[\"Fixture Card Gateway\"]}\n{\"id\":\"gid://shopify/Order/5550001033001\",\"paymentGatewayNames\":[\"Cash on Delivery (COD)\"]}\n"
+  }
+}

@@ -28,6 +28,8 @@ export * from './tasks/task-enums.js';
 export * from './connectors/connector-enums.js';
 export * from './connectors/connection-config.js';
 export * from './connectors/connections.js';
+export * from './connectors/freshness.js';
+export * from './connectors/sync-runs.js';
 export * from './platform/cost-rules.js';
 export * from './credit/credit-amounts.js';
 export * from './settlement/settlement-states.js';

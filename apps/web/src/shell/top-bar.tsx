@@ -6,6 +6,7 @@ import { MenuIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ClientName } from './client-name';
 import { CommandPalette } from './command-palette';
+import { ConnectionFreshnessLine } from './connection-freshness-line';
 import { LicenseBanner } from './license-banner';
 import { LocationSwitcher } from './location-switcher';
 import { StaffNoticeBanner } from './staff-notice-banner';
@@ -13,8 +14,8 @@ import { UserMenu } from './user-menu';
 
 /**
  * The sticky top bar: sidebar toggle, client name, location switcher, command palette, user menu,
- * with the manager's license banner and the staff lapse notice under it (each shows only when
- * there is a notice).
+ * with the manager's license banner, the staff lapse notice, and the Shopify freshness line under
+ * it (each shows only when there is something to say).
  */
 export function TopBar() {
   const { t } = useTranslation();
@@ -48,6 +49,7 @@ export function TopBar() {
       </header>
       <LicenseBanner />
       <StaffNoticeBanner />
+      <ConnectionFreshnessLine />
     </>
   );
 }
