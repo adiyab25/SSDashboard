@@ -8,7 +8,11 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { OnlineStockGate } from '../src/inventory/online-stock/online-stock-gate.js';
-import { OnlineStockService } from '../src/inventory/online-stock/online-stock.service.js';
+import {
+  ONLINE_FLAG_KEY,
+  ONLINE_FLAG_LOCK,
+  OnlineStockService,
+} from '../src/inventory/online-stock/online-stock.service.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { fixtures, posting } from './ledger.js';
 
@@ -65,6 +69,21 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
     api.call(who, method, path, body);
 
   /** A warehouse as the owner plants it, optionally with stock confirmed counted. */
+  /** Waits until `count` transactions wait for the online flag lock (spec 0013 review N3). */
+  async function waitForFlagWaiters(count: number): Promise<void> {
+    for (let tries = 0; tries < 200; tries += 1) {
+      const { rows } = await api.owner.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_locks
+         WHERE locktype = 'advisory' AND NOT granted
+           AND classid = $1::int::oid AND objid = $2::int::oid AND objsubid = 2`,
+        [ONLINE_FLAG_LOCK, ONLINE_FLAG_KEY],
+      );
+      if ((rows[0]?.n ?? 0) >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`Fewer than ${String(count)} moves waited for the online flag lock`);
+  }
+
   async function warehouse(options: { verified?: boolean } = {}): Promise<string> {
     // An upper case code, as the location rules store it (the audit label must match that pattern).
     counter += 1;
@@ -199,23 +218,36 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       expect(['ONLINE_GATE_STALE', 'ALREADY_ONLINE']).toContain(loser.code);
     });
 
-    it('serializes parallel moves of two different warehouses on the online flag lock: one location online after both', async () => {
+    it('gives one success and one ONLINE_GATE_STALE for parallel moves of two different warehouses', async () => {
       const first = await warehouse({ verified: true });
       const second = await warehouse({ verified: true });
       const body = { confirmedVariantCount: 0, reason: 'Race' };
-      // Spec 0013 review M2: every move takes the online flag lock exclusive first, so the two
-      // never run their gates at the same time. The second reads the first's committed flag and
-      // moves it on (or meets the unique index guard and answers ONLINE_GATE_STALE).
-      const replies = await Promise.all([
-        call('POST', `/api/locations/${first}/make-online`, body),
-        call('POST', `/api/locations/${second}/make-online`, body),
-      ]);
-
-      expect(replies.some((reply) => reply.status === 200)).toBe(true);
-      for (const reply of replies.filter((r) => r.status !== 200)) {
-        expect(reply.status).toBe(409);
-        expect(reply.body).toMatchObject({ code: 'ONLINE_GATE_STALE' });
+      // Both moves read "nothing online", then queue on the online flag lock this connection
+      // holds (spec 0013 review N3). Once both wait, it lets go: the first to take the lock
+      // moves the flag, the second finds the flag moved since its read and answers stale.
+      const holder = await api.owner.pool.connect();
+      let replies: { status: number; body: unknown }[] = [];
+      try {
+        await holder.query('BEGIN');
+        await holder.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [
+          ONLINE_FLAG_LOCK,
+          ONLINE_FLAG_KEY,
+        ]);
+        const moves = Promise.all([
+          call('POST', `/api/locations/${first}/make-online`, body),
+          call('POST', `/api/locations/${second}/make-online`, body),
+        ]);
+        await waitForFlagWaiters(2);
+        await holder.query('COMMIT');
+        replies = await moves;
+      } finally {
+        holder.release();
       }
+
+      expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
+      expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
+        code: 'ONLINE_GATE_STALE',
+      });
       const online = await api.owner.pool.query<{ n: number }>(
         'SELECT count(*)::int AS n FROM locations WHERE sellable_online',
       );

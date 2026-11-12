@@ -33,9 +33,16 @@ export const ONLINE_FEED_LAG = '5 minutes';
  * security L3): taken shared by every orders write that reads the online location to reserve
  * there, and exclusive by the online flag moves (`makeOnline`, `stop`) before any row lock. So an
  * order either reserves before a move starts (and the move's gate sees its hold) or waits and reads
- * the moved flag; it never reserves at the old location after the gate passed.
+ * the moved flag; it never reserves at the old location after the gate passed. Taken in the two
+ * key form `pg_advisory_xact_lock(ONLINE_FLAG_LOCK, ONLINE_FLAG_KEY)`, a key space apart from the
+ * single key locks (orders `clientRef`, settings, license, the ledger's pair locks) and from the
+ * customers and identity namespaces (727_002 to 727_012). In `pg_locks` it shows as `classid` =
+ * `ONLINE_FLAG_LOCK`, `objid` = `ONLINE_FLAG_KEY`, `objsubid` = 2.
  */
-export const ONLINE_FLAG_LOCK = 'inventory.online_flag';
+export const ONLINE_FLAG_LOCK = 727_020;
+
+/** The second key of the online flag lock: there is one online flag per install. */
+export const ONLINE_FLAG_KEY = 1;
 
 /** Variants read per query when the gate counts a location's stock. */
 const GATE_CHUNK = 5000;
@@ -97,7 +104,9 @@ export class OnlineStockService {
    * transaction the lock would end with the statement.
    */
   async shareOnlineFlag(tx: Transaction): Promise<void> {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock_shared(hashtext(${ONLINE_FLAG_LOCK}))`);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock_shared(${ONLINE_FLAG_LOCK}::int, ${ONLINE_FLAG_KEY}::int)`,
+    );
   }
 
   /**
@@ -106,7 +115,9 @@ export class OnlineStockService {
    * and none starts until the move commits.
    */
   async lockOnlineFlag(tx: Transaction): Promise<void> {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${ONLINE_FLAG_LOCK}))`);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(${ONLINE_FLAG_LOCK}::int, ${ONLINE_FLAG_KEY}::int)`,
+    );
   }
 
   /** The online location (`{ id, code, name }`), or null when no location feeds online stock. */

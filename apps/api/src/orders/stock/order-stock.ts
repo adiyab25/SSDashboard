@@ -42,6 +42,8 @@ interface StockLine {
   variantId: string;
   quantity: number;
   shortQuantity: number;
+  /** The order is `packed`: its pieces are in a box, so a hold of it never moves (review N1). */
+  packed?: boolean;
 }
 
 /** What one line's hold came to: how many pieces still wait for stock. */
@@ -106,9 +108,14 @@ const READ_CHUNK = 5_000;
  * also registers the `orders.open_orders_held` gate check and holds open orders at a location
  * before it goes online.
  *
- * Every operation first takes the online flag lock shared (`OnlineStockService.shareOnlineFlag`),
- * so an order never reserves at a location while the online flag moves away from it (review M2).
- * Then it locks the SKU rows (`CatalogLocks.lockForShare`) and decides what is reservable from that
+ * Every operation that reads the online location to reserve there (`afterCreate`, `afterLink`,
+ * `afterEdit` when it adds lines, `topUp`, and each hold batch) first takes the online flag lock
+ * shared (`OnlineStockService.shareOnlineFlag`), before any other stock lock, so an order never
+ * reserves at a location while the online flag moves away from it (review M2); those operations
+ * wait while a flag move runs. A release only path (`afterCancel`, an edit that only removes
+ * lines) reads no online location and takes no flag lock (review N5); a unit that reserves after
+ * such a release takes the flag lock after the release's location locks, and a deadlock with a
+ * flag move is then broken by the runner's single rerun. Then it locks the SKU rows (`CatalogLocks.lockForShare`) and decides what is reservable from that
  * locked answer, so a SKU archived meanwhile is skipped, never a ledger refusal.
  *
  * It must never write an order table itself (the writer does), never read an inventory table (it
@@ -174,7 +181,8 @@ export class OrderStock implements OnModuleInit {
    * breaks.
    */
   async afterEdit(tx: OrderTransaction, orderId: string, lines: EditedLines): Promise<void> {
-    await this.onlineStock.shareOnlineFlag(tx);
+    // Only an edit that adds lines reads the online location (review N5).
+    if (lines.addedLineIds.length > 0) await this.onlineStock.shareOnlineFlag(tx);
     const added = await this.openLines(tx, orderId, lines.addedLineIds);
     if (lines.cancelledLineIds.length > 0) {
       const cancelledVariants = await this.variantsOf(tx, orderId, lines.cancelledLineIds);
@@ -194,7 +202,7 @@ export class OrderStock implements OnModuleInit {
    * brings every line's `short_quantity` to 0.
    */
   async afterCancel(tx: OrderTransaction, orderId: string): Promise<void> {
-    await this.onlineStock.shareOnlineFlag(tx);
+    // A release only: no online location is read, so no flag lock (review N5).
     await this.ledger.releaseSource(tx, { sourceType: SOURCE_TYPE, sourceId: orderId });
     await this.writer.clearShortQuantities(tx, orderId);
   }
@@ -215,7 +223,8 @@ export class OrderStock implements OnModuleInit {
    * The `orders.open_orders_held` gate check (AC-26, spec 0011 AC-19): passes when every open line
    * with a variant of an order in `new`, `confirmed`, or `packed` holds an active reservation at
    * the candidate location or at the current online location (holds there stay there after the
-   * move); `count` is the lines that do not. Reads only, through `executor`, in a few set based
+   * move), and a line of a `packed` order counts as held wherever its active reservation is (its
+   * pieces are in a box, review N1); `count` is the lines that do not. Reads only, through `executor`, in a few set based
    * statements whatever the number of open orders.
    */
   async openOrdersHeld(locationId: string, executor: Executor): Promise<OnlineGateCheckResult> {
@@ -237,9 +246,10 @@ export class OrderStock implements OnModuleInit {
    * `POST /api/orders/hold-open-orders` (AC-26, spec 0011 AC-19): reserves at `locationId` every
    * open line the gate check counts as unheld, oldest order first, one `OrderTransactions.run` per
    * batch of at most 200 lines, each order row locked first (ascending id). A line holding nothing
-   * is reserved there; a line held at a location that does not feed online stock is released there
-   * and reserved here (releasing there cannot oversell); a line held at the current online location
-   * is never touched. A shortage never refuses: the line waits for stock and counts in
+   * is reserved there; a line of a `new` or `confirmed` order held at a location that does not feed
+   * online stock is released there and reserved here (releasing there cannot oversell); a line held
+   * at the current online location, and a held line of a `packed` order wherever it is held, is
+   * never touched (review N1). A shortage never refuses: the line waits for stock and counts in
    * `linesShort`. A repeat holds nothing twice. Throws `LocationNotFound` for a missing or archived
    * location or one that could never feed online stock, and `OrderLockTimeout` (503 `BUSY`) when a
    * batch waits too long; batches already done stay done. Must not be called inside an order
@@ -279,15 +289,19 @@ export class OrderStock implements OnModuleInit {
     await this.onlineStock.shareOnlineFlag(tx);
     const online = (await this.onlineStock.onlineLocation(tx))?.id.toLowerCase() ?? null;
     // Read again under the locks: an order may have moved on, or a line been cancelled.
-    const { rows: holding } = await tx.execute<{ id: string }>(sql`
-      SELECT id FROM orders WHERE id = ANY(${pgArray(orderIds)}::uuid[])
+    const { rows: holding } = await tx.execute<{ id: string; packed: boolean }>(sql`
+      SELECT id, fulfillment_state = 'packed' AS packed FROM orders
+      WHERE id = ANY(${pgArray(orderIds)}::uuid[])
         AND fulfillment_state IN ('new', 'confirmed', 'packed')`);
-    const holdingIds = new Set(holding.map((row) => row.id));
+    const holdingIds = new Map(holding.map((row) => [row.id, row.packed]));
     const wanted = new Set(batch.map((line) => line.id));
     const open: StockLine[] = [];
     for (const orderId of orderIds) {
       if (!holdingIds.has(orderId)) continue;
-      open.push(...(await this.openLines(tx, orderId)).filter((line) => wanted.has(line.id)));
+      const packed = holdingIds.get(orderId) === true;
+      for (const line of await this.openLines(tx, orderId)) {
+        if (wanted.has(line.id)) open.push({ ...line, packed });
+      }
     }
     const reservable = await this.reservable(open, tx, tx);
     const active = await this.activeAt([...new Set(reservable.map((line) => line.orderId))], tx);
@@ -295,6 +309,8 @@ export class OrderStock implements OnModuleInit {
     const toHold = reservable.filter((line) => {
       const heldAt = active.get(line.id);
       if (heldAt === at || (heldAt !== undefined && heldAt === online)) return false;
+      // A packed order's pieces are in a box: its hold never moves, wherever it is (review N1).
+      if (heldAt !== undefined && line.packed === true) return false;
       if (heldAt !== undefined) elsewhere.push(line.id);
       return true;
     });
@@ -481,7 +497,8 @@ export class OrderStock implements OnModuleInit {
 
   /**
    * The open reservable lines of holding orders that hold no active reservation at `locationId`
-   * nor at the online location `onlineId` (spec 0011 AC-19), oldest order first (`placed_at`,
+   * nor at the online location `onlineId` (spec 0011 AC-19), a held line of a `packed` order
+   * excepted (it counts as held anywhere, review N1), oldest order first (`placed_at`,
    * `id`, then line position). Reads only, through `executor`: one read of the lines, one of the
    * SKUs, and one set based read of the reservations per 5,000 orders.
    */
@@ -496,8 +513,10 @@ export class OrderStock implements OnModuleInit {
       variant_id: string;
       quantity: number;
       short_quantity: number;
+      packed: boolean;
     }>(sql`
-      SELECT l.id, l.order_id, l.variant_id, l.quantity, l.short_quantity
+      SELECT l.id, l.order_id, l.variant_id, l.quantity, l.short_quantity,
+             o.fulfillment_state = 'packed' AS packed
       FROM order_lines l JOIN orders o ON o.id = l.order_id
       WHERE o.fulfillment_state IN ('new', 'confirmed', 'packed')
         AND l.line_state = 'open' AND l.variant_id IS NOT NULL
@@ -509,6 +528,7 @@ export class OrderStock implements OnModuleInit {
         variantId: row.variant_id,
         quantity: row.quantity,
         shortQuantity: row.short_quantity,
+        packed: row.packed,
       })),
       executor,
     );
@@ -520,7 +540,9 @@ export class OrderStock implements OnModuleInit {
     const online = onlineId?.toLowerCase() ?? null;
     return candidates.filter((line) => {
       const heldAt = active.get(line.id);
-      return heldAt === undefined || (heldAt !== at && heldAt !== online);
+      if (heldAt === undefined) return true;
+      // A packed order held anywhere counts as held: its pieces are in a box (review N1).
+      return !line.packed && heldAt !== at && heldAt !== online;
     });
   }
 

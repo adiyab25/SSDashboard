@@ -80,7 +80,7 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
   - [x] One manual order through every layer
   - [x] Editing, confirming, cancelling, packing, and the hold
   - [x] The channel intake contract for feature 13
-  - [ ] Stock: holds at creation, short lines, and carrier shipments
+  - [x] Stock: holds at creation, short lines, and carrier shipments
   - [ ] Carrier and cash moves, the shipment posting, and scale
 - [ ] Verify it: `/check verify orders & their state machines`
 - [ ] Test it: `/test orders & their state machines`

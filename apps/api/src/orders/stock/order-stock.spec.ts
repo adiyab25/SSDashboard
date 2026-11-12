@@ -243,6 +243,16 @@ describe('OrderStock (spec 0013 AC-13)', () => {
     expect(catalog.getSkus).not.toHaveBeenCalled();
   });
 
+  it('takes no flag lock on a release only path: a cancel, or an edit that only removes lines (review N5)', async () => {
+    const { stock, tx, onlineStock } = stockWith();
+    await stock.afterCancel(tx, ORDER);
+    await stock.afterEdit(tx, ORDER, { addedLineIds: [], cancelledLineIds: [LINE_A] });
+
+    expect(onlineStock.shareOnlineFlag).not.toHaveBeenCalled();
+    await stock.afterEdit(tx, ORDER, { addedLineIds: [LINE_B], cancelledLineIds: [LINE_A] });
+    expect(onlineStock.shareOnlineFlag).toHaveBeenCalledTimes(1);
+  });
+
   it('skips a SKU the lock finds archived instead of calling the ledger for it (review m3)', async () => {
     const { stock, tx, ledger } = stockWith({ skus: { [SKU_A]: { archived: true } } });
     await stock.afterCreate(tx, ORDER, [LINE_A, LINE_B]);

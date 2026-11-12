@@ -8,7 +8,10 @@ import {
 } from '@ssdashboard/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
-import { ONLINE_FLAG_LOCK } from '../src/inventory/online-stock/online-stock.service.js';
+import {
+  ONLINE_FLAG_KEY,
+  ONLINE_FLAG_LOCK,
+} from '../src/inventory/online-stock/online-stock.service.js';
 import { OPEN_ORDERS_HELD_CHECK } from '../src/orders/stock/order-stock.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { makeOnline, plantWarehouse, putOnShelf } from './order-stock.js';
@@ -224,24 +227,30 @@ describe(
       const c = await plantWarehouse(api);
       const id = await create(shelfSku);
       expect(Object.values(await active(id))).toEqual([[b, 0, 1]]);
-      const atA = (
-        await owner<{ n: number }>(
-          `SELECT count(*)::int AS n FROM reservations WHERE status = 'active' AND location_id = $1::uuid`,
-          [a],
-        )
-      ).rows[0]?.n as number;
+      /** Active holds at A, split by whether their order is packed (a packed hold never moves). */
+      const heldAtA = async (packed: boolean) =>
+        (
+          await owner<{ n: number }>(
+            `SELECT count(*)::int AS n FROM reservations r JOIN orders o ON o.id = r.source_id
+             WHERE r.status = 'active' AND r.source_type = 'order' AND r.location_id = $1::uuid
+               AND (o.fulfillment_state = 'packed') = $2`,
+            [a, packed],
+          )
+        ).rows[0]?.n as number;
+      const atA = await heldAtA(false);
+      const packedAtA = await heldAtA(true);
       expect(atA).toBeGreaterThan(0);
+      // The order packed from A in the case above still holds there.
+      expect(packedAtA).toBe(1);
       expect(await ordersCheck(c)).toMatchObject({ passed: false, count: atA });
 
       const result = await hold(c);
-      // A's holds moved to C (C has no stock, so they wait there); B's online hold stayed.
+      // A's holds of new and confirmed orders moved to C (no stock there, so they wait); B's online
+      // hold and the packed order's hold at A stayed (review N1).
       expect(result).toEqual({ linesHeld: 0, linesShort: atA, linesLeft: 0 });
       expect(Object.values(await active(id))).toEqual([[b, 0, 1]]);
-      const left = await owner<{ n: number }>(
-        `SELECT count(*)::int AS n FROM reservations WHERE status = 'active' AND location_id = $1::uuid`,
-        [a],
-      );
-      expect(left.rows[0]?.n).toBe(0);
+      expect(await heldAtA(false)).toBe(0);
+      expect(await heldAtA(true)).toBe(packedAtA);
     });
 
     it('makes an order that races a flag move wait, then reserve at the new online location (review M2)', async () => {
@@ -249,18 +258,35 @@ describe(
       await putOnShelf(api, a, [s], 5);
       const client = await api.owner.pool.connect();
       let created: Promise<string> | null = null;
+      let settled = false;
       try {
         await client.query('BEGIN');
         // A flag move in flight: it holds the online flag lock exclusive and moves the flag to A.
-        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [ONLINE_FLAG_LOCK]);
+        await client.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [
+          ONLINE_FLAG_LOCK,
+          ONLINE_FLAG_KEY,
+        ]);
         await client.query('UPDATE locations SET sellable_online = false WHERE sellable_online');
         await client.query('UPDATE locations SET sellable_online = true WHERE id = $1', [a]);
         created = create(s);
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        const { rows } = await owner<{ n: number }>(
-          `SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`,
-        );
-        expect(rows[0]?.n).toBeGreaterThan(0);
+        const settle = () => {
+          settled = true;
+        };
+        void created.then(settle, settle);
+        // Wait until the order's transaction waits on exactly this lock (review N4).
+        let waiting = 0;
+        for (let tries = 0; tries < 200 && waiting === 0; tries += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          const { rows } = await owner<{ n: number }>(
+            `SELECT count(*)::int AS n FROM pg_locks
+             WHERE locktype = 'advisory' AND NOT granted
+               AND classid = $1::int::oid AND objid = $2::int::oid AND objsubid = 2`,
+            [ONLINE_FLAG_LOCK, ONLINE_FLAG_KEY],
+          );
+          waiting = rows[0]?.n ?? 0;
+        }
+        expect(waiting).toBe(1);
+        expect(settled).toBe(false);
         await client.query('COMMIT');
       } catch (error) {
         await client.query('ROLLBACK');
@@ -270,6 +296,30 @@ describe(
       }
       const id = await created;
       expect(Object.values(await active(id))).toEqual([[a, 1, 0]]);
+    });
+
+    it('never moves the hold of a packed order, and counts it as held for any candidate (review N1)', async () => {
+      // A is online (the race above moved the flag there); pack an order from A, then stop.
+      const packedId = await create(shelfSku);
+      expect(Object.values(await active(packedId))).toEqual([[a, 1, 0]]);
+      expect((await move(packedId, 'confirm')).status).toBe(200);
+      const packed = await move(packedId, 'pack', warehouse);
+      expect(packed.status, JSON.stringify(packed.body)).toBe(200);
+      const stopped = await api.call(manager, 'POST', '/api/locations/online/stop', {
+        reason: 'Stop online stock for the packed order case',
+      });
+      expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
+      const d = await plantWarehouse(api);
+      const before = await ordersCheck(d);
+
+      const result = await hold(d);
+
+      // The other open orders held at A moved to D; the packed one stayed in its box at A.
+      expect(result.linesLeft).toBe(0);
+      expect(result.linesHeld + result.linesShort).toBe(before?.count);
+      expect(Object.values(await active(packedId))).toEqual([[a, 1, 0]]);
+      expect((await detail(packedId)).fulfillmentState).toBe('packed');
+      expect(await ordersCheck(d)).toMatchObject({ passed: true, count: 0 });
     });
   },
 );
