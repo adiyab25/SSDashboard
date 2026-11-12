@@ -68,7 +68,6 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
   const call = (method: string, path: string, body?: unknown, who = cookie) =>
     api.call(who, method, path, body);
 
-  /** A warehouse as the owner plants it, optionally with stock confirmed counted. */
   /** Waits until `count` transactions wait for the online flag lock (spec 0013 review N3). */
   async function waitForFlagWaiters(count: number): Promise<void> {
     for (let tries = 0; tries < 200; tries += 1) {
@@ -84,6 +83,7 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
     throw new Error(`Fewer than ${String(count)} moves waited for the online flag lock`);
   }
 
+  /** A warehouse as the owner plants it, optionally with stock confirmed counted. */
   async function warehouse(options: { verified?: boolean } = {}): Promise<string> {
     // An upper case code, as the location rules store it (the audit label must match that pattern).
     counter += 1;

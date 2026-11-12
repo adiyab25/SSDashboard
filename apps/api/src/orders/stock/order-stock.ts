@@ -108,21 +108,22 @@ const READ_CHUNK = 5_000;
  * also registers the `orders.open_orders_held` gate check and holds open orders at a location
  * before it goes online.
  *
- * Every operation that reads the online location to reserve there (`afterCreate`, `afterLink`,
- * `afterEdit` when it adds lines, `topUp`, and each hold batch) first takes the online flag lock
- * shared (`OnlineStockService.shareOnlineFlag`), before any other stock lock, so an order never
- * reserves at a location while the online flag moves away from it (review M2); those operations
- * wait while a flag move runs. A release only path (`afterCancel`, an edit that only removes
- * lines) reads no online location and takes no flag lock (review N5); a unit that reserves after
- * such a release takes the flag lock after the release's location locks, and a deadlock with a
- * flag move is then broken by the runner's single rerun. Then it locks the SKU rows (`CatalogLocks.lockForShare`) and decides what is reservable from that
+ * Every operation that can reserve (`afterCreate`, `afterLink`, `afterEdit` always, `topUp`,
+ * and each hold batch) first takes the online flag lock shared
+ * (`OnlineStockService.shareOnlineFlag`), before any other stock lock, so an order never reserves
+ * at a location while the online flag moves away from it (review M2); those operations wait while
+ * a flag move runs. `afterEdit` takes it even for an edit that only removes lines, because the
+ * same unit may reserve next (the Shopify inbox applies a removal, then creates an exchange
+ * replacement), and the shared lock must come before the release's location locks. Only
+ * `afterCancel`, after which the order never reserves again, takes no flag lock (review N5). Then
+ * it locks the SKU rows (`CatalogLocks.lockForShare`) and decides what is reservable from that
  * locked answer, so a SKU archived meanwhile is skipped, never a ledger refusal.
  *
  * It must never write an order table itself (the writer does), never read an inventory table (it
  * asks the ledger and the online stock service), and never open a transaction except one
  * `OrderTransactions.run` per hold batch. Lines without a variant, and lines whose SKU cannot hold
- * stock (archived, not a stocked kind, or lot tracked, which an order line cannot name), are neither
- * reserved nor short. With no online location nothing new is reserved: a line holding nothing reads
+ * stock (archived, not a stocked kind, or lot tracked, which an order line cannot name), are
+ * neither reserved nor short. With no online location nothing new is reserved: a line holding nothing reads
  * short by its quantity, a held line keeps its stored short, and a pack is refused. A line whose
  * active reservation sits at another location keeps it and ships from there (spec 0011 AC-19:
  * reservations at the old location stay there).
@@ -181,8 +182,8 @@ export class OrderStock implements OnModuleInit {
    * breaks.
    */
   async afterEdit(tx: OrderTransaction, orderId: string, lines: EditedLines): Promise<void> {
-    // Only an edit that adds lines reads the online location (review N5).
-    if (lines.addedLineIds.length > 0) await this.onlineStock.shareOnlineFlag(tx);
+    // Always, also for a removal only edit: the unit may reserve next (final delta check).
+    await this.onlineStock.shareOnlineFlag(tx);
     const added = await this.openLines(tx, orderId, lines.addedLineIds);
     if (lines.cancelledLineIds.length > 0) {
       const cancelledVariants = await this.variantsOf(tx, orderId, lines.cancelledLineIds);
@@ -224,8 +225,8 @@ export class OrderStock implements OnModuleInit {
    * with a variant of an order in `new`, `confirmed`, or `packed` holds an active reservation at
    * the candidate location or at the current online location (holds there stay there after the
    * move), and a line of a `packed` order counts as held wherever its active reservation is (its
-   * pieces are in a box, review N1); `count` is the lines that do not. Reads only, through `executor`, in a few set based
-   * statements whatever the number of open orders.
+   * pieces are in a box, review N1); `count` is the lines that do not. Reads only, through
+   * `executor`, in a few set based statements whatever the number of open orders.
    */
   async openOrdersHeld(locationId: string, executor: Executor): Promise<OnlineGateCheckResult> {
     const online = await this.onlineStock.onlineLocation(executor);

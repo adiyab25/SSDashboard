@@ -243,14 +243,16 @@ describe('OrderStock (spec 0013 AC-13)', () => {
     expect(catalog.getSkus).not.toHaveBeenCalled();
   });
 
-  it('takes no flag lock on a release only path: a cancel, or an edit that only removes lines (review N5)', async () => {
+  it('takes no flag lock on a cancel, but always on an edit, a removal only one included', async () => {
     const { stock, tx, onlineStock } = stockWith();
     await stock.afterCancel(tx, ORDER);
-    await stock.afterEdit(tx, ORDER, { addedLineIds: [], cancelledLineIds: [LINE_A] });
-
     expect(onlineStock.shareOnlineFlag).not.toHaveBeenCalled();
-    await stock.afterEdit(tx, ORDER, { addedLineIds: [LINE_B], cancelledLineIds: [LINE_A] });
+
+    // A removal only edit may be followed by a reserve in the same unit (final delta check).
+    await stock.afterEdit(tx, ORDER, { addedLineIds: [], cancelledLineIds: [LINE_A] });
     expect(onlineStock.shareOnlineFlag).toHaveBeenCalledTimes(1);
+    await stock.afterEdit(tx, ORDER, { addedLineIds: [LINE_B], cancelledLineIds: [LINE_A] });
+    expect(onlineStock.shareOnlineFlag).toHaveBeenCalledTimes(2);
   });
 
   it('skips a SKU the lock finds archived instead of calling the ledger for it (review m3)', async () => {
