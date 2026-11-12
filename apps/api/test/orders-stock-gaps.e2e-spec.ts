@@ -355,6 +355,39 @@ describe(
         }
         expect((await detail(id)).fulfillmentState).toBe('new');
       });
+
+      // Re-verify at f87c78a (lead ruling on C1, spec 0011 AC-19 and amended spec 0013 AC-26): a
+      // line waiting at the online location is "held" there, so a hold at another candidate leaves
+      // it, and after the move it still waits at the old location, not at the new one.
+      it('keeps a line waiting at the online location there through a hold and a move; only stock at that location fills it', async () => {
+        const x = await sku();
+        const id = await create([{ variantId: x, quantity: 1 }]);
+        expect(Object.values(await active(id))).toEqual([[online, 0, 1]]);
+        expect(await shorts(id)).toEqual([1]);
+
+        const next = await plantWarehouse(api);
+        await putOnShelf(api, next, [x], 1);
+        const held = await hold(next);
+        expect(held.status, JSON.stringify(held.body)).toBe(200);
+        // Never taken off the online location, even though `next` has the piece.
+        expect(Object.values(await active(id))).toEqual([[online, 0, 1]]);
+
+        await makeOnline(api, next);
+        expect((await move(id, 'confirm')).status).toBe(200);
+        // The top up leaves a line held at a location that is not online where it is.
+        expect(Object.values(await active(id))).toEqual([[online, 0, 1]]);
+        expect(await shorts(id)).toEqual([1]);
+        const refused = await move(id, 'pack', {}, warehouse);
+        expect(refused.status).toBe(409);
+        expect(refused.body).toMatchObject({ code: 'LINE_SHORT' });
+
+        // A piece arriving at the old location fills it (ReservationFilled), and it packs from there.
+        await putOnShelf(api, online, [x], 1);
+        expect(Object.values(await active(id))).toEqual([[online, 1, 0]]);
+        expect(await shorts(id)).toEqual([0]);
+        const packed = await move(id, 'pack', {}, warehouse);
+        expect(packed.status, JSON.stringify(packed.body)).toBe(200);
+      });
     });
   },
 );
