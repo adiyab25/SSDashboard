@@ -3,6 +3,7 @@ import { moneyInput } from '../digit-input.js';
 import { LocalizedText } from '../localized-text.js';
 import { MoneyString } from '../money.js';
 import { BarcodeCode } from './barcodes.js';
+import { VariantCost } from './cost-records.js';
 import { OptionRole } from './option-roles.js';
 import { SeasonFilter } from './search.js';
 import {
@@ -66,7 +67,11 @@ export const StyleOption = z.object({
 /** The validated shape of `StyleOption`, as the api and web see it after parsing. */
 export type StyleOption = z.infer<typeof StyleOption>;
 
-/** One variant on the style page: code, option values, price, archived, and barcodes. */
+/**
+ * One variant on the style page: code, option values, price, archived, and barcodes, plus its
+ * `cost` in force on today's operating day (spec 0012, AC-12) only for a caller holding
+ * `cost.view`; without the grant the key is absent (`cost` is in `COST_FIELD_KEYS`).
+ */
 export const StyleVariant = z.object({
   id: z.uuid(),
   code: z.string(),
@@ -74,6 +79,7 @@ export const StyleVariant = z.object({
   price: MoneyString.nullable(),
   archived: z.boolean(),
   barcodes: z.array(SkuBarcode),
+  cost: VariantCost.optional(),
 });
 /** The validated shape of `StyleVariant`, as the api and web see it after parsing. */
 export type StyleVariant = z.infer<typeof StyleVariant>;

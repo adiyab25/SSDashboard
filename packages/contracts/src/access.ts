@@ -235,6 +235,8 @@ export const COST_FIELD_KEYS = [
   'avgUnitCost',
   'totalValue',
   'totalCost',
+  // Spec 0012, AC-12 and AC-16: a variant's cost in force on the style page (an object).
+  'cost',
 ] as const;
 /** One of {@link COST_FIELD_KEYS}. */
 export type CostFieldKey = (typeof COST_FIELD_KEYS)[number];

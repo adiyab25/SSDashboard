@@ -19,6 +19,7 @@ import type { z } from 'zod';
 import type { AuditEntryInput, JsonObject } from '../../audit/audit.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { DATABASE } from '../../database/database.module.js';
+import type { Access } from '../../platform/access/access.js';
 import { pgArray, pgConstraint, type Executor } from '../../database/sql.js';
 import { encodeKeyset } from '../../platform/keyset-cursor.js';
 import { BARCODES_CODE_UNIQUE, barcodeTaken } from '../barcodes/barcodes.service.js';
@@ -30,6 +31,7 @@ import {
   OPTIONS_UNIQUE,
   optionCombinationTaken,
 } from '../catalog.service.js';
+import { CostService } from '../cost.service.js';
 import {
   ISO_UTC,
   SKU_ROW_COLUMNS,
@@ -106,6 +108,19 @@ export function optionRoleOf(nameKeys: readonly string[]): OptionRole {
 }
 
 /**
+ * The `StyleDetail` serializer on `Access` (spec 0012, AC-12, AC-16): a caller holding
+ * `cost.view` gets the detail as is; any other caller gets it without the `cost` key on every
+ * variant (`cost` is in `COST_FIELD_KEYS`). Every style detail answer passes through it. Pure.
+ */
+export function serializeStyleDetail(
+  detail: StyleDetail,
+  access: Pick<Access, 'has'>,
+): StyleDetail {
+  if (access.has('cost.view')) return detail;
+  return { ...detail, variants: detail.variants.map(({ cost: _cost, ...variant }) => variant) };
+}
+
+/**
  * Styles (spec 0012, AC-8 to AC-10, AC-17): the list and the detail, edits with the stale check,
  * the bulk season and group assign, the code change, and adding a variant with option matching.
  * Every write runs in one READ COMMITTED transaction (`catalogTransaction`, run again once on a
@@ -116,11 +131,15 @@ export function optionRoleOf(nameKeys: readonly string[]): OptionRole {
  */
 @Injectable()
 export class StylesService {
-  /** Takes the app connection, the catalog (SKU answers and grouping checks), and the audit writer. */
+  /**
+   * Takes the app connection, the catalog (SKU answers and grouping checks), the audit writer,
+   * and the cost reader (each variant's cost in force on the detail).
+   */
   constructor(
     @Inject(DATABASE) private readonly connection: DatabaseConnection,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(CostService) private readonly costs: CostService,
   ) {}
 
   /** One page of styles by code (`buildStyleListSql`). */
@@ -136,9 +155,13 @@ export class StylesService {
     };
   }
 
-  /** One style with its options and variants, or `NotFound`. */
-  async get(id: string): Promise<StyleDetail> {
-    return this.detail(this.connection.db, id);
+  /**
+   * One style with its options and variants, each with its cost in force today, or `NotFound`.
+   * The controller passes `withCost` false for a caller without `cost.view`, so the cost reads
+   * are skipped; `serializeStyleDetail` stays the safety net.
+   */
+  async get(id: string, withCost = true): Promise<StyleDetail> {
+    return this.detail(this.connection.db, id, withCost);
   }
 
   /**
@@ -151,6 +174,7 @@ export class StylesService {
     id: string,
     input: z.output<typeof UpdateStyleRequest>,
     caller: CatalogCaller,
+    withCost = true,
   ): Promise<StyleDetail> {
     const correlationId = this.audit.newCorrelationId();
     return catalogTransaction(this.connection.db, async (tx) => {
@@ -211,7 +235,7 @@ export class StylesService {
           correlationId,
         });
       }
-      return this.detail(tx, id);
+      return this.detail(tx, id, withCost);
     });
   }
 
@@ -307,6 +331,7 @@ export class StylesService {
     id: string,
     input: z.output<typeof ChangeStyleCodeRequest>,
     caller: CatalogCaller,
+    withCost = true,
   ): Promise<StyleDetail> {
     const correlationId = this.audit.newCorrelationId();
     try {
@@ -324,7 +349,7 @@ export class StylesService {
             correlationId,
           });
         }
-        return this.detail(tx, id);
+        return this.detail(tx, id, withCost);
       });
     } catch (error) {
       if (pgConstraint(error) === 'products_style_code_unique') {
@@ -563,8 +588,12 @@ export class StylesService {
       LEFT JOIN seasons s ON s.id = p.season_id`;
   }
 
-  /** The style page's answer: the style, its options by position, its variants by code. */
-  private async detail(executor: Executor, id: string): Promise<StyleDetail> {
+  /**
+   * The style page's answer: the style, its options by position, its variants by code, each
+   * with its `cost` in force on today's operating day (`CostService.costForMany`, one query).
+   * Carries cost only when `withCost`; the controller serializes it on `Access` as well.
+   */
+  private async detail(executor: Executor, id: string, withCost: boolean): Promise<StyleDetail> {
     const { rows } = await executor.execute<StyleRecord>(sql`
       SELECT ${this.recordColumns()} FROM ${this.recordFrom()} WHERE p.id = ${id}`);
     const row = rows[0];
@@ -585,6 +614,9 @@ export class StylesService {
             ORDER BY code COLLATE "C"`)
         ).rows
       : [];
+    const costs = withCost
+      ? await this.costs.costForMany(ids, await this.costs.today(executor), executor)
+      : null;
     const summary = toStyleSummary(row);
     return {
       id: summary.id,
@@ -616,6 +648,7 @@ export class StylesService {
           barcodes: barcodes
             .filter((barcode) => barcode.variant_id === sku.id)
             .map((barcode) => ({ id: barcode.id, code: barcode.code })),
+          ...(costs && { cost: costs.get(sku.id) ?? { status: 'not_set' as const } }),
         };
       }),
     };

@@ -36,6 +36,13 @@ export interface AuditActionDefinition {
   /** True when the owning module registers an undo handler for it. */
   readonly undoable: boolean;
   /**
+   * True when the whole entry is a cost (spec 0012 AC-17): its diff carries an amount and a
+   * reason typed next to it, so a reader without `cost.view` never sees the entry, and an
+   * `audit.exported` entry whose export could have included it is shown redacted. The api derives
+   * its `COST_ENTRY_ACTIONS` from this flag; set it on any action that records a cost.
+   */
+  readonly costEntry?: true;
+  /**
    * The code of the undo handler the owning module registers (milestone 4,
    * `AuditUndoRegistry`). Required exactly when `undoable`; the registry test refuses an undoable
    * code without one.
@@ -87,6 +94,9 @@ const STYLES_PROOF = 'apps/api/test/styles.e2e-spec.ts';
 
 /** The proof test of the season and product group actions (spec 0012). */
 const GROUPINGS_PROOF = 'apps/api/test/seasons-groups.e2e-spec.ts';
+
+/** The proof test of the cost record action (spec 0012 milestone 3). */
+const COST_PROOF = 'apps/api/test/cost.e2e-spec.ts';
 
 /**
  * Every audit action code, keyed `module_noun.verb_past` (spec 0010, "Actions"). A later feature
@@ -609,6 +619,19 @@ export const AUDIT_ACTIONS = {
     undoable: false,
     label: 'audit.actions.connectionGatewayScanStarted',
     proof: 'apps/api/test/shopify-sync-jobs.e2e-spec.ts',
+  },
+  // Spec 0012 milestone 3 (AC-13, AC-17): a cost record added to a style or one of its variants,
+  // recorded on the style. The reason is optional, and required for this call
+  // (`reasonRequired: true`) when the record applies from before today's operating day.
+  'cost_record.recorded': {
+    module: 'catalog',
+    recordType: 'style',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    costEntry: true,
+    label: 'audit.actions.costRecordRecorded',
+    proof: COST_PROOF,
   },
 } as const satisfies Record<string, AuditActionDefinition>;
 

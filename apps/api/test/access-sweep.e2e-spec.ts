@@ -102,18 +102,43 @@ function personalDataIn(body: unknown, allowed: readonly string[]): string[] {
 }
 
 /**
+ * Whether one line of text names `key`, in any spelling `normalKey` treats as the same (security
+ * review AS34). The short key `cost` (spec 0012) matches as a whole word only, else it would hit
+ * inside any word such as an action code (`planted.costed`); every other key matches as a
+ * substring, so `unit_cost_egp` and `variantUnitCost` still flag `unitCost`.
+ */
+function lineNamesCostKey(line: string, key: string): boolean {
+  const text = normalKey(line);
+  const wanted = normalKey(key);
+  if (wanted === 'cost') return /(?<![a-z0-9])cost(?![a-z0-9])/.test(text);
+  return text.includes(wanted);
+}
+
+/**
  * The `COST_FIELD_KEYS` an answer holds, at any depth. A text answer (the CSV export, whose
- * `before` and `after` cells are JSON text) counts a key named anywhere in it, in any spelling
- * `normalKey` treats as the same (security review AS34).
+ * `before` and `after` cells are JSON text) is checked line by line, so a line break never
+ * glues a header to the next word (`lineNamesCostKey`).
  */
 function costKeysIn(body: unknown): string[] {
   if (typeof body === 'string') {
-    const text = normalKey(body);
-    return COST_FIELD_KEYS.filter((key) => text.includes(normalKey(key)));
+    const lines = body.split(/\r\n|\r|\n/);
+    return COST_FIELD_KEYS.filter((key) => lines.some((line) => lineNamesCostKey(line, key)));
   }
   const keys = new Set(keyPaths(body).map((path) => path.at(-1)));
   return COST_FIELD_KEYS.filter((key) => keys.has(normalKey(key)));
 }
+
+describe('costKeysIn on text', () => {
+  it('flags compound keys and a bare cost header, not a word that merely contains cost', () => {
+    expect(costKeysIn('a,unit_cost_egp,b')).toContain('unitCost');
+    expect(costKeysIn('{"variantUnitCost":"5"}')).toContain('unitCost');
+    expect(costKeysIn('sku,price,cost\r\n1,2,3')).toContain('cost');
+    expect(costKeysIn('sku,cost\nnext')).toContain('cost');
+    expect(costKeysIn('"cost":"9"')).toContain('cost');
+    expect(costKeysIn('planted.costed')).not.toContain('cost');
+    expect(costKeysIn('cost_record.recorded')).not.toContain('cost');
+  });
+});
 
 describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, () => {
   let api: InProcessApi;
@@ -642,6 +667,24 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       needs: PEOPLE_MANAGE,
       path: () => `/partner-users/${ids.partnerTarget}/revoke-sessions`,
     },
+    // Spec 0012 milestone 3 (AC-13, AC-16): a style's cost records, read with stock.view and
+    // cost.view, added with catalog.edit and cost.view (both required). The add names an unknown
+    // season, so a person allowed gets 404 NOT_FOUND and no record is ever added.
+    'GET /styles/:id/cost-records': {
+      needs: ['stock.view', 'cost.view'],
+      path: () => `/styles/${ids.style}/cost-records`,
+    },
+    'POST /styles/:id/cost-records': {
+      needs: ['catalog.edit', 'cost.view'],
+      path: () => `/styles/${ids.style}/cost-records`,
+      body: () => ({
+        seasonId: randomUUID(),
+        costBasis: 'estimate',
+        unitCost: '1.00',
+        effectiveFrom: '2026-01-01',
+        reason: 'sweep',
+      }),
+    },
   };
 
   const keyOf = (route: RouteEntry) => `${route.method} ${route.path}`;
@@ -952,6 +995,8 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         'GET /audit/entries/:id',
         'GET /audit/records/:type/:id/entries',
         'POST /audit/entries/export',
+        // Spec 0012, AC-12: each variant's `cost` on the style page.
+        'GET /styles/:id',
       ]),
     );
   });

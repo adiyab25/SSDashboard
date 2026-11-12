@@ -89,9 +89,17 @@ describe('the permission matrix', () => {
     expect(Object.keys(COST_VIEW_DEFAULT)).not.toContain('partner');
   });
 
-  it('names the cost fields of spec 0006 answers', () => {
+  it('names the cost fields of spec 0006 answers and the style page cost of spec 0012', () => {
     expect([...COST_FIELD_KEYS].sort()).toEqual(
-      ['avgUnitCost', 'lineTotal', 'referenceValue', 'totalCost', 'totalValue', 'unitCost'].sort(),
+      [
+        'avgUnitCost',
+        'lineTotal',
+        'referenceValue',
+        'totalCost',
+        'totalValue',
+        'unitCost',
+        'cost',
+      ].sort(),
     );
   });
 });

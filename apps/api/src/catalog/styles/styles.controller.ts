@@ -33,12 +33,13 @@ import { ZodQueryPipe } from '../../platform/zod-query.pipe.js';
 import { catalogCallerOf } from '../catalog-caller.js';
 import { CatalogError } from '../catalog.service.js';
 import { catalogHttpError, notFoundId, UNPROCESSABLE_INPUT } from '../catalog.controller.js';
-import { StylesService } from './styles.service.js';
+import { serializeStyleDetail, StylesService } from './styles.service.js';
 
 /**
  * Styles (spec 0012, AC-8 to AC-10, AC-16): reading needs `stock.view`; edits, the bulk assign,
  * and adding variants `catalog.edit`; the code change `catalog.manage`. `assign` is declared
- * before `:id` so the path is never read as an id.
+ * before `:id` so the path is never read as an id. Every `StyleDetail` answer passes through
+ * `serializeStyleDetail`, so only a caller holding `cost.view` sees a variant's `cost`.
  */
 @Audience('staff')
 @RequiresModule('catalog')
@@ -80,12 +81,18 @@ export class StylesController {
     }
   }
 
-  /** One style with its options and variants; an unknown or malformed id answers 404. */
+  /**
+   * One style with its options and variants; an unknown or malformed id answers 404. Each
+   * variant carries its `cost` in force today only for a caller holding `cost.view`.
+   */
   @Permission('stock.view')
   @Get(':id')
-  async get(@Param('id', notFoundId()) id: string): Promise<StyleDetail> {
+  async get(
+    @Param('id', notFoundId()) id: string,
+    @CurrentAccess() access: Access,
+  ): Promise<StyleDetail> {
     try {
-      return await this.styles.get(id);
+      return serializeStyleDetail(await this.styles.get(id, access.has('cost.view')), access);
     } catch (error) {
       throw catalogHttpError(error);
     }
@@ -102,7 +109,15 @@ export class StylesController {
     @CurrentAccess() access: Access,
   ): Promise<StyleDetail> {
     try {
-      return await this.styles.update(id, body, catalogCallerOf(request, access));
+      return serializeStyleDetail(
+        await this.styles.update(
+          id,
+          body,
+          catalogCallerOf(request, access),
+          access.has('cost.view'),
+        ),
+        access,
+      );
     } catch (error) {
       throw catalogHttpError(error);
     }
@@ -119,7 +134,15 @@ export class StylesController {
     @CurrentAccess() access: Access,
   ): Promise<StyleDetail> {
     try {
-      return await this.styles.changeCode(id, body, catalogCallerOf(request, access));
+      return serializeStyleDetail(
+        await this.styles.changeCode(
+          id,
+          body,
+          catalogCallerOf(request, access),
+          access.has('cost.view'),
+        ),
+        access,
+      );
     } catch (error) {
       throw catalogHttpError(error);
     }
