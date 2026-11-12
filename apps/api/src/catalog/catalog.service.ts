@@ -11,7 +11,13 @@ import {
 import { sql, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import type { z } from 'zod';
 import { DATABASE } from '../database/database.module.js';
-import { isStillReferenced, pgArray, pgConstraint, type Executor } from '../database/sql.js';
+import {
+  isStillReferenced,
+  pgArray,
+  pgConstraint,
+  type Executor,
+  type Transaction,
+} from '../database/sql.js';
 import { encodeKeyset } from '../platform/keyset-cursor.js';
 import { catalogTransaction } from './catalog-transaction.js';
 import {
@@ -424,11 +430,12 @@ export class CatalogService {
    * Locks SKU rows `FOR SHARE` in id order inside the caller's transaction and answers what a
    * stock posting checks (spec 0011 AC-18): kind, tracking, and whether archived. An archive or
    * code change, which takes `lockForUpdate`, waits for every holder, and the reverse. A SKU that
-   * does not exist is simply absent from the answer. Never changes a row and never opens a
+   * does not exist is simply absent from the answer. Takes a `Transaction`, never the pool: outside a
+   * transaction the lock would end with the statement. Never changes a row and never opens a
    * transaction of its own.
    */
   async lockForShare(
-    tx: Executor,
+    tx: Transaction,
     variantIds: readonly string[],
   ): Promise<Map<string, LockedVariant>> {
     const { rows } = await tx.execute<LockedVariant>(sql`
@@ -442,11 +449,13 @@ export class CatalogService {
   /**
    * Locks SKU rows `FOR UPDATE` in id order inside the caller's transaction, for an archive,
    * unarchive, or code change that must wait for every posting in flight (spec 0011 AC-18). Same
-   * answer as `lockForShare`; a SKU that does not exist is absent. Never changes a row and never
+   * answer as `lockForShare`; a SKU that does not exist is absent. Takes a `Transaction`, never the
+   * pool. Only inventory's archive and code change paths call it: it can stall every posting on
+   * the rows. Never changes a row and never
    * opens a transaction of its own.
    */
   async lockForUpdate(
-    tx: Executor,
+    tx: Transaction,
     variantIds: readonly string[],
   ): Promise<Map<string, LockedVariant>> {
     const { rows } = await tx.execute<LockedVariant>(sql`

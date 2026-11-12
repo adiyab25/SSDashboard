@@ -1,6 +1,6 @@
-import { CatalogService } from '../src/catalog/catalog.service.js';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogService } from '../src/catalog/catalog.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import { NumberingError, NumberingService } from '../src/platform/numbering.service.js';
 import { SettingsService } from '../src/platform/settings/settings.service.js';

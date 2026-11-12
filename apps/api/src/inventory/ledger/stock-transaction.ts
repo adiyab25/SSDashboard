@@ -9,56 +9,78 @@ declare const stockTransactionBrand: unique symbol;
  * functions take one as their first argument, so a plain Drizzle transaction does not type check
  * and they also refuse one at run time. It is a `Transaction`, so it is accepted wherever one is:
  * `AuditService.record`, `DomainEvents.publish`, `CustomersService.findOrCreate`,
- * `NumberingService.next`, and pg-boss `send` with the `db` option.
+ * `NumberingService.next`, and pg-boss `send` with the `db` option. The `within` callback of a
+ * posting receives one too, so it may call `releaseLines` and `reserveLines`.
  */
 export type StockTransaction = Transaction & { readonly [stockTransactionBrand]: true };
 
-/** What is known about the stock transaction running on this async call chain. */
+/** What is known about the ledger transaction running on this async call chain. */
 interface RunningUnit {
-  /** Set when a nested `LedgerService.transaction` was attempted; the runner then fails the unit. */
+  /** Set when a nested ledger transaction was attempted; the runner then fails the unit. */
   nested: LedgerError | null;
+  /** Set when the unit ends, so a detached continuation that outlives it is not mistaken for it. */
+  done: boolean;
 }
 
-/** The transaction objects the runner opened and has not finished with. Module private. */
+/**
+ * The transaction objects the ledger marked as a stock unit and has not finished with. Module
+ * private: only `markStockUnit` adds to it, and a static test (`stock-transaction-wall.spec.ts`)
+ * fails any value import of this file from outside `inventory/ledger/`.
+ */
 const opened = new WeakSet<object>();
 
-/** Set while a stock transaction's `work` runs, so a nested runner call is detected. */
+/** Set while any ledger transaction's work runs, so a nested one is detected. */
 const running = new AsyncLocalStorage<RunningUnit>();
 
 /**
- * Runs `work` as the body of a stock transaction: marks `tx` as opened by the runner and flags the
- * call chain. If `work` (or anything it called) tried to open another ledger transaction, that
- * call threw `NestedStockTransaction` and this throws it again after `work` ends, even when
- * `work` swallowed the first throw, so the outer transaction always rolls back. Never commits.
+ * Runs `work` as the body of a ledger transaction (every `ledgerTransaction`): flags the call chain.
+ * If `work` (or anything it called, an event handler or a `within` callback included) tried to
+ * open another ledger transaction, that call threw `NestedStockTransaction`, and this throws it
+ * again after `work` ends, even when `work` swallowed the first throw, so the outer transaction
+ * always rolls back. Never commits.
  */
-export async function runStockUnit<T>(
-  tx: Transaction,
-  work: (tx: StockTransaction) => Promise<T>,
-): Promise<T> {
-  const unit: RunningUnit = { nested: null };
-  opened.add(tx);
+export async function runLedgerUnit<T>(work: () => Promise<T>): Promise<T> {
+  const unit: RunningUnit = { nested: null, done: false };
   try {
-    const result = await running.run(unit, () => work(tx as StockTransaction));
+    const result = await running.run(unit, work);
     if (unit.nested) throw unit.nested;
     return result;
   } finally {
-    opened.delete(tx);
+    unit.done = true;
   }
 }
 
 /**
- * Called before any ledger transaction opens: inside a running stock transaction it throws
+ * Called before any ledger transaction opens: inside a running one it throws
  * `NestedStockTransaction` (and marks the outer unit failed), because a second transaction is a
  * second connection that would not see, wait for, or roll back with the first.
  */
 export function refuseNesting(): void {
   const unit = running.getStore();
-  if (!unit) return;
+  if (!unit || unit.done) return;
   unit.nested = new LedgerError(
     'NestedStockTransaction',
-    'A ledger transaction cannot open inside a running stock transaction; pass the open one down.',
+    'A ledger transaction cannot open inside a running one; pass the open transaction down.',
   );
   throw unit.nested;
+}
+
+/**
+ * Marks `tx` as a stock unit while `work` runs, so the reservation functions accept it, and
+ * unmarks it afterwards. Only the ledger calls this, for `LedgerService.transaction` and for the
+ * `within` callback of a posting.
+ */
+export async function markStockUnit<T>(
+  tx: Transaction,
+  work: (tx: StockTransaction) => Promise<T>,
+): Promise<T> {
+  const already = opened.has(tx);
+  opened.add(tx);
+  try {
+    return await work(tx as StockTransaction);
+  } finally {
+    if (!already) opened.delete(tx);
+  }
 }
 
 /** Throws `InvalidInput` unless `tx` was opened by `LedgerService.transaction` and is still running. */

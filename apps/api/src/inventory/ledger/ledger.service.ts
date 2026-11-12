@@ -47,8 +47,7 @@ import { ledgerTransaction, lockPairs } from './locks.js';
 import { requestHash, type HashedLine } from './request-hash.js';
 import {
   assertStockTransaction,
-  refuseNesting,
-  runStockUnit,
+  markStockUnit,
   type StockTransaction,
 } from './stock-transaction.js';
 
@@ -153,6 +152,22 @@ function parse<T extends z.ZodType>(shape: T, input: unknown): z.infer<T> {
   return result.data;
 }
 
+/** The prefix of every carrier shipment key; only `postCarrierShipment` may claim one. */
+const CARRIER_KEY_PREFIX = 'order_shipment:';
+
+/** The source type orders hold stock under (spec 0013): the only reservations a carrier fact fulfils. */
+const ORDER_SOURCE_TYPE = 'order';
+
+/** A plain posting never claims a carrier key, so a carrier fact can never collide with one. */
+function refuseCarrierKey(idempotencyKey: string): void {
+  if (idempotencyKey.startsWith(CARRIER_KEY_PREFIX)) {
+    throw new LedgerError(
+      'InvalidInput',
+      `A key starting ${CARRIER_KEY_PREFIX} belongs to postCarrierShipment`,
+    );
+  }
+}
+
 function balanceKey(line: {
   variantId: string;
   locationId: string;
@@ -190,7 +205,7 @@ function compareLines(a: Line, b: Line): number {
  * last. A throw rolls the whole posting back. On the one deadlock retry the transaction reruns,
  * this callback included, so it must keep no state across attempts. It never runs on a replay.
  */
-export type WithinPosting = (tx: Transaction, result: PostingResult) => Promise<void>;
+export type WithinPosting = (tx: StockTransaction, result: PostingResult) => Promise<void>;
 
 /** Extra behaviour for one posting: `within` runs inside the posting's transaction. */
 export interface PostingOptions {
@@ -259,6 +274,7 @@ export class LedgerService {
   /** Posts one atomic group of movements. Replaying the same key returns the stored result. */
   async post(input: PostingInput, options: PostingOptions = {}): Promise<PostingOutcome> {
     const parsed = parse(PostingInput, input);
+    refuseCarrierKey(parsed.idempotencyKey);
     const lines = parsed.lines.map((line, index): Line => {
       const inbound = line.quantity > 0;
       if (inbound && line.unitCost === undefined) {
@@ -320,6 +336,7 @@ export class LedgerService {
    */
   async reverse(input: ReverseInput, options: PostingOptions = {}): Promise<PostingOutcome> {
     const parsed = parse(ReverseInput, input);
+    refuseCarrierKey(parsed.idempotencyKey);
     return this.transact(async (tx) => {
       const original = (
         await tx.execute<{
@@ -633,7 +650,12 @@ export class LedgerService {
     return this.availability(this.connection.db, null, parsed.variantId, parsed.locationId);
   }
 
-  /** Holds stock for a document line. Rejected when more than available is asked for. */
+  /**
+   * Holds stock for a document line. Rejected when more than available is asked for.
+   *
+   * @deprecated Use `transaction` with `reserveLines`, which also keeps waiting demand and takes
+   * the caller's transaction. This one ignores waiting demand and has no callers in the api.
+   */
   async reserve(input: ReserveInput): Promise<Reservation> {
     const parsed = parse(ReserveInput, input);
     const lotId = parsed.lotId ?? null;
@@ -695,7 +717,12 @@ export class LedgerService {
     });
   }
 
-  /** Releases all or part of a reservation's open quantity. It closes when nothing is open. */
+  /**
+   * Releases all or part of a reservation's open quantity. It closes when nothing is open.
+   *
+   * @deprecated Use `transaction` with `releaseLines` or `releaseSource`, which also fill waiting
+   * demand with the freed stock. This one does not and has no callers in the api.
+   */
   async release(input: ReleaseInput): Promise<Reservation> {
     const parsed = parse(ReleaseInput, input);
     return this.transact(async (tx) => {
@@ -740,12 +767,13 @@ export class LedgerService {
    * `work` can run twice, so it must be safe to rerun and keep no state across the rerun. Lock order
    * inside: the caller's own rows, then the order row (spec 0013), then inventory's locks (the
    * master rows `FOR SHARE`, pair locks, reservation rows). Calling this, `post`, `reverse`, or any
-   * other ledger transaction inside a running one throws `NestedStockTransaction` and fails the
-   * outer transaction too, because a second connection would break both the lock order and the
-   * rerun. Never commits on its own and never hands out a transaction it did not open.
+   * other ledger transaction inside a running one (`work`, a `within` callback, or a domain event
+   * handler) throws `NestedStockTransaction` and fails the outer transaction too, because a second
+   * connection would break both the lock order and the rerun. Never commits on its own and never
+   * hands out a transaction it did not open.
    */
   async transaction<T>(work: (tx: StockTransaction) => Promise<T>): Promise<T> {
-    return this.transact((tx) => runStockUnit(tx, work));
+    return this.transact((tx) => markStockUnit(tx, work));
   }
 
   /**
@@ -754,9 +782,12 @@ export class LedgerService {
    * reservation (`unfilled`), never failing for a shortage; `refuse` holds every line fully or
    * raises `InsufficientStock` listing each short line (`index`, `available`, `requested`) and
    * writes nothing. Lines on one SKU, location, and lot share the free stock in input order after
-   * older waiting demand. A repeat raises a line toward `quantity` and never lowers it; another
-   * key for the same line raises `DuplicateReservation`. A location that allows negative stock
-   * holds the full request. Never reads or writes a table of another module.
+   * older waiting demand. `quantity` is the requested total still to ship: a repeat raises a line
+   * toward it and never lowers it, so never call this again for a line after a shipment fulfilled
+   * part of it (the shipped units would be held again). Another key for the same line, or a line id
+   * another document holds, raises `DuplicateReservation`. `InsufficientStock.details.lines[].index`
+   * is the zero based position in `lines`. A location that allows negative stock holds the full
+   * request. Never reads or writes a table of another module.
    */
   async reserveLines(tx: StockTransaction, input: ReserveLinesInput): Promise<ReservedLine[]> {
     assertStockTransaction(tx);
@@ -812,7 +843,8 @@ export class LedgerService {
       const held = existing.get(line.sourceLineId);
       if (
         held &&
-        (held.variant_id !== line.variantId ||
+        (held.source_id !== parsed.sourceId ||
+          held.variant_id !== line.variantId ||
           held.location_id !== line.locationId ||
           held.lot_id !== line.lotId)
       ) {
@@ -976,11 +1008,15 @@ export class LedgerService {
 
   /**
    * Each line's reservation of one document (spec 0011 AC-6), read only and lock free: the active
-   * one when the line has one, else its most recent closed one, ordered by creation.
+   * one when the line has one, else its most recent closed one, ordered by creation. Pass the
+   * caller's transaction as `executor` to see its uncommitted reservations.
    */
-  async reservationsFor(input: ReservationSource): Promise<ReservationLine[]> {
+  async reservationsFor(
+    input: ReservationSource,
+    executor: Executor = this.connection.db,
+  ): Promise<ReservationLine[]> {
     const parsed = parse(ReservationSource, input);
-    const { rows } = await this.connection.db.execute<ReservationRow>(sql`
+    const { rows } = await executor.execute<ReservationRow>(sql`
       SELECT * FROM (
         SELECT DISTINCT ON (source_line_id) *
         FROM reservations
@@ -1005,13 +1041,21 @@ export class LedgerService {
    * `order_shipment:<orderId>` (`:<n>` from generation 2). It is never refused for stock,
    * reservations, an archived SKU or location, or a locked period: each line fulfils its named
    * reservation's open quantity, then its waiting quantity, and the rest simply leaves on hand,
-   * below zero even where negative stock is not allowed. A time on or before the lock date moves
-   * to now. Afterwards the newest other reservations at each SKU and location are shortened by the
-   * excess of held over `max(onHand, 0)` (`ReservationShortened`, cause `carrier_shipment`), and
-   * on hand below zero publishes `StockOverdrawn`. A replay returns the stored result. Never
-   * accepts a lot or serial tracked SKU (`TrackingMismatch`), because a carrier fact names neither.
+   * below zero even where negative stock is not allowed. A time on or before the lock date, or more
+   * than 5 minutes ahead, moves to now. A named reservation counts only when it is the order's own
+   * (`order` source, this order id, this line id), else it is ignored. Afterwards, at locations that
+   * do not allow negative stock, the newest other reservations at each SKU and location are
+   * shortened by the excess of held over `max(onHand, 0)` (`ReservationShortened`, cause
+   * `carrier_shipment`), and on hand below zero publishes `StockOverdrawn`. A replay returns the
+   * stored result and never runs `options.within`; `within` runs inside the posting's transaction,
+   * gets a stock unit, and a throw there rolls the posting back. The request hash leaves out the
+   * time. Raises `TrackingMismatch` for a lot or serial tracked SKU (a carrier fact names neither)
+   * and `NotStockable` for a SKU that holds no stock.
    */
-  async postCarrierShipment(input: CarrierShipmentInput): Promise<PostingOutcome> {
+  async postCarrierShipment(
+    input: CarrierShipmentInput,
+    options: PostingOptions = {},
+  ): Promise<PostingOutcome> {
     const parsed = parse(CarrierShipmentInput, input);
     const lines = parsed.lines.map((line, index): Line => ({
       index,
@@ -1028,12 +1072,13 @@ export class LedgerService {
     }));
     const operation: Operation = {
       idempotencyKey: carrierShipmentKey(parsed.orderId, parsed.generation),
+      // The key, generation, and lines define a shipment; the carrier's time is not part of it, so
+      // a replay never conflicts because the time was moved to now.
       requestHash: requestHash({
-        operation: 'post',
+        operation: 'carrier',
         sourceType: 'order_shipment',
         sourceId: parsed.orderId,
         reversesGroupId: null,
-        effectiveAt: parsed.effectiveAt,
         lines: lines.map((line) => ({
           variantId: line.variantId,
           locationId: line.locationId,
@@ -1050,7 +1095,7 @@ export class LedgerService {
       lines,
       carrier: true,
     };
-    return this.transact((tx) => this.apply(tx, operation));
+    return this.transact((tx) => this.apply(tx, operation, options.within));
   }
 
   /**
@@ -1087,9 +1132,14 @@ export class LedgerService {
     }));
     await this.loadMaster(tx, keys);
     await lockPairs(tx, distinctPairs(keys));
+    // Lock exactly the rows whose pair locks were taken: a row that became active at an unlocked
+    // key after the preview is left alone.
     const locked = (
       await tx.execute<ReservationRow>(sql`
-        SELECT * FROM reservations WHERE status = 'active' AND ${find} ORDER BY id FOR UPDATE`)
+        SELECT * FROM reservations
+        WHERE status = 'active' AND id = ANY(${pgArray(preview.rows.map((row) => row.id))}::uuid[])
+        ORDER BY id
+        FOR UPDATE`)
     ).rows;
     if (!locked.length) return [];
     const { rows } = await tx.execute<ReservationRow>(sql`
@@ -1168,10 +1218,11 @@ export class LedgerService {
    * The shortening step (spec 0011 AC-22, AC-23), run under the pair lock after a write that took
    * on hand below what orders hold: while the active held quantity at a key exceeds
    * `max(onHand, 0)`, the newest reservations (`created_at desc`, `id desc`,
-   * `reservations_newest_idx`) outside `exclude` move `min(held, excess)` from held to waiting, and
+   * `reservations_newest_idx`), those in `exclude` (the posting's own) last, move
+   * `min(held, excess)` from held to waiting, and
    * each publishes `ReservationShortened` with `cause` and the posting's `groupId`. Built to be
    * reused by every posting that may take stock below the reservations (the carrier shipment now,
-   * a `damaged` or `missing` adjustment later). Never publishes when nothing is in excess.
+   * a `damaged` or `missing` adjustment later). Skips locations that allow negative stock. Never publishes when nothing is in excess.
    */
   private async shortenExcess(
     tx: Transaction,
@@ -1181,10 +1232,20 @@ export class LedgerService {
     exclude: ReadonlySet<string>,
   ): Promise<void> {
     if (!keys.length) return;
+    // Where negative stock is allowed `reserveLines` holds the full request, so held may exceed
+    // on hand there and nothing is shortened (the overdraw event still fires).
+    const negative = new Set(
+      (
+        await tx.execute<{ id: string }>(sql`
+          SELECT id FROM locations
+          WHERE allow_negative AND id = ANY(${pgArray([...new Set(keys.map((k) => k.locationId))])}::uuid[])`)
+      ).rows.map((row) => row.id),
+    );
     const levels = new Map(
       (await this.availability(tx, distinctPairs(keys))).map((row) => [reservationKeyOf(row), row]),
     );
     for (const key of new Map(keys.map((k) => [reservationKeyOf(k), k])).values()) {
+      if (negative.has(key.locationId)) continue;
       const level = levels.get(reservationKeyOf(key));
       if (!level) continue;
       let excess = level.reserved - Math.max(level.onHand, 0);
@@ -1194,10 +1255,14 @@ export class LedgerService {
         WHERE status = 'active' AND open_quantity > 0
           AND variant_id = ${key.variantId} AND location_id = ${key.locationId}
           AND lot_id IS NOT DISTINCT FROM ${key.lotId}::uuid
-          AND id <> ALL(${pgArray([...exclude])}::uuid[])
         ORDER BY created_at DESC, id DESC
         FOR UPDATE`);
-      for (const row of rows) {
+      // The newest others first; what the posting itself fulfilled (its leftover) only last.
+      const ordered = [
+        ...rows.filter((row) => !exclude.has(row.id)),
+        ...rows.filter((row) => exclude.has(row.id)),
+      ];
+      for (const row of ordered) {
         if (excess <= 0) break;
         const moved = Math.min(row.open_quantity, excess);
         excess -= moved;
@@ -1244,8 +1309,6 @@ export class LedgerService {
   }
 
   private transact<T>(work: (tx: Transaction) => Promise<T>): Promise<T> {
-    // A ledger transaction inside a running stock transaction would be a second connection.
-    refuseNesting();
     return ledgerTransaction(this.connection.db, work);
   }
 
@@ -1257,14 +1320,16 @@ export class LedgerService {
   ): Promise<PostingOutcome> {
     const lockDate = await this.lockDate(tx);
     let effectiveAt = op.effectiveAt;
-    if (op.carrier && effectiveAt && lockDate) {
-      // A carrier fact is never refused for a locked period: its time moves to now instead.
-      const locked = (
-        await tx.execute<{ locked: boolean }>(
-          sql`SELECT ssd_operating_day(${effectiveAt.toISOString()}::timestamptz) <= ${lockDate}::date AS locked`,
-        )
+    if (op.carrier && effectiveAt) {
+      // A carrier fact is never refused for a locked period or a time ahead: its time moves to now.
+      const moved = (
+        await tx.execute<{ moved: boolean }>(sql`
+          SELECT (${lockDate}::date IS NOT NULL
+                  AND ssd_operating_day(${effectiveAt.toISOString()}::timestamptz) <= ${lockDate}::date)
+                 OR ${effectiveAt.toISOString()}::timestamptz
+                    > now() + ${`${FUTURE_TOLERANCE_MS} milliseconds`}::interval AS moved`)
       ).rows[0];
-      if (locked?.locked) effectiveAt = undefined;
+      if (moved?.moved) effectiveAt = undefined;
     }
     // Claim the idempotency key. A repeat finds the stored group; a concurrent first
     // request makes this wait, and if that one rolls back, this one proceeds as new.
@@ -1341,7 +1406,7 @@ export class LedgerService {
       balance.state = result.next;
       balance.changed = true;
       if (line.quantity < 0) {
-        if (op.carrier) this.fulfilCarrierLine(line, reservations, fulfilled);
+        if (op.carrier) this.fulfilCarrierLine(line, op.sourceId, reservations, fulfilled);
         else this.applyReservation(line, reservations, balances.byKey);
       }
       costed.push(result);
@@ -1359,7 +1424,8 @@ export class LedgerService {
       );
     }
     const result = await this.loadResult(tx, inserted.id);
-    if (within) await within(tx, result);
+    // The callback gets a stock unit, so it may release and reserve lines (spec 0013 AC-27).
+    if (within) await markStockUnit(tx, (unit) => within(unit, result));
     return { ...result, replayed: false };
   }
 
@@ -1386,7 +1452,7 @@ export class LedgerService {
    * so the master row locks are the only ones the two contend on.
    */
   private async loadMaster(
-    executor: Executor,
+    executor: Transaction,
     lines: readonly {
       variantId: string;
       locationId: string;
@@ -1539,11 +1605,14 @@ export class LedgerService {
   /**
    * A carrier line fulfils its named reservation's open quantity, then its waiting quantity (spec
    * 0011 AC-22); waiting units shipped count toward `quantity`, so the closed row keeps a positive
-   * demand. A reservation that is missing, closed, or on another SKU, location, or lot is ignored:
-   * a carrier fact is never refused. Records what it fulfilled so the shortening step skips it.
+   * demand. A reservation that is missing, closed, on another SKU, location, or lot, or not this
+   * order's own line (`order` source, `orderId`, the line's `sourceLineId`) is ignored: a carrier
+   * fact is never refused, and it never consumes another order's hold. Records what it fulfilled
+   * so the shortening step takes it last.
    */
   private fulfilCarrierLine(
     line: Line,
+    orderId: string,
     reservations: Map<string, ReservationRow>,
     fulfilled: Set<string>,
   ): void {
@@ -1551,6 +1620,9 @@ export class LedgerService {
     if (
       !reservation ||
       reservation.status !== 'active' ||
+      reservation.source_type !== ORDER_SOURCE_TYPE ||
+      reservation.source_id !== orderId ||
+      reservation.source_line_id !== line.sourceLineId ||
       reservation.variant_id !== line.variantId ||
       reservation.location_id !== line.locationId ||
       reservation.lot_id !== line.lotId

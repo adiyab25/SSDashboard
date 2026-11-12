@@ -1,4 +1,3 @@
-import { CatalogService } from '../src/catalog/catalog.service.js';
 import { randomUUID } from 'node:crypto';
 import {
   SkuDetail,
@@ -10,6 +9,7 @@ import {
 } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogService } from '../src/catalog/catalog.service.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';

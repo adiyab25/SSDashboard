@@ -15,6 +15,7 @@ import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import type { StockTransaction } from '../src/inventory/ledger/stock-transaction.js';
 import { OnlineStockService } from '../src/inventory/online-stock/online-stock.service.js';
+import type { Transaction } from '../src/database/sql.js';
 import { DomainEvents } from '../src/platform/events/domain-events.js';
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
@@ -38,6 +39,8 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
   const filled: ReservationFilled[] = [];
   const shortened: ReservationShortened[] = [];
   const overdrawn: StockOverdrawn[] = [];
+  /** A test sets this to make the `ReservationFilled` handler do something inside the posting. */
+  let onFilled: ((tx: Transaction) => Promise<void>) | null = null;
 
   beforeAll(async () => {
     api = await startInProcessApi();
@@ -47,7 +50,14 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
     audit = api.app.get(AuditService);
     events = api.app.get(DomainEvents);
     connection = api.app.get<DatabaseConnection>(DATABASE);
-    events.on(ReservationFilled, (_tx, event) => void filled.push(event), 'test');
+    events.on(
+      ReservationFilled,
+      async (tx, event) => {
+        filled.push(event);
+        await onFilled?.(tx);
+      },
+      'test',
+    );
     events.on(ReservationShortened, (_tx, event) => void shortened.push(event), 'test');
     events.on(StockOverdrawn, (_tx, event) => void overdrawn.push(event), 'test');
 
@@ -675,7 +685,7 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
   });
 
   describe('the order thread holds together (AC-7)', () => {
-    it('keeps every number right after each step, and reruns a deadlock once', async () => {
+    it('keeps every number right after each step', async () => {
       const lineA = await onlineKey();
       const lineB = await onlineKey();
       await stock(lineA, 2);
@@ -888,6 +898,385 @@ describe('stock reservations and carrier shipments', { timeout: 180_000 }, () =>
         code: 'InvalidInput',
       });
       expect(await ledger.postingFor('k'.repeat(200))).toBeNull();
+    });
+  });
+
+  describe('fix round F1: posting hooks, nesting, and carrier rules', () => {
+    const shipment = (
+      orderId: string,
+      at: { variantId: string; locationId: string },
+      quantity = 1,
+      extra: { reservationId?: string; sourceLineId?: string } = {},
+    ) => ({
+      orderId,
+      lines: [{ sourceLineId: extra.sourceLineId ?? randomUUID(), ...at, quantity, ...extra }],
+    });
+
+    it('runs within on a carrier posting, rolls the posting back when it throws, and skips it on a replay', async () => {
+      const at = await key();
+      await stock(at, 3);
+      const orderId = randomUUID();
+      const input = shipment(orderId, at);
+      const calls = { count: 0 };
+
+      await expect(
+        ledger.postCarrierShipment(input, {
+          within: async (tx) => {
+            await fixtureOrder(tx, orderId);
+            throw new Error('cost write failed');
+          },
+        }),
+      ).rejects.toThrow('cost write failed');
+      expect(await count('fixture_orders', 'id = $1', [orderId])).toBe(0);
+      expect(await ledger.postingFor(`order_shipment:${orderId}`)).toBeNull();
+      expect((await level(api.owner, at)).onHand).toBe(3);
+
+      const first = await ledger.postCarrierShipment(input, {
+        within: async (tx, result) => {
+          calls.count += 1;
+          await fixtureOrder(tx, orderId);
+          expect(result.sourceType).toBe('order_shipment');
+        },
+      });
+      const replay = await ledger.postCarrierShipment(input, {
+        within: () => {
+          calls.count += 1;
+          return Promise.resolve();
+        },
+      });
+
+      expect(first.replayed).toBe(false);
+      expect(replay.replayed).toBe(true);
+      expect(calls.count).toBe(1);
+      expect(await count('fixture_orders', 'id = $1', [orderId])).toBe(1);
+    });
+
+    it('hands within a stock unit that can release lines', async () => {
+      const at = await key();
+      await stock(at, 2);
+      const holder = randomUUID();
+      await reserve(holder, 'refuse', [{ ...at, quantity: 1 }]);
+
+      await ledger.postCarrierShipment(shipment(randomUUID(), at, 1), {
+        within: async (tx) => {
+          const released = await ledger.releaseSource(tx, {
+            sourceType: 'order',
+            sourceId: holder,
+          });
+          expect(released).toHaveLength(1);
+        },
+      });
+
+      expect(await rows(holder)).toMatchObject([{ status: 'released' }]);
+    });
+
+    it('refuses a ledger transaction opened from within or from an event handler, rolling the outer back', async () => {
+      const at = await key();
+      await stock(at, 1);
+      const orderId = randomUUID();
+
+      const fromWithin = await failure(
+        ledger.postCarrierShipment(shipment(orderId, at), {
+          within: async () => {
+            await ledger.transaction(() => Promise.resolve());
+          },
+        }),
+      );
+      expect(fromWithin.code).toBe('NestedStockTransaction');
+      expect(await ledger.postingFor(`order_shipment:${orderId}`)).toBeNull();
+      expect((await level(api.owner, at)).onHand).toBe(1);
+
+      // A handler of an event published inside a posting: a restock that fills waiting demand.
+      const waiting = await key();
+      await reserve(randomUUID(), 'reserve_available', [{ ...waiting, quantity: 1 }]);
+      onFilled = () =>
+        ledger.post(posting([{ ...at, quantity: 1, unitCost: '1.0000' }])).then(() => undefined);
+      try {
+        const fromHandler = await failure(stock(waiting, 1));
+        expect(fromHandler.code).toBe('NestedStockTransaction');
+      } finally {
+        onFilled = null;
+      }
+      expect((await level(api.owner, waiting)).onHand).toBe(0);
+      expect((await level(api.owner, at)).onHand).toBe(1);
+    });
+
+    it('refuses nesting from the other ledger transaction callers too', async () => {
+      const at = await key();
+      const error = await failure(
+        ledger.transaction(async () => {
+          await ledger.reverse({
+            groupId: randomUUID(),
+            idempotencyKey: randomUUID(),
+            postedBy: null,
+            reasonCode: 'test',
+          });
+          await ledger.postingFor(`k-${at.variantId}`);
+        }),
+      );
+      expect(error.code).toBe('NestedStockTransaction');
+    });
+
+    it('keeps the reservation functions refused outside the runner after a unit ended', async () => {
+      let kept: StockTransaction | undefined;
+      await ledger.transaction((tx) => {
+        kept = tx;
+        return Promise.resolve();
+      });
+      const at = await key();
+
+      const error = await failure(
+        ledger.reserveLines(kept as StockTransaction, {
+          sourceType: 'order',
+          sourceId: randomUUID(),
+          shortage: 'refuse',
+          lines: [{ sourceLineId: randomUUID(), ...at, quantity: 1 }],
+        }),
+      );
+
+      expect(error.code).toBe('InvalidInput');
+    });
+
+    it('refuses a plain posting or reversal under a carrier key', async () => {
+      const at = await key();
+      const orderId = randomUUID();
+
+      const posted = await failure(
+        ledger.post(
+          posting([{ ...at, quantity: 1, unitCost: '1.0000' }], {
+            idempotencyKey: `order_shipment:${orderId}`,
+          }),
+        ),
+      );
+      const reversed = await failure(
+        ledger.reverse({
+          groupId: randomUUID(),
+          idempotencyKey: `order_shipment:${orderId}:2`,
+          postedBy: null,
+          reasonCode: 'test',
+        }),
+      );
+
+      expect([posted.code, reversed.code]).toEqual(['InvalidInput', 'InvalidInput']);
+    });
+
+    it('does not shorten at a location that allows negative stock, but still says so when on hand goes below zero', async () => {
+      const at = await key({ allowNegative: true });
+      const holder = randomUUID();
+      await reserve(holder, 'refuse', [{ ...at, quantity: 2 }]);
+
+      const result = await ledger.postCarrierShipment(shipment(randomUUID(), at, 1));
+
+      expect(shortened).toEqual([]);
+      expect(await rows(holder)).toMatchObject([{ open_quantity: 2, unfilled_quantity: 0 }]);
+      expect(overdrawn).toEqual([
+        new StockOverdrawn(at.variantId, at.locationId, -1, result.groupId),
+      ]);
+    });
+
+    it('moves a carrier time more than 5 minutes ahead to now instead of refusing it', async () => {
+      const at = await key();
+      await stock(at, 1);
+
+      const result = await ledger.postCarrierShipment({
+        ...shipment(randomUUID(), at),
+        effectiveAt: new Date(Date.now() + 86_400_000),
+      });
+
+      expect(Math.abs(Date.now() - Date.parse(result.effectiveAt))).toBeLessThan(60_000);
+    });
+
+    it('replays to the stored result when only the carrier time differs', async () => {
+      const at = await key();
+      await stock(at, 2);
+      const input = shipment(randomUUID(), at);
+
+      const first = await ledger.postCarrierShipment({
+        ...input,
+        effectiveAt: new Date(Date.now() - 3600_000),
+      });
+      const replay = await ledger.postCarrierShipment({ ...input, effectiveAt: new Date() });
+      const noTime = await ledger.postCarrierShipment(input);
+
+      expect(replay).toEqual({ ...first, replayed: true });
+      expect(noTime.groupId).toBe(first.groupId);
+    });
+
+    it("ignores a named reservation that is another order's, closed, missing, or on another key", async () => {
+      const at = await key();
+      await stock(at, 4);
+      const other = await key();
+      await stock(other, 4);
+      const otherOrder = randomUUID();
+      const [theirs] = await reserve(otherOrder, 'refuse', [{ ...at, quantity: 1 }]);
+      const [elsewhere] = await reserve(randomUUID(), 'refuse', [{ ...other, quantity: 1 }]);
+      const closedOrder = randomUUID();
+      const [closed] = await reserve(closedOrder, 'refuse', [{ ...at, quantity: 1 }]);
+      await ledger.transaction((tx) =>
+        ledger.releaseSource(tx, { sourceType: 'order', sourceId: closedOrder }),
+      );
+
+      for (const reservationId of [
+        theirs?.reservationId,
+        elsewhere?.reservationId,
+        closed?.reservationId,
+        randomUUID(),
+      ]) {
+        await ledger.postCarrierShipment(shipment(randomUUID(), at, 1, { reservationId }));
+      }
+
+      // The other order's hold was never consumed by a shipment naming it; stock fell by 4 and
+      // the one real hold was then shortened to fit what is left.
+      expect((await level(api.owner, at)).onHand).toBe(0);
+      expect(await rows(otherOrder)).toMatchObject([
+        { status: 'active', open_quantity: 0, unfilled_quantity: 1 },
+      ]);
+    });
+
+    it('lets a carrier line fulfil its own reservation without shortening the others', async () => {
+      const at = await key();
+      await stock(at, 2);
+      const [mine, other] = [randomUUID(), randomUUID()];
+      const lineId = randomUUID();
+      const [own] = await reserve(mine, 'refuse', [{ sourceLineId: lineId, ...at, quantity: 1 }]);
+      await reserve(other, 'refuse', [{ ...at, quantity: 1 }]);
+
+      await ledger.postCarrierShipment(
+        shipment(mine, at, 1, { sourceLineId: lineId, reservationId: own?.reservationId }),
+      );
+
+      expect(shortened).toEqual([]);
+      expect(await rows(mine)).toMatchObject([{ status: 'fulfilled' }]);
+      expect(await rows(other)).toMatchObject([{ open_quantity: 1, status: 'active' }]);
+    });
+
+    it('shortens the newest reservations first, fully then partly', async () => {
+      const at = await key();
+      await stock(at, 4);
+      const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+      await reserve(a, 'refuse', [{ ...at, quantity: 1 }]);
+      await reserve(b, 'refuse', [{ ...at, quantity: 2 }]);
+      await reserve(c, 'refuse', [{ ...at, quantity: 1 }]);
+
+      await ledger.postCarrierShipment(shipment(randomUUID(), at, 3));
+
+      expect(shortened.map((e) => [e.sourceId, e.quantity])).toEqual([
+        [c, 1],
+        [b, 2],
+      ]);
+      expect(await rows(a)).toMatchObject([{ open_quantity: 1 }]);
+
+      const partial = await key();
+      await stock(partial, 3);
+      const [x, y] = [randomUUID(), randomUUID()];
+      await reserve(x, 'refuse', [{ ...partial, quantity: 1 }]);
+      await reserve(y, 'refuse', [{ ...partial, quantity: 2 }]);
+      shortened.length = 0;
+
+      await ledger.postCarrierShipment(shipment(randomUUID(), partial, 1));
+
+      expect(shortened.map((e) => [e.sourceId, e.quantity])).toEqual([[y, 1]]);
+      expect(await rows(y)).toMatchObject([
+        { quantity: 1, open_quantity: 1, unfilled_quantity: 1 },
+      ]);
+    });
+
+    it('keeps its own leftover hold when on hand still covers it', async () => {
+      const at = await key();
+      await stock(at, 2);
+      const mine = randomUUID();
+      const lineId = randomUUID();
+      const [own] = await reserve(mine, 'refuse', [{ sourceLineId: lineId, ...at, quantity: 2 }]);
+
+      await ledger.postCarrierShipment(
+        shipment(mine, at, 1, { sourceLineId: lineId, reservationId: own?.reservationId }),
+      );
+
+      // One piece shipped from a hold of two: on hand 1, one still held, no excess to shorten.
+      expect(shortened).toEqual([]);
+      expect(await rows(mine)).toMatchObject([{ open_quantity: 1, status: 'active' }]);
+    });
+
+    it('refuses a carrier line for a lot or serial tracked SKU', async () => {
+      const at = {
+        variantId: await make.variant({ tracking: 'serial' }),
+        locationId: await make.location(),
+      };
+
+      const error = await failure(ledger.postCarrierShipment(shipment(randomUUID(), at)));
+
+      expect(error.code).toBe('TrackingMismatch');
+    });
+
+    it('refuses a line id another document already holds', async () => {
+      const at = await key();
+      await stock(at, 5);
+      const lineId = randomUUID();
+      await reserve(randomUUID(), 'refuse', [{ sourceLineId: lineId, ...at, quantity: 1 }]);
+
+      const error = await failure(
+        reserve(randomUUID(), 'refuse', [{ sourceLineId: lineId, ...at, quantity: 1 }]),
+      );
+
+      expect(error.code).toBe('DuplicateReservation');
+    });
+
+    it('fills another order with the piece a successful size swap frees', async () => {
+      const medium = await key();
+      await stock(medium, 1);
+      const large = await key();
+      await stock(large, 1);
+      const [swapper, waiter] = [randomUUID(), randomUUID()];
+      const lineId = randomUUID();
+      await reserve(swapper, 'refuse', [{ sourceLineId: lineId, ...medium, quantity: 1 }]);
+      await reserve(waiter, 'reserve_available', [{ ...medium, quantity: 1 }]);
+      filled.length = 0;
+
+      await ledger.transaction(async (tx) => {
+        await ledger.releaseLines(tx, { sourceType: 'order', sourceLineIds: [lineId] });
+        await ledger.reserveLines(tx, {
+          sourceType: 'order',
+          sourceId: swapper,
+          shortage: 'refuse',
+          lines: [{ sourceLineId: randomUUID(), ...large, quantity: 1 }],
+        });
+      });
+
+      expect(await rows(waiter)).toMatchObject([{ open_quantity: 1, unfilled_quantity: 0 }]);
+      expect(filled.map((e) => e.sourceId)).toEqual([waiter]);
+    });
+
+    it('splits a restock across three waiting orders, oldest first', async () => {
+      const at = await key();
+      const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+      for (const id of [a, b, c]) await reserve(id, 'reserve_available', [{ ...at, quantity: 1 }]);
+
+      await stock(at, 2);
+
+      expect(filled.map((e) => e.sourceId)).toEqual([a, b]);
+      expect(await rows(c)).toMatchObject([{ open_quantity: 0, unfilled_quantity: 1 }]);
+    });
+
+    it("reads reservations through the caller's transaction", async () => {
+      const at = await key();
+      await stock(at, 1);
+      const orderId = randomUUID();
+
+      const seen = await ledger.transaction(async (tx) => {
+        await ledger.reserveLines(tx, {
+          sourceType: 'order',
+          sourceId: orderId,
+          shortage: 'refuse',
+          lines: [{ sourceLineId: randomUUID(), ...at, quantity: 1 }],
+        });
+        return {
+          inside: await ledger.reservationsFor({ sourceType: 'order', sourceId: orderId }, tx),
+          outside: await ledger.reservationsFor({ sourceType: 'order', sourceId: orderId }),
+        };
+      });
+
+      expect(seen.inside).toHaveLength(1);
+      expect(seen.outside).toEqual([]);
     });
   });
 
