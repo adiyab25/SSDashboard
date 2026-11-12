@@ -64,3 +64,4 @@ export * from './customers/customer-views.js';
 export * from './customers/customer-search.js';
 export * from './customers/customer-merges.js';
 export * from './customers/customer-flags.js';
+export * from './customers/customer-timeline.js';

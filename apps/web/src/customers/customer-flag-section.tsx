@@ -1,18 +1,31 @@
 'use client';
 
 import type { CustomerFlagView } from '@ssdashboard/contracts';
+import type { Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
 import { CustomerFlagBadge } from './customer-flag-badge';
 
 /** The flag of a customer: its kind, source, who set it and when, and the note. Nothing when there is no flag. */
-export function CustomerFlagSection({ flag }: { flag: CustomerFlagView | null }) {
+export function CustomerFlagSection({
+  flag,
+  headingRef,
+}: {
+  flag: CustomerFlagView | null;
+  /** The heading takes focus when a screen sets the flag for the person (applying the suggestion). */
+  headingRef?: Ref<HTMLHeadingElement>;
+}) {
   const { t } = useTranslation();
   const format = useFormat();
   if (flag === null) return null;
   return (
     <section aria-labelledby="customer-flag-title" className="flex flex-col gap-2">
-      <h2 id="customer-flag-title" className="text-base font-semibold">
+      <h2
+        id="customer-flag-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-base font-semibold"
+      >
         {t('customers.profile.flagCard.title')}
       </h2>
       <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">

@@ -6,6 +6,7 @@ import {
   LineRemovalReasonCode,
   ORDER_CREATED_MANUALLY_REASONS,
   ORDER_EDITED_REASONS,
+  RefusedReasonCode,
 } from '@ssdashboard/contracts';
 import type { MessageKey } from '@ssdashboard/i18n';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
@@ -18,10 +19,11 @@ const GROUPS: readonly (readonly [string, readonly string[]])[] = [
   ['gift', GiftReasonCode.options],
   ['lineRemoval', [...LineRemovalReasonCode.options, 'edit_removal']],
   ['created', ORDER_CREATED_MANUALLY_REASONS],
+  ['refused', RefusedReasonCode.options],
 ];
 
 /**
- * A reason code in words, from the cancel, edit, gift, line removal, or created lists. A code no
+ * A reason code in words, from the cancel, edit, gift, line removal, created, or refused (a carrier's refusal) lists. A code no
  * list holds (a channel's or the carrier's own, such as `channel.fake`) is shown as it is, in
  * `LtrText`, never dropped.
  */
