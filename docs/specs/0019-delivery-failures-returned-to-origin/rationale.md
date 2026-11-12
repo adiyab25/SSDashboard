@@ -37,7 +37,7 @@ A module that listens to spec 0018's events and to orders' events, owns attempts
 - Rates read the module's own projection, never another module's tables.
 
 **Cons**:
-- Requests thirteen changes to spec 0013, five to spec 0018, and one to spec 0011 (listed in index.md, *Calls this feature makes* and Follow-up).
+- Requests fifteen changes to spec 0013, eight to spec 0018, and one to spec 0011 (listed in index.md, *Calls this feature makes* and Follow-up).
 - A projection must be kept in step with orders (a rebuild command proves it).
 
 ### Option C: keep it in the connector
@@ -152,6 +152,36 @@ The [domain review of this spec](../../reviews/domain-delivery-failures.md) (202
 **From spec 0020's domain review** (`docs/reviews/domain-settlement-reconciliation.md`, findings routed by the lead): M4, the `refusal_fee` sign, is closed by AC-11 (every amount positive, the leg gives the direction, so 150.00 agrees with settlement's +150.00); M7, a shortfall written off only through a claim, by the claim kind `short_collection` (AC-12, AC-13, AC-19) and `delivery.over_collection` for an excess that belongs to the customer; M5 by `CarrierClaims.overdueCompensation` and the setting `claim_compensation_overdue_days` (AC-22); M9 by AC-12 stating that the collection is recorded and only the delivered move is held.
 
 The three new owner questions of the review are Q-21.9 to Q-21.11 in index.md; the lead's ruling adds Q-21.12 on the deposit's legality. The review's twelve brand questions are listed in index.md's Follow-up.
+
+## Domain review, second pass
+
+The [second pass domain review](../../reviews/domain-delivery-failures-r2.md) (2026-11-12, verdict accept with changes) found 1 blocker, 5 majors, and 11 minors, and asked three owner questions (OQ-1 to OQ-3, now Q-21.13 to Q-21.15) and nine brand questions (Follow-up, 13 to 21). Every finding is applied; the lead's rulings on B1 and N1 to N5 are applied as given; n11 is not rejected but moved to *Later than the pilot* in index.md, as the lead asked.
+
+| Finding | Closed by | How |
+|---|---|---|
+| B1 blocker: an exchange delivery takes a new piece out and nothing posts it; "back at 23" is not a Bosta fact | AC-29, AC-8, *Lifecycles*, *Event handling*, Q-21.13, `delivery.exchange_not_supported`, *Later than the pilot* | A written pilot condition: no Bosta Exchange type during the pilot; a swap is a return pickup plus a new `replacement_for` order. Any type 30 delivery opens an operations task with the runbook step (record the replacement and a manual handover naming the tracking number, which posts the shipment). The old piece is received on an `exchange_pickup` parcel. 23 means the courier has the piece at the customer's door: the parcel stays `returning` until 46 or its first piece. The review's option 2 (type 30 as the replacement's forward delivery) is listed under Later. verify AC-29 fixed |
+| N1: short cash equal to Bosta's own COD is not a partial and not Bosta's fault | AC-12 (a) to (c), AC-13, AC-22 (`openShortCollection` refuses it), Q-21.14, Follow-up (spec 0018 item 6) | Compare the collected cash with Bosta's `cod_amount` first. Equal: no hold (requested of spec 0018 AC-16), no claim; `cod_difference_brand_side` with cause `carrier_record_stale` or `cod_rule_mismatch`, answered `brand_side_write_off` (reason and note, `settlement.close`, audited) or `customer_owes`; nothing at all while `COD_RULE_MISMATCH` stands. A `short_collection` claim only for the part below Bosta's COD. The invariant names both write offs |
+| N2: the customer's latest answer must beat the courier's earlier reason | AC-6 (`effective-answer.ts`), AC-15 (`released_carrier_ignored_request`) | A recorded contact always overrides the courier's reason, for the ending and the deposit rule. A later `will_receive`, `rescheduled`, or `details_corrected` passed to Bosta stops the flip from making the order `refused`, releases the deposit, and opens `delivery.next_try_missed` to complain or reopen |
+| N3: a size swap replacement has no undo | AC-7, AC-25 (hold), `delivery.replacement_check`, spec 0013 request (o) | "Undo the replacement" while it is not shipped (spec 0013's cancel, `size_swap_undone`); the original delivered while the replacement waits holds it on the pick list and opens a support task (`cancel_replacement`, `keep_both`); a shipped replacement stays a second order with the task; `size_swap` recomputed on each event |
+| N4: the app never learns that the warehouse packed | AC-25 ("Packed" through `markPacked`, prints, "Cancelled since printed"), AC-31 widened to confirmed orders (`delivery.not_shipped`), Q-21.15, `pick_list_prints` | Packing is a tap on the pick list that the holds refuse; marking packed is a pilot condition; every order on a print that is cancelled afterwards is listed first until taken out; a confirmed or packed order that never ships gets a task; the invariant covers every confirmed order |
+| N5: `found` is refused whenever the same variant awaits on another order | AC-10, AC-30, Follow-up (spec 0011) | Requested of spec 0011: `pre_go_live_return` and `customer_swapped_return` skip the `RETURN_AWAITING_RESTOCK` check, carry the parcel piece id, and get their own label. The AC-29 fallback is a plain `found` and keeps the guard (it is only a fallback) |
+| n1: return pickups are the customer's side | AC-29, spec 0013 request (i), Follow-up (spec 0020) | No claim for a damaged piece on a return pickup unless the bag is marked tampered; `recordCarrierReturn` sets the line `returned`; a return pickup COD above 0 goes to spec 0020 as a refund paid by Bosta |
+| n2: a lost COD order has no customer follow up | AC-14 | `delivery.lost_resolve` opens for every lost order, with `send_again`, `refund` (only when prepaid), or `customer_declined` |
+| n3: the manual courier path at the door | AC-23, AC-24 | `cashCollected` required when COD is due; a `fulfillment.work` holder records the collected amount on an office pickup; a stale Bosta record no longer refuses a handover |
+| n4: a flip with no attempt row has nowhere to record the call | AC-1 | The flip inserts an `unclassified` attempt row and the task is attached to it |
+| n5: the pilot's deposit setting | AC-15, *Pilot acceptance*, the runbook | `released` until the lawyer answers, set at install and checked in the pilot acceptance |
+| n6: the address problem clause | AC-15 | `address_problem` always releases |
+| n7: the rate's buckets and cohort | AC-18, `outcome_ending` | One bucket per order (`returning` until ended); `refused` is a reason, not an ending; `cohort=placed\|shipped` with placed the default for the campaign cut; a "no area" group |
+| n8: a lost parcel Bosta later delivers | AC-16, `delivery.lost_parcel_moved`, spec 0013 request (n) | A task to withdraw the claim and correct the order by a person, with evidence |
+| n9: one tap per piece on a bag of twenty | AC-9, `/receive-all` | "Receive all as sellable", one piece row and key per expected piece |
+| n10: `not_received` has no customer side | AC-19 | The claim page names the slice 1a answer: a `goodwill_for` gifted resend with `replacement_goodwill`, or a refund outside the app until feature 34 |
+| n11: complexity the pilot does not need | *Later than the pilot* in index.md | Moved, not deleted: the grouped teaching screen, the prepaid late partial, the `other_courier` fee split, and the over collection answers may slip; marked in the build plan |
+
+**Calls spec 0020 relies on** (its Follow-up "Requested of spec 0019"), matched to the shapes spec 0020 uses: `CarrierClaims.openShortCollection(tx, { orderId, deliveryId, amount }, actor)` (spec 0020 names the field `amount`, not `shortfall`), `CarrierClaims.overdueCompensation({ connectionId, decidedBefore })` as its one signature (spec 0020 second review N3; the caller computes `decidedBefore` from `claim_compensation_overdue_days`), and `ManualHandovers.cashSummary({ from, to, storeId?, courierKind? })` (spec 0020's `storeId?` plus the lead's `courierKind?`).
+
+**From spec 0020's second review** (`docs/reviews/domain-settlement-reconciliation-r2.md`, N1 and N3, routed by the lead): this spec is the single owner of cash difference resolutions (AC-32, `CashDifferences.resolutionOf`), the only write offs are the rejected `short_collection` claim and `brand_side_write_off`, no claim can be opened while a partial is held (`PARTIAL_UNDECIDED`), and `overdueCompensation` has one signature.
+
+**The first review's renamed names**: `delivery.packed_not_shipped` and `packed_not_shipped_days` in the table above are now `delivery.not_shipped` and `not_shipped_days`, because AC-31 covers confirmed orders too.
 
 ## References
 
