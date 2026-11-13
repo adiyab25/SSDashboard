@@ -203,16 +203,34 @@ Also from spec 0022: a close check of plain conditions (every line settled, ever
 - [ ] Document it: `/document period close with evidence`
 Spec [0022](../specs/0022-period-close-evidence/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-period-close](../reviews/domain-period-close.md) and the own records request of specs 0023 and 0024; owner decisions Q-23.1 to Q-23.10 answered, Q-23.10 by the owner: the period length is a per brand setting, monthly by default)
 
-### 24. Metric dictionary & phone dashboard · needs a decision
+### 24. Metric dictionary & phone dashboard
 Every figure defined once in the model, and the owner's first dashboard designed for a phone in Arabic.
 **Done when:** the dashboard shows today's orders, confirmed, shipped, delivered, returned to origin by governorate and product, and cash expected versus remitted; real returns are separated from cancellations and order edits; marketing figures (placed day order value) and cash figures (delivered and remitted) never share a number without saying which; today's numbers are marked live; it reads well on a phone.
-- [ ] Design it (spec): `/architect metric dictionary & phone dashboard`
+Also from spec 0023: reporting owns no table and reads each figure at request time from the owning module; a figure whose source is not built yet shows "not available yet", never zero; each returned piece lands in exactly one kind and the real return rate is a delivered cohort; yesterday's deliveries and Bosta's credits are two rows, never one "versus"; parcels count every type, while exchange replacements and gifted orders stay out of orders and rates; a failed delivery counts on the day the parcel turns back; every count opens the orders behind it; feature 23 owns confirming the app's own records days as well as money periods (owner decision Q-24.5); the manager lands on `/today`.
+- [x] Design it (spec): `/architect metric dictionary & phone dashboard`
+- [ ] Build it: `/develop metric dictionary & phone dashboard`
+  - [ ] One figure, end to end: the dictionary, the reader, the state rule, `/today` with the four cards (AC-1 to AC-3, AC-5, AC-14, AC-19 to AC-22)
+  - [ ] The order flow, the pipeline, the returns split, the failed delivery card, the cohort, and the drill downs to the orders (AC-4, AC-6, AC-7, AC-10 to AC-13, AC-15)
+  - [ ] Cash and confirmed days, after specs 0020 and 0022 (AC-3, AC-8 to AC-10, AC-15)
+  - [ ] Needs you, freshness, definitions, the media buyer's page, and scale (AC-11, AC-16 to AC-19, AC-21, AC-23)
+- [ ] Verify it: `/check verify metric dictionary & phone dashboard`
+- [ ] Test it: `/test metric dictionary & phone dashboard`
+Spec [0023](../specs/0023-metric-dictionary-phone-dashboard/index.md) (Proposed 2026-11-13, ratified by the owner the same day; owner decisions Q-24.1 to Q-24.11 answered)
 
-### 25. Daily report · needs a decision
+### 25. Daily report
 A short morning report to the Telegram or WhatsApp group the owner already reads, showing confirmed figures as confirmed and every other figure with its provisional value marked provisional (never as zero), as a worker job with no host privileges.
 **Done when:** at a fixed Cairo time the report sends yesterday's orders, confirmed, shipped, delivered, returned to origin, cash expected versus remitted, one line per store and per partner, exchanges and refunds owed, plus an automation status line (what synced, what failed, what needs a sign in); a failed send retries and shows up on the dashboard.
 Also from spec 0007: a Telegram group is the first channel; WhatsApp group delivery is a later feature once Meta's documentation is checked.
-- [ ] Design it (spec): `/architect daily report`
+Also from spec 0024: one message at 06:00 Cairo by default in the dashboard's order, sent to the Telegram group through an outbound command, waiting up to an hour for yesterday to be confirmed and then sent marked provisional; the header follows the orders, and Bosta money says on its own line that it is provisional until period close; a failure goes to the owner's private chat with the bot, then by email to the managers, opens a task, and shows on `/today`, while a deliberate pause raises no alarm (owner decision Q-25.1); one run per day; alerts go to the owner's private chat in batches and may carry an order number with its store code, never a name, phone, address, note, or message body (Q-25.12, owner ruling 2026-11-13); a dead host is caught only by feature 26's outside check.
+- [x] Design it (spec): `/architect daily report`
+- [ ] Build it: `/develop daily report`
+  - [ ] One report sent: the Telegram connection, the run table, the schedule, the render, the outbound command (AC-1, AC-3, AC-6, AC-8, AC-9, AC-11, AC-13)
+  - [ ] The whole report and the automation status line (AC-4 to AC-7)
+  - [ ] Failure, resend, and confirmed data (AC-2, AC-3, AC-10, AC-11)
+  - [ ] Alerts and the lapse (AC-1, AC-12, AC-14)
+- [ ] Verify it: `/check verify daily report`
+- [ ] Test it: `/test daily report`
+Spec [0024](../specs/0024-daily-report/index.md) (Proposed 2026-11-13, ratified by the owner the same day; owner decisions Q-25.1 to Q-25.8 answered)
 
 ### 26. Deployment, backups & monitoring · GA · needs a decision
 One stack per brand, vendor hosted by default in an Egyptian data center with backups kept in Egypt, and the same images for a self hosted install.
