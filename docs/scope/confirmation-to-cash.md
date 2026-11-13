@@ -232,7 +232,7 @@ Also from spec 0024: one message at 06:00 Cairo by default in the dashboard's or
   - [ ] Alerts and the lapse (AC-1, AC-12, AC-14)
 - [ ] Verify it: `/check verify daily report`
 - [ ] Test it: `/test daily report`
-Spec [0024](../specs/0024-daily-report/index.md) (Proposed 2026-11-13, ratified by the owner the same day; owner decisions Q-25.1 to Q-25.8 answered)
+Spec [0024](../specs/0024-daily-report/index.md) (Proposed 2026-11-13, ratified by the owner the same day; owner decisions Q-25.1 to Q-25.14 answered)
 
 ### 26. Deployment, backups & monitoring · GA · needs a decision
 One stack per brand, vendor hosted by default in an Egyptian data center with backups kept in Egypt, and the same images for a self hosted install.
