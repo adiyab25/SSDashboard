@@ -3355,7 +3355,6 @@ export const en = {
       help: 'In screen help',
       frames: 'Frames',
       rtl: 'Right to left',
-      accent: 'Light theme accent choice (owner decides)',
     },
     pair: {
       atLeast: 'at least {{min}}:1',
@@ -3530,25 +3529,6 @@ export const en = {
     },
     help: {
       note: 'The confirmation queue’s help: the Help button or the ? key opens the page guide; the question mark buttons on the queue card above open a short note. The no answer limit is a sample number, not a setting yet.',
-    },
-    accent: {
-      darkOnly:
-        'This comparison is about the light theme. Switch the theme to Light from the user menu to see it.',
-      intro:
-        'Dev only comparison for spec 0025, AC-17. Pick one for the light theme. Rows that fail are expected: they are the reason a link and status text are refused on the current accent.',
-      optionA: 'Option A: current rule',
-      optionB: 'Option B: lighter accent #E9EEF4',
-      optionANote:
-        'accent #DCE5EE carries only foreground and muted text. Row hover is the ink tint, which keeps a cyan link and the owed text readable.',
-      optionBNote:
-        'accent #E9EEF4 (a candidate, not a token yet): a cyan link, confirmed, and owed text may sit on it. Foreground and muted text stay as they are.',
-      optionAPairs: 'Measured on accent (the fails are expected) and on the ink hover tint:',
-      optionBPairs: 'Measured on the candidate accent:',
-      plain: 'Menu focus or selected segment',
-      link: 'Link',
-      owed: 'Owed',
-      confirmed: 'Confirmed',
-      muted: 'Muted text',
     },
   },
 } as const;

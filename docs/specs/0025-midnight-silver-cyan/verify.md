@@ -16,7 +16,7 @@ pnpm --filter @ssdashboard/web test:e2e -- design-contrast
 pnpm --filter @ssdashboard/web test:e2e -- design-motion-density
 ```
 
-Expect to find these key figures: `foreground` on `background` 15.75 dark and 17.99 light; cyan link on the page 11.60 and 4.98; `input` on control fill 3.25 and 3.88; owed chip 8.98 and 4.82; light cyan on `accent` 4.21 (the failing pair AC-5 forbids); `foreground` on the selected row tint 10.85 and 16.81.
+Expect to find these key figures: `foreground` on `background` 15.75 dark and 17.99 light; cyan link on the page 11.60 and 4.98; `input` on control fill 3.25 and 3.88; owed chip 8.98 and 4.82; light cyan link on `accent` 4.59 (`#E9EEF4`, passes); `foreground` on the selected row tint 10.85 and 16.81.
 
 ## Automated
 
@@ -42,7 +42,7 @@ Whole repository gate at the end of every milestone: `pnpm lint && pnpm typechec
 Milestone 1 (`/design`, in development, `pnpm dev`):
 
 - [ ] Open `/design` in dark. The palette shows every role of the dark column, the gradients show each utility, and the contrast section lists every pair with a live number matching the table in index.md → AC-1, AC-2, AC-3
-- [ ] Switch to light from the user menu. Same page, light column. The pairs AC-5 forbids (cyan, confirmed, owed text on `accent`) are shown as "not allowed on accent", not as a passing pair → AC-5
+- [ ] Switch to light from the user menu. Same page, light column. Every text pair on `accent` (`#E9EEF4`) is listed with its live number: foreground 16.58, muted 6.45, cyan link 4.59, confirmed 4.70, owed 4.65, failed 4.99, all at or above 4.5; row hover uses `tint-row` in both themes → AC-5
 - [ ] Look at the status chip row. Each meaning has its own icon, a word, the control fill, a glow on the icon, and no plain dot → AC-6
 - [ ] Look at the button matrix: main button (blend, edge, weight 600), secondary (control fill, gradient edge, both ends visible against page and card), disabled (card fill, muted text, no lift), hover shows a 1px lift and the sheen on the main button, press shrinks slightly → AC-7, AC-18
 - [ ] Focus every control with Tab. The cyan ring is visible on page, card, control fill, sidebar, and `accent` → AC-8, AC-22
@@ -51,7 +51,7 @@ Milestone 1 (`/design`, in development, `pnpm dev`):
 - [ ] Read the page heading: 20px, the blend fill. Switch the system to forced colors (Windows High Contrast): the heading reads in the plain foreground → AC-11
 - [ ] Switch to Arabic and right to left: section label `//` stays correct, table headers read normally, heading letters join (no gaps), digits stay Western, tinted gradients fade from the right edge, Arabic text in a mono styled label is in Noto Sans Arabic → AC-13, AC-15
 - [ ] Turn on "reduce motion" in the operating system: hover and press no longer move anything; no entrance, sheen, or pulse → AC-19
-- [ ] Show the light theme to the owner. Write the approval (or the changed values) under "Light theme approval" in index.md → AC-17
+- [x] Show the light theme to the owner. Satisfied 2026-11-14: approved with `accent` changed to `#E9EEF4`, written under "Light theme approval" in index.md → AC-17
 - [ ] Open the fonts README: the Geist and Geist Mono rows have the real version from the font `name` table, the `unicode-range`, the weight range, and the licence link; it states whether `tnum` exists → AC-14, AC-16
 
 Milestones 2 to 7 (each batch, in dark and light, English and Arabic):
@@ -68,4 +68,4 @@ Milestones 2 to 7 (each batch, in dark and light, English and Arabic):
 
 - Axe may report the gradient `h1` as "incomplete" instead of passing it. Record what it says in M1 and rely on the stop by stop table plus the plain fallback.
 - A component that still carries an old Daftar class (an indigo, a radius multiplier, a tinted chip surface) passes lint. The AC-23 grep and the token spec catch the leftovers.
-- A hover tint in light that uses `accent` instead of the ink tint puts text on `accent`; check any link, owed flag, or status text inside a hovered row (AC-5).
+- A row hover that uses `accent` instead of the `tint-row` utility; check a hovered row with a link and an owed flag inside, in both themes (AC-5).

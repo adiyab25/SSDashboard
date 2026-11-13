@@ -24,7 +24,7 @@ const PUBLISHED: ReadonlyArray<{
   { id: 'foreground-on-background', dark: 15.75, light: 17.99, fg: 'foreground', bg: 'background' },
   { id: 'foreground-on-card', dark: 14.63, light: 19.34, fg: 'foreground', bg: 'card' },
   { id: 'foreground-on-muted', dark: 13.35, light: 17.19, fg: 'foreground', bg: 'muted' },
-  { id: 'foreground-on-accent', dark: 10.82, light: 15.18, fg: 'foreground', bg: 'accent' },
+  { id: 'foreground-on-accent', dark: 10.82, light: 16.58, fg: 'foreground', bg: 'accent' },
   { id: 'foreground-on-sidebar', dark: 15.41, light: 16.87, fg: 'foreground', bg: 'sidebar' },
   { id: 'foreground-on-popover', dark: 13.35, light: 19.34, fg: 'foreground', bg: 'popover' },
   {
@@ -39,7 +39,7 @@ const PUBLISHED: ReadonlyArray<{
   {
     id: 'muted-foreground-on-accent',
     dark: 5.39,
-    light: 5.91,
+    light: 6.45,
     fg: 'muted-foreground',
     bg: 'accent',
   },
@@ -51,6 +51,7 @@ const PUBLISHED: ReadonlyArray<{
     bg: 'sidebar',
   },
   { id: 'primary-on-background', dark: 11.6, light: 4.98, fg: 'primary', bg: 'background' },
+  { id: 'primary-on-accent', dark: 7.97, light: 4.59, fg: 'primary', bg: 'accent' },
   { id: 'primary-on-card', dark: 10.77, light: 5.36, fg: 'primary', bg: 'card' },
   {
     id: 'primary-foreground-on-primary',
@@ -60,6 +61,7 @@ const PUBLISHED: ReadonlyArray<{
     bg: 'primary',
   },
   { id: 'confirmed-on-background', dark: 12.13, light: 5.1, fg: 'confirmed', bg: 'background' },
+  { id: 'confirmed-on-accent', dark: 8.33, light: 4.7, fg: 'confirmed', bg: 'accent' },
   { id: 'confirmed-on-card', dark: 11.27, light: 5.48, fg: 'confirmed', bg: 'card' },
   {
     id: 'confirmed-on-confirmed-surface',
@@ -69,9 +71,11 @@ const PUBLISHED: ReadonlyArray<{
     bg: 'confirmed-surface',
   },
   { id: 'owed-on-background', dark: 10.6, light: 5.04, fg: 'owed', bg: 'background' },
+  { id: 'owed-on-accent', dark: 7.28, light: 4.65, fg: 'owed', bg: 'accent' },
   { id: 'owed-on-card', dark: 9.84, light: 5.42, fg: 'owed', bg: 'card' },
   { id: 'owed-on-owed-surface', dark: 8.98, light: 4.82, fg: 'owed', bg: 'owed-surface' },
   { id: 'failed-on-background', dark: 8.52, light: 5.42, fg: 'failed', bg: 'background' },
+  { id: 'failed-on-accent', dark: 5.85, light: 4.99, fg: 'failed', bg: 'accent' },
   { id: 'failed-on-card', dark: 7.91, light: 5.82, fg: 'failed', bg: 'card' },
   { id: 'failed-on-failed-surface', dark: 7.22, light: 5.18, fg: 'failed', bg: 'failed-surface' },
   {
@@ -88,7 +92,7 @@ const PUBLISHED: ReadonlyArray<{
     fg: 'foreground',
     bg: 'destructive-surface',
   },
-  { id: 'destructive-on-accent', dark: 5.85, light: 4.57, fg: 'destructive', bg: 'accent' },
+  { id: 'destructive-on-accent', dark: 5.85, light: 4.99, fg: 'destructive', bg: 'accent' },
   {
     id: 'success-foreground-on-success',
     dark: 12.13,
@@ -114,7 +118,7 @@ const PUBLISHED: ReadonlyArray<{
   { id: 'ring-on-background', dark: 11.6, light: 4.98, fg: 'ring', bg: 'background' },
   { id: 'ring-on-muted', dark: 9.83, light: 4.76, fg: 'ring', bg: 'muted' },
   { id: 'ring-on-sidebar', dark: 11.35, light: 4.67, fg: 'ring', bg: 'sidebar' },
-  { id: 'ring-on-accent', dark: 7.97, light: 4.21, fg: 'ring', bg: 'accent' },
+  { id: 'ring-on-accent', dark: 7.97, light: 4.59, fg: 'ring', bg: 'accent' },
   { id: 'input-on-background', dark: 3.83, light: 4.06, fg: 'input', bg: 'background' },
   { id: 'input-on-card', dark: 3.56, light: 4.36, fg: 'input', bg: 'card' },
   { id: 'input-on-muted', dark: 3.25, light: 3.88, fg: 'input', bg: 'muted' },
@@ -168,7 +172,7 @@ const PUBLISHED: ReadonlyArray<{
 const TINT_ID = /^(selected-row|current-page|marker|nav-hover|row-hover)/;
 
 /** How many live `contrast-*` pairs /design shows: 45 text and control, 11 tints, and the gradient stops of the theme. */
-const LIVE_PAIR_COUNT = { dark: 71, light: 69 } as const;
+const LIVE_PAIR_COUNT = { dark: 75, light: 73 } as const;
 
 /**
  * WCAG 2 contrast of two tokens, measured here and not by the app's own helper: each colour is
@@ -339,45 +343,6 @@ for (const theme of ['light', 'dark'] satisfies Theme[]) {
     });
   });
 }
-
-test.describe('the light accent choice (AC-5, AC-17)', () => {
-  test('shows option A and B side by side in light, with the expected fails labelled', async ({
-    page,
-  }) => {
-    await useBrowserState(page, { theme: 'light', language: 'en' });
-    await openShell(page, '/design');
-    await expect(page.getByTestId('accent-choice')).toBeVisible();
-    await expect(page.locator('[data-testid^="compare-"]', { hasText: '…' })).toHaveCount(0);
-
-    // Option A: foreground and muted text pass on #DCE5EE; the link, confirmed and owed text fail there (AC-5).
-    for (const id of ['a-foreground', 'a-muted', 'a-hover-link', 'a-hover-owed']) {
-      await expect(page.getByTestId(`compare-${id}`), id).toHaveText(/:1 meets$/);
-    }
-    for (const id of ['a-link', 'a-confirmed', 'a-owed']) {
-      await expect(page.getByTestId(`compare-${id}`), id).toHaveText(/:1 fails$/);
-    }
-    // The published failing figures: cyan 4.21, confirmed 4.31, owed 4.25.
-    for (const [id, published] of [
-      ['a-link', 4.21],
-      ['a-confirmed', 4.31],
-      ['a-owed', 4.25],
-    ] as const) {
-      const live = Number.parseFloat((await page.getByTestId(`compare-${id}`).textContent()) ?? '');
-      expect(Math.abs(live - published), id).toBeLessThanOrEqual(0.02);
-    }
-    // Option B is measured live and shown, whatever the result, for the owner to read.
-    for (const id of ['b-foreground', 'b-muted', 'b-link', 'b-confirmed', 'b-owed', 'b-failed']) {
-      await expect(page.getByTestId(`compare-${id}`), id).toHaveText(/^\d+\.\d\d:1 (meets|fails)$/);
-    }
-  });
-
-  test('says it is about the light theme when the theme is dark', async ({ page }) => {
-    await useBrowserState(page, { theme: 'dark', language: 'en' });
-    await openShell(page, '/design');
-    await expect(page.getByTestId('accent-choice-dark')).toBeVisible();
-    await expect(page.locator('[data-testid^="compare-"]')).toHaveCount(0);
-  });
-});
 
 test.describe('/design lists the pairs spec 0025 names (AC-2)', () => {
   test('has primary on background and card, and ring on card', async ({ page }) => {

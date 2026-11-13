@@ -1,7 +1,7 @@
 # 0025. Midnight, Silver and Cyan: a new look for the design system (colour, typeface, corners, motion, base components), with the behaviour rules of spec 0003 kept
 
 **Date**: 2026-11-13
-**Status**: Proposed (the owner chose the look and every decision in [Decisions](#decisions); the light theme is a derived starting point and still needs the owner's approval on `/design`, see AC-17)
+**Status**: Proposed (the owner chose the look and every decision in [Decisions](#decisions); the owner approved the light theme on `/design` on 2026-11-14 with one change, see [Light theme approval](#light-theme-approval))
 **Scope feature**: 5, Design system and UI foundation (done), amended. No new scope feature: this changes the look of a built feature, and the screens are restyled in milestones M2 to M7 below.
 **Amends**: [spec 0003](../0003-design-system-ui-foundation/index.md). Option B, "Daftar", is replaced as the look. Everything behavioural in spec 0003 stays.
 **Source design**: the owner's design spec "Midnight, Silver and Cyan" (a folder outside this repository, read only: `DESIGN-SPEC.md` and the reference screens `DSheet`, `DComponents`, `DSsdOrders`). Where the design spec and a screen disagreed, the design spec was followed.
@@ -31,7 +31,7 @@ This spec changes the look only. It does not change behaviour, routes, data, per
 - **AC-2** (contrast, text and controls): every text pair in [Measured contrast](#measured-contrast) meets 4.5:1 (3:1 for large text and for the focus ring and control boundaries), in dark and light, and `/design` computes every pair live from the painted colours and shows the same numbers to within 0.02 for opaque pairs and within 0.1 for pairs measured over a translucent tint (selected row, current page, hover tints), which are measured as painted. Checked by `packages/ui/src/styles/tokens.spec.ts` and the Playwright spec `apps/web/e2e/design-contrast.spec.ts`.
 - **AC-3** (gradient stops): every gradient stop that sits behind text passes 4.5:1 on its own (3:1 for the stops of the large heading fill), the main button blend, the hero blend, the heading blend, the selected row tint, and the current page tint, in both themes. `/design` lists each stop with its ratio. Checked by the same Playwright spec (`design-contrast.spec.ts`).
 - **AC-4** (accent never means status): cyan (`primary`, `ring`) and the gradient blends carry only links, focus, the current page, the main action, and the selected row tint. Status uses `success`, `warning`, `destructive`, and the muted foreground only. Checked by a Vitest spec that renders every `StatusChip` meaning and asserts its class list holds none of `primary`, `ring`, or a blend utility, and by a repository grep recorded in verify.md.
-- **AC-5** (text on `accent` in light): in the light theme `accent` (`#DCE5EE`) carries only `foreground` and `muted-foreground` text. Links, status colours, and the cyan marker as text never sit on `accent` (the measured pairs fail: cyan 4.21, confirmed 4.31, owed 4.25). In light, row hover is the ink tint utility, not `accent`. Checked by the contrast table and by a story on `/design` that renders hovered and selected rows with a link and an owed flag inside.
+- **AC-5** (text on `accent`): every text pair on `accent` passes in both themes, measured on `/design` with light `accent` `#E9EEF4`: `foreground` 16.58, `muted-foreground` 6.45, `primary` (link) 4.59, confirmed 4.70, owed 4.65, failed 4.99, all at or above 4.5. Row hover is the `tint-row` utility in both themes. Checked by the contrast table and by a story on `/design` that renders hovered and selected rows with a link and an owed flag inside.
 
 *Look of base components*
 
@@ -52,7 +52,7 @@ This spec changes the look only. It does not change behaviour, routes, data, per
 
 *Light theme gate*
 
-- **AC-17** (owner approval before screens): the light values are shown on `/design` (palette, gradients, every measured pair) and the owner approves or changes them before M2 starts. The approval (date and any changed value) is written under [Light theme approval](#light-theme-approval) in this spec. Checked by that line being filled in.
+- **AC-17** (owner approval before screens): the light values are shown on `/design` (palette, gradients, every measured pair) and the owner approves or changes them before M2 starts. The approval (date and any changed value) is written under [Light theme approval](#light-theme-approval) in this spec. Checked by that line being filled in. **Satisfied 2026-11-14** by the approval line (accent changed to `#E9EEF4`).
 
 *Motion*
 
@@ -90,7 +90,7 @@ Each decision was made by the owner. The reason is the reason given with it.
 
 ### Colour tokens
 
-Role names are the existing ones in `globals.css`. Dark is the owner's design exactly. Light is derived and owner approved as a starting point (AC-17). Alpha values are written as eight digit hex (`#RRGGBBAA`) and painted over the surface they sit on.
+Role names are the existing ones in `globals.css`. Dark is the owner's design exactly. Light is derived and owner approved on 2026-11-14 (AC-17), with `accent` changed to `#E9EEF4`. Alpha values are written as eight digit hex (`#RRGGBBAA`) and painted over the surface they sit on.
 
 | Role | Dark | Light | Notes |
 |---|---|---|---|
@@ -99,7 +99,7 @@ Role names are the existing ones in `globals.css`. Dark is the owner's design ex
 | `card` | `#111722` | `#FFFFFF` | cards, panels, tables |
 | `popover` | `#18202C` | `#FFFFFF` | menus, popovers |
 | `secondary`, `muted` | `#18202C` | `#EEF2F6` | control fill (secondary button, chips, table header fill) |
-| `accent` | `#243044` | `#DCE5EE` | hover and selected (menu focus, selected segment) |
+| `accent` | `#243044` | `#E9EEF4` | hover and selected (menu focus, selected segment) |
 | `foreground` | `#E6E8EB` | `#0A0E14` | text; `card-foreground`, `popover-foreground`, `sidebar-foreground`, `secondary-foreground`, `accent-foreground` equal it |
 | `muted-foreground` | `#9AA6B8` | `#4A5568` | labels, captions, table headers, info notices |
 | `primary`, `ring` | `#7DD3FC` | `#0E7490` | cyan alone: links, focus, current page |
@@ -160,21 +160,21 @@ Method: the WCAG 2 formula, the same one `apps/web/src/design/contrast.ts` uses 
 | `foreground` on `background` | 15.75 | 17.99 | 4.5 |
 | `foreground` on `card` | 14.63 | 19.34 | 4.5 |
 | `foreground` on control fill | 13.35 | 17.19 | 4.5 |
-| `foreground` on `accent` | 10.82 | 15.18 | 4.5 |
+| `foreground` on `accent` | 10.82 | 16.58 | 4.5 |
 | `foreground` on `sidebar` | 15.41 | 16.87 | 4.5 |
 | `foreground` on `popover` | 13.35 | 19.34 | 4.5 |
 | `muted-foreground` on `background` | 7.85 | 7.00 | 4.5 |
 | `muted-foreground` on `card` | 7.29 | 7.53 | 4.5 |
 | `muted-foreground` on control fill | 6.65 | 6.69 | 4.5 |
-| `muted-foreground` on `accent` | 5.39 | 5.91 | 4.5 |
+| `muted-foreground` on `accent` | 5.39 | 6.45 | 4.5 |
 | `muted-foreground` on `sidebar` | 7.68 | 6.56 | 4.5 |
 | `primary` (link) on `background` | 11.60 | 4.98 | 4.5 |
 | `primary` (link) on `card` | 10.77 | 5.36 | 4.5 |
-| `primary` (link) on `accent` | 7.97 | 4.21 (fails: AC-5) | 4.5 |
+| `primary` (link) on `accent` | 7.97 | 4.59 | 4.5 |
 | `ring` on `background` | 11.60 | 4.98 | 3 |
 | `ring` on control fill | 9.83 | 4.76 | 3 |
 | `ring` on `sidebar` | 11.35 | 4.67 | 3 |
-| `ring` on `accent` | 7.97 | 4.21 | 3 |
+| `ring` on `accent` | 7.97 | 4.59 | 3 |
 | `primary-foreground` on solid `primary` | 11.60 | 5.36 | 4.5 |
 | `success` on `background` | 12.13 | 5.10 | 4.5 |
 | `success` on `card` | 11.27 | 5.48 | 4.5 |
@@ -187,9 +187,9 @@ Method: the WCAG 2 formula, the same one `apps/web/src/design/contrast.ts` uses 
 | `destructive` on control fill (chip) | 7.22 | 5.18 | 4.5 |
 | `destructive` on `destructive-surface` | 7.33 | 5.10 | 4.5 |
 | `foreground` on `destructive-surface` | 13.54 | 16.93 | 4.5 |
-| `success` on `accent` | 8.33 | 4.31 (fails: AC-5) | 4.5 |
-| `warning` on `accent` | 7.28 | 4.25 (fails: AC-5) | 4.5 |
-| `destructive` on `accent` | 5.85 | 4.57 | 4.5 |
+| `success` on `accent` | 8.33 | 4.70 | 4.5 |
+| `warning` on `accent` | 7.28 | 4.65 | 4.5 |
+| `destructive` on `accent` | 5.85 | 4.99 | 4.5 |
 | `success-foreground` on solid `success` | 12.13 | 5.48 | 4.5 |
 | `warning-foreground` on solid `warning` | 10.60 | 5.42 | 4.5 |
 | `destructive-foreground` on solid `destructive` | 8.52 | 5.82 | 4.5 |
@@ -206,7 +206,7 @@ Method: the WCAG 2 formula, the same one `apps/web/src/design/contrast.ts` uses 
 
 The weakest control pairs are `input` on control fill in dark (3.25) and `input` on `sidebar` in light (3.81); the weakest text pairs are the cyan link on the light page (4.98) and the owed chip in light (4.82).
 
-The segmented control's selected border is `input` on the selected `accent` fill at 2.63 in dark (3.43 light). That is not a failing pair: the border's neighbour on the outside is the track, which is the pair that matters for a boundary (3.56 and 4.36); the fill inside is the control itself.
+The segmented control's selected border is `input` on the selected `accent` fill at 2.63 in dark (light: 3.74 on `#E9EEF4`, was 3.43 on `#DCE5EE`). That is not a failing pair: the border's neighbour on the outside is the track, which is the pair that matters for a boundary (3.56 and 4.36); the fill inside is the control itself.
 
 **Gradient stops behind or inside text** (each stop alone)
 
@@ -287,7 +287,11 @@ Lines this change makes false. M1 fixes them (the first group is the brief's lis
 
 ### Light theme approval
 
-Not yet given. M1 ends when the owner sees the light theme on `/design` (AC-17). Record here: the date, "approved as is" or the changed values, and the commit that holds them.
+- **Date**: 2026-11-14.
+- **Approved by**: the owner, on `/design`.
+- **Changed value**: one. Light `accent` `#DCE5EE` becomes `#E9EEF4` (option B). Measured live on `/design` on `#E9EEF4`: `foreground` 16.58, `muted-foreground` 6.45, `primary` 4.59, confirmed 4.70, owed 4.65, failed 4.99, all pass 4.5.
+- **Everything else**: approved as shown, including row hover staying the `tint-row` utility in both themes.
+- **Commit holding the values**: to be filled in when the change is committed.
 
 ## Build plan
 
@@ -353,7 +357,7 @@ Owner: frontend.
 - A migration risk is small: token values, a font swap, and class changes in base components; no structure, route, or data changes.
 - Several tests name the old look (a font family, a Daftar pair, a class list) and change in the same milestones; only look assertions may change (AC-21).
 - Gradient text on `h1` is a known weak spot for contrast checkers: axe may report the gradient text as "incomplete" rather than passing it. The stop by stop measurement and the plain `foreground` fallback are the mitigation; M1 runs axe on a heading and records what it says.
-- In light, `accent` cannot carry links or status text (AC-5). A screen that wanted a coloured link on a hovered row has to use the ink hover tint, which is a rule every builder must follow.
+- Row hover is the `tint-row` utility in both themes, not `accent` (AC-5). Text on `accent` is no longer restricted (every pair passes), but the hover tint rule still holds.
 
 ## Follow-up
 

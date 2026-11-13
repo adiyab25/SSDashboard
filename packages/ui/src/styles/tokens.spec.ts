@@ -28,7 +28,7 @@ const TABLE: readonly (readonly [readonly string[], string, string])[] = [
   [['card'], '#111722', '#ffffff'],
   [['popover'], '#18202c', '#ffffff'],
   [['secondary', 'muted'], '#18202c', '#eef2f6'],
-  [['accent', 'sidebar-accent'], '#243044', '#dce5ee'],
+  [['accent', 'sidebar-accent'], '#243044', '#e9eef4'],
   [
     [
       'foreground',

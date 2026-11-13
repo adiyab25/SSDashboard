@@ -5,7 +5,6 @@
 // sections below keep their own sample copy.
 
 import { useTranslation } from 'react-i18next';
-import { AccentChoice } from './accent-choice';
 import { Basics } from './basics';
 import { ButtonMatrix } from './button-matrix';
 import { ContrastList } from './contrast-list';
@@ -133,10 +132,6 @@ export function DesignGallery() {
       <DesignSection id="rtl" title={t('design.sections.rtl')}>
         <RightToLeftRow />
         <p className="text-muted-foreground">{t('design.rtlNote')}</p>
-      </DesignSection>
-
-      <DesignSection id="accent" title={t('design.sections.accent')}>
-        <AccentChoice version={version} />
       </DesignSection>
     </div>
   );

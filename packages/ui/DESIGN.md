@@ -29,7 +29,7 @@ Token values live in [`src/styles/globals.css`](src/styles/globals.css). This fi
 | `card`                                              | `#111722`                        | `#FFFFFF`          | Cards, panels, tables. `card-foreground` equals `foreground`                                                                                                                              |
 | `popover`                                           | `#18202C`                        | `#FFFFFF`          | Menus, popovers, dialogs, sheets. `popover-foreground` equals `foreground`                                                                                                                |
 | `secondary`, `muted`                                | `#18202C`                        | `#EEF2F6`          | The control fill: secondary buttons, chips, the table header fill. `secondary-foreground` equals `foreground`                                                                             |
-| `accent`                                            | `#243044`                        | `#DCE5EE`          | Hover and selected: menu focus, the selected segment. `accent-foreground` equals `foreground`. **In light it carries only `foreground` and `muted-foreground` text** (see the rule below) |
+| `accent`                                            | `#243044`                        | `#E9EEF4`          | Hover and selected: menu focus, the selected segment. `accent-foreground` equals `foreground`. Carries text, links, and status in both themes (rule below) |
 | `foreground`                                        | `#E6E8EB`                        | `#0A0E14`          | Text. `card-`, `popover-`, `sidebar-`, `secondary-`, `accent-` `foreground` equal it                                                                                                      |
 | `muted-foreground`                                  | `#9AA6B8`                        | `#4A5568`          | Labels, captions, table headers, placeholders, info notices                                                                                                                               |
 | `primary`, `ring`                                   | `#7DD3FC`                        | `#0E7490`          | Cyan alone: links, the focus ring, the current page, the main action. Never status                                                                                                        |
@@ -54,7 +54,7 @@ Keep one main button (the silver to cyan blend) per view. Hierarchy comes from f
 **Rules that follow from the numbers.**
 
 - **Cyan means three things and the main action.** `primary` and `ring` carry links, focus, the current page, the main action, and the selected row tint. Status never uses them (a Vitest spec asserts no `StatusChip` class holds `primary`, `ring`, a blend, or a gradient).
-- **Light `accent` carries only `foreground` and `muted-foreground` text (AC-5).** Links, status colours, and the cyan marker as text never sit on it: measured cyan 4.21, confirmed 4.31, owed 4.25, all below 4.5. In light, row hover is the ink tint utility `tint-row`, never `accent`. A hovered or selected row can hold a link and an owed flag because the tints measure above 4.5.
+- **`accent` carries `foreground`, `muted-foreground`, links, and status text in both themes.** In light `#E9EEF4` measures foreground 16.58, muted-foreground 6.45, cyan link 4.59, confirmed 4.70, owed 4.65, failed 4.99, all at least 4.5. Row hover stays the alpha tint utility `tint-row` in both themes and does not derive from `accent`. Owner decision 2026-11-14: option B, light `accent` `#E9EEF4` (it replaces `#DCE5EE`, where cyan, confirmed and owed failed at 4.21 to 4.31).
 - **The cyan marker is a mark, not text.** On the light current page tint the cyan as text is 3.88 and is not used; the current page text is `foreground` and the cyan is only the 2px marker (non text mark, 3:1, it has 4.67 on the light sidebar).
 
 ### Four meaning roles (AC-16)
@@ -94,21 +94,21 @@ Text needs 4.5:1 (3:1 for large text). Control boundaries, the focus ring, and n
 | `foreground` on `background`                                | 15.75                  | 17.99              | 4.5  |
 | `foreground` on `card`                                      | 14.63                  | 19.34              | 4.5  |
 | `foreground` on control fill                                | 13.35                  | 17.19              | 4.5  |
-| `foreground` on `accent`                                    | 10.82                  | 15.18              | 4.5  |
+| `foreground` on `accent`                                    | 10.82                  | 16.58              | 4.5  |
 | `foreground` on `sidebar`                                   | 15.41                  | 16.87              | 4.5  |
 | `foreground` on `popover`                                   | 13.35                  | 19.34              | 4.5  |
 | `muted-foreground` on `background`                          | 7.85                   | 7.00               | 4.5  |
 | `muted-foreground` on `card`                                | 7.29                   | 7.53               | 4.5  |
 | `muted-foreground` on control fill                          | 6.65                   | 6.69               | 4.5  |
-| `muted-foreground` on `accent`                              | 5.39                   | 5.91               | 4.5  |
+| `muted-foreground` on `accent`                              | 5.39                   | 6.45               | 4.5  |
 | `muted-foreground` on `sidebar`                             | 7.68                   | 6.56               | 4.5  |
 | `primary` (link) on `background`                            | 11.60                  | 4.98               | 4.5  |
 | `primary` (link) on `card`                                  | 10.77                  | 5.36               | 4.5  |
-| `primary` (link) on `accent`                                | 7.97                   | 4.21 (fails: AC-5) | 4.5  |
+| `primary` (link) on `accent`                                | 7.97                   | 4.59               | 4.5  |
 | `ring` on `background`                                      | 11.60                  | 4.98               | 3    |
 | `ring` on control fill                                      | 9.83                   | 4.76               | 3    |
 | `ring` on `sidebar`                                         | 11.35                  | 4.67               | 3    |
-| `ring` on `accent`                                          | 7.97                   | 4.21               | 3    |
+| `ring` on `accent`                                          | 7.97                   | 4.59               | 3    |
 | `primary-foreground` on solid `primary`                     | 11.60                  | 5.36               | 4.5  |
 | `success` on `background`                                   | 12.13                  | 5.10               | 4.5  |
 | `success` on `card`                                         | 11.27                  | 5.48               | 4.5  |
@@ -121,9 +121,9 @@ Text needs 4.5:1 (3:1 for large text). Control boundaries, the focus ring, and n
 | `destructive` on control fill (chip)                        | 7.22                   | 5.18               | 4.5  |
 | `destructive` on `destructive-surface`                      | 7.33                   | 5.10               | 4.5  |
 | `foreground` on `destructive-surface`                       | 13.54                  | 16.93              | 4.5  |
-| `success` on `accent`                                       | 8.33                   | 4.31 (fails: AC-5) | 4.5  |
-| `warning` on `accent`                                       | 7.28                   | 4.25 (fails: AC-5) | 4.5  |
-| `destructive` on `accent`                                   | 5.85                   | 4.57               | 4.5  |
+| `success` on `accent`                                       | 8.33                   | 4.70               | 4.5  |
+| `warning` on `accent`                                       | 7.28                   | 4.65               | 4.5  |
+| `destructive` on `accent`                                   | 5.85                   | 4.99               | 4.5  |
 | `success-foreground` on solid `success`                     | 12.13                  | 5.48               | 4.5  |
 | `warning-foreground` on solid `warning`                     | 10.60                  | 5.42               | 4.5  |
 | `destructive-foreground` on solid `destructive`             | 8.52                   | 5.82               | 4.5  |
@@ -140,7 +140,7 @@ Text needs 4.5:1 (3:1 for large text). Control boundaries, the focus ring, and n
 
 The weakest control pairs are `input` on control fill in dark (3.25) and `input` on `sidebar` in light (3.81); the weakest text pairs are the cyan link on the light page (4.98) and the owed chip in light (4.82).
 
-The segmented control's selected border is `input` on the selected `accent` fill at 2.63 in dark (3.43 light). That is not a failing pair: the border's neighbour on the outside is the track, which is the pair that matters for a boundary (3.56 and 4.36); the fill inside is the control itself.
+The segmented control's selected border is `input` on the selected `accent` fill at 2.63 in dark (3.74 light). That is not a failing pair: the border's neighbour on the outside is the track, which is the pair that matters for a boundary (3.56 and 4.36); the fill inside is the control itself.
 
 **Gradient stops behind or inside text** (each stop alone)
 
@@ -228,7 +228,7 @@ Gradients are named utilities in `globals.css`, never colour variables and never
 | `gradient-current-page`   | The current page tint on a sidebar item                                                                                        | `90deg, #7DD3FC29, #7DD3FC05`                                             | `90deg, #0E749024, #0E74900A`                                                                          |
 | `gradient-current-marker` | The 2px marker on the leading edge of the current page (the sidebar button draws it with `before:`)                            | `180deg, #FFFFFF, #7DD3FC`                                                | `180deg, #0A0E14, #0E7490`                                                                             |
 | `tint-nav`                | Sidebar item hover (alpha only)                                                                                                | `#FFFFFF0A`                                                               | `#0A0E140A`                                                                                            |
-| `tint-row`                | Table row hover (alpha only; in light an ink tint, never `accent`)                                                             | `#FFFFFF08`                                                               | `#0A0E140D`                                                                                            |
+| `tint-row`                | Table row hover (alpha only; an ink tint in light)                                                             | `#FFFFFF08`                                                               | `#0A0E140D`                                                                                            |
 | `section-label`           | Lowercase mono label with a cyan `// ` before                                                                                  | n/a                                                                       | n/a                                                                                                    |
 | `table-head-look`         | Lowercase mono table header look                                                                                               | n/a                                                                       | n/a                                                                                                    |
 
@@ -324,7 +324,7 @@ Each component keeps its props, structure, density classes (`h-control`, `h-row`
 
 - Build on TanStack Table with the shadcn `Table` parts. Rows are `h-row` (40px; 48px in the `floor` scope on touch), the header `h-row-header` (44px; 52px) on `bg-muted` with lowercase mono labels (`table-head-look`) and a `border-strong` rule.
 - Numbers, quantities, and money are end aligned (`text-end`) with `tabular-nums`. Text columns are start aligned.
-- Row hover is `hover:tint-row` (an alpha tint; in light an ink tint, never `accent`, AC-5); a selected row is `gradient-selected-row` plus a checked row checkbox. Never color alone. Status in a row is a `StatusChip` (icon plus word, at most three, then a "+2" count), in the column order code, who, where, how much, state, cash; provisional amounts follow the provisional rules above.
+- Row hover is `hover:tint-row` (an alpha tint in both themes, independent of `accent`); a selected row is `gradient-selected-row` plus a checked row checkbox. Never color alone. Status in a row is a `StatusChip` (icon plus word, at most three, then a "+2" count), in the column order code, who, where, how much, state, cash; provisional amounts follow the provisional rules above.
 - **Chips in a row.** At most three `StatusChip`s per row: fulfillment, cash, and one more. Attention (a flag, a note, a problem) is a small flag under the name, not a chip. Anything beyond three collapses into a `StatusChipOverflow` "+N" (a button listing the rest when the row has room for one, otherwise plain text). One line to open the detail: `<Popover><PopoverTrigger asChild><StatusChipOverflow count={n} label={t("...")} /></PopoverTrigger><PopoverContent aria-label={...}>...</PopoverContent></Popover>` (the content needs an accessible name); it forwards `ref` and the trigger props, becomes a button when `onClick`, `interactive`, or any `aria-haspopup`/`aria-expanded`/`aria-controls` is present, and needs no wrapper, effect, or manual focus return; never hide a failed or owed status only behind the count.
 - **Column order is fixed**: code, who, where, how much, state, cash. Money and counts end aligned with `tabular-nums`; the state and cash columns hold the chips.
 - **Provisional in a table.** A provisional amount is a `ProvisionalValue`: `≈` first (inside a `bdi`, so it stays first in right to left), a dashed `input` boundary on a transparent surface (never solid), `tabular-nums`, and a hidden "provisional" label. A total that mixes both shows the confirmed part and the provisional part as two separate values, never one blended sum. A provisional dashboard card is a dashed card (`border-dashed border-input`).

@@ -2,10 +2,8 @@ import type { ContrastPairSpec } from './contrast-pair';
 
 /**
  * The text and control pairs of spec 0025, "Measured contrast, text and controls". Text needs
- * 4.5:1; control boundaries and the focus ring 3:1 (WCAG 2.2 AA). "Control fill" is `muted`. Three
- * pairs of that table are not here because the rule forbids them: in light, a link, the owed text,
- * and the confirmed text never sit on `accent` (AC-5). They are shown with the light accent choice
- * (`ACCENT_OPTION_A_PAIRS`), where they are labelled as expected to fail.
+ * 4.5:1; control boundaries and the focus ring 3:1 (WCAG 2.2 AA). "Control fill" is `muted`. The
+ * light `accent` is #E9EEF4 (the owner's choice), so a link and the status text may sit on it.
  */
 export const TEXT_AND_CONTROL_PAIRS: readonly ContrastPairSpec[] = [
   { fg: 'foreground', bg: 'background', min: 4.5 },
@@ -18,6 +16,10 @@ export const TEXT_AND_CONTROL_PAIRS: readonly ContrastPairSpec[] = [
   { fg: 'muted-foreground', bg: 'card', min: 4.5 },
   { fg: 'muted-foreground', bg: 'muted', min: 4.5 },
   { fg: 'muted-foreground', bg: 'accent', min: 4.5 },
+  { fg: 'primary', bg: 'accent', min: 4.5 },
+  { fg: 'confirmed', bg: 'accent', min: 4.5 },
+  { fg: 'owed', bg: 'accent', min: 4.5 },
+  { fg: 'failed', bg: 'accent', min: 4.5 },
   { fg: 'muted-foreground', bg: 'sidebar', min: 4.5 },
   { fg: 'primary', bg: 'background', min: 4.5 },
   { fg: 'primary', bg: 'card', min: 4.5 },
@@ -104,32 +106,3 @@ export const STOP_GROUPS = [
   // The h1 fill: each stop is large text, 3:1 on the page and on a card.
   { name: 'heading', variable: 'stops-heading', kind: 'is-text' },
 ] as const;
-
-/** The candidate for the light accent (option B of spec 0025, AC-17); not a token. */
-export const CANDIDATE_ACCENT = '#E9EEF4';
-
-/**
- * Option A of the light accent choice, the current rule: `accent` (`#DCE5EE`) carries only
- * `foreground` and `muted-foreground` text (the first two pass); the next three show why a link,
- * the confirmed text, and the owed text are refused there and are expected to fail. Row hover is
- * the ink tint, where the link and the owed text pass.
- */
-export const ACCENT_OPTION_A_PAIRS: readonly ContrastPairSpec[] = [
-  { fg: 'foreground', bg: 'accent', min: 4.5, id: 'a-foreground', prefix: 'compare' },
-  { fg: 'muted-foreground', bg: 'accent', min: 4.5, id: 'a-muted', prefix: 'compare' },
-  { fg: 'primary', bg: 'accent', min: 4.5, id: 'a-link', prefix: 'compare' },
-  { fg: 'confirmed', bg: 'accent', min: 4.5, id: 'a-confirmed', prefix: 'compare' },
-  { fg: 'owed', bg: 'accent', min: 4.5, id: 'a-owed', prefix: 'compare' },
-  { fg: 'primary', bg: 'tint-row', over: 'card', min: 4.5, id: 'a-hover-link', prefix: 'compare' },
-  { fg: 'owed', bg: 'tint-row', over: 'card', min: 4.5, id: 'a-hover-owed', prefix: 'compare' },
-];
-
-/** Option B: `accent` lightened to the candidate, which would let a link and status text sit on it. */
-export const ACCENT_OPTION_B_PAIRS: readonly ContrastPairSpec[] = [
-  { fg: 'foreground', bg: CANDIDATE_ACCENT, min: 4.5, id: 'b-foreground', prefix: 'compare' },
-  { fg: 'muted-foreground', bg: CANDIDATE_ACCENT, min: 4.5, id: 'b-muted', prefix: 'compare' },
-  { fg: 'primary', bg: CANDIDATE_ACCENT, min: 4.5, id: 'b-link', prefix: 'compare' },
-  { fg: 'confirmed', bg: CANDIDATE_ACCENT, min: 4.5, id: 'b-confirmed', prefix: 'compare' },
-  { fg: 'owed', bg: CANDIDATE_ACCENT, min: 4.5, id: 'b-owed', prefix: 'compare' },
-  { fg: 'failed', bg: CANDIDATE_ACCENT, min: 4.5, id: 'b-failed', prefix: 'compare' },
-];

@@ -17,13 +17,11 @@ export interface ContrastPairSpec {
   min: number;
   /** Distinguishes two pairs with the same colours on different surfaces. */
   id?: string;
-  /** The `data-testid` prefix; `compare` marks a pair that is allowed to fail (the light accent choice). */
-  prefix?: 'contrast' | 'compare';
 }
 
 /** The `data-testid` a pair carries, so a test can read its live figure. */
 export function pairTestId(pair: ContrastPairSpec): string {
-  return `${pair.prefix ?? 'contrast'}-${pair.id ?? `${pair.fg}-on-${pair.bg}`}`;
+  return `contrast-${pair.id ?? `${pair.fg}-on-${pair.bg}`}`;
 }
 
 /**
@@ -40,7 +38,7 @@ export function ContrastPair(pair: ContrastPairSpec & { version: number }) {
   }, [fg, bg, over, version]);
   const passes = measured !== null && measured.ratio >= min;
   const surface = `var(--${over ?? 'background'})`;
-  // Documented exception to role tokens only (see ./README.md, with accent-choice.tsx): the inline
+  // Documented exception to role tokens only (see ./README.md): the inline
   // style carries the live measured colours, which are the thing this row exists to show.
   const swatch = {
     backgroundColor: surface,
