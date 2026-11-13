@@ -1,0 +1,246 @@
+# 0021. Barcode scanning: one scan box for a keyboard wedge scanner, the phone camera, and typing, a barcode or SKU code resolved to its variant in under a second, returned pieces received one scan at a time with a path for every piece the table really sees, and scans that fill the lines of the stock forms
+
+**Date**: 2026-11-13
+**Status**: Assumed
+**Revised**: 2026-11-13 for the domain review [domain-barcode-scanning](../../reviews/domain-barcode-scanning.md) (B1, B2, M1 to M8, m1 to m8 folded in; the requests it routes to spec 0019 are in *Requested of spec 0019*)
+**Scope feature**: 20, Barcode scanning, in [Slice 1a: confirmation to cash](../../scope/confirmation-to-cash.md)
+**Depends on**: the barcodes table and the exact barcode branch of search in [spec 0012](../0012-catalog-styles-variants/index.md) (`barcodes`, unique per tenant, each tied to a pack unit; `normalizeDigits`; barcode add and remove); the returned parcels of [spec 0019](../0019-delivery-failures-returned-to-origin/index.md) (AC-8 to AC-10 and AC-29: `GET /api/returned-parcels/lookup`, `POST /api/returned-parcels/:id/pieces` with `via: 'scan'`, conditions, wrong pieces, close short, return pickups and exchanges; its *Exported services and events* are used, never redefined, and three small additions are requested of it); the stock forms of [spec 0011](../0011-stock-ledger-locations/index.md) (adjustments, adjustment requests, send to and return from a partner) and the stock receipt of [spec 0006](../0006-core-stock-loop/index.md); the design system of [spec 0003](../0003-design-system-ui-foundation/index.md) and `packages/ui/DESIGN.md`.
+**Consumed by**: the slice 1a done when ("every returned to origin piece of that week is restocked by scan"); later, the pick and pack check (Follow-up) and the partner count of feature 42.
+
+## Summary
+
+The warehouse finds a variant and moves stock by scanning, with a handheld scanner that types like a keyboard or with the phone's own camera. One scan box serves both: it reads the physical keys a scanner presses, so an Arabic keyboard layout never turns a code into Arabic letters, it still takes a code typed on a phone's own keyboard, and it opens the camera on a phone. The server resolves the code (a barcode first, then an exact SKU code) to one variant in well under a second, and an unknown code says so in words, a sound, and a vibration. On the returns screen a label scan (or a tap on the list) opens the parcel and each piece scan calls spec 0019's receive call, which writes the restock through the ledger; the station also handles what a real table brings: a piece with no tag, a piece of another bag, more pieces than expected, a damaged or doubtful piece, and a save lost to bad wifi, without ever restocking a piece twice. On the stock forms a scan adds or counts up a line, and the form still posts once. Every owner question was answered with its recommended option, so this spec is `Assumed` until the owner ratifies it.
+
+## Requirements
+
+**User stories**:
+- As a warehouse person, I want to scan a returned parcel's label and then each piece inside, so that every piece is back on the shelf in seconds and nothing is restocked twice.
+- As a warehouse person at a table with several bags and loose pieces, I want the app to tell me which parcel a piece belongs to, so that one bag's piece never becomes another bag's mistake.
+- As a warehouse person on a phone, I want the camera to read a tag when no handheld scanner is near, and to type a code when a label is torn, so that the job never waits.
+- As a warehouse person, I want an unknown or wrong code to stop me clearly (words, sound, vibration), so that I never think a piece was saved when it was not.
+- As a manager, I want to give a tag with no barcode in the app its code on the spot, so that the next scan of that tag works.
+- As a warehouse person counting a delivery from the factory or a bag for a showroom, I want each scan to add the piece to the form, so that I do not type SKU codes.
+
+**Acceptance criteria** (the contract; each is checked in [verify.md](verify.md)):
+
+*Resolving a code*
+- **AC-1** (resolve): `POST /api/barcodes/resolve` with body `{ code }` (permission `stock.view`; a POST so the code never sits in an address that proxy access logs keep, review m2) normalizes the code with `normalizeScannedCode` (AC-2) and answers, in this order: (a) the variant whose barcode equals the normalized code, or equals its UPC A and EAN 13 twin (a 12 digit code and the same code with a leading `0`, review M7), with `matchedBy: 'barcode'` and the barcode's pack unit factor (`unitFactor`, 1 for the base unit); else (b) the variant whose SKU equals it exactly, with `matchedBy: 'sku_code'` and `unitFactor` 1; else `{ kind: 'unknown', looksLikeAddress }`, where `looksLikeAddress` is true for a code that starts with `HTTP://` or `HTTPS://` (a QR with the store's web address, review M7), so the screen can say "This is a web address, not a product code". A found answer is `{ kind: 'variant', variant: { id, skuCode, styleId, styleName (both languages), optionValues, archived }, matchedBy, unitFactor }`. An archived variant is still answered, with `archived: true`, so a returned piece of an archived style can come back. Unknown is a 200, never a 404, so the scan box treats every answer the same way.
+- **AC-2** (normalizing, one pure function shared by the web and the api): `normalizeScannedCode(raw)` in `packages/contracts/src/catalog/scanned-code.ts` removes a leading symbology identifier (`]` and two characters, for example `]C1`), the control characters a scanner may add (group separator, carriage return, line feed, tab), and surrounding spaces; turns Arabic Indic and Eastern Arabic digits into Western digits through `normalizeDigits`; uppercases Latin letters; and refuses an empty result or one longer than 64 characters (`SCAN_CODE_INVALID`). `upcTwins(code)` in the same file answers the twin of a 12 or 13 digit code (AC-1). Spec 0012's barcode branch of `GET /api/skus?q=` uses the same functions, so a code that search finds is a code that scanning finds.
+- **AC-3** (speed): at the spec 0012 scale seed (50,000 variants, one barcode each) on the dev PostgreSQL, `POST /api/barcodes/resolve` answers in 50 ms or less at the 95th percentile over at least 50 timed runs after 10 warm up runs, for a barcode hit, a twin hit, an SKU hit, and an unknown code. In the browser, from the Enter key of a wedge scan (or the camera's decode) to the variant or the unknown message on screen takes under one second at the 95th percentile on the pilot's phone over the warehouse network (measured once in the pilot setup, recorded in verify.md).
+- **AC-4** (an unknown code says so): an unknown code shows "This code is not in the catalog" (or the web address message of AC-1) with the code itself in left to right text, plays the error sound, vibrates long where the device can, and leaves the code in the box for a second look. It moves nothing. A holder of `catalog.edit` (warehouse and manager hats) sees "Give this code to a variant", which opens a variant search (spec 0012) and calls spec 0012's `POST /api/skus/:id/barcodes`; the dialog shows the chosen variant's size and color large with its SKU code left to right; on the receive view it warns "This variant is not expected in this parcel" when it is not; after the code is given, the result offers Undo for 10 seconds (spec 0012's barcode remove) (review m1); a 409 `BARCODE_TAKEN` names the SKU that holds it. On the return from partner form, the dialog first warns "This may be the partner's sticker: scan the brand's own tag" (review m6). After a code is given, the same scan is resolved again at once.
+
+*The scan box*
+- **AC-5** (one scan box for a scanner, a phone keyboard, and paste): the `ScanBox` component (`apps/web/src/scanning/`) is a labelled text field with a visible focus ring that keeps focus while its screen is open. A keystroke with a physical key (`KeyboardEvent.code` not empty) is read by that key with Shift and mapped through the US layout, so a wedge scanner on a computer or phone set to Arabic still gives `TEE-BLK-M`, not Arabic letters. A keystroke with an empty `code`, or a key of `Unidentified` or `Process` (a phone's on screen keyboard, which sends key code 229, review B2) is read from the field's `beforeinput` and `input` data instead, with no layout mapping; so is a paste. Every entry then goes through `normalizeScannedCode`. Enter or Tab ends a scan, and a typed entry is also ended by the box's Go button. When focus leaves the box, it shows "Scanning paused: select here to scan", never capturing keys from the rest of the page.
+- **AC-6** (no keyboard over the screen on a phone, review M8): on a touch device the box sets `inputmode="none"` while waiting for a scanner or the camera, so focus never raises the on screen keyboard; a "Type a code" button switches the box to normal typing (`inputmode="text"`) for one entry, then back. At 360 pixels wide, the expected pieces of the open parcel stay visible after a scan.
+- **AC-7** (the camera): on a device with a camera, the box shows "Scan with camera", which opens the rear camera (`getUserMedia` with `facingMode: 'environment'`) in a sheet with a viewfinder, a torch toggle where the device has one, and Close. It decodes with the browser's own `BarcodeDetector` when it reports the needed formats, else with the `barcode-detector` polyfill (zxing in WebAssembly) loaded only when the camera first opens, its WebAssembly file served from the web app itself, never from a public CDN. Formats: EAN 13, EAN 8, UPC A, UPC E, Code 128, Code 39, QR, and Data Matrix. A refused camera permission shows how to allow it in the reader's language and leaves the box working by keyboard. The camera stops when the sheet closes, the screen is left, or the tab is hidden.
+- **AC-8** (one scan, one action; no rereads, review M1): on the receive view the camera takes one decode, then pauses with "Scan next piece"; it decodes again only after that tap. On the line forms the camera stays continuous, and the same code is accepted again only after it has been out of the frame (no decode of it) for at least 1 second, because the form's count is reviewed before it posts. A wedge scan is never ignored, since a second scan of the same tag means a second piece; the pilot scanner is set to trigger mode (Follow-up). Each accepted scan gets one `crypto.randomUUID()` at the moment it is accepted; that id is the `Idempotency-Key` of the action the scan starts, and a retry of that action sends the same id.
+- **AC-9** (feedback): every scan gives one of three results, each in words, an icon, and a sound, never by color alone: saved (short high tone, a short vibration), needs you (two tones, a long vibration: unknown, not in this parcel, more than expected, pack code, choose a parcel), and not saved (three low tones: a network or server error, with Retry). Sounds are made with the Web Audio API (no sound files), and a Mute switch on the scan box is remembered on the device. Each result is announced to screen readers through a polite live region.
+- **AC-10** (not saved is never silent, and never doubled, review M2): an action that fails for the network, a timeout, or a 5xx stays in a "Not saved" list with its code, what it was for, and Retry (same idempotency key). While a Not saved entry exists for a variant on the open parcel, a new scan of that variant retries that entry with its key and says "Retrying the piece not saved", never starting a new piece. The list is kept in the device's browser storage keyed by parcel (read and written in a try, so a private window only loses the persistence) and restored when the view opens again; the screen warns before it is left while the list is not empty. The parcel view lists each received piece with its time, its condition, and who recorded it, so a person sees that an earlier scan landed. There is no offline queue (owner decision Q-20.5).
+
+*Returned parcels (the slice's done when)*
+- **AC-11** (opening a parcel): on spec 0019's `/returned-parcels` page the scan station opens a parcel's receive view in any of three ways: a scanned code that equals a parcel's tracking number (spec 0019 `GET /api/returned-parcels/lookup?code=`, called beside the resolve call); a typed entry, which may also be a store order number (a scanned code is matched against tracking numbers only, so a short numeric tag never opens an order's parcel, review m3); or a tap on a parcel's row in the list or on a lookup result (review B2). A piece scanned with no parcel open lists the open parcels that expect that variant, oldest first, from the read requested of spec 0019 (`ReturnedParcels.expecting(variantId)`), and the person picks one; with none, it answers "No open parcel expects this piece" with "Record a parcel that is not on the list" (spec 0019 AC-30). With a parcel open, a hit on another parcel's label while pieces are still expected asks "Switch to parcel N? M pieces still expected here" with three answers: Switch, Close this parcel short and switch (spec 0019's close with `received_short`, review m4), and Stay.
+- **AC-12** (each piece scan receives): a variant scan with a parcel open calls spec 0019's `POST /api/returned-parcels/:id/pieces` with that parcel, the variant, `quantity` 1, `via: 'scan'`, the condition of AC-14, and the scan's idempotency key; this feature never calls the ledger itself. A `sellable` piece's answer is the restock spec 0019 posts through `OrderStock.restockAwaiting`. The view counts the piece off its expected list at once. The `orderLineId` is chosen by the parcel's cause (review M4): for `returned_to_origin`, `partial_delivery`, and `manual_return`, spec 0019 picks the awaiting line (oldest first) and the station sends none; for `customer_return_pickup` and `exchange_pickup`, the station sends the delivered line of the scanned variant on the order whose piece is coming back (for a Bosta Exchange, the original order the replacement was made for), the oldest delivered line first, limited to what is not yet back, read from spec 0019's parcel read; when that order has no delivered line of the variant, it answers "Not on this customer's order" and shows the order's delivered pieces. The exchange path waits for spec 0019's amendment for owner decision Q-21.13 (Bosta Exchange supported in slice 1a).
+- **AC-13** (a piece that is not where expected): a variant that the open parcel does not expect is answered in this order, never with a one tap wrong piece. (a) Another open parcel expects it (`ReturnedParcels.expecting`): "This piece belongs to parcel N (order M): switch and receive" (review M3). (b) The open parcel expects another size or color of the same style: "Expected the L of this style; this tag says M" with Receive as L, Receive as M (a wrong piece), and Cancel (review M7). (c) Neither: "Not expected in this parcel" with spec 0019's "Record a different piece" as a deliberate second step. A variant whose expected pieces on this parcel are all received is answered "Already received" only when it comes within 10 seconds of the last saved piece of that variant; otherwise "More of this than expected: put it aside" with "Record the extra piece", which records a `held` piece on the parcel with no `orderLineId` and posts no stock, so operations sees it through spec 0019's tasks (review M6; requested of spec 0019). A pack barcode (`unitFactor` above 1) answers "This is a pack code: scan the piece" and sends nothing.
+- **AC-14** (condition modes, review M5 and m5; owner decision Q-20.7 changed): the receive view has three modes, Sellable (always the default), Damaged, and Held. Tapping Damaged or Held applies it to the next one scan only, then the view goes back to Sellable; a second tap locks the mode for a bag that is all damaged or all doubtful, and a locked mode shows its name and a count ("3 pieces marked damaged") in the box's label and the banner words. Opening another parcel unlocks it. A Damaged or Held piece is shown as "Damaged, sending in 5 seconds" with Undo, and is sent to spec 0019 (condition `damaged` or `held`) only when those 5 seconds pass, so a wrong tap is undone before anything closes or drafts a claim. A piece already received as sellable is not changed by a later scan; correcting it is spec 0019's and spec 0011's work.
+- **AC-15** (a piece with no tag, review B1): the receive view offers "This piece has no tag", which lists the open parcel's expected pieces (style, color and size large, SKU code left to right) and records the chosen one through the same receive call, with its own idempotency key, the current mode's condition, and `via: 'no_tag'` (requested of spec 0019), so the pieces received without a tag are counted apart from taps. It needs the parcel open (by a label scan, a typed entry, or a tap on the list).
+
+*Scans that fill stock forms*
+- **AC-16** (line forms): the stock receipt form (spec 0006), the adjustment form and its request mode (spec 0011 AC-9, AC-27), and the send to partner and return from partner forms (spec 0011 AC-25) each show a scan box above their lines. A variant scan adds a line of that variant with quantity `unitFactor`, or adds `unitFactor` to the existing line of that variant, and moves focus back to the box; the line's quantity stays editable by hand. An unknown code or an archived variant (where the form refuses one) adds nothing and says why. The form still posts once, with its own idempotency key, through its existing route; a scan here posts no stock.
+- **AC-17** (find by scan): the SKU search box of the stock pages (spec 0012 `GET /api/skus?q=`) uses the scan box's key reading, so a wedge scan into it on an Arabic layout finds the variant; a single exact barcode hit opens that variant.
+
+*Access, privacy, and the frame*
+- **AC-18** (access): `POST /api/barcodes/resolve` is `@Audience('staff')`, `@RequiresModule('catalog')`, permission `stock.view`, with a `FIXTURES` entry in `apps/api/test/access-sweep.e2e-spec.ts`; a partner user gets 403. The receive view needs `stock.receive` (spec 0019), the line forms keep their own permissions, and "Give this code to a variant" shows only with `catalog.edit`. The web hides what a person cannot use; the api enforces it.
+- **AC-19** (no personal data in logs or addresses): a scanned code is never logged as it is, by the api or the web, and never put in a page address, because a label code can carry a customer's phone or address (a QR on a carrier label). The api logs only its length, its matched kind, and a short hash; `code` is in the redaction list of `packages/config/src/redaction.ts`. Spec 0019's lookup still takes `code` in its query; the web image and Caddy must not keep query strings on that path in their access logs (Follow-up, feature 26).
+- **AC-20** (screens): built to `packages/ui/DESIGN.md` in the `(backoffice)` frame, every string in both catalogs, logical CSS only, keyboard only use of every step (scan, mode switch and lock, Undo, retry, choose or switch a parcel, no tag, give a code), focus returned to the scan box after each scan, the camera sheet usable at 360 pixels wide, axe clean in English and Arabic. Codes, SKU codes, and tracking numbers always render left to right inside Arabic text.
+
+## Decision
+
+**Chosen option**: Option B in [rationale.md](rationale.md): one scan box component that reads a wedge scanner by physical key, takes phone keyboard input from the field's input events, and opens the camera with the browser's own detector or a self hosted WebAssembly fallback; one small catalog resolve call; and a returns station on spec 0019's receive call that answers every real table moment (no tag, another bag's piece, extra pieces, damaged or doubtful pieces, lost saves) without a new stock path.
+
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `shadcn` (`.claude/skills/shadcn/`) · `playwright-best-practices` (`.claude/skills/playwright-best-practices/`)
+
+**Decided by the architect** (expertise, not owner questions; runner up in brackets):
+- Read wedge keystrokes by `KeyboardEvent.code`, not `key`, because handheld scanners send US key positions and Egyptian computers and phones often have the Arabic layout on; fall back to the field's input events when `code` is empty, as a phone's on screen keyboard sends [a table mapping Arabic letters back to Latin: Shift states and the two character `لا` key make it lossy].
+- The resolve call lives in the catalog module, which owns barcodes; the returns screen calls it and spec 0019's lookup and reads side by side in the browser, so no module reads another's tables [one server endpoint that knows parcels and variants: it would have to sit in one module and reach into the other].
+- Resolve is a POST with the code in the body, an unknown code is a 200 with `kind: 'unknown'` [a GET: the code lands in proxy access logs; a 404: a normal warehouse moment would read as an error].
+- SKU code as the second match, because many Egyptian brands print the SKU as a Code 128 on the tag instead of buying EAN numbers; UPC A and EAN 13 twins match each other [barcodes only: such brands would have to enter every SKU again as a barcode].
+- On returns the camera takes one decode per "Scan next piece", because a reread of a tag on a parcel expecting two identical pieces restocks a piece that never came back [a time based repeat guard: a tag left in the frame is read again].
+- Damaged and Held wait 5 seconds in the browser with Undo before they are sent, because spec 0019 closes and drafts a claim at once for a manager [ask spec 0019 for a request only flag: a second shape of its call for one screen].
+- The camera fallback is the `barcode-detector` polyfill with its WebAssembly file self hosted [`@zxing/browser`: larger, JavaScript decoding is slower on low end Android; a public CDN: a third party sees every page that opens the camera, and the content security policy stays strict].
+- Sounds come from Web Audio tones [sound files: more assets, and autoplay rules treat a tone after a key press the same way].
+
+## Owner decisions
+
+No owner was in this session; each question below records its options and the recommended answer, and the spec is designed on the recommendation. The status stays `Assumed` until the owner ratifies or changes them. The domain review also lists nine questions only a real brand can answer (what tags carry, the device at the table, how Bosta hands returns back); they are pilot setup questions, not design decisions, and are kept in [the review](../../reviews/domain-barcode-scanning.md#questions-only-a-real-brand-can-answer).
+
+- **Q-20.1 Which devices the pilot uses.** (a) Both a handheld scanner and the phone camera, as the scope says. (b) Phone camera only. (c) Handheld scanner only. **Recommended: (a)**: a USB or Bluetooth 2D handheld scanner (one that reads QR and Code 128, set as the runbook says) at the returns table is far faster for a bag of pieces, and the camera covers the times it is elsewhere. Ask the brand to buy one 2D scanner before the pilot week; a 1D only scanner cannot read a QR label.
+- **Q-20.2 What is printed on the brand's tags today.** (a) Shopify's barcode field (spec 0012 syncs it as the channel barcode). (b) The SKU code as a Code 128. (c) Nothing scannable. **Recommended: support (a) and (b) at once** (AC-1), and before the pilot run a rehearsal on the real scanner and phone over the tag of every style in stock, listing unknowns and conflicts (one code on every size, an old SKU, a web address QR) before the week starts (review M7). If (c), scanning cannot prove the done when until tags are printed: label printing is not in this spec (Follow-up) and the pilot would receive by "no tag" (AC-15).
+- **Q-20.3 An unknown code.** (a) Say so, and let a holder of `catalog.edit` give it to a variant on the spot, with the size shown large and a short Undo. (b) Say so only; codes are added on the SKU page. (c) Ask the scanner to pick the variant every time with no code saved. **Recommended: (a)**: tags without a code in the app are the first week's most common miss, and fixing it once fixes every later scan; the warehouse hat already holds `catalog.edit`.
+- **Q-20.4 Which stock moves take a scan in slice 1a.** (a) Returned pieces only. (b) Returned pieces, plus the receipt, adjustment, and partner send and return forms (AC-16). (c) (b) plus a pick and pack check that refuses a wrong piece before the bag is sealed. **Recommended: (b)**: the line forms reuse the same box with no new stock path, so they cost little; they are milestone 3 and do not count toward the done when, so the returns station comes first if time is short. (c) would catch spec 0019's `packed_wrong` before it ships but changes the packing flow and needs spec 0019's pick list (AC-25), so it is the first follow up after the pilot.
+- **Q-20.5 A scan when the network drops.** (a) No offline queue: a failed save stays in a Not saved list kept on the device, a rescan of the same piece retries it, and leaving the screen warns (AC-10). (b) Queue scans in the browser and send them later. **Recommended: (a)**: a queued restock could post after someone already tapped the same piece, and the idempotency key covers a retry, not a second door. AC-10's rescan rule and persistence are what make (a) safe; the runbook names a phone on mobile data as the fallback when the wifi drops.
+- **Q-20.6 One scan, one piece.** (a) Each scan is one piece on returns and `unitFactor` pieces on the line forms, with the quantity editable on the forms. (b) Ask for a quantity after each scan. **Recommended: (a)**: scanning ten identical pieces ten times is fast and each scan is a count; a typed quantity is still there on the forms for a sealed carton.
+- **Q-20.7 Marking a damaged or doubtful piece.** (a) A Damaged or Held tap that applies to the next one scan, a second tap that locks it, and 5 seconds to undo before it is sent (AC-14). (b) A mode that stays on until another parcel opens. (c) Scan everything as sellable and fix the damaged ones after. **Recommended: (a)** (changed by review M5 from (b)): one tap for each of the few damaged pieces and no tap for the many sellable ones, and a mode left on can no longer write off sellable pieces; (c) would put a damaged piece on sale until someone fixes it.
+
+## Rationale
+
+Reasoning, options, and the device facts behind the scan box: see [rationale.md](rationale.md).
+
+## Feature design
+
+### Where it lives
+
+- `packages/contracts/src/catalog/scanned-code.ts`: `normalizeScannedCode`, `upcTwins`, `SCAN_CODE_MAX_LENGTH` (64), and the Zod schemas `BarcodeResolveRequest` and `BarcodeResolveResponse`; exported through `packages/contracts/src/catalog/index.ts`.
+- `apps/api/src/catalog/barcodes/`: `BarcodeResolver` (service) and `BarcodeResolveController` (`POST /api/barcodes/resolve`), beside spec 0012's barcode add and remove. The catalog module stays the only reader of `barcodes` and `product_variants`; the module README gains the route.
+- `apps/web/src/scanning/` (feature folder with README): `scan-box.tsx` (`ScanBox`), `camera-scanner-sheet.tsx` (`CameraScannerSheet`), `scan-result-banner.tsx` (`ScanResultBanner`), `not-saved-list.tsx` (`NotSavedList`), `give-code-dialog.tsx` (`GiveCodeDialog`), `use-scan-box.ts` (focus, `inputmode`, the key reading, the typed path, Enter, Tab, and Go), `key-code-layout.ts` (the US layout map from `KeyboardEvent.code` and Shift to a character), `camera-decoder.ts` (picks `BarcodeDetector` or the polyfill; single decode and continuous modes), `not-saved-store.ts` (the per parcel list in browser storage), `scan-sounds.ts` (the three tones and the Mute setting), and their tests.
+- `apps/web/src/returned-parcels/` (spec 0019's folder): `returned-parcel-scan-station.tsx` (`ReturnedParcelScanStation`, the AC-11 to AC-15 flow), `parcel-chooser.tsx` (`ParcelChooser`, the parcels expecting a variant), `condition-mode-switch.tsx` (`ConditionModeSwitch`), `no-tag-piece-picker.tsx` (`NoTagPiecePicker`); spec 0019's tap buttons stay beside them, and its list rows open the station.
+- The stock forms (spec 0006 receipt, spec 0011 adjustment and partner forms) each mount `ScanBox` above their lines through one small `scan-adds-line.ts` per form folder, which owns only the add or count up rule of AC-16.
+- The WebAssembly file of the polyfill is copied into `apps/web/public/scanning/` at build time from the installed package (a build step, so the version always matches), and the decoder is pointed at it.
+- Message keys under `scanning.*` in both catalogs of `packages/i18n`.
+
+### Data model
+
+No new table and no migration in this feature. It reads `barcodes` (`code` unique per tenant, `uom_id`), `variant_uom_conversions` (the pack factor), and `product_variants` through the catalog module, and writes only through other features' routes: spec 0012's barcode add and remove, spec 0019's receive and close calls, and the stock forms' existing posts. The pieces it records are spec 0019's `returned_parcel_pieces` rows with `via: 'scan'` or `via: 'no_tag'` (requested).
+
+### Requested of spec 0019
+
+Small additions to spec 0019, for its amendment lane or its build; this feature waits for them where noted:
+- `ReturnedParcels.expecting(variantId)` and `GET /api/returned-parcels/expecting?variantId=` (permission `stock.receive`): the open parcels with an expected piece of that variant (awaiting lines for returns to origin, partials, and manual returns; not yet back delivered lines for return pickups and exchanges), with tracking number, store order number, cause, and age, oldest first (AC-11, AC-13; review M3, B2).
+- The `via` value `no_tag` on `returned_parcel_pieces` (AC-15; review B1).
+- A `held` piece with no `orderLineId` for "Record the extra piece" (AC-13; review M6), which spec 0019's `held` condition and its existing tasks answer.
+- For Bosta Exchange (owner decision Q-21.13): the parcel read names the order whose piece is coming back (the original order for an exchange) and its delivered lines, so AC-12 can choose the line.
+
+### Lifecycle of one scan (client)
+
+`reading` (keys or input arriving, or the camera decoding) → `resolving` (the resolve call, plus the parcel lookup on the returns screen) → one of `acting` (a receive call, after the 5 second Undo for Damaged and Held; on the line forms, the line changes at once with no call), `needs_you` (unknown, not in this parcel, more than expected, pack code, choose a parcel), or `retrying` (a rescan of a variant with a Not saved entry) → `saved` or `not_saved`. `not_saved` waits in the stored list until Retry or a rescan gives `saved` or `needs_you`. The box accepts the next scan as soon as the current one leaves `resolving`; actions run one at a time per screen, in scan order, so two scans of the last expected piece never race each other.
+
+### API surface
+
+| Endpoint | Method | Key inputs | Key outputs | Auth | Key errors |
+|---|---|---|---|---|---|
+| `/api/barcodes/resolve` | POST | body `code` (req, 1 to 200 characters raw) | `BarcodeResolveResponse`: `{ kind: 'variant', variant, matchedBy, unitFactor }` or `{ kind: 'unknown', looksLikeAddress }` | staff, `stock.view`, `@RequiresModule('catalog')` | 400 `SCAN_CODE_INVALID` (empty or over 64 after normalizing) |
+
+Used, not defined here: `GET /api/returned-parcels/lookup?code=`, `POST /api/returned-parcels/:id/pieces`, `POST /api/returned-parcels/:id/close`, and the requested `GET /api/returned-parcels/expecting` (spec 0019); `POST /api/skus/:id/barcodes`, `DELETE /api/skus/:id/barcodes/:barcodeId`, and `GET /api/skus?q=` (spec 0012); the receipt, adjustment, adjustment request, and partner send and return posts (specs 0006, 0011).
+
+### Value sourcing
+
+| Action | Value | Source |
+|---|---|---|
+| resolve | normalized code | `normalizeScannedCode(raw)` (AC-2) |
+| resolve | variant | `barcodes.code` equal to the normalized code or one of `upcTwins(code)` within the tenant; else `product_variants.sku` equal to the normalized code |
+| resolve | `unitFactor` | 1 for the variant's base unit; else `variant_uom_conversions.factor` for the barcode's `uom_id` |
+| resolve | style id and name, option values, archived | `products` and the variant's option values, through the catalog module |
+| resolve | `looksLikeAddress` | the normalized code starts with `HTTP://` or `HTTPS://` |
+| resolve | tenant | the session's tenant, as every staff route |
+| wedge scan | the characters | `KeyboardEvent.code` plus `shiftKey` through `key-code-layout.ts` (US layout) |
+| typed entry, paste | the characters | the field's `beforeinput` and `input` data |
+| camera scan | the characters | `BarcodeDetector.detect` `rawValue` (native or polyfill) |
+| any scan | idempotency key | `crypto.randomUUID()` when the scan is accepted (AC-8), or the Not saved entry's key on a retry (AC-10) |
+| open a parcel | parcel | spec 0019's lookup (tracking number for a scan; also store order number for a typed entry), a tap on the list, or the chosen parcel of `expecting` |
+| receive | `orderLineId` | none for returns to origin, partials, manual returns (spec 0019 picks); for return pickups and exchanges, the oldest not yet back delivered line of the variant on the order whose piece is coming back, from spec 0019's parcel read |
+| receive | condition | the view's mode (AC-14), `sellable` by default |
+| receive | `via` | `scan`, or `no_tag` from the no tag picker (AC-15) |
+| receive | restock movement, its cost and location | spec 0019 AC-9 through `OrderStock.restockAwaiting` (the line's frozen `unit_cost`, the location the piece left from) |
+| not in this parcel | the parcel it belongs to, the sibling size | `expecting(variantId)`; the open parcel's expected pieces with the same `styleId` |
+| already received or extra | which answer | the time of the last saved piece of that variant on this view (10 seconds) |
+| received pieces list | time, condition, who | spec 0019's parcel read of its piece rows |
+| line form | line quantity | the existing line's quantity plus `unitFactor`, else `unitFactor` |
+| Not saved list | entries | `not-saved-store.ts`, browser storage keyed by parcel id, read in a try |
+| feedback | Mute | the device's browser storage, read in a try and default off |
+| logs | code fingerprint | length, matched kind, and the first 8 hex characters of SHA 256 of the normalized code |
+
+### Key invariants
+
+- A scan never posts stock on its own: on returns it is spec 0019's receive call (one door), on forms it only edits lines.
+- One accepted scan is one idempotency key; a retry, or a rescan while that piece is Not saved, reuses it; two saved scans are two keys, even of the same code.
+- On the receive view one camera decode is one scan; a piece is never read twice without a person's tap or a new wedge trigger.
+- A piece that the open parcel does not expect is never recorded as a wrong piece while another open parcel expects it.
+- `normalizeScannedCode` is the one normalizer for scanning and for search's barcode branch; the web and the api import the same function.
+- The scan box never listens to keys outside itself.
+- A raw scanned code is never written to a log or a page address.
+
+### Security model
+
+- Staff audience only, `stock.view` to resolve; returns need `stock.receive`; giving and removing a code need `catalog.edit`. Partner and portal audiences never reach these routes.
+- Camera frames never leave the device: decoding runs in the browser, and no frame or image is sent or stored.
+- The polyfill's WebAssembly file is same origin, so the content security policy needs `wasm-unsafe-eval` for scripts and no third party origin. The camera needs a secure context (HTTPS, as Caddy serves) and a `Permissions-Policy` that allows `camera=(self)` (Follow-up: check the current headers).
+- Codes can hold personal data (a carrier label's QR); they are redacted from logs and sent in a POST body (AC-19). The Not saved list in browser storage holds codes of the device's own scans only and is cleared when its entries are saved.
+
+### Configuration required
+
+No new environment variable. A new web dependency in the pnpm catalog: the `barcode-detector` polyfill (check its current version, license, and that it still bundles zxing WebAssembly at build time; not verified in this task).
+
+### Critical test scenarios
+
+- Normalizing: `]C1TEE-BLK-M\r` gives `TEE-BLK-M`; Arabic Indic digits become Western; an empty code and a 65 character code are refused; `012345678905` and `0012345678905` are twins; search's barcode branch gives the same result for each, verifies **AC-2**.
+- Resolve: a barcode hit with factor 1, a pack barcode with factor 6, a twin hit, an SKU hit, a code that is both one variant's barcode and another's SKU (the barcode wins), an archived variant, an unknown code (200), a web address QR (`looksLikeAddress`), verifies **AC-1**.
+- Speed: the scale seed run records the 95th percentile of each kind, verifies **AC-3**.
+- Key reading: keydown events for `KeyT`, `KeyE`, `KeyE`, `Minus` with the Arabic layout's `key` values give `TEE-`; keydown events with key code 229 and an empty `code` followed by `input` data `4025` give `4025`; a paste resolves; Enter ends a scan; focus outside the box shows the paused notice; on a mobile viewport the box has `inputmode="none"` until "Type a code", verifies **AC-5**, **AC-6**.
+- Camera: in Playwright with a fake camera stream, the receive view decodes once and waits for "Scan next piece"; a tag held for 5 seconds on a parcel expecting two of it gives one piece; on the receipt form a tag leaving and entering the frame counts twice, a tag held still counts once; a refused permission shows the help text; the track stops when the sheet closes; the WebAssembly request goes to the app's own origin, verifies **AC-7**, **AC-8**.
+- Returns end to end (the done when): open a returned to origin parcel of two pieces by scanning its tracking number, scan both pieces by wedge input: two `returned_parcel_pieces` rows with `via: 'scan'`, two restock movements in the ledger at the frozen cost, the parcel `received`; open a second parcel by tapping its row; a piece scanned with no parcel open lists the two parcels that expect it, verifies **AC-11**, **AC-12**.
+- Mixed bags: with parcels A and B open in the list, a piece of B scanned on A offers switch and receive on B, and no wrong piece is recorded; a piece whose sibling size is expected offers Receive as L or M; a fourth piece of a variant expected three times, scanned a minute later, offers Record the extra piece and records `held`; scanned within 10 seconds, says Already received, verifies **AC-13**.
+- Return pickup and exchange: a return pickup piece is received against the order's oldest delivered line; a Bosta Exchange old piece is received against the original order's line; a variant not on the order says Not on this customer's order, verifies **AC-12**.
+- Modes: one Damaged tap marks only the next piece; a locked Damaged marks three and shows the count; Undo within 5 seconds sends nothing; a new parcel unlocks; Held records `held` with no posting, verifies **AC-14**.
+- No tag: a piece chosen from the no tag picker is received with `via: 'no_tag'` and counts in the parcel, verifies **AC-15**.
+- Network: the receive call times out after the server committed; a rescan of the same piece retries with the same key and gives one piece row; a reload restores the Not saved list; leaving the page with an entry warns; the received list shows the first piece with its time, verifies **AC-9**, **AC-10**.
+- Switch: a scan of another parcel's label with a piece still expected offers Switch, Close short and switch, and Stay; Close short calls spec 0019's close with `received_short`, verifies **AC-11**.
+- Unknown code: the message, the error tone (Web Audio mocked), the long vibration call; a warehouse user gives the code to a variant, sees the size large and the not expected warning, undoes within 10 seconds, gives it again, and the scan resolves; a code another SKU holds names that SKU; on the return from partner form the sticker warning shows first; a support user does not see the button, verifies **AC-4**.
+- Line forms: three scans of one variant and one pack scan make one line of 3 and one line of 6 on the receipt form; the form posts once; an adjustment request by scan posts nothing until sent, verifies **AC-16**; a wedge scan into the SKU search on an Arabic layout opens the variant, verifies **AC-17**.
+- Access and privacy: a partner user gets 403 on resolve; the access sweep covers the route; the api log line of a resolve holds no code, and no page address holds one, verifies **AC-18**, **AC-19**.
+- Screens: both languages, keyboard only, axe clean, codes left to right in Arabic, the camera sheet and the expected list at 360 pixels, verifies **AC-20**.
+
+## Build plan
+
+Tracer Bullet: milestone 1 runs one real thread (a wedge scan on the returns screen, through the resolve call and spec 0019's receive call, to a restock movement in the ledger) through every layer; milestone 2 thickens it with every moment a real returns table brings; milestone 3 adds the camera on the same station; milestone 4 thickens to the stock forms. Milestone 1 needs spec 0019's milestone with `POST /api/returned-parcels/:id/pieces` and the lookup; milestone 2 needs spec 0019's `expecting` read, `via: 'no_tag'`, and its Bosta Exchange amendment (*Requested of spec 0019*); until then it runs against those branches or waits. Milestones 1 to 3 are the done when; milestone 4 can follow the pilot week if time is short. No milestone has a migration.
+
+**Milestone 1: a wedge scan restocks a returned piece** (backend, frontend). Done when `apps/web/e2e/returned-parcel-scan.spec.ts` opens a parcel by scanning its tracking number and receives two pieces by wedge input on an Arabic layout, two restock movements are in the ledger, and the resolve speed run is recorded.
+1. `normalizeScannedCode` and `upcTwins` with their tests, used by spec 0012's barcode branch of search, satisfies **AC-2**
+2. `BarcodeResolver` and `POST /api/barcodes/resolve` with the access sweep entry, the redaction entry, the fingerprint log, and the scale timing test, satisfies **AC-1**, **AC-3**, **AC-18**, **AC-19**
+3. `ScanBox` with `use-scan-box.ts` (the key reading and the typed path), `key-code-layout.ts`, `inputmode` and "Type a code", `ScanResultBanner`, `scan-sounds.ts` with Mute, the live region, satisfies **AC-5**, **AC-6**, **AC-9**
+4. `ReturnedParcelScanStation` with the three ways to open a parcel, the receive call with the scan's key and the cause's line rule, the received pieces list, `NotSavedList` with `not-saved-store.ts`, the rescan retry, and the leave warning, satisfies **AC-8**, **AC-10**, **AC-11**, **AC-12**
+5. Both catalogs, keyboard only, axe, left to right codes, satisfies **AC-20**
+
+**Milestone 2: every moment of a real returns table** (frontend). Done when `apps/web/e2e/returned-parcel-table.spec.ts` passes the mixed bags, the extra piece, the sibling size, the modes with Undo, the no tag piece, a return pickup, a Bosta Exchange old piece, and close short and switch.
+6. `ParcelChooser` on the `expecting` read for a piece with no parcel open and for a piece of another parcel; the sibling size answer; Already received against Record the extra piece; the pack code refusal, satisfies **AC-11**, **AC-13**
+7. `ConditionModeSwitch` (one scan, lock, count, the 5 second Undo) with Damaged and Held, satisfies **AC-14**
+8. `NoTagPiecePicker` with `via: 'no_tag'`, satisfies **AC-15**
+9. The return pickup and Bosta Exchange line rule and "Not on this customer's order"; Close short and switch, satisfies **AC-11**, **AC-12**
+
+**Milestone 3: the phone camera** (frontend). Done when the Playwright fake camera run decodes a Code 128 and a QR on the receive view once per "Scan next piece", and the WebAssembly loads from the app's origin.
+10. `camera-decoder.ts` (native detector or the polyfill, the formats, single decode and continuous modes), the build step that copies the WebAssembly file, `CameraScannerSheet` with the torch and the permission help, stopping on close, hide, or leave, satisfies **AC-7**, **AC-8**
+11. The pilot setup measurement of AC-3's browser half on the pilot's phone, recorded in verify.md, satisfies **AC-3**
+
+**Milestone 4: scans fill stock forms, and unknown codes get a code** (frontend). Done when `apps/web/e2e/stock-forms-scan.spec.ts` fills a receipt, an adjustment request, and a send to partner by scanning, and gives an unknown code to a variant with its Undo.
+12. `scan-adds-line.ts` and `ScanBox` on the receipt, adjustment (and request), and send and return forms, satisfies **AC-16**
+13. The scan box key reading on the SKU search boxes of the stock pages, satisfies **AC-17**
+14. `GiveCodeDialog` with the variant search, the size shown large, the not expected and partner sticker warnings, spec 0012's barcode add and its Undo, then the resolve again, satisfies **AC-4**
+
+## Consequences
+
+**Positive**:
+- The done when's "restocked by scan" sits on spec 0019's receive call; the stock path stays the one door spec 0019 and spec 0011 already guard.
+- A real returns table (loose pieces, cut tags, extra pieces, bad wifi) has a path for every piece, and none of them doubles a piece or makes a false claim.
+- The same box serves every later scanning job (a pick and pack check, a partner count) with no new decoding work.
+- Reading physical keys removes the most common wedge scanner failure in Arabic speaking offices, and the typed path keeps the phone keyboard working.
+
+**Negative / tradeoffs**:
+- A WebAssembly decoder adds a few hundred kilobytes, loaded only when the camera first opens, and a build step to copy it.
+- The browser half of the speed criterion is measured once on a real phone, not in CI; CI proves the server half.
+- No offline queue: a dead warehouse network stops scanning until a phone on mobile data takes over (the tap path of spec 0019 needs the network too).
+- Damaged and Held pieces wait 5 seconds before they are sent, and one camera decode per tap is slower than a continuous camera on a large bag; a handheld scanner is the fast path.
+- Milestone 2 depends on four small additions to spec 0019.
+- Scanning cannot help a brand whose tags carry no code until tags are printed.
+
+**Neutral**:
+- A scanner must be set as the runbook says (trigger mode, Enter after each code).
+- The resolve call duplicates nothing in search: search stays for typing, resolve answers one exact code.
+
+## Follow-up
+
+- [ ] Owner: ratify or change Q-20.1 to Q-20.7; then the status leaves `Assumed`.
+- [ ] Spec 0019 (its amendment lane or its build): the four additions of *Requested of spec 0019*.
+- [ ] The lead: align the slice 1a done when's "restocked by scan" with verify.md's count (pieces received through the scan station, with no tag pieces counted apart and parcels still `returning` at the week's end listed, not failed; review B1, m8).
+- [ ] Pilot setup, before the pilot week (written in the returns runbook): scan three real Bosta labels on the pilot device and settle whether the label's barcode is the tracking number (if not, spec 0019's lookup needs Bosta's label code as a second key, review B2); the tag rehearsal of Q-20.2 over every style in stock; buy one 2D handheld scanner and set it to trigger mode (not continuous or presentation), Enter as suffix, no prefix, symbology identifier off, UPC A sent as printed, and test the first scan after a Bluetooth scanner wakes (review m7); check the warehouse network at the returns table and name the mobile data fallback; record AC-3's browser measurement.
+- [ ] Spec 0012: its barcode branch of search moves onto `normalizeScannedCode` and `upcTwins` (milestone 1 task 1), a one line change to spec 0012's value sourcing row.
+- [ ] Deployment (feature 26): `Permissions-Policy: camera=(self)` and a content security policy with `wasm-unsafe-eval` on the web image's responses; Caddy and the web image keep no query string in access logs for `/api/returned-parcels/lookup` (review m2).
+- [ ] After the pilot: the pick and pack check by scan (Q-20.4 (c)), which builds on spec 0019's pick list (AC-25) and closes spec 0019's `packed_wrong` path earlier; tag and label printing for a brand with no codes or a high no tag share (review B1).
+- [ ] Feature 42: the partner count by scan reuses `ScanBox` and the line form rule; partner stickers are its concern (review m6).
