@@ -73,6 +73,13 @@ How a partner's debt is computed (quantity times an agreed consignment price, or
 - (feature 22) An unbound Bosta account with lines for two stores: each line carries its delivery's store, verifies **AC-25** (B1).
 - An `accounted` line of a superseded statement takes a `cleared` row with the reason `superseded`; the same row on a live statement, a rematch, another account code, or another reason after `accounted` fails `settlement_line_matches_accounted_terminal`; two `other_fee` lines with one reference and different fee names insert, the same fee name twice fails, verifies **AC-25** (domain review D1, D6).
 
+## Amendments from specs 0016 to 0020 (ratified 2026-11-13)
+
+The owner ratified specs 0016 to 0020 on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)), which settles the changes they ask of this spec. Each line below amends the text above; where they disagree, the line here wins, and the named section of the asking spec holds the detail. Each lands with the asking feature's milestone, not before.
+
+- [spec 0018](../0018-bosta-connector-mirror-mode/index.md) and [spec 0020](../0020-settlement-bosta-reconciliation/index.md): *The store on a carrier line* reads the store through `CarrierDeliveries.byTrackingNumbers`; *Effects on orders* is the direct `recordSettlement` call with the event published for readers; the carrier `DuplicateLine` rule becomes spec 0020 AC-9; the reason code list gains spec 0020's *Matching rules* codes; the expand only migration requests of spec 0020's Follow-up.
+- [spec 0019](../0019-delivery-failures-returned-to-origin/index.md) AC-33 and AC-34: a `failed_delivery_fee` claim is matched to a compensation line like any claim, and an exchange delivery's cash is its replacement order's forward cash.
+
 ## Follow-up
 
 - (feature 23) Whether clearing a line inside a closed period (the superseded clear of D1 included) needs the period's close revoked first. Not built: today the database allows the superseded clear in any period, and feature 23's refusal of new match rows inside a closed period without a written reason decides it.

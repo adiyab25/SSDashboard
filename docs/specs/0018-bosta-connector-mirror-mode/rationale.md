@@ -167,6 +167,10 @@ Applied additively, no name removed: spec 0019's AC-16 delivered hold with `deli
 
 Later the same day, spec 0019's remaining requests, also additive: `opensTask` on `CarrierDeliveryNeedsAttention` (false for the kinds and flags spec 0019's own tasks replace, while `deliveries.carrier_failures` is runnable), `cancel_in_bosta` from `ManualHandoverRecorded`, and the 46, return pickup, and pick list wording.
 
+## Owner answers of 2026-11-13
+
+The owner ratified every recommendation of this spec ([owner answers](../../reviews/owner-answers-2026-11-13.md)). Two answers made to sibling specs change it. Spec 0017's Q-18.1 (both send modes, per brand) is carried as connection config (AC-32) rather than a settings row, because it describes one Bosta account's Shopify app, and an install with one account per store may run the two modes side by side; the mode changes only whether a route before confirmation opens a task and how long `cancel_in_bosta` waits, so the mirror itself stays one design. Spec 0019's Q-21.13 (support Bosta's Exchange now) makes a type 30 delivery the forward delivery of the exchange replacement (AC-33). The link prefers the replacement's own order number as the business reference and falls back to the original's number when exactly one open replacement exists, because brands type the order number they know; anything else waits for a person. The refused exchange and the item count of a type 30 are marked unverified until a recording.
+
 ## References
 
 **Project sources**:
