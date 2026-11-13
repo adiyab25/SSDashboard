@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import { PASSWORD_MAX_LENGTH, unmetPasswordRules } from '@ssdashboard/contracts';
 import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api';
 import { hashPassword } from 'better-auth/crypto';
@@ -49,7 +50,7 @@ export interface HookContext {
 
 /**
  * What the sign in hooks need from outside: the trusted origin, the lockout and audit services,
- * and a clock and sleep that tests replace.
+ * and the clocks and sleep that tests replace.
  */
 export interface AuthHookDeps {
   origin: string;
@@ -59,7 +60,14 @@ export interface AuthHookDeps {
   audiences: AccessAudiences;
   /** Stamps `users.last_sign_in_at` without moving `users.updated_at` (spec 0008 AC-12). */
   lastSignIn: LastSignIn;
+  /** The wall clock, for the time an event happened. Never used to measure how long something took. */
   now?: () => Date;
+  /**
+   * A monotonic clock in milliseconds (`performance.now()` by default), for how long a request
+   * took. It never jumps when the host clock is set, so the reset floor cannot be shortened by a
+   * time sync. Its values mean nothing on their own; never use one as a timestamp.
+   */
+  elapsedNow?: () => number;
   /** Waits this many milliseconds; replaced in tests. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -98,7 +106,7 @@ const acting = new WeakMap<object, Acting>();
 const heldSlots = new WeakMap<object, string>();
 /** A reset request answers no faster than this, so the time cannot tell a real email from a fake one. */
 export const RESET_RESPONSE_FLOOR_MS = 500;
-/** When each reset request started, from the before hook to the after hook. */
+/** When each reset request started on the monotonic clock, from the before hook to the after hook. */
 const resetStartedAt = new WeakMap<object, number>();
 /** Routes that start with no session, so there is nothing to cap or gate. */
 const NO_SESSION_YET = new Set([SIGN_IN, '/request-password-reset', '/reset-password']);
@@ -179,6 +187,7 @@ export function forceRevokeOtherSessions(body: unknown): BeforeHookResult | unde
  */
 export function createBeforeHook(deps: AuthHookDeps) {
   const now = deps.now ?? (() => new Date());
+  const elapsedNow = deps.elapsedNow ?? (() => performance.now());
   return beforeAuth;
 
   async function beforeAuth(ctx: HookContext): Promise<BeforeHookResult | undefined> {
@@ -199,7 +208,7 @@ export function createBeforeHook(deps: AuthHookDeps) {
       throw APIError.from('FORBIDDEN', { code: 'FORBIDDEN_ORIGIN', message: 'Origin not allowed' });
     }
 
-    if (path === REQUEST_RESET) resetStartedAt.set(ctx.request, now().getTime());
+    if (path === REQUEST_RESET) resetStartedAt.set(ctx.request, elapsedNow());
 
     if (NEW_PASSWORD_PATHS.has(path)) {
       const unmet = unmetPasswordRules(bodyField(ctx.body, 'newPassword') ?? '');
@@ -357,6 +366,7 @@ export function createBeforeHook(deps: AuthHookDeps) {
  */
 export function createAfterHook(deps: AuthHookDeps) {
   const now = deps.now ?? (() => new Date());
+  const elapsedNow = deps.elapsedNow ?? (() => performance.now());
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
 
   /** Pads the answer to the floor, and records the request (with no target for an unknown email). */
@@ -370,7 +380,7 @@ export function createAfterHook(deps: AuthHookDeps) {
     }
     const started = ctx.request ? resetStartedAt.get(ctx.request) : undefined;
     if (started === undefined) return;
-    const wait = RESET_RESPONSE_FLOOR_MS - (now().getTime() - started);
+    const wait = RESET_RESPONSE_FLOOR_MS - (elapsedNow() - started);
     if (wait > 0) await sleep(wait);
   }
 
