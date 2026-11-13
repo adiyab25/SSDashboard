@@ -23,14 +23,14 @@ Milestones 2 to 4:
 - [ ] On a confirmed morning → the header says confirmed and the cash block says Bosta money is provisional; owed figures say "as of <time>" → AC-2, AC-4
 - [ ] Re add the bot and tap Send again → the stored text arrives once; the task closes and the connection health is ok → AC-10, AC-11
 - [ ] Stop the worker over the report time and start it at 09:00 → the report sends late; start it at 13:00 instead → the run is `skipped`, the private chat and email notices go at once, and the next morning's status line says that day's report did not send; stop it for three days → a row for each day → AC-3, AC-5, AC-10
-- [ ] Make a Shopify write back fail → one alert line in the owner's private chat with the kind, store code, and a link, no order number; ten more in two minutes → one summary line ten minutes later; the same failure retried does not send again → AC-7, AC-12
+- [ ] Make a Shopify write back fail → one alert line in the owner's private chat with the kind, the order number and store code, and a link, no customer name or phone; ten more in two minutes → one summary line ten minutes later; the same failure retried does not send again → AC-7, AC-12
 - [ ] Leave a write back failed for three days → each morning's status line still shows it with its age → AC-5
 - [ ] Read the Arabic report on Telegram for Android, iOS, and desktop → every line reads right to left, amounts and times in order → AC-6
 - [ ] Turn `daily_report_enabled` off → no report, Needs you says it is paused → AC-14
 
 ## Automated
 
-- [ ] `pnpm --filter @ssdashboard/api test -- src/reporting/daily-report` → render tests in both languages (direction marks, plain text, the 4,000 character rule with 15 stores, provisional wording, `read_failed` lines, no personal data or order number in the report or any alert over the seeded data) → AC-4, AC-6, AC-7
+- [ ] `pnpm --filter @ssdashboard/api test -- src/reporting/daily-report` → render tests in both languages (direction marks, plain text, the 4,000 character rule with 15 stores, provisional wording, `read_failed` lines, no field on the redaction list or phone shape in the report or any alert over the seeded data, order numbers with store codes allowed) → AC-4, AC-6, AC-7
 - [ ] `pnpm --filter @ssdashboard/api test -- src/connectors/telegram` → each recorded fixture: sent, 401, 403, 400 chat not found, 400 topic closed, 400 with a new supergroup id, 429 with `retry_after`, 409 conflict, a privacy mode `getUpdates` → AC-8, AC-9
 - [ ] Schedule test over the release year's Cairo daylight saving dates → one run per operating day → AC-1
 - [ ] Concurrency e2e: two workers and a restart at the report time → one run, one command → AC-3
