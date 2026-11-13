@@ -298,7 +298,7 @@ One brand wide setting owned by `platform`, a spec 0009 settings registry row, r
 
 ### Data model delta (tables owned by `tasks`)
 
-One forward migration. The table has no writer yet, so the new checks are added `NOT VALID` and validated in the same migration (they hold on zero rows); every step is additive (expand only).
+Two forward migrations, as built in milestone 1: the generated delta, then a hand written rules migration for the append only triggers and grants of `task_notes` (`packages/db/AGENTS.md`: generated files hold no hand written SQL). The table had no writer, so the new checks are added plainly and hold on zero rows; every step is additive (expand only).
 
 | Change | Detail |
 |---|---|
@@ -554,7 +554,7 @@ Tracer Bullet: milestone 1 runs one real thread (a failed write back) from the e
 - [ ] Lead: route owner question 2 to `/scope` (a thin feature 35 slice in slice 1a, owned by `credit`, built to *What the credit slice must provide*) before features 22 and 25 are designed, and tell lane D (feature 22) that the refund record is not settlement's (domain review M6).
 - [ ] Spec 0015 (feature 13): publish `OutboundCommandOverdue` from the scheduled sweep for a confirmation edit command `waiting` longer than the budget (10 minutes, Assumed, spec 0017 Q-18.1), and carry the person who queued a command on the four `OutboundCommand*` events (domain review M1, B1).
 - [ ] Spec 0017 (feature 18): drop `confirmation.working_hours` and read `operations.working_hours`; register path overrides for its two types (domain review M3, m6).
-- [ ] Spec 0008 (feature 8): build `HatDirectory.holdersOf(hat)` in identity's public files (milestone 1 needs it), and show on the people screen "no one holds the operations hat: its tasks go to the manager" when an internal hat that owns task types has no active holder (domain review B1).
+- [ ] Spec 0008 (feature 8): ~~build `HatDirectory.holdersOf(hat)` in identity's public files~~ (built with milestone 1, `apps/api/src/identity/hats/hat-directory.ts`); show on the people screen "no one holds the operations hat: its tasks go to the manager" when an internal hat that owns task types has no active holder (domain review B1).
 - [ ] Spec 0009: add the `operations.working_hours` row of *Working hours* to its rows requested by other specs.
 - [ ] Feature 25 (daily report, not designed): send one Telegram line (order number and store, no personal data) for each failed or late write back through its sender; report "refunds owed" from the credit module and "refunds owed (unrecorded)" from `TaskQueries.counts` (owner question 6, domain review M5).
 - [ ] Spec 0013: the orders module closes an attention task with `cleared` through `closeByKey` when its condition clears (domain review m4).
