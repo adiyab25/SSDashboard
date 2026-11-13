@@ -35,35 +35,58 @@ Run the Windows commands in PowerShell and the rest inside the new distro.
    wsl --install -d Ubuntu-24.04 --name ssdashboard-ci
    ```
 
-2. Inside it, turn off the Windows drive mounts, and turn on systemd (the runner service needs it):
+2. Inside it, turn off the Windows drive mounts and Windows interop, and turn on systemd (the runner service needs it):
 
    ```bash
-   sudo tee /etc/wsl.conf >/dev/null <<'EOF'
+   sudo tee /etc/wsl.conf >/dev/null <<EOF
    [automount]
    enabled=false
 
+   [interop]
+   enabled=false
+   appendWindowsPath=false
+
    [boot]
    systemd=true
+
+   [user]
+   default=$(whoami)
    EOF
    ```
 
+   `[interop] enabled=false` stops the distro from running Windows programs. Keep the `[user]` section: rewriting `wsl.conf` without it drops the default user that the install set. The `$(whoami)` fills in your distro user when you run the command.
+
    Then, from PowerShell, `wsl --terminate ssdashboard-ci`, and open the distro again. Check that `ls /mnt/c` is empty.
 
-3. Docker Desktop: Settings > Resources > WSL integration, turn it on for `ssdashboard-ci`. Check inside the distro with `docker ps`. If `docker ps` is refused, add the runner user to the `docker` group with `sudo usermod -aG docker $USER` and reopen the distro (this is the root equivalent step mentioned above).
-4. Node as in `.nvmrc` (26) and git, then pnpm through corepack. The workflow's `actions/setup-node` and `pnpm/action-setup` steps pick the exact versions per job, so this is only the base the runner needs:
+3. Docker Engine inside the distro, from Docker's apt repository, so CI does not depend on Docker Desktop running:
 
    ```bash
-   sudo apt-get update && sudo apt-get install -y git curl
-   # install Node 26 (for example with nvm), then:
-   corepack enable
+   sudo install -m 0755 -d /etc/apt/keyrings
+   sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+   sudo chmod a+r /etc/apt/keyrings/docker.asc
+   . /etc/os-release
+   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+   sudo apt-get update -y
+   sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+   sudo systemctl enable --now docker
+   sudo usermod -aG docker "$USER"
    ```
 
-5. Playwright's system libraries, once, with `sudo` and the pinned Playwright version, from a checkout (not `npx`, which could fetch another version). A GitHub-hosted machine installs them in the job; the self-hosted job only downloads Chromium because the runner has no passwordless `sudo`:
+   Reopen the distro (`wsl --terminate ssdashboard-ci` from PowerShell), then check with `docker ps`. The `docker` group is the root equivalent step mentioned above. Docker Desktop's WSL integration toggle did not take effect for this distro on the owner's machine (no `docker` CLI or socket appeared), so do not rely on it.
+
+4. Node as in `.nvmrc` (26) and git. The workflow's `actions/setup-node` and `pnpm/action-setup` steps pick the exact versions per job, and `pnpm/action-setup` installs pnpm, so there is no corepack step (Node 26 has no corepack). Node 26's binary needs `libatomic1` on Ubuntu 24.04:
 
    ```bash
-   git clone https://github.com/adiyab25/SSDashboard.git ~/ssdashboard-setup && cd ~/ssdashboard-setup
-   pnpm install --frozen-lockfile
-   sudo env "PATH=$PATH" pnpm --filter @ssdashboard/web exec playwright install-deps chromium
+   sudo apt-get update && sudo apt-get install -y git curl ca-certificates libatomic1
+   curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+   # open a new shell so nvm loads, then:
+   nvm install 26 && nvm alias default 26
+   ```
+
+5. Playwright's system libraries, once, with `sudo`. The command pins Playwright 1.64.1, so `npx` does not fetch another version. Keep that pinned version in step with `@playwright/test` in `apps/web/package.json`. A GitHub-hosted machine installs them in the job; the self-hosted job only downloads Chromium because the runner has no passwordless `sudo`. Run it from a shell where `node` is on PATH (step 4):
+
+   ```bash
+   sudo env "PATH=$PATH" npx -y playwright@1.64.1 install-deps chromium
    ```
 
 6. Create the runner folder and download the runner. Open the repository on GitHub, Settings > Actions > Runners > New self-hosted runner, pick Linux, and copy the download commands from that page (the version and URL change, so do not copy them from here):
@@ -76,8 +99,10 @@ Run the Windows commands in PowerShell and the rest inside the new distro.
 7. Register it with the token shown on that same page (the token expires after about an hour). The `self-hosted` label is added by default:
 
    ```bash
-   ./config.sh --unattended --url https://github.com/adiyab25/SSDashboard --token <token from that page> --name ssdashboard-wsl
+   ./config.sh --unattended --replace --url https://github.com/adiyab25/SSDashboard --token <token from that page> --name ssdashboard-wsl
    ```
+
+   `--replace` lets you register again under the same name (for example after a reinstall) without removing the old runner by hand.
 
 8. Install it as a service so it survives closing the terminal:
 
@@ -88,23 +113,33 @@ Run the Windows commands in PowerShell and the rest inside the new distro.
 
    Without systemd, `./run.sh` works while the terminal stays open.
 
-9. Check that the runner shows Idle on the Runners page, then switch the repository to it:
+9. Give the service a PATH with Node in it. The service does not load nvm, so without this a job has no `node` and `pnpm/action-setup` fails with `preinstall: sh: 1: node: not found`. Run this in a shell where `node -v` shows 26, then restart the service:
 
    ```bash
-   gh variable set CI_RUNS_ON --body self-hosted
+   cd ~/actions-runner
+   printf '%s' "$(dirname "$(command -v node)"):$(cat .path)" > .path
+   sudo ./svc.sh stop && sudo ./svc.sh start
    ```
 
-   Do it in that order: jobs queued for a runner that is not online wait until one is.
+   Do not run it twice for the same Node: each run adds another copy of the folder. After `nvm install` of a new Node version, update this path.
+
+10. Check that the runner shows Idle on the Runners page, then switch the repository to it:
+
+    ```bash
+    gh variable set CI_RUNS_ON --body self-hosted
+    ```
+
+    Do it in that order: jobs queued for a runner that is not online wait until one is.
 
 ## Keep it online after you sign in to Windows
 
-The runner is online only while its WSL distro is running, and WSL stops an idle distro. A Task Scheduler task that starts the distro at sign in and holds it open keeps the runner up. In PowerShell:
+The runner is online only while its WSL distro is running. WSL stops the distro about 10 to 30 seconds after the last Windows side process ends, even with the runner service running. On the owner's machine this killed a job mid run. So the scheduled task below is required, not optional. It starts the distro at sign in and holds it open. In PowerShell:
 
 ```powershell
 schtasks /create /tn "ssdashboard-ci-runner" /sc onlogon /tr "wsl -d ssdashboard-ci --exec sleep infinity"
 ```
 
-Starting the distro also starts the runner service (systemd). If WSL still stops the distro on your machine, check the Runners page; the runner then shows Offline until the next sign in. Remove the task with `schtasks /delete /tn "ssdashboard-ci-runner"`. This was not tested on the owner's machine, so check once after a restart.
+Starting the distro also starts the runner service (systemd). The task exists on the owner's machine. A check that it keeps the runner online after the next restart is still owed: look at the Runners page once after that restart. Until the next sign in, `wsl -d ssdashboard-ci --exec sleep infinity` in an open terminal does the same. Remove the task with `schtasks /delete /tn "ssdashboard-ci-runner"`.
 
 ## Fall back to GitHub machines
 
