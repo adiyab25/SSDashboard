@@ -84,6 +84,9 @@ describe('CloseTaskDialog (spec 0016, AC-3, AC-14)', () => {
       'Someone changed this task while you were looking.',
     );
     expect(screen.queryByRole('button', { name: 'Close task' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Back to My work' })).toHaveFocus(),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Back to My work' }));
     expect(onDismiss).toHaveBeenCalled();
   });

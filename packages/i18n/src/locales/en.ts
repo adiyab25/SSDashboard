@@ -1977,13 +1977,12 @@ export const en = {
     },
     row: {
       due: 'Due {{when}}',
+      timeUnavailable: 'Time unavailable',
       noDue: 'No due time',
       overdue: 'Overdue',
       heldBy: 'Held by {{name}}',
       queue: 'In the {{hat}} queue',
       unknownType: 'Task',
-      unknownLink: 'Record',
-      openRecord: 'Open {{record}}',
       close: 'Close',
       closeLabel: 'Close {{task}}',
       closesByItself:

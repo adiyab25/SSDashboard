@@ -20,6 +20,14 @@ vi.mock('@/auth/use-me', () => ({
   }),
 }));
 
+const modules = vi.hoisted((): { tasks: string | null } => ({ tasks: 'on' }));
+vi.mock('@/shell/use-module-states', () => ({
+  useModuleStates: () => ({
+    stateOf: (key: string) =>
+      key === 'tasks' && modules.tasks !== null ? { key, state: modules.tasks } : null,
+  }),
+}));
+
 afterEach(() => {
   api.getTaskSummary.mockReset();
   me.permissions = ['tasks.work', 'orders.confirm'];

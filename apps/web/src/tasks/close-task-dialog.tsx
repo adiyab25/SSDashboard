@@ -18,7 +18,7 @@ import { RadioGroup, RadioGroupItem } from '@ssdashboard/ui/components/radio-gro
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon } from 'lucide-react';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ApiError } from '@/api/client';
@@ -61,6 +61,7 @@ export function CloseTaskDialog({
   const [outcomeMissing, setOutcomeMissing] = useState(false);
   const firstOutcome = useRef<HTMLButtonElement>(null);
   const noteField = useRef<HTMLTextAreaElement>(null);
+  const dismissButton = useRef<HTMLButtonElement>(null);
 
   const noteRequired = definition?.noteRequiredOutcomes?.includes(outcome) ?? false;
   const outcomeLabel = (code: string): string => {
@@ -101,6 +102,10 @@ export function CloseTaskDialog({
 
   const failed = mutation.error;
   const outOfDate = isTaskOutOfDate(failed);
+  // The form below the alert goes away: put focus on the way back, so a keyboard person lands somewhere.
+  useEffect(() => {
+    if (outOfDate) dismissButton.current?.focus();
+  }, [outOfDate]);
   const alertKey: MessageKey | null = failed ? closeTaskErrorKey(failed) : null;
 
   const onSubmit = (event: FormEvent) => {
@@ -195,6 +200,7 @@ export function CloseTaskDialog({
 
           <DialogFooter>
             <Button
+              ref={dismissButton}
               type="button"
               variant="outline"
               disabled={mutation.isPending}

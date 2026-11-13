@@ -7,7 +7,7 @@ import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { LoaderCircleIcon, PlusIcon, SearchIcon, ShoppingBagIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
@@ -34,6 +34,7 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
   const { t } = useTranslation();
   const access = useAccess();
   const params = useSearchParams();
+  const router = useRouter();
   const [filters, setFilters] = useState<OrderFilters>(() => ({
     ...EMPTY_FILTERS,
     customerId: customerIdFromAddress(params.get('customerId')),
@@ -46,6 +47,18 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
     setSeenHold(holdInAddress);
     setFilters((current) => ({ ...current, hold: holdInAddress }));
   }
+  // The hold box is also the address (`?hold=1`), so following the navigation link again after
+  // unchecking it still changes the address and applies the filter.
+  const changeFilters = (next: OrderFilters) => {
+    if (next.hold !== filters.hold) {
+      const address = new URLSearchParams(params.toString());
+      if (next.hold) address.set('hold', '1');
+      else address.delete('hold');
+      const query = address.toString();
+      router.replace(query ? `/orders?${query}` : '/orders', { scroll: false });
+    }
+    setFilters(next);
+  };
   const [typed, setTyped] = useState('');
   const canCreate = access.can('orders.confirm');
 
@@ -137,7 +150,7 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
         )}
       </form>
 
-      <OrderFilterBar value={filters} onChange={setFilters} options={options.data ?? null} />
+      <OrderFilterBar value={filters} onChange={changeFilters} options={options.data ?? null} />
 
       {query.isPending && enabled && (
         <div className="flex flex-col gap-2" aria-busy aria-hidden>

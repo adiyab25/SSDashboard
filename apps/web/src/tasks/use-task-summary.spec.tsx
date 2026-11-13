@@ -17,12 +17,21 @@ vi.mock('@/auth/use-me', () => ({
   }),
 }));
 
+const modules = vi.hoisted((): { tasks: string | null } => ({ tasks: 'on' }));
+vi.mock('@/shell/use-module-states', () => ({
+  useModuleStates: () => ({
+    stateOf: (key: string) =>
+      key === 'tasks' && modules.tasks !== null ? { key, state: modules.tasks } : null,
+  }),
+}));
+
 const visibility = (state: 'visible' | 'hidden') => {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
   document.dispatchEvent(new Event('visibilitychange'));
 };
 
 beforeEach(() => {
+  modules.tasks = 'on';
   vi.useFakeTimers({ shouldAdvanceTime: true });
   api.getTaskSummary.mockResolvedValue({ mine: { open: 1, overdue: 1, dueToday: 0 } });
 });
@@ -60,5 +69,13 @@ describe('useTaskSummary (spec 0016, AC-7)', () => {
 
     await act(() => vi.advanceTimersByTimeAsync(180_000));
     expect(api.getTaskSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['off', null])('does not call the api while the tasks module is %s', async (state) => {
+    modules.tasks = state;
+    renderSummary();
+
+    await act(() => vi.advanceTimersByTimeAsync(180_000));
+    expect(api.getTaskSummary).not.toHaveBeenCalled();
   });
 });

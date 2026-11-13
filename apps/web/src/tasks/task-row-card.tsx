@@ -68,7 +68,9 @@ export function TaskRowCard({
           <span className="inline-flex items-center gap-1">
             <ClockIcon aria-hidden className="size-4 shrink-0" />
             {task.dueAt
-              ? t('tasks.row.due', { when: format.dateTime(task.dueAt) })
+              ? format.status === 'ready'
+                ? t('tasks.row.due', { when: format.dateTime(task.dueAt) })
+                : t('tasks.row.timeUnavailable')
               : t('tasks.row.noDue')}
           </span>
           <span>

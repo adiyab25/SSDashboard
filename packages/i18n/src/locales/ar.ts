@@ -2005,13 +2005,12 @@ export const ar: Catalog = {
     },
     row: {
       due: 'موعدها {{when}}',
+      timeUnavailable: 'الوقت غير متاح',
       noDue: 'بدون موعد',
       overdue: 'متأخرة',
       heldBy: 'مع {{name}}',
       queue: 'في قائمة {{hat}}',
       unknownType: 'مهمة',
-      unknownLink: 'سجل',
-      openRecord: 'فتح {{record}}',
       close: 'إغلاق',
       closeLabel: 'إغلاق {{task}}',
       closesByItself:

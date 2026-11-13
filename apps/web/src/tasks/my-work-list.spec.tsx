@@ -11,10 +11,10 @@ vi.mock('./tasks-api', async (original) => ({
   ...api,
 }));
 
-const format = vi.hoisted(() => ({ asked: [] as string[] }));
+const format = vi.hoisted(() => ({ asked: [] as string[], status: 'ready' }));
 vi.mock('@/i18n/use-format', () => ({
   useFormat: () => ({
-    status: 'ready',
+    status: format.status,
     dateTime: (instant: string) => {
       format.asked.push(instant);
       return 'Thu 12 Nov, 12:00 (Cairo)';
@@ -26,6 +26,7 @@ afterEach(() => {
   api.listMyTasks.mockReset();
   api.closeTask.mockReset();
   format.asked = [];
+  format.status = 'ready';
 });
 
 const page = (rows: ReturnType<typeof taskListRowOf>[], nextCursor: string | null = null) => ({
@@ -47,6 +48,16 @@ describe('MyWorkList (spec 0016, AC-5, AC-6, AC-14)', () => {
     expect(screen.getByText('In the Operations queue')).toBeVisible();
     expect(screen.queryByText('Overdue')).toBeNull();
     expect(api.listMyTasks).toHaveBeenCalledWith(undefined, expect.anything());
+  });
+
+  it('shows a neutral text, never the raw time, until the install settings are ready', async () => {
+    format.status = 'loading';
+    api.listMyTasks.mockResolvedValue(page([taskListRowOf()]));
+    renderWithQuery(<MyWorkList enabled />);
+
+    expect(await screen.findByText('Time unavailable')).toBeVisible();
+    expect(screen.queryByText(/2026-11-12/)).toBeNull();
+    expect(format.asked).toEqual([]);
   });
 
   it('marks an overdue row with a word, not only a color, and names the person holding it', async () => {
