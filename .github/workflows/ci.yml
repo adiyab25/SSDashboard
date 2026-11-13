@@ -6,16 +6,19 @@ on:
   pull_request:
     # `labeled` starts the scale job when the `scale` label is added; the other jobs skip that event.
     types: [opened, synchronize, reopened, labeled]
-  schedule:
-    # Nightly scale suite at a quiet hour (UTC).
-    - cron: "30 2 * * *"
   workflow_dispatch:
 
-# The nightly run, each manual dispatch, and a label event get their own groups, so they never cancel a push or pull
+# Each manual dispatch and a label event get their own groups, so they never cancel a push or pull
 # request run (and a new push never cancels a scale run started by a label).
 concurrency:
-  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}${{ github.event.action == 'labeled' && format('-label-{0}', github.event.label.name) || '' }}
+  group: ci-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}${{ github.event.action == 'labeled' && format('-label-{0}', github.event.label.name) || '' }}
   cancel-in-progress: true
+
+# CI ports: 4900-4949 is reserved for CI only (docs/ops/self-hosted-ci-runner.md), so a self-hosted runner
+# never collides with the dev servers and databases on the same machine. The block is web 4900, api 4901,
+# production web 4910, Postgres 4932; the e2e and scale jobs spell these out (the `env` context is not
+# available in job level `env` or `services`, so they cannot be defined once). Keep them in step.
+# check-reserved-ci-ports.mjs keeps these numbers out of dev facing config.
 
 # Every job only reads the repository; nothing here writes to it, comments, or publishes.
 permissions:
@@ -30,7 +33,8 @@ jobs:
   conventions:
     name: Branch name and commit subjects
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -54,8 +58,9 @@ jobs:
 
   images:
     name: Build the ${{ matrix.image }} image (not pushed)
-    if: github.event.action != 'labeled' && github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event.action != 'labeled'
+    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -73,8 +78,9 @@ jobs:
 
   checks:
     name: Format, lint, typecheck, unit tests
-    if: github.event.action != 'labeled' && github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event.action != 'labeled'
+    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -90,8 +96,9 @@ jobs:
 
   e2e:
     name: Database and browser e2e
-    if: github.event.action != 'labeled' && github.event_name != 'schedule'
-    runs-on: ubuntu-latest
+    if: github.event.action != 'labeled'
+    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:18-alpine
@@ -100,23 +107,25 @@ jobs:
           POSTGRES_USER: ssdashboard
           POSTGRES_PASSWORD: ssdashboard
         ports:
-          - 5433:5432
+          - 4932:5432
         options: >-
           --health-cmd "pg_isready -U ssdashboard -d ssdashboard"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:5433/ssdashboard
-      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:5433/ssdashboard
+      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:4932/ssdashboard
+      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:4932/ssdashboard
       APP_DB_PASSWORD: ssdashboard_app
       # Playwright (apps/web/playwright.config.ts) starts the api from its build (`node dist/main.js`,
-      # never the `nest start --watch` watcher) on E2E_API_PORT (default 3001), `next dev` on
-      # E2E_WEB_PORT (3000), and `next start` on E2E_PROD_PORT (3100), and hands each server the
-      # API_INTERNAL_URL (and the api and `next dev` the PUBLIC_URL) matching them. These two match those defaults for anything else that reads
-      # the env; the api's Origin check for sign in must match the address Playwright opens.
-      API_INTERNAL_URL: http://localhost:3001
-      PUBLIC_URL: http://localhost:3000
+      # never the `nest start --watch` watcher) on E2E_API_PORT, `next dev` on E2E_WEB_PORT, and
+      # `next start` on E2E_PROD_PORT, all in the reserved CI block 4900-4949 so a self-hosted run
+      # never collides with dev servers. The api's Origin check for sign in must match PUBLIC_URL.
+      API_INTERNAL_URL: http://localhost:4901
+      PUBLIC_URL: http://localhost:4900
+      E2E_WEB_PORT: 4900
+      E2E_API_PORT: 4901
+      E2E_PROD_PORT: 4910
       # A public, test only value for this throwaway CI database. Never use it anywhere real.
       BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
       # A public, test only 32 byte key (64 hex characters) that seals connection credentials in
@@ -130,21 +139,28 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @ssdashboard/web exec playwright install --with-deps chromium
+      # GitHub machines let the runner install system libraries with sudo. A self-hosted runner has no
+      # passwordless sudo, so its machine needs `npx playwright install-deps chromium` run once by hand
+      # (docs/ops/self-hosted-ci-runner.md); there this only downloads the browser.
+      - name: Install Chromium and its system libraries (GitHub hosted)
+        if: runner.environment == 'github-hosted'
+        run: pnpm --filter @ssdashboard/web exec playwright install --with-deps chromium
+      - name: Install Chromium (self-hosted)
+        if: runner.environment != 'github-hosted'
+        run: pnpm --filter @ssdashboard/web exec playwright install chromium
       - run: pnpm db:migrate
       - run: pnpm test:e2e
 
   # The spec 0002 scale suite (and the spec 0010 audit load): too long for the default e2e job, so
-  # it runs nightly, by hand, and on pull requests carrying the `scale` label.
+  # it runs only by hand and on pull requests carrying the `scale` label, never on a timer.
   scale:
     name: Scale suite
     if: >-
-      github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'scale') &&
        (github.event.action != 'labeled' || github.event.label.name == 'scale'))
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
     timeout-minutes: 60
     services:
       postgres:
@@ -154,18 +170,18 @@ jobs:
           POSTGRES_USER: ssdashboard
           POSTGRES_PASSWORD: ssdashboard
         ports:
-          - 5433:5432
+          - 4932:5432
         options: >-
           --health-cmd "pg_isready -U ssdashboard -d ssdashboard"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:5433/ssdashboard
-      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:5433/ssdashboard
+      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:4932/ssdashboard
+      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:4932/ssdashboard
       APP_DB_PASSWORD: ssdashboard_app
-      API_INTERNAL_URL: http://localhost:3001
-      PUBLIC_URL: http://localhost:3000
+      API_INTERNAL_URL: http://localhost:4901
+      PUBLIC_URL: http://localhost:4900
       # A public, test only value for this throwaway CI database. Never use it anywhere real.
       BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
       # A public, test only 32 byte key (64 hex characters) that seals connection credentials in

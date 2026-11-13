@@ -17,7 +17,7 @@
     "test:e2e": "pnpm build && pnpm -r --workspace-concurrency=1 test:e2e",
     "lint": "turbo run lint",
     "check:timezone": "node packages/config/scripts/check-timezone.mjs",
-    "lint:repo": "node packages/config/scripts/check-route-groups.mjs && node packages/config/scripts/check-folder-names.mjs && node packages/config/scripts/check-module-readmes.mjs && node packages/config/scripts/check-doc-links.mjs && node packages/config/scripts/check-banned-names.mjs && node packages/config/scripts/check-component-export-names.mjs && node packages/config/scripts/check-tsdoc-fixture.mjs",
+    "lint:repo": "node packages/config/scripts/check-route-groups.mjs && node packages/config/scripts/check-folder-names.mjs && node packages/config/scripts/check-module-readmes.mjs && node packages/config/scripts/check-doc-links.mjs && node packages/config/scripts/check-banned-names.mjs && node packages/config/scripts/check-component-export-names.mjs && node packages/config/scripts/check-tsdoc-fixture.mjs && node packages/config/scripts/check-reserved-ci-ports.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
