@@ -6,6 +6,8 @@ export default function config(phase: string): NextConfig {
   return {
     // One image for every client: nothing per client is baked in at build time.
     output: 'standalone',
+    // next build type checks the app only: e2e/ reaches into apps/api, which the pruned image lacks.
+    typescript: { tsconfigPath: 'tsconfig.build.json' },
     // packages/ui ships TypeScript source; Next compiles it with the app.
     transpilePackages: ['@ssdashboard/ui'],
     outputFileTracingRoot: fileURLToPath(new URL('../..', import.meta.url)),
