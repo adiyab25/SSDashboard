@@ -22,6 +22,7 @@ export const en = {
       },
       items: {
         home: 'Home',
+        myWork: 'My work',
         design: 'Design system',
         staff: 'Staff',
         stock: 'Stock on hand',
@@ -1948,12 +1949,90 @@ export const en = {
   // My work and the task registry (spec 0016). Keys follow tasks.types.<code> and
   // tasks.outcomes.<code>; a code with a dot nests (sync.write_back_failed).
   tasks: {
+    title: 'My work',
+    description:
+      'Tasks that need a person: yours, and those waiting in the queue of a hat you wear.',
     types: {
       sync: { write_back_failed: 'Shopify change not synced' },
     },
     outcomes: {
       synced: 'Synced to Shopify',
       resolved: 'Resolved by a person',
+    },
+    nav: {
+      overdue_one: '{{n}} overdue task',
+      overdue_other: '{{n}} overdue tasks',
+      unsyncedLabel: 'Edits not synced',
+      unsyncedCount_one: '{{n}} order edit not synced',
+      unsyncedCount_other: '{{n}} order edits not synced',
+    },
+    list: {
+      label: 'Your tasks',
+      loadError: 'Your tasks could not be loaded.',
+      retry: 'Try again',
+      loadMore: 'Load more',
+      emptyTitle: 'Nothing needs you right now',
+      emptyBody:
+        'Tasks that need a person, such as a Shopify change that did not sync, show up here.',
+    },
+    row: {
+      due: 'Due {{when}}',
+      noDue: 'No due time',
+      overdue: 'Overdue',
+      heldBy: 'Held by {{name}}',
+      queue: 'In the {{hat}} queue',
+      unknownType: 'Task',
+      unknownLink: 'Record',
+      openRecord: 'Open {{record}}',
+      close: 'Close',
+      closeLabel: 'Close {{task}}',
+      closesByItself:
+        'Closes by itself when the system sees the problem is fixed, for example when Shopify accepts the edit.',
+    },
+    linkKinds: {
+      order: 'Order',
+      customer: 'Customer',
+      exchange: 'Exchange',
+      refund: 'Refund',
+      shipment: 'Shipment',
+      settlement_line: 'Settlement line',
+      settlement_statement: 'Settlement statement',
+      settlement_period: 'Settlement period',
+      outbound_command: 'Outgoing change',
+      party: 'Partner',
+      location: 'Location',
+      connection: 'Connection',
+      inbound_event: 'Incoming event',
+      variant: 'SKU',
+      install: 'Install',
+    },
+    close: {
+      title: 'Close this task',
+      description: 'Choose how it ended. This is recorded in the audit trail.',
+      outcome: 'Outcome',
+      outcomeRequired: 'Choose an outcome.',
+      note: 'Note',
+      noteOptional: '(optional)',
+      noteRequiredMark: '(required for this outcome)',
+      noteHint: 'Keep it short and leave out phone numbers and addresses.',
+      confirm: 'Close task',
+      cancel: 'Keep it open',
+      dismiss: 'Back to My work',
+      closeLabel: 'Close the dialog',
+      done: 'Task closed.',
+      errors: {
+        TASK_NOT_FOUND:
+          'This task is gone or is no longer yours to see. The list has been refreshed.',
+        TASK_CHANGED:
+          'Someone changed this task while you were looking. The list has been refreshed, so check it and try again.',
+        TASK_NOT_OPEN: 'This task is already closed. The list has been refreshed.',
+        OUTCOME_INVALID: 'That outcome does not fit this task. Choose another.',
+        OUTCOME_NOT_FOR_PERSON: 'Only the system can set that outcome.',
+        NOTE_REQUIRED: 'This outcome needs a note. Add one and try again.',
+        VALIDATION_FAILED: 'Check the outcome and the note, then try again.',
+        rateLimited: 'Too many tries. Wait a moment and try again.',
+        generic: 'The task could not be closed. Try again.',
+      },
     },
   },
   audit: {

@@ -192,6 +192,20 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
     expect(screen.getByText('Showing the orders of one customer.')).toBeVisible();
   });
 
+  it('starts on the hold filter from the unsynced edits link (spec 0016, AC-7)', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockResolvedValue({ items: [order(1)], nextCursor: null });
+    address.search = 'hold=1';
+    renderWithQuery(<OrdersPage />);
+
+    await screen.findByRole('table', { name: 'Orders' });
+    expect(api.listOrders).toHaveBeenCalledWith(
+      expect.objectContaining({ hold: true }),
+      undefined,
+      expect.anything(),
+    );
+  });
+
   it('offers every store and channel, Shopify ones included, to a person who only has orders.view', async () => {
     me.current = { id: 'me', hats: ['warehouse'], permissions: ['orders.view'] };
     api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);

@@ -82,6 +82,11 @@ export function isFiltered(filters: OrderFilters): boolean {
   );
 }
 
+/** True when the address asks for orders on hold (`/orders?hold=1`, the unsynced edits link of the navigation). */
+export function holdFromAddress(value: string | null): boolean {
+  return value === '1';
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A customer id from the address (`/orders?customerId=...`), or empty when it is not a uuid. */

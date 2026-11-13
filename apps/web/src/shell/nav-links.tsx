@@ -8,7 +8,10 @@ import {
   SidebarMenuItem,
 } from '@ssdashboard/ui/components/sidebar';
 import Link from 'next/link';
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
+import { MyWorkNavBadge } from '@/tasks/my-work-nav-badge';
+import { UnsyncedEditsNavItem } from '@/tasks/unsynced-edits-nav-item';
 import { navGroups, navItemFor, type NavItem } from './nav';
 
 /** Props of `NavLinks`. */
@@ -36,19 +39,23 @@ export function NavLinks({ items, pathname }: NavLinksProps) {
             const active = current?.id === item.id;
             const label = t(item.labelKey);
             return (
-              <SidebarMenuItem key={item.id}>
-                <SidebarMenuButton
-                  asChild
-                  isActive={active}
-                  tooltip={label}
-                  className="coarse:h-touch coarse:group-data-[collapsible=icon]:size-touch!"
-                >
-                  <Link href={item.href} aria-current={active ? 'page' : undefined}>
-                    <item.icon aria-hidden />
-                    <span>{label}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <Fragment key={item.id}>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={active}
+                    tooltip={label}
+                    className="coarse:h-touch coarse:group-data-[collapsible=icon]:size-touch!"
+                  >
+                    <Link href={item.href} aria-current={active ? 'page' : undefined}>
+                      <item.icon aria-hidden />
+                      <span>{label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                  {item.id === 'myWork' && <MyWorkNavBadge />}
+                </SidebarMenuItem>
+                {item.id === 'myWork' && <UnsyncedEditsNavItem />}
+              </Fragment>
             );
           })}
         </SidebarMenu>

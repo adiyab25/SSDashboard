@@ -16,6 +16,7 @@ import { OrderFilterBar } from './order-filter-bar';
 import {
   customerIdFromAddress,
   EMPTY_FILTERS,
+  holdFromAddress,
   isFiltered,
   type OrderFilters,
 } from './order-filters';
@@ -36,7 +37,15 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
   const [filters, setFilters] = useState<OrderFilters>(() => ({
     ...EMPTY_FILTERS,
     customerId: customerIdFromAddress(params.get('customerId')),
+    hold: holdFromAddress(params.get('hold')),
   }));
+  // The navigation link to `?hold=1` can be followed while this page is open: apply the address.
+  const holdInAddress = holdFromAddress(params.get('hold'));
+  const [seenHold, setSeenHold] = useState(holdInAddress);
+  if (seenHold !== holdInAddress) {
+    setSeenHold(holdInAddress);
+    setFilters((current) => ({ ...current, hold: holdInAddress }));
+  }
   const [typed, setTyped] = useState('');
   const canCreate = access.can('orders.confirm');
 

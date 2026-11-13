@@ -6,6 +6,7 @@ import {
   GitMergeIcon,
   HomeIcon,
   LayersIcon,
+  ListChecksIcon,
   MapPinIcon,
   PackagePlusIcon,
   PaletteIcon,
@@ -65,6 +66,15 @@ export const navItems: readonly NavItem[] = [
     group: 'general',
     needs: ANY_HAT,
     module: 'platform',
+  },
+  {
+    id: 'myWork',
+    labelKey: 'shell.nav.items.myWork',
+    href: '/my-work',
+    icon: ListChecksIcon,
+    group: 'general',
+    needs: 'tasks.work',
+    module: 'tasks',
   },
   {
     id: 'design',
