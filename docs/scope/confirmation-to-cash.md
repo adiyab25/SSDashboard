@@ -117,28 +117,63 @@ Also from spec 0017: the queue writes a confirmed and a held tag to Shopify, and
 - [ ] Document it: `/document confirmation queue`
 Spec [0017](../specs/0017-confirmation-queue/index.md) (Assumed 2026-11-12, owner questions open; domain review [domain-confirmation-queue](../reviews/domain-confirmation-queue.md): accept with changes, folded in)
 
-### 19. Bosta connector, mirror mode · GA · needs a decision
+### 19. Bosta connector, mirror mode · GA
 Read the deliveries the carrier's own Shopify app created, with their states, fees, and cash cycles, without executing anything.
 **Done when:** tracking updates move the order's states; attention rules flag exceptions or holds, stuck at pickup over two days, no movement over three days, the carrier's delayed flag, two or more attempts, and stalled after 48 hours; fees and cash cycle amounts come from the per delivery detail and are never overwritten by a list sync that lacks them; recorded fixtures replay green with no live call.
 Also from spec 0007: works with one Bosta account for all stores or one per store; a delivery's store comes from the account's binding, else from its business reference or Shopify store name.
-- [ ] Design it (spec): `/architect bosta connector, mirror mode`
+Also from spec 0018: the order stays editable while Bosta reports pickup requested, and a COD difference after a confirmation edit is a stale carrier record with an operations task before support reconfirms (with spec 0017); the connector keeps Bosta's cities, zones, and districts for address fixing.
+- [x] Design it (spec): `/architect bosta connector, mirror mode`
+- [ ] Build it: `/develop bosta connector, mirror mode`
+  - [ ] One delivery from a verified webhook to a moved order (AC-1, AC-2, AC-4 to AC-7, AC-9, AC-13, AC-14, AC-26, AC-27)
+  - [ ] Every state, the list pass, the cash cycle sweep, linking, and the wind down (AC-6, AC-8 to AC-19, AC-24, AC-25)
+  - [ ] The stale carrier record, attention, and carrier areas (AC-20 to AC-22, AC-28, AC-29, AC-30)
+  - [ ] Screens, freshness, and the runbook (AC-2, AC-3, AC-23, AC-27, AC-28)
+  - [ ] Record the fixtures from the pilot brand's Read Only key (owner decision Q-19.6: synthetic until then; not done before)
+- [ ] Verify it: `/check verify bosta connector, mirror mode`
+- [ ] Test it: `/test bosta connector, mirror mode`
+- [ ] Review it (fresh model): `/check review bosta connector, mirror mode`
+- [ ] Document it: `/document bosta connector, mirror mode`
+Spec [0018](../specs/0018-bosta-connector-mirror-mode/index.md) (Proposed 2026-11-12; owner decisions Q-19.1 to Q-19.6 taken as recommended, awaiting the owner)
 
 ### 20. Barcode scanning · needs a decision
 Scan to find a variant and scan to move stock, on a phone camera or a handheld scanner, starting with restock of returned pieces.
 **Done when:** a scan finds the variant in under a second, an unknown barcode says so clearly, a restock by scan writes a stock movement, and it works with a phone camera and a keyboard wedge scanner.
 - [ ] Design it (spec): `/architect barcode scanning`
 
-### 21. Delivery failures & returned to origin · GA · needs a decision
+### 21. Delivery failures & returned to origin · GA
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
 **Done when:** a failed attempt schedules the next try; a returned to origin piece is restocked by scan and both shipping legs post against the order and its campaign; a partial delivery splits the order into delivered and returned lines with the partial cash amount; the returned to origin rate shows by governorate, product, and carrier; every order ends with an outcome.
 The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
-- [ ] Design it (spec): `/architect delivery failures & returned to origin`
+Also from spec 0019: restock is by tap until feature 20 brings the scan; customer return pickups come back through the same returned parcels, and the pilot does not use Bosta's Exchange type (a swap is a return pickup plus a new order); the warehouse marks each order packed in the app; a lost or damaged parcel opens a claim that settlement matches to Bosta's compensation; an order handed to another courier is followed by hand; the warehouse packs from a pick list that shows the holds.
+- [x] Design it (spec): `/architect delivery failures & returned to origin`
+- [ ] Build it: `/develop delivery failures & returned to origin`
+  - [ ] Every returned parcel from the Bosta event to the shelf, with its charge (AC-8 to AC-11, AC-27, AC-29, AC-30)
+  - [ ] Failed attempts, reasons, the next try, and refusals (AC-1 to AC-7, AC-27)
+  - [ ] Partial deliveries and the money of pieces that never arrive (AC-12 to AC-15, AC-27)
+  - [ ] Every order ends, the rates, and the pick list (AC-16 to AC-18, AC-25, AC-27, AC-31)
+  - [ ] Claims, cash differences, the manual courier path, and the runbook (AC-19 to AC-24, AC-26 to AC-28, AC-32)
+- [ ] Verify it: `/check verify delivery failures & returned to origin`
+- [ ] Test it: `/test delivery failures & returned to origin`
+- [ ] Review it (fresh model): `/check review delivery failures & returned to origin`
+- [ ] Document it: `/document delivery failures & returned to origin`
+Spec [0019](../specs/0019-delivery-failures-returned-to-origin/index.md) (Proposed 2026-11-12, revised the same day for two domain review passes; owner decisions Q-21.1 to Q-21.15 taken as recommended, awaiting the owner)
 
-### 22. Settlement & Bosta reconciliation · GA · needs a decision
+### 22. Settlement & Bosta reconciliation · GA
 The settlement primitive with its first owner, the carrier: Bosta remits cash minus fees and refunds, and every line is matched to an order.
 **Done when:** a Bosta settlement file or the per delivery cash cycles import into a carrier settlement account; each line matches an order by tracking number (COD collected, COD fee, shipping fee, refund as a negative line, partial amounts); matched orders become reconciled; unmatched lines list with a reason; period totals agree with the app's own cash state.
 Also from spec 0007: cash matching by tracking number and business reference carries the store id onto every settlement line.
-- [ ] Design it (spec): `/architect settlement & bosta reconciliation`
+Also from spec 0020: the per delivery cash cycles lead and Bosta's sheet adds the wallet's own rows and confirms the rest, never counting a delivery's cash cycle twice; fees are checked against the brand's Bosta rate card; remitted means credited in Bosta's wallet, and the wallet is rolled forward to the bank beside the order's states; a lost parcel's claim is closed by Bosta's compensation; cash differences are decided in feature 21 (spec 0019) and settlement reconciles from them; the month exports as CSV; a refund line, a partial delivery, and prepaid parcels count in the done when only if the pilot month has them, else a recorded fixture proves the path (owner decisions Q-22.8 and Q-22.12; the slice done when wording is the lead's to align); every figure stays provisional until feature 23 closes the period.
+- [x] Design it (spec): `/architect settlement & bosta reconciliation`
+- [ ] Build it: `/develop settlement & bosta reconciliation`
+  - [ ] One cash cycle from the event to a reconciled order (AC-1, AC-2, AC-5, AC-8, AC-10, AC-11, AC-15 to AC-17, AC-22, AC-24 to AC-26, AC-28, AC-35)
+  - [ ] Every carrier line, the contract, spec 0019's cash decisions, a person's and bulk actions, and the cash going back (AC-3, AC-4, AC-10, AC-12 to AC-15, AC-17 to AC-19, AC-26, AC-27, AC-30, AC-35, AC-37, AC-38)
+  - [ ] Bosta's sheet: mapping, preview, import, one count across both sources, and the day evidence (AC-6 to AC-9, AC-25 to AC-27, AC-33)
+  - [ ] Periods, the wallet and the bank, what is missing, the export, the wind down, scale, and one real month matched (AC-20 to AC-24, AC-25, AC-26, AC-28, AC-29, AC-31, AC-32, AC-34)
+- [ ] Verify it: `/check verify settlement & bosta reconciliation`
+- [ ] Test it: `/test settlement & bosta reconciliation`
+- [ ] Review it (fresh model): `/check review settlement & bosta reconciliation`
+- [ ] Document it: `/document settlement & bosta reconciliation`
+Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews [domain-settlement-reconciliation](../reviews/domain-settlement-reconciliation.md) and [second pass](../reviews/domain-settlement-reconciliation-r2.md); owner decisions Q-22.1 to Q-22.13 taken as recommended, awaiting the owner)
 
 ### 23. Period close with evidence · GA · needs a decision
 Confirmed data is the only data reports, settlements, and exports use. A channel's date range is confirmed by a person after review, or automatically when the evidence matches exactly.
