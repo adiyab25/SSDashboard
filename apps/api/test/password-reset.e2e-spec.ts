@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { hashPassword } from 'better-auth/crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -158,9 +159,10 @@ describe('password reset by mail', { timeout: 240_000 }, () => {
       const person = await addUser();
 
       const timed = async (email: string) => {
-        const started = Date.now();
+        // Monotonic, so a host clock step during the request cannot skew the measurement.
+        const started = performance.now();
         const response = await requestReset(email);
-        return { response, ms: Date.now() - started };
+        return { response, ms: performance.now() - started };
       };
       const real = await timed(person.email);
       const unknown = await timed('nobody-here@example.com');

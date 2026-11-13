@@ -576,6 +576,15 @@ Each is decided with the recommended answer and built that way unless the owner 
 11. Do you ever ship part of an order now and the rest later, and how long does the rest wait? After the Bosta delivery exists, do you ever cancel the fulfillment to change a size or an address, then fulfil again? (AC-28 waiting, fulfillment cancelled)
 12. Out of every ten returned pieces, how many cannot be sold again? When do you count the shelf: before or after the day's Bosta pickup? (AC-28 coming back, counting)
 
+## Amendments from specs 0016 to 0020 (ratified 2026-11-13)
+
+The owner ratified specs 0016 to 0020 on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)), which settles the changes they ask of this spec. Each line below amends the text above; where they disagree, the line here wins, and the named section of the asking spec holds the detail. Each lands with the asking feature's milestone, not before.
+
+- **A third outbound kind for feature 18** ([spec 0017](../0017-confirmation-queue/index.md) AC-27): `shopify.order_tags` (linked `order`, payload `{ orderId }`, idempotency key `shopify.order_tags:<orderId>:<order updated_at>`, executor feature 18, step `step.shopify_order_tags_write_back`), beside `shopify.order_edit` and `shopify.order_cancel` of AC-23; task 13 is a prerequisite of spec 0017's milestone 3; resolving a command with `edit_undone` enqueues the read back.
+- **Intake** ([spec 0017](../0017-confirmation-queue/index.md) AC-15): carry the checkout province code and city separately on `ChannelOrderInput.shipTo`; the cancel reason mapping and the card refund on cancel (its Q-18.6), checked against the pinned API version. How a Shopify deposit maps to `prepaid_purpose = 'shipping_deposit'` is needed only for a brand that turns spec 0017's optional deposit on (its Q-18.5 waits for that brand's method).
+- **Sweep and events** ([spec 0016](../0016-tasks-my-work-inbox/index.md)): publish `OutboundCommandOverdue` for a confirmation edit command `waiting` longer than 10 minutes (ratified for both send modes), and carry the person who queued a command on the four `OutboundCommand*` events.
+- **Retrying a failed read** ([spec 0016](../0016-tasks-my-work-inbox/index.md) owner question 4, ratified): `connector.inbound_failed` stays with operations, and a holder of `channels.map` may retry a failed read.
+
 ## Follow-up
 
 - [ ] Feature 18: build the `shopify.order_edit` and `shopify.order_cancel` executors to the shapes above (reading `OrderQueries.writeBackViewOf`, calling `OrderIntake.recordChannelLineIds` on sync), and register `step.shopify_order_edit_write_back` and `step.shopify_duplicate_cancel`.
