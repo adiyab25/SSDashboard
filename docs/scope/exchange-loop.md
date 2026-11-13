@@ -38,6 +38,7 @@ Pick by scan, pack, and hand over to the carrier, for exchange replacements firs
 ### 34. Exchange execution & inspection · GA · needs a decision
 Everything between approval and close, including the edge states real customers create.
 **Done when:** an exchange id groups the return, the new sale, the shipment, the credit entries, the inspection, and the settlement line; the replacement is reserved; the returned piece is inspected by scan and restocked or written off with reason and cost; refused at the door, old piece never collected ("customer owes"), and inspection rejection after shipping each follow the brand's policy knobs; the exchange cost posts against the original sale; nothing is edited or deleted.
+Pulled into slice 1a (owner decision Q-21.13, 2026-11-13): a Bosta Exchange delivery (type 30) as the replacement order's forward delivery, with the new piece out, the old piece back by restock, and the price difference collected at the door, built as milestone 6 of feature 21 ([spec 0019](../specs/0019-delivery-failures-returned-to-origin/index.md) AC-34, with [spec 0018](../specs/0018-bosta-connector-mirror-mode/index.md) AC-33); roughly two builder weeks added to slice 1a. This feature keeps the exchange id, the reservation rules, inspection, the credit entries (the slice 1a allowance becomes one), the policy knobs, and the edge states.
 - [ ] Design it (spec): `/architect exchange execution & inspection`
 
 ### 35. Refunds by original method · GA · needs a decision

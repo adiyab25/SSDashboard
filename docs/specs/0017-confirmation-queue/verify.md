@@ -33,6 +33,7 @@ Milestone 2:
 - [ ] Choose a zone → it is also appended to the courier note → AC-15
 - [ ] With `confirmation.require_area` at `governorate_city`, confirm an editable order with no city → refused, asking for the area → AC-8
 - [ ] Replace an M with an L from the card → the new line shows, "Tell the customer the new amount" appears, the WhatsApp message carries the new amount → AC-16
+- [ ] On a store whose Bosta connection is `app_sync_at_creation`, with a fixture delivery, fix the address and change a size → "Also change it in Bosta" lists address and pieces with the new values and who can change each; tick both, record the next outcome → the attempt shows `bosta_fields_done`; an order at route assigned sorts first marked "Bosta routes this pickup: confirm first" and no task opens → AC-33
 
 Milestone 3:
 
@@ -44,10 +45,8 @@ Milestone 3:
 - [ ] Force a failure of the tag command itself → a `sync.write_back_failed` task opens and the order is not held by it → AC-19, AC-27
 - [ ] Print the to pack list → one A4 page per 30 orders, held section first → AC-19
 - [ ] The runbook `docs/runbooks/confirmation-and-sending-to-bosta.md` exists and states the operating rule of AC-27 → AC-27
-
-Milestone 4:
-
-- [ ] After a `message_sent` on line 2, open My work as the agent of line 2 at the reply wait's end → the `confirmation.callback` task is hers; after a call with no answer it sits in the support pool; its row opens the card; recording `confirmed` closes it → AC-17
+- [ ] **Pilot acceptance run, app sync brand:** on an `app_sync_at_creation` store, edit an order's address, leave "Also change it in Bosta" unticked, confirm → spec 0018 marks it stale and the order is held; on the pick list it shows "carrier record stale, hold" and Packed is refused; fix it at the fixture and read back → the hold clears with no reconfirmation → AC-19, AC-21, AC-33
+- [ ] On an `app_sync_at_creation` store with `bostaAutoCancel` off, close an order by three no answers → `terminate_carrier_delivery` opens; with it on and the cancel written to Shopify → no task while Bosta reaches 49 within 30 minutes → AC-33
 - [ ] An unconfirmed order with a Bosta delivery → "Bosta already has this parcel: any change you make here must also be made in Bosta", edits still allowed; confirm it → line and shipping edits now refused with the Bosta app instruction; the current tracking number shows → AC-20
 - [ ] Fire `CarrierRecordStale` with `receiver_address` and `receiver_phone`, both `merchant` fixable, `editedBy` you → your card shows "Change it in the Bosta app now: address, phone" at once and the order is held; after 30 minutes the `carrier.record_stale` task is with operations; fire the cleared event with `fixOutcome` `updated` → no reconfirmation, the hold clears → AC-19, AC-21
 - [ ] Fire `CarrierRecordStale` with `fixableBy` `nobody` → the banner says operations decides to cancel or deliver as is; fire the cleared event with `cannot_update` after a `cod` mismatch → the order enters Reconfirm listing "amount to collect" with both amounts in the script; `reconfirmed` records the accepted amount → AC-21
@@ -55,14 +54,24 @@ Milestone 4:
 - [ ] A stale with only `receiver_phone`, cleared `cannot_update` → the script has no money or pieces line and shows no phone value → AC-21
 - [ ] A cleared event with reason `order_matches` and a null `fixOutcome` while a reconfirmation is open → it closes `cleared_by_carrier` → AC-21
 - [ ] Three counted no answers on a reconfirmation → the task moves to the manager hat and the order is not cancelled → AC-21
-- [ ] On a flagged customer, send the `deposit_request` template → it states the deposit and, with `shipping_deposit_on_refusal` at `released`, that the deposit is returned on a refusal; record `message_sent` → the attempt shows the template key and version and the order shows `deposit_disclosure` with that version and rule `released`; change the template in settings and press `message_sent` from the old card → refused `TEMPLATE_CHANGED` → AC-32
+
+Milestone 4:
+
+- [ ] After a `message_sent` on line 2, open My work as the agent of line 2 at the reply wait's end → the `confirmation.callback` task is hers; after a call with no answer it sits in the support pool; its row opens the card; recording `confirmed` closes it → AC-17
 - [ ] Set `confirmation.carrier_refusal_fee` to 150.00 → the `confirm` and `deposit_request` messages carry the Bosta refusal fee line in Arabic and English; set it back to off → the line is gone with no empty line → AC-5
+- [ ] Cancel a card prepaid Shopify order → the button shows "This cancels and refunds 2,000.00 to the card" before the press; cancel a transfer prepaid one → a `refund.unrecorded_payout` task opens for operations → AC-8, AC-31
+- [ ] The today strip and `/api/confirmation/metrics` for a seeded week match a hand count of confirmed (including one confirmed on the order page), cancelled by reason, closed, fake, duplicate (left out of the rate), confirm rate, and median time to confirm in clock and working minutes → AC-24
+
+Milestone 5 (the optional deposit):
+
+- [ ] With `confirmation.shipping_deposit_offered` off (the default) → no "Ask for a shipping deposit", no `deposit_request` template, no "Deposits to check"; `POST /api/orders/:id/deposit` answers 409 `DEPOSIT_NOT_OFFERED` → AC-22
+- [ ] Turn the setting on → the items below apply → AC-22
+- [ ] On a flagged customer, send the `deposit_request` template → it states the deposit and, with `shipping_deposit_on_refusal` at `released`, that the deposit is returned on a refusal; record `message_sent` → the attempt shows the template key and version and the order shows `deposit_disclosure` with that version and rule `released`; change the template in settings and press `message_sent` from the old card → refused `TEMPLATE_CHANGED` → AC-32
 - [ ] Switch `shipping_deposit_on_refusal` to `kept_as_delivery_fee` → the next `deposit_request` message states that the deposit is kept as the delivery fee → AC-5, AC-23
 - [ ] Record `awaiting_transfer` → Later shows the deadline; past it the card is back in Due now marked "Deposit not received"; cancel with `deposit_not_paid` → AC-8, AC-22
 - [ ] On an internal store order of 1,000.00 plus 50.00, record a 50.00 InstaPay deposit with its reference → shipping prepaid 50.00, COD expected 1,000.00, "Deposit claimed, not yet checked", `order.deposit_recorded` on `/audit`; as operations, check it from "Deposits to check" → the stamp shows → AC-22, AC-23
 - [ ] Try the deposit on a Shopify order → refused, "record it in Shopify; it will sync" → AC-22
 - [ ] Cancel the internal store deposit order → the button named "50.00 InstaPay is owed back"; a `refund.unrecorded_payout` task opens for operations; cancelling a card prepaid Shopify order shows "This cancels and refunds 2,000.00 to the card" before the press → AC-8, AC-31
-- [ ] The today strip and `/api/confirmation/metrics` for a seeded week match a hand count of confirmed (including one confirmed on the order page), cancelled by reason, closed, fake, duplicate (left out of the rate), confirm rate, and median time to confirm in clock and working minutes → AC-24
 
 ## Commands
 

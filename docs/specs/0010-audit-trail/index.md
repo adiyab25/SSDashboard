@@ -448,6 +448,12 @@ Tracer Bullet, as the project default ([AGENTS.md](../../../AGENTS.md)). Milesto
 - One table in the migration baseline (amended 2026-11-06, see build plan task 1), one module. No new environment setting and no new dependency.
 - `order_events`, `credit_entries`, `stock_movements`, and `settlement_lines` stay their own histories; audit adds entries for voids, reversals, overrides, and automatic actions.
 
+## Amendments from specs 0016 to 0020 (ratified 2026-11-13)
+
+The owner ratified specs 0016 to 0020 on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)), which settles the changes they ask of this spec. Each line below amends the text above; where they disagree, the line here wins, and the named section of the asking spec holds the detail. Each lands with the asking feature's milestone, not before.
+
+- **New actions**: from [spec 0017](../0017-confirmation-queue/index.md), `order.duplicates_merged`, `order.deposit_recorded`, and `order.deposit_verified` (the last two only with its optional deposit); from [spec 0016](../0016-tasks-my-work-inbox/index.md), `task.opened` and `task.cancelled`, with `task.reopened` marked not built; from [spec 0018](../0018-bosta-connector-mirror-mode/index.md), `connection.send_mode_changed` (added 2026-11-13), `carrier_delivery.linked_by_person`, `carrier_delivery.linked_to_exchange_replacement` (system, added 2026-11-13), and `connection.cod_rule_acknowledged`; from [spec 0019](../0019-delivery-failures-returned-to-origin/index.md), the actions of its *Security model* and AC-28 plus `delivery_outcome.fee_bearer_set` (added 2026-11-13); from [spec 0020](../0020-settlement-bosta-reconciliation/index.md), the actions and record types of its *Security model*.
+
 ## Follow-up
 
 - [x] Spec 0002 tenancy child (`docs/specs/0002-core-data-model/0002-tenancy-platform.md`, A3 stamped list): add `audit_entries` (`recorded_at`) to the list of operating day tables; A4 and A5 already list it. Owner of that file: the architect, via Igris. (2026-11-06: the A3 list already names it; nothing to add.)
