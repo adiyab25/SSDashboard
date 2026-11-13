@@ -15,6 +15,7 @@ import { IdentityModule } from './identity/identity.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { MailModule } from './mail/mail.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { TasksModule } from './tasks/tasks.module.js';
 import { PartnersModule } from './partners/partners.module.js';
 import { PlatformApiModule } from './platform/platform-api.module.js';
 import { PlatformModule } from './platform/platform.module.js';
@@ -46,6 +47,7 @@ import { PlatformModule } from './platform/platform.module.js';
     CustomersModule,
     InventoryModule,
     OrdersModule,
+    TasksModule,
     PartnersModule,
     // The customers leaf (profile, timeline, flag routes; spec 0014): after `CustomersModule`, so
     // its `GET customers/:id` is matched after `GET customers/merge-suggestions`.

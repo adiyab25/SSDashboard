@@ -18,6 +18,13 @@ abstract class OutboundCommandEvent {
     readonly linkedId: string,
     /** A provider error code only (`STEP_OFF`), set on a failure; never provider text. */
     readonly failureCode: string | null = null,
+    /**
+     * The person who queued the command (a staff user id), when the publisher knows one; the
+     * tasks module assigns a failed write back to that person when she still holds
+     * `orders.confirm` (spec 0016 AC-8, review B1). Null for a system queued command. An id
+     * only, never a name.
+     */
+    readonly queuedByUserId: string | null = null,
   ) {}
 }
 

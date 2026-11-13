@@ -14,6 +14,7 @@ import {
   PHASE_WATCH_CRON_TOKEN,
 } from './platform/license/license-check.job.js';
 import { PlatformModule } from './platform/platform.module.js';
+import { TasksModule } from './tasks/tasks.module.js';
 
 /**
  * The `worker` entry point's modules: no HTTP, only scheduled and queued jobs.
@@ -35,6 +36,7 @@ import { PlatformModule } from './platform/platform.module.js';
     InventoryModule,
     MailWorkerModule,
     ConnectorsWorkerModule,
+    TasksModule,
   ],
   providers: [
     ReconcileJob,

@@ -254,6 +254,8 @@ const IDENTITY_PUBLIC_FILES: Readonly<Record<string, string>> = {
     '@Public(): open routes (health, config) mark themselves for the global session guard',
   'apps/api/src/identity/staff/staff-directory.ts':
     'StaffDirectoryModule: read only display names for "posted by", no auth dependency',
+  'apps/api/src/identity/hats/hat-directory.ts':
+    'HatDirectoryModule: read only active holders of an internal hat, no auth dependency',
   'apps/api/src/identity/sign-in/mail-recipients.ts':
     'MailRecipientsModule: the read only recipient and token row the mail worker sends with',
 };

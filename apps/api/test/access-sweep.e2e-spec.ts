@@ -341,6 +341,15 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
         expectedUpdatedAt: '2026-11-08T10:00:00.000000Z',
       }),
     },
+    // Spec 0016 milestone 1: My work. The close body is empty, so a person who may call it gets a
+    // 422 once the permission passes (a refusal, never a 5xx).
+    'GET /tasks': { needs: ['tasks.work'] },
+    'GET /tasks/summary': { needs: ['tasks.work'] },
+    'POST /tasks/:id/close': {
+      needs: ['tasks.work'],
+      path: () => `/tasks/${randomUUID()}/close`,
+      body: () => ({}),
+    },
     'GET /orders': { needs: ['orders.view'] },
     'POST /orders/search': { needs: ['orders.view'], body: () => ({}) },
     'GET /orders/options': { needs: ['orders.confirm'] },

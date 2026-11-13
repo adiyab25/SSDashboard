@@ -77,6 +77,7 @@ import { SettingsService } from './settings/settings.service.js';
     SettingsCache,
     PlatformChangesListener,
     LicenseService,
+    PlatformClock,
     NumberingService,
     CostRulesService,
     ModuleRegistry,
