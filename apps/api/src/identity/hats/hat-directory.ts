@@ -2,6 +2,7 @@ import { Inject, Injectable, Module } from '@nestjs/common';
 import { InternalHat } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { DATABASE } from '../../database/database.module.js';
+import type { Executor } from '../../database/sql.js';
 
 /**
  * Read only answer to "who is wearing this hat" for other modules (spec 0008 named it, spec 0016
@@ -16,17 +17,23 @@ export class HatDirectory {
   /** Takes the app database connection. */
   constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
 
-  /** The active (not disabled) people wearing the hat, sorted by id. Empty when nobody does. */
-  async holdersOf(hat: InternalHat): Promise<readonly string[]> {
-    return (await this.holdersByHat()).get(hat) ?? [];
+  /**
+   * The active (not disabled) people wearing the hat, sorted by id. Empty when nobody does. Reads
+   * through `executor` when given: a caller inside a transaction passes its own, so no second
+   * connection is taken.
+   */
+  async holdersOf(hat: InternalHat, executor?: Executor): Promise<readonly string[]> {
+    return (await this.holdersByHat(executor)).get(hat) ?? [];
   }
 
   /**
    * The active holders of every internal hat in one read, so a request asks once. Each of the four
-   * internal hats has an entry, empty when nobody wears it.
+   * internal hats has an entry, empty when nobody wears it. Reads through `executor` when given.
    */
-  async holdersByHat(): Promise<ReadonlyMap<InternalHat, readonly string[]>> {
-    const { rows } = await this.connection.db.execute<{ hat: string; user_ids: string[] }>(
+  async holdersByHat(
+    executor: Executor = this.connection.db,
+  ): Promise<ReadonlyMap<InternalHat, readonly string[]>> {
+    const { rows } = await executor.execute<{ hat: string; user_ids: string[] }>(
       sql`SELECT h.hat, array_agg(h.user_id ORDER BY h.user_id) AS user_ids
             FROM hat_assignments h
             JOIN users u ON u.id = h.user_id

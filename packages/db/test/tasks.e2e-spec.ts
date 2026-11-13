@@ -187,6 +187,8 @@ describe('tasks (AC-26)', () => {
     await expect(app.query('DELETE FROM task_notes WHERE id = $1', [note.id])).rejects.toThrow(
       /permission denied/,
     );
+    await expect(app.query('TRUNCATE task_notes')).rejects.toThrow(/permission denied/);
+    await expect(owner.query('TRUNCATE task_notes')).rejects.toThrow(/append only/);
     await expect(
       app.query("INSERT INTO task_notes (task_id, note, author_id) VALUES ($1, '', $2)", [
         id,

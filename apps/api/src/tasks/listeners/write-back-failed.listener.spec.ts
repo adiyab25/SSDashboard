@@ -24,7 +24,7 @@ function build(eligible: string[]) {
   const tasks = {
     open,
     closeByKey,
-    eligibleFor: () => Promise.resolve(new Set(eligible)),
+    eligibleFor: (_type: string, _executor?: object) => Promise.resolve(new Set(eligible)),
   } as unknown as TasksService;
   const events = new DomainEvents();
   new WriteBackFailedListener(events, tasks).onModuleInit();

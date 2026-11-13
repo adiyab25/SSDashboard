@@ -59,7 +59,7 @@ export class WriteBackFailedListener implements OnModuleInit {
   async failed(tx: Transaction, event: OutboundCommandFailed): Promise<void> {
     const editor = event.queuedByUserId;
     const assignable =
-      editor !== null && (await this.tasks.eligibleFor('sync.write_back_failed')).has(editor);
+      editor !== null && (await this.tasks.eligibleFor('sync.write_back_failed', tx)).has(editor);
     await this.tasks.open(tx, {
       type: 'sync.write_back_failed',
       linked: { type: event.linkedType, id: event.linkedId },

@@ -5,12 +5,14 @@ import { ChannelsModule } from '../channels/channels.module.js';
 import { ConnectorsModule } from '../connectors/connectors.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
+import { TasksModule } from '../tasks/tasks.module.js';
 import { PlatformModule } from '../platform/platform.module.js';
 import { OrderEditing } from './editing/order-editing.service.js';
 import { OrderIntake } from './intake/order-intake.service.js';
 import { OrderMovesController } from './moves/order-moves.controller.js';
 import { OrderTransactions } from './order-transactions.js';
 import { OrderQueries } from './reading/order-query.service.js';
+import { OrderTaskLink } from './reading/order-task-link.js';
 import { OrdersController } from './reading/orders.controller.js';
 import { OrderStock } from './stock/order-stock.js';
 import { OrderTransitions } from './transitions/order-transitions.service.js';
@@ -37,6 +39,7 @@ import { OrderWriter } from './writer/order-writer.js';
     CustomersModule,
     PlatformModule,
     StaffDirectoryModule,
+    TasksModule,
   ],
   controllers: [OrdersController, OrderMovesController],
   providers: [
@@ -48,6 +51,7 @@ import { OrderWriter } from './writer/order-writer.js';
     OrderStock,
     OrderQueries,
     WriteBackProjection,
+    OrderTaskLink,
   ],
   exports: [OrderTransactions, OrderIntake, OrderEditing, OrderTransitions, OrderQueries],
 })

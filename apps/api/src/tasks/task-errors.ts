@@ -13,7 +13,9 @@ export type TasksErrorCode =
   | 'DueRequired'
   | 'DueRuleUnsupported'
   | 'KeyShapeInvalid'
-  | 'NoteInvalid';
+  | 'NoteInvalid'
+  | 'ExpectedUpdatedAtRequired'
+  | 'SystemNoteRefused';
 
 /**
  * A typed domain error of the tasks module (never an error string). Messages are fixed text and
@@ -132,6 +134,22 @@ export class KeyShapeInvalid extends TasksError {
   /** Fixed text; the key is not echoed. */
   constructor() {
     super('KeyShapeInvalid', 'A key may hold ids and codes only');
+  }
+}
+
+/** A person changed a task without the `updated_at` she read (the concurrency token). */
+export class ExpectedUpdatedAtRequired extends TasksError {
+  /** Fixed text. */
+  constructor() {
+    super('ExpectedUpdatedAtRequired', 'A person must send the updated time she read');
+  }
+}
+
+/** A system close carried a note: notes are a person's words, the system has none. */
+export class SystemNoteRefused extends TasksError {
+  /** Fixed text. */
+  constructor() {
+    super('SystemNoteRefused', 'The system does not write notes');
   }
 }
 

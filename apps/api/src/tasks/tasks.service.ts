@@ -14,7 +14,7 @@ import {
 } from '@ssdashboard/contracts';
 import { sql } from '@ssdashboard/db';
 import { AuditService } from '../audit/audit.service.js';
-import type { Transaction } from '../database/sql.js';
+import type { Executor, Transaction } from '../database/sql.js';
 import { HatDirectory } from '../identity/hats/hat-directory.js';
 import { PlatformClock } from '../platform/license/platform-clock.js';
 import { dueFromRule } from './task-due.js';
@@ -23,6 +23,8 @@ import {
   KeyShapeInvalid,
   NoteInvalid,
   NoteRequired,
+  ExpectedUpdatedAtRequired,
+  SystemNoteRefused,
   OutcomeNotForPerson,
   TaskAssigneeNotEligible,
   TaskChanged,
@@ -92,12 +94,13 @@ export class TasksService {
 
   /**
    * The active people who hold the type's permission through a hat they wear (an eligible
-   * assignee, and the people a task falls back to). One read of the hat directory.
+   * assignee, and the people a task falls back to). One read of the hat directory, through
+   * `executor` when given (a caller inside a transaction passes its own).
    */
-  async eligibleFor(type: TaskTypeCode): Promise<ReadonlySet<string>> {
+  async eligibleFor(type: TaskTypeCode, executor?: Executor): Promise<ReadonlySet<string>> {
     const definition = taskTypeOf(type);
     if (!definition) throw new UnknownTaskType();
-    return eligibleHolders(definition, await this.hats.holdersByHat());
+    return eligibleHolders(definition, await this.hats.holdersByHat(executor));
   }
 
   /**
@@ -122,7 +125,7 @@ export class TasksService {
     }
     const hat = InternalHat.parse(input.hat ?? definition.defaultHat);
     if (input.assigneeId !== undefined) {
-      const eligible = eligibleHolders(definition, await this.hats.holdersByHat());
+      const eligible = eligibleHolders(definition, await this.hats.holdersByHat(tx));
       if (!eligible.has(input.assigneeId)) throw new TaskAssigneeNotEligible();
     }
     const dueAt =
@@ -172,7 +175,8 @@ export class TasksService {
    * Closes an open task with an allowed outcome and writes one `task.closed` audit entry in the
    * same transaction (ids and codes only, never the note). A person's `expectedUpdatedAt` that is
    * not the row's `updated_at` throws `TaskChanged` (checked first, so the loser of two parallel
-   * closes hears `TaskChanged`). Then: `TaskNotOpen`; `InvalidOutcome` (not one of the type's
+   * closes hears `TaskChanged`); a person without one gets `ExpectedUpdatedAtRequired`, and a system
+   * close with a note `SystemNoteRefused`. Then: `TaskNotOpen`; `InvalidOutcome` (not one of the type's
    * outcomes); `OutcomeNotForPerson` (a system outcome, or a type only the system closes);
    * `NoteRequired`. A person's note is appended to `task_notes`.
    */
@@ -181,6 +185,10 @@ export class TasksService {
     taskId: string,
     change: { outcome: string; note?: string; by: TaskActor; expectedUpdatedAt?: string },
   ): Promise<TaskRow> {
+    if (change.by.kind === 'person' && change.expectedUpdatedAt === undefined) {
+      throw new ExpectedUpdatedAtRequired();
+    }
+    if (change.by.kind === 'system_job' && change.note !== undefined) throw new SystemNoteRefused();
     const locked = await tx.execute<TaskDbRow & { fresh: boolean }>(
       sql`SELECT ${TASK_COLUMNS},
                  ${change.expectedUpdatedAt === undefined ? sql`true` : sql`coalesce(updated_at = ${change.expectedUpdatedAt}::timestamptz, false)`} AS fresh

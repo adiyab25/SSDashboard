@@ -49,14 +49,14 @@ export type TaskLinkLabel = z.infer<typeof TaskLinkLabel>;
 
 /**
  * The record a row points at, without personal data: the kind, the id, the web path that opens
- * it, and a label when the owner can give one. Milestone 1 has no link resolvers, so only an
- * order has a label (read through the orders module's `OrderQueries.summaryOf`), and `label` is
- * null for every other kind; the path of an order is `/orders/<id>`.
+ * it, and a label when the owner can give one. The module that owns a record kind registers a
+ * resolver (`TaskLinks`): orders registers `order` (label and path `/orders/<id>`), and a kind with
+ * no resolver shows its kind only (`path` and `label` null).
  */
 export const TaskLink = z.object({
   kind: TaskLinkedType,
   id: z.uuid(),
-  path: z.string().startsWith('/'),
+  path: z.string().startsWith('/').nullable(),
   label: TaskLinkLabel.nullable(),
 });
 /** The validated shape of `TaskLink`. */

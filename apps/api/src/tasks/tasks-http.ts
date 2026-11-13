@@ -31,6 +31,7 @@ export function tasksHttpError(error: unknown): unknown {
     case 'NoteRequired':
       return new UnprocessableEntityException({ code: 'NOTE_REQUIRED', message: error.message });
     case 'NoteInvalid':
+    case 'ExpectedUpdatedAtRequired':
       return new UnprocessableEntityException({
         code: 'VALIDATION_FAILED',
         message: error.message,
@@ -43,6 +44,7 @@ export function tasksHttpError(error: unknown): unknown {
     case 'DueRequired':
     case 'DueRuleUnsupported':
     case 'KeyShapeInvalid':
+    case 'SystemNoteRefused':
       return error;
     default: {
       const unreachable: never = error.code;

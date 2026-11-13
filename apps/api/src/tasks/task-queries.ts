@@ -13,10 +13,10 @@ import { DATABASE } from '../database/database.module.js';
 import { pgArray, type Executor } from '../database/sql.js';
 import { HatDirectory } from '../identity/hats/hat-directory.js';
 import { StaffDirectory } from '../identity/staff/staff-directory.js';
-import { OrderQueries } from '../orders/reading/order-query.service.js';
 import type { Access } from '../platform/access/access.js';
 import { PlatformClock } from '../platform/license/platform-clock.js';
-import { SettingsService, localDate } from '../platform/settings/settings.service.js';
+import { SettingsService } from '../platform/settings/settings.service.js';
+import { TaskLinks } from './task-links.js';
 import { TASK_COLUMNS, toTaskRow, type TaskDbRow } from './task-rows.js';
 import { visibilityPlan, type VisibilityPlan } from './task-visibility.js';
 
@@ -66,20 +66,20 @@ export class InvalidTaskCursor extends Error {
  * The read side of tasks (spec 0016): what the caller sees in My work and the counts of the shell.
  * Visibility is decided in SQL from the caller's `Access` and the active holders of each hat
  * (`HatDirectory`, read once per request), so an invisible task is the same as a missing one.
- * Rows carry ids, codes, times, display names of staff, and an order's number and store code
- * (through `OrderQueries.summaryOf`, never orders' tables); never a phone, a name, an address, or
- * a note. It never writes.
+ * Rows carry ids, codes, times, display names of staff, and the label and path a record's owner
+ * gives through `TaskLinks` (an order's number and store code; a kind with no resolver shows its
+ * kind only); never a phone, a name, an address, or a note. It never writes.
  */
 @Injectable()
 export class TaskQueries {
   private readonly db: Executor;
 
-  /** Takes the database, the hat and staff directories, the order reads, the clock, and settings. */
+  /** Takes the database, the hat and staff directories, the link registry, the clock, and settings. */
   constructor(
     @Inject(DATABASE) connection: DatabaseConnection,
     private readonly hats: HatDirectory,
     private readonly staff: StaffDirectory,
-    private readonly orders: OrderQueries,
+    private readonly links: TaskLinks,
     private readonly clock: PlatformClock,
     private readonly settings: SettingsService,
   ) {
@@ -93,10 +93,11 @@ export class TaskQueries {
 
   /** My work, view `mine` (AC-5, milestone 1): one keyset page of the caller's open tasks. */
   async listMine(access: Access, cursorText: string | undefined): Promise<TaskListResponse> {
-    const plan = await this.planFor(access);
-    if (plan.visibleTypes.length === 0) return { rows: [], nextCursor: null };
+    // A bad cursor is a bad query for everyone, also for a caller who sees no type at all.
     const cursor = cursorText === undefined ? null : decodeCursor(cursorText);
     if (cursorText !== undefined && !cursor) throw new InvalidTaskCursor();
+    const plan = await this.planFor(access);
+    if (plan.visibleTypes.length === 0) return { rows: [], nextCursor: null };
     const after = cursor ? afterCursor(cursor) : sql`true`;
     const { rows } = await this.db.execute<TaskDbRow>(sql`
       SELECT ${TASK_COLUMNS} FROM tasks t
@@ -150,22 +151,24 @@ export class TaskQueries {
     const plan = await this.planFor(access);
     const now = await this.clock.now(this.db);
     const timeZone = await this.settings.get('timezone');
-    const today = localDate(now, timeZone);
     let open = 0;
     let overdue = 0;
     let dueToday = 0;
     if (plan.visibleTypes.length > 0) {
-      const { rows } = await this.db.execute<{ due_at: string | null }>(
-        sql`SELECT to_char(t.due_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS due_at
+      // Counted in SQL: "today" is the local date in the brand's time zone, so the day boundary
+      // follows daylight saving and never the UTC date.
+      const { rows } = await this.db.execute<{ open: number; overdue: number; due_today: number }>(
+        sql`SELECT count(*)::int AS open,
+                   count(*) FILTER (WHERE t.due_at < ${now.toISOString()}::timestamptz)::int AS overdue,
+                   count(*) FILTER (
+                     WHERE (t.due_at AT TIME ZONE ${timeZone})::date
+                         = (${now.toISOString()}::timestamptz AT TIME ZONE ${timeZone})::date
+                   )::int AS due_today
               FROM tasks t WHERE ${visibleTo(plan)}`,
       );
-      for (const row of rows) {
-        open += 1;
-        if (row.due_at === null) continue;
-        const due = new Date(row.due_at);
-        if (due.getTime() < now.getTime()) overdue += 1;
-        if (localDate(due, timeZone) === today) dueToday += 1;
-      }
+      open = rows[0]?.open ?? 0;
+      overdue = rows[0]?.overdue ?? 0;
+      dueToday = rows[0]?.due_today ?? 0;
     }
     const summary: TaskSummary = { mine: { open, overdue, dueToday } };
     if (access.has('orders.confirm') && UNSYNCED_TYPES.length > 0) {
@@ -184,10 +187,17 @@ export class TaskQueries {
     const names = await this.staff.namesByIds(
       rows.flatMap((row) => (row.owner_user_id ? [row.owner_user_id] : [])),
     );
-    const orderIds = rows.filter((row) => row.linked_type === 'order').map((row) => row.linked_id);
-    const orders = new Map(
-      (await this.orders.summaryOf(orderIds, this.db)).map((order) => [order.id, order]),
-    );
+    // One resolver call per linked kind on the page; a kind with no resolver shows its kind only.
+    const described = new Map<string, Awaited<ReturnType<TaskLinks['describe']>>>();
+    for (const kind of new Set(rows.map((row) => row.linked_type))) {
+      described.set(
+        kind,
+        await this.links.describe(
+          kind,
+          rows.filter((row) => row.linked_type === kind).map((row) => row.linked_id),
+        ),
+      );
+    }
     return rows.map((row) => {
       const task = toTaskRow(row);
       const definition = taskTypeOf(task.type);
@@ -195,14 +205,12 @@ export class TaskQueries {
         !definition || definition.closedBy === 'system'
           ? []
           : definition.outcomes.filter((outcome) => !definition.systemOutcomes?.includes(outcome));
-      const order = task.linkedType === 'order' ? orders.get(task.linkedId) : undefined;
+      const resolved = described.get(task.linkedType)?.get(task.linkedId);
       const link: TaskLink = {
         kind: task.linkedType,
         id: task.linkedId,
-        path: task.linkedType === 'order' ? `/orders/${task.linkedId}` : '/',
-        label: order
-          ? { kind: 'order', number: order.orderNumber, storeCode: order.storeCode }
-          : null,
+        path: resolved?.path ?? null,
+        label: resolved?.label ?? null,
       };
       return {
         ...task,
