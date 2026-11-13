@@ -2,7 +2,7 @@
 
 The walking skeleton, target about month three: a real Shopify order confirmed in the app, shipped with Bosta in mirror mode, its failures handled, and its cash reconciled, then reported to the owner's phone. The pilot starts right after this slice. [Back to the scope](index.md).
 
-**Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece that reaches the brand that week is received through the scan station (scanned, or recorded as having no tag when its tag is missing or unreadable, counted apart) with both shipping legs on its order, and parcels still returning at the week's end are listed, not failed, and one month of the real Bosta settlement is matched line by line including refunds, negative lines, and at least one partial delivery, with unmatched lines listed.
+**Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece that reaches the brand that week is received through the scan station (scanned, or recorded as having no tag when its tag is missing or unreadable, counted apart) with both shipping legs on its order, and parcels still returning at the week's end are listed, not failed, and one month of the real Bosta settlement is matched line by line including negative lines, with unmatched lines listed; a refund, a partial delivery, and a prepaid parcel each count if that month has one, and otherwise a recorded fixture month proves the path (owner decisions Q-22.8 and Q-22.12, 2026-11-13).
 
 ### 11. Stock ledger & locations · GA
 The single writer of stock movements, and the locations it moves stock between. Locations carry an owner type (own warehouse or shop, consignment partner, wholesale customer) and a sellable online flag; only the warehouse sells online. Bins stay flat for now.
@@ -74,7 +74,7 @@ Day one data from the brand's spreadsheets: a stock snapshot per location, cost 
 
 ### 16. Orders & their state machines · GA
 The order at the heart of cash on delivery: a fulfillment state machine, a cash state machine, its store, channel, and source, its type, and one derived outcome.
-**Done when:** fulfillment moves through new, confirmed, packed, shipped, delivered, partially delivered, failed attempt, returned to origin, exchanged, refused; cash moves through unpaid, collected by carrier, remitted, reconciled, with the COD fee and shipping fee as their own lines and partial amounts allowed; gifted orders stay out of revenue and return rates; the order is editable until pickup is created, with every edit audited.
+**Done when:** fulfillment moves through new, confirmed, packed, shipped, delivered, partially delivered, failed attempt, returned to origin, exchanged, refused; cash moves through unpaid, collected by carrier, remitted, reconciled, with the COD fee and shipping fee as their own lines and partial amounts allowed; gifted orders stay out of revenue and return rates; the order is editable until the money freeze, which comes once Bosta has routed the delivery: at confirmation or at the first pickup, whichever comes first (for a confirmed order, at once; spec 0013 AC-8, spec 0018 D-1), with every edit audited.
 - [x] Design it (spec): `/architect orders & their state machines`
 - [ ] Build it: `/develop orders & their state machines`
   - [x] One manual order through every layer
@@ -88,40 +88,41 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
 - [ ] Document it: `/document orders & their state machines`
 Spec [0013](../specs/0013-orders-state-machines/index.md) (Accepted 2026-11-07; domain review [domain-orders](../reviews/domain-orders.md): accept with changes, folded in)
 
-### 17. Tasks & My work inbox · needs a decision
+### 17. Tasks & My work inbox
 One task primitive (type, linked record, owner, due time, outcome code) that every process creates as it moves, and one inbox that shows each person their work.
 **Done when:** a process can open, assign, and close tasks with an outcome code; each person's "My work" shows their tasks filtered by permission and sorted by due time; overdue tasks stand out; there is no workflow designer.
-Also from spec 0016 (independent audit of 2026-11-11, section 4, items 7 and 8): support cases (wrong item, late delivery, carrier ticket, reorder, damaged or missing piece) with a required follow up time are task types here; a refund owed stays an open `refund.unrecorded_payout` task until the refund record lands in the `credit` module (owner question 2); one brand working hours setting (`operations.working_hours`) drives every due time.
+Also from spec 0016 (independent audit of 2026-11-11, section 4, items 7 and 8): support cases (wrong item, late delivery, carrier ticket, reorder, damaged or missing piece) with a required follow up time are task types here; a refund owed stays an open `refund.unrecorded_payout` task until the refund record lands in the `credit` module, a thin slice of feature 35 brought into slice 1a with the method `carrier_cash` (owner question 2 with spec 0020 Q-22.8, ratified 2026-11-13); one brand working hours setting (`operations.working_hours`) drives every due time.
 - [x] Design it (spec): `/architect tasks & my work inbox`
 - [ ] Build it: `/develop tasks & my work inbox`
   - [ ] One failed write back, from event to My work
   - [ ] The full service, working hours, and the interface for feature 18
   - [ ] Every existing producer
   - [ ] Support cases, money owed, notes, and the phone pass
-Spec [0016](../specs/0016-tasks-my-work-inbox/index.md) (Assumed 2026-11-12, owner questions open; domain review [domain-tasks-my-work](../reviews/domain-tasks-my-work.md): accept with changes, folded in)
+Spec [0016](../specs/0016-tasks-my-work-inbox/index.md) (Proposed, ratified by the owner 2026-11-13 with every recommendation; domain review [domain-tasks-my-work](../reviews/domain-tasks-my-work.md): accept with changes, folded in)
 
-### 18. Confirmation queue · GA · needs a decision
+### 18. Confirmation queue · GA
 Where support confirms every order before it ships: oldest first, grouped by phone, with a WhatsApp deep link, outcome codes, callbacks, address zones, and edits written back to Shopify.
 **Done when:** an agent opens WhatsApp with a prefilled message or calls, records one outcome (confirmed, no answer with an automatic callback, call back at a time, cancelled with reason, duplicate, fake); three no answers close the order; duplicates merge in one tap and cancel on Shopify with a reason; the address is fixed into the carrier's governorate, city, and zone with suggestions from past orders; size changes and added pieces write back to Shopify; confirmed orders move on to fulfillment.
 The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
-Also from spec 0017: the queue writes a confirmed and a held tag to Shopify, and the pilot sends to Bosta only from the Shopify view "confirmed and not held" (owner question Q-18.1, before milestone 2); a confirmation edit after Bosta created the delivery reconfirms only after operations has fixed the delivery, while feature 19 owns the Bosta side ("carrier record stale", audit item 9); the pilot acceptance includes one deliberately failed write back caught by the warehouse before pickup ([stack review](../reviews/domain-stack.md) n1).
+Also from spec 0017: the app serves both ways a brand reaches Bosta, set per Bosta connection (owner decision Q-18.1, 2026-11-13): sending by hand after confirmation, where the queue writes a confirmed and a held tag to Shopify and the brand sends only from the Shopify view "confirmed and not held"; or Bosta's app syncing every order at creation, where the card shows the Bosta parcel, every edit comes with an "also change it in Bosta" checklist, the check at confirmation catches a missed one, and the warehouse's pick list is the gate. A confirmation edit after Bosta created the delivery reconfirms only after the delivery is fixed, while feature 19 owns the Bosta side ("carrier record stale", audit item 9). Usually there is no deposit: Bosta's fee is paid on every parcel and the refusal reason decides who bears it (feature 21); the shipping deposit is an optional path off the pilot's way (Q-18.3). The pilot acceptance includes one deliberately failed write back, or for an app sync brand one deliberately stale record, caught by the warehouse before pickup ([stack review](../reviews/domain-stack.md) n1).
 - [x] Design it (spec): `/architect confirmation queue`
 - [ ] Build it: `/develop confirmation queue`
   - [ ] One order confirmed through the queue, the way the desk works
-  - [ ] Duplicates and the address
-  - [ ] The queue's result reaches Shopify, and the hold
-  - [ ] Callbacks in My work, reconfirmation, deposits, and the numbers
+  - [ ] Duplicates and the address, in both send modes
+  - [ ] The queue's result reaches where the parcel is made, and the hold, in both send modes
+  - [ ] Callbacks in My work and the numbers
+  - [ ] The optional shipping deposit (off the pilot's path)
 - [ ] Verify it: `/check verify confirmation queue`
 - [ ] Test it: `/test confirmation queue`
 - [ ] Review it (fresh model): `/check review confirmation queue`
 - [ ] Document it: `/document confirmation queue`
-Spec [0017](../specs/0017-confirmation-queue/index.md) (Assumed 2026-11-12, owner questions open; domain review [domain-confirmation-queue](../reviews/domain-confirmation-queue.md): accept with changes, folded in)
+Spec [0017](../specs/0017-confirmation-queue/index.md) (Proposed, ratified by the owner 2026-11-13; Q-18.1 and Q-18.3 changed the design; domain review [domain-confirmation-queue](../reviews/domain-confirmation-queue.md): accept with changes, folded in)
 
 ### 19. Bosta connector, mirror mode · GA
 Read the deliveries the carrier's own Shopify app created, with their states, fees, and cash cycles, without executing anything.
 **Done when:** tracking updates move the order's states; attention rules flag exceptions or holds, stuck at pickup over two days, no movement over three days, the carrier's delayed flag, two or more attempts, and stalled after 48 hours; fees and cash cycle amounts come from the per delivery detail and are never overwritten by a list sync that lacks them; recorded fixtures replay green with no live call.
 Also from spec 0007: works with one Bosta account for all stores or one per store; a delivery's store comes from the account's binding, else from its business reference or Shopify store name.
-Also from spec 0018: the order stays editable while Bosta reports pickup requested, and a COD difference after a confirmation edit is a stale carrier record with an operations task before support reconfirms (with spec 0017); the connector keeps Bosta's cities, zones, and districts for address fixing.
+Also from spec 0018: the order stays editable while Bosta reports pickup requested, and a COD difference after a confirmation edit is a stale carrier record with an operations task before support reconfirms (with spec 0017); the connector keeps Bosta's cities, zones, and districts for address fixing. From the owner's answers of 2026-11-13: each Bosta connection records its send mode (by hand after confirmation, or the Bosta app's sync at creation), which Bosta Shopify app, and whether it cancels automatically; a Bosta Exchange delivery is the replacement order's forward delivery.
 - [x] Design it (spec): `/architect bosta connector, mirror mode`
 - [ ] Build it: `/develop bosta connector, mirror mode`
   - [ ] One delivery from a verified webhook to a moved order (AC-1, AC-2, AC-4 to AC-7, AC-9, AC-13, AC-14, AC-26, AC-27)
@@ -133,7 +134,7 @@ Also from spec 0018: the order stays editable while Bosta reports pickup request
 - [ ] Test it: `/test bosta connector, mirror mode`
 - [ ] Review it (fresh model): `/check review bosta connector, mirror mode`
 - [ ] Document it: `/document bosta connector, mirror mode`
-Spec [0018](../specs/0018-bosta-connector-mirror-mode/index.md) (Proposed 2026-11-12; owner decisions Q-19.1 to Q-19.6 taken as recommended, awaiting the owner)
+Spec [0018](../specs/0018-bosta-connector-mirror-mode/index.md) (Proposed 2026-11-12; ratified by the owner 2026-11-13 with every recommendation, plus the send mode and the Bosta Exchange)
 
 ### 20. Barcode scanning
 Scan to find a variant and scan to move stock, on a phone camera or a handheld scanner, starting with restock of returned pieces.
@@ -153,21 +154,22 @@ Spec [0021](../specs/0021-barcode-scanning/index.md) (Proposed 2026-11-13, ratif
 
 ### 21. Delivery failures & returned to origin · GA
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
-**Done when:** a failed attempt schedules the next try; a returned to origin piece is restocked by scan and both shipping legs post against the order and its campaign; a partial delivery splits the order into delivered and returned lines with the partial cash amount; the returned to origin rate shows by governorate, product, and carrier; every order ends with an outcome.
+**Done when:** a failed attempt schedules the next try; a returned to origin piece is restocked by scan (or by tap until feature 20 lands) and both shipping legs post against the order and its campaign; a partial delivery splits the order into delivered and returned lines with the partial cash amount; the returned to origin rate shows by governorate, product, and carrier; every order ends with an outcome.
 The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
-Also from spec 0019: restock is by tap until feature 20 brings the scan; customer return pickups come back through the same returned parcels, and the pilot does not use Bosta's Exchange type (a swap is a return pickup plus a new order); the warehouse marks each order packed in the app; a lost or damaged parcel opens a claim that settlement matches to Bosta's compensation; an order handed to another courier is followed by hand; the warehouse packs from a pick list that shows the holds.
+Also from spec 0019: restock is by tap until feature 20 brings the scan; customer return pickups come back through the same returned parcels; a failed delivery's reason decides who bears Bosta's fee (the brand for a wrong item or size, damaged or not as shown, or a wrong price or COD; Bosta through a claim when late or it never reached her; otherwise the customer, who is flagged and pays only any FlexShip fee taken at the door); a Bosta Exchange (type 30) is the replacement order's forward delivery, taking the new piece out and bringing the old piece back on one parcel with the price difference collected at the door (owner decision Q-21.13, 2026-11-13: feature 34 work pulled forward, about two builder weeks, milestone 6); the warehouse marks each order packed in the app; a lost or damaged parcel opens a claim that settlement matches to Bosta's compensation; an order handed to another courier is followed by hand; the warehouse packs from a pick list that shows the holds.
 - [x] Design it (spec): `/architect delivery failures & returned to origin`
 - [ ] Build it: `/develop delivery failures & returned to origin`
   - [ ] Every returned parcel from the Bosta event to the shelf, with its charge (AC-8 to AC-11, AC-27, AC-29, AC-30)
   - [ ] Failed attempts, reasons, the next try, and refusals (AC-1 to AC-7, AC-27)
   - [ ] Partial deliveries and the money of pieces that never arrive (AC-12 to AC-15, AC-27)
   - [ ] Every order ends, the rates, and the pick list (AC-16 to AC-18, AC-25, AC-27, AC-31)
-  - [ ] Claims, cash differences, the manual courier path, and the runbook (AC-19 to AC-24, AC-26 to AC-28, AC-32)
+  - [ ] Claims, cash differences, the manual courier path, and the runbook (AC-19 to AC-24, AC-26 to AC-28, AC-32, AC-33)
+  - [ ] A Bosta Exchange as the replacement's forward delivery (AC-29, AC-34)
 - [ ] Verify it: `/check verify delivery failures & returned to origin`
 - [ ] Test it: `/test delivery failures & returned to origin`
 - [ ] Review it (fresh model): `/check review delivery failures & returned to origin`
 - [ ] Document it: `/document delivery failures & returned to origin`
-Spec [0019](../specs/0019-delivery-failures-returned-to-origin/index.md) (Proposed 2026-11-12, revised the same day for two domain review passes; owner decisions Q-21.1 to Q-21.15 taken as recommended, awaiting the owner)
+Spec [0019](../specs/0019-delivery-failures-returned-to-origin/index.md) (Proposed 2026-11-12, revised the same day for two domain review passes; ratified by the owner 2026-11-13, with who bears Bosta's fee and the Bosta Exchange added)
 
 ### 22. Settlement & Bosta reconciliation · GA
 The settlement primitive with its first owner, the carrier: Bosta remits cash minus fees and refunds, and every line is matched to an order.
@@ -184,7 +186,7 @@ Also from spec 0020: the per delivery cash cycles lead and Bosta's sheet adds th
 - [ ] Test it: `/test settlement & bosta reconciliation`
 - [ ] Review it (fresh model): `/check review settlement & bosta reconciliation`
 - [ ] Document it: `/document settlement & bosta reconciliation`
-Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews [domain-settlement-reconciliation](../reviews/domain-settlement-reconciliation.md) and [second pass](../reviews/domain-settlement-reconciliation-r2.md); owner decisions Q-22.1 to Q-22.13 taken as recommended, awaiting the owner)
+Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews [domain-settlement-reconciliation](../reviews/domain-settlement-reconciliation.md) and [second pass](../reviews/domain-settlement-reconciliation-r2.md); ratified by the owner 2026-11-13 with every recommendation)
 
 ### 23. Period close with evidence · GA
 Confirmed data is the only data reports, settlements, and exports use. A channel's date range is confirmed by a person after review, or automatically when the evidence matches exactly.

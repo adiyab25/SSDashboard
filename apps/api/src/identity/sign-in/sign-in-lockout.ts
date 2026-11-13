@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Inject, Injectable } from '@nestjs/common';
 import { sql, type Database, type DatabaseConnection } from '@ssdashboard/db';
@@ -91,16 +92,17 @@ export class SignInLockout {
    * and the window's failures plus the slots still held stay under the limit, for the pair and
    * for the email from all addresses. The lock is only ever tried, never waited on: while
    * another request holds the email's turn this one pauses with no connection and tries again,
-   * and after `SLOT_WAIT_MS` it gets no slot. Slot ages use `clock_timestamp()`.
+   * and after `SLOT_WAIT_MS` it gets no slot, measured on the monotonic clock so a host clock
+   * step can neither cut the wait short nor stretch it. Slot ages use `clock_timestamp()`.
    */
   async takeSlot(emailKey: string, ip: string): Promise<TakenSlot> {
-    const deadline = Date.now() + SLOT_WAIT_MS;
+    const deadline = performance.now() + SLOT_WAIT_MS;
     for (;;) {
       const row = await this.trySlot(emailKey, ip);
       if (row !== EMAIL_BUSY) {
         return row?.id ? { slot: row.id } : { slot: null, locked: row?.locked ?? false };
       }
-      const left = deadline - Date.now();
+      const left = deadline - performance.now();
       // Waited too long for the email's turn: turned away like a full window, not counted.
       if (left <= 0) return { slot: null, locked: false };
       await sleep(Math.min(left, SLOT_RETRY_MS / 2 + Math.random() * SLOT_RETRY_MS));

@@ -1,7 +1,7 @@
 # 0016. Tasks and My work: one task primitive every process opens, and one inbox per person
 
 **Date**: 2026-11-12
-**Status**: Assumed (written by the architect without the owner; every owner question below carries the recommended answer the design is built on; revised the same day for the [domain review](../../reviews/domain-tasks-my-work.md), accept with changes, B1, M1 to M7, and m1 to m7 folded in with the lead's rulings, see *Domain review applied*; the owner ratifies next)
+**Status**: Proposed (ratified by the owner on 2026-11-13, [owner answers](../../reviews/owner-answers-2026-11-13.md): every owner question as recommended; written by the architect without the owner and revised the same day for the [domain review](../../reviews/domain-tasks-my-work.md), accept with changes, B1, M1 to M7, and m1 to m7 folded in with the lead's rulings, see *Domain review applied*; `/develop` advances the status as feature 17 is built)
 **Feature**: [scope feature 17, Tasks & My work inbox](../../scope/confirmation-to-cash.md) (slice 1a, Core, Beta)
 **Depends on**: the `tasks` table as migrated by the feature 4 baseline ([spec 0002 customers, credit, and tasks child](../0002-core-data-model/0002-customers-credit-tasks.md), `packages/db/src/schema/tasks.ts`); hats and permissions ([spec 0008](../0008-roles-as-hats/index.md), `packages/contracts/src/access.ts`: `tasks.work`, `tasks.assign`, `InternalHat`); the module registry, the settings registry, and the manager task port ([spec 0009](../0009-settings-toggles-bundles/index.md), `apps/api/src/platform/modules/capability-hooks.ts`); the audit trail ([spec 0010](../0010-audit-trail/index.md)); in transaction domain events (`apps/api/src/platform/events/domain-events.ts`, built by [spec 0013](../0013-orders-state-machines/index.md)); the outbound and inbox events of [spec 0015](../0015-shopify-connector/index.md) (`apps/api/src/connectors/connectors.events.ts`).
 **Parallel seam**: scope feature 18 (confirmation queue, [spec 0017](../0017-confirmation-queue/index.md)) opens its callback and reconfirm tasks through *Interface for other modules* below and reads the working hours setting defined here. Feature 22 (settlement) is designed at the same time; see *Decision on audit item 8*.
@@ -288,7 +288,7 @@ One brand wide setting owned by `platform`, a spec 0009 settings registry row, r
 |---|---|
 | key | `operations.working_hours` |
 | shape | `{ weekly: { "1".."7": [{ opens: "HH:MM", closes: "HH:MM" }] }, exceptions: [{ from: "YYYY-MM-DD", to: "YYYY-MM-DD", kind, hours: [{ opens, closes }] }] }`; ISO weekday keys; an empty list is a closed day; `kind` one of `ramadan`, `eid`, `public_holiday`, `other`; at most 2 periods a day and 30 exceptions; every time matches `^([01][0-9]|2[0-3]):[0-5][0-9]$`, `opens` before `closes`; exception ranges do not overlap |
-| default | 10:00 to 22:00 every day, no exceptions (**Assumed**, the same default as spec 0017 Q-18.10) |
+| default | 10:00 to 22:00 every day, no exceptions (owner question 7, ratified 2026-11-13; the same default as spec 0017 Q-18.10) |
 | bundle, group | `core`, `policies` |
 | who may change | `settings.manage`, reason required |
 | exposure | `staff` (the web needs it for the snooze warning and the presets) |
@@ -496,6 +496,8 @@ Tracer Bullet: milestone 1 runs one real thread (a failed write back) from the e
 
 ## Open owner questions
 
+Answered by the owner on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)): every recommendation below is ratified. Question 8 is settled by spec 0017's Q-18.1 answer (both send modes): the 10 minute budget stands for every store, because under either mode a confirmation edit must reach Shopify before the order is packed, and under `app_sync_at_creation` the Bosta side is spec 0017's checklist and spec 0018's stale check, not this budget.
+
 1. **Support cases in feature 17 (audit item 7)?** Recommended: yes, the six case types of AC-10 with a required follow up time, notes, escalation to the owner (M4), no outcome that drops money (M5), a duplicate check and the customer view (M7), and the damaged or missing type (m3); no case table. Alternatives: a separate support cases feature later (the agent keeps a spreadsheet during the pilot, which the pilot's "no spreadsheet" week forbids); or only one generic `case.other` type.
 2. **Where does the manual refund record live (audit item 8)?** Recommended: in the `credit` module as a thin slice of feature 35 in slice 1a, built to *What the credit slice must provide*; feature 17 contributes `refund.manual_payout`, and `refund_needed` with `refund.unrecorded_payout` until the slice lands. Alternative: feature 22 owns it (lane D; the task contract is the same, but it ties InstaPay and bank refunds to the carrier statement, which the domain review also advises against).
 3. **Landing pages.** Recommended: warehouse and operations land on `/my-work`; support lands on the confirmation queue (spec 0017), with an "orders waiting to confirm" card at the top of My work and the My work counts in the nav; the manager keeps the current home until feature 24. Alternative: My work is a nav item only for everyone.
@@ -503,7 +505,7 @@ Tracer Bullet: milestone 1 runs one real thread (a failed write back) from the e
 5. **Reopening a closed task?** Recommended: not in slice 1a; a wrong close is followed by a new task, which sees the old one in the open and closed tasks of its record (spec 0010's `task.reopened` stays unbuilt). Alternative: managers may reopen within 7 days.
 6. **Notifications beyond the screen?** Recommended: none per task, with one exception: a failed or late write back posts one line (order number and store, no personal data) to the brand's Telegram group through the sender feature 25 builds (*Follow-up*). Everything else stays on the screen and in the daily report's status line. Alternative: no exception at all.
 7. **The default working hours.** Recommended: 10:00 to 22:00 every day, Fridays included, the same default as spec 0017 Q-18.10; the manager enters Ramadan and Eid as dated exceptions. Alternative: closed on Fridays.
-8. **How long may a confirmation edit wait before it is "late"?** Recommended: 10 minutes (**Assumed**), until spec 0017 Q-18.1 (when the Bosta Shopify app creates the delivery) is answered; the budget lives in spec 0015's sweep. Alternative: 30 minutes, if the Bosta app creates deliveries only at fulfillment.
+8. **How long may a confirmation edit wait before it is "late"?** Recommended: 10 minutes (ratified 2026-11-13; spec 0017 Q-18.1 is answered as both send modes, see the note above); the budget lives in spec 0015's sweep. Alternative: 30 minutes, if the Bosta app creates deliveries only at fulfillment.
 
 ## Domain review applied
 
@@ -551,8 +553,8 @@ Tracer Bullet: milestone 1 runs one real thread (a failed write back) from the e
 ## Follow-up
 
 - [ ] Lead: tick the scope row's design box and write the four milestones as its build sub tasks (`docs/scope/confirmation-to-cash.md` feature 17).
-- [ ] Lead: route owner question 2 to `/scope` (a thin feature 35 slice in slice 1a, owned by `credit`, built to *What the credit slice must provide*) before features 22 and 25 are designed, and tell lane D (feature 22) that the refund record is not settlement's (domain review M6).
-- [ ] Spec 0015 (feature 13): publish `OutboundCommandOverdue` from the scheduled sweep for a confirmation edit command `waiting` longer than the budget (10 minutes, Assumed, spec 0017 Q-18.1), and carry the person who queued a command on the four `OutboundCommand*` events (domain review M1, B1).
+- [x] Owner question 2 ratified 2026-11-13 (with spec 0020 Q-22.8: the minimal refund record, with `carrier_cash`, in slice 1a); the scope line for the thin feature 35 slice is applied in `docs/scope/confirmation-to-cash.md`. Originally: route owner question 2 to `/scope` (a thin feature 35 slice in slice 1a, owned by `credit`, built to *What the credit slice must provide*) before features 22 and 25 are designed, and tell lane D (feature 22) that the refund record is not settlement's (domain review M6).
+- [ ] Spec 0015 (feature 13): publish `OutboundCommandOverdue` from the scheduled sweep for a confirmation edit command `waiting` longer than the budget (10 minutes, ratified 2026-11-13 for both send modes), and carry the person who queued a command on the four `OutboundCommand*` events (domain review M1, B1).
 - [ ] Spec 0017 (feature 18): drop `confirmation.working_hours` and read `operations.working_hours`; register path overrides for its two types (domain review M3, m6).
 - [ ] Spec 0008 (feature 8): build `HatDirectory.holdersOf(hat)` in identity's public files (milestone 1 needs it), and show on the people screen "no one holds the operations hat: its tasks go to the manager" when an internal hat that owns task types has no active holder (domain review B1).
 - [ ] Spec 0009: add the `operations.working_hours` row of *Working hours* to its rows requested by other specs.
