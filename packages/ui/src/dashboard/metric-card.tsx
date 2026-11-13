@@ -55,8 +55,10 @@ export function MetricCard({
       data-slot="metric-card"
       data-provisional={provisional ? '' : undefined}
       className={cn(
-        'focus-ring block min-h-touch rounded-lg border p-4 text-card-foreground transition-colors hover:bg-muted/50',
-        provisional ? 'border-dashed border-input bg-transparent' : 'border-border bg-card',
+        'focus-ring block min-h-touch rounded-card border p-4 text-card-foreground transition-ui',
+        provisional
+          ? 'border-dashed border-input bg-transparent hover:tint-row'
+          : 'gradient-card-edge lift',
         emphasis === 'owed' && rowStripeClassName('owed'),
         className,
       )}

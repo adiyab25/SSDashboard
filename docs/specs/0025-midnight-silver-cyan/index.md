@@ -28,8 +28,8 @@ This spec changes the look only. It does not change behaviour, routes, data, per
 *Tokens and contrast*
 
 - **AC-1** (tokens): `packages/ui/src/styles/globals.css` carries the values of the [token tables](#colour-tokens) exactly, dark in `.dark` and light in `:root`, for every role listed, and no Daftar value (the indigo primary, the warm paper neutrals, the `oklch(... 275)` and `oklch(... 70)` families) remains. Checked by a Vitest spec in `packages/ui` that reads the file and compares each role to the table.
-- **AC-2** (contrast, text and controls): every text pair in [Measured contrast](#measured-contrast) meets 4.5:1 (3:1 for large text and for the focus ring and control boundaries), in dark and light, and `/design` computes every pair live from the painted colours and shows the same numbers to within 0.02. Checked by the contrast script (`node` run, output in verify.md) and by the Playwright spec `design-contrast.spec.ts` updated to the new pairs.
-- **AC-3** (gradient stops): every gradient stop that sits behind text passes 4.5:1 on its own (3:1 for the stops of the large heading fill), the main button blend, the hero blend, the heading blend, the selected row tint, and the current page tint, in both themes. `/design` lists each stop with its ratio. Checked by the same script and the same Playwright spec.
+- **AC-2** (contrast, text and controls): every text pair in [Measured contrast](#measured-contrast) meets 4.5:1 (3:1 for large text and for the focus ring and control boundaries), in dark and light, and `/design` computes every pair live from the painted colours and shows the same numbers to within 0.02 for opaque pairs and within 0.1 for pairs measured over a translucent tint (selected row, current page, hover tints), which are measured as painted. Checked by `packages/ui/src/styles/tokens.spec.ts` and the Playwright spec `apps/web/e2e/design-contrast.spec.ts`.
+- **AC-3** (gradient stops): every gradient stop that sits behind text passes 4.5:1 on its own (3:1 for the stops of the large heading fill), the main button blend, the hero blend, the heading blend, the selected row tint, and the current page tint, in both themes. `/design` lists each stop with its ratio. Checked by the same Playwright spec (`design-contrast.spec.ts`).
 - **AC-4** (accent never means status): cyan (`primary`, `ring`) and the gradient blends carry only links, focus, the current page, the main action, and the selected row tint. Status uses `success`, `warning`, `destructive`, and the muted foreground only. Checked by a Vitest spec that renders every `StatusChip` meaning and asserts its class list holds none of `primary`, `ring`, or a blend utility, and by a repository grep recorded in verify.md.
 - **AC-5** (text on `accent` in light): in the light theme `accent` (`#DCE5EE`) carries only `foreground` and `muted-foreground` text. Links, status colours, and the cyan marker as text never sit on `accent` (the measured pairs fail: cyan 4.21, confirmed 4.31, owed 4.25). In light, row hover is the ink tint utility, not `accent`. Checked by the contrast table and by a story on `/design` that renders hovered and selected rows with a link and an owed flag inside.
 
@@ -38,7 +38,7 @@ This spec changes the look only. It does not change behaviour, routes, data, per
 - **AC-6** (status chips): `StatusChip` is the control fill, 1px `border-strong`, mono 12px lowercase text in the meaning colour, 24px tall, 6px corners, keeps its distinct icon per meaning (check for confirmed, X for failed, coins for owed, clock for provisional), and the icon carries the glow (`drop-shadow` of the meaning colour at 8px). No plain dot. A blank label still renders nothing. Checked by the existing `status-chip.spec.tsx` updated, plus a computed style check in Playwright.
 - **AC-7** (buttons): the main button uses the primary blend, the primary edge, weight 600, and is one per view as before. The secondary button is the control fill with the [secondary edge](#gradients-and-utilities), a gradient from a lighter slate down to the `input` colour in dark (and from a darker slate down to `input` in light), so both ends of the edge reach 3:1 on the page and on a card. Disabled is the card fill, muted text, no lift. Checked by contrast rows in the table and the button matrix on `/design`.
 - **AC-8** (fields): inputs and selects are the page colour (the card colour on a card in light) with the `input` boundary and 8px corners; focus is the 2px cyan `ring` outline with the project's 2px offset; an error uses the `destructive` boundary and the message below. Checked by `field-states` on `/design` and axe.
-- **AC-9** (segmented control): wherever a segmented control or toggle group is used, the track is `card` with a hairline, and the selected segment is `accent` with `foreground` text and an additional 1px `input` coloured border. Checked by a component test and the `/design` button matrix.
+- **AC-9** (segmented control): no segmented control or toggle group is vendored yet and no screen uses one, so until then this is satisfied by the rule in `packages/ui/DESIGN.md`. It applies the first time one is vendored (the first milestone that needs one, probably M4): the track is `card` with a hairline, and the selected segment is `accent` with `foreground` text and an additional 1px `input` coloured border. Checked then by a component test and the `/design` button matrix; the pair itself (`input` on `card`, 3.56 dark and 4.36 light) is already in the contrast table.
 - **AC-10** (feedback): a toast is inverted (`foreground` background, `background` coloured text) with Undo when the action can be undone; an error toast is the `destructive-surface` with a `destructive` border. Notices that are not errors use `muted-foreground` text with an "i" icon, never cyan. Checked by component tests and the pairs in the table.
 - **AC-11** (headings and labels): the page `h1` stays at 20px (`text-xl`) and gets the heading blend as its fill, with a plain `foreground` fallback when forced colours are on or `background-clip: text` is unsupported; section titles keep their sizes. Section labels show `// ` in cyan before a lowercase mono label (CSS only). Table headers are lowercase mono through `text-transform: lowercase` only. No message catalog changes, and Arabic text is untouched by both. Checked by `git diff` showing no change under `packages/i18n` and `apps/web/src/i18n`, and by computed style checks in Playwright.
 - **AC-12** (corners): four named radius tokens exist and are used by the components: `chip` 6px (chips and menu rows), `control` 8px (buttons, fields), `popover` 10px (popovers, menus, tooltips), `card` 12px (cards, dialogs). Checked by the token spec and a computed style check per component on `/design`.
@@ -126,7 +126,7 @@ New roles:
 
 Gradients are utilities in `globals.css`, not colour variables, so a gradient is used by name. Dark values are the design's; light values are the owner's approved starting point. Each utility sets the light value and overrides it with the project's `dark` variant.
 
-| Utility (proposed names) | Dark | Light |
+| Utility (built in `globals.css`) | Dark | Light |
 |---|---|---|
 | Primary blend (main button fill, text `primary-foreground`) | `linear-gradient(110deg, #F4F7FA 0%, #C9D3DE 34%, #FFFFFF 48%, #A9DDF8 64%, #7DD3FC 100%)` at `background-size: 220% 100%` | `linear-gradient(110deg, #1E293B 0%, #334155 40%, #0E7490 100%)`, white text |
 | Heading blend (page `h1` text fill) | `linear-gradient(100deg, #FFFFFF 0%, #C9D3DE 45%, #7DD3FC 100%)` | `linear-gradient(100deg, #0A0E14 0%, #334155 45%, #0E7490 100%)` |
@@ -139,6 +139,8 @@ Gradients are utilities in `globals.css`, not colour variables, so a gradient is
 | Current page tint (sidebar) | `linear-gradient(90deg, #7DD3FC29, #7DD3FC05)` | `linear-gradient(90deg, #0E749024, #0E74900A)` |
 | Current page marker (2px, leading edge) | `linear-gradient(180deg, #FFFFFF, #7DD3FC)` | `linear-gradient(180deg, #0A0E14, #0E7490)` |
 
+Names that exist in `packages/ui/src/styles/globals.css`: the gradient rows above are `gradient-primary`, `gradient-heading`, `gradient-hero`, `gradient-card-edge`, `gradient-secondary-edge`, `gradient-glow`, `gradient-grid`, `gradient-selected-row`, `gradient-current-page`, and `gradient-current-marker`. The alpha only hover tints are `tint-nav` (sidebar item) and `tint-row` (table row). Look utilities with no gradient value: `section-label` (lowercase mono label with the cyan `// `) and `table-head-look` (lowercase mono header). Motion utilities: `transition-ui`, `lift`, `press`, `sheen`, `enter`, `enter-children`, `pop`, `pulse-ui`. Radii: `rounded-chip`, `rounded-control`, `rounded-popover`, `rounded-card`. New colour roles: `border-strong`, `destructive-surface`, `primary-edge`. Values and use of each: [`packages/ui/DESIGN.md`](../../../packages/ui/DESIGN.md).
+
 Notes:
 
 - The secondary edge top in dark, `#8A9BB2`, is **Assumed** (my pick, 6.83 on the page and 6.34 on a card). In light the edge runs from a darker slate (`#475569`, 7.05 and 7.58) down to `input`, because a lighter slate would lose contrast on a light page.
@@ -149,7 +151,7 @@ Notes:
 
 ### Measured contrast
 
-Method: the WCAG 2 formula, the same one `apps/web/src/design/contrast.ts` uses (sRGB channels to linear light, `(L1 + 0.05) / (L2 + 0.05)`). A translucent colour is painted over the surface it sits on first. The script that produced every number below: `contrast.mjs` and two extension scripts in the session scratchpad (the commands and the output are pasted in [verify.md](verify.md)); `/design` recomputes every pair live in the browser in M1. Thresholds: 4.5 for text, 3 for large text, the focus ring, and control boundaries.
+Method: the WCAG 2 formula, the same one `apps/web/src/design/contrast.ts` uses (sRGB channels to linear light, `(L1 + 0.05) / (L2 + 0.05)`). A translucent colour is painted over the surface it sits on first. The numbers below are guarded by committed checks, not scripts: `packages/ui/src/styles/tokens.spec.ts` (token values and the opaque pairs), `apps/web/e2e/design-contrast.spec.ts` (every pair, live on `/design`, in both themes), and `apps/web/e2e/design-motion-density.spec.ts` (motion, reduced motion, density, mirroring); [verify.md](verify.md) says how to run them. Opaque pairs match within 0.02; tint pairs are measured as painted, within 0.1. Thresholds: 4.5 for text, 3 for large text, the focus ring, and control boundaries.
 
 **Text and controls**
 
@@ -224,17 +226,17 @@ The segmented control's selected border is `input` on the selected `accent` fill
 | Heading blend `#0A0E14` on `background` | | n/a | 17.99 | 3 |
 | Heading blend `#334155` on `background` | | n/a | 9.63 | 3 |
 | Heading blend `#0E7490` on `background` | | n/a | 4.98 | 3 |
-| `foreground` on selected row tint | | 10.78 | 16.80 | 4.5 |
-| cyan link on selected row tint | | 7.94 | 4.65 | 4.5 |
-| owed flag on selected row tint | | 7.25 | 4.71 | 4.5 |
-| `muted-foreground` on selected row tint | | 5.37 | 6.54 | 4.5 |
-| `foreground` on current page tint (sidebar) | | 11.04 | 14.01 | 4.5 |
-| `muted-foreground` on sidebar item hover | | 7.06 | 6.06 | 4.5 |
-| `muted-foreground` on row hover | | 6.76 | 6.76 | 4.5 |
-| owed flag on row hover | | 9.13 | 4.87 | 4.5 |
-| `foreground` on row hover | | 13.57 | 17.38 | 4.5 |
+| `foreground` on selected row tint | | 10.85 | 16.81 | 4.5 |
+| cyan link on selected row tint | | 7.99 | 4.66 | 4.5 |
+| owed flag on selected row tint | | 7.30 | 4.71 | 4.5 |
+| `muted-foreground` on selected row tint | | 5.40 | 6.54 | 4.5 |
+| `foreground` on current page tint (sidebar) | | 11.07 | 13.93 | 4.5 |
+| `muted-foreground` on sidebar item hover | | 7.08 | 6.04 | 4.5 |
+| `muted-foreground` on row hover | | 6.79 | 6.78 | 4.5 |
+| owed flag on row hover | | 9.17 | 4.88 | 4.5 |
+| `foreground` on row hover | | 13.63 | 17.43 | 4.5 |
 
-Tints are translucent, so each pair is measured with the tint painted over its surface (the card, or the sidebar). The exact painted figures are also computed live on `/design` (AC-2).
+Tints are translucent, so each pair is measured with the tint painted over its surface (the card, or the sidebar). The figures in the tint rows above are the values the browser paints and `/design` shows live (read from the running page; the browser rounds the tint's alpha to two decimals, which a script that keeps the full alpha does not). Tints are measured as painted with a tolerance of 0.1; every opaque pair keeps 0.02 (AC-2).
 
 **Not a pair that matters.** The cyan marker as text on the light current page tint (3.88) is not allowed and is not used: the current page text is `foreground`, and the cyan is only the 2px marker, a non text mark that needs 3:1 (it has 4.67 on the light sidebar).
 
@@ -258,9 +260,9 @@ Tints are translucent, so each pair is measured with the tint painted over its s
 
 ### Radius, motion
 
-Radius tokens in the `@theme` block: `--radius-chip: 6px`, `--radius-control: 8px`, `--radius-popover: 10px`, `--radius-card: 12px`, used by the components so `rounded-chip`, `rounded-control`, `rounded-popover`, and `rounded-card` exist. The old `--radius` multiplier set (`sm`, `md`, `lg`, `xl`) is removed or mapped onto these four so no component keeps an unnamed radius. **Assumed**: the exact utility names; the builder may rename them if lint rejects a name, as long as the four values stay.
+Radius tokens in the `@theme` block: `--radius-chip: 6px`, `--radius-control: 8px`, `--radius-popover: 10px`, `--radius-card: 12px`, used by the components so `rounded-chip`, `rounded-control`, `rounded-popover`, and `rounded-card` exist. The old `--radius` multiplier set (`sm`, `md`, `lg`, `xl`) is removed or mapped onto these four so no component keeps an unnamed radius. The names are built as written.
 
-Motion tokens: `--ease-ui: cubic-bezier(.2, .7, .2, 1)`, `--duration-ui: 180ms`. Named utilities (proposed): lift (1px up and `0 8px 24px #00000080` in dark, a softer shadow in light), press (`scale(.98)`), sheen (the primary blend's `background-position` from `100% 0` to `0 0` over 600ms with `0 8px 28px #7DD3FC40` in dark), enter (fade and 8px rise over 500ms, children staggered 50ms to a 200ms maximum), pop (150ms fade with a 4px drop), skeleton pulse (1.4s). Under `@media (prefers-reduced-motion: reduce)` each is set to no transform, no animation, and no transition, so the global rule that only shortens durations is replaced by a rule that removes the movement itself (AC-19).
+Motion tokens: `--ease-ui: cubic-bezier(.2, .7, .2, 1)`, `--duration-ui: 180ms`. Named utilities (built, listed under Gradients and utilities): lift (1px up and `0 8px 24px #00000080` in dark, a softer shadow in light), press (`scale(.98)`), sheen (the primary blend's `background-position` from `100% 0` to `0 0` over 600ms with `0 8px 28px #7DD3FC40` in dark), enter (fade and 8px rise over 500ms, children staggered 50ms to a 200ms maximum), pop (150ms fade with a 4px drop), skeleton pulse (1.4s). Under `@media (prefers-reduced-motion: reduce)` each is set to no transform, no animation, and no transition, so the global rule that only shortens durations is replaced by a rule that removes the movement itself (AC-19).
 
 ### Components that change look (not behaviour)
 
@@ -280,7 +282,7 @@ Lines this change makes false. M1 fixes them (the first group is the brief's lis
 - `apps/web/src/shell/fonts/README.md` (the whole table and the notes about Inter and JetBrains Mono).
 - `packages/ui/DESIGN.md` look sections (front matter, the opening paragraph, Color roles, Type, Spacing radius density where it names radius, Focus colour, Motion, Elevation, Components look, Brand accent).
 - `packages/ui/README.md` line 9 ("Tokens (Daftar: ...)"), `apps/web/src/design/README.md` line 3 (the type specimens), `apps/web/src/shell/README.md` line 15 (names the fonts; check the line), `docs/scope/foundations.md` lines 48 and 54 (the Daftar wording is history; add a pointer to this spec when it is built, by `/sync` or the scope owner).
-- Code comments and tests that name the old look: `packages/ui/src/lib/row-stripe.ts` line 7 (Daftar), `packages/ui/src/lib/brand-tokens.ts` line 5 (the near black brand foreground is the Daftar `--foreground`; with the new `foreground` it becomes `#0A0E14`, which changes the worked example of AC-19: `#F2C230` with near black), `packages/ui/src/components/ltr-text.tsx` line 7 (JetBrains Mono), `apps/web/src/design/design-gallery.tsx` lines 46 and 131, `apps/web/src/shell/static-root-frame.spec.tsx` line 32 (the font class names), `apps/web/e2e/shell.spec.ts` line 459 and `production.spec.ts` line 88 (the `Inter` family), `apps/web/e2e/design-contrast.spec.ts` lines 5, 162 and 258 (Daftar pairs, JetBrains Mono).
+- Code comments and tests that name the old look: `packages/ui/src/lib/row-stripe.ts` line 7 (Daftar), `packages/ui/src/lib/brand-tokens.ts` line 5 (the near black brand foreground was the Daftar `--foreground`; with the new `foreground` it is `#0A0E14`, which changes the brand worked example in `packages/ui/DESIGN.md`: yellow `#F2C230` was 10.35 and is 11.54 with the new near black; the mid luminance window narrows, so the old refused examples `#A9780B` and `#808080` now pass and are replaced by `#997311` (4.43, refused) and `#797979` (4.44, refused)), `packages/ui/src/components/ltr-text.tsx` line 7 (JetBrains Mono), `apps/web/src/design/design-gallery.tsx` lines 46 and 131, `apps/web/src/shell/static-root-frame.spec.tsx` line 32 (the font class names), `apps/web/e2e/shell.spec.ts` line 459 and `production.spec.ts` line 88 (the `Inter` family), `apps/web/e2e/design-contrast.spec.ts` lines 5, 162 and 258 (Daftar pairs, JetBrains Mono).
 - [spec 0003](../0003-design-system-ui-foundation/index.md) itself: amended by this spec in the same change (its Status line and a note under the Daftar amendment). Its option previews in `directions/` are history and stay.
 
 ### Light theme approval
@@ -322,7 +324,7 @@ Owner: frontend.
 Owner: frontend.
 
 - Stock, stock receipts (three screens), SKUs (two), styles (two), product groups, seasons, and locations.
-- **Done when**: all of them are restyled; forms use the field and segmented control looks (AC-8, AC-9); AC-21 and AC-22 hold; no screen's data or actions changed.
+- **Done when**: all of them are restyled; forms use the field look (AC-8), and the segmented control look (AC-9) if a form needs one and it is vendored then; AC-21 and AC-22 hold; no screen's data or actions changed.
 
 ### M5. Customers and connections
 

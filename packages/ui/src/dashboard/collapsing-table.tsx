@@ -85,7 +85,7 @@ export function CollapsingTable<Row>({
       </div>
       <ul aria-label={caption} className="flex flex-col gap-2 sm:hidden">
         {rows.map((row) => (
-          <li key={getRowKey(row)} className="rounded-lg border bg-card p-3 text-sm">
+          <li key={getRowKey(row)} className="gradient-card-edge rounded-card p-3 text-sm">
             {titleColumn ? <div className="font-medium">{titleColumn.cell(row)}</div> : null}
             <dl className="mt-2 flex flex-col gap-1.5">
               {rest.map((column) => (

@@ -98,8 +98,8 @@ test.describe('the frames on a phone', () => {
     await page.goto('/en/returns/preview/rejected');
 
     await expect(page.locator('[data-slot="portal-frame"]')).not.toHaveAttribute('style', /brand/);
-    await expect(page.getByTestId('brand-refusal')).toContainText('#A9780B was refused');
-    await expect(page.getByTestId('brand-refusal')).toContainText('#AB7A0B');
+    await expect(page.getByTestId('brand-refusal')).toContainText('#997311 was refused');
+    await expect(page.getByTestId('brand-refusal')).toContainText('#9B7511');
     const primary = await page.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.color = 'var(--primary)';

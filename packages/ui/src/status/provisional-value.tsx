@@ -19,7 +19,7 @@ export function ProvisionalValue({ value, provisionalLabel, className }: Provisi
     <span
       data-slot="provisional-value"
       className={cn(
-        'inline-flex items-baseline rounded-sm border border-dashed border-input bg-provisional-surface px-1.5 text-muted-foreground tabular-nums',
+        'inline-flex items-baseline rounded-chip border border-dashed border-input bg-provisional-surface px-1.5 text-muted-foreground tabular-nums',
         className,
       )}
     >

@@ -4,30 +4,32 @@ _Steps derived from the acceptance criteria of [spec 0025](index.md). `/check ve
 
 ## Contrast numbers (reproduce the spec's tables)
 
-The scripts that produced the numbers in [index.md](index.md) use the same WCAG 2 formula as `apps/web/src/design/contrast.ts`. They live in the Architect session's scratchpad (outside the repository):
+The numbers in [index.md](index.md) use the same WCAG 2 formula as `apps/web/src/design/contrast.ts` and are guarded by three committed checks:
 
-- `contrast.mjs`: the main dark and light tables.
-- `extra.mjs`, `extra2.mjs`, `extra3.mjs`, `extra4.mjs`: the extra pairs (secondary edge, segmented border, tints, status on `accent`, solid status fills).
+- `packages/ui/src/styles/tokens.spec.ts`: token values.
+- `apps/web/e2e/design-contrast.spec.ts`: every pair live on `/design`, dark and light. Opaque pairs match the published figure within 0.02; pairs measured over a translucent tint (selected row, current page, hover tints) are measured as painted and match within 0.1.
+- `apps/web/e2e/design-motion-density.spec.ts`: motion, reduced motion, density, and the right to left mirroring of gradients.
 
 ```bash
-node <scratchpad>/contrast.mjs        # AC-2, AC-3, AC-5 base tables
-node <scratchpad>/extra.mjs           # AC-3, AC-5, AC-7, AC-9, AC-10 extra pairs
+pnpm --filter @ssdashboard/ui test
+pnpm --filter @ssdashboard/web test:e2e -- design-contrast
+pnpm --filter @ssdashboard/web test:e2e -- design-motion-density
 ```
 
-In M1, a committed test (a Vitest spec in `packages/ui` or the Playwright `design-contrast.spec.ts`) replaces these scripts, so the numbers are guarded in the repository. Expect to find these key figures: `foreground` on `background` 15.75 dark and 17.99 light; cyan link on the page 11.60 and 4.98; `input` on control fill 3.25 and 3.88; owed chip 8.98 and 4.82; light cyan on `accent` 4.21 (the failing pair AC-5 forbids).
+Expect to find these key figures: `foreground` on `background` 15.75 dark and 17.99 light; cyan link on the page 11.60 and 4.98; `input` on control fill 3.25 and 3.88; owed chip 8.98 and 4.82; light cyan on `accent` 4.21 (the failing pair AC-5 forbids); `foreground` on the selected row tint 10.85 and 16.81.
 
 ## Automated
 
 | AC | Command or test | Expect |
 |---|---|---|
 | AC-1 | `pnpm --filter @ssdashboard/ui test` (token spec) | every role equals the table; no Daftar value left |
-| AC-2, AC-3, AC-5 | `pnpm --filter @ssdashboard/web test:e2e -- design-contrast` (or the repo's name for the Playwright contrast spec) | every pair at or above its need, live number within 0.02 of the table |
+| AC-2, AC-3, AC-5 | `pnpm --filter @ssdashboard/web test:e2e -- design-contrast` (or the repo's name for the Playwright contrast spec) | every pair at or above its need, live number within 0.02 of the table (0.1 for tint pairs, measured as painted) |
 | AC-4 | `pnpm --filter @ssdashboard/ui test` (status chip spec) and `rg -n "bg-primary\|text-primary\|ring" packages/ui/src/status` | no `primary`, `ring`, or blend class in any status component |
 | AC-6 | `pnpm --filter @ssdashboard/ui test` (`status-chip.spec.tsx`) | four meanings, each icon plus word, blank label renders nothing; Playwright computed style 24px, 6px radius |
 | AC-12 | token spec, then Playwright computed style per component on `/design` | 6, 8, 10, 12px as named |
 | AC-14 | `pnpm --filter @ssdashboard/web build` with the network off; `git diff --stat main -- package.json pnpm-lock.yaml pnpm-workspace.yaml apps/web/package.json packages/ui/package.json`; the `fonts-production` Playwright spec | build passes; no dependency change; no font host request; families Geist and Geist Mono |
 | AC-11 | `git diff main --stat -- packages/i18n apps/web/src/i18n` | empty |
-| AC-18, AC-19 | Playwright projects with and without `reducedMotion: 'reduce'` | normal: 180ms on transform, box-shadow, colours; hover on a button gives `translateY(-1px)`. Reduced: `transform: none` on hovered and pressed buttons, no running animation on a page section, no sheen |
+| AC-13, AC-18, AC-19 | `pnpm --filter @ssdashboard/web test:e2e -- design-motion-density`; Playwright projects with and without `reducedMotion: 'reduce'` | normal: 180ms on transform, box-shadow, colours; hover on a button gives `translateY(-1px)`. Reduced: `transform: none` on hovered and pressed buttons, no running animation on a page section, no sheen |
 | AC-20 | `pnpm --filter @ssdashboard/web test:e2e -- shell` and `git diff main -- packages/ui/DESIGN.md` on the density section | geometry assertions pass unchanged; no density number changed |
 | AC-21 | `pnpm test` and `pnpm test:e2e` | pass; the pull request lists every test line changed and each one is a colour, font, or class assertion |
 | AC-22 | the axe Playwright specs for each milestone's screens | zero violations in dark and light, left to right and right to left |
@@ -45,7 +47,7 @@ Milestone 1 (`/design`, in development, `pnpm dev`):
 - [ ] Look at the button matrix: main button (blend, edge, weight 600), secondary (control fill, gradient edge, both ends visible against page and card), disabled (card fill, muted text, no lift), hover shows a 1px lift and the sheen on the main button, press shrinks slightly → AC-7, AC-18
 - [ ] Focus every control with Tab. The cyan ring is visible on page, card, control fill, sidebar, and `accent` → AC-8, AC-22
 - [ ] Open a select and a menu: 10px corners, 6px rows, 150ms drop. Trigger a toast: inverted colours, Undo when undoable. Trigger an error toast: destructive surface with a destructive border. An info notice has the "i" icon and muted text, no cyan → AC-10, AC-12, AC-18
-- [ ] Open a segmented control and select a segment: it gets the `accent` fill and a 1px `input` border → AC-9
+- [ ] Segmented control: none is vendored yet, so confirm the `DESIGN.md` rule is there. When one is vendored, select a segment: it gets the `accent` fill and a 1px `input` border → AC-9
 - [ ] Read the page heading: 20px, the blend fill. Switch the system to forced colors (Windows High Contrast): the heading reads in the plain foreground → AC-11
 - [ ] Switch to Arabic and right to left: section label `//` stays correct, table headers read normally, heading letters join (no gaps), digits stay Western, tinted gradients fade from the right edge, Arabic text in a mono styled label is in Noto Sans Arabic → AC-13, AC-15
 - [ ] Turn on "reduce motion" in the operating system: hover and press no longer move anything; no entrance, sheen, or pulse → AC-19

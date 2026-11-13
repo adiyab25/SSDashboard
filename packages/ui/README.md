@@ -6,7 +6,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 
 ## Owns
 
-- Tokens (Daftar: colors, the four meaning roles, brand, type, density and the `floor` scope) and the Tailwind theme mapping: [src/styles/globals.css](src/styles/globals.css)
+- Tokens (Midnight, Silver and Cyan: colors, the four meaning roles, gradients and motion utilities, the four radii, brand, type, density and the `floor` scope) and the Tailwind theme mapping: [src/styles/globals.css](src/styles/globals.css)
 - Components, one per file: [src/components/](src/components/)
 - Status display, one per file: [src/status/](src/status/) (`StatusChip`, `StatusChipOverflow`, `ProvisionalValue`, `FreshnessStrip`), plus `rowStripeClassName` and the `StatusMeaning` type in [src/lib/](src/lib/)
 - Audience frames, one per file: [src/frames/](src/frames/) (`PortalFrame`, `PartnerFrame`, `BrandMark`), and the brand accent gate `deriveBrandTokens` in [src/lib/brand-tokens.ts](src/lib/brand-tokens.ts)
