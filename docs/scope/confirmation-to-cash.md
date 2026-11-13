@@ -2,7 +2,7 @@
 
 The walking skeleton, target about month three: a real Shopify order confirmed in the app, shipped with Bosta in mirror mode, its failures handled, and its cash reconciled, then reported to the owner's phone. The pilot starts right after this slice. [Back to the scope](index.md).
 
-**Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece of that week is restocked by scan with both shipping legs on its order, and one month of the real Bosta settlement is matched line by line including refunds, negative lines, and at least one partial delivery, with unmatched lines listed.
+**Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece that reaches the brand that week is received through the scan station (scanned, or recorded as having no tag when its tag is missing or unreadable, counted apart) with both shipping legs on its order, and parcels still returning at the week's end are listed, not failed, and one month of the real Bosta settlement is matched line by line including refunds, negative lines, and at least one partial delivery, with unmatched lines listed.
 
 ### 11. Stock ledger & locations · GA
 The single writer of stock movements, and the locations it moves stock between. Locations carry an owner type (own warehouse or shop, consignment partner, wholesale customer) and a sellable online flag; only the warehouse sells online. Bins stay flat for now.
@@ -149,7 +149,7 @@ Also from spec 0021: one scan box reads a handheld scanner by physical key, so a
 - [ ] Test it: `/test barcode scanning`
 - [ ] Review it (fresh model): `/check review barcode scanning`
 - [ ] Document it: `/document barcode scanning`
-Spec [0021](../specs/0021-barcode-scanning/index.md) (Assumed 2026-11-13, revised the same day for its domain review [domain-barcode-scanning](../reviews/domain-barcode-scanning.md); no owner in the design session; owner decisions Q-20.1 to Q-20.7 taken as recommended, awaiting the owner)
+Spec [0021](../specs/0021-barcode-scanning/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-barcode-scanning](../reviews/domain-barcode-scanning.md); owner decisions Q-20.1 to Q-20.7 answered, Q-20.2 by the owner: a printed barcode per variant)
 
 ### 21. Delivery failures & returned to origin · GA
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
@@ -201,7 +201,7 @@ Also from spec 0022: a close check of plain conditions (every line settled, ever
 - [ ] Test it: `/test period close with evidence`
 - [ ] Review it (fresh model): `/check review period close with evidence`
 - [ ] Document it: `/document period close with evidence`
-Spec [0022](../specs/0022-period-close-evidence/index.md) (Assumed 2026-11-13, revised the same day for its domain review [domain-period-close](../reviews/domain-period-close.md) and the own records request of specs 0023 and 0024; no owner in the design session; owner decisions Q-23.1 to Q-23.10 taken as recommended, awaiting the owner)
+Spec [0022](../specs/0022-period-close-evidence/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-period-close](../reviews/domain-period-close.md) and the own records request of specs 0023 and 0024; owner decisions Q-23.1 to Q-23.10 answered, Q-23.10 by the owner: the period length is a per brand setting, monthly by default)
 
 ### 24. Metric dictionary & phone dashboard · needs a decision
 Every figure defined once in the model, and the owner's first dashboard designed for a phone in Arabic.
@@ -209,7 +209,7 @@ Every figure defined once in the model, and the owner's first dashboard designed
 - [ ] Design it (spec): `/architect metric dictionary & phone dashboard`
 
 ### 25. Daily report · needs a decision
-A short morning report to the Telegram or WhatsApp group the owner already reads, built only from confirmed data, as a worker job with no host privileges.
+A short morning report to the Telegram or WhatsApp group the owner already reads, showing confirmed figures as confirmed and every other figure with its provisional value marked provisional (never as zero), as a worker job with no host privileges.
 **Done when:** at a fixed Cairo time the report sends yesterday's orders, confirmed, shipped, delivered, returned to origin, cash expected versus remitted, one line per store and per partner, exchanges and refunds owed, plus an automation status line (what synced, what failed, what needs a sign in); a failed send retries and shows up on the dashboard.
 Also from spec 0007: a Telegram group is the first channel; WhatsApp group delivery is a later feature once Meta's documentation is checked.
 - [ ] Design it (spec): `/architect daily report`
