@@ -135,10 +135,21 @@ Also from spec 0018: the order stays editable while Bosta reports pickup request
 - [ ] Document it: `/document bosta connector, mirror mode`
 Spec [0018](../specs/0018-bosta-connector-mirror-mode/index.md) (Proposed 2026-11-12; owner decisions Q-19.1 to Q-19.6 taken as recommended, awaiting the owner)
 
-### 20. Barcode scanning · needs a decision
+### 20. Barcode scanning
 Scan to find a variant and scan to move stock, on a phone camera or a handheld scanner, starting with restock of returned pieces.
 **Done when:** a scan finds the variant in under a second, an unknown barcode says so clearly, a restock by scan writes a stock movement, and it works with a phone camera and a keyboard wedge scanner.
-- [ ] Design it (spec): `/architect barcode scanning`
+Also from spec 0021: one scan box reads a handheld scanner by physical key, so an Arabic keyboard layout never breaks a code, and opens the phone camera with a self hosted decoder; a code resolves as a barcode first, then as an exact SKU code; on returns a label scan, a typed entry, or a tap opens the parcel and each piece scan calls spec 0019's receive call; the station handles a piece with no tag, a piece of another parcel, extra pieces, and one scan Damaged and Held modes with Undo, and never rereads a tag; scans also fill the lines of the receipt, adjustment, and partner send and return forms; there is no offline queue, and a failed save stays visible with Retry.
+- [x] Design it (spec): `/architect barcode scanning`
+- [ ] Build it: `/develop barcode scanning`
+  - [ ] A wedge scan restocks a returned piece (AC-1 to AC-3, AC-5, AC-6, AC-8 to AC-12, AC-18 to AC-20)
+  - [ ] Every moment of a real returns table (AC-11 to AC-15)
+  - [ ] The phone camera (AC-3, AC-7, AC-8)
+  - [ ] Scans fill stock forms, and unknown codes get a code (AC-4, AC-16, AC-17)
+- [ ] Verify it: `/check verify barcode scanning`
+- [ ] Test it: `/test barcode scanning`
+- [ ] Review it (fresh model): `/check review barcode scanning`
+- [ ] Document it: `/document barcode scanning`
+Spec [0021](../specs/0021-barcode-scanning/index.md) (Assumed 2026-11-13, revised the same day for its domain review [domain-barcode-scanning](../reviews/domain-barcode-scanning.md); no owner in the design session; owner decisions Q-20.1 to Q-20.7 taken as recommended, awaiting the owner)
 
 ### 21. Delivery failures & returned to origin · GA
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
@@ -175,10 +186,22 @@ Also from spec 0020: the per delivery cash cycles lead and Bosta's sheet adds th
 - [ ] Document it: `/document settlement & bosta reconciliation`
 Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews [domain-settlement-reconciliation](../reviews/domain-settlement-reconciliation.md) and [second pass](../reviews/domain-settlement-reconciliation-r2.md); owner decisions Q-22.1 to Q-22.13 taken as recommended, awaiting the owner)
 
-### 23. Period close with evidence · GA · needs a decision
+### 23. Period close with evidence · GA
 Confirmed data is the only data reports, settlements, and exports use. A channel's date range is confirmed by a person after review, or automatically when the evidence matches exactly.
 **Done when:** a range can be confirmed by a person or by matching evidence (the carrier's statement total, a file checksum); re importing into a confirmed range is refused without an admin's written reason; a confirmation is revoked with a reason, never deleted; provisional data shows as provisional everywhere; every automatic action writes a snapshot and undoes in one step.
-- [ ] Design it (spec): `/architect period close with evidence`
+Also from spec 0022: a close check of plain conditions (every line settled, every cash out seen in the bank, Bosta's sheet against the app day by day, Bosta's deposits, the wallet roll forward) shows both figures and every judgment made by hand; a person closes with a written acceptance for each difference, and the system closes only when the manager turned it on, on exact evidence, never over a hand judgment and never after a revoke, with a line snapshot and one step undo; late Bosta data for a closed period is held for a manager, who reopens the period with a written reason, dismisses it, or, once the accountant marked the month posted, carries the difference into the open month; the brand's own records confirm per store and day once a sweep after midnight agrees, and `ConfirmedDays` answers both for the dashboard and the daily report; partner close rules come with feature 43.
+- [x] Design it (spec): `/architect period close with evidence`
+- [ ] Build it: `/develop period close with evidence`
+  - [ ] A person closes one period end to end (AC-1 to AC-3, AC-6, AC-11, AC-14, AC-15, AC-18)
+  - [ ] The gate: nothing lands in a closed period (AC-7 to AC-10, AC-13)
+  - [ ] Every condition, the prompts, and the automatic close (AC-1, AC-3 to AC-5, AC-12, AC-15, AC-17, AC-27)
+  - [ ] Provisional and confirmed everywhere, the accountant's side, and the pilot month (AC-1, AC-3, AC-10, AC-11, AC-14 to AC-16, AC-18, AC-19, AC-26, AC-28)
+  - [ ] Own records days confirm themselves (AC-20 to AC-25)
+- [ ] Verify it: `/check verify period close with evidence`
+- [ ] Test it: `/test period close with evidence`
+- [ ] Review it (fresh model): `/check review period close with evidence`
+- [ ] Document it: `/document period close with evidence`
+Spec [0022](../specs/0022-period-close-evidence/index.md) (Assumed 2026-11-13, revised the same day for its domain review [domain-period-close](../reviews/domain-period-close.md) and the own records request of specs 0023 and 0024; no owner in the design session; owner decisions Q-23.1 to Q-23.10 taken as recommended, awaiting the owner)
 
 ### 24. Metric dictionary & phone dashboard · needs a decision
 Every figure defined once in the model, and the owner's first dashboard designed for a phone in Arabic.
