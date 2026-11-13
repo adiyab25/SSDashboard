@@ -2,6 +2,7 @@
 
 **Date**: 2026-11-03
 **Status**: Proposed (amendment of 2026-11-05 for scope feature 5; the original decision was accepted and built)
+**Amended by**: [spec 0025](../0025-midnight-silver-cyan/index.md) (2026-11-13), which replaces the look (option B, Daftar: colour, type, corner radius, motion, and the look of base components) with Midnight, Silver and Cyan. The behaviour rules below stay.
 
 ## Summary
 
@@ -10,6 +11,8 @@ This spec sets the look of the back office and builds its frame (the app shell: 
 > Amended 2026-11-05: the look described above is the original direction and is now one of three options (Quiet Ledger). The frame, the package, the gallery, and the checks stay. See Amendment 2026-11-05 below.
 
 > Amended 2026-11-06 (Daftar built): the owner picked option B, Daftar, and milestone 1 built it, so "Vega, zinc" in the title and the zinc, black and white, 10px corners, IBM Plex wording in the paragraph above no longer describe the code. Built: warm paper neutrals (hue 70 to 85), a deep indigo primary (`oklch(0.38 0.12 275)` light, `oklch(0.78 0.12 280)` dark), radius 0.5rem, table rows 40px, header 44px, controls 40px, body text 15px, Inter plus Noto Sans Arabic plus JetBrains Mono. The frame, the package, the gallery, and the checks are as described. Values and measured contrast: `packages/ui/DESIGN.md`.
+
+> Amended 2026-11-13 (spec 0025): the look of option B, Daftar, is replaced by [Midnight, Silver and Cyan](../0025-midnight-silver-cyan/index.md): new colour tokens (a dark theme as designed, a derived light theme), Geist and Geist Mono instead of Inter and JetBrains Mono (Noto Sans Arabic stays), explicit radius tokens, and new motion. Everything about behaviour stays as written here: the frames, density (40px controls and rows, 44px table header, 32px sidebar items, 15px body, the `floor` scope), the status meaning and provisional rules, help, right to left, focus and target sizes, and the contrast minimums. Where this spec names Daftar values, fonts, or colours, spec 0025 and `packages/ui/DESIGN.md` hold the current ones.
 
 ## Amendment 2026-11-05
 
