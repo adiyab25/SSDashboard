@@ -616,6 +616,29 @@ describe('core data model schema (spec 0002)', () => {
           params: [check.id],
         };
       },
+      task_notes: async () => {
+        const user = await one<{ id: string }>(
+          owner,
+          "INSERT INTO users (name, email) VALUES ('N', $1) RETURNING id",
+          ['notes@example.test'],
+        );
+        const task = await one<{ id: string }>(
+          owner,
+          `INSERT INTO tasks (type, linked_type, linked_id, owner_hat, created_by_type)
+           VALUES ('sync.write_back_failed', 'order', gen_random_uuid(), 'operations', 'system_job')
+           RETURNING id`,
+        );
+        const note = await one<{ id: string }>(
+          owner,
+          `INSERT INTO task_notes (task_id, note, author_id) VALUES ($1, 'a note', $2) RETURNING id`,
+          [task.id, user.id],
+        );
+        return {
+          update: "UPDATE task_notes SET note = 'x' WHERE id = $1",
+          remove: 'DELETE FROM task_notes WHERE id = $1',
+          params: [note.id],
+        };
+      },
       order_cost_rules: async () => {
         const rule = await one<{ id: string }>(
           owner,

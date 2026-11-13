@@ -190,4 +190,13 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = Object.freeze([
     description: 'modules.orders.description',
     capabilities: [],
   }),
+  defineModule({
+    key: 'tasks',
+    bundle: 'core',
+    toggle: false,
+    requires: [],
+    label: 'modules.tasks.label',
+    description: 'modules.tasks.description',
+    capabilities: [],
+  }),
 ]);

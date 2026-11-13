@@ -1945,6 +1945,17 @@ export const en = {
       },
     },
   },
+  // My work and the task registry (spec 0016). Keys follow tasks.types.<code> and
+  // tasks.outcomes.<code>; a code with a dot nests (sync.write_back_failed).
+  tasks: {
+    types: {
+      sync: { write_back_failed: 'Shopify change not synced' },
+    },
+    outcomes: {
+      synced: 'Synced to Shopify',
+      resolved: 'Resolved by a person',
+    },
+  },
   audit: {
     title: 'Audit trail',
     description: 'Who changed what, newest first. Entries cannot be edited or removed.',
@@ -1984,6 +1995,7 @@ export const en = {
       style: 'Style',
       season: 'Season',
       productGroup: 'Product group',
+      task: 'Task',
     },
     filters: {
       title: 'Filters',
@@ -2113,6 +2125,7 @@ export const en = {
       orderPartialDeliverySplit: 'Partial delivery recorded',
       orderCollectionRecordedManually: 'Cash collection entered by hand',
       orderPaymentMethodRederived: 'Order payment method corrected',
+      taskClosed: 'Task closed',
       connectionCreated: 'Shopify store connected',
       connectionBackfillStarted: 'Shopify backfill started',
       connectionGatewayScanStarted: 'Shopify payment gateway scan started',
@@ -2709,6 +2722,10 @@ export const en = {
     },
     customers: { label: 'Customers', description: 'One customer per phone number.' },
     orders: { label: 'Orders', description: 'Orders, their parcels, and their money.' },
+    tasks: {
+      label: 'Tasks',
+      description: 'The work every process hands to a person, and My work.',
+    },
     capabilities: {
       platformReconcileModules: 'Keeping background jobs in line with the module switches',
       platformLicenseCheck: 'The daily license check',

@@ -20,6 +20,10 @@ export const TaskLinkedType = z.enum([
   'outbound_command',
   'party',
   'location',
+  'connection',
+  'inbound_event',
+  'variant',
+  'install',
 ]);
 /** One TaskLinkedType value. */
 export type TaskLinkedType = z.infer<typeof TaskLinkedType>;

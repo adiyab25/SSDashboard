@@ -95,6 +95,7 @@ describe('the module registry (AC-6)', () => {
       'connectors',
       'customers',
       'orders',
+      'tasks',
     ]);
     expect(MODULE_REGISTRY.flatMap((m) => m.capabilities.map((c) => c.key))).toEqual([
       'platform.reconcile_modules',

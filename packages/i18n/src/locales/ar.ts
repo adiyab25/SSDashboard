@@ -1968,6 +1968,16 @@ export const ar: Catalog = {
       },
     },
   },
+  // My work and the task registry (spec 0016).
+  tasks: {
+    types: {
+      sync: { write_back_failed: 'تعديل لم يصل إلى شوبيفاي' },
+    },
+    outcomes: {
+      synced: 'تمت المزامنة مع شوبيفاي',
+      resolved: 'تمت المعالجة يدويًا',
+    },
+  },
   audit: {
     title: 'سجل المراجعة',
     description: 'من غيّر ماذا، من الأحدث إلى الأقدم. لا يمكن تعديل السجلات أو حذفها.',
@@ -2007,6 +2017,7 @@ export const ar: Catalog = {
       style: 'موديل',
       season: 'موسم',
       productGroup: 'مجموعة منتجات',
+      task: 'مهمة',
     },
     filters: {
       title: 'عوامل التصفية',
@@ -2138,6 +2149,7 @@ export const ar: Catalog = {
       orderPartialDeliverySplit: 'تسجيل تسليم جزئي',
       orderCollectionRecordedManually: 'إدخال تحصيل نقدي يدويًا',
       orderPaymentMethodRederived: 'تصحيح طريقة دفع الطلب',
+      taskClosed: 'إغلاق مهمة',
       connectionCreated: 'ربط متجر Shopify',
       connectionBackfillStarted: 'بدء استيراد بيانات Shopify السابقة',
       connectionGatewayScanStarted: 'بدء فحص بوابات الدفع في Shopify',
@@ -2719,6 +2731,7 @@ export const ar: Catalog = {
     },
     customers: { label: 'العملاء', description: 'عميل واحد لكل رقم هاتف.' },
     orders: { label: 'الطلبات', description: 'الطلبات وشحناتها وأموالها.' },
+    tasks: { label: 'المهام', description: 'الأعمال التي تسلّمها كل عملية لشخص، وصفحة عملي.' },
     capabilities: {
       platformReconcileModules: 'مواءمة المهام الخلفية مع مفاتيح الوحدات',
       platformLicenseCheck: 'الفحص اليومي للترخيص',
