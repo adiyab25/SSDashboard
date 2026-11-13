@@ -478,23 +478,33 @@
 }
 
 /*
- * The look of a section label (CSS only, no text): lowercase mono, muted, with a cyan `// ` before
+ * The look of a section label (CSS only, no text): lowercase mono, muted, with a cyan `//` before
  * it. The empty alternative text keeps the mark out of screen reader output; the plain `content`
  * line before it is the fallback for a browser that does not read the alternative text syntax.
+ * The gap after the slashes is a margin, not a trailing space: inside a `flex` parent the pseudo
+ * element is a flex item and a trailing space collapses. `margin-inline-end` follows the parent's
+ * direction (no `direction` on the pseudo element), so it sits toward the text in left to right and
+ * right to left alike.
+ * Size, line height and weight sit in `:where()` (specificity zero), so a class a caller passes
+ * (`text-sm`, `font-medium`) always wins; tailwind-merge does not know this utility and cannot
+ * remove them.
  */
 @utility section-label {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: var(--text-xs--line-height);
-  font-weight: 400;
   text-transform: lowercase;
   color: var(--muted-foreground);
 
+  :where(&) {
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+    font-weight: 400;
+  }
+
   &::before {
-    content: '// ';
-    content: '// ' / '';
+    content: '//';
+    content: '//' / '';
+    margin-inline-end: 1ch;
     color: var(--primary);
-    direction: ltr;
     unicode-bidi: isolate;
   }
 }

@@ -145,3 +145,19 @@ describe('globals.css tokens (spec 0025, AC-1)', () => {
     expect(css).toContain('[data-button]:not([data-cancel])');
   });
 });
+
+describe('section-label utility', () => {
+  const start = css.indexOf('@utility section-label {');
+  const body = css.slice(start, css.indexOf('\n}\n', start));
+
+  it('keeps the gap after the slashes as an inline end margin, not a trailing space', () => {
+    expect(body).toMatch(/&::before \{[^}]*margin-inline-end:\s*1ch;/);
+    expect(body).toContain("content: '//' / '';");
+    expect(body).not.toMatch(/content: '\/\/ '/);
+    expect(body).not.toMatch(/direction:\s*ltr/);
+  });
+
+  it('puts size and weight at zero specificity so a caller class wins', () => {
+    expect(body).toMatch(/:where\(&\) \{[^}]*font-size:[^}]*font-weight: 400;/);
+  });
+});
