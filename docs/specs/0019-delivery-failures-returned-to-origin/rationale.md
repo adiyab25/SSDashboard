@@ -183,6 +183,27 @@ The [second pass domain review](../../reviews/domain-delivery-failures-r2.md) (2
 
 **The first review's renamed names**: `delivery.packed_not_shipped` and `packed_not_shipped_days` in the table above are now `delivery.not_shipped` and `not_shipped_days`, because AC-31 covers confirmed orders too.
 
+## Owner answers of 2026-11-13
+
+The owner ratified every recommendation ([owner answers](../../reviews/owner-answers-2026-11-13.md)) except the deposit questions and the exchange. **Who bears Bosta's fee** (Q-21.2, Q-21.9, Q-21.10, Q-21.12): usually there is no deposit; Bosta's fee is paid on every parcel, and the reason decides who bears it. AC-33 turns the owner's words into one pure rule over the deciding answer the spec already had (AC-6), with two vocabulary additions the rule needs: the refusal code `wrong_item` (the owner's "wrong item or size", which is the brand's mistake, unlike `size`, a piece that does not fit) and the contact outcome `courier_never_came` (the owner's "Bosta never reached her", which a courier's own reason text never says). `unclassified` becomes `undecided` rather than the customer's, because flagging a customer on a reason nobody knows would punish her for the classifier's gap; a person decides it. The carrier's share becomes a claim kind, `failed_delivery_fee`, so spec 0020 matches Bosta's compensation exactly as it matches any claim. The customer's share is only what the owner named: the FlexShip fee Bosta took at the door and the flag. **Bosta Exchange** (Q-21.13 (b)): the exchange allowance is modelled as a prepayment of its own method on the replacement order so its COD is the price difference with no new money machinery; it is never published as money owed back, because it is the customer's earlier payment moving, not a second payment. The runner up, a credit pair through the credit module, needs feature 28 and is the shape the allowance takes when that module exists. Cost, stated for the owner: a sixth milestone here and requests of specs 0013, 0018, and 0020, roughly two builder weeks.
+
+### Domain review of the owner answers (2026-11-13)
+
+The [domain review](../../reviews/domain-owner-answers-2026-11-13.md) of the three changed designs (verdict accept with changes) and how each finding was closed:
+
+| Finding | Closed by |
+|---|---|
+| B1 the fee bearer contradicted AC-6 and AC-15 | AC-33: a request passed to Bosta and ignored is `carrier`; `address_problem` is `undecided`, or `brand` after a confirmation edit or out of zone; AC-33 is the only fault table and AC-15 reads it |
+| M1 one ending flags her on the courier's word | AC-33: every customer borne ending is counted; the flag is set only for an uncontradicted door refusal with a customer side code; spec 0014's suggestion stays for the rest |
+| M2 "wrong size" split two ways | AC-33: `size` is `undecided` until a contact records the code, `brand` with a size swap replacement; a disputed amount is `price`, not `cash_problem`; a bare "السعر" is not seeded |
+| M3 app sync compares an old read (specs 0017, 0018) | confirming sends a priority 1 read and the check compares only on it (0017 AC-33 c, 0018 AC-32) |
+| M4 the old piece never comes back | AC-34: `delivery.exchange_old_piece_missing` with `courier_did_not_collect` (claim, original `exchanged`) and `customer_kept` (original stays `delivered`, allowance owed) |
+| M5 a discounted dress charged the discount back | AC-34: a same style line defaults to the price she paid |
+| M6 order level `exchanged` and retries | AC-34: an `exchanged` original accepts exchanges of lines not yet exchanged; a cancelled or refused replacement frees its quantity; a retry is a new exchange |
+| m1 to m7 | no flag on an exchange replacement; a packed replacement with no Bosta Exchange is marked and raises `delivery.exchange_unlinked`; the cheaper case nets the shipping charge; `undecided` wording, filter, and how the bearer was reached shown; the replacement's store, number, and campaign stated; `bostaAppSyncsEdits` hides the checklist (0017 AC-33, 0018 AC-32) |
+
+The review's six brand questions are listed in the owner report, not assumed.
+
 ## References
 
 - `AGENTS.md`; `apps/api/src/inventory/AGENTS.md`.

@@ -602,6 +602,14 @@ From the [domain review](../../reviews/domain-settings-toggles-bundles.md) of 20
 | W1 re-check N2 | nice | *Rows requested* (`sales_tax_rate` worked split follows `prices_include_vat`), `verify.md` |
 | W1 re-check N3 | nice | *Rows requested* (`catalog.store_product_groups` named as the one reason rule exception) |
 
+## Amendments from specs 0016 to 0020 (ratified 2026-11-13)
+
+The owner ratified specs 0016 to 0020 on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)), which settles the changes they ask of this spec. Each line below amends the text above; where they disagree, the line here wins, and the named section of the asking spec holds the detail. Each lands with the asking feature's milestone, not before.
+
+- **Settings rows**: [spec 0017](../0017-confirmation-queue/index.md)'s *Settings* table, including the new `confirmation.shipping_deposit_offered` (default `false`) and `shipping_deposit_on_refusal` with default `released`; [spec 0016](../0016-tasks-my-work-inbox/index.md)'s `operations.working_hours`; [spec 0018](../0018-bosta-connector-mirror-mode/index.md)'s *Settings requested from feature 9*; [spec 0019](../0019-delivery-failures-returned-to-origin/index.md)'s *Settings requested from feature 9*; [spec 0020](../0020-settlement-bosta-reconciliation/index.md)'s policy knob `settlement_bank_receipt_days`.
+- **Steps, modules, and capabilities**: the executing step `step.shopify_order_tags_write_back` (operations, under `connectors.shopify.order_write_back`, `notifiesCustomer: false`, [spec 0017](../0017-confirmation-queue/index.md)); [spec 0018](../0018-bosta-connector-mirror-mode/index.md)'s three capability rows and `connectors.bosta.new_shipments` in `requiresOneOf`; [spec 0019](../0019-delivery-failures-returned-to-origin/index.md)'s `deliveries` module row and capabilities; [spec 0020](../0020-settlement-bosta-reconciliation/index.md)'s `settlement` module row and its two capability rows.
+- **Not a settings row**: the Bosta send mode, `bostaShopifyApp`, and `bostaAutoCancel` live on each Bosta connection's config ([spec 0018](../0018-bosta-connector-mirror-mode/index.md) AC-32), because one install may hold two Bosta accounts that send differently.
+
 ## Follow-up
 
 - [x] Igris: spec 0002 [tenancy child](../0002-core-data-model/0002-tenancy-platform.md) A4 and A5 list `licenses` and `license_checks`, and A5 says module toggles are settings rows. Done (already in the tenancy child; checked 2026-11-07).

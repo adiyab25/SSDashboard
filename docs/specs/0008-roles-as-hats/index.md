@@ -406,6 +406,14 @@ None blocks the build. Each is built with the default shown until you rule.
 - A minimal partners module may appear before feature 41, holding one service.
 - Teams and routing are reserved on the same data, not built.
 
+## Amendments from specs 0016 to 0020 (ratified 2026-11-13)
+
+The owner ratified specs 0016 to 0020 on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)), which settles the changes they ask of this spec. Each line below amends the text above; where they disagree, the line here wins, and the named section of the asking spec holds the detail. Each lands with the asking feature's milestone, not before.
+
+- **An accountant hat** ([spec 0020](../0020-settlement-bosta-reconciliation/index.md) Q-22.11, ratified): a settlement only hat for an outside accountant with `settlement.work`, `settlement.close`, and `orders.view`, and nothing that confirms or edits orders or customers, with its route mapping rows.
+- **Route mapping rows and access sweep fixtures** for every route of [spec 0017](../0017-confirmation-queue/index.md) (with `settlement.work` on the deposit check routes, which exist only with its optional milestone 5), [spec 0018](../0018-bosta-connector-mirror-mode/index.md), [spec 0019](../0019-delivery-failures-returned-to-origin/index.md) (including the new `POST /api/orders/:id/fee-bearer` with `orders.confirm`, and the exchange routes of its AC-34), and [spec 0020](../0020-settlement-bosta-reconciliation/index.md).
+- **For tasks** ([spec 0016](../0016-tasks-my-work-inbox/index.md)): `HatDirectory.holdersOf(hat)` in identity's public files, and the people screen notice "no one holds the operations hat: its tasks go to the manager"; `channels.map` may retry a failed Shopify read (its owner question 4).
+
 ## Follow-up
 
 - [ ] Spec 0005 AC-28 says `GET /api/me` returns `home` to partner users; with one audience per controller that answer comes from `GET /api/partner/me` (this spec, Decision). Update AC-28 and its milestone 3 task in the next amendment.
