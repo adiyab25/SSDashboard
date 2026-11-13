@@ -111,7 +111,7 @@ export default defineConfig({
               NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${nextDevKeepAlive}`.trim(),
               NEXT_KEEP_ALIVE_TIMEOUT: String(nextKeepAliveTimeout),
             },
-            reuseExistingServer: true,
+            reuseExistingServer: !process.env.CI,
             timeout: 180_000,
             stdout: 'pipe' as const,
           },
@@ -124,7 +124,7 @@ export default defineConfig({
             url: prodBaseURL,
             // The session check must reach this run's api.
             env: { API_INTERNAL_URL: apiURL },
-            reuseExistingServer: true,
+            reuseExistingServer: !process.env.CI,
             timeout: 120_000,
           },
         ]),
