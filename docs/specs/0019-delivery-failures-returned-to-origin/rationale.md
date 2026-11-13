@@ -194,8 +194,8 @@ The [domain review](../../reviews/domain-owner-answers-2026-11-13.md) of the thr
 | Finding | Closed by |
 |---|---|
 | B1 the fee bearer contradicted AC-6 and AC-15 | AC-33: a request passed to Bosta and ignored is `carrier`; `address_problem` is `undecided`, or `brand` after a confirmation edit or out of zone; AC-33 is the only fault table and AC-15 reads it |
-| M1 one ending flags her on the courier's word | AC-33: every customer borne ending is counted; the flag is set only for an uncontradicted door refusal with a customer side code; spec 0014's suggestion stays for the rest |
-| M2 "wrong size" split two ways | AC-33: `size` is `undecided` until a contact records the code, `brand` with a size swap replacement; a disputed amount is `price`, not `cash_problem`; a bare "السعر" is not seeded |
+| M1 one ending flags her on the courier's word | AC-33: every customer borne ending is counted and spec 0014's suggestion after 2 stays for refusals; the owner then ruled (follow up, same day) that an unreachable ending flags her automatically (`unreachable_return`), so that one case flags on the courier's word by the owner's choice |
+| M2 "wrong size" split two ways | AC-33, after the owner's follow up answer: `size` is always the customer's, also with a size swap replacement, unless support records the wrong size was sent (`wrong_item`, brand); a disputed amount is `price`, not `cash_problem`; a bare "السعر" is not seeded |
 | M3 app sync compares an old read (specs 0017, 0018) | confirming sends a priority 1 read and the check compares only on it (0017 AC-33 c, 0018 AC-32) |
 | M4 the old piece never comes back | AC-34: `delivery.exchange_old_piece_missing` with `courier_did_not_collect` (claim, original `exchanged`) and `customer_kept` (original stays `delivered`, allowance owed) |
 | M5 a discounted dress charged the discount back | AC-34: a same style line defaults to the price she paid |
