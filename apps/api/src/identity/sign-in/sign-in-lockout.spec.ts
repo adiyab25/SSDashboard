@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignInLockout, SLOT_RETRY_MS, SLOT_WAIT_MS } from './sign-in-lockout.js';
@@ -50,7 +51,7 @@ function fakeDatabase(answers: () => { rows: unknown[] }) {
 
 beforeEach(() => {
   clock = 0;
-  vi.spyOn(Date, 'now').mockImplementation(() => clock);
+  vi.spyOn(performance, 'now').mockImplementation(() => clock);
   vi.mocked(sleep)
     .mockReset()
     .mockImplementation(((ms: number) => {
