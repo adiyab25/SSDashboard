@@ -2,7 +2,7 @@
 
 The walking skeleton, target about month three: a real Shopify order confirmed in the app, shipped with Bosta in mirror mode, its failures handled, and its cash reconciled, then reported to the owner's phone. The pilot starts right after this slice. [Back to the scope](index.md).
 
-**Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece of that week is restocked by scan (or by tap until feature 20 lands) with both shipping legs on its order, and one month of the real Bosta settlement is matched line by line including negative lines, with unmatched lines listed; a refund, a partial delivery, and a prepaid parcel each count if that month has one, and otherwise a recorded fixture month proves the path (owner decisions Q-22.8 and Q-22.12, 2026-11-13).
+**Slice done when:** the brand runs one full week of real confirmations in the app with no spreadsheet, every returned to origin piece that reaches the brand that week is received through the scan station (scanned, or recorded as having no tag when its tag is missing or unreadable, counted apart) with both shipping legs on its order, and parcels still returning at the week's end are listed, not failed, and one month of the real Bosta settlement is matched line by line including negative lines, with unmatched lines listed; a refund, a partial delivery, and a prepaid parcel each count if that month has one, and otherwise a recorded fixture month proves the path (owner decisions Q-22.8 and Q-22.12, 2026-11-13).
 
 ### 11. Stock ledger & locations · GA
 The single writer of stock movements, and the locations it moves stock between. Locations carry an owner type (own warehouse or shop, consignment partner, wholesale customer) and a sellable online flag; only the warehouse sells online. Bins stay flat for now.
@@ -136,10 +136,21 @@ Also from spec 0018: the order stays editable while Bosta reports pickup request
 - [ ] Document it: `/document bosta connector, mirror mode`
 Spec [0018](../specs/0018-bosta-connector-mirror-mode/index.md) (Proposed 2026-11-12; ratified by the owner 2026-11-13 with every recommendation, plus the send mode and the Bosta Exchange)
 
-### 20. Barcode scanning · needs a decision
+### 20. Barcode scanning
 Scan to find a variant and scan to move stock, on a phone camera or a handheld scanner, starting with restock of returned pieces.
 **Done when:** a scan finds the variant in under a second, an unknown barcode says so clearly, a restock by scan writes a stock movement, and it works with a phone camera and a keyboard wedge scanner.
-- [ ] Design it (spec): `/architect barcode scanning`
+Also from spec 0021: one scan box reads a handheld scanner by physical key, so an Arabic keyboard layout never breaks a code, and opens the phone camera with a self hosted decoder; a code resolves as a barcode first, then as an exact SKU code; on returns a label scan, a typed entry, or a tap opens the parcel and each piece scan calls spec 0019's receive call; the station handles a piece with no tag, a piece of another parcel, extra pieces, and one scan Damaged and Held modes with Undo, and never rereads a tag; scans also fill the lines of the receipt, adjustment, and partner send and return forms; there is no offline queue, and a failed save stays visible with Retry.
+- [x] Design it (spec): `/architect barcode scanning`
+- [ ] Build it: `/develop barcode scanning`
+  - [ ] A wedge scan restocks a returned piece (AC-1 to AC-3, AC-5, AC-6, AC-8 to AC-12, AC-18 to AC-20)
+  - [ ] Every moment of a real returns table (AC-11 to AC-15)
+  - [ ] The phone camera (AC-3, AC-7, AC-8)
+  - [ ] Scans fill stock forms, and unknown codes get a code (AC-4, AC-16, AC-17)
+- [ ] Verify it: `/check verify barcode scanning`
+- [ ] Test it: `/test barcode scanning`
+- [ ] Review it (fresh model): `/check review barcode scanning`
+- [ ] Document it: `/document barcode scanning`
+Spec [0021](../specs/0021-barcode-scanning/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-barcode-scanning](../reviews/domain-barcode-scanning.md); owner decisions Q-20.1 to Q-20.7 answered, Q-20.2 by the owner: a printed barcode per variant)
 
 ### 21. Delivery failures & returned to origin · GA
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
@@ -177,10 +188,22 @@ Also from spec 0020: the per delivery cash cycles lead and Bosta's sheet adds th
 - [ ] Document it: `/document settlement & bosta reconciliation`
 Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews [domain-settlement-reconciliation](../reviews/domain-settlement-reconciliation.md) and [second pass](../reviews/domain-settlement-reconciliation-r2.md); ratified by the owner 2026-11-13 with every recommendation)
 
-### 23. Period close with evidence · GA · needs a decision
+### 23. Period close with evidence · GA
 Confirmed data is the only data reports, settlements, and exports use. A channel's date range is confirmed by a person after review, or automatically when the evidence matches exactly.
 **Done when:** a range can be confirmed by a person or by matching evidence (the carrier's statement total, a file checksum); re importing into a confirmed range is refused without an admin's written reason; a confirmation is revoked with a reason, never deleted; provisional data shows as provisional everywhere; every automatic action writes a snapshot and undoes in one step.
-- [ ] Design it (spec): `/architect period close with evidence`
+Also from spec 0022: a close check of plain conditions (every line settled, every cash out seen in the bank, Bosta's sheet against the app day by day, Bosta's deposits, the wallet roll forward) shows both figures and every judgment made by hand; a person closes with a written acceptance for each difference, and the system closes only when the manager turned it on, on exact evidence, never over a hand judgment and never after a revoke, with a line snapshot and one step undo; late Bosta data for a closed period is held for a manager, who reopens the period with a written reason, dismisses it, or, once the accountant marked the month posted, carries the difference into the open month; the brand's own records confirm per store and day once a sweep after midnight agrees, and `ConfirmedDays` answers both for the dashboard and the daily report; partner close rules come with feature 43.
+- [x] Design it (spec): `/architect period close with evidence`
+- [ ] Build it: `/develop period close with evidence`
+  - [ ] A person closes one period end to end (AC-1 to AC-3, AC-6, AC-11, AC-14, AC-15, AC-18)
+  - [ ] The gate: nothing lands in a closed period (AC-7 to AC-10, AC-13)
+  - [ ] Every condition, the prompts, and the automatic close (AC-1, AC-3 to AC-5, AC-12, AC-15, AC-17, AC-27)
+  - [ ] Provisional and confirmed everywhere, the accountant's side, and the pilot month (AC-1, AC-3, AC-10, AC-11, AC-14 to AC-16, AC-18, AC-19, AC-26, AC-28)
+  - [ ] Own records days confirm themselves (AC-20 to AC-25)
+- [ ] Verify it: `/check verify period close with evidence`
+- [ ] Test it: `/test period close with evidence`
+- [ ] Review it (fresh model): `/check review period close with evidence`
+- [ ] Document it: `/document period close with evidence`
+Spec [0022](../specs/0022-period-close-evidence/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-period-close](../reviews/domain-period-close.md) and the own records request of specs 0023 and 0024; owner decisions Q-23.1 to Q-23.10 answered, Q-23.10 by the owner: the period length is a per brand setting, monthly by default)
 
 ### 24. Metric dictionary & phone dashboard
 Every figure defined once in the model, and the owner's first dashboard designed for a phone in Arabic.
@@ -194,13 +217,13 @@ Also from spec 0023: reporting owns no table and reads each figure at request ti
   - [ ] Needs you, freshness, definitions, the media buyer's page, and scale (AC-11, AC-16 to AC-19, AC-21, AC-23)
 - [ ] Verify it: `/check verify metric dictionary & phone dashboard`
 - [ ] Test it: `/test metric dictionary & phone dashboard`
-Spec [0023](../specs/0023-metric-dictionary-phone-dashboard/index.md) (Assumed 2026-11-13, written without the owner; owner decisions Q-24.1 to Q-24.11 taken as recommended, awaiting the owner)
+Spec [0023](../specs/0023-metric-dictionary-phone-dashboard/index.md) (Proposed 2026-11-13, ratified by the owner the same day; owner decisions Q-24.1 to Q-24.11 answered)
 
 ### 25. Daily report
-A short morning report to the Telegram or WhatsApp group the owner already reads, built only from confirmed data, as a worker job with no host privileges.
+A short morning report to the Telegram or WhatsApp group the owner already reads, showing confirmed figures as confirmed and every other figure with its provisional value marked provisional (never as zero), as a worker job with no host privileges.
 **Done when:** at a fixed Cairo time the report sends yesterday's orders, confirmed, shipped, delivered, returned to origin, cash expected versus remitted, one line per store and per partner, exchanges and refunds owed, plus an automation status line (what synced, what failed, what needs a sign in); a failed send retries and shows up on the dashboard.
 Also from spec 0007: a Telegram group is the first channel; WhatsApp group delivery is a later feature once Meta's documentation is checked.
-Also from spec 0024: one message at 06:00 Cairo by default in the dashboard's order, sent to the Telegram group through an outbound command, waiting up to an hour for yesterday to be confirmed and then sent marked provisional; the header follows the orders, and Bosta money says on its own line that it is provisional until period close; a failure goes to the owner's private chat with the bot, then by email to the managers, opens a task, and shows on `/today`, while a deliberate pause raises no alarm (owner decision Q-25.1); one run per day; alerts go to the owner's private chat in batches and carry no order number (Q-25.12); a dead host is caught only by feature 26's outside check.
+Also from spec 0024: one message at 06:00 Cairo by default in the dashboard's order, sent to the Telegram group through an outbound command, waiting up to an hour for yesterday to be confirmed and then sent marked provisional; the header follows the orders, and Bosta money says on its own line that it is provisional until period close; a failure goes to the owner's private chat with the bot, then by email to the managers, opens a task, and shows on `/today`, while a deliberate pause raises no alarm (owner decision Q-25.1); one run per day; alerts go to the owner's private chat in batches and may carry an order number with its store code, never a name, phone, address, note, or message body (Q-25.12, owner ruling 2026-11-13); a dead host is caught only by feature 26's outside check.
 - [x] Design it (spec): `/architect daily report`
 - [ ] Build it: `/develop daily report`
   - [ ] One report sent: the Telegram connection, the run table, the schedule, the render, the outbound command (AC-1, AC-3, AC-6, AC-8, AC-9, AC-11, AC-13)
@@ -209,7 +232,7 @@ Also from spec 0024: one message at 06:00 Cairo by default in the dashboard's or
   - [ ] Alerts and the lapse (AC-1, AC-12, AC-14)
 - [ ] Verify it: `/check verify daily report`
 - [ ] Test it: `/test daily report`
-Spec [0024](../specs/0024-daily-report/index.md) (Assumed 2026-11-13, written without the owner; owner decisions Q-25.1 to Q-25.8 taken as recommended, awaiting the owner)
+Spec [0024](../specs/0024-daily-report/index.md) (Proposed 2026-11-13, ratified by the owner the same day; owner decisions Q-25.1 to Q-25.8 answered)
 
 ### 26. Deployment, backups & monitoring · GA · needs a decision
 One stack per brand, vendor hosted by default in an Egyptian data center with backups kept in Egypt, and the same images for a self hosted install.
