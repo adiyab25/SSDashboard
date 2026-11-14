@@ -931,45 +931,144 @@ test.describe('status chips are never cyan (AC-10)', () => {
     });
   }
 
-  test('the online status notice keeps its triangle icon and is never cyan', async ({ page }) => {
-    await enter(page, { theme: 'dark', dir: 'ltr' });
-    await openPath(page, '/stock');
-    const notice = page.getByRole('region', {
-      name: textFor('ltr', 'inventory.onlineGate.noticeLabel'),
-    });
-    // The notice only shows while no location is online; a database with one online skips this.
-    const shown = await notice.waitFor({ state: 'visible', timeout: 5000 }).then(
-      () => true,
-      () => false,
-    );
-    test.skip(!shown, 'an online location exists on this database, so the notice is not shown');
-    const look = await notice.evaluate((element) => {
-      const probe = (variable: string) => {
-        const el = document.createElement('div');
-        el.style.color = `var(${variable})`;
-        document.body.append(el);
-        const color = getComputedStyle(el).color;
-        el.remove();
-        return color;
-      };
-      const svg = element.querySelector('svg');
-      return {
-        text: getComputedStyle(element.querySelector('[data-slot="alert-description"]')!).color,
-        icon: svg ? getComputedStyle(svg).color : null,
-        iconClass: svg?.getAttribute('class') ?? '',
-        iconHidden: svg?.getAttribute('aria-hidden'),
-        muted: probe('--muted-foreground'),
-        primary: probe('--primary'),
-      };
-    });
-    console.log(`online notice look: ${JSON.stringify(look)}`);
-    expect(look.iconClass).toContain('lucide-triangle-alert');
-    expect(look.iconHidden).toBe('true');
-    expect(look.text).not.toBe(look.primary);
-    expect(look.icon).not.toBe(look.primary);
-    await expectNoAxeViolations(page);
-    await shot(page, 'stock-notice-dark-en');
-  });
+  for (const { theme, dir, tag } of COMBINATIONS) {
+    for (const path of ['/stock', '/locations']) {
+      test(`the online warning on ${path} is amber with a triangle, readable, and axe clean in ${tag}`, async ({
+        page,
+      }) => {
+        test.setTimeout(90_000);
+        await enter(page, { theme, dir });
+        await openPath(page, path);
+        const notice = page.getByRole('region', {
+          name: textFor(dir, 'inventory.onlineGate.noticeLabel'),
+        });
+        // The notice only shows while no location is online; a database with one online skips this.
+        const shown = await notice.waitFor({ state: 'visible', timeout: 8000 }).then(
+          () => true,
+          () => false,
+        );
+        test.skip(!shown, 'an online location exists on this database, so the notice is not shown');
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                document
+                  .getAnimations()
+                  .filter(
+                    (animation) =>
+                      animation.effect?.getComputedTiming().iterations !== Infinity &&
+                      animation.playState === 'running',
+                  ).length,
+            ),
+          )
+          .toBe(0);
+        const look = await notice.evaluate((element) => {
+          const probe = (variable: string) => {
+            const el = document.createElement('div');
+            el.style.color = `var(${variable})`;
+            document.body.append(el);
+            const color = getComputedStyle(el).color;
+            el.remove();
+            return color;
+          };
+          type Rgba = [number, number, number, number];
+          const parse = (value: string): Rgba => {
+            const numbers = value.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 0];
+            return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0, numbers[3] ?? 1];
+          };
+          // The fill a person sees behind an element: its own colour over its ancestors' colours.
+          const backdrop = (start: Element): Rgba => {
+            const layers: Rgba[] = [];
+            for (let node: Element | null = start; node; node = node.parentElement) {
+              const color = parse(getComputedStyle(node).backgroundColor);
+              if (color[3] > 0) layers.push(color);
+              if (color[3] === 1) break;
+            }
+            let out: [number, number, number] = [255, 255, 255];
+            for (const [r, g, b, a] of layers.reverse()) {
+              out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)];
+            }
+            return [...out, 1];
+          };
+          const luminance = ([r, g, b]: Rgba) => {
+            const channel = (value: number) => {
+              const v = value / 255;
+              return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+            };
+            return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+          };
+          const contrast = (a: Rgba, b: Rgba) => {
+            const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+            return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+          };
+          const alert = element.querySelector('[data-slot="alert"]')!;
+          const description = element.querySelector('[data-slot="alert-description"]')!;
+          const svg = element.querySelector('svg');
+          const link = element.querySelector('a');
+          const linkLook = link
+            ? {
+                text: getComputedStyle(link).color,
+                fill: backdrop(link),
+                image: getComputedStyle(link).backgroundImage,
+                contrast: contrast(parse(getComputedStyle(link).color), backdrop(link)),
+              }
+            : null;
+          return {
+            border: getComputedStyle(alert).borderTopColor,
+            text: getComputedStyle(description).color,
+            icon: svg ? getComputedStyle(svg).color : null,
+            iconClass: svg?.getAttribute('class') ?? '',
+            iconHidden: svg?.getAttribute('aria-hidden'),
+            fill: getComputedStyle(alert).backgroundColor,
+            warning: probe('--warning'),
+            primary: probe('--primary'),
+            card: (() => {
+              const el = document.createElement('div');
+              el.style.backgroundColor = 'var(--card)';
+              document.body.append(el);
+              const color = getComputedStyle(el).backgroundColor;
+              el.remove();
+              return color;
+            })(),
+            linkLook,
+          };
+        });
+        console.log(`online warning ${path} ${tag}: ${JSON.stringify(look)}`);
+        expect(look.iconClass).toContain('lucide-triangle-alert');
+        expect(look.iconHidden).toBe('true');
+        expect(look.border).toBe(look.warning);
+        expect(look.text).toBe(look.warning);
+        expect(look.icon).toBe(look.warning);
+        expect(look.fill).toBe(look.card);
+        for (const colour of [look.border, look.text, look.icon, look.fill]) {
+          expect(colour).not.toBe(look.primary);
+        }
+        if (path === '/stock') {
+          // The link to the gate: readable text on its fill, and a visible outline on keyboard focus.
+          expect(look.linkLook, 'the gate link is in the notice').not.toBeNull();
+          expect(look.linkLook?.image).toBe('none');
+          expect(look.linkLook?.contrast ?? 0).toBeGreaterThanOrEqual(4.5);
+          const link = notice.getByRole('link', {
+            name: textFor(dir, 'inventory.onlineGate.noticeLink'),
+          });
+          let focused = false;
+          for (let step = 0; step < 80 && !focused; step += 1) {
+            await page.keyboard.press('Tab');
+            focused = await link.evaluate((element) => element === document.activeElement);
+          }
+          expect(focused, 'Tab reaches the gate link').toBe(true);
+          const ring = await link.evaluate((element) => {
+            const computed = getComputedStyle(element);
+            return { style: computed.outlineStyle, width: parseFloat(computed.outlineWidth) };
+          });
+          expect(ring.style).not.toBe('none');
+          expect(ring.width).toBeGreaterThanOrEqual(2);
+        }
+        await expectNoAxeViolations(page);
+        await shot(page, `${path === '/stock' ? 'stock' : 'locations'}-notice-${tag}`);
+      });
+    }
+  }
 });
 
 test.describe('phone (AC-22)', () => {

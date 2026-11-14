@@ -43,6 +43,15 @@ describe('OnlineStatusNotice (spec 0011 AC-20)', () => {
     );
   });
 
+  it('draws the notice as a warning alert (spec 0025, AC-10)', async () => {
+    api.getOnlineStatus.mockResolvedValue({ onlineLocation: null });
+    renderWithQuery(<OnlineStatusNotice linkToGate />);
+
+    const alert = (await screen.findByText(LINE)).closest('[data-slot="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveClass('border-warning', 'text-warning');
+  });
+
   it('shows the line without the link for a person without catalog.manage', async () => {
     me.permissions = ['stock.view'];
     api.getOnlineStatus.mockResolvedValue({ onlineLocation: null });
