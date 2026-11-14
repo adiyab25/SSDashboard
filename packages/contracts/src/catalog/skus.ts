@@ -112,19 +112,30 @@ export const SkuSummary = z.object({
 /** The validated shape of `SkuSummary`, as the api and web see it after parsing. */
 export type SkuSummary = z.infer<typeof SkuSummary>;
 
-/** A scannable code of a SKU, as `GET /api/skus/:id` lists it. */
-export const SkuBarcode = z.object({ id: z.uuid(), code: z.string() });
+/**
+ * A scannable code of a SKU, as `GET /api/skus/:id` and the style page list it. `fromChannel` is
+ * true for the one barcode a sales channel manages on the variant (spec 0012, AC-15): the screens
+ * show it read only with "From Shopify"; codes added in the app are false.
+ */
+export const SkuBarcode = z.object({ id: z.uuid(), code: z.string(), fromChannel: z.boolean() });
 /** The validated shape of `SkuBarcode`, as the api and web see it after parsing. */
 export type SkuBarcode = z.infer<typeof SkuBarcode>;
 
 /**
  * `GET /api/skus/:id`, and the answer of every SKU write. `updatedAt` is the microsecond UTC
  * string the stale check compares; `barcodes` are the SKU's codes in code order (spec 0012, AC-4).
+ * `channelLinked` is true while a sales channel owns some of the variant's fields (spec 0012,
+ * AC-15): its price is then read only ("From Shopify") and `PATCH /api/skus/:id` answers 409
+ * `FIELD_OWNED_BY_CHANNEL` for a new price. `channelNameLanguage` is the style's name language the
+ * channel writes (`en` or `ar`, null when the style is not linked); a name edit that changes that
+ * language answers the same 409.
  */
 export const SkuDetail = SkuSummary.extend({
   status: SkuStatus,
   updatedAt: z.string(),
   barcodes: z.array(SkuBarcode),
+  channelLinked: z.boolean(),
+  channelNameLanguage: z.enum(['en', 'ar']).nullable(),
 });
 /** The validated shape of `SkuDetail`, as the api and web see it after parsing. */
 export type SkuDetail = z.infer<typeof SkuDetail>;
@@ -136,7 +147,9 @@ export const UpdatedAt = z.string().min(1).max(40);
  * `PATCH /api/skus/:id`: name and price (`catalog.edit`). `name`, when sent, replaces
  * both languages (a language left out of it is cleared, not kept). `price: null` clears it; an
  * absent field is left as is. A stored `updatedAt` other than the one sent answers 409
- * `STALE_RECORD` (AC-2).
+ * `STALE_RECORD` (AC-2). On a channel linked variant a different `price`, and on a channel linked
+ * style a `name` that changes the channel's language, answer 409 `FIELD_OWNED_BY_CHANNEL` (spec
+ * 0012, AC-15).
  */
 export const UpdateSkuRequest = z
   .object({

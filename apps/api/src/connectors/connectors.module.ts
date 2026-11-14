@@ -1,5 +1,6 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js';
+import { CatalogModule } from '../catalog/catalog.module.js';
 import { ChannelsModule } from '../channels/channels.module.js';
 import { ChannelsService } from '../channels/channels.service.js';
 import { PlatformModule } from '../platform/platform.module.js';
@@ -8,6 +9,7 @@ import { ConnectionStores } from './connections/connection-stores.js';
 import { ConnectionsController } from './connections/connections.controller.js';
 import { ConnectionsService } from './connections/connections.service.js';
 import { GoLiveClock } from './connections/go-live-clock.js';
+import { ProductUnlink } from './connections/product-unlink.js';
 import { ConnectorsService } from './connectors.service.js';
 import { ShopifyHookVerifier } from './hooks/shopify-hook-verifier.js';
 import { ShopifyHooksController } from './hooks/shopify-hooks.controller.js';
@@ -26,12 +28,14 @@ import { SyncRuns } from './sync-runs/sync-runs.js';
  * `POST /api/hooks/shopify/:connectionId`), its signature check (`ShopifyHookVerifier`, run by
  * `mountHooks` before the guards), and the inbox writer (`ShopifyHooksService`); from task 12 the
  * sync runs (`SyncRuns`, exported for the worker's jobs) and the freshness line
- * (`FreshnessController`, `GET /api/connections/freshness`, `FreshnessService`). It owns the
+ * (`FreshnessController`, `GET /api/connections/freshness`, `FreshnessService`); from task 8
+ * `ProductUnlink` (the archive step and gone variants through the catalog's `CatalogChannelSync`,
+ * which is why it imports `CatalogModule`), exported for the worker's product job. It owns the
  * connector tables (`table-ownership.ts`). It must never import the orders module (orders imports
  * it), and never calls Shopify: only `ConnectorsWorkerModule`'s jobs do.
  */
 @Module({
-  imports: [AuditModule, ChannelsModule, PlatformModule],
+  imports: [AuditModule, CatalogModule, ChannelsModule, PlatformModule],
   // `FreshnessController` first: its `connections/freshness` route must be matched before
   // `ConnectionsController`'s `connections/:id`.
   controllers: [FreshnessController, ConnectionsController, ShopifyHooksController],
@@ -45,8 +49,9 @@ import { SyncRuns } from './sync-runs/sync-runs.js';
     SyncRuns,
     FreshnessService,
     GoLiveClock,
+    ProductUnlink,
   ],
-  exports: [ConnectorsService, ConnectionSecrets, ShopifyHookVerifier, SyncRuns],
+  exports: [ConnectorsService, ConnectionSecrets, ShopifyHookVerifier, SyncRuns, ProductUnlink],
 })
 export class ConnectorsModule implements OnModuleInit {
   /** Takes the channels service and the store source it registers there. */

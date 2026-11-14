@@ -1,0 +1,106 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "sweep-products-updated",
+    "step": "the read back of the swept product (task 8)",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductVariant",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/SelectedOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItem",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItemMeasurement",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Weight",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/WeightUnit",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/connections/ProductVariantConnection",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/PageInfo"
+    ]
+  },
+  "request": {
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    },
+    "shopDomain": "fixture-store.myshopify.com",
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "operationName": "ProductRead",
+    "variables": {
+      "id": "gid://shopify/Product/2220000031001"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "product": {
+          "id": "gid://shopify/Product/2220000031001",
+          "handle": "fixture-swept-tee",
+          "title": "Fixture Swept Tee",
+          "productType": "Tees",
+          "vendor": "Fixture Brand",
+          "tags": ["fixture"],
+          "status": "ACTIVE",
+          "isGiftCard": false,
+          "updatedAt": "2026-11-05T09:40:00Z",
+          "options": [
+            {
+              "name": "Size",
+              "position": 1,
+              "values": ["M"]
+            }
+          ],
+          "variants": {
+            "nodes": [
+              {
+                "id": "gid://shopify/ProductVariant/7770000031101",
+                "sku": "SW-TEE-M",
+                "price": "450.00",
+                "compareAtPrice": null,
+                "barcode": null,
+                "selectedOptions": [
+                  {
+                    "name": "Size",
+                    "value": "M"
+                  }
+                ],
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/2230000031101",
+                  "tracked": true,
+                  "requiresShipping": true,
+                  "measurement": {
+                    "weight": {
+                      "unit": "GRAMS",
+                      "value": 200
+                    }
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": "fixture-variants-end"
+            }
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 708,
+          "actualQueryCost": 4,
+          "throttleStatus": {
+            "maximumAvailable": 1000,
+            "currentlyAvailable": 990,
+            "restoreRate": 50
+          }
+        }
+      }
+    }
+  }
+}

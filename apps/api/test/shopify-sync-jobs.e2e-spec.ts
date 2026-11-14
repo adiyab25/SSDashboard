@@ -441,7 +441,8 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         });
         const products = (await runsOf(c, 'backfill_products'))[0];
         expect(products).toMatchObject({ id: productsRunId, status: 'succeeded' });
-        expect(products?.counts).toMatchObject({ objects: 1, recorded: 1 });
+        // Task 8: the product is applied from the bulk line (its SKU is not the mapped one's).
+        expect(products?.counts).toMatchObject({ objects: 1, recorded: 1, applied: 1, failed: 0 });
       } finally {
         budget.chunkMillis = 60_000;
       }
@@ -512,7 +513,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         expect(row.actor_ref ?? '').not.toContain('connectors.shopify.inbox');
       }
 
-      // One inbox row per order, never two, each minimized; the product recorded with no job.
+      // One inbox row per order, never two, each minimized; the product applied in the run.
       const orderEvents = (await eventsOf(c, 'order')).filter((e) =>
         e.dedupe_key.startsWith('backfill:'),
       );
@@ -527,15 +528,23 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(productEvents).toEqual([
         expect.objectContaining({
           source: 'backfill',
-          status: 'received',
+          status: 'processed',
           subject_external_id: 'gid://shopify/Product/2220000031001',
         }),
       ]);
-      const productJobs = await api.owner.pool.query<{ n: string }>(
-        `SELECT count(*) AS n FROM pgboss.job WHERE data->>'eventId' = $1`,
-        [productEvents[0]?.id],
+      // The mapped variant keeps its mapping: its catalog SKU differs from Shopify's.
+      const variantMapping = await api.owner.pool.query<{ local_id: string; state: unknown }>(
+        `SELECT local_id, state FROM connection_external_ids
+         WHERE connection_id = $1::uuid AND entity = 'variant' AND external_id = $2`,
+        [c.id, VARIANT_M],
       );
-      expect(Number(productJobs.rows[0]?.n)).toBe(0);
+      expect(variantMapping.rows[0]).toMatchObject({
+        local_id: skuM,
+        state: {
+          lastOutcome: 'sku_mismatch',
+          inventoryItemId: 'gid://shopify/InventoryItem/2230000031001',
+        },
+      });
 
       // The sweeps take over from the backfill; the result address is stored nowhere.
       const row = await connectionRow(c);
@@ -793,7 +802,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(Number(seen.rows[0]?.n)).toBe(1);
     });
 
-    it('records a found product received with no job until task 8', async () => {
+    it('records a found product with its inbox job, which reads it back and applies it (task 8)', async () => {
       clock.at = new Date('2026-11-05T10:00:00Z');
       const c = await plant({
         goLiveAt: '2026-11-01T00:00:00Z',
@@ -803,13 +812,23 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       useShopifyScenarios('sweep-products-updated');
       const outcome = await worker.get(SweepJob).sweep('products', { connectionId: c.id });
       expect(outcome).toEqual({ status: 'succeeded', found: 1, recorded: 1 });
-      const [event] = await eventsOf(c, 'product');
-      expect(event).toMatchObject({ source: 'sweep', status: 'received' });
-      const jobs = await api.owner.pool.query<{ n: string }>(
-        `SELECT count(*) AS n FROM pgboss.job WHERE data->>'eventId' = $1`,
-        [event?.id],
+      const event = await eventually(
+        async () => {
+          const [row] = await eventsOf(c, 'product');
+          return row && row.status !== 'received' ? row : undefined;
+        },
+        { timeoutMs: 60_000, what: 'the swept product to be applied' },
       );
-      expect(Number(jobs.rows[0]?.n)).toBe(0);
+      expect(event).toMatchObject({ source: 'sweep', status: 'processed' });
+      const mapped = await api.owner.pool.query<{ entity: string; local_id: string | null }>(
+        `SELECT entity, local_id FROM connection_external_ids
+         WHERE connection_id = $1::uuid AND entity IN ('product', 'variant') ORDER BY entity`,
+        [c.id],
+      );
+      expect(mapped.rows.map((row) => [row.entity, row.local_id !== null])).toEqual([
+        ['product', true],
+        ['variant', true],
+      ]);
       expect((await connectionRow(c))?.products_swept_through?.toISOString()).toBe(
         '2026-11-05T09:40:00.000Z',
       );

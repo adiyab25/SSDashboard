@@ -73,16 +73,31 @@ export class BarcodesService {
     return this.catalog.getSku(skuId);
   }
 
-  /** Removes one barcode of the SKU; a barcode of another SKU, or none, is `NotFound`. */
+  /**
+   * Removes one barcode of the SKU; a barcode of another SKU, or none, is `NotFound`. The channel
+   * barcode (`from_channel`) is the channel's (spec 0012, AC-15, security review L1):
+   * `FieldOwnedByChannel` with `field: 'barcode'`; the next sync would only add it back.
+   */
   async remove(skuId: string, barcodeId: string, caller: CatalogCaller): Promise<void> {
     const correlationId = this.audit.newCorrelationId();
     await catalogTransaction(this.connection.db, async (tx) => {
       const { rows } = await tx.execute<{ code: string; sku: string }>(sql`
         DELETE FROM barcodes b USING product_variants v
         WHERE b.id = ${barcodeId} AND b.variant_id = ${skuId} AND v.id = b.variant_id
+          AND NOT b.from_channel
         RETURNING b.code, v.sku`);
       const removed = rows[0];
-      if (!removed) throw new CatalogError('NotFound', 'Barcode not found');
+      if (!removed) {
+        const channel = await tx.execute(sql`
+          SELECT 1 FROM barcodes
+          WHERE id = ${barcodeId} AND variant_id = ${skuId} AND from_channel`);
+        if (channel.rows.length) {
+          throw new CatalogError('FieldOwnedByChannel', 'This barcode comes from Shopify', {
+            field: 'barcode',
+          });
+        }
+        throw new CatalogError('NotFound', 'Barcode not found');
+      }
       await this.audit.record(tx, {
         actor: catalogActor(caller, 'catalog.edit'),
         action: 'sku.barcode_removed',

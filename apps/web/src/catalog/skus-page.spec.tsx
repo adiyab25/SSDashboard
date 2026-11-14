@@ -58,6 +58,8 @@ const detail = (n: number) => ({
   status: 'active' as const,
   updatedAt: '2026-11-03T10:00:00.123456Z',
   barcodes: [],
+  channelLinked: false,
+  channelNameLanguage: null,
 });
 
 afterEach(() => {

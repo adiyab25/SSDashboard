@@ -1,0 +1,34 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "scenario": "default-title",
+    "step": "a one variant product whose lone Default Title option the connector sends as no option",
+    "shape": "ChannelProductInput (packages/contracts/src/catalog/channel-product.ts), already mapped from a Shopify product; the mapping is spec 0015's"
+  },
+  "input": {
+    "storeId": "00000000-0000-4000-8000-000000000000",
+    "externalProductId": "gid://shopify/Product/9002",
+    "styleId": null,
+    "handle": "gift-wrap",
+    "title": "Gift Wrap",
+    "productType": null,
+    "vendor": null,
+    "tags": [],
+    "options": [],
+    "variants": [
+      {
+        "externalVariantId": "gid://shopify/ProductVariant/90021",
+        "variantId": null,
+        "sku": "WRAP",
+        "optionValues": [],
+        "price": "20.00",
+        "compareAtPrice": null,
+        "barcode": null,
+        "weightGrams": null,
+        "requiresShipping": true,
+        "tracked": false
+      }
+    ]
+  }
+}

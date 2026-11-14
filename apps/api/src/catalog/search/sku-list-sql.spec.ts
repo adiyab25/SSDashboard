@@ -156,6 +156,8 @@ describe('toSkuSummary (spec 0012, AC-4)', () => {
     price: '10.00',
     archived: false,
     updated_at: '2026-11-08T10:00:00.000000Z',
+    channel_linked: false,
+    channel_name_language: null,
   };
 
   it('names the style, a null season, the group, and the option values', () => {

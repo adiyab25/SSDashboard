@@ -78,6 +78,12 @@ export function catalogHttpError(error: unknown): unknown {
           code: 'REASON_REQUIRED',
           message: error.message,
         });
+      case 'FieldOwnedByChannel':
+        return new ConflictException({
+          code: 'FIELD_OWNED_BY_CHANNEL',
+          message: error.message,
+          ...(error.details.field ? { field: error.details.field } : {}),
+        });
     }
   }
   if (error instanceof InvalidCursorError) {

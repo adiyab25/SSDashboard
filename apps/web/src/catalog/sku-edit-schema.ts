@@ -33,6 +33,7 @@ const KNOWN = [
   'STYLE_CODE_TAKEN',
   'STOCK_ON_HAND',
   'IN_USE',
+  'FIELD_OWNED_BY_CHANNEL',
   'BUSY',
 ] as const;
 /** An api error code the dialog has its own message for. */

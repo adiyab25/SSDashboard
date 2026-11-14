@@ -34,7 +34,8 @@ import { useLocalizedText } from '@/i18n/use-localized-text';
 import { inventoryKeys } from '@/inventory/inventory-api';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { catalogKeys, updateStyle } from '../catalog-api';
-import { catalogErrorCode } from '../catalog-error';
+import { catalogErrorCode, channelOwnedField, type ChannelOwnedField } from '../catalog-error';
+import { FromChannelBadge } from '../from-channel-badge';
 import { useGroupingChoices } from '../use-grouping-choices';
 import { SELECT_CLASS } from '@/shared/select-class';
 
@@ -73,7 +74,13 @@ const valuesOf = (style: StyleDetail): FormInput => ({
   tags: style.tags.join(', '),
 });
 
-const KNOWN = ['STALE_RECORD', 'ARCHIVED', 'INVALID_INPUT', 'NOT_FOUND'] as const;
+const KNOWN = [
+  'STALE_RECORD',
+  'ARCHIVED',
+  'INVALID_INPUT',
+  'NOT_FOUND',
+  'FIELD_OWNED_BY_CHANNEL',
+] as const;
 type Failure = (typeof KNOWN)[number] | 'generic';
 
 /** The active choices, plus the style's own one when it is not among them (it is archived). */
@@ -98,6 +105,9 @@ interface Props {
  * archived one keeps it as a labelled choice, and choosing another archived one is refused by the
  * api (`ARCHIVED`). The pickers render only once the choices have loaded, so a native select never
  * falls back to its first option and saves a season the person did not pick. A save refreshes the style, the style list, and the SKU list.
+ * While the style is linked to a sales channel, the name in the channel's language and the tags
+ * are read only with "From Shopify" (AC-15, AC-18); the other name language, the descriptions,
+ * season, and group stay editable, and a `FIELD_OWNED_BY_CHANNEL` answer names its field.
  */
 export function StyleEditDialog({ style, reload, onClose }: Props) {
   const { t } = useTranslation();
@@ -107,6 +117,7 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
   const groupings = useGroupingChoices(true);
   const [current, setCurrent] = useState(style);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [ownedField, setOwnedField] = useState<ChannelOwnedField>('generic');
   const [reloading, setReloading] = useState(false);
   const form = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(StyleEditForm),
@@ -152,6 +163,7 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
         void refetchAfterWrite(queryClient, { queryKey: catalogKeys.groupings('season') });
         void refetchAfterWrite(queryClient, { queryKey: catalogKeys.groupings('productGroup') });
       }
+      setOwnedField(channelOwnedField(error));
       setFailure(code);
     },
   });
@@ -174,6 +186,8 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
   const seasons = withCurrent(groupings.seasons, current.season);
   const groups = withCurrent(groupings.groups, current.productGroup);
   const pending = mutation.isPending;
+  const nameEnOwned = current.channelNameLanguage === 'en';
+  const nameArOwned = current.channelNameLanguage === 'ar';
 
   return (
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
@@ -198,7 +212,9 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
           {failure && (
             <Alert variant="destructive" role="alert">
               <AlertDescription className="flex flex-wrap items-center gap-3">
-                {t(`catalog.styleEdit.errors.${failure}`)}
+                {failure === 'FIELD_OWNED_BY_CHANNEL'
+                  ? t(`catalog.channel.owned.${ownedField}`)
+                  : t(`catalog.styleEdit.errors.${failure}`)}
                 {failure === 'STALE_RECORD' && (
                   <Button
                     type="button"
@@ -224,12 +240,15 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
               <Field data-invalid={!!errors.nameEn}>
                 <FieldLabel htmlFor="style-edit-name-en">
                   {t('catalog.styleEdit.nameEn')}
+                  {nameEnOwned && <FromChannelBadge />}
                 </FieldLabel>
                 <Input
                   id="style-edit-name-en"
                   lang="en"
                   dir="ltr"
                   autoComplete="off"
+                  readOnly={nameEnOwned}
+                  className="read-only:bg-muted"
                   aria-invalid={!!errors.nameEn}
                   aria-describedby={
                     errors.nameEn ? 'style-edit-name-error' : 'style-edit-name-hint'
@@ -240,12 +259,15 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
               <Field data-invalid={!!errors.nameEn}>
                 <FieldLabel htmlFor="style-edit-name-ar">
                   {t('catalog.styleEdit.nameAr')}
+                  {nameArOwned && <FromChannelBadge />}
                 </FieldLabel>
                 <Input
                   id="style-edit-name-ar"
                   lang="ar"
                   dir="rtl"
                   autoComplete="off"
+                  readOnly={nameArOwned}
+                  className="read-only:bg-muted"
                   aria-invalid={!!errors.nameEn}
                   aria-describedby={
                     errors.nameEn ? 'style-edit-name-error' : 'style-edit-name-hint'
@@ -373,10 +395,13 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
                 <span className="font-normal text-muted-foreground">
                   ({t('catalog.common.optional')})
                 </span>
+                {current.channelLinked && <FromChannelBadge />}
               </FieldLabel>
               <Input
                 id="style-edit-tags"
                 autoComplete="off"
+                readOnly={current.channelLinked}
+                className="read-only:bg-muted"
                 aria-invalid={!!errors.tags}
                 aria-describedby={errors.tags ? 'style-edit-tags-error' : 'style-edit-tags-hint'}
                 {...form.register('tags')}

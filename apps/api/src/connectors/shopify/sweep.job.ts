@@ -75,7 +75,7 @@ const RESEND_LIMIT = 200;
 /** The topic a sweep's order row carries, so the one inbox path reads it back (AC-7). */
 export const SWEEP_ORDER_TOPIC = 'orders/updated';
 
-/** The topic a sweep's or backfill's product row carries, recorded for spec 0015 task 8. */
+/** The topic a sweep's or backfill's product row carries, read back by the one product path (task 8). */
 export const SWEEP_PRODUCT_TOPIC = 'products/update';
 
 /**
@@ -163,9 +163,8 @@ function countOf(counts: Record<string, unknown>, key: string): number {
  * - `sweep` reads the objects updated since the watermark minus 10 minutes, 250 a page, oldest
  *   change first, selecting ids and update times only. Each one newer than the version the app last
  *   applied (and not already waiting in the inbox at that version) becomes an inbox row
- *   (`source = 'sweep'`, dedupe `sweep:<gid>:<updatedAt>`): an order row gets its inbox job
- *   (priority 20), which reads it back through the one mapper; a product row is recorded
- *   `received` with no job until spec 0015 task 8. A chunk ends after 60 seconds or 3,000 points
+ *   (`source = 'sweep'`, dedupe `sweep:<gid>:<updatedAt>`) with its inbox job (priority 20),
+ *   which reads the order or product back through the one mapper (products: task 8). A chunk ends after 60 seconds or 3,000 points
  *   (`ConnectorBudget`): the run turns `partial` with its page cursor and the next job continues
  *   it. When the last page is read the orders sweep also adds a retry row
  *   (`sweep-retry:<gid>:<updatedAt>:<attempt>`) for each order whose latest event is `failed`, at
@@ -397,7 +396,7 @@ export class SweepJob {
 
   /**
    * Records one page in one transaction: every object newer than its mapping's applied version and
-   * not already `received` at that version becomes an inbox row; an order row gets its job.
+   * not already `received` at that version becomes an inbox row with its inbox job.
    * Answers how many rows were added.
    */
   private async record(
@@ -438,7 +437,7 @@ export class SweepJob {
         const eventId = inserted.rows[0]?.id;
         if (!eventId) continue;
         added += 1;
-        if (kind === 'orders') await this.sendInbox(tx, connectionId, eventId);
+        await this.sendInbox(tx, connectionId, eventId);
       }
       return added;
     });
@@ -451,7 +450,8 @@ export class SweepJob {
    * its inbox job; then the job of every event left `received` with no job sent again
    * (`RESEND_AFTER_MINUTES`, `RESEND_RETRIED_AFTER_HOURS`), at most one resend per event an hour.
    * The resend scan filters on the processed subject types first, so the partial index on
-   * (connection, subject type, received at) skips product, inventory, and bulk rows cheaply.
+   * (connection, subject type, received at) skips inventory and bulk rows cheaply; product rows
+   * (task 8) are resent too, which also picks up the ones recorded before task 8 gave them a job.
    * Answers the counts.
    */
   private async retryAndResend(
