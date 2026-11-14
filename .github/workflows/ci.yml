@@ -109,7 +109,7 @@ jobs:
           fi
 
   images:
-    name: Build the ${{ matrix.image }} image (not pushed; skipped for docs only changes)
+    name: Build the ${{ matrix.image }} image (not pushed)
     needs: changes
     if: github.event.action != 'labeled' && needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
@@ -148,7 +148,7 @@ jobs:
       - run: pnpm test
 
   e2e:
-    name: Database and browser e2e (skipped for docs only changes)
+    name: Database and browser e2e
     needs: changes
     if: github.event.action != 'labeled' && needs.changes.outputs.docs_only != 'true'
     runs-on: ${{ vars.CI_RUNS_ON || 'ubuntu-latest' }}
