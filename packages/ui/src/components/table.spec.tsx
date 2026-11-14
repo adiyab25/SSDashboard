@@ -43,4 +43,18 @@ describe('Table', () => {
     expect(screen.getByRole('columnheader', { name: 'Code' })).toHaveClass('h-row-header');
     expect(screen.getByRole('row')).toHaveClass('h-row');
   });
+
+  it('trims the cell padding to 4px top and bottom for Arabic so a row stays 40px', () => {
+    render(
+      <Table aria-label="SKUs">
+        <TableBody>
+          <TableRow>
+            <TableCell>x</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>,
+    );
+
+    expect(screen.getByRole('cell')).toHaveClass('p-2', '[&:lang(ar)]:py-1');
+  });
 });

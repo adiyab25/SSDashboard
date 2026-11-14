@@ -198,7 +198,7 @@ export function GroupingListView({ kind, enabled }: { kind: GroupingKind; enable
             )}
           </div>
           {row.protected && (
-            <p className="max-w-64 text-xs text-muted-foreground">
+            <p className="max-w-lg text-xs whitespace-normal text-muted-foreground">
               {t(`catalog.${prefix}.protectedNote`)}
             </p>
           )}
@@ -275,7 +275,7 @@ export function GroupingListView({ kind, enabled }: { kind: GroupingKind; enable
           columns={columns}
           rows={rows}
           getRowKey={(row) => row.id}
-          className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
+          className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge sm:[&_td]:py-0 sm:[&_td:lang(ar)]:py-0"
         />
       )}
 

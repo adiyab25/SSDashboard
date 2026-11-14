@@ -195,7 +195,7 @@ export function SkusView({ enabled }: { enabled: boolean }) {
           columns={columns}
           rows={rows}
           getRowKey={(row) => row.id}
-          className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
+          className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge sm:[&_td]:py-0 sm:[&_td:lang(ar)]:py-0"
         />
       )}
 

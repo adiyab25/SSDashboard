@@ -392,6 +392,42 @@ test.describe('field colour (AC-8)', () => {
   });
 });
 
+test.describe('table rows after the global TableCell change (AC-20)', () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
+
+  for (const { dir, tag } of [
+    { dir: 'ltr', tag: 'dark-en' },
+    { dir: 'rtl', tag: 'dark-ar' },
+  ] as const) {
+    test(`orders list and order page rows are at least 40px in ${tag}`, async ({ page }) => {
+      await enter(page, { theme: 'dark', dir });
+      const heightsOf = async () =>
+        page
+          .locator('main table tbody tr')
+          .evaluateAll((all) =>
+            all.map((row) => Math.round(row.getBoundingClientRect().height * 100) / 100),
+          );
+      await openList(page);
+      const list = await heightsOf();
+      await openOrder(page);
+      const order = await heightsOf();
+      const summary = (values: number[]) => ({
+        count: values.length,
+        min: Math.min(...values),
+        max: Math.max(...values),
+        at40: values.filter((value) => Math.abs(value - 40) <= 0.5).length,
+        sample: values.slice(0, 8),
+      });
+      console.log(
+        `orders rows ${tag}: list ${JSON.stringify(summary(list))}, order page ${JSON.stringify(summary(order))}`,
+      );
+      expect(list.length).toBeGreaterThan(0);
+      expect(order.length).toBeGreaterThan(0);
+      for (const height of [...list, ...order]) expect(height).toBeGreaterThanOrEqual(39.5);
+    });
+  }
+});
+
 test.describe('keyboard focus and notices (AC-22)', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
 

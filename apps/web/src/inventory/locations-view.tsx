@@ -213,7 +213,7 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="px-3">
+                    <TableCell className="px-3 py-0 [&:lang(ar)]:py-0">
                       <div className="flex flex-wrap gap-1">
                         <Button
                           type="button"
