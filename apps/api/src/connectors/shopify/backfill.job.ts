@@ -77,10 +77,13 @@ function countOf(counts: Record<string, unknown>, key: string): number {
  * job per step of a run that `POST /api/connections/:id/backfill` started (it also set the
  * connection's `go_live_at`):
  *
- * 1. `backfill_products`: a bulk read of every product with its variants and inventory item ids
- *    (`PRODUCTS_BULK_QUERY`); each product is one inbox row (`source = 'backfill'`, subject
- *    `product`, dedupe `backfill:<bulk operation id>:<gid>`), recorded `received` with no job until
- *    spec 0015 task 8 builds the product processor. When it ends, `products_swept_through` is set
+ * 1. `backfill_products`: a bulk read of every product with the read back's fields and its
+ *    variants (`PRODUCTS_BULK_QUERY`); each product is one inbox row (`source = 'backfill'`,
+ *    subject `product`, dedupe `backfill:<bulk operation id>:<gid>`) applied at once by
+ *    `InboxJob.applyProductRead` (task 8: `applyProduct`, the variant mappings with their
+ *    inventory item ids, the attention events), as `connectors.shopify.backfill`, with no second
+ *    read; its counts are `objects`, `recorded`, `applied`, and `failed`. When it ends,
+ *    `products_swept_through` is set
  *    (the run's start: the products sweep continues from there) and the orders run starts.
  * 2. `backfill_orders`: a bulk read of every order created from `go_live_at` minus 60 days with the
  *    read back's fields (`ordersBulkQuery`). Each order (`assembleBulkOrder`) becomes an inbox row
@@ -151,7 +154,9 @@ export class BackfillJob {
       });
       return { status: 'failed', code: opened.skipped };
     }
-    if (run.kind === 'backfill_products') return this.products(run, opened.access, retryCount);
+    if (run.kind === 'backfill_products') {
+      return this.products(run, opened.access, jobId, retryCount);
+    }
     const goLiveAt = opened.connection.goLiveAt;
     if (goLiveAt === null) {
       await this.runs.finish(this.connection.db, run.id, {
@@ -168,11 +173,16 @@ export class BackfillJob {
   private async products(
     run: SyncRunRow,
     access: ShopifyConnectionAccess,
+    jobId: string,
     retryCount: number,
   ): Promise<BulkJobOutcome> {
-    let objects = countOf(run.counts, 'objects');
-    let recorded = countOf(run.counts, 'recorded');
-    const counts = () => ({ ...run.counts, objects, recorded });
+    const tally = {
+      objects: countOf(run.counts, 'objects'),
+      recorded: countOf(run.counts, 'recorded'),
+      applied: countOf(run.counts, 'applied'),
+      failed: countOf(run.counts, 'failed'),
+    };
+    const counts = () => ({ ...run.counts, ...tally });
     const cost = { points: 0 };
     try {
       const step = await this.runner.step(
@@ -180,8 +190,17 @@ export class BackfillJob {
         { bulkId: run.position.bulkId, line: run.position.line },
         PRODUCTS_BULK_QUERY,
         async (object) => {
-          objects += 1;
-          if (await this.recordProduct(run, run.position.bulkId ?? run.id, object)) recorded += 1;
+          tally.objects += 1;
+          const outcome = await this.applyProduct(
+            run,
+            run.position.bulkId ?? run.id,
+            object,
+            jobId,
+          );
+          if (outcome === null) return;
+          tally.recorded += 1;
+          if (outcome.status === 'failed') tally.failed += 1;
+          else if (outcome.status) tally.applied += 1;
         },
         cost,
       );
@@ -213,7 +232,9 @@ export class BackfillJob {
         });
         await this.progress.send(tx, 'backfill', run.connectionId, ordersRun, 0, false);
       });
-      this.logger.log(`backfill products run=${run.id} objects=${objects} recorded=${recorded}`);
+      this.logger.log(
+        `backfill products run=${run.id} objects=${tally.objects} applied=${tally.applied} failed=${tally.failed}`,
+      );
       return { step: 'done', status: 'succeeded' };
     } catch (error) {
       return this.progress.failed(run, error, counts(), cost.points, retryCount);
@@ -446,15 +467,21 @@ export class BackfillJob {
     );
   }
 
-  /** Records one product's row (`received`, no job until task 8). Answers whether one was added. */
-  private async recordProduct(
+  /**
+   * Records one product's inbox row and applies it through `InboxJob.applyProductRead` (task 8),
+   * the same unit and mapper as a webhook's read back, with no second read; one product's
+   * failure fails its own event and the run goes on (security review L2). Answers the inbox
+   * outcome, or null when the object is not a product or its row is already past `received`.
+   */
+  private async applyProduct(
     run: SyncRunRow,
     prefix: string,
     object: BulkObject,
-  ): Promise<boolean> {
+    jobId: string,
+  ): Promise<InboxOutcome | null> {
     const gid = object.root['id'];
-    if (typeof gid !== 'string' || !PRODUCT_GID.test(gid)) return false;
-    const id = await this.record(
+    if (typeof gid !== 'string' || !PRODUCT_GID.test(gid)) return null;
+    const eventId = await this.record(
       this.connection.db,
       run.connectionId,
       `backfill:${prefix}:${gid}`,
@@ -463,7 +490,15 @@ export class BackfillJob {
       gid,
       instantOf(object.root['updatedAt']),
     );
-    return id !== null;
+    if (eventId === null) return null;
+    return this.inbox.applyProductRead(
+      { connectionId: run.connectionId, eventId },
+      object,
+      jobId,
+      BACKFILL_JOB_NAME,
+      // The bulk snapshot is no older than the run: a mapping removed since stays removed (L3).
+      run.startedAt,
+    );
   }
 
   /**
@@ -489,7 +524,6 @@ export class BackfillJob {
       RETURNING id`);
     const id = inserted.rows[0]?.id;
     if (id) return id;
-    if (subject === 'product') return null;
     const { rows } = await executor.execute<{ id: string; status: string }>(sql`
       SELECT id, status FROM inbound_events
       WHERE connection_id = ${connectionId}::uuid AND dedupe_key = ${dedupe}`);

@@ -4,12 +4,20 @@
     "note": "synthetic, to be replaced by recordings",
     "apiVersion": "2026-10",
     "scenario": "backfill-go-live",
-    "step": "one product and its variant",
+    "step": "one product with the read back fields and its variant (PRODUCTS_BULK_QUERY, task 8)",
     "shapedFrom": [
       "https://shopify.dev/docs/api/usage/bulk-operations/queries",
       "https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/bulkOperationRunQuery",
       "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/bulkOperation",
-      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/BulkOperation"
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/BulkOperation",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductVariant",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/SelectedOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItem",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItemMeasurement",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Weight",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/WeightUnit"
     ]
   },
   "request": {
@@ -27,6 +35,6 @@
     "headers": {
       "Content-Type": "application/jsonl"
     },
-    "body": "{\"id\":\"gid://shopify/Product/2220000031001\",\"updatedAt\":\"2026-11-01T08:00:00Z\"}\n{\"id\":\"gid://shopify/ProductVariant/7770000000101\",\"inventoryItem\":{\"id\":\"gid://shopify/InventoryItem/2230000031001\"},\"__parentId\":\"gid://shopify/Product/2220000031001\"}\n"
+    "body": "{\"id\":\"gid://shopify/Product/2220000031001\",\"handle\":\"fixture-basic-tee\",\"title\":\"Fixture Basic Tee\",\"productType\":\"Tees\",\"vendor\":\"Fixture Brand\",\"tags\":[\"fixture\"],\"status\":\"ACTIVE\",\"isGiftCard\":false,\"updatedAt\":\"2026-11-01T08:00:00Z\",\"options\":[{\"name\":\"Size\",\"position\":1,\"values\":[\"M\"]}]}\n{\"id\":\"gid://shopify/ProductVariant/7770000000101\",\"sku\":\"FX-BASIC-TEE-M\",\"price\":\"450.00\",\"compareAtPrice\":null,\"barcode\":null,\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"M\"}],\"inventoryItem\":{\"id\":\"gid://shopify/InventoryItem/2230000031001\",\"tracked\":true,\"requiresShipping\":true,\"measurement\":{\"weight\":{\"unit\":\"GRAMS\",\"value\":200}}},\"__parentId\":\"gid://shopify/Product/2220000031001\"}\n"
   }
 }

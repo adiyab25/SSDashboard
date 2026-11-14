@@ -58,6 +58,8 @@ function arrange(options: { cost: boolean; movements?: SkuMovement[]; next?: str
     archived: false,
     status: 'active',
     updatedAt: 'x',
+    channelLinked: false,
+    channelNameLanguage: null,
   });
   api.getSkuStock.mockResolvedValue({
     locations: [

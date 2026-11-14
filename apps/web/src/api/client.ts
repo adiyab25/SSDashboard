@@ -34,6 +34,8 @@ export interface ApiErrorBody {
   skuCode?: string;
   /** `NOT_FOUND` on a bulk style assign: the style ids the api did not find. */
   missingIds?: string[];
+  /** `FIELD_OWNED_BY_CHANNEL`: the field a sales channel owns (`price`, `name.en`, or `name.ar`). */
+  field?: string;
 }
 
 /** A list of plain codes from an error body, or undefined when it is not one. */
@@ -107,6 +109,7 @@ function errorBody(json: unknown): ApiErrorBody {
   const fields = 'fields' in json ? codeList(json.fields) : undefined;
   const skuCode = 'skuCode' in json && typeof json.skuCode === 'string' ? json.skuCode : undefined;
   const missingIds = 'missingIds' in json ? codeList(json.missingIds) : undefined;
+  const field = 'field' in json && typeof json.field === 'string' ? json.field : undefined;
   return {
     code,
     ...(precondition && { precondition }),
@@ -115,6 +118,7 @@ function errorBody(json: unknown): ApiErrorBody {
     ...(fields && { fields }),
     ...(skuCode && { skuCode }),
     ...(missingIds && { missingIds }),
+    ...(field && { field }),
     ...(requires && { requires }),
     ...(dependants && { dependants }),
     ...(lineErrors && { lineErrors }),

@@ -99,7 +99,7 @@ export class ConnectorsService {
    * to its Shopify store (spec 0015 AC-24, spec 0013 AC-7 and AC-10). Always false today: spec
    * 0015 AC-24 makes it true only when the kind's executor is registered, and no executor
    * registers before feature 18, so staff edit and cancel a Shopify order in Shopify and the
-   * change syncs back. Spec 0015 task 13 replaces this with the connection, step, and executor
+   * connector reads the change back; nothing is written to Shopify yet. Spec 0015 task 13 replaces this with the connection, step, and executor
    * checks; it must never answer true without a registered executor.
    */
   writeBackAvailable(_orderId: string, _kind: WriteBackKind): Promise<boolean> {

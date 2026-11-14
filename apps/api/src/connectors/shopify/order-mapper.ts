@@ -369,7 +369,7 @@ const CONTROL_KEEPING_BREAKS = /(?![\n\t])[\p{Cc}؜‎‏‪-‮⁦-⁩]/gu;
  * A typed text with control and direction characters stripped, trimmed, cut to `max` UTF-16
  * units (never splitting a surrogate pair), and null when nothing is left.
  */
-function cleanText(
+export function cleanText(
   value: string | null | undefined,
   max: number,
   keepBreaks = false,

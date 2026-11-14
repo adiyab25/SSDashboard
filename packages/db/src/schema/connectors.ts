@@ -392,6 +392,11 @@ export const connectionExternalIds = pgTable(
       .where(
         sql`${t.entity} = 'variant' AND coalesce(${t.state}->>'lastOutcome', '') NOT IN ('created', 'linked', 'updated', 'unchanged')`,
       ),
+    // A product's variant mappings (spec 0015 task 8: the product apply and delete read them by
+    // `state.productId`; security review M1 of the channel upsert).
+    index('connection_external_ids_product_variants_idx')
+      .on(t.connectionId, sql`(${t.state}->>'productId')`)
+      .where(sql`${t.entity} = 'variant'`),
     // Late links and waiting replacement orders.
     index('connection_external_ids_waiting_orders_idx')
       .on(t.connectionId)

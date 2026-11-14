@@ -26,17 +26,18 @@ import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { inventoryKeys } from '@/inventory/inventory-api';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { addBarcode, catalogKeys, removeBarcode } from '../catalog-api';
-import { barcodeHolder, catalogErrorCode } from '../catalog-error';
+import { barcodeHolder, catalogErrorCode, channelOwnedField } from '../catalog-error';
+import { FromChannelBadge } from '../from-channel-badge';
 
 /** The add form: one barcode, checked and normalized by the contract (AC-10). */
 const BarcodeForm = z.object({ code: BarcodeCode });
 type FormInput = z.input<typeof BarcodeForm>;
 type FormOutput = z.output<typeof BarcodeForm>;
 
-const KNOWN = ['BARCODE_TAKEN', 'INVALID_INPUT', 'NOT_FOUND'] as const;
+const KNOWN = ['BARCODE_TAKEN', 'INVALID_INPUT', 'NOT_FOUND', 'FIELD_OWNED_BY_CHANNEL'] as const;
 type Failure = Exclude<(typeof KNOWN)[number], 'BARCODE_TAKEN'> | 'generic';
 /** What removing a barcode can answer besides success. */
-const REMOVE_KNOWN = ['NOT_FOUND'] as const;
+const REMOVE_KNOWN = ['NOT_FOUND', 'FIELD_OWNED_BY_CHANNEL'] as const;
 
 /** Props of `VariantBarcodesDialog`. */
 interface Props {
@@ -48,7 +49,8 @@ interface Props {
 /**
  * The barcodes of one SKU on the style page (spec 0012, AC-10, `catalog.edit`): the list with a
  * Remove button per barcode, and a field to add one. A barcode another SKU holds is refused with
- * that SKU's code in the message. Each write refreshes the style and the SKU queries with
+ * that SKU's code in the message. The barcode a sales channel manages (`fromChannel`) shows
+ * "From Shopify" and no Remove button (AC-15). Each write refreshes the style and the SKU queries with
  * `refetchAfterWrite`; the list here follows the api's answers so it never waits on the refetch.
  */
 export function VariantBarcodesDialog({ styleId, variant, onClose }: Props) {
@@ -58,6 +60,7 @@ export function VariantBarcodesDialog({ styleId, variant, onClose }: Props) {
   const [barcodes, setBarcodes] = useState<SkuBarcode[]>(variant.barcodes);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [holder, setHolder] = useState<string | undefined>();
+  const [ownedField, setOwnedField] = useState(channelOwnedField(undefined));
   const form = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(BarcodeForm),
     mode: 'onSubmit',
@@ -85,6 +88,7 @@ export function VariantBarcodesDialog({ styleId, variant, onClose }: Props) {
         form.setError('code', { message: 'taken' }, { shouldFocus: true });
         return;
       }
+      setOwnedField(channelOwnedField(error));
       setFailure(code);
     },
   });
@@ -115,6 +119,7 @@ export function VariantBarcodesDialog({ styleId, variant, onClose }: Props) {
         dropRow(barcode);
         refresh();
       }
+      setOwnedField(channelOwnedField(error));
       setFailure(code);
     },
   });
@@ -136,7 +141,11 @@ export function VariantBarcodesDialog({ styleId, variant, onClose }: Props) {
 
         {failure && (
           <Alert variant="destructive" role="alert">
-            <AlertDescription>{t(`catalog.barcodes.errors.${failure}`)}</AlertDescription>
+            <AlertDescription>
+              {failure === 'FIELD_OWNED_BY_CHANNEL'
+                ? t(`catalog.channel.owned.${ownedField}`)
+                : t(`catalog.barcodes.errors.${failure}`)}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -147,21 +156,25 @@ export function VariantBarcodesDialog({ styleId, variant, onClose }: Props) {
             {barcodes.map((barcode) => (
               <li key={barcode.id} className="flex h-row items-center justify-between gap-3">
                 <LtrText className="font-medium">{barcode.code}</LtrText>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive"
-                  disabled={pending}
-                  id={`barcode-remove-${barcode.id}`}
-                  aria-label={t('catalog.barcodes.removeLabel', { code: barcode.code })}
-                  onClick={() => {
-                    setFailure(null);
-                    remove.mutate(barcode);
-                  }}
-                >
-                  {t('catalog.barcodes.remove')}
-                </Button>
+                {barcode.fromChannel ? (
+                  <FromChannelBadge />
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    disabled={pending}
+                    id={`barcode-remove-${barcode.id}`}
+                    aria-label={t('catalog.barcodes.removeLabel', { code: barcode.code })}
+                    onClick={() => {
+                      setFailure(null);
+                      remove.mutate(barcode);
+                    }}
+                  >
+                    {t('catalog.barcodes.remove')}
+                  </Button>
+                )}
               </li>
             ))}
           </ul>

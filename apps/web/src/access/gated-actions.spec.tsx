@@ -58,6 +58,8 @@ const skuDetail: SkuDetail = {
   status: 'active',
   updatedAt: '2026-11-03T10:00:00.123456Z',
   barcodes: [],
+  channelLinked: false,
+  channelNameLanguage: null,
 };
 
 const receipt = {
