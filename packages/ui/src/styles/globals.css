@@ -123,6 +123,7 @@
   --color-destructive-surface: var(--destructive-surface);
   --color-primary-edge: var(--primary-edge);
   --color-input: var(--input);
+  --color-field: var(--field);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -653,6 +654,29 @@
   }
   html {
     @apply font-sans;
+  }
+  /*
+   * The field fill (spec 0025, AC-8): `bg-field` on every field component. It is the page colour
+   * everywhere and always in dark; in light, a field on a card (`data-slot="card"`, a
+   * `gradient-card-edge` surface, a dialog, a sheet, or a popover) takes the card colour. Dark is
+   * listed again so a card nested in a light scope inside `.dark` cannot leak the card colour.
+   */
+  :root {
+    --field: var(--background);
+  }
+  [data-slot='card'],
+  [data-slot='dialog-content'],
+  [data-slot='sheet-content'],
+  [data-slot='popover-content'],
+  .gradient-card-edge {
+    --field: var(--card);
+  }
+  .dark [data-slot='card'],
+  .dark [data-slot='dialog-content'],
+  .dark [data-slot='sheet-content'],
+  .dark [data-slot='popover-content'],
+  .dark .gradient-card-edge {
+    --field: var(--background);
   }
   /*
    * WCAG 2.2 SC 2.4.11 (Focus Not Obscured): while a toast is up at the bottom of the screen, the

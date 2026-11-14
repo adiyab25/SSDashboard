@@ -9,6 +9,13 @@
         "files": ["packages/ui/src/lib/row-stripe.ts"],
         "createdAt": "2026-11-06T14:39:32.746Z",
         "reason": "Igris (lead) per spec 0003 amendment Build plan 2.1, which requires a row start stripe helper; decorative only, StatusChip repeats the meaning, off by default in option B; the owner-chosen Daftar preview uses an amber start edge on the Cash owed card"
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": ["packages/ui/src/styles/globals.css"],
+        "createdAt": "2026-11-14T09:03:43.758Z",
+        "reason": "Owner's chosen design: DESIGN-SPEC heading blend as text fill, spec 0025 AC-11 owner decision (h1 keeps the blend), forced-colors fallback in place"
       }
     ]
   }

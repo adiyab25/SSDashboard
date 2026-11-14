@@ -120,6 +120,18 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
     expect(screen.getByRole('link', { name: 'New order' })).toHaveAttribute('href', '/orders/new');
   });
 
+  it('draws Search as a secondary button so New order is the only main action', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockResolvedValue({ items: [order(1)], nextCursor: null });
+    renderWithQuery(<OrdersPage />);
+
+    await screen.findByRole('table', { name: 'Orders' });
+    expect(screen.getByRole('button', { name: 'Search' })).toHaveAttribute(
+      'data-variant',
+      'secondary',
+    );
+  });
+
   it('says more is available and loads the next page by cursor', async () => {
     api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
     api.listOrders

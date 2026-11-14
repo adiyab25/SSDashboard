@@ -76,7 +76,7 @@ export function OrderShipToSection({
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('orders.shipTo.none')}</p>
       ) : (
-        <dl className="grid gap-x-8 gap-y-1 rounded-lg border p-4 sm:grid-cols-[max-content_1fr]">
+        <dl className="grid gap-x-8 gap-y-1 rounded-card gradient-card-edge p-4 sm:grid-cols-[max-content_1fr]">
           {rows.map((row) => (
             <div key={row.id} className="contents">
               <dt className="text-sm text-muted-foreground">{row.label}</dt>
