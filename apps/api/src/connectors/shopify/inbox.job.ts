@@ -64,6 +64,7 @@ import { orderErrorCodeOf, upperCode } from './error-codes.js';
 import { ExchangeByEdit, stateWithoutWaitingReplacement } from './exchange-by-edit.js';
 import { nextKnownOrderState, planKnownOrder, type KnownOrderPlan } from './known-order-plan.js';
 import {
+  assertShopifyTotal,
   cancelReasonCodeOf,
   firstActiveFulfillmentOf,
   mapShopifyOrder,
@@ -328,7 +329,11 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *   else applied by `applyKnown` (task 9: cancel, late links, the edit with its
  *   `held_write_back_open` and `edit_not_applied` outcomes, first fulfillment, the payment
  *   rederive of lead decision D10; task 10: the exchange by edit with its `replacement_waiting`
- *   outcome); a new order writes its mapping first (`createdOrderState`, with the creation facts
+ *   outcome); a new order is refused before any write when a gateway name or payment is on an
+ *   unmapped gateway (`GATEWAY_UNMAPPED`), its tax mode differs from `prices_include_vat` while a
+ *   line is taxed (`TAX_MODE_MISMATCH`),
+ *   or its computed total differs from Shopify's (`TOTAL_MISMATCH`, audit A2 and A3), then
+ *   writes its mapping first (`createdOrderState`, with the creation facts
  *   of D10), then `OrderIntake.createFromChannel` (actor `system_job`, or `import` as the mapper
  *   names for a closed order before go live), the mapping's `local_id`, a live order's cancel or
  *   first fulfillment (AC-13), and `last_order_at`. Every applied read of an order (new, cancel,
@@ -1115,6 +1120,9 @@ export class InboxJob {
     ];
     const variants = await this.variantMappings(tx, event.connection_id, variantGids);
     const mapped = mapShopifyOrder(order, { ...base, variants });
+    // Audit A3: the app charges what Shopify charged, priced as the intake will price it (the
+    // setting read in this transaction, as `createFromChannel` reads it), before anything is written.
+    assertShopifyTotal(order, mapped.input, await this.settings.get('prices_include_vat', tx));
     // A live order Shopify already cancelled or fulfilled takes its named move right after its
     // creation (AC-13); an imported order's first states already hold it (AC-17).
     const live = mapped.actor === 'system_job' && !mapped.input.firstStates;

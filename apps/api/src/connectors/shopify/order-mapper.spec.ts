@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  assertShopifyTotal,
   cancelReasonCodeOf,
   firstActiveFulfillmentOf,
   foundStatesOf,
@@ -219,7 +220,7 @@ describe('mapShopifyOrder', () => {
     ]).toEqual(['cod', '0.00', null]);
   });
 
-  it('lists an unmapped gateway: cod without a successful sale, gateway with one', () => {
+  it('refuses a new order with an unmapped gateway name or payment, and lists the names on a later snapshot', () => {
     const unmapped = changed(COD, (order) => {
       order.paymentGatewayNames = ['Fixture New Wallet', 'constructor'];
     });
@@ -237,21 +238,156 @@ describe('mapShopifyOrder', () => {
       });
     });
 
-    const cod = mapShopifyOrder(unmapped, CONTEXT);
-    const gateway = mapShopifyOrder(paid, CONTEXT);
-
-    expect(cod.input.paymentMethod).toBe('cod');
-    expect(cod.unmappedGateways).toEqual(['Fixture New Wallet', 'constructor']);
-    expect([gateway.input.paymentMethod, gateway.input.prepaidAmount]).toEqual([
-      'gateway',
-      '860.00',
-    ]);
-    expect(gateway.input.prepaidMethod).toBe('gateway');
-    expect(gateway.unmappedGateways).toEqual(['Fixture New Wallet']);
+    // Review round 2 M3: an unmapped name alone refuses a new order (paths only, never the name).
+    expect(thrown(() => mapShopifyOrder(unmapped, CONTEXT))).toMatchObject({
+      code: 'GATEWAY_UNMAPPED',
+      paths: ['paymentGatewayNames.0', 'paymentGatewayNames.1'],
+    });
+    // A known order's read back is not blocked: its snapshot lists them for the mapping state.
+    const snapshot = mapShopifyOrderSnapshot(unmapped, CONTEXT);
+    expect(snapshot.snapshot.paymentMethod).toBe('cod');
+    expect(snapshot.unmappedGateways).toEqual(['Fixture New Wallet', 'constructor']);
+    // Audit A2: a successful sale on an unmapped gateway is never guessed into a prepayment.
+    expect(thrown(() => mapShopifyOrder(paid, CONTEXT))).toMatchObject({
+      code: 'GATEWAY_UNMAPPED',
+      paths: ['transactions.0.gateway', 'paymentGatewayNames.0'],
+    });
     expect([
       mapShopifyOrder(refunded, CONTEXT).input.prepaidAmount,
       mapShopifyOrder(refunded, CONTEXT).input.prepaidMethod,
     ]).toEqual(['0.00', null]);
+  });
+
+  it('refuses a COD order marked as paid on an unmapped gateway instead of making it prepaid (audit A2)', () => {
+    // The `manual` "mark as paid" sale with the `manual` gateway missing from the config: before
+    // the fix this became prepaid 455.00 on method `gateway`, so the courier collected nothing.
+    const withoutManual: ShopifyOrderContext = {
+      ...CONTEXT,
+      gatewayMethods: { 'Cash on Delivery (COD)': 'cod' },
+    };
+    const marked = fixture('order-prepaid-gateway/03-order-read.json');
+
+    const error = thrown(() => mapShopifyOrder(marked, withoutManual));
+
+    expect(error).toBeInstanceOf(ShopifyOrderMappingError);
+    expect(error).toMatchObject({ code: 'GATEWAY_UNMAPPED' });
+    const paths = (error as ShopifyOrderMappingError).paths;
+    expect(paths.length).toBeGreaterThan(0);
+    for (const path of paths) expect(path).toMatch(/^transactions\.\d+\.gateway$/);
+    // Fixed text and paths only: no gateway name, amount, or customer value in the message.
+    expect((error as Error).message).not.toMatch(/manual|455|Fixture/);
+    // Once the manager maps the gateway, the same read creates a cod order with nothing prepaid.
+    expect(mapShopifyOrder(marked, CONTEXT).input).toMatchObject({
+      paymentMethod: 'cod',
+      prepaidAmount: '0.00',
+      prepaidMethod: null,
+    });
+  });
+
+  it('refuses a successful payment that names no gateway, and keeps a failed one out (audit A2)', () => {
+    const noGateway = changed('order-prepaid-gateway/01-order-read.json', (order) => {
+      for (const transaction of order.transactions) transaction.gateway = null;
+    });
+    const failedOnly = changed(COD, (order) => {
+      order.transactions = [
+        {
+          id: 'gid://shopify/OrderTransaction/2220000001901',
+          kind: 'SALE',
+          status: 'FAILURE',
+          gateway: 'Fixture New Wallet',
+          amountSet: { shopMoney: { amount: '860.00' } },
+        },
+      ];
+    });
+
+    expect(thrown(() => mapShopifyOrder(noGateway, CONTEXT))).toMatchObject({
+      code: 'GATEWAY_UNMAPPED',
+    });
+    expect(mapShopifyOrder(failedOnly, CONTEXT).input).toMatchObject({
+      paymentMethod: 'cod',
+      prepaidAmount: '0.00',
+    });
+  });
+
+  it('refuses an order with only an authorization on an unmapped gateway instead of making it cod (review round 2 M3)', () => {
+    // Before: no counted sale, so `cod` with nothing prepaid, while the customer may pay by card.
+    const authorized = changed('order-prepaid-gateway/01-order-read.json', (order) => {
+      for (const transaction of order.transactions) {
+        transaction.kind = 'AUTHORIZATION';
+        transaction.status = 'SUCCESS';
+      }
+    });
+    const pending = changed('order-prepaid-gateway/01-order-read.json', (order) => {
+      for (const transaction of order.transactions) transaction.status = 'PENDING';
+    });
+    const noCard = { ...CONTEXT, gatewayMethods: { 'Cash on Delivery (COD)': 'cod' as const } };
+
+    for (const order of [authorized, pending]) {
+      const error = thrown(() => mapShopifyOrder(order, noCard));
+      expect(error).toMatchObject({ code: 'GATEWAY_UNMAPPED', paths: ['paymentGatewayNames.0'] });
+      expect((error as Error).message).not.toContain('Fixture Card Gateway');
+    }
+    // Mapped, the authorization alone prepays nothing and the order takes the gateway's method.
+    expect(mapShopifyOrder(authorized, CONTEXT).input).toMatchObject({
+      paymentMethod: 'gateway',
+      prepaidAmount: '0.00',
+    });
+  });
+
+  it('refuses a refund alone on an unmapped gateway, and finds no prepayment on one (review m2, m3)', () => {
+    const refundOnly = changed(COD, (order) => {
+      order.transactions = [
+        {
+          id: 'gid://shopify/OrderTransaction/2220000001902',
+          kind: 'REFUND',
+          status: 'SUCCESS',
+          gateway: 'Fixture New Wallet',
+          amountSet: { shopMoney: { amount: '10.00' } },
+        },
+      ];
+    });
+    const shippedCard = changed('order-prepaid-gateway/01-order-read.json', (order) => {
+      order.fulfillments = [
+        {
+          id: 'gid://shopify/Fulfillment/9990000005001',
+          status: 'SUCCESS',
+          createdAt: order.updatedAt,
+        },
+      ];
+    });
+    const noCard = { ...CONTEXT, gatewayMethods: { 'Cash on Delivery (COD)': 'cod' as const } };
+
+    expect(thrown(() => mapShopifyOrder(refundOnly, CONTEXT))).toMatchObject({
+      code: 'GATEWAY_UNMAPPED',
+      paths: ['transactions.0.gateway'],
+    });
+    expect(thrown(() => foundStatesOf(shippedCard, noCard))).toMatchObject({
+      code: 'GATEWAY_UNMAPPED',
+    });
+    expect(foundStatesOf(shippedCard, CONTEXT)).toMatchObject({ cash: 'prepaid' });
+  });
+
+  it('refuses a negative payment and an amount out of range as BAD_AMOUNT (security review lows)', () => {
+    const negative = changed('order-prepaid-gateway/01-order-read.json', (order) => {
+      order.transactions.push({
+        id: 'gid://shopify/OrderTransaction/2220000005009',
+        kind: 'REFUND',
+        status: 'SUCCESS',
+        gateway: 'Fixture Card Gateway',
+        amountSet: { shopMoney: { amount: '-500.00' } },
+      });
+    });
+    const huge = changed(COD, (order) => {
+      order.currentShippingPriceSet = { shopMoney: { amount: '1000000000000.00' } };
+    });
+
+    expect(thrown(() => mapShopifyOrder(negative, CONTEXT))).toMatchObject({
+      code: 'BAD_AMOUNT',
+      paths: ['transactions.1.amountSet'],
+    });
+    const error = thrown(() => mapShopifyOrder(huge, CONTEXT));
+    expect(error).toBeInstanceOf(ShopifyOrderMappingError);
+    expect(error).toMatchObject({ code: 'BAD_AMOUNT' });
   });
 
   it('passes phones that do not parse as text, for orders to keep raw and flag', () => {
@@ -502,12 +638,16 @@ describe('mapShopifyOrder', () => {
       order.paymentGatewayNames = ['Fixture‮ Wallet', 'Cash on Delivery (COD)'];
     });
 
-    const mapped = mapShopifyOrder(dirty, CONTEXT);
+    // A new order with the unmapped name is refused (review round 2 M3); a later snapshot lists it.
+    const mapped = mapShopifyOrder(
+      { ...dirty, paymentGatewayNames: ['Cash on Delivery (COD)'] },
+      CONTEXT,
+    );
 
     expect(mapped.input.orderNumber).toBe('#1001');
     expect(mapped.discountCodes).toEqual(['WELCOME10', 'VIP']);
     expect(mapped.input.discountCode).toBe('WELCOME10');
-    expect(mapped.unmappedGateways).toEqual(['Fixture Wallet']);
+    expect(mapShopifyOrderSnapshot(dirty, CONTEXT).unmappedGateways).toEqual(['Fixture Wallet']);
     expect(shopifyOrderName({ name: `#${'9'.repeat(80)}` })).toHaveLength(64);
     expect(shopifyOrderName({ name: '‮‏' })).toBe('');
     // A name with nothing left is refused by the contract, never stored blank.
@@ -517,6 +657,127 @@ describe('mapShopifyOrder', () => {
     expect(thrown(() => mapShopifyOrder(blank, CONTEXT))).toMatchObject({
       code: 'CONTRACT_REFUSED',
     });
+  });
+});
+
+describe('assertShopifyTotal (audit A3)', () => {
+  /** The order's mapped input checked against its own Shopify total. */
+  const check = (order: ShopifyOrder, pricesIncludeVat = true): unknown =>
+    thrown(() =>
+      assertShopifyTotal(order, mapShopifyOrder(order, CONTEXT).input, pricesIncludeVat),
+    );
+
+  it.each([
+    COD,
+    'order-prepaid-gateway/01-order-read.json',
+    'order-unmapped-line/01-order-read.json',
+    'order-go-live-import/02-order-read.json',
+    'order-imported-refund-before-go-live/01-order-read.json',
+    'order-same-variant-lines/01-order-read.json',
+    'order-gifted-tag/01-order-read.json',
+  ])('passes the creation read %s, discounts and shipping included', (file) => {
+    expect(check(fixture(file))).toBeNull();
+  });
+
+  it('refuses a total that differs from Shopify by one piastre, naming no amount', () => {
+    const off = changed(COD, (order) => {
+      order.currentTotalPriceSet = { shopMoney: { amount: '859.99' } };
+    });
+    const error = check(off);
+    expect(error).toMatchObject({ code: 'TOTAL_MISMATCH', paths: [] });
+    expect((error as Error).message).not.toMatch(/859|860/);
+  });
+
+  it('charges shipping after a free shipping code (currentShippingPriceSet) and passes (code review B1)', () => {
+    const order = fixture('order-free-shipping/01-order-read.json');
+    const mapped = mapShopifyOrder(order, CONTEXT);
+
+    expect(mapped.input.shippingChargedAmount).toBe('0.00');
+    expect(mapped.input.discountCode).toBe('WELCOME10');
+    expect(check(order)).toBeNull();
+    // A shipping charge that does not agree with the total is still refused, never guessed.
+    const stale = changed('order-free-shipping/01-order-read.json', (o) => {
+      o.currentShippingPriceSet = { shopMoney: { amount: '50.00' } };
+    });
+    expect(check(stale)).toMatchObject({ code: 'TOTAL_MISMATCH' });
+  });
+
+  it('prorates the discount of a line with a unit removed to the units kept and passes (code review B2)', () => {
+    // Ordered 2 at 450.00 with 90.00 allocated over both, 1 kept: 450.00 less 45.00, plus 50.00.
+    const order = fixture('order-partly-refunded-quantity/01-order-read.json');
+    const [line] = mapShopifyOrder(order, CONTEXT).input.lines;
+
+    expect([line?.quantity, line?.unitPrice, line?.discountAmount]).toEqual([1, '450.00', '45.00']);
+    expect(check(order)).toBeNull();
+    // The snapshot path prices the same way: before the fix it kept the 90.00 on one unit.
+    const [snapshotLine] = mapShopifyOrderSnapshot(order, CONTEXT).snapshot.lines;
+    expect(snapshotLine?.discountAmount).toBe('45.00');
+    // Held at 1 of 2 units: the same proration.
+    const held = new Map([['gid://shopify/LineItem/6660000092001', 1]]);
+    expect(mapShopifyOrderSnapshot(order, CONTEXT, held).snapshot.lines[0]?.discountAmount).toBe(
+      '45.00',
+    );
+  });
+
+  it('rounds a prorated odd piastre half away from zero, once', () => {
+    // 0.03 over 2 units, 1 kept: 0.015 rounds to 0.02.
+    const odd = changed('order-partly-refunded-quantity/01-order-read.json', (o) => {
+      const [line] = o.lineItems.nodes;
+      if (line)
+        line.discountAllocations = [{ allocatedAmountSet: { shopMoney: { amount: '0.03' } } }];
+    });
+    expect(mapShopifyOrder(odd, CONTEXT).input.lines[0]?.discountAmount).toBe('0.02');
+  });
+
+  it('refuses an order whose taxesIncluded disagrees with prices_include_vat', () => {
+    const exclusive = changed(COD, (order) => {
+      order.taxesIncluded = false;
+    });
+    expect(check(exclusive, true)).toMatchObject({ code: 'TAX_MODE_MISMATCH' });
+    expect(check(fixture(COD), false)).toMatchObject({ code: 'TAX_MODE_MISMATCH' });
+  });
+
+  it('skips the tax mode when no line carries a positive tax rate, the total still checked (review round 2 M2)', () => {
+    // A store that charges no VAT may report taxesIncluded false; with tax inclusive pricing the
+    // gross, and so the cash on delivery, does not depend on the rate.
+    const untaxed = changed(COD, (order) => {
+      order.taxesIncluded = false;
+      for (const line of order.lineItems.nodes) line.taxLines = [];
+    });
+    const zeroRate = changed(COD, (order) => {
+      order.taxesIncluded = false;
+      for (const line of order.lineItems.nodes) line.taxLines = [{ rate: 0, ratePercentage: 0 }];
+    });
+    expect(check(untaxed, true)).toBeNull();
+    expect(check(zeroRate, true)).toBeNull();
+    const off = changed(COD, (order) => {
+      order.taxesIncluded = false;
+      for (const line of order.lineItems.nodes) line.taxLines = [];
+      order.currentTotalPriceSet = { shopMoney: { amount: '859.99' } };
+    });
+    expect(check(off, true)).toMatchObject({ code: 'TOTAL_MISMATCH' });
+  });
+
+  it('prices a tax exclusive store tax exclusive: passes only when Shopify charged the tax on top', () => {
+    // Lines 2 x (450.00 - 45.00) at 14 percent: 2 x 461.70 = 923.40, plus 50.00 shipping.
+    const exclusive = changed(COD, (order) => {
+      order.taxesIncluded = false;
+    });
+    expect(check(exclusive, false)).toMatchObject({ code: 'TOTAL_MISMATCH' });
+    const charged = changed(COD, (order) => {
+      order.taxesIncluded = false;
+      order.currentTotalPriceSet = { shopMoney: { amount: '973.40' } };
+    });
+    expect(check(charged, false)).toBeNull();
+  });
+
+  it('skips a cancelled order: nothing is collected and Shopify refunds its total to 0', () => {
+    const cancelled = changed(COD, (order) => {
+      order.cancelledAt = '2026-11-02T10:00:00Z';
+      order.cancelReason = 'CUSTOMER';
+      order.currentTotalPriceSet = ZERO;
+    });
+    expect(check(cancelled)).toBeNull();
   });
 });
 
@@ -734,7 +995,7 @@ describe('no personal data in a thrown error (Law 151)', () => {
     });
     const amount = changed(COD, (order) => {
       personal(order);
-      order.totalShippingPriceSet = { shopMoney: { amount: SENTINELS[1] ?? '' } };
+      order.currentShippingPriceSet = { shopMoney: { amount: SENTINELS[1] ?? '' } };
     });
 
     const refused = thrown(() => mapShopifyOrder(taxed, CONTEXT));

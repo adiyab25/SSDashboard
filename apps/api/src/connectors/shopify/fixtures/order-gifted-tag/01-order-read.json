@@ -103,6 +103,17 @@
               "currencyCode": "EGP"
             }
           },
+          "taxesIncluded": true,
+          "currentShippingPriceSet": {
+            "shopMoney": {
+              "amount": "0.00",
+              "currencyCode": "EGP"
+            },
+            "presentmentMoney": {
+              "amount": "0.00",
+              "currencyCode": "EGP"
+            }
+          },
           "totalShippingPriceSet": {
             "shopMoney": {
               "amount": "0.00",

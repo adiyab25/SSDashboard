@@ -78,31 +78,42 @@
           "currencyCode": "EGP",
           "currentSubtotalPriceSet": {
             "shopMoney": {
-              "amount": "900.00",
+              "amount": "810.00",
               "currencyCode": "EGP"
             },
             "presentmentMoney": {
-              "amount": "900.00",
+              "amount": "810.00",
               "currencyCode": "EGP"
             }
           },
           "currentTotalPriceSet": {
             "shopMoney": {
-              "amount": "950.00",
+              "amount": "860.00",
               "currencyCode": "EGP"
             },
             "presentmentMoney": {
-              "amount": "950.00",
+              "amount": "860.00",
               "currencyCode": "EGP"
             }
           },
           "totalPriceSet": {
             "shopMoney": {
-              "amount": "500.00",
+              "amount": "455.00",
               "currencyCode": "EGP"
             },
             "presentmentMoney": {
-              "amount": "500.00",
+              "amount": "455.00",
+              "currencyCode": "EGP"
+            }
+          },
+          "taxesIncluded": true,
+          "currentShippingPriceSet": {
+            "shopMoney": {
+              "amount": "50.00",
+              "currencyCode": "EGP"
+            },
+            "presentmentMoney": {
+              "amount": "50.00",
               "currencyCode": "EGP"
             }
           },

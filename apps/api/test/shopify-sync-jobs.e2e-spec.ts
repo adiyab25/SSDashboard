@@ -20,7 +20,7 @@ import {
   INBOX_JOB_PRIORITY,
 } from '../src/connectors/shopify/connector-shopify.queue.js';
 import { HourlyCheckJob } from '../src/connectors/shopify/hourly-check.job.js';
-import { SweepJob } from '../src/connectors/shopify/sweep.job.js';
+import { SWEEP_RETRY_DAYS, SweepJob } from '../src/connectors/shopify/sweep.job.js';
 import { JobSender } from '../src/platform/jobs/job-sender.js';
 import { WorkerModule } from '../src/worker.module.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
@@ -187,6 +187,11 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         [orderId],
       )
     ).rows;
+
+  /** Today's operating day by the database clock, as the sweep puts it in a retry key. */
+  const operatingDay = async (): Promise<string> =>
+    (await api.owner.pool.query<{ day: string }>(`SELECT ssd_operating_day(now())::text AS day`))
+      .rows[0]?.day as string;
 
   const runsOf = async (c: Planted, kind: string) =>
     (
@@ -845,7 +850,11 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       const skuM = await sku(`SJR-${randomUUID().slice(0, 6)}`);
       await mapVariant(c, VARIANT_M, skuM);
       // #1038: its webhook event failed 90 minutes ago (a rule fixed since).
-      await inboxRow(c, { gidValue: gid(1038), status: 'failed', minutesAgo: 90 });
+      const failed1038 = await inboxRow(c, {
+        gidValue: gid(1038),
+        status: 'failed',
+        minutesAgo: 90,
+      });
       // Code review minor: the n-th retry waits n hours after the previous attempt. #1052 failed
       // 30 minutes ago (retry 1 waits an hour); #1053 failed its first retry 90 minutes ago
       // (retry 2 waits two hours). Neither is retried by this sweep.
@@ -891,7 +900,7 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       expect(retries.rows).toEqual([
         {
           subject_external_id: gid(1038),
-          dedupe_key: `sweep-retry:${gid(1038)}:2026-11-05T09:00:00.000Z:1`,
+          dedupe_key: `sweep-retry:${await operatingDay()}:1:${failed1038}`,
         },
       ]);
       const cappedRows = await api.owner.pool.query<{ n: string }>(
@@ -920,6 +929,101 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
         what: 'the resent order',
       });
       expect(remainingShopifyExchanges()).toEqual([]);
+    });
+
+    it('retries a failed order again on the next operating day after its 3 retries of the day before (code review: the day is in the retry key)', async () => {
+      clock.at = new Date('2026-11-05T12:05:00Z');
+      const c = await plant({
+        goLiveAt: '2026-11-01T00:00:00Z',
+        ordersSweptThrough: '2026-11-05T12:00:00Z',
+        lastSweepMinutesAgo: 5,
+      });
+      // #1059: refused (say GATEWAY_UNMAPPED) a day ago, then retried 3 times that day, each
+      // failing, with the keys the sweep wrote before the day was in them; the gateway is mapped
+      // since. Before the fix today's first retry reused yesterday's `:1` key and was a no-op.
+      const stuck = gid(1059);
+      await inboxRow(c, { gidValue: stuck, status: 'failed', daysAgo: 1, minutesAgo: 30 });
+      let lastFailed = '';
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        lastFailed = await inboxRow(c, {
+          gidValue: stuck,
+          status: 'failed',
+          source: 'sweep',
+          dedupe: `sweep-retry:${stuck}:2026-11-05T09:00:00.000Z:${attempt}`,
+          daysAgo: 1,
+          minutesAgo: 20 - attempt,
+        });
+      }
+      useShopifyScenarios('sweep-retry-and-resend');
+      // The retry's own inbox job is not run here: only the row the sweep records is checked.
+      const jobs = worker.get(JobSender);
+      const spy = vi.spyOn(jobs, 'sendIn').mockResolvedValue('recorded');
+      try {
+        await worker.get(SweepJob).sweep('orders', { connectionId: c.id });
+      } finally {
+        spy.mockRestore();
+      }
+
+      const { rows } = await api.owner.pool.query<{ dedupe_key: string }>(
+        `SELECT dedupe_key FROM inbound_events
+         WHERE connection_id = $1::uuid AND subject_external_id = $2
+           AND ssd_operating_day(received_at) = ssd_operating_day(now())`,
+        [c.id, stuck],
+      );
+      expect(rows).toEqual([{ dedupe_key: `sweep-retry:${await operatingDay()}:1:${lastFailed}` }]);
+      expect(rows[0]?.dedupe_key.length).toBeLessThanOrEqual(128);
+    });
+
+    it('retries a failed order on the 7th operating day of its failure run and never on the 8th (review round 2 M1, SWEEP_RETRY_DAYS)', async () => {
+      clock.at = new Date('2026-11-05T12:05:00Z');
+      const c = await plant({
+        goLiveAt: '2026-11-01T00:00:00Z',
+        ordersSweptThrough: '2026-11-05T12:00:00Z',
+        lastSweepMinutesAgo: 5,
+      });
+      expect(SWEEP_RETRY_DAYS).toBe(7);
+      /** An order that first failed `daysAgo` days ago and failed every retry since, the last yesterday. */
+      const failing = async (n: number, daysAgo: number): Promise<string> => {
+        const value = gid(n);
+        await inboxRow(c, { gidValue: value, status: 'failed', daysAgo });
+        // An older success of the order ends no run: only events after the run's first failure count.
+        return inboxRow(c, {
+          gidValue: value,
+          status: 'failed',
+          source: 'sweep',
+          dedupe: `sweep-retry:old:${randomUUID()}`,
+          daysAgo: 1,
+        });
+      };
+      const day7 = await failing(1060, 6);
+      await failing(1061, 7);
+      // #1062 failed 10 days ago, then a newer Shopify update applied (`processed`), then failed
+      // again 2 days ago: a new failure run, still retried.
+      const renewed = gid(1062);
+      await inboxRow(c, { gidValue: renewed, status: 'failed', daysAgo: 10 });
+      await inboxRow(c, { gidValue: renewed, status: 'processed', daysAgo: 9 });
+      const renewedFailed = await inboxRow(c, { gidValue: renewed, status: 'failed', daysAgo: 2 });
+      useShopifyScenarios('sweep-retry-and-resend');
+      const jobs = worker.get(JobSender);
+      const spy = vi.spyOn(jobs, 'sendIn').mockResolvedValue('recorded');
+      try {
+        await worker.get(SweepJob).sweep('orders', { connectionId: c.id });
+      } finally {
+        spy.mockRestore();
+      }
+
+      const { rows } = await api.owner.pool.query<{ gid: string; dedupe_key: string }>(
+        `SELECT subject_external_id AS gid, dedupe_key FROM inbound_events
+         WHERE connection_id = $1::uuid AND ssd_operating_day(received_at) = ssd_operating_day(now())
+           AND left(dedupe_key, 12) = 'sweep-retry:'
+         ORDER BY subject_external_id`,
+        [c.id],
+      );
+      const today = await operatingDay();
+      expect(rows).toEqual([
+        { gid: gid(1060), dedupe_key: `sweep-retry:${today}:1:${day7}` },
+        { gid: renewed, dedupe_key: `sweep-retry:${today}:1:${renewedFailed}` },
+      ]);
     });
 
     it('never resends a D12 re-read at webhook priority: not at 15 minutes, only past 4 hours and at the backfill priority (F2, M-R1)', async () => {
