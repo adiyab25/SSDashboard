@@ -9,6 +9,7 @@ const variant = (id: string, cost: StyleDetail['variants'][number]['cost']) => (
   price: '250.00',
   archived: false,
   barcodes: [],
+  channelLinked: false,
   cost,
 });
 
@@ -24,6 +25,8 @@ const detail: StyleDetail = {
   brand: null,
   archived: false,
   updatedAt: '2026-11-09T00:00:00.000000Z',
+  channelLinked: false,
+  channelNameLanguage: null,
   options: [],
   variants: [
     variant('00000000-0000-7000-8000-00000000000a', {
@@ -49,8 +52,8 @@ describe('serializeStyleDetail', () => {
     const served = serializeStyleDetail(detail, holding('stock.view'));
 
     expect(served.variants.map((row) => Object.keys(row))).toEqual([
-      ['id', 'code', 'options', 'price', 'archived', 'barcodes'],
-      ['id', 'code', 'options', 'price', 'archived', 'barcodes'],
+      ['id', 'code', 'options', 'price', 'archived', 'barcodes', 'channelLinked'],
+      ['id', 'code', 'options', 'price', 'archived', 'barcodes', 'channelLinked'],
     ]);
     expect(JSON.stringify(served)).not.toContain('unitCost');
     expect(served.code).toBe('TEE');

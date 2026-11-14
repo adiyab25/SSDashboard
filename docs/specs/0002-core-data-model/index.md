@@ -75,7 +75,7 @@ This feature migrates every ★ table in the children with all its checks, index
 - **AC-33**: For every table in the append only list (tenancy child, A4, including `licenses` and `license_checks` from spec 0009 and `audit_entries` from spec 0010) the app role's `UPDATE`, `DELETE`, and `TRUNCATE` fail with permission denied, and the owner's fail with "append only".
 - **AC-34**: Every table is in the ownership map; a file in one api module that names another module's table, or an extension that names a core table, fails the boundary test.
 - **AC-35**: `outbound_commands` holds each write back's `sync_state` (`waiting`, `synced`, `failed`, `resolved`) with its linked record, failure reason, and resolution, as the single truth; `orders.write_back_state` is the orders module's projection of it, indexed for the confirmation queue and the pick list (B2).
-- **AC-36**: With 50,000 variants, 500,000 movements, 150,000 orders, and the related customers, events, settlement lines, tasks, and credit entries loaded, every budget in the catalog child's scale table holds at the 95th percentile on the dev Postgres, and every foreign key column has an index (replaces AC-14). The suite runs as its own CI job (nightly and on a `scale` label), never in the default e2e job.
+- **AC-36**: With 50,000 variants, 500,000 movements, 150,000 orders, and the related customers, events, settlement lines, tasks, and credit entries loaded, every budget in the catalog child's scale table holds at the 95th percentile on the dev Postgres, and every foreign key column has an index (replaces AC-14). The suite runs as its own CI job (nightly and on a `scale` label), never in the default e2e job. Amended 2026-11-08: the nightly schedule was dropped (GitHub Actions billing; CI moved to a self-hosted runner); the scale suite runs by hand (workflow_dispatch) and on PRs labelled `scale`.
 
 ### Security model (amendment)
 
@@ -465,7 +465,7 @@ The amendment only (Amendment 2026-11-05, with the fix pass of the same day). Tr
 
 **Milestone 5: Scale at 50,000 SKUs, in its own CI job**
 19. [x] `apps/api/test/scale-seed.ts` and `scale.e2e-spec.ts` reshaped to the catalog child's load (50,000 variants, 500,000 movements, 150,000 orders, and the related rows) with one p95 assertion per budget row; a foreign key index check in `schema.e2e-spec.ts`; the measured p95 values recorded in `verify.md` and the budgets reset from the first run where they were **Assumed**, satisfies **AC-36**
-20. [x] A `scale` job in `.github/workflows/ci.yml` that runs the scale file on a nightly schedule and on pull requests labelled `scale`, and the default api `test:e2e` excluding `test/scale.e2e-spec.ts`; spec 0010's 5,000,000 audit entry check runs in the same file and job, satisfies **AC-36**
+20. [x] A `scale` job in `.github/workflows/ci.yml` that runs the scale file on a nightly schedule and on pull requests labelled `scale`, and the default api `test:e2e` excluding `test/scale.e2e-spec.ts`; spec 0010's 5,000,000 audit entry check runs in the same file and job, satisfies **AC-36** Amended 2026-11-08: the nightly schedule was dropped (GitHub Actions billing; CI moved to a self-hosted runner); the scale suite runs by hand (workflow_dispatch) and on PRs labelled `scale`.
 
 **Done when** `pnpm build && pnpm --filter @ssdashboard/api test:scale` passes with every p95 under its budget; `pnpm test:e2e` no longer runs the scale file; the `scale` job is green on a labelled pull request; and `pnpm --filter @ssdashboard/db test:e2e` passes including the foreign key index check.
 

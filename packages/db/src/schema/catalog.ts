@@ -108,12 +108,28 @@ export const products = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customFields: jsonb('custom_fields').notNull().default({}),
+    /**
+     * Set while a sales channel owns some of this style's fields (spec 0012, AC-15): the first
+     * time `CatalogChannelSync` links the style, cleared by `unlink`. Null for a style the app
+     * owns entirely.
+     */
+    channelLinkedAt: timestamp('channel_linked_at', { withTimezone: true }),
+    /**
+     * The one name language the channel writes (`ar` when the channel title has an Arabic letter
+     * at first link, else `en`, spec 0012 field ownership); the app refuses edits to that slot
+     * while the style is linked. Set with `channel_linked_at`, cleared by `unlink`.
+     */
+    channelNameLanguage: text('channel_name_language'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: archivedAt(),
   },
   (t) => [
     unique('products_style_code_unique').on(t.tenantId, t.styleCode),
+    check(
+      'products_channel_name_language_known',
+      sql`${t.channelNameLanguage} IS NULL OR ${t.channelNameLanguage} IN ('en', 'ar')`,
+    ),
     index('products_product_group_idx').on(t.productGroupId),
     index('products_season_idx').on(t.seasonId),
     index('products_tags_idx').using('gin', t.tags),
@@ -187,6 +203,12 @@ export const productVariants = pgTable(
      * by application code. The default only covers the instant before the insert trigger runs.
      */
     searchText: text('search_text').notNull().default(''),
+    /**
+     * Set while a sales channel owns some of this variant's fields (price, compare at price,
+     * weight, requires shipping, option values, its channel barcode; spec 0012, AC-15): the first
+     * time `CatalogChannelSync` links the variant, cleared by `unlink`.
+     */
+    channelLinkedAt: timestamp('channel_linked_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: archivedAt(),
@@ -247,10 +269,19 @@ export const barcodes = pgTable(
       .notNull()
       .references(() => uoms.id, { onDelete: 'restrict' }),
     code: text('code').notNull(),
+    /**
+     * True for the one barcode a sales channel manages on this variant (spec 0012, AC-15): the
+     * channel sync adds, replaces, and removes only this one, never a code added in the app.
+     */
+    fromChannel: boolean('from_channel').notNull().default(false),
   },
   (t) => [
     unique('barcodes_code_unique').on(t.tenantId, t.code),
     index('barcodes_variant_idx').on(t.variantId),
+    // At most one channel barcode per variant (spec 0012, data model sketch).
+    uniqueIndex('barcodes_one_channel_code')
+      .on(t.tenantId, t.variantId)
+      .where(sql`${t.fromChannel}`),
     index('barcodes_uom_idx').on(t.uomId),
   ],
 );

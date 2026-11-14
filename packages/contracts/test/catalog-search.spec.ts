@@ -55,7 +55,9 @@ describe('SkuDetail', () => {
       archived: false,
       status: 'active',
       updatedAt: '2026-11-08T10:00:00.000000Z',
-      barcodes: [{ id: ID, code: '6221234567890' }],
+      barcodes: [{ id: ID, code: '6221234567890', fromChannel: true }],
+      channelLinked: true,
+      channelNameLanguage: 'ar',
     };
     expect(SkuDetail.parse(detail)).toEqual(detail);
     expect(SkuDetail.safeParse({ ...detail, barcodes: undefined }).success).toBe(false);

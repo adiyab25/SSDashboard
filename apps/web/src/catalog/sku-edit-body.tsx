@@ -48,6 +48,8 @@ import {
   type EditInput,
   type EditOutput,
 } from './sku-edit-schema';
+import { channelOwnedField, type ChannelOwnedField } from './catalog-error';
+import { FromChannelBadge } from './from-channel-badge';
 
 /** The loaded SKU form: name, price, code change, archive and delete, with stale record handling. */
 export function SkuEditBody({
@@ -77,6 +79,8 @@ export function SkuEditBody({
   // colleague's change.
   const [sku, setSku] = useState(initial);
   const [failure, setFailure] = useState<KnownCode | 'generic' | null>(null);
+  // Which field the last `FIELD_OWNED_BY_CHANNEL` answer named, for its message.
+  const [ownedField, setOwnedField] = useState<ChannelOwnedField>('generic');
   const [confirm, setConfirm] = useState<SkuLifecycleAction | null>(null);
   const [reloading, setReloading] = useState(false);
   const [deleted, setDeleted] = useState(false);
@@ -159,7 +163,10 @@ export function SkuEditBody({
       toast.success(t('inventory.skuEdit.saved', { code: next.code }));
       onClose();
     },
-    onError: (error) => setFailure(knownCode(error)),
+    onError: (error) => {
+      setOwnedField(channelOwnedField(error));
+      setFailure(knownCode(error));
+    },
   });
 
   const recode = useMutation({
@@ -257,7 +264,13 @@ export function SkuEditBody({
 
   const busy = save.isPending || recode.isPending;
   const codeLocked = !canManage || usage.data?.codeLocked !== false;
-  const messageFor = (code: KnownCode | 'generic') => t(`inventory.skuEdit.errors.${code}`);
+  const messageFor = (code: KnownCode | 'generic') =>
+    code === 'FIELD_OWNED_BY_CHANNEL'
+      ? t(`catalog.channel.owned.${ownedField}`)
+      : t(`inventory.skuEdit.errors.${code}`);
+  // Fields the sales channel owns while linked are shown but not editable (spec 0012, AC-15).
+  const nameEnOwned = sku.channelNameLanguage === 'en';
+  const nameArOwned = sku.channelNameLanguage === 'ar';
   const blocked = usage.data?.canArchive === false;
 
   const reloadLatest = async () => {
@@ -337,24 +350,34 @@ export function SkuEditBody({
         <FieldGroup className="gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field data-invalid={!!errors.nameEn}>
-              <FieldLabel htmlFor="sku-edit-name-en">{t('inventory.sku.nameEn')}</FieldLabel>
+              <FieldLabel htmlFor="sku-edit-name-en">
+                {t('inventory.sku.nameEn')}
+                {nameEnOwned && <FromChannelBadge />}
+              </FieldLabel>
               <Input
                 id="sku-edit-name-en"
                 lang="en"
                 dir="ltr"
                 autoComplete="off"
+                readOnly={nameEnOwned}
+                className="read-only:bg-muted"
                 aria-invalid={!!errors.nameEn}
                 aria-describedby={errors.nameEn ? 'sku-edit-name-error' : 'sku-edit-name-hint'}
                 {...form.register('nameEn')}
               />
             </Field>
             <Field data-invalid={!!errors.nameEn}>
-              <FieldLabel htmlFor="sku-edit-name-ar">{t('inventory.sku.nameAr')}</FieldLabel>
+              <FieldLabel htmlFor="sku-edit-name-ar">
+                {t('inventory.sku.nameAr')}
+                {nameArOwned && <FromChannelBadge />}
+              </FieldLabel>
               <Input
                 id="sku-edit-name-ar"
                 lang="ar"
                 dir="rtl"
                 autoComplete="off"
+                readOnly={nameArOwned}
+                className="read-only:bg-muted"
                 aria-invalid={!!errors.nameEn}
                 aria-describedby={errors.nameEn ? 'sku-edit-name-error' : 'sku-edit-name-hint'}
                 {...form.register('nameAr')}
@@ -375,13 +398,15 @@ export function SkuEditBody({
             <FieldLabel htmlFor="sku-edit-price">
               {t('inventory.sku.price')}
               <span className="font-normal text-muted-foreground">({t('inventory.optional')})</span>
+              {sku.channelLinked && <FromChannelBadge />}
             </FieldLabel>
             <Input
               id="sku-edit-price"
               dir="ltr"
               inputMode="decimal"
               autoComplete="off"
-              className="tabular-nums sm:max-w-48"
+              readOnly={sku.channelLinked}
+              className="tabular-nums read-only:bg-muted sm:max-w-48"
               aria-invalid={!!errors.price}
               aria-describedby={errors.price ? 'sku-edit-price-error' : 'sku-edit-price-hint'}
               {...form.register('price')}

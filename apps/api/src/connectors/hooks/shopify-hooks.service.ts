@@ -9,7 +9,11 @@ import {
   INBOX_JOB_PRIORITY,
   type ShopifyJobData,
 } from '../shopify/connector-shopify.queue.js';
-import { minimizeShopifyWebhook, topicIsProcessed } from './shopify-hook-payload.js';
+import {
+  minimizeShopifyWebhook,
+  SHOPIFY_COMPLIANCE_TOPICS,
+  topicIsProcessed,
+} from './shopify-hook-payload.js';
 
 /** The capability that owns the Shopify hook route and its queue (spec 0015, settings rows). */
 const HOOK_CAPABILITY = 'connectors.shopify.sync';
@@ -65,18 +69,29 @@ export class ShopifyHooksService {
       return 'unknown_topic';
     }
     const decision = await this.modules.acceptsHook(HOOK_CAPABILITY);
-    const status = decision === 'process' ? 'received' : 'ignored_unlicensed';
+    // A delivery of an order, product, customer, or bulk topic that names no subject (none sent,
+    // or a gid of another resource: security review L5) can never be read back: it is recorded
+    // `ignored` `no_subject` with no job, never left `received` for the sweep to resend.
+    // The compliance topics name their subject in their own fields: kept `received` (Minor D).
+    const subjectless =
+      minimized.subjectExternalId === null &&
+      minimized.subjectType !== 'app' &&
+      minimized.subjectType !== 'inventory_level' &&
+      !SHOPIFY_COMPLIANCE_TOPICS.includes(delivery.topic);
+    const status =
+      decision !== 'process' ? 'ignored_unlicensed' : subjectless ? 'ignored' : 'received';
+    const outcome = status === 'ignored' ? 'no_subject' : null;
     const sendJob = status === 'received' && topicIsProcessed(delivery.topic);
     if (sendJob) await this.jobs.prepare(CONNECTOR_SHOPIFY_QUEUE);
     return this.connection.db.transaction(async (tx) => {
       const inserted = await tx.execute<{ id: string }>(sql`
         INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,
                                     subject_external_id, subject_version, payload, status,
-                                    processed_at)
+                                    outcome, processed_at)
         VALUES (${delivery.connectionId}::uuid, 'webhook', ${delivery.topic},
                 ${delivery.webhookId}, ${minimized.subjectType}::inbound_subject,
                 ${minimized.subjectExternalId}, ${minimized.subjectVersion}::timestamptz,
-                ${JSON.stringify(minimized.payload)}::jsonb, ${status}::inbound_status,
+                ${JSON.stringify(minimized.payload)}::jsonb, ${status}::inbound_status, ${outcome},
                 CASE WHEN ${status} = 'received' THEN NULL ELSE now() END)
         ON CONFLICT ON CONSTRAINT inbound_events_dedupe_unique DO NOTHING
         RETURNING id`);

@@ -29,7 +29,7 @@ export function ModuleNotAvailableState({ titleKey, reason }: ModuleNotAvailable
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <h1 className="text-xl font-semibold">{t(titleKey)}</h1>
-      <div className="flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
+      <div className="flex flex-col items-center gap-3 rounded-card gradient-card-edge px-4 py-10 text-center">
         <PowerOffIcon aria-hidden className="size-8 text-muted-foreground" />
         <div className="flex flex-col gap-1">
           <p className="font-medium">{t('shell.modules.notAvailable.title')}</p>

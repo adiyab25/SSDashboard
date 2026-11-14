@@ -2,13 +2,13 @@
 
 ## Overview
 
-`@ssdashboard/ui`, the shared design system: shadcn/ui components (Radix primitives, Vega style), the Daftar design tokens (warm paper, indigo primary, Inter, Noto Sans Arabic, JetBrains Mono), and the hooks they need. Plain React, so a future storefront or POS app can use it too. Decision: [spec 0003](../../docs/specs/0003-design-system-ui-foundation/index.md).
+`@ssdashboard/ui`, the shared design system: shadcn/ui components (Radix primitives, Vega style), the Midnight, Silver and Cyan design tokens (blue black page, silver text, one cyan accent, Geist, Geist Mono, Noto Sans Arabic, four named radii, gradient and motion utilities), and the hooks they need. Plain React, so a future storefront or POS app can use it too. Decisions: [spec 0003](../../docs/specs/0003-design-system-ui-foundation/index.md) (behaviour) and [spec 0025](../../docs/specs/0025-midnight-silver-cyan/index.md) (the look).
 
 ## Key files
 
 | File | Owns |
 |---|---|
-| `src/styles/globals.css` | Tokens (oklch CSS variables, light in `:root`, dark in `.dark`), the `@theme inline` mapping, base layer |
+| `src/styles/globals.css` | Tokens (hex CSS variables, light in `:root`, dark in `.dark`), the `@theme inline` mapping, the radius and motion tokens, the gradient and motion `@utility` set, base layer; checked by `tokens.spec.ts` |
 | `src/components/*.tsx` | shadcn components in their vendor shape (compound files like `dialog.tsx` hold several components; exempt from the one component rule by [ADR 0001](../../docs/adr/0001-shadcn-component-files-keep-their-vendor-shape.md)), imported as `@ssdashboard/ui/components/<name>` |
 | `src/status/*.tsx` | Status display, one component per file (`status-chip`, `status-chip-overflow`, `provisional-value`, `freshness-strip`), imported as `@ssdashboard/ui/status/<name>`; outside `src/components/`, so the one component rules apply |
 | `src/frames/*.tsx` | `PortalFrame`, `PartnerFrame`, and their shared `BrandMark`, imported as `@ssdashboard/ui/frames/<name>`; each renders the one `main` and the one `h1`, the brand accent goes on the frame root as inline `--brand` tokens |
@@ -19,7 +19,7 @@
 | `src/lib/utils.ts` | `cn()`; the one file allowed the banned name `utils` (ADR 0001) |
 | `src/hooks/*.ts` | Hooks the components use (`use-mobile`, `use-help-shortcut`) |
 | `src/test/axe.ts` | `expectNoAxeViolations()` for component tests |
-| `DESIGN.md` | The written design standard (direction B, Daftar): color and meaning roles with measured contrast, type, density and the `floor` scope, focus, icons, and table, form, and feedback rules |
+| `DESIGN.md` | The written design standard (Midnight, Silver and Cyan, spec 0025): color and meaning roles with measured contrast, type, gradients, radius, motion, density and the `floor` scope, focus, icons, and table, form, and feedback rules |
 
 ## Commands
 
@@ -33,7 +33,8 @@ pnpm --filter @ssdashboard/ui typecheck
 - Consumed as TypeScript source, no build step: `apps/web` lists it in `transpilePackages` and scans it with `@source` in its `globals.css`.
 - Never import from `apps/*`, `@ssdashboard/contracts`, or `next/*`.
 - No text of its own: every label, including screen reader only ones, arrives as a prop.
-- Role tokens only (`bg-muted`, `text-foreground`); no raw colors or Tailwind palette classes.
+- Role tokens only (`bg-muted`, `text-foreground`); no raw colors or Tailwind palette classes. Gradients are utilities (`gradient-primary`, `gradient-card-edge`, `tint-row`, ...) and corners are `rounded-chip|control|popover|card`; motion utilities (`lift`, `press`, `sheen`, `enter`) exist only under `prefers-reduced-motion: no-preference`.
+- Cyan (`primary`, `ring`) means link, focus, current page, and the main action only; never status. In light, `accent` carries only `foreground` and `muted-foreground` text.
 - Logical sides only (`ms-`, `pe-`, `start-`, `border-e`); directional icons get `rtl:-scale-x-100`.
 - Every component gets a spec with an axe check; overlays are checked on `document.body`.
 - Radix Dialog returns focus only to a trigger; `HelpPanel` stores the opener itself for the `?` key path. Radix restores focus in a timeout, so tests that check it use `waitFor`.

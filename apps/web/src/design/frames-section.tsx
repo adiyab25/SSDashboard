@@ -23,7 +23,7 @@ const SAMPLES: readonly { heading: string; note: string; frames: readonly FrameP
   },
   {
     heading: 'Portal with a rejected accent',
-    note: 'Brand #A9780B fails both foregrounds, so the portal keeps the neutral primary and says why, with the nearest accepted colour.',
+    note: 'Brand #997311 fails both foregrounds, so the portal keeps the neutral primary and says why, with the nearest accepted colour.',
     frames: [
       {
         title: 'Portal frame with a rejected accent, left to right',

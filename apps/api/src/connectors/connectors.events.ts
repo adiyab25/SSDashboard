@@ -1,4 +1,8 @@
-import type { InboundSubject, OutboundLinkedType } from '@ssdashboard/contracts';
+import type {
+  ChannelVariantOutcome,
+  InboundSubject,
+  OutboundLinkedType,
+} from '@ssdashboard/contracts';
 
 /**
  * The public events of the outbound commands (spec 0015 AC-24, its exported service table): one
@@ -91,5 +95,40 @@ export class ChannelRefundRecorded {
     readonly amount: string,
     /** When Shopify recorded the refund (`happenedAt`), an ISO instant. */
     readonly occurredAt: string,
+  ) {}
+}
+
+/**
+ * The variant outcomes of `CatalogChannelSync.applyProduct` a person must clear (spec 0015 AC-16,
+ * spec 0012 Q-12.2): each publishes `ChannelProductNeedsAttention`.
+ */
+export const ATTENTION_OUTCOMES: readonly ChannelVariantOutcome[] = [
+  'needs_sku',
+  'invalid_sku',
+  'sku_mismatch',
+  'barcode_conflict',
+  'option_conflict',
+];
+
+/**
+ * A Shopify variant needs a person (spec 0015 AC-16, its exported service table): its product
+ * applied with one of `ATTENTION_OUTCOMES`. Published once per variant and outcome with
+ * `DomainEvents.publish(tx, event)` in the unit that applied the product: a later apply with the
+ * same outcome publishes nothing (the variant mapping's `state.lastOutcome` already holds it).
+ * Feature 17 turns it into one task per variant and outcome. Ids and the outcome only, never a
+ * title, SKU, or barcode.
+ */
+export class ChannelProductNeedsAttention {
+  /** Takes the connection, the Shopify product and variant, the app variant if any, the outcome. */
+  constructor(
+    readonly connectionId: string,
+    /** The Shopify product gid. */
+    readonly externalProductId: string,
+    /** The Shopify variant gid. */
+    readonly externalVariantId: string,
+    /** The app variant the catalog resolved (a conflict on a linked variant), else null. */
+    readonly variantId: string | null,
+    /** One of `ATTENTION_OUTCOMES`. */
+    readonly outcome: ChannelVariantOutcome,
   ) {}
 }

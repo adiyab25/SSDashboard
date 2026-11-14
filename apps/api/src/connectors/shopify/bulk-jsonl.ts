@@ -11,10 +11,11 @@ import { gatewayKeyOf } from './order-mapper.js';
  */
 
 /**
- * The most child lines one object may hold (security review L2): an order's line items and
+ * The most child lines one object may hold (security review L2): Shopify's 2,048 variants of one
+ * product (`MAX_CHANNEL_VARIANTS`, the products backfill of task 8); an order's line items and
  * discount applications are far fewer. Past it the result is unreadable, never kept growing.
  */
-export const BULK_OBJECT_MAX_CHILDREN = 2_000;
+export const BULK_OBJECT_MAX_CHILDREN = 2_048;
 
 /**
  * A line that is not a JSON object, a child line that does not follow its parent, or an object

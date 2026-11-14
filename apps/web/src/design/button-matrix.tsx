@@ -2,31 +2,33 @@
 
 import { Button } from '@ssdashboard/ui/components/button';
 import { Loader2Icon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const VARIANTS = ['default', 'outline', 'secondary', 'ghost', 'destructive', 'link'] as const;
 const STATES = ['default', 'hover', 'focus', 'active', 'disabled', 'loading'] as const;
 
 /** Every button variant in every state, for checking the focus ring and disabled look. */
 export function ButtonMatrix() {
+  const { t } = useTranslation();
   return (
     // The table scrolls inside itself on a phone, so it is a named, focusable region (WCAG 2.1.1).
     <div
       role="region"
-      aria-label="Button variants by state"
+      aria-label={t('design.buttons.caption')}
       // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={0}
       className="overflow-x-auto outline-none focus-ring-inset"
     >
       <table className="w-full border-collapse text-start">
-        <caption className="sr-only">Button variants by state</caption>
+        <caption className="sr-only">{t('design.buttons.caption')}</caption>
         <thead>
           <tr className="h-row-header border-b">
             <th scope="col" className="pe-4 text-start font-medium">
-              Variant
+              {t('design.buttons.variant')}
             </th>
             {STATES.map((state) => (
               <th key={state} scope="col" className="px-2 text-start font-medium">
-                {state}
+                {t(`design.buttons.states.${state}`)}
               </th>
             ))}
           </tr>
@@ -35,7 +37,7 @@ export function ButtonMatrix() {
           {VARIANTS.map((variant) => (
             <tr key={variant} className="border-b">
               <th scope="row" className="pe-4 text-start font-normal">
-                {variant}
+                {t(`design.buttons.variants.${variant}`)}
               </th>
               {STATES.map((state) => (
                 <td key={state} className="p-2">
@@ -50,7 +52,7 @@ export function ButtonMatrix() {
                     {state === 'loading' && (
                       <Loader2Icon aria-hidden className="animate-spin" data-icon="inline-start" />
                     )}
-                    Save
+                    {t('design.buttons.save')}
                   </Button>
                 </td>
               ))}

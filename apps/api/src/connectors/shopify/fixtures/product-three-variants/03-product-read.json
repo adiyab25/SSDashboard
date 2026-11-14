@@ -1,0 +1,154 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "product-three-variants",
+    "step": "a newer read with the same content: applying it again changes nothing",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductVariant",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/SelectedOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItem",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItemMeasurement",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Weight",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/WeightUnit",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/connections/ProductVariantConnection",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/PageInfo"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": "ProductRead",
+    "variables": {
+      "id": "gid://shopify/Product/2220000081001"
+    },
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "product": {
+          "id": "gid://shopify/Product/2220000081001",
+          "handle": "fixture-linen-shirt",
+          "title": "Fixture Linen Shirt",
+          "productType": "Shirts",
+          "vendor": "Fixture Brand",
+          "tags": ["fixture", "summer"],
+          "status": "ACTIVE",
+          "isGiftCard": false,
+          "updatedAt": "2026-11-10T10:00:00Z",
+          "options": [
+            {
+              "name": "Size",
+              "position": 1,
+              "values": ["S", "M", "L", "XL"]
+            }
+          ],
+          "variants": {
+            "nodes": [
+              {
+                "id": "gid://shopify/ProductVariant/7770000081011",
+                "sku": "PX-LIN-S",
+                "price": "650.00",
+                "compareAtPrice": null,
+                "barcode": null,
+                "selectedOptions": [
+                  {
+                    "name": "Size",
+                    "value": "S"
+                  }
+                ],
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/77700000810119",
+                  "tracked": true,
+                  "requiresShipping": true,
+                  "measurement": {
+                    "weight": {
+                      "unit": "GRAMS",
+                      "value": 250
+                    }
+                  }
+                }
+              },
+              {
+                "id": "gid://shopify/ProductVariant/7770000081012",
+                "sku": "PX-LIN-M",
+                "price": "650.00",
+                "compareAtPrice": null,
+                "barcode": null,
+                "selectedOptions": [
+                  {
+                    "name": "Size",
+                    "value": "M"
+                  }
+                ],
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/77700000810129",
+                  "tracked": true,
+                  "requiresShipping": true,
+                  "measurement": {
+                    "weight": {
+                      "unit": "KILOGRAMS",
+                      "value": 0.3
+                    }
+                  }
+                }
+              },
+              {
+                "id": "gid://shopify/ProductVariant/7770000081013",
+                "sku": "PX-LIN-L",
+                "price": "650.00",
+                "compareAtPrice": null,
+                "barcode": null,
+                "selectedOptions": [
+                  {
+                    "name": "Size",
+                    "value": "L"
+                  }
+                ],
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/77700000810139",
+                  "tracked": true,
+                  "requiresShipping": true,
+                  "measurement": {
+                    "weight": {
+                      "unit": "OUNCES",
+                      "value": 12
+                    }
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": true,
+              "endCursor": "fixture-variants-p1-2"
+            }
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 708,
+          "actualQueryCost": 9,
+          "throttleStatus": {
+            "maximumAvailable": 2000,
+            "currentlyAvailable": 1991,
+            "restoreRate": 100
+          }
+        }
+      }
+    }
+  }
+}

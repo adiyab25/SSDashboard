@@ -30,6 +30,7 @@ import {
   CatalogService,
   OPTIONS_UNIQUE,
   optionCombinationTaken,
+  refuseChannelNameChange,
 } from '../catalog.service.js';
 import { CostService } from '../cost.service.js';
 import {
@@ -52,6 +53,9 @@ interface StyleRecord extends StyleRow {
   product_type: string | null;
   brand: string | null;
   updated_at: string;
+  channel_linked: boolean;
+  /** The channel's name language while linked, else null. */
+  channel_name_language: 'en' | 'ar' | null;
 }
 
 /** A style option as stored, with the normalized keys of its name and of each value. */
@@ -79,7 +83,10 @@ interface WorkingOption {
 
 const STYLE_RECORD_COLUMNS = sql`
   p.description, p.tags, p.product_type, p.brand,
-  to_char(p.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
+  to_char(p.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at,
+  p.channel_linked_at IS NOT NULL AS channel_linked,
+  CASE WHEN p.channel_linked_at IS NOT NULL THEN p.channel_name_language END
+    AS channel_name_language`;
 
 /** Text in both languages without empty ones, as stored in `jsonb` and shown in a diff. */
 const cleanText = (text: LocalizedText): { en?: string; ar?: string } => ({
@@ -168,7 +175,10 @@ export class StylesService {
    * Edits name, description, season, group, and tags (AC-9) with the stale check on the style's
    * `updated_at`. A season or group the style does not hold yet must exist (`NotFound`) and not
    * be archived (`Archived`). Records `style.edited` with the changed fields; a no change edit
-   * writes nothing.
+   * writes nothing. On a channel linked style, a name that changes the channel's language is
+   * `FieldOwnedByChannel` (spec 0012, AC-15); the other language stays the app's. So is a tags
+   * change (`field: 'tags'`, security review L1: the source store's tags replace them on every
+   * sync); resending the stored tags passes.
    */
   async update(
     id: string,
@@ -182,6 +192,9 @@ export class StylesService {
       const before: JsonObject = {};
       const after: JsonObject = {};
       const sets: SQL[] = [];
+      if (input.name !== undefined) {
+        refuseChannelNameChange(current.channel_name_language, current.name, input.name);
+      }
       if (input.name !== undefined && !sameText(input.name, current.name)) {
         before.name = diffText(current.name);
         after.name = diffText(input.name);
@@ -219,6 +232,15 @@ export class StylesService {
         sets.push(sql`product_group_id = ${input.productGroupId}`);
       }
       if (input.tags !== undefined && JSON.stringify(input.tags) !== JSON.stringify(current.tags)) {
+        if (current.channel_linked) {
+          throw new CatalogError(
+            'FieldOwnedByChannel',
+            'The tags of this style come from Shopify',
+            {
+              field: 'tags',
+            },
+          );
+        }
         before.tags = current.tags;
         after.tags = input.tags;
         sets.push(sql`tags = ${pgArray(input.tags)}::text[]`);
@@ -369,7 +391,9 @@ export class StylesService {
    * or a name or value that normalizes to nothing in both languages (`-`), `InvalidInput`.
    * Locks the style row first (`FOR NO KEY UPDATE`, the lock `CatalogService.setArchived` takes
    * too), so a variant add and an archive of the style's last variant queue (AC-11). Records
-   * `style.variant_added`, and returns the new SKU.
+   * `style.variant_added`, and returns the new SKU. On a channel linked style a new option or
+   * value is `FieldOwnedByChannel` (`field: 'options'`, spec 0012, AC-15); a variant on the
+   * style's existing values passes.
    */
   async addVariant(
     styleId: string,
@@ -381,9 +405,10 @@ export class StylesService {
     try {
       variantId = await catalogTransaction(this.connection.db, async (tx) => {
         const style = (
-          await tx.execute<{ style_code: string; archived: boolean }>(sql`
-            SELECT style_code, archived_at IS NOT NULL AS archived FROM products
-            WHERE id = ${styleId} FOR NO KEY UPDATE`)
+          await tx.execute<{ style_code: string; archived: boolean; linked: boolean }>(sql`
+            SELECT style_code, archived_at IS NOT NULL AS archived,
+                   channel_linked_at IS NOT NULL AS linked
+            FROM products WHERE id = ${styleId} FOR NO KEY UPDATE`)
         ).rows[0];
         if (!style) throw new CatalogError('NotFound', 'Style not found');
         if (style.archived) {
@@ -394,6 +419,15 @@ export class StylesService {
         }
         const options = await this.workingOptions(tx, styleId);
         const optionValues = await this.placeOptions(tx, options, input.options);
+        // A channel linked style's options are the channel's (security review L1): a new axis
+        // or value would leave every variant of the product answering option_conflict.
+        if (style.linked && options.some((option) => option.id === null || option.valuesChanged)) {
+          throw new CatalogError(
+            'FieldOwnedByChannel',
+            'The options of this style come from Shopify; add the option or value there',
+            { field: 'options' },
+          );
+        }
         for (const option of options) {
           if (option.id === null) {
             await tx.execute(sql`
@@ -609,7 +643,7 @@ export class StylesService {
     const barcodes = ids.length
       ? (
           await executor.execute<SkuBarcode & { variant_id: string }>(sql`
-            SELECT id, code, variant_id FROM barcodes
+            SELECT id, code, from_channel AS "fromChannel", variant_id FROM barcodes
             WHERE variant_id = ANY(${pgArray(ids)}::uuid[])
             ORDER BY code COLLATE "C"`)
         ).rows
@@ -630,6 +664,8 @@ export class StylesService {
       brand: row.brand,
       archived: row.archived,
       updatedAt: row.updated_at,
+      channelLinked: row.channel_linked,
+      channelNameLanguage: row.channel_name_language,
       options: options.rows.map((option) => ({
         id: option.id,
         name: cleanText(option.name),
@@ -647,7 +683,12 @@ export class StylesService {
           archived: sku.archived,
           barcodes: barcodes
             .filter((barcode) => barcode.variant_id === sku.id)
-            .map((barcode) => ({ id: barcode.id, code: barcode.code })),
+            .map((barcode) => ({
+              id: barcode.id,
+              code: barcode.code,
+              fromChannel: barcode.fromChannel,
+            })),
+          channelLinked: variant.channel_linked,
           ...(costs && { cost: costs.get(sku.id) ?? { status: 'not_set' as const } }),
         };
       }),

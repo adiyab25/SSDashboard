@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
-    "test": "tsc -p tsconfig.build.json && node --test scripts/redaction-keys.test.mjs scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs scripts/check-banned-names.test.mjs scripts/check-commit-subject.test.mjs scripts/check-branch-name.test.mjs scripts/check-component-export-names.test.mjs scripts/check-tsdoc-fixture.test.mjs scripts/check-timezone.test.mjs eslint/i18n.test.mjs"
+    "test": "tsc -p tsconfig.build.json && node --test scripts/redaction-keys.test.mjs scripts/check-logical-css.test.mjs scripts/check-module-readmes.test.mjs scripts/check-route-groups.test.mjs scripts/check-folder-names.test.mjs scripts/check-doc-links.test.mjs scripts/check-banned-names.test.mjs scripts/check-commit-subject.test.mjs scripts/check-branch-name.test.mjs scripts/check-component-export-names.test.mjs scripts/check-tsdoc-fixture.test.mjs scripts/check-timezone.test.mjs scripts/check-reserved-ci-ports.test.mjs eslint/i18n.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

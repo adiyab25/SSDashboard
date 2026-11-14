@@ -165,7 +165,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
       value: (
         <Link
           href={`/orders/${order.relatedOrder.id}`}
-          className="rounded-sm underline-offset-4 hover:underline focus-ring"
+          className="rounded-chip underline-offset-4 hover:underline focus-ring"
         >
           <OrderNumber order={order.relatedOrder} />
         </Link>
@@ -182,7 +182,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
             <li key={linked.id} className="flex flex-wrap items-baseline gap-2">
               <Link
                 href={`/orders/${linked.id}`}
-                className="rounded-sm underline-offset-4 hover:underline focus-ring"
+                className="rounded-chip underline-offset-4 hover:underline focus-ring"
               >
                 <OrderNumber order={linked} />
               </Link>
@@ -204,7 +204,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
           {access.can('customers.view') ? (
             <Link
               href={`/customers/${order.customer.id}`}
-              className="rounded-sm underline-offset-4 hover:underline focus-ring"
+              className="rounded-chip underline-offset-4 hover:underline focus-ring"
             >
               <bdi dir="auto">{order.customer.name ?? t('customers.unnamed')}</bdi>
             </Link>
@@ -261,7 +261,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
         <h1
           ref={heading}
           tabIndex={-1}
-          className="rounded-sm text-xl font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="rounded-chip text-xl font-semibold outline-none focus-ring"
         >
           <OrderNumber order={order} />
         </h1>
@@ -275,7 +275,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
 
       <OrderHoldBlock order={order} />
 
-      <dl className="grid gap-x-8 gap-y-1 rounded-lg border p-4 sm:grid-cols-[max-content_1fr]">
+      <dl className="grid gap-x-8 gap-y-1 rounded-card gradient-card-edge p-4 sm:grid-cols-[max-content_1fr]">
         {facts.map((fact) => (
           <div key={fact.id} className="contents">
             <dt className="text-sm text-muted-foreground">{fact.label}</dt>

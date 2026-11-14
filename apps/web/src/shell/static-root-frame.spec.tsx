@@ -29,7 +29,7 @@ describe('StaticRootFrame', () => {
 
   it('exposes both font families as CSS variables on the document', () => {
     expect(render('page')).toMatch(
-      /^<html[^>]* class="font-inter font-noto-arabic font-jetbrains-mono"/,
+      /^<html[^>]* class="font-geist font-noto-arabic font-geist-mono"/,
     );
   });
 

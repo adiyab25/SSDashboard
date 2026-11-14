@@ -79,6 +79,12 @@ export const StyleVariant = z.object({
   price: MoneyString.nullable(),
   archived: z.boolean(),
   barcodes: z.array(SkuBarcode),
+  /**
+   * True while a sales channel owns some of this variant's fields (spec 0012, AC-15): price,
+   * compare at price, weight, requires shipping, its option values, and its `fromChannel`
+   * barcode, shown read only with "From Shopify".
+   */
+  channelLinked: z.boolean(),
   cost: VariantCost.optional(),
 });
 /** The validated shape of `StyleVariant`, as the api and web see it after parsing. */
@@ -101,6 +107,19 @@ export const StyleDetail = z.object({
   brand: z.string().nullable(),
   archived: z.boolean(),
   updatedAt: z.string(),
+  /**
+   * True while a sales channel owns some of the style's fields (spec 0012, AC-15, field
+   * ownership): the name in `channelNameLanguage`, `tags`, `productType`, `brand`, and the option
+   * names and values, shown read only with "From Shopify". Code, the other name language,
+   * description, season, and group stay the app's.
+   */
+  channelLinked: z.boolean(),
+  /**
+   * The name language the channel writes (`ar` when the channel title had an Arabic letter at
+   * first link, else `en`), null when not linked. `PATCH /api/styles/:id` answers 409
+   * `FIELD_OWNED_BY_CHANNEL` for a name that changes this language.
+   */
+  channelNameLanguage: z.enum(['en', 'ar']).nullable(),
   options: z.array(StyleOption),
   variants: z.array(StyleVariant),
 });
@@ -125,7 +144,9 @@ export const StyleTags = z
  * `PATCH /api/styles/:id` (`catalog.edit`, spec 0012 AC-9). Absent fields are left as is; `name`
  * replaces both languages; `description: null` and `seasonId: null` clear them. A stale
  * `updatedAt` answers 409 `STALE_RECORD`; an archived season or group the style does not hold
- * yet 422 `ARCHIVED`; an unknown one 404 `NOT_FOUND`.
+ * yet 422 `ARCHIVED`; an unknown one 404 `NOT_FOUND`. On a channel linked style, a `name` whose
+ * `channelNameLanguage` text differs from the stored one answers 409 `FIELD_OWNED_BY_CHANNEL`
+ * (spec 0012, AC-15).
  */
 export const UpdateStyleRequest = z
   .object({

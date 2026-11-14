@@ -1,0 +1,89 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "apiVersion": "2026-10",
+    "scenario": "product-failures",
+    "step": "page 2 repeats the variant of page 1: the catalog refuses the input, PRODUCT_INPUT_INVALID",
+    "shapedFrom": [
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/queries/product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Product",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/ProductVariant",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/SelectedOption",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItem",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/InventoryItemMeasurement",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Weight",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/enums/WeightUnit",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/connections/ProductVariantConnection",
+      "https://shopify.dev/docs/api/admin-graphql/2026-10/objects/PageInfo"
+    ]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
+    "shopDomain": "fixture-store.myshopify.com",
+    "operationName": "ProductVariantsPage",
+    "variables": {
+      "id": "gid://shopify/Product/2220000082003",
+      "after": "fixture-repeated-p1"
+    },
+    "headers": {
+      "X-Shopify-API-Version": "2026-10"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "X-Shopify-API-Version": "2026-10",
+      "Content-Type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "data": {
+        "product": {
+          "id": "gid://shopify/Product/2220000082003",
+          "variants": {
+            "nodes": [
+              {
+                "id": "gid://shopify/ProductVariant/7770000082031",
+                "sku": "PB-TWICE-M",
+                "price": "650.00",
+                "compareAtPrice": null,
+                "barcode": null,
+                "selectedOptions": [
+                  {
+                    "name": "Size",
+                    "value": "M"
+                  }
+                ],
+                "inventoryItem": {
+                  "id": "gid://shopify/InventoryItem/77700000820319",
+                  "tracked": true,
+                  "requiresShipping": true,
+                  "measurement": {
+                    "weight": null
+                  }
+                }
+              }
+            ],
+            "pageInfo": {
+              "hasNextPage": false,
+              "endCursor": "fixture-variants-end"
+            }
+          }
+        }
+      },
+      "extensions": {
+        "cost": {
+          "requestedQueryCost": 705,
+          "actualQueryCost": 3,
+          "throttleStatus": {
+            "maximumAvailable": 2000,
+            "currentlyAvailable": 1997,
+            "restoreRate": 100
+          }
+        }
+      }
+    }
+  }
+}

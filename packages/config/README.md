@@ -11,6 +11,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 - The personal data redaction list and `redact` function, shared by every log and error sink: [src/redaction.ts](src/redaction.ts). Its key test, [scripts/redaction-keys.test.mjs](scripts/redaction-keys.test.mjs), covers the order, customer, and task keys.
 - The logical CSS check that fails `lint` on physical side styles: [scripts/check-logical-css.mjs](scripts/check-logical-css.mjs)
 - The time zone release step, run as `pnpm check:timezone` (spec 0004, AC-22): [scripts/check-timezone.mjs](scripts/check-timezone.mjs)
+- The reserved CI ports check that fails `lint` when dev facing config uses a port in 4900-4949: [scripts/check-reserved-ci-ports.mjs](scripts/check-reserved-ci-ports.mjs)
 - The commit subject and branch name checks, shared by the `.husky/commit-msg` hook and the CI `conventions` job: [scripts/check-commit-subject.mjs](scripts/check-commit-subject.mjs), [scripts/check-branch-name.mjs](scripts/check-branch-name.mjs)
 
 ## Never touches

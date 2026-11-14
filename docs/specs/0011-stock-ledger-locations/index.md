@@ -380,6 +380,13 @@ Tracer Bullet, the project default ([AGENTS.md](../../../AGENTS.md)). Milestone 
 - One new append only table, one seeded prefix; the baseline is regenerated again and developers recreate their database.
 - Two registries (`OnlineStockGate`, `ReturnsAwaitingRestock`) follow the `AuditUndoRegistry` pattern, so inventory imports neither orders nor connectors.
 
+## Amendments from specs 0016 to 0020 (ratified 2026-11-13)
+
+The owner ratified specs 0016 to 0020 on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)), which settles the changes they ask of this spec. Each line below amends the text above; where they disagree, the line here wins, and the named section of the asking spec holds the detail. Each lands with the asking feature's milestone, not before.
+
+- **A named found call** ([spec 0019](../0019-delivery-failures-returned-to-origin/index.md) AC-30): `StockAdjustments.recordFound(tx, { variantId, locationId, quantity, reasonCode, reference }, actor)`, callable by the deliveries module, with the reasons `pre_go_live_return` and `customer_swapped_return`; both skip the `RETURN_AWAITING_RESTOCK` check of AC-28, carry the parcel piece id as their reference, and have their own labels instead of "Found on the shelf, not from a parcel".
+- **The Bosta Exchange** ([spec 0019](../0019-delivery-failures-returned-to-origin/index.md) AC-34, owner decision Q-21.13): no new posting kind. The new piece leaves through the replacement order's shipment posting, and the old piece comes back through `customer_return_restock` at the original line's frozen unit cost, both through the orders module.
+
 ## Follow-up
 
 - [ ] Spec 0013: open order writes with `LedgerService.transaction`, call `reserveLines` with `reserve_available`, handle `ReservationShortened` and `ReservationFilled`, book carrier shipments with `postCarrierShipment`, register `orders.open_orders_held` with `OnlineStockGate`, and register (or leave to feature 21) a `ReturnsAwaitingRestock` provider.

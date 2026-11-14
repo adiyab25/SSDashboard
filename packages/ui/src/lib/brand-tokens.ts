@@ -2,10 +2,10 @@
 export const BRAND_LIGHT_FOREGROUND = '#FFFFFF';
 
 /**
- * The near black foreground a brand fill may carry: the Daftar light `--foreground`,
- * `oklch(0.22 0.02 70)`, converted to sRGB (OKLab matrix, sRGB transfer, rounded).
+ * The near black foreground a brand fill may carry: the light `--foreground` of the Midnight look (spec 0025),
+ * `#0A0E14`.
  */
-export const BRAND_DARK_FOREGROUND = '#211910';
+export const BRAND_DARK_FOREGROUND = '#0A0E14';
 
 /** The lowest contrast a brand fill and its foreground may have (WCAG 2.2 AA, normal text). */
 export const BRAND_MIN_RATIO = 4.5;
@@ -14,7 +14,7 @@ export const BRAND_MIN_RATIO = 4.5;
 export type BrandTokens = {
   /** Fill for the logo tile, the top rule, and the main portal button, as `#RRGGBB`. */
   fill: string;
-  /** Text and icon color on the fill, `#FFFFFF` or `#211910`. */
+  /** Text and icon color on the fill, `#FFFFFF` or `#0A0E14`. */
   foreground: string;
 };
 
@@ -136,7 +136,7 @@ function round2(value: number): number {
 
 /**
  * Turns a brand accent into the fill and foreground a portal or partner frame carries (AC-19).
- * The foreground is white or the near black `#211910`, whichever contrasts more (WCAG 2 relative
+ * The foreground is white or the near black `#0A0E14`, whichever contrasts more (WCAG 2 relative
  * luminance); the pair is accepted at 4.5:1 or more. Otherwise the answer says `contrast` and
  * suggests the nearest accepted fill, found by moving only the HSL lightness in steps of 0.25
  * percent, trying darker then lighter at each distance and taking the first that passes, so hue

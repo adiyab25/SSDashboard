@@ -763,7 +763,8 @@ describe('second factor codes (AC-3, AC-20)', () => {
 
 describe('password reset request (AC-9)', () => {
   function resetSetup(found: { user: { id: string } } | null) {
-    let clock = NOW.getTime();
+    let clock = 0;
+    let wall = NOW.getTime();
     const sleep = vi.fn((ms: number) => {
       clock += ms;
       return Promise.resolve();
@@ -776,7 +777,9 @@ describe('password reset request (AC-9)', () => {
       origin: ORIGIN,
       lockout: { takeSlot: vi.fn(), giveBack: vi.fn(), reset: vi.fn() },
       audit,
-      now: () => new Date(clock),
+      // Two clocks: the wall clock for event times, the monotonic one for the floor.
+      now: () => new Date(wall),
+      elapsedNow: () => clock,
       sleep,
     } as unknown as Parameters<typeof createBeforeHook>[0];
     const request = new Request(`${ORIGIN}/api/auth/request-password-reset`, { method: 'POST' });
@@ -801,6 +804,7 @@ describe('password reset request (AC-9)', () => {
       audit,
       ctx,
       advance: (ms: number) => (clock += ms),
+      jumpWall: (ms: number) => (wall += ms),
     };
   }
 
@@ -833,6 +837,18 @@ describe('password reset request (AC-9)', () => {
     await after(ctx({ status: true }));
 
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('keeps the full floor when the wall clock jumps during the request', async () => {
+    for (const jump of [10_000, -10_000]) {
+      const { before, after, sleep, ctx, jumpWall } = resetSetup(null);
+
+      await before(ctx());
+      jumpWall(jump);
+      await after(ctx({ status: true }));
+
+      expect(sleep).toHaveBeenCalledWith(RESET_RESPONSE_FLOOR_MS);
+    }
   });
 
   it('records the request with the target for a real email and none for an unknown one', async () => {

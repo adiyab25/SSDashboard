@@ -47,7 +47,7 @@ test.describe('accessibility matrix (AC-2, AC-5, AC-11)', () => {
           await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
           if (path === '/design') {
             await expect(page.getByTestId('contrast-foreground-on-background')).toHaveText(
-              /:1 meets$/,
+              new RegExp(`:1 ${textFor(dir, 'design.pair.meets')}$`),
             );
           }
 
@@ -456,6 +456,6 @@ test.describe('/design in development (AC-11, AC-13)', () => {
     );
     expect(
       await page.locator('body').evaluate((element) => getComputedStyle(element).fontFamily),
-    ).toMatch(/Inter/);
+    ).toMatch(/Geist/);
   });
 });

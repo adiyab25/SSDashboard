@@ -1,6 +1,6 @@
 import localFont from 'next/font/local';
 
-// Daftar type (spec 0003, Option B). Self hosted: each family is one variable woff2 file committed
+// Midnight, Silver and Cyan type (spec 0025; the self hosting is spec 0003). Self hosted: each family is one variable woff2 file committed
 // in `./fonts/` (see its README), so building an image makes no request to a font host and the app
 // makes none at runtime. `weight` is the file's weight axis range; `unicode-range` is the subset
 // Google Fonts served for the same family, so each file is used only for the characters it was
@@ -11,16 +11,16 @@ import localFont from 'next/font/local';
 // (`Noto Sans Arabic`). `fallback` appends that real name to the variable, so the variable reaches
 // the face. `adjustFontFallback: false` is required with it: the generated "<name> Fallback" face
 // (local Arial) would otherwise sit in the list before the real family and always win.
-const inter = localFont({
-  src: './fonts/inter-latin-variable.woff2',
+const geist = localFont({
+  src: './fonts/geist-latin-variable.woff2',
   weight: '100 900',
   style: 'normal',
   display: 'swap',
-  variable: '--font-inter',
-  fallback: ['Inter'],
+  variable: '--font-geist',
+  fallback: ['Geist'],
   adjustFontFallback: false,
   declarations: [
-    { prop: 'font-family', value: 'Inter' },
+    { prop: 'font-family', value: 'Geist' },
     {
       prop: 'unicode-range',
       value:
@@ -52,17 +52,17 @@ const notoArabic = localFont({
 });
 
 // Codes and the `/design` code specimen; not preloaded.
-const jetbrainsMono = localFont({
-  src: './fonts/jetbrains-mono-latin-variable.woff2',
-  weight: '100 800',
+const geistMono = localFont({
+  src: './fonts/geist-mono-latin-variable.woff2',
+  weight: '100 900',
   style: 'normal',
   display: 'swap',
   preload: false,
-  variable: '--font-jetbrains-mono',
-  fallback: ['JetBrains Mono'],
+  variable: '--font-geist-mono',
+  fallback: ['Geist Mono'],
   adjustFontFallback: false,
   declarations: [
-    { prop: 'font-family', value: 'JetBrains Mono' },
+    { prop: 'font-family', value: 'Geist Mono' },
     {
       prop: 'unicode-range',
       value:
@@ -72,11 +72,11 @@ const jetbrainsMono = localFont({
 });
 
 /**
- * The class names that put the three font families (Inter, Noto Sans Arabic, JetBrains Mono) on
- * `<html>` as the CSS variables `--font-inter`, `--font-noto-arabic`, and `--font-jetbrains-mono`.
+ * The class names that put the three font families (Geist, Noto Sans Arabic, Geist Mono) on
+ * `<html>` as the CSS variables `--font-geist`, `--font-noto-arabic`, and `--font-geist-mono`.
  * The families are self hosted from the variable files in `./fonts/` through `next/font/local`, so
  * no part of a build or a page load reaches a font host. Every root layout (back office, sign in,
  * portal, partner) uses it, so the fonts load the same way everywhere. It must never be applied to
  * anything but the `<html>` element, and must never point at a remote font URL.
  */
-export const rootFontClassName = `${inter.variable} ${notoArabic.variable} ${jetbrainsMono.variable}`;
+export const rootFontClassName = `${geist.variable} ${notoArabic.variable} ${geistMono.variable}`;

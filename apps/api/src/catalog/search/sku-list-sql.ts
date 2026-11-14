@@ -76,6 +76,10 @@ export interface SkuRow extends Record<string, unknown> {
   price: string | null;
   archived: boolean;
   updated_at: string;
+  /** Whether a sales channel owns some of the variant's fields (`channel_linked_at` is set). */
+  channel_linked: boolean;
+  /** The style's `channel_name_language`, null when the style is not channel linked. */
+  channel_name_language: 'en' | 'ar' | null;
 }
 
 /**
@@ -94,7 +98,10 @@ export const SKU_ROW_COLUMNS = sql`
          LATERAL (SELECT o.values -> ((v.option_values ->> o.position::text)::int)) AS l(label)
     WHERE o.product_id = v.product_id AND l.label IS NOT NULL), '[]'::jsonb) AS options,
   v.price, v.archived_at IS NOT NULL AS archived,
-  to_char(v.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at`;
+  to_char(v.updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) AS updated_at,
+  v.channel_linked_at IS NOT NULL AS channel_linked,
+  CASE WHEN p.channel_linked_at IS NOT NULL THEN p.channel_name_language END
+    AS channel_name_language`;
 
 /** A variant with its style (`p`), product group (`g`), and season (`s`, null when none). */
 export const SKU_ROW_FROM = sql`

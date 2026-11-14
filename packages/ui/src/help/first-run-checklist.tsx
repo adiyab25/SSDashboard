@@ -56,7 +56,7 @@ export function FirstRunChecklist({
     <section
       aria-label={title}
       data-slot="first-run-checklist"
-      className={cn('rounded-lg border bg-card p-4 text-card-foreground', className)}
+      className={cn('gradient-card-edge rounded-card p-4 text-card-foreground', className)}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -104,7 +104,7 @@ export function FirstRunChecklist({
               {item.href && !item.done ? (
                 <a
                   href={item.href}
-                  className={cn(ROW_CLASS, 'focus-ring rounded-sm hover:underline')}
+                  className={cn(ROW_CLASS, 'focus-ring rounded-chip hover:underline')}
                 >
                   {content}
                 </a>

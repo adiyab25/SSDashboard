@@ -17,6 +17,29 @@ export const SHOPIFY_ORDER_TOPICS: readonly string[] = [
  */
 export const SHOPIFY_CUSTOMER_TOPICS: readonly string[] = ['customers/create', 'customers/update'];
 
+/**
+ * The product topics the inbox processes (spec 0015 task 8, AC-16): each sends one inbox job,
+ * which reads the product back and applies it through `CatalogChannelSync.applyProduct`; a
+ * product Shopify no longer answers (`products/delete`) marks its mappings removed.
+ */
+export const SHOPIFY_PRODUCT_TOPICS: readonly string[] = [
+  'products/create',
+  'products/update',
+  'products/delete',
+];
+
+/**
+ * Shopify's mandatory compliance topics (`customers/data_request`, `customers/redact`,
+ * `shop/redact`): their bodies name the customer or shop in their own fields, never with a top
+ * level `id` or `admin_graphql_api_id`, so the hook's `no_subject` rule leaves them out and keeps
+ * them `received` for the task that scopes them (none yet; re-review Minor D).
+ */
+export const SHOPIFY_COMPLIANCE_TOPICS: readonly string[] = [
+  'customers/data_request',
+  'customers/redact',
+  'shop/redact',
+];
+
 /** The app topic milestone 1 processes: confirmed by the inbox job, then health `failing` (L1). */
 export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 
@@ -28,22 +51,29 @@ export const SHOPIFY_APP_UNINSTALLED_TOPIC = 'app/uninstalled';
 export const PROCESSED_INBOX_TOPICS: readonly string[] = [
   ...SHOPIFY_ORDER_TOPICS,
   ...SHOPIFY_CUSTOMER_TOPICS,
+  ...SHOPIFY_PRODUCT_TOPICS,
   SHOPIFY_APP_UNINSTALLED_TOPIC,
 ];
 
 /** The subject types of the processed topics: the resend scan's index friendly filter. */
-export const PROCESSED_INBOX_SUBJECTS: readonly InboundSubject[] = ['order', 'customer', 'app'];
+export const PROCESSED_INBOX_SUBJECTS: readonly InboundSubject[] = [
+  'order',
+  'customer',
+  'product',
+  'app',
+];
 
 /**
  * Whether a verified topic gets an inbox job now: the order topics, the customer topics (task 11),
- * and `app/uninstalled` (D9). Every other verified topic (refunds, products, inventory levels,
- * bulk operations) is still recorded in the inbox with its minimized payload, but no job is sent:
+ * the product topics (task 8), and `app/uninstalled` (D9). Every other verified topic (refunds,
+ * inventory levels, bulk operations) is still recorded in the inbox with its minimized payload, but no job is sent:
  * it stays `received` until its milestone 2 or 3 task processes it.
  */
 export function topicIsProcessed(topic: string): boolean {
   return (
     SHOPIFY_ORDER_TOPICS.includes(topic) ||
     SHOPIFY_CUSTOMER_TOPICS.includes(topic) ||
+    SHOPIFY_PRODUCT_TOPICS.includes(topic) ||
     topic === SHOPIFY_APP_UNINSTALLED_TOPIC
   );
 }
@@ -110,7 +140,8 @@ export interface MinimizedShopifyWebhook {
 /**
  * Reduces a verified, parsed Shopify webhook body to what the inbox may keep (spec 0015 AC-6,
  * *Value sourcing* "hook" rows): the topic, the subject's Shopify id (`admin_graphql_api_id` when
- * present, else the gid built from `id`; for a refund, its order's id from `order_id`), and
+ * present, else the gid built from `id`; for a refund, its order's id from `order_id`; none when
+ * `admin_graphql_api_id` is sent but is not a gid of the topic's resource), and
  * `updated_at`. For an inventory level message it also keeps the item id, the location id, and the
  * `available` quantity, numbers only (AC-6; their field names are Shopify's REST names, not yet
  * checked against a recording). Never a name, phone, email, address, note, line text, or any other
@@ -126,13 +157,17 @@ export function minimizeShopifyWebhook(topic: string, body: unknown): MinimizedS
     if (topic.startsWith('refunds/')) {
       const orderId = numericId(fields['order_id']);
       subjectExternalId = orderId ? `gid://shopify/Order/${orderId}` : null;
-    } else if (
-      typeof sent === 'string' &&
-      GID.test(sent) &&
-      typeName &&
-      sent.startsWith(`gid://shopify/${typeName}/`)
-    ) {
-      subjectExternalId = sent;
+    } else if (sent !== undefined && sent !== null) {
+      // A gid of another type than the topic's resource (security review L5: the topic header is
+      // not signed, so a signed body of one resource replayed under another topic) names no
+      // subject, never a gid built from the body's numeric id.
+      subjectExternalId =
+        typeof sent === 'string' &&
+        GID.test(sent) &&
+        typeName &&
+        sent.startsWith(`gid://shopify/${typeName}/`)
+          ? sent
+          : null;
     } else {
       const restId = numericId(fields['id']);
       subjectExternalId = restId && typeName ? `gid://shopify/${typeName}/${restId}` : null;

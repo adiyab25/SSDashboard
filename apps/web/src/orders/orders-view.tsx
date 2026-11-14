@@ -110,7 +110,7 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
             {t('orders.search.hint')}
           </span>
         </div>
-        <Button type="submit">
+        <Button type="submit" variant="secondary">
           <SearchIcon aria-hidden data-icon="inline-start" />
           {t('orders.search.submit')}
         </Button>
@@ -159,7 +159,7 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
 
       {query.data &&
         (rows.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 rounded-lg border px-4 py-10 text-center">
+          <div className="flex flex-col items-center gap-2 rounded-card gradient-card-edge px-4 py-10 text-center">
             <ShoppingBagIcon aria-hidden className="size-8 text-muted-foreground" />
             <p className="font-medium">
               {isFiltered(filters) || filters.customerId

@@ -16,12 +16,12 @@ export function BrandMark({ brand }: { brand: FrameBrand }) {
           alt={brand.name}
           width={36}
           height={36}
-          className="size-9 shrink-0 rounded-md bg-brand object-contain"
+          className="size-9 shrink-0 rounded-control bg-brand object-contain"
         />
       ) : (
         <span
           aria-hidden="true"
-          className="flex size-9 shrink-0 items-center justify-center rounded-md bg-brand text-base font-semibold text-brand-foreground"
+          className="flex size-9 shrink-0 items-center justify-center rounded-control bg-brand text-base font-semibold text-brand-foreground"
         >
           {initial}
         </span>

@@ -1,0 +1,51 @@
+{
+  "_fixture": {
+    "synthetic": true,
+    "note": "synthetic, to be replaced by recordings",
+    "scenario": "arabic-title",
+    "step": "a product titled in Arabic with Arabic option names and values",
+    "shape": "ChannelProductInput (packages/contracts/src/catalog/channel-product.ts), already mapped from a Shopify product; the mapping is spec 0015's"
+  },
+  "input": {
+    "storeId": "00000000-0000-4000-8000-000000000000",
+    "externalProductId": "gid://shopify/Product/9003",
+    "styleId": null,
+    "handle": "qamis-aswad",
+    "title": "قميص أسود",
+    "productType": "قمصان",
+    "vendor": "Fixture Brand",
+    "tags": ["شتاء"],
+    "options": [
+      {
+        "name": "المقاس",
+        "values": ["صغير", "وسط"]
+      }
+    ],
+    "variants": [
+      {
+        "externalVariantId": "gid://shopify/ProductVariant/90031",
+        "variantId": null,
+        "sku": "QMS-S",
+        "optionValues": ["صغير"],
+        "price": "300.00",
+        "compareAtPrice": null,
+        "barcode": null,
+        "weightGrams": 250,
+        "requiresShipping": true,
+        "tracked": true
+      },
+      {
+        "externalVariantId": "gid://shopify/ProductVariant/90032",
+        "variantId": null,
+        "sku": "QMS-M",
+        "optionValues": ["وسط"],
+        "price": "300.00",
+        "compareAtPrice": null,
+        "barcode": null,
+        "weightGrams": 250,
+        "requiresShipping": true,
+        "tracked": true
+      }
+    ]
+  }
+}

@@ -11,19 +11,22 @@ type StatusChipProps = {
 };
 
 const BASE =
-  'inline-flex h-6 shrink-0 items-center gap-1 rounded-sm px-2 text-xs font-medium whitespace-nowrap [&_svg]:size-3.5 [&_svg]:shrink-0';
+  'inline-flex h-6 shrink-0 items-center gap-1 rounded-chip border px-2 font-mono text-xs font-normal whitespace-nowrap lowercase [&_svg]:size-3.5 [&_svg]:shrink-0';
 
-/** The tinted surface and text classes for one meaning (full class names so Tailwind finds them). */
+/**
+ * The text colour for one meaning (full class names so Tailwind finds them). The surface is the
+ * control fill for every meaning; only the text and the icon glow carry the colour. Never cyan.
+ */
 function chipClassName(meaning: StatusMeaning): string {
   switch (meaning) {
     case 'confirmed':
-      return 'bg-confirmed-surface text-confirmed';
+      return 'border-border-strong bg-confirmed-surface text-confirmed [&_svg]:drop-shadow-[0_0_8px_var(--confirmed)]';
     case 'failed':
-      return 'bg-failed-surface text-failed';
+      return 'border-border-strong bg-failed-surface text-failed [&_svg]:drop-shadow-[0_0_8px_var(--failed)]';
     case 'owed':
-      return 'bg-owed-surface text-owed';
+      return 'border-border-strong bg-owed-surface text-owed [&_svg]:drop-shadow-[0_0_8px_var(--owed)]';
     case 'provisional':
-      return 'border border-dashed border-input bg-provisional-surface text-provisional';
+      return 'border-dashed border-input bg-provisional-surface text-provisional [&_svg]:drop-shadow-[0_0_8px_var(--provisional)]';
     default: {
       const unreachable: never = meaning;
       return unreachable;
@@ -50,7 +53,7 @@ function chipIcon(meaning: StatusMeaning) {
 }
 
 /**
- * A 24px tinted chip that shows order or cash state as an icon plus a word, never color alone
+ * A 24px chip (control fill, 1px strong border, lowercase mono text in the meaning colour, a glowing icon) that shows order or cash state as an icon plus a word, never color alone
  * (AC-16). The icon is decorative; the word carries the meaning. A blank or whitespace only label
  * renders nothing, so a chip can never appear as a bare colored pill; callers must pass the
  * translated word. It must never hold text of its own, take a brand accent, or mix meanings.
