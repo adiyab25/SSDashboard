@@ -80,10 +80,10 @@
 
 @theme inline {
   /* The three --font-* variables on <html> come from apps/web/src/shell/root-fonts.ts. */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-arabic: var(--font-noto-arabic), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: var(--font-noto-arabic), var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), var(--font-noto-arabic), ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -119,6 +119,9 @@
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-destructive-surface: var(--destructive-surface);
+  --color-primary-edge: var(--primary-edge);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
@@ -129,12 +132,6 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-
-  /* radius 8px gives sm 4.8px, md 6.4px, lg 8px, xl 11.2px */
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
 }
 
 /*
@@ -155,114 +152,195 @@
   --text-sm--line-height: 1.5;
   --text-base: 1.0625rem;
   --text-base--line-height: 1.5;
+
+  /*
+   * Corners (spec 0025, AC-12): four named values. `rounded-chip` 6px (chips, menu rows),
+   * `rounded-control` 8px (buttons, fields), `rounded-popover` 10px (popovers, menus, tooltips),
+   * `rounded-card` 12px (cards, dialogs). The old multiplier names stay as aliases of them so
+   * no screen keeps an unnamed radius: sm is chip, md is control, lg and xl are card.
+   */
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-popover: 10px;
+  --radius-card: 12px;
+  --radius-sm: var(--radius-chip);
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-card);
+  --radius-xl: var(--radius-card);
+
+  /* Motion (AC-18): one curve and one duration for transform, shadow, and colour changes. */
+  --ease-ui: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration-ui: 180ms;
 }
 
 /*
- * Color roles: direction B "Daftar". Warm paper neutrals (hue 70 to 85), a deep indigo
- * primary, and status hues used only for meaning. Every text pair reaches 4.5:1 and every
- * control boundary (`input`) and the focus ring 3:1, in both modes; `border` is for
- * decorative separators only. Measured values are in packages/ui/DESIGN.md and live on /design.
+ * Color roles: "Midnight, Silver and Cyan" (spec 0025). Dark is the owner's design exactly and
+ * lives in `.dark`; light is derived from the same roles and lives in `:root`. Cyan (`primary`,
+ * `ring`) alone means link, focus, current page, and the main action; status uses `success`,
+ * `warning`, `destructive`, and the muted foreground only. Every text pair reaches 4.5:1 and every
+ * control boundary (`input`) and the focus ring 3:1, in both modes; `border` is for decorative
+ * hairlines only. Measured values are in packages/ui/DESIGN.md and live on /design. Alpha colours
+ * are eight digit hex, painted over the surface they sit on.
  */
 :root {
-  --radius: 0.5rem;
   --focus-width: 2px;
-  --background: oklch(0.985 0.006 85);
-  --foreground: oklch(0.22 0.02 70);
-  --card: oklch(0.997 0.003 85);
-  --card-foreground: oklch(0.22 0.02 70);
-  --popover: oklch(0.997 0.003 85);
-  --popover-foreground: oklch(0.22 0.02 70);
-  --primary: oklch(0.38 0.12 275);
-  --primary-foreground: oklch(0.99 0.003 85);
-  --secondary: oklch(0.955 0.01 85);
-  --secondary-foreground: oklch(0.22 0.02 70);
-  --muted: oklch(0.955 0.01 85);
-  --muted-foreground: oklch(0.46 0.02 70);
-  --accent: oklch(0.935 0.014 85);
-  --accent-foreground: oklch(0.22 0.02 70);
-  --destructive: oklch(0.5 0.19 27);
-  --destructive-foreground: oklch(0.99 0.003 85);
-  --success: oklch(0.45 0.11 150);
-  --success-foreground: oklch(0.99 0.003 85);
-  --warning: oklch(0.48 0.11 65);
-  --warning-foreground: oklch(0.99 0.003 85);
-  --info: oklch(0.45 0.07 235);
-  --info-foreground: oklch(0.99 0.003 85);
-  --border: oklch(0.9 0.012 85);
-  --input: oklch(0.58 0.02 70);
-  --ring: oklch(0.38 0.12 275);
-  --sidebar: oklch(0.972 0.008 85);
-  --sidebar-foreground: oklch(0.22 0.02 70);
-  --sidebar-primary: oklch(0.38 0.12 275);
-  --sidebar-primary-foreground: oklch(0.99 0.003 85);
-  --sidebar-accent: oklch(0.93 0.014 85);
-  --sidebar-accent-foreground: oklch(0.22 0.02 70);
-  --sidebar-border: oklch(0.9 0.012 85);
-  --sidebar-ring: oklch(0.38 0.12 275);
+  --background: #f4f7fa;
+  --foreground: #0a0e14;
+  --card: #ffffff;
+  --card-foreground: #0a0e14;
+  --popover: #ffffff;
+  --popover-foreground: #0a0e14;
+  --primary: #0e7490;
+  --primary-foreground: #ffffff;
+  --primary-edge: #0b5568;
+  --secondary: #eef2f6;
+  --secondary-foreground: #0a0e14;
+  --muted: #eef2f6;
+  --muted-foreground: #4a5568;
+  --accent: #e9eef4;
+  --accent-foreground: #0a0e14;
+  --destructive: #c02a2a;
+  --destructive-foreground: #ffffff;
+  --destructive-surface: #fdecec;
+  --success: #047857;
+  --success-foreground: #ffffff;
+  --warning: #9a5b0b;
+  --warning-foreground: #ffffff;
+  --info: var(--muted-foreground);
+  --info-foreground: #ffffff;
+  --border: #0a0e1414;
+  --border-strong: #0a0e141f;
+  --input: #6b7a90;
+  --ring: #0e7490;
+  --sidebar: #ebf0f5;
+  --sidebar-foreground: #0a0e14;
+  --sidebar-primary: #0e7490;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9eef4;
+  --sidebar-accent-foreground: #0a0e14;
+  --sidebar-border: #0a0e1414;
+  --sidebar-ring: #0e7490;
 
-  /* Meaning roles (AC-16): aliases of existing hues, no new hue. Repeated in `.dark`. */
+  /* Meaning roles (spec 0003 AC-16): aliases of existing roles. Their surfaces are the control fill. */
   --confirmed: var(--success);
   --failed: var(--destructive);
   --owed: var(--warning);
   --provisional: var(--muted-foreground);
-  --confirmed-surface: color-mix(in oklab, var(--confirmed) 12%, var(--card));
-  --failed-surface: color-mix(in oklab, var(--failed) 12%, var(--card));
-  --owed-surface: color-mix(in oklab, var(--owed) 12%, var(--card));
-  --info-surface: color-mix(in oklab, var(--info) 12%, var(--card));
+  --confirmed-surface: var(--muted);
+  --failed-surface: var(--muted);
+  --owed-surface: var(--muted);
+  --info-surface: var(--muted);
   --provisional-surface: transparent;
 
   /* Portal brand accent (AC-19). A frame overrides these inline; the default is the primary. */
   --brand: var(--primary);
   --brand-foreground: var(--primary-foreground);
+
+  /* Gradient stops, light. The gradient utilities below read these; screens use the utilities. */
+  --stops-primary: #1e293b 0%, #334155 40%, #0e7490 100%;
+  --stops-heading: #0a0e14 0%, #334155 45%, #0e7490 100%;
+  --stops-hero: #1e293b, #334155 40%, #155e75 70%, #0e7490;
+  --stops-card-edge: #0a0e1424, #0a0e140d;
+  --stops-secondary-edge: #475569, #6b7a90;
+  --glow-core: #0e749026;
+  --glow-mid: #0e74900d;
+  --grid-line: #0a0e1408;
+  --stops-selected-row: #0e74901a, transparent 70%;
+  --stops-current-page: #0e749024, #0e74900a;
+  --stops-marker: #0a0e14, #0e7490;
+  --tint-nav: #0a0e140a;
+  --tint-row: #0a0e140d;
+  --shadow-lift: 0 8px 24px #0a0e1426;
+  --shadow-sheen: 0 8px 28px #0e749033;
 }
 
 .dark {
-  --background: oklch(0.19 0.012 70);
-  --foreground: oklch(0.96 0.01 85);
-  --card: oklch(0.23 0.014 70);
-  --card-foreground: oklch(0.96 0.01 85);
-  --popover: oklch(0.23 0.014 70);
-  --popover-foreground: oklch(0.96 0.01 85);
-  --primary: oklch(0.78 0.12 280);
-  --primary-foreground: oklch(0.2 0.03 275);
-  --secondary: oklch(0.28 0.014 70);
-  --secondary-foreground: oklch(0.96 0.01 85);
-  --muted: oklch(0.28 0.014 70);
-  --muted-foreground: oklch(0.75 0.02 80);
-  --accent: oklch(0.32 0.016 70);
-  --accent-foreground: oklch(0.96 0.01 85);
-  --destructive: oklch(0.74 0.16 25);
-  --destructive-foreground: oklch(0.19 0.012 70);
-  --success: oklch(0.78 0.15 150);
-  --success-foreground: oklch(0.19 0.012 70);
-  --warning: oklch(0.82 0.14 80);
-  --warning-foreground: oklch(0.19 0.012 70);
-  --info: oklch(0.78 0.08 235);
-  --info-foreground: oklch(0.19 0.012 70);
-  --border: oklch(0.33 0.014 70);
-  --input: oklch(0.6 0.02 75);
-  --ring: oklch(0.78 0.12 280);
-  --sidebar: oklch(0.21 0.013 70);
-  --sidebar-foreground: oklch(0.96 0.01 85);
-  --sidebar-primary: oklch(0.78 0.12 280);
-  --sidebar-primary-foreground: oklch(0.2 0.03 275);
-  --sidebar-accent: oklch(0.3 0.016 70);
-  --sidebar-accent-foreground: oklch(0.96 0.01 85);
-  --sidebar-border: oklch(0.33 0.014 70);
-  --sidebar-ring: oklch(0.78 0.12 280);
+  --background: #0a0e14;
+  --foreground: #e6e8eb;
+  --card: #111722;
+  --card-foreground: #e6e8eb;
+  --popover: #18202c;
+  --popover-foreground: #e6e8eb;
+  --primary: #7dd3fc;
+  --primary-foreground: #0a0e14;
+  --primary-edge: #bfe6fb;
+  --secondary: #18202c;
+  --secondary-foreground: #e6e8eb;
+  --muted: #18202c;
+  --muted-foreground: #9aa6b8;
+  --accent: #243044;
+  --accent-foreground: #e6e8eb;
+  --destructive: #ff8a8a;
+  --destructive-foreground: #0a0e14;
+  --destructive-surface: #2a1a1c;
+  --success: #7ee0b0;
+  --success-foreground: #0a0e14;
+  --warning: #e8b86d;
+  --warning-foreground: #0a0e14;
+  --info: var(--muted-foreground);
+  --info-foreground: #0a0e14;
+  --border: #ffffff14;
+  --border-strong: #ffffff1f;
+  --input: #5f7088;
+  --ring: #7dd3fc;
+  --sidebar: #0c1119;
+  --sidebar-foreground: #e6e8eb;
+  --sidebar-primary: #7dd3fc;
+  --sidebar-primary-foreground: #0a0e14;
+  --sidebar-accent: #243044;
+  --sidebar-accent-foreground: #e6e8eb;
+  --sidebar-border: #ffffff14;
+  --sidebar-ring: #7dd3fc;
 
   --confirmed: var(--success);
   --failed: var(--destructive);
   --owed: var(--warning);
   --provisional: var(--muted-foreground);
-  --confirmed-surface: color-mix(in oklab, var(--confirmed) 12%, var(--card));
-  --failed-surface: color-mix(in oklab, var(--failed) 12%, var(--card));
-  --owed-surface: color-mix(in oklab, var(--owed) 12%, var(--card));
-  --info-surface: color-mix(in oklab, var(--info) 12%, var(--card));
+  --confirmed-surface: var(--muted);
+  --failed-surface: var(--muted);
+  --owed-surface: var(--muted);
+  --info-surface: var(--muted);
   --provisional-surface: transparent;
 
   --brand: var(--primary);
   --brand-foreground: var(--primary-foreground);
+
+  --stops-primary: #f4f7fa 0%, #c9d3de 34%, #ffffff 48%, #a9ddf8 64%, #7dd3fc 100%;
+  --stops-heading: #ffffff 0%, #c9d3de 45%, #7dd3fc 100%;
+  --stops-hero: #f4f7fa, #c9d3de 40%, #a9ddf8 70%, #7dd3fc;
+  --stops-card-edge: #ffffff33, #ffffff0d;
+  --stops-secondary-edge: #8a9bb2, #5f7088;
+  --glow-core: #7dd3fc30;
+  --glow-mid: #7dd3fc0f;
+  --grid-line: #ffffff08;
+  --stops-selected-row: #7dd3fc24, transparent 70%;
+  --stops-current-page: #7dd3fc29, #7dd3fc05;
+  --stops-marker: #ffffff, #7dd3fc;
+  --tint-nav: #ffffff0a;
+  --tint-row: #ffffff08;
+  --shadow-lift: 0 8px 24px #00000080;
+  --shadow-sheen: 0 8px 28px #7dd3fc40;
+}
+
+/*
+ * Gradients that run along the line mirror in right to left, so the strong end is always at the
+ * start edge: the angles below are read by the gradient utilities. Top to bottom gradients (the
+ * card edge, the marker) do not mirror.
+ */
+:root,
+[dir='ltr'] {
+  --line-angle: 90deg;
+  --blend-angle: 110deg;
+  --heading-angle: 100deg;
+  --sheen-rest: 100%;
+  --sheen-hover: 0%;
+}
+[dir='rtl'] {
+  --line-angle: 270deg;
+  --blend-angle: 250deg;
+  --heading-angle: 260deg;
+  --sheen-rest: 0%;
+  --sheen-hover: 100%;
 }
 
 /*
@@ -297,6 +375,268 @@
   }
 }
 
+/*
+ * Gradients (spec 0025). Named utilities, not colour variables: a screen writes
+ * `gradient-primary`, never a hex. Each reads the per theme stops above, so one name serves both
+ * themes. Gradients imitate light (an edge, a glow, a sheen) and never fill a whole surface.
+ * Those that run along the line read the mirrored angle variables, so they flip in right to left.
+ */
+
+/* The main button fill (one per view). Text is `primary-foreground`. The sheen utility slides it. */
+@utility gradient-primary {
+  background-image: linear-gradient(var(--blend-angle), var(--stops-primary));
+  background-size: 220% 100%;
+  background-position: var(--sheen-rest) 0;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* The hero tile fill. Text is `primary-foreground`. */
+@utility gradient-hero {
+  background-image: linear-gradient(var(--blend-angle), var(--stops-hero));
+  color: var(--primary-foreground);
+}
+
+/* The page heading text fill, with a plain `foreground` fallback (forced colours, no clip support). */
+@utility gradient-heading {
+  background-image: linear-gradient(var(--heading-angle), var(--stops-heading));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+
+  @media (forced-colors: active) {
+    background-image: none;
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+  }
+  @supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+    background-image: none;
+    color: var(--foreground);
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* A 1px gradient border on a card: the `card` fill in the padding box, the edge in the border box. */
+@utility gradient-card-edge {
+  /* Zero specificity (`:where`), so a stripe such as `border-s-4 border-s-owed` always wins. */
+  :where(&) {
+    border: 1px solid transparent;
+  }
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(180deg, var(--stops-card-edge)) border-box;
+}
+
+/* The secondary button edge: a lighter (dark) or darker (light) slate down to `input`, 3:1 at both ends. */
+@utility gradient-secondary-edge {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--secondary), var(--secondary)) padding-box,
+    linear-gradient(180deg, var(--stops-secondary-edge)) border-box;
+}
+
+/* A soft cyan light behind hero areas. */
+@utility gradient-glow {
+  background-image: radial-gradient(
+    110% 90% at 50% 0%,
+    var(--glow-core) 0%,
+    var(--glow-mid) 38%,
+    transparent 72%
+  );
+}
+
+/* A faint 32px grid for hero backgrounds. */
+@utility gradient-grid {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* The selected table row tint; the strong end is at the start edge. */
+@utility gradient-selected-row {
+  background-image: linear-gradient(var(--line-angle), var(--stops-selected-row));
+}
+
+/* The current page tint on a sidebar item; pair it with `gradient-current-marker` on a child. */
+@utility gradient-current-page {
+  background-image: linear-gradient(var(--line-angle), var(--stops-current-page));
+}
+
+/* The 2px mark on the leading edge of the current page: put it on an absolutely placed child. */
+@utility gradient-current-marker {
+  background-image: linear-gradient(180deg, var(--stops-marker));
+}
+
+/* Alpha only hover tints. In light the table row hover is ink, never `accent`. */
+@utility tint-nav {
+  background-color: var(--tint-nav);
+}
+@utility tint-row {
+  background-color: var(--tint-row);
+}
+
+/*
+ * The look of a section label (CSS only, no text): lowercase mono, muted, with a cyan `// ` before
+ * it. The empty alternative text keeps the mark out of screen reader output; the plain `content`
+ * line before it is the fallback for a browser that does not read the alternative text syntax.
+ */
+@utility section-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 400;
+  text-transform: lowercase;
+  color: var(--muted-foreground);
+
+  &::before {
+    content: '// ';
+    content: '// ' / '';
+    color: var(--primary);
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+}
+
+/* Lowercase mono table header look, by CSS only. */
+@utility table-head-look {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 400;
+  text-transform: lowercase;
+  color: var(--muted-foreground);
+}
+
+/*
+ * Motion (AC-18, AC-19). Every utility exists only under `prefers-reduced-motion: no-preference`,
+ * so with `reduce` nothing moves at all: no lift, no press, no sheen, no entrance, no pulse.
+ */
+@keyframes ui-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ui-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ui-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* The shared 180ms transition on lift, press, shadow, and colours. The sheen position is not in it: `sheen` owns that at 600ms. */
+@utility transition-ui {
+  @media (prefers-reduced-motion: no-preference) {
+    transition-property: transform, box-shadow, color, background-color, border-color, opacity;
+    transition-duration: var(--duration-ui);
+    transition-timing-function: var(--ease-ui);
+  }
+}
+
+/* Hover lift: 1px up with a shadow. `transform` only while hovered, so an idle button is no stacking context. */
+@utility lift {
+  @media (prefers-reduced-motion: no-preference) {
+    &:not(:disabled, [aria-disabled='true']) {
+      @variant hover {
+        --ui-lift: -1px;
+        transform: translateY(var(--ui-lift)) scale(var(--ui-press, 1));
+        box-shadow: var(--shadow-lift);
+      }
+    }
+  }
+}
+
+/* Press: scale to .98 while active. */
+@utility press {
+  @media (prefers-reduced-motion: no-preference) {
+    &:not(:disabled, [aria-disabled='true']) {
+      @variant active {
+        --ui-press: 0.98;
+        transform: translateY(var(--ui-lift, 0)) scale(var(--ui-press));
+      }
+    }
+  }
+}
+
+/* Sheen: the main button blend sweeps across over 600ms on hover, with a cyan shadow. */
+@utility sheen {
+  @media (prefers-reduced-motion: no-preference) {
+    /* `&.sheen` doubles the specificity so this beats `transition-ui` whatever the emit order. */
+    &.sheen {
+      transition-property: background-position, box-shadow, transform, color;
+      transition-duration: 600ms, var(--duration-ui), var(--duration-ui), var(--duration-ui);
+      transition-timing-function: var(--ease-ui);
+    }
+    &:not(:disabled, [aria-disabled='true']) {
+      @variant hover {
+        background-position: var(--sheen-hover) 0;
+        box-shadow: var(--shadow-sheen);
+      }
+    }
+  }
+}
+
+/* Entrance: fade and an 8px rise over 500ms. */
+@utility enter {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ui-enter 500ms var(--ease-ui) both;
+  }
+}
+
+/* Entrance for the children of a page: staggered 50ms apart, 200ms at most. */
+@utility enter-children {
+  @media (prefers-reduced-motion: no-preference) {
+    & > * {
+      animation: ui-enter 500ms var(--ease-ui) both;
+    }
+    & > :nth-child(2) {
+      animation-delay: 50ms;
+    }
+    & > :nth-child(3) {
+      animation-delay: 100ms;
+    }
+    & > :nth-child(4) {
+      animation-delay: 150ms;
+    }
+    & > :nth-child(n + 5) {
+      animation-delay: 200ms;
+    }
+  }
+}
+
+/* A dropdown or popover opens in 150ms with a 4px drop. */
+@utility pop {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ui-pop 150ms var(--ease-ui) both;
+  }
+}
+
+/* The skeleton pulse, 1.4s. */
+@utility pulse-ui {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ui-pulse 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -317,6 +657,22 @@
   }
   body {
     @apply bg-background text-sm text-foreground antialiased;
+  }
+  /*
+   * The page heading keeps its size (`text-xl` on the element) and gets the heading blend as its
+   * fill (spec 0025, AC-11). Letter spacing is tight in Latin and reset in Arabic, where negative
+   * spacing breaks the joined letters.
+   */
+  h1 {
+    @apply gradient-heading;
+    letter-spacing: -0.03em;
+    /* Needed, not decoration: the blend spans the element box, so a full width heading would show only its first stops. */
+    inline-size: fit-content;
+    max-inline-size: 100%;
+  }
+  :lang(ar) h1,
+  h1:lang(ar) {
+    letter-spacing: 0;
   }
   :focus-visible {
     outline: var(--focus-width) solid var(--ring);
@@ -342,13 +698,36 @@
   }
 }
 
+/*
+ * Reduced motion (AC-19): switch the movement itself off, not only shorten it. Every motion
+ * utility lives inside `prefers-reduced-motion: no-preference`, so it never exists under
+ * `reduce`; this rule also stops the library's own enter and exit animations and transitions.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
   ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * Toasts (spec 0025, AC-10): inverted by default (`foreground` fill, `background` text, set in the
+ * Toaster). An error toast is the `destructive-surface` with a `destructive` border. The Undo
+ * button is an outline on the toast text colour. Unlayered on purpose: sonner injects its own
+ * unlayered stylesheet, which beats utility classes.
+ */
+[data-sonner-toast][data-type='error'] {
+  --normal-bg: var(--destructive-surface);
+  --normal-text: var(--destructive);
+  --normal-border: var(--destructive);
+}
+[data-sonner-toaster] [data-sonner-toast] [data-button]:not([data-cancel]) {
+  background: transparent;
+  color: var(--normal-text);
+  border: 1px solid var(--normal-text);
+  border-radius: var(--radius-chip);
+  font-weight: 600;
 }

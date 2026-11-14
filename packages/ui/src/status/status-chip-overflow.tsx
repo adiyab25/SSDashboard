@@ -11,7 +11,7 @@ type StatusChipOverflowProps = Omit<ComponentProps<'button'>, 'children' | 'type
 };
 
 const CLASS_NAME =
-  'inline-flex h-6 shrink-0 items-center rounded-sm bg-muted px-2 text-xs font-medium whitespace-nowrap text-muted-foreground tabular-nums';
+  'inline-flex h-6 shrink-0 items-center rounded-chip border border-border-strong bg-muted px-2 font-mono text-xs font-normal whitespace-nowrap text-muted-foreground tabular-nums';
 
 /**
  * The neutral "+N" chip that stands for the status chips a row cannot show (at most three are

@@ -17,7 +17,7 @@ export function FreshnessStrip({ text, className }: FreshnessStripProps) {
     <p
       data-slot="freshness-strip"
       className={cn(
-        'flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground',
+        'flex items-center gap-2 rounded-control bg-muted px-3 py-2 text-xs text-muted-foreground',
         className,
       )}
     >

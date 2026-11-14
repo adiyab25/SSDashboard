@@ -28,7 +28,17 @@ describe('StatusChip', () => {
     );
 
     expect(screen.getByText('Provisional').className).toContain('border-dashed');
-    expect(screen.getByText('Confirmed').className).not.toContain('border');
+    expect(screen.getByText('Confirmed').className).not.toContain('border-dashed');
+  });
+
+  it.each(STATUS_MEANINGS)('never uses the accent or a blend for %s (AC-4)', (meaning) => {
+    const { container } = render(<StatusChip meaning={meaning} label="Word" />);
+
+    const classes = (container.firstElementChild?.className ?? '').split(/\s+/);
+    expect(classes.length).toBeGreaterThan(0);
+    for (const name of classes) {
+      expect(name).not.toMatch(/primary|ring|blend|gradient/);
+    }
   });
 
   it.each(['light', 'dark'])('has no axe violations in %s', async (mode) => {

@@ -8,14 +8,14 @@ describe('deriveBrandTokens', () => {
     if (result.accepted) expect(result.ratio).toBeCloseTo(5.31, 1);
   });
 
-  it('accepts a yellow with the near black foreground (10.35:1)', () => {
+  it('accepts a yellow with the near black foreground (11.54:1)', () => {
     const result = deriveBrandTokens('#f2c230');
     expect(result).toMatchObject({
       accepted: true,
       fill: '#F2C230',
       foreground: BRAND_DARK_FOREGROUND,
     });
-    if (result.accepted) expect(result.ratio).toBeCloseTo(10.35, 1);
+    if (result.accepted) expect(result.ratio).toBeCloseTo(11.54, 1);
   });
 
   it('reads the short form', () => {
@@ -30,10 +30,10 @@ describe('deriveBrandTokens', () => {
   );
 
   it.each([
-    // Mid tone ochre: 3.90:1 with white, 4.44:1 with the near black.
-    ['#A9780B', 4.44],
-    // Mid grey: 3.95:1 with white, 4.39:1 with the near black.
-    ['#808080', 4.39],
+    // Mid tone ochre: 4.36:1 with white, 4.43:1 with the near black.
+    ['#997311', 4.43],
+    // Mid grey: 4.35:1 with white, 4.44:1 with the near black.
+    ['#797979', 4.44],
   ])(
     'rejects %s (best ratio %s, both foregrounds fail) with a passing suggestion',
     (accent, best) => {

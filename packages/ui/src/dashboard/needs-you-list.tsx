@@ -50,12 +50,12 @@ export function NeedsYouList({
   const rows = items.slice(0, NEEDS_YOU_MAX_ROWS);
   const hidden = Math.max(total ?? 0, items.length) - rows.length;
   const rowClass =
-    'focus-ring-inset flex min-h-12 w-full items-center gap-3 px-3 py-2 text-sm hover:bg-muted';
+    'focus-ring-inset flex min-h-12 w-full items-center gap-3 px-3 py-2 text-sm hover:tint-row';
   return (
     <ul
       aria-label={label}
       data-slot="needs-you-list"
-      className={cn('divide-y overflow-hidden rounded-lg border bg-card', className)}
+      className={cn('divide-y overflow-hidden rounded-card border bg-card', className)}
     >
       {rows.map((item) => (
         <li key={item.id}>
