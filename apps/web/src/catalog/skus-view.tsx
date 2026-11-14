@@ -75,7 +75,7 @@ export function SkusView({ enabled }: { enabled: boolean }) {
       cell: (row: SkuSummary) => (
         <Link
           href={`/skus/${row.id}`}
-          className="rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+          className="rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
         >
           <LtrText>{row.code}</LtrText>
         </Link>
@@ -171,7 +171,10 @@ export function SkusView({ enabled }: { enabled: boolean }) {
           </AlertDescription>
         </Alert>
       ) : loading ? (
-        <div aria-busy className="flex flex-col gap-2 sm:gap-0 sm:rounded-lg sm:border">
+        <div
+          aria-busy
+          className="flex flex-col gap-2 sm:gap-0 sm:rounded-card sm:gradient-card-edge"
+        >
           {Array.from({ length: 5 }, (_, index) => (
             <div key={index} className="flex h-row items-center px-3" aria-hidden>
               <Skeleton className="h-4 w-full" />
@@ -179,7 +182,7 @@ export function SkusView({ enabled }: { enabled: boolean }) {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <p className="rounded-lg border px-3 py-10 text-center text-sm text-muted-foreground">
+        <p className="rounded-card gradient-card-edge px-3 py-10 text-center text-sm text-muted-foreground">
           {filtered
             ? t('inventory.skus.noMatch')
             : filters.status === 'archived'
@@ -192,7 +195,7 @@ export function SkusView({ enabled }: { enabled: boolean }) {
           columns={columns}
           rows={rows}
           getRowKey={(row) => row.id}
-          className="sm:overflow-hidden sm:rounded-lg sm:border"
+          className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
         />
       )}
 

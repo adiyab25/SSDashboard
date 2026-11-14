@@ -33,7 +33,7 @@ export function OnlineGateCheckRow({
   const runnable = action !== undefined && ACTION_PATH.test(action.path);
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2">
+    <li className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border-strong px-3 py-2">
       <div className="flex min-w-0 flex-col gap-1">
         <span className="flex items-center gap-2 text-sm font-medium">
           {check.passed ? (

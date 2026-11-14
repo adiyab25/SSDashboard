@@ -18,7 +18,7 @@ export function SkuStyleBlock({ sku }: { sku: SkuDetail }) {
   return (
     <section
       aria-labelledby="sku-style-title"
-      className="flex flex-col gap-3 rounded-lg border p-4 text-sm"
+      className="flex flex-col gap-3 rounded-card gradient-card-edge p-4 text-sm"
     >
       <h2 id="sku-style-title" className="font-medium">
         {t('inventory.skuDetail.aboutTitle')}
@@ -29,7 +29,7 @@ export function SkuStyleBlock({ sku }: { sku: SkuDetail }) {
           <dd className="font-medium">
             <Link
               href={`/styles/${sku.style.id}`}
-              className="rounded-sm underline-offset-4 hover:underline focus-ring"
+              className="rounded-chip underline-offset-4 hover:underline focus-ring"
             >
               <LtrText>{sku.style.code}</LtrText> {text(sku.style.name, sku.style.code)}
             </Link>

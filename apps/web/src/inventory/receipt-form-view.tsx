@@ -14,7 +14,7 @@ import {
 import { Input } from '@ssdashboard/ui/components/input';
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { LoaderCircleIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { InfoIcon, LoaderCircleIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
@@ -33,9 +33,7 @@ import {
 import { useLanguage } from '@/i18n/language-provider';
 import { inventoryKeys, postReceipt } from './inventory-api';
 import { SkuPicker } from './sku-picker';
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 const Sku = z.object({
   id: z.string(),
@@ -280,14 +278,15 @@ export function ReceiptFormView() {
         </Alert>
       )}
       {noLocations && (
-        <Alert>
+        <Alert className="text-muted-foreground">
+          <InfoIcon aria-hidden />
           <AlertDescription>{t('inventory.receipt.noLocations')}</AlertDescription>
         </Alert>
       )}
 
       <section
         aria-labelledby="receipt-details"
-        className="flex flex-col gap-4 rounded-lg border p-4"
+        className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
       >
         <h2 id="receipt-details" className="text-base font-semibold">
           {t('inventory.receipt.details')}
@@ -300,7 +299,7 @@ export function ReceiptFormView() {
             </FieldLabel>
             <select
               id="receipt-location"
-              className={SELECT}
+              className={SELECT_CLASS}
               aria-required
               aria-invalid={!!errors.locationId}
               aria-describedby={errors.locationId ? 'receipt-location-error' : undefined}
@@ -370,7 +369,7 @@ export function ReceiptFormView() {
 
       <section
         aria-labelledby="receipt-lines"
-        className="flex flex-col gap-4 rounded-lg border p-4"
+        className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
       >
         <h2 id="receipt-lines" className="text-base font-semibold">
           {t('inventory.receipt.lines')}

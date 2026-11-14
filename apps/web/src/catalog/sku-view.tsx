@@ -51,7 +51,7 @@ export function SkuView({ sku }: { sku: SkuDetail }) {
         </div>
       </div>
 
-      <dl className="grid gap-4 rounded-lg border p-4 text-sm sm:grid-cols-2">
+      <dl className="grid gap-4 rounded-card gradient-card-edge p-4 text-sm sm:grid-cols-2">
         <div className="flex flex-col gap-1">
           <dt className="text-muted-foreground">{t('inventory.skuDetail.price')}</dt>
           <dd className="font-medium tabular-nums">

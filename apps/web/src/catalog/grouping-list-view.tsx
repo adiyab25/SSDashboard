@@ -247,7 +247,10 @@ export function GroupingListView({ kind, enabled }: { kind: GroupingKind; enable
           </AlertDescription>
         </Alert>
       ) : query.isPending ? (
-        <div aria-busy className="flex flex-col gap-2 sm:gap-0 sm:rounded-lg sm:border">
+        <div
+          aria-busy
+          className="flex flex-col gap-2 sm:gap-0 sm:rounded-card sm:gradient-card-edge"
+        >
           {Array.from({ length: 4 }, (_, index) => (
             <div key={index} className="flex h-row items-center px-3" aria-hidden>
               <Skeleton className="h-4 w-full" />
@@ -255,7 +258,7 @@ export function GroupingListView({ kind, enabled }: { kind: GroupingKind; enable
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border px-4 py-10 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-card gradient-card-edge px-4 py-10 text-center">
           <EmptyIcon aria-hidden className="size-8 text-muted-foreground" />
           {status === 'archived' ? (
             <p className="text-sm text-muted-foreground">{t(`catalog.${prefix}.emptyArchived`)}</p>
@@ -272,7 +275,7 @@ export function GroupingListView({ kind, enabled }: { kind: GroupingKind; enable
           columns={columns}
           rows={rows}
           getRowKey={(row) => row.id}
-          className="sm:overflow-hidden sm:rounded-lg sm:border"
+          className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
         />
       )}
 

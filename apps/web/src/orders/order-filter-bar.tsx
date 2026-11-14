@@ -14,7 +14,7 @@ import { XIcon } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedText } from '@/i18n/use-localized-text';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { EMPTY_FILTERS, isFiltered, type OrderFilters } from './order-filters';
 
 /** Adds or removes one value from a list, keeping the enum's own order. */

@@ -71,7 +71,7 @@ export function StyleView({
       cell: (variant: StyleVariant) => (
         <Link
           href={`/skus/${variant.id}`}
-          className="rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+          className="rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
         >
           <LtrText>{variant.code}</LtrText>
         </Link>
@@ -196,7 +196,7 @@ export function StyleView({
 
       <section
         aria-labelledby="style-facts-title"
-        className="flex flex-col gap-3 rounded-lg border p-4 text-sm"
+        className="flex flex-col gap-3 rounded-card gradient-card-edge p-4 text-sm"
       >
         <h2 id="style-facts-title" className="font-medium">
           {t('catalog.style.factsTitle')}
@@ -258,7 +258,7 @@ export function StyleView({
         {style.options.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('catalog.style.noOptions')}</p>
         ) : (
-          <dl className="grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-3">
+          <dl className="grid gap-3 rounded-card gradient-card-edge p-4 text-sm sm:grid-cols-3">
             {style.options.map((option) => (
               <div key={option.id} className="flex flex-col gap-1">
                 <dt className="text-muted-foreground">
@@ -283,7 +283,7 @@ export function StyleView({
           {t('catalog.style.variantsTitle')}
         </h2>
         {style.variants.length === 0 ? (
-          <p className="rounded-lg border px-3 py-10 text-center text-sm text-muted-foreground">
+          <p className="rounded-card gradient-card-edge px-3 py-10 text-center text-sm text-muted-foreground">
             {t('catalog.style.noVariants')}
           </p>
         ) : (
@@ -292,7 +292,7 @@ export function StyleView({
             columns={columns}
             rows={style.variants}
             getRowKey={(variant) => variant.id}
-            className="sm:overflow-hidden sm:rounded-lg sm:border"
+            className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
           />
         )}
       </section>

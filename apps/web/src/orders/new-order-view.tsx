@@ -41,7 +41,7 @@ import { ApiError } from '@/api/client';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { SkuPicker } from '@/inventory/sku-picker';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { NewOrderSkeleton } from './new-order-skeleton';
 import { createGiftedOrder, createOrder, getOrderOptions, orderKeys } from './orders-api';
 import { RelatedOrderPicker } from './related-order-picker';

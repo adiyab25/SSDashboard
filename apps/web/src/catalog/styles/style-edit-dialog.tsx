@@ -36,6 +36,7 @@ import { useReturnFocus } from '@/shared/use-return-focus';
 import { catalogKeys, updateStyle } from '../catalog-api';
 import { catalogErrorCode } from '../catalog-error';
 import { useGroupingChoices } from '../use-grouping-choices';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 /** Splits the tags box on commas (Latin or Arabic) and drops empty pieces. */
 const splitTags = (value: string) =>
@@ -74,9 +75,6 @@ const valuesOf = (style: StyleDetail): FormInput => ({
 
 const KNOWN = ['STALE_RECORD', 'ARCHIVED', 'INVALID_INPUT', 'NOT_FOUND'] as const;
 type Failure = (typeof KNOWN)[number] | 'generic';
-
-const SELECT =
-  'h-control w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 
 /** The active choices, plus the style's own one when it is not among them (it is archived). */
 function withCurrent(choices: CatalogRef[], current: CatalogRef | null) {
@@ -321,7 +319,11 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
                   <FieldLabel htmlFor="style-edit-season">
                     {t('catalog.styleEdit.season')}
                   </FieldLabel>
-                  <select id="style-edit-season" className={SELECT} {...form.register('seasonId')}>
+                  <select
+                    id="style-edit-season"
+                    className={SELECT_CLASS}
+                    {...form.register('seasonId')}
+                  >
                     <option value="">{t('catalog.common.noSeason')}</option>
                     {seasons.archived && (
                       <option value={seasons.archived.id}>
@@ -343,7 +345,7 @@ export function StyleEditDialog({ style, reload, onClose }: Props) {
                   <FieldLabel htmlFor="style-edit-group">{t('catalog.styleEdit.group')}</FieldLabel>
                   <select
                     id="style-edit-group"
-                    className={SELECT}
+                    className={SELECT_CLASS}
                     {...form.register('productGroupId')}
                   >
                     {groups.archived && (
