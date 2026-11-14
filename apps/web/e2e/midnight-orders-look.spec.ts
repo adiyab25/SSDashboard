@@ -276,6 +276,9 @@ test.describe('the list look (AC-11, AC-13, AC-21)', () => {
       )
       .not.toBe(before);
 
+    // One main action: New order is the only element with the blend in main.
+    await expect(page.locator('main .gradient-primary')).toHaveCount(1);
+
     // Card edge on the table wrapper.
     const wrapper = page.locator('.gradient-card-edge', { has: table }).first();
     expect(await wrapper.evaluate((e) => getComputedStyle(e).borderRadius)).toBe('12px');

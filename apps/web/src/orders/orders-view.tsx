@@ -110,7 +110,7 @@ export function OrdersView({ enabled }: { enabled: boolean }) {
             {t('orders.search.hint')}
           </span>
         </div>
-        <Button type="submit">
+        <Button type="submit" variant="secondary">
           <SearchIcon aria-hidden data-icon="inline-start" />
           {t('orders.search.submit')}
         </Button>
