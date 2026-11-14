@@ -66,7 +66,11 @@ export function LocationSwitcher() {
           <ChevronsUpDownIcon aria-hidden className="opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-0" aria-label={t('shell.locations.label')}>
+      <PopoverContent
+        align="end"
+        className="w-96 max-w-[calc(100vw-2rem)] p-0"
+        aria-label={t('shell.locations.label')}
+      >
         {status === 'error' ? (
           <div className="flex flex-col items-start gap-3 p-3" role="alert">
             <p>{t('shell.locations.errorDetail')}</p>
@@ -106,7 +110,7 @@ export function LocationSwitcher() {
                   >
                     <CheckIcon aria-hidden className={current === location.id ? '' : 'invisible'} />
                     <span className="truncate">{locationName(location, order)}</span>
-                    <LtrText className="ms-auto text-xs text-muted-foreground">
+                    <LtrText className="ms-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                       {location.code}
                     </LtrText>
                   </CommandItem>

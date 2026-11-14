@@ -47,7 +47,7 @@ export function OrderResultsTable({ rows }: { rows: readonly OrderListItem[] }) 
           <div className="flex flex-col gap-0.5 py-1">
             <Link
               href={`/orders/${row.original.id}`}
-              className="w-fit rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+              className="w-fit rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
             >
               <OrderNumber order={row.original} />
             </Link>
@@ -98,16 +98,16 @@ export function OrderResultsTable({ rows }: { rows: readonly OrderListItem[] }) 
   const table = useTable({ features, columns, data: rows, getRowId: (row) => row.id });
 
   return (
-    <div className="relative overflow-x-auto rounded-lg border">
+    <div className="relative overflow-x-auto rounded-card gradient-card-edge">
       <Table aria-label={t('orders.tableLabel')}>
-        <TableHeader className="bg-muted">
+        <TableHeader>
           {table.getHeaderGroups().map((group) => (
-            <TableRow key={group.id} className="h-row-header hover:bg-muted">
+            <TableRow key={group.id} className="h-row-header">
               {group.headers.map((header) => (
                 <TableHead
                   key={header.id}
                   scope="col"
-                  className={`px-3 font-medium ${NUMERIC.has(header.column.id) ? 'text-end' : 'text-start'}`}
+                  className={`px-3 ${NUMERIC.has(header.column.id) ? 'text-end' : 'text-start'}`}
                 >
                   <table.FlexRender header={header} />
                 </TableHead>
@@ -117,7 +117,7 @@ export function OrderResultsTable({ rows }: { rows: readonly OrderListItem[] }) 
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id} className="min-h-row hover:bg-muted">
+            <TableRow key={row.id} className="min-h-row">
               {row.getAllCells().map((cell) => (
                 <TableCell
                   key={cell.id}

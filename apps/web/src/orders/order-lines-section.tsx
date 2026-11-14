@@ -141,16 +141,16 @@ export function OrderLinesSection({ lines }: { lines: readonly OrderLineView[] }
       <h2 id="order-lines-title" className="text-base font-semibold">
         {t('orders.lines.title')}
       </h2>
-      <div className="relative overflow-x-auto rounded-lg border">
+      <div className="relative overflow-x-auto rounded-card gradient-card-edge">
         <Table aria-labelledby="order-lines-title">
-          <TableHeader className="bg-muted">
+          <TableHeader>
             {table.getHeaderGroups().map((group) => (
-              <TableRow key={group.id} className="h-row-header hover:bg-muted">
+              <TableRow key={group.id} className="h-row-header">
                 {group.headers.map((header) => (
                   <TableHead
                     key={header.id}
                     scope="col"
-                    className={`px-3 font-medium ${NUMERIC.has(header.column.id) ? 'text-end' : 'text-start'}`}
+                    className={`px-3 ${NUMERIC.has(header.column.id) ? 'text-end' : 'text-start'}`}
                   >
                     <table.FlexRender header={header} />
                   </TableHead>
@@ -160,7 +160,7 @@ export function OrderLinesSection({ lines }: { lines: readonly OrderLineView[] }
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id} className="h-row hover:bg-muted">
+              <TableRow key={row.id} className="h-row">
                 {row.getAllCells().map((cell) => (
                   <TableCell
                     key={cell.id}

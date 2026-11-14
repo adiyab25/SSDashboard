@@ -106,7 +106,7 @@ export function RelatedOrderPicker({
           disabled={disabled}
           aria-invalid={invalid}
           aria-describedby={describedBy}
-          className="w-full min-w-0 justify-between font-normal"
+          className="w-full min-w-0 justify-between bg-field font-normal"
         >
           {value ? (
             <OrderNumber order={value} className="font-medium" />

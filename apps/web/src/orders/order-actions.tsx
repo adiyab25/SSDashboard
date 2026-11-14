@@ -8,6 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BanIcon,
   CheckIcon,
+  InfoIcon,
   LoaderCircleIcon,
   PackageCheckIcon,
   PackageOpenIcon,
@@ -237,7 +238,8 @@ export function OrderActions({
             </Alert>
           )}
           {notes.map((key) => (
-            <Alert key={key}>
+            <Alert key={key} className="text-muted-foreground">
+              <InfoIcon aria-hidden />
               <AlertDescription>{t(key)}</AlertDescription>
             </Alert>
           ))}

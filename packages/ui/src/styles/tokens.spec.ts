@@ -161,3 +161,37 @@ describe('section-label utility', () => {
     expect(body).toMatch(/:where\(&\) \{[^}]*font-size:[^}]*font-weight: 400;/);
   });
 });
+
+describe('field fill (AC-8)', () => {
+  // Any block whose only declaration starts with `--field:`, whatever the indentation or line breaks.
+  const fieldRules = [
+    ...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{\s*--field:\s*([^;]+);/g),
+  ].map((match) => ({
+    selector: (match[1] ?? '').replace(/\s+/g, ' ').trim(),
+    value: match[2]?.trim(),
+  }));
+
+  it('is the page colour at the root and a card colour on a card in light only', () => {
+    const rootRule = fieldRules.find((rule) => rule.selector === ':root');
+    expect(rootRule?.value).toBe('var(--background)');
+
+    const card = fieldRules.find((rule) => rule.selector.startsWith("[data-slot='card']"));
+    expect(card?.value).toBe('var(--card)');
+    expect(card?.selector).toContain('.gradient-card-edge');
+    expect(card?.selector).not.toContain('.dark');
+    for (const slot of ['dialog-content', 'sheet-content', 'popover-content'])
+      expect(card?.selector).toContain(`[data-slot='${slot}']`);
+
+    const darkCard = fieldRules.find((rule) =>
+      rule.selector.startsWith(".dark [data-slot='card']"),
+    );
+    expect(darkCard?.value).toBe('var(--background)');
+    expect(darkCard?.selector).toContain('.dark .gradient-card-edge');
+    for (const slot of ['dialog-content', 'sheet-content', 'popover-content'])
+      expect(darkCard?.selector).toContain(`.dark [data-slot='${slot}']`);
+  });
+
+  it('maps the field role to a bg-field utility', () => {
+    expect(css).toContain('--color-field: var(--field);');
+  });
+});

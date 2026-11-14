@@ -74,7 +74,7 @@ export function OrderMoneySection({ money }: { money: OrderMoneyView }) {
           method: t(`orders.paymentMethod.${money.paymentMethod}`),
         })}
       </p>
-      <dl className="grid gap-x-8 gap-y-1 rounded-lg border p-4 sm:grid-cols-2">
+      <dl className="grid gap-x-8 gap-y-1 rounded-card gradient-card-edge p-4 sm:grid-cols-2">
         {rows.map((row) => (
           <div key={row.id} className="flex items-baseline justify-between gap-4">
             <dt className="text-sm text-muted-foreground">{row.label}</dt>
