@@ -92,13 +92,26 @@ function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
   );
 }
 
-/** Data cell. */
+/** Matches a vertical padding class (`p-`, `py-`, `pt-`, `pb-`), with or without a variant or `!` before it. */
+const ownVerticalPadding = /(?:^|[\s:\]!])-?(?:p|py|pt|pb)-\S/;
+
+/**
+ * Data cell. Adds the Arabic trim (`[&:lang(ar)]:py-1`, so a single line Arabic row stays 40px
+ * on its 28px line) only when the caller's `className` sets no vertical padding of its own. Any
+ * `p-`, `py-`, `pt-` or `pb-` class counts, variant prefixed ones too (`sm:py-0`,
+ * `[&:lang(ar)]:py-0`); `px-`, `ps-` and `pe-` do not. Why: the variant class has a higher
+ * specificity than a plain `py-10` and tailwind-merge does not dedupe across variants, so an
+ * always-on trim would beat the caller's padding in Arabic. It must never be applied on top of
+ * a caller's vertical padding.
+ */
 function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
+  const arabicTrim = ownVerticalPadding.test(className ?? '') ? undefined : '[&:lang(ar)]:py-1';
   return (
     <td
       data-slot="table-cell"
       className={cn(
-        'p-2 [&:lang(ar)]:py-1 align-middle whitespace-nowrap [&:has([role=checkbox])]:pe-0',
+        'p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pe-0',
+        arabicTrim,
         className,
       )}
       {...props}

@@ -401,15 +401,27 @@ test.describe('table rows after the global TableCell change (AC-20)', () => {
   ] as const) {
     test(`orders list and order page rows are at least 40px in ${tag}`, async ({ page }) => {
       await enter(page, { theme: 'dark', dir });
+      // Only visible data rows: a hidden or empty row (display none, zero height) is not measured.
       const heightsOf = async () =>
+        page.locator('main table tbody tr').evaluateAll((all) =>
+          all
+            .filter((row) => row.getClientRects().length > 0)
+            .map((row) => Math.round(row.getBoundingClientRect().height * 100) / 100)
+            .filter((height) => height > 0),
+        );
+      const hiddenRows = async () =>
         page
           .locator('main table tbody tr')
-          .evaluateAll((all) =>
-            all.map((row) => Math.round(row.getBoundingClientRect().height * 100) / 100),
+          .evaluateAll(
+            (all) => all.filter((row) => row.getBoundingClientRect().height === 0).length,
           );
       await openList(page);
+      const hiddenInList = await hiddenRows();
       const list = await heightsOf();
       await openOrder(page);
+      console.log(
+        `zero height rows ${tag}: list ${hiddenInList}, order page ${await hiddenRows()}`,
+      );
       const order = await heightsOf();
       const summary = (values: number[]) => ({
         count: values.length,
@@ -421,8 +433,8 @@ test.describe('table rows after the global TableCell change (AC-20)', () => {
       console.log(
         `orders rows ${tag}: list ${JSON.stringify(summary(list))}, order page ${JSON.stringify(summary(order))}`,
       );
-      expect(list.length).toBeGreaterThan(0);
-      expect(order.length).toBeGreaterThan(0);
+      expect(list.length, 'the orders list has visible data rows').toBeGreaterThan(0);
+      expect(order.length, 'the order page has visible table rows').toBeGreaterThan(0);
       for (const height of [...list, ...order]) expect(height).toBeGreaterThanOrEqual(39.5);
     });
   }

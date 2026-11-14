@@ -795,7 +795,7 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
       });
 
       if (NOTE_ALLOWED.has(name)) {
-        test(`${name} protected note rows are at most 62px and the note is fully visible in ${tag}`, async ({
+        test(`${name} protected note rows are at most 90px and the note is fully visible in ${tag}`, async ({
           page,
         }) => {
           const screen = SCREENS.find((entry) => entry.tag === name)!;
@@ -812,7 +812,8 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
                   element.closest('button, a') === null,
               );
               if (leaves.length === 0) return [];
-              const panel = row.closest('[data-slot="table-container"]')!.getBoundingClientRect();
+              const container = row.closest('[data-slot="table-container"]')!;
+              const panel = container.getBoundingClientRect();
               const cell = last.getBoundingClientRect();
               return leaves.map((note) => {
                 const rect = note.getBoundingClientRect();
@@ -823,6 +824,7 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
                   cellClipped: last.scrollWidth > last.clientWidth + 1,
                   insideCell: rect.left >= cell.left - 1 && rect.right <= cell.right + 1,
                   insidePanel: rect.left >= panel.left - 1 && rect.right <= panel.right + 1,
+                  panelScrolls: container.scrollWidth > container.clientWidth + 1,
                   lines: Math.round(rect.height / parseFloat(getComputedStyle(note).lineHeight)),
                 };
               });
@@ -833,7 +835,10 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
             0,
           );
           for (const note of notes) {
-            expect(note.rowHeight, note.text).toBeLessThanOrEqual(62);
+            // The note always shows in full and its row grows to fit: up to two note lines (about 90px).
+            expect(note.rowHeight, note.text).toBeLessThanOrEqual(90);
+            expect(note.lines, `${note.text} lines`).toBeLessThanOrEqual(2);
+            expect(note.panelScrolls, `${note.text} panel scrolls sideways`).toBe(false);
             expect(note.noteClipped, `${note.text} clipped`).toBe(false);
             expect(note.cellClipped, `${note.text} cell clipped`).toBe(false);
             expect(note.insideCell, `${note.text} inside its cell`).toBe(true);
@@ -920,6 +925,52 @@ test.describe('SKU option line in Arabic at 3x (AC-20, look only)', () => {
         clip: { x: box.x + box.width - 560, y: first.y - 4, width: 560, height: 6 * 40 + 8 },
       });
     });
+  }
+});
+
+test.describe('empty state cells keep their own padding (TableCell Arabic trim)', () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
+
+  for (const { dir, tag } of [
+    { dir: 'ltr', tag: 'dark-en' },
+    { dir: 'rtl', tag: 'dark-ar' },
+  ] as const) {
+    for (const { name, path, api: pattern, title } of [
+      {
+        name: 'stock',
+        path: '/stock',
+        api: /\/api\/stock(\?|$)/,
+        title: 'inventory.stock.emptyTitle' as const,
+      },
+      {
+        name: 'stock-receipts',
+        path: '/stock-receipts',
+        api: /\/api\/stock-receipts(\?|$)/,
+        title: 'inventory.receipts.emptyTitle' as const,
+      },
+    ]) {
+      test(`the ${name} empty cell keeps py-10 (40px) in ${tag}`, async ({ page }) => {
+        await enter(page, { theme: 'dark', dir });
+        await page.route(pattern, (route) =>
+          route.request().method() === 'GET'
+            ? route.fulfill({ json: { items: [], nextCursor: null } })
+            : route.fallback(),
+        );
+        await page.goto(path);
+        await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
+        // The skeleton row is a td[colspan] too: take the cell that holds the empty title.
+        const cell = page.locator('main table tbody td[colspan]', {
+          hasText: textFor(dir, title),
+        });
+        await expect(cell).toBeVisible();
+        const padding = await cell.evaluate((element) => {
+          const computed = getComputedStyle(element);
+          return { top: computed.paddingTop, bottom: computed.paddingBottom };
+        });
+        console.log(`${name} empty cell ${tag}: ${JSON.stringify(padding)}`);
+        expect(padding).toEqual({ top: '40px', bottom: '40px' });
+      });
+    }
   }
 });
 

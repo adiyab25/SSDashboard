@@ -49,7 +49,7 @@ export function SkuHistorySection({ skuId }: { skuId: string }) {
     }
     if (row.isReversal) return t('inventory.skuDetail.voidOf');
     return (
-      <span className="inline-flex flex-wrap items-center gap-x-2">
+      <span className="inline-flex items-center gap-x-2">
         {t(`inventory.skuDetail.sourceTypes.${row.sourceType}`)}
         {row.source && (
           <Link href={`/stock-receipts/${row.source.id}`} className={linkClass}>
