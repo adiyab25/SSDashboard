@@ -123,6 +123,21 @@ async function openNew(page: Page) {
 
 /** Every text field, native select and field-fill control on the page, with the fill it paints. */
 async function fieldFills(page: Page, scope = 'body') {
+  // A disabled control fades to its field fill; measure once no transition is running.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.effect?.getComputedTiming().iterations !== Infinity &&
+                animation.playState === 'running',
+            ).length,
+      ),
+    )
+    .toBe(0);
   return page.locator(scope).evaluate((root) => {
     const probe = (variable: string) => {
       const element = document.createElement('div');
@@ -137,7 +152,7 @@ async function fieldFills(page: Page, scope = 'body') {
     const pageColor = probe('--background');
     const fields = [
       ...root.querySelectorAll<HTMLElement>(
-        'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea, [class*="bg-field"]',
+        'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea, [class*="bg-field"], [role="combobox"]',
       ),
     ].filter((element) => element.getBoundingClientRect().width > 0);
     return {
@@ -314,6 +329,8 @@ test.describe('field colour (AC-8)', () => {
       const form = await fieldFills(page, 'main');
       console.log(`new order ${tag}: ${JSON.stringify(form)}`);
       expectFieldRule(form);
+      // The SKU picker of a line is a combobox trigger that looks like a field: it is measured too.
+      expect(form.fields.some((field) => field.id === 'line-0-sku')).toBe(true);
       if (theme === 'light') {
         // On the cards of the form the fields are the card colour, not the page colour.
         expect(form.fields.some((field) => field.onCard && field.fill === form.cardColor)).toBe(

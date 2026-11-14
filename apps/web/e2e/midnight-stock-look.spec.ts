@@ -367,6 +367,24 @@ async function walk(
 
 /** Every text field, native select, combobox button and field-fill control in a scope, with fill and height. */
 async function measureFields(page: Page, scope: string) {
+  // The stock SKU filter starts disabled until the access check answers and then fades to its field
+  // fill; measure what is painted once it is enabled and no transition is still running.
+  const filter = page.locator('#stock-sku-filter');
+  if ((await filter.count()) > 0) await expect(filter).toBeEnabled();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.effect?.getComputedTiming().iterations !== Infinity &&
+                animation.playState === 'running',
+            ).length,
+      ),
+    )
+    .toBe(0);
   return page
     .locator(scope)
     .first()
@@ -385,7 +403,7 @@ async function measureFields(page: Page, scope: string) {
         element.id || element.tagName.toLowerCase() + ':' + (element.getAttribute('name') ?? '');
       const fields = [
         ...root.querySelectorAll<HTMLElement>(
-          'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea, [class*="bg-field"]',
+          'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea, [class*="bg-field"], [role="combobox"]',
         ),
       ].filter(visible);
       const heightOf = (selector: string) =>
@@ -607,6 +625,10 @@ test.describe('field colour (AC-8) and control height (AC-20)', () => {
             })
             .map((field) => `${field.id} painted ${field.fill}, onCard ${field.onCard}`);
           expect(wrong, `card ${result.cardColor}, page ${result.pageColor}`).toEqual([]);
+          // The pickers are comboboxes that look like fields; they must be among the fields measured.
+          if (name === 'receipt-new' || name === 'stock') {
+            expect(result.combos.length, `${name} has a combobox trigger`).toBeGreaterThan(0);
+          }
           if (dialog && theme === 'light') {
             // On a dialog in light every field is the card colour.
             expect(result.fields.every((field) => field.fill === result.cardColor)).toBe(true);

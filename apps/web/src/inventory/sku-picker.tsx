@@ -107,7 +107,7 @@ export function SkuPicker({
             aria-invalid={invalid}
             aria-labelledby={label ? `${id}-label ${id}` : undefined}
             aria-describedby={describedBy}
-            className="w-full min-w-0 justify-between font-normal"
+            className="w-full min-w-0 justify-between bg-field font-normal"
           >
             {value ? (
               <span className="flex min-w-0 items-center gap-2">

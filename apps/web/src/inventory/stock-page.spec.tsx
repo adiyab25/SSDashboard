@@ -253,6 +253,13 @@ describe('StockPage (AC-9, AC-16)', () => {
     expect(header[0]).toHaveAttribute('data-variant', 'default');
   });
 
+  it('fills the SKU picker trigger with the field colour like the fields beside it', async () => {
+    api.listStock.mockResolvedValue(page([row(1)]));
+    renderWithQuery(<StockPage />);
+    await screen.findByText('SKU-1');
+    expect(screen.getByRole('combobox', { name: 'Filter by SKU' })).toHaveClass('bg-field');
+  });
+
   it('shows an error with a retry', async () => {
     api.listStock.mockRejectedValueOnce(new Error('boom'));
     api.listStock.mockResolvedValue(page([row(1)]));
