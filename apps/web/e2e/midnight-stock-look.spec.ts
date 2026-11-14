@@ -734,13 +734,13 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
   ];
   // Only these two lists may show a row with a protected or in use note (an owner question).
   const NOTE_ALLOWED = new Set(['seasons', 'product-groups']);
+  // The style page SKU row whose cost cell shows its second line ("from <date> · from the style")
+  // may grow too (owner ruling 2026-11-14, spec 0025 decision 14), up to TWO_LINE_MAX.
+  const TWO_LINE_ALLOWED = new Set(['style']);
+  const TWO_LINE_MAX = 64;
   for (const { theme, dir, tag } of COMBINATIONS) {
     for (const name of ROW_SCREENS) {
       test(`${name} rows are 40px in ${tag}`, async ({ page }) => {
-        // Bug 2 (verify-0025-m4.md, Re-verify 6): the style page SKU row whose cost cell has a second
-        // line ("from <date> · from the style") is 58 to 63px. `test.fail()` keeps the suite green and
-        // turns red when the row is 40px or the owner accepts it; then remove this line.
-        test.fail(name === 'style', 'bug 2: two line cost cell makes the SKU row taller than 40px');
         const screen = SCREENS.find((entry) => entry.tag === name)!;
         await enter(page, { theme, dir });
         await openPath(page, screen.path());
@@ -756,6 +756,15 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
               // A note is text in the last cell next to its buttons (the protected or in use line).
               hasNote:
                 controls.length > 0 && lastText.length > controlText.replace(/\s/g, '').length,
+              // A cell whose content is a column of two lines (the cost and its origin line).
+              hasSecondLine: [...row.children].some((cell) => {
+                const content = cell.firstElementChild;
+                return (
+                  content !== null &&
+                  content.classList.contains('flex-col') &&
+                  content.children.length >= 2
+                );
+              }),
             };
           }),
         );
@@ -770,7 +779,15 @@ test.describe('every table row is 40px (AC-20, owner ruling 2026-11-14)', () => 
             `${name} ${tag}: protected note rows ${JSON.stringify(notes.map((row) => ({ h: row.height, text: row.text })))}`,
           );
         }
-        const unexpected = off.filter((row) => !(row.hasNote && NOTE_ALLOWED.has(name)));
+        const twoLine = off.filter((row) => row.hasSecondLine && TWO_LINE_ALLOWED.has(name));
+        for (const row of twoLine) {
+          expect(row.height, `two line row: ${row.text}`).toBeLessThanOrEqual(TWO_LINE_MAX);
+        }
+        const unexpected = off.filter(
+          (row) =>
+            !(row.hasNote && NOTE_ALLOWED.has(name)) &&
+            !(row.hasSecondLine && TWO_LINE_ALLOWED.has(name)),
+        );
         expect(
           unexpected.map((row) => `${row.height}px: ${row.text}`),
           'rows that are not 40px',

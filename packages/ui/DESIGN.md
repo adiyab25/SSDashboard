@@ -339,7 +339,7 @@ Each component keeps its props, structure, density classes (`h-control`, `h-row`
 - DropdownMenu is non-modal by default (a modal menu aria-hides the shell and fails axe aria-hidden-focus); no scroll lock; one outside press closes the menu AND activates the pressed control. Keep this when re-copying from shadcn.
 - **Arabic cells use 4px vertical padding** because Arabic text runs on a 28px line, so a row stays 40px (`TableCell` sets `[&:lang(ar)]:py-1`).
 - **Rows that hold a button stay 40px.** On desktop a row that holds a button is still 40px: the cells around a 32px `sm` button drop their vertical padding (`py-0`) instead of the button shrinking. Touch (coarse pointer) may stay larger, as the density rules above already allow.
-- **One exception: a row with a note under its action.** A row that shows an explanatory note under its action (the in-use note on `/seasons` and `/product-groups`) may grow to fit the note, about 52px. The note is never truncated or hidden to save height.
+- **Two exceptions: a note under an action, and a two line cell.** A row that shows an explanatory note under its action (the in-use note on `/seasons` and `/product-groups`) may grow to fit the note, about 52px. A row with a cell of two lines (the style page SKU cost with its "from <date> · from the style" line) may grow to fit it, up to 64px. Neither text is ever truncated or hidden to save height.
 - States: loading shows skeleton rows at the real row height; empty uses the empty pattern below inside the table body; an error replaces the body with an inline alert and a retry.
 
 ### Forms (built by features 7 and 8)
