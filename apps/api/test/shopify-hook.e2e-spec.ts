@@ -141,7 +141,10 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
         sealed.keyVersion,
         options.health ?? 'ok',
         options.health_reason ?? null,
-        options.config ?? '{"appOwner":"organization","altPhoneAttribute":"alt_phone"}',
+        // The fixtures' COD gateway mapped as a manager would: a new order with an unmapped
+        // gateway is refused (review round 2 M3).
+        options.config ??
+          '{"appOwner":"organization","altPhoneAttribute":"alt_phone","gatewayMethods":{"Cash on Delivery (COD)":"cod"}}',
       ],
     );
     return { id, shopDomain, storeCode, storeId };

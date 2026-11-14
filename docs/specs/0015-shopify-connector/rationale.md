@@ -78,7 +78,7 @@ The [domain review](../../reviews/domain-shopify-connector.md) accepted the desi
 
 | Finding | Change in the spec |
 |---|---|
-| X1 failed inbound order events were invisible and never retried | AC-8: transient read errors retry and never end `failed`; domain failures publish `InboundEventFailed` (a task in feature 17), show on a Failed reads tab and as a count in the freshness line; the sweep retries with its own dedupe key `sweep-retry:<gid>:<updatedAt>:<attempt>` |
+| X1 failed inbound order events were invisible and never retried | AC-8: transient read errors retry and never end `failed`; domain failures publish `InboundEventFailed` (a task in feature 17), show on a Failed reads tab and as a count in the freshness line; the sweep retries with its own dedupe key `sweep-retry:<operating day>:<attempt>:<failed event id>`, at most 3 times a day for 7 operating days |
 | M1 exchanges made by editing the delivered order | AC-12 and Q-13.5: added lines become a linked replacement order through spec 0013's `relatedOrder` with `replacement_for`; the Q-13.3 reasoning no longer claims free orders are usually replacements |
 | M2 netting keys and a snapshot that could drop a live line | AC-11: pairs keyed on the sale's action type (`UPDATE` against `ORDER`), as the reference brand verified against Shopify Analytics; the snapshot is always every line with current quantity above 0, and netting only names line ids for metrics; a sales history check per recorded day |
 | M3 which difference is overwritten, and when | AC-21 and Q-13.6: higher pushed the next minute, lower held for a person; a 5 minute recheck; inbound messages set the compare and set base; older messages ignored |
