@@ -18,6 +18,7 @@ import { OrderAttentionRaised, OrderStateChanged } from '../src/orders/orders.ev
 import { OrderNumberTaken } from '../src/orders/orders.errors.js';
 import { OrderQueries } from '../src/orders/reading/order-query.service.js';
 import { OrderWriter } from '../src/orders/writer/order-writer.js';
+import { stockedOnline } from './order-stock.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 
 // Spec 0013 milestone 1 (AC-1 to AC-6, AC-14, AC-18, AC-19, AC-21, AC-22, AC-23, AC-25): the
@@ -128,6 +129,8 @@ describe('orders, milestone 1', { timeout: 240_000 }, () => {
       variants: [{ sku: 'SHIRT-AR', price: '300.00' }],
     });
     skuBilingual = SkuDetail.parse(bilingual.body).id;
+    // Spec 0013 milestone 4: orders reserve at creation; with stock online no line reads short.
+    await stockedOnline(api, [skuM, skuL, skuBilingual]);
     const events = api.app.get(DomainEvents);
     events.on(OrderAttentionRaised, (_tx, event) => void attentions.push(event), 'orders-e2e');
     events.on(

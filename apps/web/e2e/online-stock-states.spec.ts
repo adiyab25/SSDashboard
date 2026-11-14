@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { api, createLocation, createSku, receive } from './master-data-api';
-import { pressEnterOn, tabTo, typeInto, useOnlineFlag } from './online-flag';
+import { firstSortingCode, pressEnterOn, tabTo, typeInto, useOnlineFlag } from './online-flag';
+import { moveOnlineHoldingOrders } from './order-stock';
 import { expectNoAxeViolations, textFor, useBrowserState, waitForPageHydration } from './support';
 
 // Spec 0011 milestone 1, QA pass (AC-12 badge, AC-16, AC-17, AC-19, AC-20): what the first online
@@ -94,44 +95,44 @@ for (const { language, dir } of LANGUAGES) {
     test('the gate dialog shows its counts, a failed check with its fix, and the stale, failed and generic errors (AC-19)', async ({
       page,
     }) => {
-      const code = `0G${randomUUID().slice(0, 6).toUpperCase()}`;
+      const code = firstSortingCode();
       const location = await createLocation(page.request, code);
       const sku = await createSku(page.request, `E2E-GT-${randomUUID().slice(0, 8)}`);
       await receive(page.request, location.id, sku.id, 4);
 
-      // The gate answer is the real one with a failed check from "another module", a current
-      // online location with seven reservations, and every check passing from `mode` 'ready'.
+      // The gate answer is the real one with the orders check failing with three lines (spec 0013
+      // AC-26), a current online location with seven reservations, and every check passing from
+      // `mode` 'ready'. The hold route is stubbed too, so no real order is moved here.
       let mode: 'blocked' | 'ready' = 'blocked';
       let makeOnlineAnswer: { status: number; code?: string } = {
         status: 409,
         code: 'ONLINE_GATE_STALE',
       };
-      let fixCalls = 0;
+      let fixBodies: unknown[] = [];
       await page.route(`**/api/locations/${location.id}/online-gate`, async (route: Route) => {
         const real = await route.fetch();
         const view = (await real.json()) as Record<string, unknown> & {
           checks: Record<string, unknown>[];
         };
-        const other = {
+        const held = {
           key: 'orders.open_orders_held',
-          // Any catalog key does: the web translates what the api names.
-          label: 'inventory.onlineGate.countsHeading',
+          label: 'orders.onlineGate.openOrdersHeld',
           passed: mode === 'ready',
-          count: 3,
+          count: mode === 'ready' ? 0 : 3,
           action: {
             method: 'POST',
             path: '/api/orders/hold-open-orders',
-            label: 'inventory.onlineGate.stop',
+            label: 'orders.onlineGate.holdOpenOrders',
           },
         };
-        const checks = view.checks.map((check) =>
-          mode === 'ready' ? { ...check, passed: true } : check,
-        );
+        const checks = view.checks
+          .filter((check) => check.key !== held.key)
+          .map((check) => (mode === 'ready' ? { ...check, passed: true } : check));
         await route.fulfill({
           json: {
             ...view,
             canGoOnline: true,
-            checks: [...checks, other],
+            checks: [...checks, held],
             reservationsAtOldLocation: 7,
             currentOnlineLocation: {
               id: randomUUID(),
@@ -142,9 +143,9 @@ for (const { language, dir } of LANGUAGES) {
         });
       });
       await page.route('**/api/orders/hold-open-orders', (route) => {
-        fixCalls += 1;
+        fixBodies = [...fixBodies, route.request().postDataJSON()];
         mode = 'ready';
-        return route.fulfill({ json: {} });
+        return route.fulfill({ status: 201, json: { linesHeld: 2, linesShort: 1, linesLeft: 0 } });
       });
       await page.route(`**/api/locations/${location.id}/make-online`, (route) =>
         route.fulfill({
@@ -184,13 +185,23 @@ for (const { language, dir } of LANGUAGES) {
       await expectNoSidewaysScroll(page);
       await expectNoAxeViolations(page);
 
-      // Run the failed check's fix: the gate is read again and the move opens up.
+      // Hold the open orders here: it sends this location, shows the counts it answered, and the
+      // gate is read again, so the move opens up.
+      await expect(dialog.getByText(t('orders.onlineGate.openOrdersHeld'))).toBeVisible();
       await pressEnterOn(
         page,
-        dialog.getByRole('button', { name: t('inventory.onlineGate.stop') }),
+        dialog.getByRole('button', { name: t('orders.onlineGate.holdOpenOrders') }),
       );
       await expect(move).toBeEnabled();
-      expect(fixCalls).toBe(1);
+      expect(fixBodies).toEqual([{ locationId: location.id }]);
+      const result = dialog.getByRole('status', { name: t('orders.onlineGate.heldTitle') });
+      await expect(result).toBeVisible();
+      await expect(result.getByText(t('orders.onlineGate.linesHeld'))).toBeVisible();
+      await expect(result.locator('dd')).toHaveText(['2', '1', '0']);
+      await expect(
+        dialog.getByRole('button', { name: t('orders.onlineGate.holdOpenOrders') }),
+      ).toHaveCount(0);
+      await expectNoAxeViolations(page);
 
       // Stale, failed, then a generic error: each its own message, the dialog stays open.
       const reason = dialog.getByLabel(new RegExp(t('inventory.onlineGate.reason')));
@@ -226,14 +237,17 @@ for (const { language, dir } of LANGUAGES) {
 // audience uses them; the keyboard is covered on the wide screen.
 for (const { language, dir } of LANGUAGES) {
   test.describe(`phone in ${language}`, () => {
+    // Skip the wide screen before the online flag lock is taken, not after waiting for it.
+    test.beforeEach(({ viewport }) => {
+      test.skip((viewport?.width ?? 0) >= 1000, 'the phone project only');
+    });
     useOnlineFlag();
     test(`phone: the real gate flow, badge, stop and notices in ${language}`, async ({
       page,
     }, testInfo) => {
-      test.skip((page.viewportSize()?.width ?? 0) >= 1000, 'the phone project only');
       const t = (key: Parameters<typeof textFor>[1]) => textFor(dir, key);
       await useBrowserState(page, { language });
-      const code = `0G${randomUUID().slice(0, 6).toUpperCase()}`;
+      const code = firstSortingCode();
       const location = await createLocation(page.request, code);
       const sku = await createSku(page.request, `E2E-PH-${randomUUID().slice(0, 8)}`);
       await receive(page.request, location.id, sku.id, 4);
@@ -249,16 +263,25 @@ for (const { language, dir } of LANGUAGES) {
         .tap();
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByText(t('inventory.onlineGate.failed'))).toBeVisible();
+      await expect(dialog.getByText(t('inventory.onlineGate.failed')).first()).toBeVisible();
       await expectNoSidewaysScroll(page);
       await page.screenshot({ path: testInfo.outputPath(`gate-${language}.png`) });
       await expectNoAxeViolations(page);
 
       await dialog.getByRole('button', { name: t('inventory.onlineGate.confirmStock') }).tap();
-      await expect(dialog.getByText(t('inventory.onlineGate.passed'))).toBeVisible();
+      await expect(dialog.getByText(t('inventory.onlineGate.passed')).first()).toBeVisible();
       await dialog.getByLabel(new RegExp(t('inventory.onlineGate.reason'))).fill('Counted by hand');
-      await dialog.getByRole('button', { name: t('inventory.onlineGate.confirmMove') }).tap();
-      await expect(dialog).toBeHidden();
+      // Hold the open orders here when the orders check asks (spec 0013 AC-26), then move; an order
+      // a parallel spec placed meanwhile fails the check again, so that pair may run again.
+      await moveOnlineHoldingOrders(
+        dialog,
+        dialog.getByRole('button', { name: t('inventory.onlineGate.confirmMove') }),
+        {
+          hold: t('orders.onlineGate.holdOpenOrders'),
+          heldTitle: t('orders.onlineGate.heldTitle'),
+        },
+        (button) => button.tap({ timeout: 5_000 }),
+      );
 
       const row = page.getByRole('row', { name: new RegExp(code) });
       await expect(row.getByText(t('inventory.onlineGate.badge'), { exact: true })).toBeVisible();

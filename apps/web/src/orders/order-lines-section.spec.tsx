@@ -63,3 +63,22 @@ describe('OrderLinesSection line names (AC-5)', () => {
     expect(screen.queryByText('Only English')).toBeNull();
   });
 });
+
+describe('OrderLinesSection short mark (AC-5, AC-13)', () => {
+  it('marks only a short line, with the missing quantity', () => {
+    reader.language = 'en';
+    render(
+      <OrderLinesSection
+        lines={[
+          line({ quantity: 3, shortQuantity: 2 }),
+          line({ id: '40000000-0000-4000-8000-000000000002', skuCode: 'TEE-BLUE-M' }),
+        ]}
+      />,
+    );
+    const rows = screen.getAllByRole('row');
+    const shortRow = rows.find((row) => row.textContent?.includes('TEE-RED-M'));
+    const fullRow = rows.find((row) => row.textContent?.includes('TEE-BLUE-M'));
+    expect(shortRow).toHaveTextContent('Short by 2');
+    expect(fullRow).not.toHaveTextContent('Short by');
+  });
+});

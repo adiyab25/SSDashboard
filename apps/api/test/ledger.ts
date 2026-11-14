@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { PostingInput, PostingLine } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
+import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { SettingsService } from '../src/platform/settings/settings.service.js';
 import { createScratchDatabase, dropScratchDatabase } from './support.js';
 
@@ -28,7 +30,12 @@ export async function ledgerHarness(): Promise<LedgerHarness> {
   appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
   const app = createDatabase(appUrl.toString(), { max: 40 });
   const owner = createDatabase(scratch.url, { max: 4 });
-  const ledger = new LedgerService(app, new SettingsService(app));
+  const ledger = new LedgerService(
+    app,
+    new SettingsService(app),
+    new DomainEvents(),
+    new CatalogLocks(app),
+  );
   return {
     ledger,
     app,

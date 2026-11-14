@@ -221,6 +221,8 @@ export const Reservation = z.object({
   lotId: Uuid.nullable(),
   quantity: z.number().int(),
   openQuantity: z.number().int(),
+  /** Demand that could not be held yet; filled first when stock comes back (spec 0011 AC-21). */
+  unfilledQuantity: z.number().int(),
   sourceType: z.string(),
   sourceId: Uuid,
   sourceLineId: Uuid,
@@ -228,3 +230,120 @@ export const Reservation = z.object({
 });
 /** The validated shape of `Reservation`, as the api and web see it after parsing. */
 export type Reservation = z.infer<typeof Reservation>;
+
+/** What `reserveLines` does with a line that stock cannot cover: store the rest as waiting demand, or refuse every line. */
+export const ShortagePolicy = z.enum(['reserve_available', 'refuse']);
+/** The validated shape of `ShortagePolicy`, as the api and web see it after parsing. */
+export type ShortagePolicy = z.infer<typeof ShortagePolicy>;
+
+/** One document line a caller wants held: the requested total, not a delta. */
+export const ReserveLine = z.object({
+  sourceLineId: Uuid,
+  variantId: Uuid,
+  locationId: Uuid,
+  lotId: Uuid.optional(),
+  /** The requested total for the line; a repeat raises the hold toward it and never lowers it. */
+  quantity: z.number().int().min(1).max(MAX_INT),
+});
+/** What a caller passes for `ReserveLine`, before defaults and transforms are applied. */
+export type ReserveLine = z.input<typeof ReserveLine>;
+
+/** Holds stock for 1 to 200 lines of one document, in the caller's stock transaction (spec 0011 AC-5). */
+export const ReserveLinesInput = z.object({
+  sourceType: z.string().trim().min(1).max(50),
+  sourceId: Uuid,
+  shortage: ShortagePolicy,
+  lines: z
+    .array(ReserveLine)
+    .min(1)
+    .max(200)
+    .refine(
+      (lines) => new Set(lines.map((line) => line.sourceLineId)).size === lines.length,
+      'Each line needs its own sourceLineId',
+    ),
+});
+/** What a caller passes for `ReserveLinesInput`, before defaults and transforms are applied. */
+export type ReserveLinesInput = z.input<typeof ReserveLinesInput>;
+
+/** What became of one requested line, in input order. `short` is `unfilled > 0`. */
+export const ReservedLine = z.object({
+  sourceLineId: Uuid,
+  reservationId: Uuid,
+  requested: z.number().int(),
+  held: z.number().int(),
+  unfilled: z.number().int(),
+  short: z.boolean(),
+});
+/** The validated shape of `ReservedLine`, as the api and web see it after parsing. */
+export type ReservedLine = z.infer<typeof ReservedLine>;
+
+/** Releases the active reservations of some lines of one kind of document (spec 0011 AC-6). */
+export const ReleaseLinesInput = z.object({
+  sourceType: z.string().trim().min(1).max(50),
+  sourceLineIds: z.array(Uuid).min(1).max(200),
+});
+/** What a caller passes for `ReleaseLinesInput`, before defaults and transforms are applied. */
+export type ReleaseLinesInput = z.input<typeof ReleaseLinesInput>;
+
+/** Names one document: the key of `releaseSource` and `reservationsFor`. */
+export const ReservationSource = z.object({
+  sourceType: z.string().trim().min(1).max(50),
+  sourceId: Uuid,
+});
+/** What a caller passes for `ReservationSource`, before defaults and transforms are applied. */
+export type ReservationSource = z.input<typeof ReservationSource>;
+
+/** One line's reservation as `reservationsFor` reads it. */
+export const ReservationLine = z.object({
+  sourceLineId: Uuid,
+  reservationId: Uuid,
+  variantId: Uuid,
+  locationId: Uuid,
+  quantity: z.number().int(),
+  openQuantity: z.number().int(),
+  unfilledQuantity: z.number().int(),
+  status: ReservationStatus,
+});
+/** The validated shape of `ReservationLine`, as the api and web see it after parsing. */
+export type ReservationLine = z.infer<typeof ReservationLine>;
+
+/** One order line a carrier took (spec 0011 AC-22). */
+export const CarrierShipmentLine = z.object({
+  sourceLineId: Uuid,
+  variantId: Uuid,
+  locationId: Uuid,
+  /** Whole units shipped, at least 1; the posting writes it as an outbound movement. */
+  quantity: z.number().int().min(1).max(MAX_INT),
+  /**
+   * The line's reservation, fulfilled first. It counts only when it is the order's own line (`order`
+   * source, this order id, this `sourceLineId`); a missing, closed, or other one is ignored: a
+   * carrier fact is never refused. It is not part of the request hash.
+   */
+  reservationId: Uuid.optional(),
+});
+/** What a caller passes for `CarrierShipmentLine`, before defaults and transforms are applied. */
+export type CarrierShipmentLine = z.input<typeof CarrierShipmentLine>;
+
+/**
+ * A shipment a carrier fact reported (spec 0011 AC-22). Its idempotency key is
+ * `order_shipment:<orderId>` for generation 1 and `order_shipment:<orderId>:<n>` from generation 2.
+ */
+export const CarrierShipmentInput = z.object({
+  orderId: Uuid,
+  generation: z.number().int().min(1).max(1000).default(1),
+  /**
+   * The carrier's time; moved to now when its operating day is on or before the inventory lock date
+   * or it is more than 5 minutes ahead. It is not part of the request hash.
+   */
+  effectiveAt: z.coerce.date().optional(),
+  /** Null (the default) only for system jobs with no signed in user. */
+  postedBy: Uuid.nullable().default(null),
+  lines: z.array(CarrierShipmentLine).min(1).max(200),
+});
+/** What a caller passes for `CarrierShipmentInput`, before defaults and transforms are applied. */
+export type CarrierShipmentInput = z.input<typeof CarrierShipmentInput>;
+
+/** The key a carrier shipment posts under; the one place the format lives. */
+export function carrierShipmentKey(orderId: string, generation = 1): string {
+  return generation === 1 ? `order_shipment:${orderId}` : `order_shipment:${orderId}:${generation}`;
+}

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { sql, type Database } from '@ssdashboard/db';
 import { isRetryable, pgArray, pgErrorCode, type Transaction } from '../../database/sql.js';
 import { LedgerError } from './ledger.errors.js';
+import { refuseNesting, runLedgerUnit } from './stock-transaction.js';
 
 /**
  * How long a ledger transaction waits for any one lock. A stuck transaction on a hot SKU
@@ -20,17 +21,22 @@ function asLockTimeout(error: unknown): unknown {
  * capped at `LOCK_TIMEOUT_MS` each, the whole transaction retried once on a deadlock or
  * serialization failure, and a lock timeout raised as `LockTimeout`. Every writer of
  * balances, reservations, or discrepancies goes through here.
+ *
+ * Opening one inside another ledger transaction (from `work`, a `within` callback, or a domain
+ * event handler) throws `NestedStockTransaction` and fails the outer transaction too: a second
+ * connection would not see, wait for, or roll back with the first.
  */
 export async function ledgerTransaction<T>(
   db: Database,
   work: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
+  refuseNesting();
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await db.transaction(
         async (tx) => {
           await tx.execute(sql`SELECT set_config('lock_timeout', ${`${LOCK_TIMEOUT_MS}ms`}, true)`);
-          return work(tx);
+          return runLedgerUnit(() => work(tx));
         },
         { isolationLevel: 'read committed' },
       );

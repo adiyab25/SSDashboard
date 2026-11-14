@@ -927,7 +927,7 @@ export class OrderIntake {
   /**
    * Maps a line that arrived unmapped to the variant feature 13's product mapper resolved (spec
    * 0013 AC-25 b): sets `variant_id` from null and, while the order is `new`, `confirmed`, or
-   * `packed` and the line open, reserves it (`OrderStock.afterLink`, milestone 4). On an order
+   * `packed` and the line open, reserves it at the online location (`OrderStock.afterLink`). On an order
    * past `packed` it sets the variant only and raises `shipped_with_unmapped_lines` for the
    * warehouse, because the carrier shipment was booked without that line (task 15 adds the same
    * for an order whose stock out is requested). Never cancels or adds a line, writes no
