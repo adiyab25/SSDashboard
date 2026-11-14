@@ -5,6 +5,8 @@ import { expectNoAxeViolations } from '../test/axe';
 import {
   Sidebar,
   SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -49,6 +51,32 @@ describe('Sidebar', () => {
 
     expect(screen.getByRole('button', { name: 'Toggle sidebar' })).toBeInTheDocument();
     await expectNoAxeViolations(container);
+  });
+
+  it('draws a group label with the section label look and no weight or colour override', () => {
+    render(
+      <SidebarProvider>
+        <SidebarGroup>
+          <SidebarGroupLabel>Stock</SidebarGroupLabel>
+        </SidebarGroup>
+      </SidebarProvider>,
+    );
+    const label = screen.getByText('Stock');
+    expect(label).toHaveClass('section-label');
+    expect(label.className).not.toMatch(/font-medium|text-sidebar-foreground\/70/);
+  });
+
+  it('lets a caller size class stand beside the section label', () => {
+    render(
+      <SidebarProvider>
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sm font-semibold">Stock</SidebarGroupLabel>
+        </SidebarGroup>
+      </SidebarProvider>,
+    );
+    const label = screen.getByText('Stock');
+    expect(label).toHaveClass('section-label', 'text-sm', 'font-semibold');
+    expect(label.className).not.toMatch(/text-xs|font-normal/);
   });
 
   it('collapses from the trigger and remembers it in a cookie', async () => {
