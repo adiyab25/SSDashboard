@@ -6,12 +6,14 @@ import { ConnectorsModule } from '../connectors/connectors.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { StaffDirectoryModule } from '../identity/staff/staff-directory.js';
 import { InventoryModule } from '../inventory/inventory.module.js';
+import { TasksModule } from '../tasks/tasks.module.js';
 import { PlatformModule } from '../platform/platform.module.js';
 import { OrderEditing } from './editing/order-editing.service.js';
 import { OrderIntake } from './intake/order-intake.service.js';
 import { OrderMovesController } from './moves/order-moves.controller.js';
 import { OrderTransactions } from './order-transactions.js';
 import { OrderQueries } from './reading/order-query.service.js';
+import { OrderTaskLink } from './reading/order-task-link.js';
 import { OrdersController } from './reading/orders.controller.js';
 import { OrderStockController } from './stock/order-stock.controller.js';
 import { OrderStock } from './stock/order-stock.js';
@@ -42,6 +44,7 @@ import { OrderWriter } from './writer/order-writer.js';
     InventoryModule,
     PlatformModule,
     StaffDirectoryModule,
+    TasksModule,
   ],
   controllers: [OrdersController, OrderMovesController, OrderStockController],
   providers: [
@@ -54,6 +57,7 @@ import { OrderWriter } from './writer/order-writer.js';
     OrderQueries,
     WriteBackProjection,
     ShortLinesProjection,
+    OrderTaskLink,
   ],
   exports: [OrderTransactions, OrderIntake, OrderEditing, OrderTransitions, OrderQueries],
 })

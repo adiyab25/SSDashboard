@@ -49,7 +49,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 | 14 | [Customers by phone](confirmation-to-cash.md) | Slice 1a | Core | Beta | in-progress |
 | 15 | [Onboarding imports](confirmation-to-cash.md) | Slice 1a | Core | GA | planned |
 | 16 | [Orders & their state machines](confirmation-to-cash.md) | Slice 1a | Core | GA | in-progress |
-| 17 | [Tasks & My work inbox](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |
+| 17 | [Tasks & My work inbox](confirmation-to-cash.md) | Slice 1a | Core | Beta | in-progress |
 | 18 | [Confirmation queue](confirmation-to-cash.md) | Slice 1a | Operations | GA | planned |
 | 19 | [Bosta connector, mirror mode](confirmation-to-cash.md) | Slice 1a | Operations | GA | planned |
 | 20 | [Barcode scanning](confirmation-to-cash.md) | Slice 1a | Core | Beta | planned |

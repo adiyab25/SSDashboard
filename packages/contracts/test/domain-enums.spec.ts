@@ -101,6 +101,10 @@ describe('credit, settlement, task, and cost rule enums', () => {
       'outbound_command',
       'party',
       'location',
+      'connection',
+      'inbound_event',
+      'variant',
+      'install',
     ]);
     expect(TaskCreatedByType.options).toEqual(['person', 'system_job']);
     expect(OrderCostRuleKind.options).toEqual([

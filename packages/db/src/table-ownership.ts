@@ -92,6 +92,7 @@ export const TABLE_OWNERSHIP = {
   shipments: 'orders',
 
   tasks: 'tasks',
+  task_notes: 'tasks',
 
   credit_entries: 'credit',
   refunds: 'credit',
@@ -138,6 +139,7 @@ export const APPEND_ONLY_TABLES = [
   'movement_serials',
   'stock_receipt_lines',
   'stock_transfers',
+  'task_notes',
   'cost_records',
   'order_events',
   'customer_merges',

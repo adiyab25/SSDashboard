@@ -94,7 +94,7 @@ One task primitive (type, linked record, owner, due time, outcome code) that eve
 Also from spec 0016 (independent audit of 2026-11-11, section 4, items 7 and 8): support cases (wrong item, late delivery, carrier ticket, reorder, damaged or missing piece) with a required follow up time are task types here; a refund owed stays an open `refund.unrecorded_payout` task until the refund record lands in the `credit` module, a thin slice of feature 35 brought into slice 1a with the method `carrier_cash` (owner question 2 with spec 0020 Q-22.8, ratified 2026-11-13); one brand working hours setting (`operations.working_hours`) drives every due time.
 - [x] Design it (spec): `/architect tasks & my work inbox`
 - [ ] Build it: `/develop tasks & my work inbox`
-  - [ ] One failed write back, from event to My work
+  - [x] One failed write back, from event to My work
   - [ ] The full service, working hours, and the interface for feature 18
   - [ ] Every existing producer
   - [ ] Support cases, money owed, notes, and the phone pass

@@ -286,6 +286,7 @@ describe('audit record types', () => {
       order: 'code',
       exchange: 'code',
       outbound_command: 'code',
+      task: 'code',
       connection: 'text',
       style: 'text',
       season: 'text',

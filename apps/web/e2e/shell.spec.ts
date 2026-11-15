@@ -105,6 +105,11 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
     );
     // The license banner and the module notices add links to the tab order, and the real answers
     // follow whatever license state earlier specs left in the database.
+    // My work (spec 0016) shows its Edits not synced item only while the database holds an unsynced
+    // edit, which other specs create and remove; answer an empty summary so the order is fixed.
+    await page.route('**/api/tasks/summary', (route) =>
+      route.fulfill({ json: { mine: { open: 0, overdue: 0, dueToday: 0 }, unsyncedEdits: 0 } }),
+    );
     await stubLicensedInstall(page);
     await openShell(page);
     // The Staff entry joins the sidebar once /api/me has told the shell the role.
@@ -116,6 +121,8 @@ test.describe('keyboard (AC-4, AC-7, AC-8)', () => {
     const expected = [
       'Skip to main content',
       'Home',
+      // My work (spec 0016): the administrator's manager hat holds tasks.work.
+      'My work',
       'Design system',
       // The suite signs in as an administrator, who also has the Staff page (spec 0005, AC-25).
       'Staff',

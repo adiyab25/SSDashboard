@@ -379,6 +379,19 @@ export const AUDIT_ACTIONS = {
     label: 'audit.actions.orderPaymentMethodRederived',
     proof: ORDERS_PROOF,
   },
+  // Spec 0016 AC-13: a task closed by a person or by the system (the actor says which). The record
+  // id is `tasks.id`, there is no label, `after` holds the status and the outcome code, and the
+  // note is never written.
+  'task.closed': {
+    module: 'tasks',
+    recordType: 'task',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ['closed_by_person', 'closed_by_system'],
+    label: 'audit.actions.taskClosed',
+    proof: 'apps/api/test/tasks.e2e-spec.ts',
+  },
   // Spec 0015 AC-1 (task 6): a manager connects a Shopify store. The record id is
   // `connections.id`, the label the store code; the diff holds the label, store code, shop
   // domain, and app owner, never a credential or a token (AC-2).

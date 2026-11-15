@@ -155,6 +155,14 @@ describe('nav item modules (spec 0009, AC-9)', () => {
     }
   });
 
+  it('shows My work to a holder of tasks.work, on the tasks module (spec 0016, AC-14)', () => {
+    for (const hat of ['support', 'operations', 'warehouse', 'manager'] as const) {
+      expect(ids([hat])).toContain('myWork');
+    }
+    expect(ids(['media_buyer'])).not.toContain('myWork');
+    expect(navItemFor('/my-work')?.module).toBe('tasks');
+  });
+
   it('finds the entry of an address, the longest match first', () => {
     expect(navItemFor('/stock-receipts')?.id).toBe('receipts');
     expect(navItemFor('/skus/abc')?.id).toBe('skus');

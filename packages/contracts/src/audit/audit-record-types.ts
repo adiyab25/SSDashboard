@@ -179,6 +179,15 @@ export const AUDIT_RECORD_TYPES = {
     labelPattern: AUDIT_RECORD_LABEL_PATTERN,
     labelIsOwnCode: false,
   },
+  task: {
+    // A task (spec 0016 AC-13): the record id is `tasks.id`, no label, the reason a code, and the
+    // diff holds ids, codes, hats, and times only. A note is personal data and never written.
+    label: 'audit.recordTypes.task',
+    personalKeys: ['note'],
+    reason: 'code',
+    labelPattern: null,
+    labelIsOwnCode: false,
+  },
   connection: {
     // A connected outside account (spec 0015): the record id is `connections.id`, the label the
     // store code (its own code contract), the reason the manager's free text. Entries never hold

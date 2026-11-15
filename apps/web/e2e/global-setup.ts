@@ -45,6 +45,7 @@ const WARM_UP_PATHS = [
   '/orders',
   `/orders/${PLACEHOLDER_ID}`,
   '/orders/new',
+  '/my-work',
   '/settings',
   '/connections',
   '/connections/new',

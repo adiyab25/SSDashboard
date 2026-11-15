@@ -14,8 +14,10 @@ vi.mock('./orders-api', async (original) => ({
 }));
 
 const address = vi.hoisted(() => ({ search: '' }));
+const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(address.search),
+  useRouter: () => ({ replace: router.replace }),
 }));
 
 const me = vi.hoisted(
@@ -220,6 +222,26 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
     expect(window.location.href).not.toContain('٠١٠٠');
   });
 
+  it('writes the hold box back to the address, so the link can apply it again', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockResolvedValue({ items: [order(1)], nextCursor: null });
+    address.search = 'hold=1&customerId=30000000-0000-4000-8000-000000000001';
+    renderWithQuery(<OrdersPage />);
+
+    const box = await screen.findByRole('checkbox', { name: 'Edit not synced (hold)' });
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+    expect(router.replace).toHaveBeenLastCalledWith(
+      '/orders?customerId=30000000-0000-4000-8000-000000000001',
+      { scroll: false },
+    );
+    await userEvent.click(box);
+    expect(router.replace).toHaveBeenLastCalledWith(
+      '/orders?hold=1&customerId=30000000-0000-4000-8000-000000000001',
+      { scroll: false },
+    );
+  });
+
   it('applies the customer filter from the customer page link and ignores a bad id', async () => {
     api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
     api.listOrders.mockResolvedValue({ items: [order(1)], nextCursor: null });
@@ -233,6 +255,20 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
       expect.anything(),
     );
     expect(screen.getByText('Showing the orders of one customer.')).toBeVisible();
+  });
+
+  it('starts on the hold filter from the unsynced edits link (spec 0016, AC-7)', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockResolvedValue({ items: [order(1)], nextCursor: null });
+    address.search = 'hold=1';
+    renderWithQuery(<OrdersPage />);
+
+    await screen.findByRole('table', { name: 'Orders' });
+    expect(api.listOrders).toHaveBeenCalledWith(
+      expect.objectContaining({ hold: true }),
+      undefined,
+      expect.anything(),
+    );
   });
 
   it('offers every store and channel, Shopify ones included, to a person who only has orders.view', async () => {

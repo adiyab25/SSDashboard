@@ -140,8 +140,61 @@ describe('tasks (AC-26)', () => {
       created_by_type: 'person',
       created_by: person,
       owner_user_id: person,
-      owner_hat: null,
+      owner_hat: 'support',
     });
+  });
+
+  // Spec 0016: a person never replaces the hat (release puts it back in a queue without a write),
+  // and the new text columns are shape checked so a phone or a note cannot be stored in them.
+  it('always keeps an owner hat, even when a person holds the task', async () => {
+    await expect(open({ owner_user_id: person, owner_hat: null })).rejects.toThrow(
+      /tasks_owner_hat_set/,
+    );
+  });
+
+  it('shape checks the subject key, contact channel, external reference, and note length', async () => {
+    await open({ subject_key: 'shopify.order_edit:step_off' });
+    await expect(open({ subject_key: 'Call 0100' })).rejects.toThrow(/tasks_subject_key_shape/);
+    await open({ contact_channel: 'whatsapp' });
+    await expect(open({ contact_channel: 'telegram' })).rejects.toThrow(
+      /tasks_contact_channel_known/,
+    );
+    await open({ external_ref: 'BST-123' });
+    await expect(open({ external_ref: 'call 01012345678' })).rejects.toThrow(
+      /tasks_external_ref_shape/,
+    );
+    await expect(open({ note: '' })).rejects.toThrow(/tasks_note_length/);
+    await expect(open({ note: 'x'.repeat(1001) })).rejects.toThrow(/tasks_note_length/);
+    await open({ note: 'x'.repeat(1000) });
+  });
+
+  it('accepts the four linked types spec 0016 adds', async () => {
+    for (const linked_type of ['connection', 'inbound_event', 'variant', 'install']) {
+      await open({ linked_type });
+    }
+  });
+
+  it('keeps notes append only for the application role: it may read and insert, never change', async () => {
+    const id = await open();
+    const note = await one<{ id: string }>(
+      "INSERT INTO task_notes (task_id, note, author_id) VALUES ($1, 'first', $2) RETURNING id",
+      [id, person],
+    );
+
+    await expect(
+      app.query("UPDATE task_notes SET note = 'x' WHERE id = $1", [note.id]),
+    ).rejects.toThrow(/permission denied/);
+    await expect(app.query('DELETE FROM task_notes WHERE id = $1', [note.id])).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(app.query('TRUNCATE task_notes')).rejects.toThrow(/permission denied/);
+    await expect(owner.query('TRUNCATE task_notes')).rejects.toThrow(/append only/);
+    await expect(
+      app.query("INSERT INTO task_notes (task_id, note, author_id) VALUES ($1, '', $2)", [
+        id,
+        person,
+      ]),
+    ).rejects.toThrow(/task_notes_note_length/);
   });
 
   it('keeps one open task per dedupe key; a closed one does not block a new open one', async () => {
@@ -171,16 +224,20 @@ describe('tasks (AC-26)', () => {
     expect(row.day).toBe('2026-01-21');
   });
 
-  it('has exactly the three partial indexes My work and the dedupe key read (index names only)', async () => {
+  it('has exactly the partial indexes My work, the dedupe key, and the sync tasks read (index names only)', async () => {
     const indexes = await one<{ names: string[] }>(
       `SELECT array_agg(indexname::text ORDER BY indexname) AS names FROM pg_indexes
        WHERE tablename = 'tasks' AND indexdef LIKE '%WHERE%'`,
     );
 
     expect(indexes.names).toEqual([
+      'tasks_dedupe_key_idx',
+      'tasks_external_ref_idx',
       'tasks_open_dedupe_key_unique',
+      'tasks_open_due_idx',
       'tasks_open_owner_hat_idx',
       'tasks_open_owner_user_idx',
+      'tasks_open_subject_idx',
     ]);
   });
 });

@@ -25,6 +25,8 @@ export * from './orders/order-api.js';
 export * from './credit/credit-enums.js';
 export * from './settlement/settlement-enums.js';
 export * from './tasks/task-enums.js';
+export * from './tasks/task-types.js';
+export * from './tasks/task-api.js';
 export * from './connectors/connector-enums.js';
 export * from './connectors/connection-config.js';
 export * from './connectors/connections.js';

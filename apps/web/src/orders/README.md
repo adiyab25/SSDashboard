@@ -14,7 +14,7 @@ The order list at `/orders`, one order at `/orders/[orderId]`, and the new order
 
 ## Never touches
 
-- A typed search in a URL, query string, log, history, or storage (Law 151, spec 0013 AC-4): a search text (a phone or an order number) is sent only as a `POST /api/orders/search` body and kept in component state; `GET /api/orders` carries only the non personal filters. Only a customer id may arrive in the address (`/orders?customerId=`).
+- A typed search in a URL, query string, log, history, or storage (Law 151, spec 0013 AC-4): a search text (a phone or an order number) is sent only as a `POST /api/orders/search` body and kept in component state; `GET /api/orders` carries only the non personal filters. Only a customer id (`/orders?customerId=`) and the hold flag (`/orders?hold=1`, the unsynced edits link of the navigation, spec 0016 AC-7) may arrive in the address.
 - Parsing a phone or computing order totals for the record: the api does both. The form's total is a preview (`LineAmounts.compute` with the options' tax rule) and the prepayment it sends for a prepaid method is that total, which the api checks again.
 - Who may see cost: the unit cost column exists only when the answer carries `unitCost`, which the api sends to `cost.view` holders alone.
 - Hard coded text or physical side CSS classes. Use `t()` and logical classes; names sit in `<bdi dir="auto">`, order numbers, SKU codes, and phones in `LtrText`, money and dates through `useFormat()`.

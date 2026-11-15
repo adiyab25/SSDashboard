@@ -35,6 +35,10 @@ export const taskLinkedType = pgEnum('task_linked_type', [
   'outbound_command',
   'party',
   'location',
+  'connection',
+  'inbound_event',
+  'variant',
+  'install',
 ]);
 
 /** Who opened a task. */
@@ -65,6 +69,12 @@ export const tasks = pgTable(
     note: text('note'),
     /** One open task per cause, for example `outbound_command_failed:<command id>`. */
     dedupeKey: text('dedupe_key'),
+    /** Ids and codes only, for example `<command kind>:<failure code>` on a sync task (spec 0016). */
+    subjectKey: text('subject_key'),
+    /** A case's channel code (spec 0016 m2). */
+    contactChannel: text('contact_channel'),
+    /** A carrier ticket reference, never a note (spec 0016 m2). */
+    externalRef: text('external_ref'),
     createdByType: taskCreatedByType('created_by_type').notNull(),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'restrict' }),
     closedAt: timestamp('closed_at', { withTimezone: true }),
@@ -81,6 +91,20 @@ export const tasks = pgTable(
       sql`${t.ownerHat} IS NULL OR ${t.ownerHat} IN ('support', 'operations', 'warehouse', 'manager')`,
     ),
     // A person or an internal hat always holds the task (AC-26).
+    check('tasks_owner_hat_set', sql`${t.ownerHat} IS NOT NULL`),
+    check('tasks_note_length', sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 1000`),
+    check(
+      'tasks_subject_key_shape',
+      sql`${t.subjectKey} IS NULL OR ${t.subjectKey} ~ '^[a-z0-9:_.-]{1,120}$'`,
+    ),
+    check(
+      'tasks_contact_channel_known',
+      sql`${t.contactChannel} IS NULL OR ${t.contactChannel} IN ('whatsapp', 'call', 'instagram', 'facebook', 'portal')`,
+    ),
+    check(
+      'tasks_external_ref_shape',
+      sql`${t.externalRef} IS NULL OR ${t.externalRef} ~ '^[A-Za-z0-9-]{1,40}$'`,
+    ),
     check('tasks_has_owner', sql`${t.ownerUserId} IS NOT NULL OR ${t.ownerHat} IS NOT NULL`),
     check('tasks_outcome_when_done', sql`(${t.status} = 'done') = (${t.outcomeCode} IS NOT NULL)`),
     // A done or cancelled task records when it closed; an open one has not closed.
@@ -108,10 +132,53 @@ export const tasks = pgTable(
     index('tasks_open_owner_hat_idx')
       .on(t.ownerHat, t.dueAt)
       .where(sql`${t.status} = 'open' AND ${t.ownerUserId} IS NULL`),
+    // `once` types and `closeByKey` look a key up whatever its status.
+    index('tasks_dedupe_key_idx')
+      .on(t.tenantId, t.dedupeKey)
+      .where(sql`${t.dedupeKey} IS NOT NULL`),
+    // The team view, the overdue held rows, the orphan queue fallback, and the summary.
+    index('tasks_open_due_idx')
+      .on(t.dueAt, t.createdAt, t.id)
+      .where(sql`${t.status} = 'open'`),
+    // The stopped commands count and close.
+    index('tasks_open_subject_idx')
+      .on(t.type, t.subjectKey)
+      .where(sql`${t.status} = 'open'`),
+    // A carrier ticket is found by its reference.
+    index('tasks_external_ref_idx')
+      .on(t.externalRef)
+      .where(sql`${t.externalRef} IS NOT NULL`),
     index('tasks_linked_idx').on(t.linkedType, t.linkedId),
     index('tasks_operating_day_idx').on(t.operatingDay),
     index('tasks_owner_user_idx').on(t.ownerUserId),
     index('tasks_created_by_idx').on(t.createdBy),
     index('tasks_closed_by_idx').on(t.closedBy),
+  ],
+);
+
+/**
+ * A note on a task (spec 0016 AC-11): append only, so the app role may only read and insert. The
+ * column is named `note` so the redaction list covers it: note text is personal data, never
+ * logged, never in an audit diff, never in an error. Only the tasks module writes it.
+ */
+export const taskNotes = pgTable(
+  'task_notes',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict' }),
+    /** Free text: personal data, redacted from logs. */
+    note: text('note').notNull(),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('task_notes_note_length', sql`char_length(${t.note}) BETWEEN 1 AND 1000`),
+    index('task_notes_task_idx').on(t.taskId, t.createdAt),
+    index('task_notes_author_idx').on(t.authorId),
   ],
 );
