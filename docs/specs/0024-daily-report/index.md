@@ -1,6 +1,6 @@
 # 0024. Daily report: a worker job that reads the metric dictionary at a fixed Cairo time and sends one message to the brand's Telegram group through an outbound command, with failures sent to the owner's private chat and by email
 
-**Date**: 2026-11-13 (domain review folded in the same day: [domain-daily-report](../../reviews/domain-daily-report.md), see [Domain review applied](#domain-review-applied))
+**Date**: 2026-11-13 (domain review folded in the same day: domain-daily-report (kept private), see [Domain review applied](#domain-review-applied))
 **Status**: Proposed (ratified: the owner answered every question in [Owner decisions](#owner-decisions) on 2026-11-13; every recommendation ratified except Q-25.9 and Q-25.12, applied below)
 **Scope feature**: 25, Daily report (Beta), in [Slice 1a: confirmation to cash](../../scope/confirmation-to-cash.md)
 **Depends on**: [spec 0023](../0023-metric-dictionary-phone-dashboard/index.md) (`MetricReader`, the dictionary, the state rule, the Today page order, the `reporting` module); [spec 0007](../0007-stack-architecture-operations-layer/index.md) section 3 (the daily report: worker job, `tz`, confirmed data, Telegram first, gate decision 6) and section 1 (outbound commands and their failure path); [spec 0015](../0015-shopify-connector/index.md) (built framework: `connections` with sealed credentials, `outbound_commands`, the failure contract of AC-24, `OutboundCommandFailed`); [spec 0016](../0016-tasks-my-work-inbox/index.md) (`TasksService`, `TaskQueries.counts`, owner question 6: write back failure alerts through this feature's sender); [spec 0009](../0009-settings-toggles-bundles/index.md) (settings registry, module gate, `LicenseService`); the `mail` module (built: `MailProducer`, `mail.send`); feature 23, period close (spec 0022, in parallel: the confirmed day read).
@@ -239,7 +239,7 @@ Tracer bullet: milestone 1 sends one real report with one figure through every l
 
 ## Domain review applied
 
-[domain-daily-report](../../reviews/domain-daily-report.md) (ratify with changes: 0 blockers, 11 majors, 13 minors). Every finding is folded in:
+domain-daily-report (kept private) (ratify with changes: 0 blockers, 11 majors, 13 minors). Every finding is folded in:
 
 | Finding | Where it landed |
 |---|---|

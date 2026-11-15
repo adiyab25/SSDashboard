@@ -6,7 +6,7 @@ The order operations and warehouse back office for Egyptian clothing brands: it 
 - Stack decision: [docs/specs/0007-stack-architecture-operations-layer/index.md](docs/specs/0007-stack-architecture-operations-layer/index.md)
 - Staff sign in run book (first admin, break glass reset, lockouts): [docs/runbooks/staff-sign-in.md](docs/runbooks/staff-sign-in.md)
 
-Status: the wave 3 scaffold (spec 0007, Shape A: keep and amend) is in, and the foundation specs come next ([rebuild plan](docs/positioning/2026-11-05-rebuild-plan.md), [scope](docs/scope/index.md)). The code from the earlier build is kept and amended feature by feature.
+Status: the wave 3 scaffold (spec 0007, Shape A: keep and amend) is in, and the foundation specs come next (the rebuild plan (private), [scope](docs/scope/index.md)). The code from the earlier build is kept and amended feature by feature.
 
 ## Run locally
 
@@ -57,3 +57,7 @@ Warning: `down -v` removes every database in the shared dev volume, so other che
 - *Port 3000 is taken* (often another project's container): stop what holds it, or run the web on another port and set `PUBLIC_URL` in `.env` to match. Ports 3001, 5433, 3900, 1025, and 8025 must also be free.
 - *`docker compose` fails or cannot connect*: start Docker Desktop and wait until it says it is running.
 - *`pnpm bootstrap` stops at migrations*: run `pnpm install` first, then bootstrap again.
+
+## License
+
+SSDashboard is licensed under the Business Source License 1.1, see [LICENSE](LICENSE). The Licensor is adiyab25. Non-production use is allowed. Production use needs a commercial license from the Licensor, because the Additional Use Grant is None. The Change Date is 2030-11-15. On that date, or four years after a version is first published if that comes first, the version moves to the Apache License, Version 2.0.

@@ -49,7 +49,7 @@ pnpm --filter @ssdashboard/ui typecheck
 
 ## Agent skills
 
-- [shadcn](../../.claude/skills/shadcn/): `shadcn-ui/ui`, components, composition rules, theming
-- [tailwind-4-docs](../../.claude/skills/tailwind-4-docs/): `lombiq/tailwind-agent-skills`, Tailwind v4 utilities, variants, `@theme`
+- `shadcn` (shadcn-ui/ui, install locally): components, composition rules, theming
+- `tailwind-4-docs` (lombiq/tailwind-agent-skills, install locally): Tailwind v4 utilities, variants, `@theme`
 
 Declined: Radix UI, next-themes, cmdk, and axe specific skills (no strong match, 2026-11-03; the shadcn and Playwright skills cover them). MCP servers: none credible for these tools.

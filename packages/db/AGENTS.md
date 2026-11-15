@@ -58,7 +58,7 @@ pnpm --filter @ssdashboard/db test:e2e           # Against Postgres from deploy/
 
 ## Agent skills
 
-- [drizzle-orm-patterns](../../.claude/skills/drizzle-orm-patterns/): `giuseppe-trisciuoglio/developer-kit`, schema and migrations
-- [postgresql-table-design](../../.claude/skills/postgresql-table-design/): `wshobson/agents`, types, indexes, constraints
+- `drizzle-orm-patterns` (giuseppe-trisciuoglio/developer-kit, install locally): schema and migrations
+- `postgresql-table-design` (wshobson/agents, install locally): types, indexes, constraints
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

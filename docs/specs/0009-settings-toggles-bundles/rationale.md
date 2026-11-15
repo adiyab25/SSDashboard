@@ -2,11 +2,11 @@
 
 Decision record for [index.md](index.md). `/develop` builds from the index; this file explains why. Mode: FEATURE (scope feature 9, GA). References level: `sources`. Written without the owner in the loop: every choice the design conversation would have asked is decided here with the recommended answer, and the owner only questions are in the index under `## Questions for the owner`.
 
-> Amended 2026-11-07: the owner answered the five questions (plus a sixth, the optional Warehouse expiry) and the [domain review](../../reviews/domain-settings-toggles-bundles.md) was folded in. The new decisions are the last rows of *Decisions settled here*, and *Why the wind down widened* explains the largest change.
+> Amended 2026-11-07: the owner answered the five questions (plus a sixth, the optional Warehouse expiry) and the domain review (kept private) was folded in. The new decisions are the last rows of *Decisions settled here*, and *Why the wind down widened* explains the largest change.
 
 > Amended 2026-11-07 (second note, slice 1a wave 1): the owner's rulings on the partners split, the core connectors, and the requested settings rows (owner, 2026-11-07, "Accept all", relayed by the lead session) are recorded in the index; *Why partners split into a module of their own* and the last rows of *Decisions settled here* explain how they fit the registry.
 
-> Amended 2026-11-07 (third note): the [domain review of the wave 1 amendment](../../reviews/domain-settings-wave1-amendment.md) (W1 to W18) is folded into the index. The largest change: a showroom partner holds the brand's stock and, once it sells, the brand's cash, the position Bosta is in, so partner sales ingestion now winds down by sales day like the carrier cash (row below). The Partner logins tab stays usable for existing logins (W3), because the brand must always be able to stop a former partner's access.
+> Amended 2026-11-07 (third note): the domain review of the wave 1 amendment (kept private) (W1 to W18) is folded into the index. The largest change: a showroom partner holds the brand's stock and, once it sells, the brand's cash, the position Bosta is in, so partner sales ingestion now winds down by sales day like the carrier cash (row below). The Partner logins tab stays usable for existing logins (W3), because the brand must always be able to stop a former partner's access.
 
 ## Context
 

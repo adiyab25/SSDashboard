@@ -118,7 +118,7 @@ From the domain review's build re-read (D2) and the allocation rules of the spec
 
 ## Domain review
 
-The [domain review of this spec](../../reviews/domain-delivery-failures.md) (2026-11-12, verdict accept with changes) found 1 blocker, 13 majors, and 12 minors. Every finding is applied; none is rejected outright, and where the change differs from the review's wording the row says why. The lead's rulings on X1, M1, M9, and M10, and the names agreed with spec 0017, are applied as given.
+The domain review of this spec (kept private) (2026-11-12, verdict accept with changes) found 1 blocker, 13 majors, and 12 minors. Every finding is applied; none is rejected outright, and where the change differs from the review's wording the row says why. The lead's rulings on X1, M1, M9, and M10, and the names agreed with spec 0017, are applied as given.
 
 | Finding | Closed by | How |
 |---|---|---|
@@ -155,7 +155,7 @@ The three new owner questions of the review are Q-21.9 to Q-21.11 in index.md; t
 
 ## Domain review, second pass
 
-The [second pass domain review](../../reviews/domain-delivery-failures-r2.md) (2026-11-12, verdict accept with changes) found 1 blocker, 5 majors, and 11 minors, and asked three owner questions (OQ-1 to OQ-3, now Q-21.13 to Q-21.15) and nine brand questions (Follow-up, 13 to 21). Every finding is applied; the lead's rulings on B1 and N1 to N5 are applied as given; n11 is not rejected but moved to *Later than the pilot* in index.md, as the lead asked.
+The second pass domain review (kept private) (2026-11-12, verdict accept with changes) found 1 blocker, 5 majors, and 11 minors, and asked three owner questions (OQ-1 to OQ-3, now Q-21.13 to Q-21.15) and nine brand questions (Follow-up, 13 to 21). Every finding is applied; the lead's rulings on B1 and N1 to N5 are applied as given; n11 is not rejected but moved to *Later than the pilot* in index.md, as the lead asked.
 
 | Finding | Closed by | How |
 |---|---|---|
@@ -185,11 +185,11 @@ The [second pass domain review](../../reviews/domain-delivery-failures-r2.md) (2
 
 ## Owner answers of 2026-11-13
 
-The owner ratified every recommendation ([owner answers](../../reviews/owner-answers-2026-11-13.md)) except the deposit questions and the exchange. **Who bears Bosta's fee** (Q-21.2, Q-21.9, Q-21.10, Q-21.12): usually there is no deposit; Bosta's fee is paid on every parcel, and the reason decides who bears it. AC-33 turns the owner's words into one pure rule over the deciding answer the spec already had (AC-6), with two vocabulary additions the rule needs: the refusal code `wrong_item` (the owner's "wrong item or size", which is the brand's mistake, unlike `size`, a piece that does not fit) and the contact outcome `courier_never_came` (the owner's "Bosta never reached her", which a courier's own reason text never says). `unclassified` becomes `undecided` rather than the customer's, because flagging a customer on a reason nobody knows would punish her for the classifier's gap; a person decides it. The carrier's share becomes a claim kind, `failed_delivery_fee`, so spec 0020 matches Bosta's compensation exactly as it matches any claim. The customer's share is only what the owner named: the FlexShip fee Bosta took at the door and the flag. **Bosta Exchange** (Q-21.13 (b)): the exchange allowance is modelled as a prepayment of its own method on the replacement order so its COD is the price difference with no new money machinery; it is never published as money owed back, because it is the customer's earlier payment moving, not a second payment. The runner up, a credit pair through the credit module, needs feature 28 and is the shape the allowance takes when that module exists. Cost, stated for the owner: a sixth milestone here and requests of specs 0013, 0018, and 0020, roughly two builder weeks.
+The owner ratified every recommendation (owner answers of 2026-11-13 (kept private)) except the deposit questions and the exchange. **Who bears Bosta's fee** (Q-21.2, Q-21.9, Q-21.10, Q-21.12): usually there is no deposit; Bosta's fee is paid on every parcel, and the reason decides who bears it. AC-33 turns the owner's words into one pure rule over the deciding answer the spec already had (AC-6), with two vocabulary additions the rule needs: the refusal code `wrong_item` (the owner's "wrong item or size", which is the brand's mistake, unlike `size`, a piece that does not fit) and the contact outcome `courier_never_came` (the owner's "Bosta never reached her", which a courier's own reason text never says). `unclassified` becomes `undecided` rather than the customer's, because flagging a customer on a reason nobody knows would punish her for the classifier's gap; a person decides it. The carrier's share becomes a claim kind, `failed_delivery_fee`, so spec 0020 matches Bosta's compensation exactly as it matches any claim. The customer's share is only what the owner named: the FlexShip fee Bosta took at the door and the flag. **Bosta Exchange** (Q-21.13 (b)): the exchange allowance is modelled as a prepayment of its own method on the replacement order so its COD is the price difference with no new money machinery; it is never published as money owed back, because it is the customer's earlier payment moving, not a second payment. The runner up, a credit pair through the credit module, needs feature 28 and is the shape the allowance takes when that module exists. Cost, stated for the owner: a sixth milestone here and requests of specs 0013, 0018, and 0020, roughly two builder weeks.
 
 ### Domain review of the owner answers (2026-11-13)
 
-The [domain review](../../reviews/domain-owner-answers-2026-11-13.md) of the three changed designs (verdict accept with changes) and how each finding was closed:
+The domain review (kept private) of the three changed designs (verdict accept with changes) and how each finding was closed:
 
 | Finding | Closed by |
 |---|---|
@@ -208,6 +208,6 @@ The review's six brand questions are listed in the owner report, not assumed.
 
 - `AGENTS.md`; `apps/api/src/inventory/AGENTS.md`.
 - [Spec 0018](../0018-bosta-connector-mirror-mode/index.md) and its [Bosta API evidence](../0018-bosta-connector-mirror-mode/rationale.md); [spec 0013](../0013-orders-state-machines/index.md); [spec 0011](../0011-stock-ledger-locations/index.md); [spec 0002 orders child](../0002-core-data-model/0002-orders.md), [settlement child](../0002-core-data-model/0002-settlement.md), [credit child](../0002-core-data-model/0002-customers-credit-tasks.md).
-- [Domain review of the data model, build re-read](../../reviews/domain-data-model.md) (D2, D3, D4); [domain review of the stack](../../reviews/domain-stack.md) (n1).
+- Domain review of the data model, build re-read (kept private) (D2, D3, D4); domain review of the stack (kept private) (n1).
 - The independent audit of 2026-11-11, section 4 items 11 and 12, and the Bosta research report of 2026-11-12 (both kept by the lead outside the repo; the facts relied on are copied above).
 - Spec 0016 (feature 17) on branch `docs/tasks-and-confirmation-queue`: the task registry and the slice 1a credit refund record brief.

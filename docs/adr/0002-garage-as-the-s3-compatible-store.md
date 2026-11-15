@@ -8,7 +8,7 @@
 
 Each install needs an object store for files such as exports, labels, and uploaded documents. Spec
 0007 asks for a self run, S3 compatible server on each host, in the dev and self host Compose too,
-so the product does not depend on a cloud vendor. The [hosting research](../research/0001-egypt-hosting-options.md)
+so the product does not depend on a cloud vendor. The hosting research (private)
 found that no Egyptian provider confirms an S3 service, so the store has to travel with the install.
 
 MinIO is ruled out: its community edition stopped publishing images in October 2025 and its

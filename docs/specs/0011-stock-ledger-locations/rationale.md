@@ -1,6 +1,6 @@
 # 0011. Stock ledger and locations: decision record
 
-Why spec 0011 adds what it adds on top of the built ledger. The build spec is [index.md](index.md). Updated 2026-11-07 with the [domain review](../../reviews/domain-stock-ledger.md) (accept with changes) and the lead's contract rulings shared with spec 0013.
+Why spec 0011 adds what it adds on top of the built ledger. The build spec is [index.md](index.md). Updated 2026-11-07 with the domain review (kept private) (accept with changes) and the lead's contract rulings shared with spec 0013.
 
 ## Context
 

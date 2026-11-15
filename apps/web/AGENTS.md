@@ -76,10 +76,10 @@ pnpm --filter @ssdashboard/web test:e2e    # Playwright: desktop, mobile, and pr
 
 ## Agent skills
 
-- [nextjs-app-router-patterns](../../.claude/skills/nextjs-app-router-patterns/): `wshobson/agents`, App Router, server and client components
-- [vercel-react-best-practices](../../.claude/skills/vercel-react-best-practices/): React and Next.js performance guidance
-- [playwright-best-practices](../../.claude/skills/playwright-best-practices/): `currents-dev/playwright-best-practices-skill`, the `e2e/` suite: locators, waiting, projects, axe checks
-- [react-hook-form-zod](../../.claude/skills/react-hook-form-zod/): forms validated by the Zod contract schemas
-- [tanstack-query](../../.claude/skills/tanstack-query/): query keys, `setQueryData` after a mutation, refetch on focus
+- `nextjs-app-router-patterns` (wshobson/agents, install locally): App Router, server and client components
+- `vercel-react-best-practices` (install locally, no source pinned in `skills-lock.json`): React and Next.js performance guidance
+- `playwright-best-practices` (currents-dev/playwright-best-practices-skill, install locally): the `e2e/` suite: locators, waiting, projects, axe checks
+- `react-hook-form-zod` (secondsky/claude-skills, install locally): forms validated by the Zod contract schemas
+- `tanstack-query` (tanstack-skills/tanstack-skills, install locally): query keys, `setQueryData` after a mutation, refetch on focus
 
 _Drafted by /sync from the design system change, worth a quick human pass._

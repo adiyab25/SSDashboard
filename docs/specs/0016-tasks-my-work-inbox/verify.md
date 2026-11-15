@@ -1,6 +1,6 @@
 # Verify: tasks and My work · spec 0016 · written 2026-11-12
 
-_Steps derived from spec 0016 acceptance criteria and its Value sourcing table, revised for the [domain review](../../reviews/domain-tasks-my-work.md) (finding IDs in brackets). `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones add theirs. Nothing is ticked: the spec is Assumed. Back to the [build spec](index.md)._
+_Steps derived from spec 0016 acceptance criteria and its Value sourcing table, revised for the domain review (kept private) (finding IDs in brackets). `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones add theirs. Nothing is ticked: the spec is Assumed. Back to the [build spec](index.md)._
 
 ## UI / manual
 

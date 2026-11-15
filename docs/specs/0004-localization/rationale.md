@@ -135,7 +135,7 @@ Scope feature 6 is amended in place (Shape A of spec 0007). Context, options, an
 
 ### References added
 
-**Project sources**: spec 0007 sections 2, 3 and 10 and the Carried row m7 ([spec 0007](../0007-stack-architecture-operations-layer/index.md)); positioning sections 6.4, 6.11, 6.15 ([positioning](../../positioning/2026-11-05-egypt-order-operations-layer.md)); `docs/scope/foundations.md` feature 6; `apps/web/src/app/layout.tsx`; `apps/web/src/proxy.ts`; `apps/api/src/mail/mail-templates.ts`; `packages/db/migrations/0001_core_data_model.sql` (seeds `currency` and `timezone`).
+**Project sources**: spec 0007 sections 2, 3 and 10 and the Carried row m7 ([spec 0007](../0007-stack-architecture-operations-layer/index.md)); positioning sections 6.4, 6.11, 6.15 (positioning (kept private)); `docs/scope/foundations.md` feature 6; `apps/web/src/app/layout.tsx`; `apps/web/src/proxy.ts`; `apps/api/src/mail/mail-templates.ts`; `packages/db/migrations/0001_core_data_model.sql` (seeds `currency` and `timezone`).
 
 **Installed Next.js 16.4.3 docs** (read in this session, under `apps/web/node_modules/next/dist/docs/01-app/`): `03-api-reference/03-file-conventions/route-groups.md` (multiple root layouts, full page load), `03-api-reference/03-file-conventions/layout.md` (root layout rules), `03-api-reference/03-file-conventions/not-found.md` (`global-not-found`, experimental), `03-api-reference/04-functions/next-root-params.md` (root parameters and the `generateStaticParams` requirement), `03-api-reference/04-functions/cookies.md` (Suspense under Cache Components), `02-guides/internationalization.md`.
 

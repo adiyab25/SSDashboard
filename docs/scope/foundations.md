@@ -11,7 +11,7 @@ Decide the stack again against the new positioning, then reshape the runnable sk
   - [x] Docs tree and templates (ADR, module README, PR template, research folder, README per module)
   - [x] TSDoc, naming, and personal data redaction rules, with the TSDoc backfill
   - [x] Git checks and CI building the real images
-Spec [0007](../specs/0007-stack-architecture-operations-layer/index.md) (Accepted 2026-11-05, supersedes spec 0001; domain review [domain-stack](../reviews/domain-stack.md) approves with 0 open blockers)
+Spec [0007](../specs/0007-stack-architecture-operations-layer/index.md) (Accepted 2026-11-05, supersedes spec 0001; domain review (private) approves with 0 open blockers)
 
 ### 2. Coding & documentation standards
 Capture conventions from the new scaffold, then enforce them: lint, format, type check before every commit, CI, and the documentation rules the next developer relies on.
@@ -38,7 +38,7 @@ Also from spec 0007: order number unique per (tenant, store), never per tenant; 
 - [x] Test it: `/test data model`
 - [x] Review it: `/check review data model`
 - [x] Document it: `/document data model`
-Spec [0002](../specs/0002-core-data-model/index.md) (amendment of 2026-11-05, accepted and built 2026-11-06; Fable gate review approves; domain review [domain-data-model](../reviews/domain-data-model.md): first pass 5 blockers, re-review 2026-11-05 approves with 0 open blockers)
+Spec [0002](../specs/0002-core-data-model/index.md) (amendment of 2026-11-05, accepted and built 2026-11-06; Fable gate review approves; domain review (private): first pass 5 blockers, re-review 2026-11-05 approves with 0 open blockers)
 
 ### 5. Design system & UI foundation
 Visual language, layout primitives, and base components, shaped with the Impeccable skill, so every screen feels like one product in Arabic and English.
@@ -111,7 +111,7 @@ Also from spec 0007: lapse is a read only wind down (mirror reads and cash sweep
 - [x] Test it: `/test settings, module toggles & bundles`
 - [x] Review it: `/check review settings, module toggles & bundles`
 - [x] Document it: `/document settings, module toggles & bundles`
-Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Built 2026-11-08); verification [docs/reviews/verify-settings-toggles-bundles.md](../reviews/verify-settings-toggles-bundles.md), independent reviews per milestone in `docs/reviews/` (`*-settings-m1` to `m5`), [release note](../releases/settings-modules-bundles.md)
+Spec [0009](../specs/0009-settings-toggles-bundles/index.md) (Built 2026-11-08); verification (private), independent reviews per milestone (private, `*-settings-m1` to `m5`), [release note](../releases/settings-modules-bundles.md)
 
 ### 10. Audit trail
 Agent accountability: who did what, when, and why, across edits, merges, overrides, confirmations, exports, and every automatic action.

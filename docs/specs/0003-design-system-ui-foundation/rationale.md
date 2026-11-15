@@ -77,7 +77,7 @@ Back to the amendment: [index.md](index.md#amendment-2026-11-05).
 
 ### Context
 
-The decision above was right for a generic warehouse ERP and is built. The product changed ([positioning](../../positioning/2026-11-05-egypt-order-operations-layer.md)): the users are confirmation agents on calls and WhatsApp all day, warehouse staff scanning, an operations lead, and an owner on a phone, in Arabic first. Three things the first decision did not need are now needed: order and cash status as the main content, provisional versus confirmed numbers, and two more frames (a public portal on cheap Android phones carrying a brand's own identity, and a partner surface). Shape A of spec 0007 applies: keep and amend.
+The decision above was right for a generic warehouse ERP and is built. The product changed (positioning (kept private)): the users are confirmation agents on calls and WhatsApp all day, warehouse staff scanning, an operations lead, and an owner on a phone, in Arabic first. Three things the first decision did not need are now needed: order and cash status as the main content, provisional versus confirmed numbers, and two more frames (a public portal on cheap Android phones carrying a brand's own identity, and a partner surface). Shape A of spec 0007 applies: keep and amend.
 
 Forces added:
 

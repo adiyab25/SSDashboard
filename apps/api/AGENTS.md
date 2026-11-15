@@ -72,11 +72,11 @@ pnpm --filter @ssdashboard/api worker     # Run the built worker (pg-boss jobs)
 
 ## Agent skills
 
-- [nestjs-best-practices](../../.claude/skills/nestjs-best-practices/): `kadajett/agent-nestjs-skills`, modules, DI, security, performance
-- [drizzle-orm-patterns](../../.claude/skills/drizzle-orm-patterns/): `giuseppe-trisciuoglio/developer-kit`, queries, transactions, row locks
-- [pg-boss-v12](../../.claude/skills/pg-boss-v12/): `sncollective/snc-platform`, pg-boss v12 API reference (send, work, schedule, createQueue). Written inside another project: its version notes describe that project, not ours
-- [tl-pg-boss](../../.claude/skills/tl-pg-boss/): `toddlevy/tl-agent-skills`, pg-boss job patterns (cron, retries, exactly once, testing, monitoring)
-- Identity work (`src/identity/`), from `better-auth/skills`: [better-auth-best-practices](../../.claude/skills/better-auth-best-practices/), [better-auth-security-best-practices](../../.claude/skills/better-auth-security-best-practices/), [email-and-password-best-practices](../../.claude/skills/email-and-password-best-practices/), [two-factor-authentication-best-practices](../../.claude/skills/two-factor-authentication-best-practices/), [organization-best-practices](../../.claude/skills/organization-best-practices/), [create-auth](../../.claude/skills/create-auth/).
+- `nestjs-best-practices` (kadajett/agent-nestjs-skills, install locally): modules, DI, security, performance
+- `drizzle-orm-patterns` (giuseppe-trisciuoglio/developer-kit, install locally): queries, transactions, row locks
+- `pg-boss-v12` (sncollective/snc-platform, install locally): pg-boss v12 API reference (send, work, schedule, createQueue). Written inside another project: its version notes describe that project, not ours
+- `tl-pg-boss` (toddlevy/tl-agent-skills, install locally): pg-boss job patterns (cron, retries, exactly once, testing, monitoring)
+- Identity work (`src/identity/`), from `better-auth/skills`, install locally: `better-auth-best-practices`, `better-auth-security-best-practices`, `email-and-password-best-practices`, `two-factor-authentication-best-practices`, `organization-best-practices`, `create-auth`.
 ## Related specs
 
 - [0007 Stack and architecture for the operations layer](../../docs/specs/0007-stack-architecture-operations-layer/index.md) (supersedes 0001)

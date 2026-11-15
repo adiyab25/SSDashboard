@@ -5,7 +5,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 **Build approach:** Tracer Bullet (prove one real thread through every layer first, then thicken one segment at a time, always end to end).
 **Workflow:** Beta (after `/develop`: `/check verify`, then `/test`). Features that touch money, access, a ledger, a settlement, a write to Shopify or a carrier, an export a client's accountant imports, or a public page with customer data are tagged `· GA` and also get a fresh model `/check review` and `/document`, plus a `domain-reviewer` pass on the spec before it is accepted. `/architect` is the recommended first stop for a feature with a real decision to make. Skip anything that does not fit: if you already know how to build a feature, use `/develop` and skip `/architect`. You decide when a feature is `done`.
 
-**What to build comes from** [the final plan](../positioning/2026-11-05-egypt-order-operations-layer.md) (sections 6 to 8 and 10) and **how we get there** from [the approved rebuild plan](../positioning/2026-11-05-rebuild-plan.md). This scope replaces the earlier warehouse ERP scope, which stays readable in git history (`git show 1e7225e:docs/scope/index.md`).
+**What to build comes from** the final plan (private, sections 6 to 8 and 10) and **how we get there** from the approved rebuild plan (private). This scope replaces the earlier warehouse ERP scope, which is kept in the owner's private history, not in this repo.
 
 **Planning notes**
 - Who: Egyptian clothing brands behind Shopify (often two stores), Bosta cash on delivery, consignment showroom partners, Meta ads, and a team of about four (support, operations, warehouse, manager) plus a freelance media buyer and the partners. Must feel right at four people and work at forty.
@@ -15,7 +15,7 @@ The back office behind an Egyptian clothing brand's Shopify, Bosta account, and 
 - Every executing step (Bosta driver mode, auto approval, refunds, Shopify write back) is a switch per brand; the product must be valuable with all of them off.
 - No live third party calls in tests: connectors prove themselves on recorded fixtures.
 - Vendor hosted by default in an Egyptian data center, with a self host option and a working exit package from the first pilot day. A tenant id on every row from the first migration.
-- **Spec 0007 carries requirements into later features.** Before `/architect` designs any feature, read [spec 0007](../specs/0007-stack-architecture-operations-layer/index.md)'s `## Carried from the domain review` table and the re-review findings in [the stack domain review](../reviews/domain-stack.md) (n1 to features 18 and 21, n2 to features 9 and 19) for that feature's number; only some rows carry an "Also from spec 0007" line.
+- **Spec 0007 carries requirements into later features.** Before `/architect` designs any feature, read [spec 0007](../specs/0007-stack-architecture-operations-layer/index.md)'s `## Carried from the domain review` table and the re-review findings in the stack domain review (private) (n1 to features 18 and 21, n2 to features 9 and 19) for that feature's number; only some rows carry an "Also from spec 0007" line.
 - **Pilot window**: mid March to early May 2027, between Eid al Fitr and Eid al Adha. Foundations and slice 1a must land before it (spec 0007, Build plan).
 
 ## Epics
@@ -110,9 +110,9 @@ Toggles for a later client and the parked list live in [later.md](later.md). Not
 ## References
 
 **Project sources**
-- [Final plan: the back office behind Egyptian clothing brands](../positioning/2026-11-05-egypt-order-operations-layer.md), sections 5 (bundles), 6 (design rules), 7 (processes), 8 (slice plan), 9 (pilot), 10 (scope changes), 12 (Egyptian market facts), 13 (open questions).
-- [Approved rebuild plan](../positioning/2026-11-05-rebuild-plan.md): owner decisions, keep list, waves, model routing, documentation standards.
-- [Brand owner debate](../positioning/2026-11-05-brand-owner-debate.md) and [reference brand notes](../positioning/2026-11-05-reference-brand-notes.md): the evidence behind the slice 1a contents.
+- Final plan: the back office behind Egyptian clothing brands (private), sections 5 (bundles), 6 (design rules), 7 (processes), 8 (slice plan), 9 (pilot), 10 (scope changes), 12 (Egyptian market facts), 13 (open questions).
+- Approved rebuild plan (private): owner decisions, keep list, waves, model routing, documentation standards.
+- Brand owner debate (private) and reference brand notes (private): the evidence behind the slice 1a contents.
 - `AGENTS.md` (project rules, until `/audit` rewrites it after the scaffold).
 
 **Practices & standards**

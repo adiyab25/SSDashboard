@@ -16,15 +16,15 @@ This spec sets the look of the back office and builds its frame (the app shell: 
 
 ## Amendment 2026-11-05
 
-Scope feature 5 was rewritten for the new product ([rebuild plan](../../positioning/2026-11-05-rebuild-plan.md), [positioning](../../positioning/2026-11-05-egypt-order-operations-layer.md)). Shape A of [spec 0007](../0007-stack-architecture-operations-layer/index.md): keep and amend, never replace. Nothing below removes the built shell, `packages/ui`, `/design`, or the axe checks. The amendment adds what the new product needs on top, and asks the owner to pick the look.
+Scope feature 5 was rewritten for the new product (rebuild plan (kept private), positioning (kept private)). Shape A of [spec 0007](../0007-stack-architecture-operations-layer/index.md): keep and amend, never replace. Nothing below removes the built shell, `packages/ui`, `/design`, or the axe checks. The amendment adds what the new product needs on top, and asks the owner to pick the look.
 
 ### Why it changes
 
 - **The users changed.** The original look was drawn for a generic warehouse ERP. The product is now the order operations and warehouse back office of an Egyptian clothing brand: confirmation agents on calls and WhatsApp all day (the queue is the longest daily session), warehouse staff scanning, an operations lead reading tables, and the owner on a phone (positioning section 2). Arabic first, English always.
-- **Status is now the content.** An order carries a fulfillment state, a cash state, a source, an outcome, and an attention flag (positioning 6.1). Numbers are confirmed or provisional (positioning 7.6, the brand's own rule from the [reference brand notes](../../positioning/2026-11-05-reference-brand-notes.md) item 5 and 11). The original spec only had in stock, low, and error.
+- **Status is now the content.** An order carries a fulfillment state, a cash state, a source, an outcome, and an attention flag (positioning 6.1). Numbers are confirmed or provisional (positioning 7.6, the brand's own rule from the reference brand notes (kept private) item 5 and 11). The original spec only had in stock, low, and error.
 - **There are now three frames, not one.** Spec 0007 section 2 adds a public returns portal on its own host (customers on cheap Android phones and slow networks, carrying the brand's own logo and accent) and a partner surface. The original spec built one frame and left "the public portal and partner seams" with a minimal frame.
 - **Two scope items were never designed.** A phone first pattern for the manager dashboard, and a pattern for in screen help (staff turn over, so help and training are product). Scope feature 5 now lists both in its Done when.
-- **What a real brand uses today** (read only: the design notes of the reference console, `docs/rebuild/2026-10-21-design.md` in that repository, summarised in the [insights](../../positioning/2026-11-05-reference-brand-notes.md)): a branded green on paper white, Inter plus IBM Plex Sans Arabic, light only, a bottom bar on phones. It shows that a brand expects to see its own colors, and that the brand's green is also the color of "success". Both facts shape the rules below.
+- **What a real brand uses today** (read only: the design notes of the reference console, `docs/rebuild/2026-10-21-design.md` in that repository, summarised in the insights (kept private)): a branded green on paper white, Inter plus IBM Plex Sans Arabic, light only, a bottom bar on phones. It shows that a brand expects to see its own colors, and that the brand's green is also the color of "success". Both facts shape the rules below.
 
 ### New requirements
 
@@ -183,7 +183,7 @@ Baseline 360 by 800, works from 320. One column. Top to bottom:
 5. "Needs you", at most five rows, each a full width tap target of at least 44px with a chip and a link to the exact screen; a count when there are more.
 6. A bottom tab bar of at most four tabs (Today, Orders, Cash, More), 56px tall.
 
-Each card is a link to a drill down page, never a hover. Tables below 640px collapse to cards of the same chips. The first screen order matches the pushed daily report ([positioning 7.6](../../positioning/2026-11-05-egypt-order-operations-layer.md)) so the owner reads the same story in Telegram and in the app. The four numbers on the first screen are an owner decision (see the questions).
+Each card is a link to a drill down page, never a hover. Tables below 640px collapse to cards of the same chips. The first screen order matches the pushed daily report (positioning 7.6 (kept private)) so the owner reads the same story in Telegram and in the app. The four numbers on the first screen are an owner decision (see the questions).
 
 #### In screen help (AC-21)
 
