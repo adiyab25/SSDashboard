@@ -1,6 +1,6 @@
 # 0023. Metric dictionary and phone dashboard: one typed dictionary in contracts, read at request time through the owning modules' read services, shown on a phone first Today page
 
-**Date**: 2026-11-13 (domain review folded in the same day: [domain-metric-dictionary](../../reviews/domain-metric-dictionary.md), see [Domain review applied](#domain-review-applied))
+**Date**: 2026-11-13 (domain review folded in the same day: domain-metric-dictionary (kept private), see [Domain review applied](#domain-review-applied))
 **Status**: Proposed (ratified: the owner answered every question in [Owner decisions](#owner-decisions) on 2026-11-13; every recommendation ratified)
 **Scope feature**: 24, Metric dictionary and phone dashboard (Beta), in [Slice 1a: confirmation to cash](../../scope/confirmation-to-cash.md)
 **Depends on**: [spec 0013](../0013-orders-state-machines/index.md) (built milestones 1 to 3: `OrderQueries`, the two state machines, `orders.outcome`, the `operating_day` column, the order list filters); [spec 0015](../0015-shopify-connector/index.md) (`ChannelEditNetted`, connection health and freshness); [spec 0016](../0016-tasks-my-work-inbox/index.md) (`TaskQueries.counts`, "refunds owed" and "refunds owed (unrecorded)"); [spec 0017](../0017-confirmation-queue/index.md) (`ConfirmationQueries.metrics`); [spec 0018](../0018-bosta-connector-mirror-mode/index.md) (`CarrierDeliveries`, freshness); [spec 0019](../0019-delivery-failures-returned-to-origin/index.md) (`DeliveryOutcomeReads`, the returned to origin rate of its AC-18, `ManualHandovers`); [spec 0020](../0020-settlement-bosta-reconciliation/index.md) (`CarrierSettlementReads`, remitted means credited in the Bosta wallet, provisional money of its AC-22); feature 23, period close (spec 0022, being written in parallel: the confirmed day read of [Contracts with other specs](#contracts-with-other-specs)); [spec 0003](../0003-design-system-ui-foundation/index.md) and [`packages/ui/DESIGN.md`](../../../packages/ui/DESIGN.md) (built: `MetricCard`, `NeedsYouList`, `BottomTabs`, `CollapsingTable`, `FreshnessStrip`, `ProvisionalValue`).
@@ -64,7 +64,7 @@ Every number the owner sees is defined once, in one typed list (the metric dicti
 
 The metric dictionary is data in `packages/contracts/src/reporting/` (keys, family, gross or net, basis, data class, permissions, source, exclusions, cuts, drill filters, label keys); `apps/api/src/reporting/` has one `MetricReader` with one small reader per area that calls the owning module's exported read, applies the state rule from feature 23's confirmed day read, and returns `MetricValue`s; the Today page and the report pages are client components that call `/api/reporting/*` and draw the existing dashboard parts of `@ssdashboard/ui`. Runner up: a reporting owned projection (one fact row per order and day built from domain events), rejected because specs 0019 and 0020 already keep their own projections for exactly these figures, and a second copy would drift from them, which is the failure the real brand lived through (insights section 7, "Numbers contradicted each other").
 
-**Implementation skills**: `nestjs-best-practices` (`.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`.claude/skills/nextjs-app-router-patterns/`) · `tanstack-query` (`.claude/skills/tanstack-query/`) · `shadcn` (`.claude/skills/shadcn/`) · `playwright-best-practices` (`.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (private `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (private `.claude/skills/nextjs-app-router-patterns/`) · `tanstack-query` (private `.claude/skills/tanstack-query/`) · `shadcn` (private `.claude/skills/shadcn/`) · `playwright-best-practices` (private `.claude/skills/playwright-best-practices/`)
 
 ## Rationale
 
@@ -274,7 +274,7 @@ Tracer bullet: milestone 1 is one real figure through every layer (dictionary ro
 
 ## Domain review applied
 
-[domain-metric-dictionary](../../reviews/domain-metric-dictionary.md) (accept with changes: 0 blockers, 14 majors, 16 minors). Every finding is folded in:
+domain-metric-dictionary (kept private) (accept with changes: 0 blockers, 14 majors, 16 minors). Every finding is folded in:
 
 | Finding | Where it landed |
 |---|---|

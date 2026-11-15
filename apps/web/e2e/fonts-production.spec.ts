@@ -58,6 +58,18 @@ test.describe('fonts on a production build', () => {
     }
   });
 
+  test('the Latin pages load Geist, and the old families are gone (spec 0025 AC-14)', async ({
+    page,
+  }) => {
+    await page.goto('/en/returns');
+    await page.evaluate(() => document.fonts.ready);
+    const loaded = await page.evaluate(() =>
+      [...document.fonts].filter((face) => face.status === 'loaded').map((face) => face.family),
+    );
+    expect(loaded.some((family) => /Geist/i.test(family))).toBe(true);
+    expect(loaded.some((family) => /Inter|JetBrains|Daftar/i.test(family))).toBe(false);
+  });
+
   test('every font face swaps, so text shows before the file arrives', async ({ page }) => {
     await page.goto('/ar/returns');
     const displays = await page.evaluate(() =>

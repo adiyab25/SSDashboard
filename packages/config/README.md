@@ -12,6 +12,7 @@ Agent gotchas: [AGENTS.md](AGENTS.md).
 - The logical CSS check that fails `lint` on physical side styles: [scripts/check-logical-css.mjs](scripts/check-logical-css.mjs)
 - The time zone release step, run as `pnpm check:timezone` (spec 0004, AC-22): [scripts/check-timezone.mjs](scripts/check-timezone.mjs)
 - The reserved CI ports check that fails `lint` when dev facing config uses a port in 4900-4949: [scripts/check-reserved-ci-ports.mjs](scripts/check-reserved-ci-ports.mjs)
+- The private content check that fails `lint` when a tracked file sits in a private folder or holds a blocked word (kept as digests): [scripts/check-private-content.mjs](scripts/check-private-content.mjs)
 - The commit subject and branch name checks, shared by the `.husky/commit-msg` hook and the CI `conventions` job: [scripts/check-commit-subject.mjs](scripts/check-commit-subject.mjs), [scripts/check-branch-name.mjs](scripts/check-branch-name.mjs)
 
 ## Never touches

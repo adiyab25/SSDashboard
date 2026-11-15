@@ -5,11 +5,22 @@ import {
   type InboundSubject,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
+import { ZodError } from 'zod';
+import {
+  ChannelSyncError,
+  type ChannelSyncErrorCode,
+} from '../../catalog/channel-sync/channel-sync-error.js';
 import { ChannelsService } from '../../channels/channels.service.js';
 import { CustomersError } from '../../customers/customers.errors.js';
 import { CustomersService } from '../../customers/customers.service.js';
 import { DATABASE } from '../../database/database.module.js';
-import { pgArray, type Executor, type Transaction } from '../../database/sql.js';
+import {
+  isRetryable,
+  pgArray,
+  pgErrorCode,
+  type Executor,
+  type Transaction,
+} from '../../database/sql.js';
 import type { ChannelActor, ChannelCreateActor } from '../../orders/intake/order-intake.service.js';
 import { OrderIntake } from '../../orders/intake/order-intake.service.js';
 import { OrderTransactions, type OrderTransaction } from '../../orders/order-transactions.js';
@@ -38,7 +49,9 @@ import {
   SHOPIFY_APP_UNINSTALLED_TOPIC,
   SHOPIFY_CUSTOMER_TOPICS,
   SHOPIFY_ORDER_TOPICS,
+  SHOPIFY_PRODUCT_TOPICS,
 } from '../hooks/shopify-hook-payload.js';
+import type { BulkObject } from './bulk-jsonl.js';
 import { ConnectorClock } from './connector-clock.js';
 import { CONNECTOR_SHOPIFY_RETRY } from './connector-shopify.queue.js';
 import {
@@ -51,6 +64,7 @@ import { orderErrorCodeOf, upperCode } from './error-codes.js';
 import { ExchangeByEdit, stateWithoutWaitingReplacement } from './exchange-by-edit.js';
 import { nextKnownOrderState, planKnownOrder, type KnownOrderPlan } from './known-order-plan.js';
 import {
+  assertShopifyTotal,
   cancelReasonCodeOf,
   firstActiveFulfillmentOf,
   mapShopifyOrder,
@@ -65,6 +79,13 @@ import {
   parseOrderMappingState,
   type OrderMappingState,
 } from './order-mapping-state.js';
+import {
+  assembleBulkProduct,
+  productLabelOf,
+  ShopifyProductMappingError,
+  type ShopifyProduct,
+} from './product-mapper.js';
+import { ProductSync } from './product-sync.js';
 import {
   ShopifyClient,
   ShopifyRejectedError,
@@ -82,6 +103,18 @@ import {
 
 /** The job name order events and audit actors carry for this job (spec 0013 `system_job`). */
 export const INBOX_JOB_NAME = 'connectors.shopify.inbox';
+
+/**
+ * The most products one order's job reads and applies before mapping it (AC-9, review M8): an
+ * order has at most 40 lines, and a line whose product still does not map stays unmapped.
+ */
+export const PRODUCTS_BEFORE_ORDER_MAX = 10;
+
+/** The `ChannelSyncError` codes a product event fails with; the others are defects and throw. */
+const CHANNEL_SYNC_FAILURES: readonly ChannelSyncErrorCode[] = [
+  'StyleCodeExhausted',
+  'UnknownConflict',
+];
 
 /** Transient read failures on a connection for this long set `degraded` `READS_FAILING` (AC-8). */
 export const READS_FAILING_AFTER_MS = 3 * 60 * 60_000;
@@ -104,6 +137,8 @@ interface EventRow extends Record<string, unknown> {
   subject_type: InboundSubject;
   subject_external_id: string | null;
   status: string;
+  /** Its outcome (`stale`, `coalesced`, ...), or null. */
+  outcome: string | null;
   /** When this run first read the event (before the read back), exact to the microsecond. */
   read_started_at: string;
 }
@@ -133,6 +168,8 @@ interface ConnectionRow extends Record<string, unknown> {
   credentials_key_version: number | null;
   config: unknown;
   go_live_at: string | null;
+  /** Set by the first products backfill (task 12); the product read before an order waits for it. */
+  products_swept_through: string | null;
 }
 
 /** The order mapping row, read under its row lock inside the unit of work. */
@@ -147,10 +184,18 @@ interface MappingRow extends Record<string, unknown> {
 const COALESCED_TOPICS: Readonly<Partial<Record<InboundSubject, readonly string[]>>> = {
   order: SHOPIFY_ORDER_TOPICS,
   customer: SHOPIFY_CUSTOMER_TOPICS,
+  product: SHOPIFY_PRODUCT_TOPICS,
 };
 
 /** A read back's answer, or how the event ended when the read did not answer. */
 type ReadBack = { readonly data: unknown } | { readonly done: InboxOutcome };
+
+/**
+ * A guarded read's answer: its value, how the event ended (a token refusal leaves it `received`),
+ * or the code of a refusal the caller decides about (a Shopify refusal or an unreadable product).
+ */
+type Guarded<T> =
+  { readonly data: T } | { readonly done: InboxOutcome } | { readonly refused: string };
 
 /** How one inbox job ended: codes only, the job's output (never a read value). */
 export interface InboxOutcome {
@@ -184,9 +229,63 @@ function isoOf(instant: string): string {
 /** A domain error the inbox records as `failed` with a code; anything else is retried or a bug. */
 function failureCodeOf(error: unknown): string | null {
   if (error instanceof ShopifyCustomerMappingError) return error.code;
+  if (error instanceof ShopifyProductMappingError) return error.code;
   if (error instanceof CustomersError) return upperCode(error.code);
   if (error instanceof OrderLockTimeout || error instanceof OrderTransactionNested) return null;
   return orderErrorCodeOf(error);
+}
+
+/**
+ * The failure code of a product apply (task 8): the codes of `failureCodeOf`, the channel sync's
+ * `StyleCodeExhausted` and `UnknownConflict`, and `PRODUCT_INPUT_INVALID` for a mapped input the
+ * catalog's schema refused (a rule the mapper did not foresee: never a retry). Only the product
+ * paths use it, so an order's or customer's `ZodError` still throws (security review L1).
+ */
+function productFailureCodeOf(error: unknown): string | null {
+  if (error instanceof ChannelSyncError) {
+    return CHANNEL_SYNC_FAILURES.includes(error.code) ? upperCode(error.code) : null;
+  }
+  if (error instanceof ZodError) return 'PRODUCT_INPUT_INVALID';
+  return failureCodeOf(error);
+}
+
+/** The node socket error codes the pg driver passes through, each a lost or refused connection. */
+const SOCKET_ERRORS: readonly string[] = ['ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ECONNREFUSED'];
+
+/** The message the pg driver gives a connection that ended mid query (it carries no code). */
+const CONNECTION_ENDED = 'Connection terminated unexpectedly';
+
+/**
+ * An error the product paths throw for pg-boss to retry rather than record (security review L2,
+ * re-review nit): an order lock timeout, a deadlock or serialization failure the unit already
+ * reran once, a statement timeout or cancel (57014), a lost connection (SQLSTATE class 08, a node
+ * socket error, or the driver's "connection terminated" with no code), insufficient resources
+ * (class 53: too many connections, out of memory, disk full), or a server shutting down (57P).
+ * Reads the error's code and, for the driver's codeless case, its fixed message only.
+ */
+function throwsForRetry(error: unknown): boolean {
+  if (error instanceof OrderLockTimeout || isRetryable(error)) return true;
+  const code = pgErrorCode(error);
+  if (code !== undefined) {
+    return (
+      code === '57014' ||
+      code.startsWith('08') ||
+      code.startsWith('53') ||
+      code.startsWith('57P') ||
+      SOCKET_ERRORS.includes(code)
+    );
+  }
+  let current: unknown = error;
+  for (let depth = 0; depth < 3 && current instanceof Error; depth += 1) {
+    if (current.message === CONNECTION_ENDED) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+/** An error's class name for a log line (never its message, which may hold a value). */
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name.replace(/[^A-Za-z0-9_]/g, '').slice(0, 64) : 'unknown';
 }
 
 /** Whether a read order lacks a ship to name, phone, or address line (the protected data check). */
@@ -230,7 +329,11 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *   else applied by `applyKnown` (task 9: cancel, late links, the edit with its
  *   `held_write_back_open` and `edit_not_applied` outcomes, first fulfillment, the payment
  *   rederive of lead decision D10; task 10: the exchange by edit with its `replacement_waiting`
- *   outcome); a new order writes its mapping first (`createdOrderState`, with the creation facts
+ *   outcome); a new order is refused before any write when a gateway name or payment is on an
+ *   unmapped gateway (`GATEWAY_UNMAPPED`), its tax mode differs from `prices_include_vat` while a
+ *   line is taxed (`TAX_MODE_MISMATCH`),
+ *   or its computed total differs from Shopify's (`TOTAL_MISMATCH`, audit A2 and A3), then
+ *   writes its mapping first (`createdOrderState`, with the creation facts
  *   of D10), then `OrderIntake.createFromChannel` (actor `system_job`, or `import` as the mapper
  *   names for a closed order before go live), the mapping's `local_id`, a live order's cancel or
  *   first fulfillment (AC-13), and `last_order_at`. Every applied read of an order (new, cancel,
@@ -248,9 +351,13 @@ function lacksProtectedData(order: ShopifyOrder): boolean {
  *   the event `failed` with its upper case code and publishes `InboundEventFailed` in it. Any other
  *   error (a crash) rolls the unit back and throws, leaving the event `received` for the retry.
  *
- * Variant mappings come from `connection_external_ids`; none exist before task 8, so lines stay
- * unmapped and are listed in the mapping's `state.unmappedLines` (the product read before mapping,
- * review M8, waits for task 8; a line whose variant maps later is linked on the next read back).
+ * - A product topic (task 8) reads the product back and applies it (see `product`).
+ *
+ * Variant mappings come from `connection_external_ids` (task 8's product job writes them). Before
+ * mapping an order, the products of lines naming an unknown variant are read and applied in the
+ * same job (`productsBeforeOrder`, review M8); a line still unmapped is listed in the mapping's
+ * `state.unmappedLines` and linked when its product maps (`ProductSync.linkWaitingOrders`) or on
+ * the order's next read back.
  * Law 151: it never logs, throws, or stores a name, phone, address, or note, and keeps a line's
  * product title only in a waiting replacement's lines (`state.pendingReplacementLines`, Value
  * sourcing); its log lines and output carry ids and codes only.
@@ -276,6 +383,7 @@ export class InboxJob {
     @Inject(DomainEvents) private readonly events: DomainEvents,
     @Inject(ConnectorClock) private readonly clock: ConnectorClock,
     @Inject(ExchangeByEdit) private readonly exchanges: ExchangeByEdit,
+    @Inject(ProductSync) private readonly products: ProductSync,
   ) {}
 
   /**
@@ -288,7 +396,11 @@ export class InboxJob {
     retryCount = 0,
   ): Promise<InboxOutcome> {
     const event = await this.eventOf(data);
-    if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
+    if (!event) return { skipped: 'NOT_RECEIVED' };
+    if (event.status !== 'received') {
+      await this.relinkProduct(event, retryCount);
+      return { skipped: 'NOT_RECEIVED' };
+    }
     const connection = await this.connectionOf(data.connectionId);
     if (!connection) return { skipped: 'CONNECTION_NOT_LIVE' };
     // Paused: recorded, left `received`; resume (task 16) sends the work again.
@@ -300,7 +412,9 @@ export class InboxJob {
     const isOrder = event.subject_type === 'order' && SHOPIFY_ORDER_TOPICS.includes(event.topic);
     const isCustomer =
       event.subject_type === 'customer' && SHOPIFY_CUSTOMER_TOPICS.includes(event.topic);
-    if (!uninstalled && (!gid || !(isOrder || isCustomer))) {
+    const isProduct =
+      event.subject_type === 'product' && SHOPIFY_PRODUCT_TOPICS.includes(event.topic);
+    if (!uninstalled && (!gid || !(isOrder || isCustomer || isProduct))) {
       return { skipped: 'TOPIC_NOT_PROCESSED' };
     }
     if (
@@ -338,6 +452,9 @@ export class InboxJob {
     if (uninstalled) return this.appUninstalled(event, access, retryCount);
     if (!gid) return { skipped: 'TOPIC_NOT_PROCESSED' };
     if (isCustomer) return this.customer(event, access, gid, retryCount);
+    if (isProduct) {
+      return this.product(event, connection.store_id, access, gid, jobId, retryCount);
+    }
 
     // A config that does not parse would map orders on defaults (code review m6): refused.
     const config = ShopifyConnectionConfig.partial().safeParse(connection.config);
@@ -350,6 +467,16 @@ export class InboxJob {
       variables: { id: gid },
     });
     if ('done' in answer) return answer.done;
+    // AC-9 (review M8): the products of lines naming an unknown variant, first, in this job.
+    const before = await this.productsBeforeOrder(
+      event,
+      connection,
+      access,
+      answer.data,
+      jobId,
+      retryCount,
+    );
+    if (before) return before;
     return this.applyOrder(event, connection, config.data, gid, answer.data, jobId, event.id, {
       jobName: INBOX_JOB_NAME,
       fromBackfill: false,
@@ -398,7 +525,7 @@ export class InboxJob {
   }): Promise<EventRow | undefined> {
     return (
       await this.connection.db.execute<EventRow>(sql`
-        SELECT id, connection_id, topic, subject_type, subject_external_id, status,
+        SELECT id, connection_id, topic, subject_type, subject_external_id, status, outcome,
                to_char(clock_timestamp() AT TIME ZONE 'UTC',
                        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS read_started_at
         FROM inbound_events
@@ -412,7 +539,9 @@ export class InboxJob {
       await this.connection.db.execute<ConnectionRow>(sql`
         SELECT id, status, store_id, shop_domain, credentials_ciphertext,
                credentials_key_version, config,
-               to_char(go_live_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS go_live_at
+               to_char(go_live_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS go_live_at,
+               to_char(products_swept_through AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS products_swept_through
         FROM connections WHERE id = ${connectionId}::uuid AND provider = 'shopify'`)
     ).rows[0];
   }
@@ -521,10 +650,31 @@ export class InboxJob {
       expectedCost?: number;
     },
   ): Promise<ReadBack> {
+    const answer = await this.guarded(event, access.connectionId, retryCount, async () => {
+      const response = await this.shopify.request(access, operation);
+      return { value: response.data, warnings: response.warnings };
+    });
+    if ('refused' in answer) return { done: await this.fail(event, answer.refused, null) };
+    return answer;
+  }
+
+  /**
+   * Runs one read (one or more Shopify calls) before any unit of work, with the inbox's error
+   * rules: a transient error counts an attempt on the event and throws (pg-boss retries); a token
+   * refusal sets health `failing` and leaves the event `received`; any other Shopify refusal, or a
+   * product answer the mapper cannot read, is answered as `refused` with its code for the caller
+   * to decide. A success clears `READS_FAILING` and keeps the version warning true.
+   */
+  private async guarded<T>(
+    event: EventRow,
+    connectionId: string,
+    retryCount: number,
+    read: () => Promise<{ value: T; warnings: readonly ShopifyWarning[] }>,
+  ): Promise<Guarded<T>> {
     try {
-      const answer = await this.shopify.request(access, operation);
-      await this.readSucceeded(access.connectionId, answer.warnings);
-      return { data: answer.data };
+      const answer = await read();
+      await this.readSucceeded(connectionId, answer.warnings);
+      return { data: answer.value };
     } catch (error) {
       if (error instanceof ShopifyTransientError) {
         await this.readFailed(event, retryCount);
@@ -533,16 +683,281 @@ export class InboxJob {
       if (error instanceof ShopifyRejectedError) {
         const reason = error.code as ConnectionHealthReason;
         if (TOKEN_REFUSALS.includes(reason)) {
-          await this.setHealth(this.connection.db, access.connectionId, 'failing', reason);
-          this.logger.warn(
-            `inbox event=${event.id} connection=${access.connectionId} skipped=${reason}`,
-          );
+          await this.setHealth(this.connection.db, connectionId, 'failing', reason);
+          this.logger.warn(`inbox event=${event.id} connection=${connectionId} skipped=${reason}`);
           return { done: { skipped: reason } };
         }
-        return { done: await this.fail(event, error.code, null) };
+        return { refused: error.code };
       }
+      if (error instanceof ShopifyProductMappingError) return { refused: error.code };
       throw error;
     }
+  }
+
+  /**
+   * A `products/create`, `products/update`, or `products/delete` event (task 8, AC-16): reads the
+   * product back with every variant (`ProductSync.read`), then in one `OrderTransactions.run` unit
+   * (READ COMMITTED, as the catalog requires) applies it (`ProductSync.apply`: `stale`,
+   * `not_visible`, `gift_card`, `product_removed` when Shopify no longer has it, `needs_attention`
+   * when a variant needs a person) and ends the event, coalescing every other `received` product
+   * event received before the read. A read back of another product fails `READ_BACK_MISMATCH`; an
+   * unreadable product, a catalog refusal of the mapped input, or an exhausted style code fails
+   * the event with its code and `InboundEventFailed`. After the unit, the known orders waiting for
+   * a variant that now maps are linked (`ProductSync.linkWaitingOrders`, AC-9). The event's label
+   * is the product's handle (never personal).
+   */
+  private async product(
+    event: EventRow,
+    storeId: string,
+    access: ShopifyConnectionAccess,
+    gid: string,
+    jobId: string,
+    retryCount: number,
+  ): Promise<InboxOutcome> {
+    const answer = await this.guarded(event, access.connectionId, retryCount, async () =>
+      this.products.read(access, gid),
+    );
+    if ('done' in answer) return answer.done;
+    if ('refused' in answer) return this.fail(event, answer.refused, null);
+    const product = answer.data;
+    if (product !== null && product.id !== gid) {
+      return this.fail(event, 'READ_BACK_MISMATCH', productLabelOf(product));
+    }
+    return this.applyProduct(event, storeId, gid, product, jobId, INBOX_JOB_NAME, {
+      coalesce: true,
+      snapshotAt: null,
+    });
+  }
+
+  /**
+   * Applies one product the backfill read in bulk (spec 0015 tasks 8 and 12, AC-7, AC-17): the
+   * same unit and mapper as a webhook's read back, with no second Shopify call. `object` is the
+   * product's bulk object (`assembleBulkProduct`); `jobName` names the backfill in the
+   * `system_job` actor; `snapshotAt` is when the products run started (the bulk snapshot is no
+   * older), so a product whose mapping was removed since is `stale` (security review L3). A
+   * backfill read coalesces nothing (its snapshot may predate webhook events). Any error but a
+   * lock timeout or a transient database error fails this product's event with a code
+   * (`PRODUCT_APPLY_FAILED` when it has none), so one product never stops the run (security
+   * review L2). The event must still be `received` and the connection `active`.
+   */
+  async applyProductRead(
+    data: { connectionId: string; eventId: string },
+    object: BulkObject,
+    jobId: string,
+    jobName: string,
+    snapshotAt: string,
+  ): Promise<InboxOutcome> {
+    const event = await this.eventOf(data);
+    if (!event || event.status !== 'received') return { skipped: 'NOT_RECEIVED' };
+    const connection = await this.connectionOf(data.connectionId);
+    if (!connection || connection.status !== 'active') return { skipped: 'CONNECTION_NOT_LIVE' };
+    const gid = event.subject_external_id;
+    if (!gid || event.subject_type !== 'product' || !SHOPIFY_PRODUCT_TOPICS.includes(event.topic)) {
+      return { skipped: 'TOPIC_NOT_PROCESSED' };
+    }
+    if (!connection.store_id) return { skipped: 'CONNECTION_INCOMPLETE' };
+    let product: ShopifyProduct;
+    try {
+      product = assembleBulkProduct(object);
+    } catch (error) {
+      if (!(error instanceof ShopifyProductMappingError)) throw error;
+      return this.fail(event, error.code, null);
+    }
+    if (product.id !== gid) return this.fail(event, 'READ_BACK_MISMATCH', productLabelOf(product));
+    return this.applyProduct(event, connection.store_id, gid, product, jobId, jobName, {
+      coalesce: false,
+      snapshotAt,
+      failUnknown: true,
+    });
+  }
+
+  /**
+   * The product unit (see `product`), then the late links of every variant of the product that
+   * maps now (`ProductSync.linkWaitingOrders`, on a `processed` or `stale` end, so a later event
+   * of the product retries links an earlier run lost). A product failure code (see
+   * `productFailureCodeOf`) fails the event and records the product as not applied
+   * (`ProductSync.recordRefused`), so the read before an order skips it until it changes. With
+   * `failUnknown` (the backfill), any other error but a lock timeout or a transient database
+   * error fails the event `PRODUCT_APPLY_FAILED`, logged by the error's name.
+   */
+  private async applyProduct(
+    event: EventRow,
+    storeId: string,
+    gid: string,
+    product: ShopifyProduct | null,
+    jobId: string,
+    jobName: string,
+    options: { coalesce: boolean; snapshotAt: string | null; failUnknown?: boolean },
+  ): Promise<InboxOutcome> {
+    const label = product ? productLabelOf(product) : null;
+    let mapped: readonly string[] = [];
+    let linksDue = false;
+    let outcome: InboxOutcome;
+    try {
+      outcome = await this.unit(event, async (tx) => {
+        const applied = await this.products.apply(
+          tx,
+          { connectionId: event.connection_id, storeId },
+          gid,
+          product,
+          { kind: 'system_job', name: jobName, jobId },
+          { snapshotAt: options.snapshotAt },
+        );
+        mapped = applied.mappedVariants;
+        linksDue = applied.status === 'processed' || applied.outcome === 'stale';
+        return this.end(tx, event, label, applied, options.coalesce);
+      });
+    } catch (error) {
+      let code = productFailureCodeOf(error);
+      if (code === null && options.failUnknown && !throwsForRetry(error)) {
+        this.logger.warn(
+          `inbox event=${event.id} product apply error=${errorName(error)} failed=PRODUCT_APPLY_FAILED`,
+        );
+        code = 'PRODUCT_APPLY_FAILED';
+      }
+      if (code === null) throw error;
+      // A refusal is kept so the read before an order skips the product; an apply failure says
+      // nothing about the product, so it records nothing (re-review Major A).
+      if (product && code !== 'PRODUCT_APPLY_FAILED') {
+        await this.products.recordRefused(event.connection_id, product, code);
+      }
+      return this.fail(event, code, label);
+    }
+    if (linksDue && mapped.length > 0) {
+      await this.products.linkWaitingOrders(event.connection_id, mapped);
+    }
+    return outcome;
+  }
+
+  /**
+   * After a crash between a product unit and its late links (code review minor 3): pg-boss
+   * retries the job (`retryCount` above 0), the event is no longer `received` (`processed`, or
+   * `ignored` `stale`; never `coalesced`, whose links its own read made), and this links the
+   * waiting order lines of every variant of the product that maps now, so the retry finishes what
+   * the run began.
+   */
+  private async relinkProduct(event: EventRow, retryCount: number): Promise<void> {
+    // Only pg-boss's retry of this job (re-review Minor C): a first run on an event already
+    // closed (a coalesced event's own job, a duplicate) has no links to finish.
+    if (retryCount === 0 || event.subject_type !== 'product' || !event.subject_external_id) return;
+    const linked =
+      (event.status === 'processed' && event.outcome !== 'coalesced') ||
+      (event.status === 'ignored' && event.outcome === 'stale');
+    if (!linked) return;
+    const connection = await this.connectionOf(event.connection_id);
+    if (connection?.status !== 'active') return;
+    const mapped = await this.products.mappedVariantsOf(
+      this.connection.db,
+      event.connection_id,
+      event.subject_external_id,
+    );
+    if (mapped.length > 0) await this.products.linkWaitingOrders(event.connection_id, mapped);
+  }
+
+  /**
+   * The product read before an order (AC-9, review M8; Inbound processing item 4): before the
+   * order's unit, every line naming a Shopify variant the connection has no live mapping for gets
+   * its product read (`PRODUCT_OF_VARIANT_READ`, then `ProductSync.read`) and applied in its own
+   * unit, at most `PRODUCTS_BEFORE_ORDER_MAX` products, so the order then maps those lines; then
+   * the other known orders waiting for a variant those products map are linked too
+   * (`ProductSync.linkWaitingOrders`, code review major 2). Only once the first products backfill
+   * ran (`products_swept_through` set): before it every variant is unknown and the backfill maps
+   * the catalog, after which the waiting lines are linked. A transient Shopify error retries the
+   * whole job and a token refusal ends it, as for the order read; a lock timeout or a transient
+   * database error throws for the retry. Anything else (a Shopify refusal, an unreadable or gone
+   * product, a catalog refusal, or an error with no code, logged by its name: security review L2)
+   * leaves that product's lines unmapped and the order goes on; a product failure code also
+   * records the product as not applied, so the next order does not read it again. Answers how
+   * the job ended, or null to go on.
+   */
+  private async productsBeforeOrder(
+    event: EventRow,
+    connection: ConnectionRow,
+    access: ShopifyConnectionAccess,
+    readData: unknown,
+    jobId: string,
+    retryCount: number,
+  ): Promise<InboxOutcome | null> {
+    const storeId = connection.store_id;
+    if (connection.products_swept_through === null || !storeId) return null;
+    const read =
+      typeof readData === 'object' && readData !== null
+        ? (readData as { order?: unknown }).order
+        : undefined;
+    let order: ShopifyOrder;
+    try {
+      order = parseShopifyOrder(read);
+    } catch {
+      return null; // `applyOrder` reads it again and fails or skips the event itself.
+    }
+    const gids = [
+      ...new Set(order.lineItems.nodes.flatMap((line) => (line.variant ? [line.variant.id] : []))),
+    ];
+    const unknown = await this.products.unknownVariants(this.connection.db, connection.id, gids);
+    const covered = new Set<string>();
+    const readProducts = new Set<string>();
+    const mapped = new Set<string>();
+    const link = async () => {
+      if (mapped.size > 0) await this.products.linkWaitingOrders(connection.id, [...mapped]);
+    };
+    for (const variantGid of unknown) {
+      if (covered.has(variantGid)) continue;
+      if (readProducts.size >= PRODUCTS_BEFORE_ORDER_MAX) break;
+      const owner = await this.guarded(event, connection.id, retryCount, async () =>
+        this.products.productOfVariant(access, variantGid),
+      );
+      if ('done' in owner) {
+        await link();
+        return owner.done;
+      }
+      if ('refused' in owner) {
+        this.logger.warn(`inbox event=${event.id} product_before_order refused=${owner.refused}`);
+        continue;
+      }
+      const productGid = owner.data;
+      if (productGid === null || readProducts.has(productGid)) continue;
+      readProducts.add(productGid);
+      const answer = await this.guarded(event, connection.id, retryCount, async () =>
+        this.products.read(access, productGid),
+      );
+      if ('done' in answer) {
+        await link();
+        return answer.done;
+      }
+      if ('refused' in answer) {
+        this.logger.warn(`inbox event=${event.id} product_before_order refused=${answer.refused}`);
+        continue;
+      }
+      const product = answer.data;
+      if (product === null || product.id !== productGid) continue;
+      for (const variant of product.variants) covered.add(variant.id);
+      try {
+        const applied = await this.orderTransactions.run((tx) =>
+          this.products.apply(tx, { connectionId: connection.id, storeId }, productGid, product, {
+            kind: 'system_job',
+            name: INBOX_JOB_NAME,
+            jobId,
+          }),
+        );
+        for (const gidMapped of applied.mappedVariants) mapped.add(gidMapped);
+        this.logger.log(
+          `inbox event=${event.id} product_before_order status=${applied.status} code=${applied.outcome ?? 'none'}`,
+        );
+      } catch (error) {
+        if (throwsForRetry(error)) throw error;
+        const code = productFailureCodeOf(error);
+        if (code !== null) {
+          await this.products.recordRefused(connection.id, product, code);
+          this.logger.warn(`inbox event=${event.id} product_before_order failed=${code}`);
+        } else {
+          this.logger.warn(
+            `inbox event=${event.id} product_before_order error=${errorName(error)} left_unmapped`,
+          );
+        }
+      }
+    }
+    await link();
+    return null;
   }
 
   /**
@@ -705,6 +1120,9 @@ export class InboxJob {
     ];
     const variants = await this.variantMappings(tx, event.connection_id, variantGids);
     const mapped = mapShopifyOrder(order, { ...base, variants });
+    // Audit A3: the app charges what Shopify charged, priced as the intake will price it (the
+    // setting read in this transaction, as `createFromChannel` reads it), before anything is written.
+    assertShopifyTotal(order, mapped.input, await this.settings.get('prices_include_vat', tx));
     // A live order Shopify already cancelled or fulfilled takes its named move right after its
     // creation (AC-13); an imported order's first states already hold it (AC-17).
     const live = mapped.actor === 'system_job' && !mapped.input.firstStates;
@@ -792,8 +1210,9 @@ export class InboxJob {
    *    cancelled original never gets one, so the hourly check stops trying.
    * 2. Late variant links of `state.unmappedLines` whose variant now maps
    *    (`linkChannelLineVariant`), before the edit, so the link is never seen as a change; a link
-   *    that orders refuses as `VariantUnknown` is planned again with that variant unmapped. Task 8
-   *    builds the product read that makes new variant mappings; until then none exist.
+   *    that orders refuses as `VariantUnknown` is planned again with that variant unmapped. Task
+   *    8's product job makes the variant mappings (and links waiting lines itself when a product
+   *    maps).
    * 3. `applyChannelEdit` with the snapshot: every open Shopify line while no fulfillment is active
    *    and on the read where the first one appears (code review m1: the edit came before the
    *    fulfillment froze it; the small window is that a line changed after the fulfillment but
@@ -1051,7 +1470,8 @@ export class InboxJob {
   /**
    * Ends the event and coalesces: the event takes its status, outcome, label, and processed time,
    * and every other `received` event of the same subject and processed topics received before
-   * this run's read back started is `processed` `coalesced` (AC-7). A later event (a change after
+   * this run's read back started, and not locked by another job right now, is `processed`
+   * `coalesced` (AC-7). A later event (a change after
    * the read) and other topics (refunds, which wait for their own task) are left alone. A held
    * edit passes `coalesce` false (security review L2): the other events keep their own jobs.
    */
@@ -1069,16 +1489,22 @@ export class InboxJob {
       WHERE id = ${event.id}::uuid`);
     const topics = COALESCED_TOPICS[event.subject_type];
     if (coalesce && event.subject_external_id && topics) {
+      // SKIP LOCKED (re-review Minor B): an event another job holds (its own unit has it locked)
+      // is left alone, never waited for, so two jobs of one subject cannot deadlock on each
+      // other's event rows; the skipped event ends on its own (usually `stale`).
       await tx.execute(sql`
         UPDATE inbound_events
         SET status = 'processed', outcome = 'coalesced',
             subject_label = coalesce(${label}, subject_label), processed_at = now()
-        WHERE connection_id = ${event.connection_id}::uuid
-          AND subject_type = ${event.subject_type}::inbound_subject
-          AND subject_external_id = ${event.subject_external_id}
-          AND topic = ANY(${pgArray([...topics])}::text[])
-          AND received_at <= ${event.read_started_at}::timestamptz
-          AND status = 'received' AND id <> ${event.id}::uuid`);
+        WHERE id IN (
+          SELECT id FROM inbound_events
+          WHERE connection_id = ${event.connection_id}::uuid
+            AND subject_type = ${event.subject_type}::inbound_subject
+            AND subject_external_id = ${event.subject_external_id}
+            AND topic = ANY(${pgArray([...topics])}::text[])
+            AND received_at <= ${event.read_started_at}::timestamptz
+            AND status = 'received' AND id <> ${event.id}::uuid
+          FOR UPDATE SKIP LOCKED)`);
     }
     return { status: end.status, code: end.outcome };
   }

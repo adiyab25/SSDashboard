@@ -7,7 +7,7 @@ _Steps derived from spec 0007. It is a decision spec, so its checks map to the r
 - [ ] B1 closed: section 7 keys order number on (`tenant_id`, `store_id`, `order_number`), says the store shows beside every order number, and says how the portal resolves phone plus order number across stores.
 - [ ] B2 closed: section 1 has "When an outbound command fails" (sync state on the record, `OutboundCommandFailed`, a task, the shell count, the rule that blocks packing) and "What mirror mode cannot do".
 - [ ] `## Carried from the domain review` has one row for each finding from M1 to M10 and m1 to m8, each with an owning scope feature number.
-- [ ] `## Decision` records the owner decisions of 2026-11-05; Open questions keep the data center open and link `docs/research/0001-egypt-hosting-options.md`.
+- [ ] `## Decision` records the owner decisions of 2026-11-05; Open questions keep the data center open and link private `docs/research/0001-egypt-hosting-options.md`.
 - [ ] `## Decisions at the gate` has the nine answers dated 2026-11-05, items 5 to 9 marked "recommended default, accepted by the owner without override"; `## Open questions` no longer lists them; each answer that belongs to a later feature has an "Also from spec 0007" line in that feature's scope row (features 4, 9, 13, 19, 22, 25, 27, 29, 41, 45).
 - [ ] `## Build plan` states the pilot window (mid March to early May 2027) as a schedule constraint.
 - [ ] `grep -n "^### " docs/specs/0007-stack-architecture-operations-layer/index.md` shows one section for each of R-1 to R-11 (numbered 1 to 11) plus bundles and database roles.
@@ -17,7 +17,7 @@ _Steps derived from spec 0007. It is a decision spec, so its checks map to the r
 - [ ] Each shape has 2 to 5 milestones with a "Done when" a person can run, its own keep list, and a cost line; the recommendation is a separate line, not inside a shape.
 - [ ] Every convention in *Conventions* names its enforcer or says **review only**; every named ESLint plugin and rule is listed with a link in rationale.md.
 - [ ] Every repo path cited exists, or the text marks it "to be created". Spot check: `ls apps/api/src/module-boundary.spec.ts apps/api/src/inventory/locations/locations.service.ts packages/db/src/schema/locations.ts packages/db/src/schema/parties.ts apps/web/src/api/client.ts apps/api/test/scale.e2e-spec.ts`.
-- [x] Domain review (wave 2b) of sections 1 to 6 has no open blocker (`docs/reviews/domain-stack.md`; Igris confirms B1 and B2 against this revision).
+- [x] Domain review (wave 2b) of sections 1 to 6 has no open blocker (private `docs/reviews/domain-stack.md`; Igris confirms B1 and B2 against this revision).
 
 ## Part 2: after wave 3 (both shapes unless marked)
 

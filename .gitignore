@@ -19,3 +19,12 @@ graphify-out/*
 !graphify-out/build-graphs.py
 !graphify-out/ast-extract.py
 !graphify-out/coverage-check.py
+
+# Private: kept on the owner's machine only, never committed (the repo is public)
+docs/positioning/
+docs/research/
+docs/reviews/
+docs/handover/
+docs/pr/
+.claude/skills/
+.claude/agents/

@@ -28,65 +28,67 @@ import {
 } from '@ssdashboard/ui/components/sheet';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@ssdashboard/ui/components/tooltip';
 import { StarIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 /** Dialog, popover and tooltip, to check stacking, focus return and direction. */
 export function Overlays() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-wrap gap-2">
       <Dialog>
         <DialogTrigger asChild>
-          <Button variant="outline">Dialog</Button>
+          <Button variant="outline">{t('design.overlays.dialog')}</Button>
         </DialogTrigger>
-        <DialogContent closeLabel="Close">
+        <DialogContent closeLabel={t('design.overlays.close')}>
           <DialogHeader>
-            <DialogTitle>Archive this location?</DialogTitle>
-            <DialogDescription>
-              Stock screens stop listing it. You can restore it later.
-            </DialogDescription>
+            <DialogTitle>{t('design.overlays.dialogTitle')}</DialogTitle>
+            <DialogDescription>{t('design.overlays.dialogBody')}</DialogDescription>
           </DialogHeader>
-          <DialogFooter closeLabel="Cancel">
-            <Button variant="destructive">Archive</Button>
+          <DialogFooter closeLabel={t('design.overlays.cancel')}>
+            <Button variant="destructive">{t('design.overlays.archive')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       <Sheet>
         <SheetTrigger asChild>
-          <Button variant="outline">Sheet from the start edge</Button>
+          <Button variant="outline">{t('design.overlays.sheet')}</Button>
         </SheetTrigger>
-        <SheetContent side="start" closeLabel="Close">
+        <SheetContent side="start" closeLabel={t('design.overlays.close')}>
           <SheetHeader>
-            <SheetTitle>Filters</SheetTitle>
-            <SheetDescription>Narrow the list by location and status.</SheetDescription>
+            <SheetTitle>{t('design.overlays.sheetTitle')}</SheetTitle>
+            <SheetDescription>{t('design.overlays.sheetBody')}</SheetDescription>
           </SheetHeader>
         </SheetContent>
       </Sheet>
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline">Popover</Button>
+          <Button variant="outline">{t('design.overlays.popover')}</Button>
         </PopoverTrigger>
-        <PopoverContent aria-label="Stock detail">
-          On hand 120 · reserved 8 · available 112
+        <PopoverContent aria-label={t('design.overlays.popoverLabel')}>
+          {t('design.overlays.popoverBody')}
         </PopoverContent>
       </Popover>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline">Dropdown menu</Button>
+          <Button variant="outline">{t('design.overlays.dropdown')}</Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuGroup>
-            <DropdownMenuItem>Edit</DropdownMenuItem>
-            <DropdownMenuItem>Duplicate</DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">Archive</DropdownMenuItem>
+            <DropdownMenuItem>{t('design.overlays.edit')}</DropdownMenuItem>
+            <DropdownMenuItem>{t('design.overlays.duplicate')}</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive">
+              {t('design.overlays.archive')}
+            </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="outline" size="icon" aria-label="Favourite">
+          <Button variant="outline" size="icon" aria-label={t('design.overlays.favourite')}>
             <StarIcon aria-hidden />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Favourite</TooltipContent>
+        <TooltipContent>{t('design.overlays.favourite')}</TooltipContent>
       </Tooltip>
     </div>
   );

@@ -41,7 +41,7 @@ import { ApiError } from '@/api/client';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { SkuPicker } from '@/inventory/sku-picker';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { NewOrderSkeleton } from './new-order-skeleton';
 import { createGiftedOrder, createOrder, getOrderOptions, orderKeys } from './orders-api';
 import { RelatedOrderPicker } from './related-order-picker';
@@ -402,7 +402,7 @@ export function NewOrderView() {
 
       <section
         aria-labelledby="order-details"
-        className="flex flex-col gap-4 rounded-lg border p-4"
+        className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
       >
         <h2 id="order-details" className="text-base font-semibold">
           {t('orders.new.details')}
@@ -530,7 +530,7 @@ export function NewOrderView() {
       {(!gifted || goodwill) && (
         <section
           aria-labelledby="order-related"
-          className="flex flex-col gap-4 rounded-lg border p-4"
+          className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
         >
           <h2 id="order-related" className="text-base font-semibold">
             {t('orders.new.related.title')}
@@ -585,7 +585,7 @@ export function NewOrderView() {
 
       <section
         aria-labelledby="order-ship-to"
-        className="flex flex-col gap-4 rounded-lg border p-4"
+        className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
       >
         <h2 id="order-ship-to" className="text-base font-semibold">
           {t('orders.shipTo.title')}
@@ -690,7 +690,10 @@ export function NewOrderView() {
         </FieldGroup>
       </section>
 
-      <section aria-labelledby="order-lines" className="flex flex-col gap-4 rounded-lg border p-4">
+      <section
+        aria-labelledby="order-lines"
+        className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
+      >
         <h2 id="order-lines" className="text-base font-semibold">
           {t('orders.lines.title')}
         </h2>
@@ -851,7 +854,7 @@ export function NewOrderView() {
       {!gifted && (
         <section
           aria-labelledby="order-shipping"
-          className="flex flex-col gap-4 rounded-lg border p-4"
+          className="flex flex-col gap-4 rounded-card gradient-card-edge p-4"
         >
           <h2 id="order-shipping" className="text-base font-semibold">
             {t('orders.new.shipping')}

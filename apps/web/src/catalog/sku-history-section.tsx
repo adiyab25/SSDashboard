@@ -21,7 +21,7 @@ import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { inventoryKeys, listSkuMovements } from '@/inventory/inventory-api';
 
-const linkClass = 'rounded-sm font-medium underline-offset-4 hover:underline focus-ring';
+const linkClass = 'rounded-chip font-medium underline-offset-4 hover:underline focus-ring';
 
 /** The SKU's movement history, newest first, loaded a page at a time. */
 export function SkuHistorySection({ skuId }: { skuId: string }) {
@@ -49,7 +49,7 @@ export function SkuHistorySection({ skuId }: { skuId: string }) {
     }
     if (row.isReversal) return t('inventory.skuDetail.voidOf');
     return (
-      <span className="inline-flex flex-wrap items-center gap-x-2">
+      <span className="inline-flex items-center gap-x-2">
         {t(`inventory.skuDetail.sourceTypes.${row.sourceType}`)}
         {row.source && (
           <Link href={`/stock-receipts/${row.source.id}`} className={linkClass}>
@@ -75,31 +75,31 @@ export function SkuHistorySection({ skuId }: { skuId: string }) {
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('inventory.skuDetail.historyTable')} aria-busy={loading}>
-            <TableHeader className="bg-muted">
-              <TableRow className="h-row-header hover:bg-muted">
-                <TableHead scope="col" className="px-3 text-start font-medium">
+            <TableHeader>
+              <TableRow className="h-row-header">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.skuDetail.columns.date')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-start font-medium">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.skuDetail.columns.location')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-end font-medium">
+                <TableHead scope="col" className="px-3 text-end">
                   {t('inventory.skuDetail.columns.quantity')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-start font-medium">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.skuDetail.columns.source')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-start font-medium">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.skuDetail.columns.postedBy')}
                 </TableHead>
                 {cost && (
                   <>
-                    <TableHead scope="col" className="px-3 text-end font-medium">
+                    <TableHead scope="col" className="px-3 text-end">
                       {t('inventory.skuDetail.columns.unitCost')}
                     </TableHead>
-                    <TableHead scope="col" className="px-3 text-end font-medium">
+                    <TableHead scope="col" className="px-3 text-end">
                       {t('inventory.skuDetail.columns.totalCost')}
                     </TableHead>
                   </>
@@ -126,7 +126,7 @@ export function SkuHistorySection({ skuId }: { skuId: string }) {
               )}
               {!loading &&
                 rows.map((row) => (
-                  <TableRow key={row.id} className="h-row hover:bg-muted">
+                  <TableRow key={row.id} className="h-row">
                     <TableCell className="px-3">{format.dateTime(row.effectiveAt)}</TableCell>
                     <TableCell className="px-3">
                       {text(row.location.name, row.location.code)}

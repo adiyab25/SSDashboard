@@ -788,8 +788,14 @@ describe(
 
     it('rederives the payment from the creation facts only when a creation gateway is mapped differently (lead decision D10)', async () => {
       useShopifyScenarios('order-cod-remapped');
-      // Created with the COD gateway unmapped; marked as paid on `manual` (unmapped) later.
-      const c = await plant(JSON.stringify({ appOwner: 'organization', gatewayMethods: {} }));
+      // Created with the COD gateway mapped to cod (a new order with an unmapped gateway is refused,
+      // review round 2 M3); marked as paid on `manual` (unmapped) later.
+      const c = await plant(
+        JSON.stringify({
+          appOwner: 'organization',
+          gatewayMethods: { 'Cash on Delivery (COD)': 'cod' },
+        }),
+      );
       const gid = 'gid://shopify/Order/5550000021001';
       await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
       expect(await orderOf(c, gid)).toMatchObject({
@@ -797,7 +803,7 @@ describe(
         prepaid_amount: '0.00',
       });
       expect((await mappingOf(c, gid))?.state).toMatchObject({
-        creationGateways: { 'Cash on Delivery (COD)': null },
+        creationGateways: { 'Cash on Delivery (COD)': 'cod' },
         creationTransactionIds: [],
       });
       expect(await arrive(c, 'orders/updated', gid, '2026-11-02T14:00:00Z')).toMatchObject({
@@ -827,7 +833,7 @@ describe(
       });
       expect(await auditActions(order?.id as string)).toContain('order.payment_method_rederived');
       expect((await mappingOf(c, gid))?.state).toMatchObject({
-        creationGateways: { 'Cash on Delivery (COD)': null },
+        creationGateways: { 'Cash on Delivery (COD)': 'cod' },
         creationTransactionIds: [],
       });
       expect(remainingShopifyExchanges()).toEqual([]);
@@ -935,42 +941,29 @@ describe(
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
-    it('creates an order whose gateway name holds U+0000, storing no such key in the jsonb mapping state (security review N3)', async () => {
+    it('refuses an order whose gateway name holds U+0000 GATEWAY_UNMAPPED (no config key can map it), storing nothing (security review N3, review round 2 M3)', async () => {
       useShopifyScenarios('order-gateway-nul');
       const c = await plant();
       const gid = 'gid://shopify/Order/5550000025001';
       expect(await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z')).toMatchObject({
-        status: 'processed',
-        outcome: null,
+        status: 'failed',
+        failure_code: 'GATEWAY_UNMAPPED',
       });
-      expect(await orderOf(c, gid)).toMatchObject({ payment_method: 'cod' });
-      expect((await mappingOf(c, gid))?.state).toMatchObject({
-        creationGateways: {},
-        unmappedGateways: ['Cash onDelivery'],
-      });
+      expect(await orderOf(c, gid)).toBeUndefined();
+      expect(await mappingOf(c, gid)).toBeUndefined();
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
-    it('creates an order whose gateway name and discount code hold lone surrogates, the whole mapping state stored (code review R4, security review N4)', async () => {
+    it('refuses an order whose gateway name holds a lone surrogate GATEWAY_UNMAPPED (no config key can map it), storing nothing, so no mapping state can break jsonb (code review R4, security review N4, review round 2 M3)', async () => {
       useShopifyScenarios('order-lone-surrogate');
       const c = await plant();
       const gid = 'gid://shopify/Order/5550000026001';
       expect(await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z')).toMatchObject({
-        status: 'processed',
-        outcome: null,
+        status: 'failed',
+        failure_code: 'GATEWAY_UNMAPPED',
       });
-      expect(await orderOf(c, gid)).toMatchObject({ payment_method: 'cod' });
-      const mapping = await mappingOf(c, gid);
-      expect(mapping?.state).toMatchObject({
-        creationGateways: {},
-        unmappedGateways: ['Wallet'],
-        discountCodes: ['SAVE', 'WELCOME10'],
-      });
-      const discount = await api.owner.pool.query<{ discount_code: string | null }>(
-        `SELECT discount_code FROM orders WHERE store_id = $1::uuid AND channel_order_ref = $2`,
-        [c.storeId, gid],
-      );
-      expect(discount.rows[0]?.discount_code).toBe('SAVE');
+      expect(await orderOf(c, gid)).toBeUndefined();
+      expect(await mappingOf(c, gid)).toBeUndefined();
       expect(remainingShopifyExchanges()).toEqual([]);
     });
 
@@ -1095,6 +1088,76 @@ describe(
         subject_label: '#1002',
       });
       expect(failedEvents.some((json) => json.includes(event.id))).toBe(true);
+    });
+
+    it('fails a card order whose gateway is unmapped GATEWAY_UNMAPPED, writing no mapping and no order, and creates it once the gateway is mapped (audit A2)', async () => {
+      useShopifyScenarios('order-prepaid-gateway');
+      const c = await plant(
+        JSON.stringify({
+          appOwner: 'organization',
+          altPhoneAttribute: 'alt_phone',
+          gatewayMethods: { 'Cash on Delivery (COD)': 'cod' },
+        }),
+      );
+      const card = 'gid://shopify/Order/5550000005001';
+      const event = await arrive(c, 'orders/create', card, '2026-11-02T09:15:04Z');
+      expect(event).toMatchObject({
+        status: 'failed',
+        failure_code: 'GATEWAY_UNMAPPED',
+        subject_label: '#1005',
+      });
+      expect(failedEvents.some((json) => json.includes(event.id))).toBe(true);
+      expect(await mappingOf(c, card)).toBeUndefined();
+      expect(await orderOf(c, card)).toBeUndefined();
+
+      // Mapped by a direct config change (no route writes it before task 16); the next read of
+      // the order (here a webhook, else the sweep's retry row) creates it with its prepayment.
+      await api.owner.pool.query(
+        `UPDATE connections SET config = jsonb_set(config, '{gatewayMethods,Fixture Card Gateway}', '"instapay"') WHERE id = $1::uuid`,
+        [c.id],
+      );
+      useShopifyScenarios('order-prepaid-gateway');
+      expect(await arrive(c, 'orders/updated', card, '2026-11-02T09:15:04Z')).toMatchObject({
+        status: 'processed',
+      });
+      expect(await orderOf(c, card)).toMatchObject({
+        payment_method: 'instapay',
+        prepaid_amount: '860.00',
+        prepaid_method: 'instapay',
+      });
+    });
+
+    it('fails an order whose total differs from Shopify TOTAL_MISMATCH, writing no mapping and no order (audit A3)', async () => {
+      useShopifyScenarios('order-total-mismatch');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000093001';
+      const event = await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z');
+      expect(event).toMatchObject({
+        status: 'failed',
+        failure_code: 'TOTAL_MISMATCH',
+        subject_label: '#1093',
+      });
+      expect(failedEvents.some((json) => json.includes(event.id))).toBe(true);
+      expect(await mappingOf(c, gid)).toBeUndefined();
+      expect(await orderOf(c, gid)).toBeUndefined();
+    });
+
+    it('creates a free shipping order with no shipping charged (code review B1)', async () => {
+      useShopifyScenarios('order-free-shipping');
+      const c = await plant();
+      const gid = 'gid://shopify/Order/5550000091001';
+      expect(await arrive(c, 'orders/create', gid, '2026-11-02T09:15:04Z')).toMatchObject({
+        status: 'processed',
+      });
+      const { rows } = await api.owner.pool.query<{
+        shipping_charged_amount: string;
+        cod_expected_amount: string;
+      }>(
+        `SELECT shipping_charged_amount, cod_expected_amount FROM orders
+         WHERE store_id = $1::uuid AND channel_order_ref = $2`,
+        [c.storeId, gid],
+      );
+      expect(rows[0]).toEqual({ shipping_charged_amount: '0.00', cod_expected_amount: '810.00' });
     });
 
     it('keeps every inbox payload of these connections free of a phone, a name, or an address (AC-6)', async () => {

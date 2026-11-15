@@ -1,6 +1,6 @@
 # Verify: daily report · spec 0024 · written 2026-11-13
 
-_Steps derived from spec 0024's acceptance criteria and its Value sourcing table, revised the same day for the [domain review](../../reviews/domain-daily-report.md). `/check verify` runs these; `/test` locks the durable ones. Telegram is replaced by its recorded fixtures in tests; the manual steps use a test bot and a test group, never the brand's real group._
+_Steps derived from spec 0024's acceptance criteria and its Value sourcing table, revised the same day for the domain review (kept private). `/check verify` runs these; `/test` locks the durable ones. Telegram is replaced by its recorded fixtures in tests; the manual steps use a test bot and a test group, never the brand's real group._
 
 ## UI / manual
 

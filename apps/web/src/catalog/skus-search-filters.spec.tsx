@@ -75,7 +75,11 @@ const detail = (overrides: Partial<SkuDetail> = {}): SkuDetail => ({
   ...sku(1),
   status: 'active',
   updatedAt: 'x',
-  barcodes: [{ id: '50000000-0000-4000-8000-000000000001', code: '6221234567890' }],
+  barcodes: [
+    { id: '50000000-0000-4000-8000-000000000001', code: '6221234567890', fromChannel: false },
+  ],
+  channelLinked: false,
+  channelNameLanguage: null,
   ...overrides,
 });
 

@@ -10,7 +10,7 @@ Forces that shaped it:
 
 - **The data model already points here.** The amendment of [spec 0002](../0002-core-data-model/index.md) says "writes an audit entry (feature 10)" for order edits, partial delivery splits, task changes, customer merge and unmerge, and policy row changes, and it already lists `audit_entries` as an append only table owned by an `audit` module ([tenancy child](../0002-core-data-model/0002-tenancy-platform.md), A4 and A5). The shape of that table is what this spec decides.
 - **Modules may not read each other's tables** (root [AGENTS.md](../../../AGENTS.md)). An audit module that reached into orders to build a diff, or into customers to undo a merge, would break the walls. So callers hand over what changed, and an undo is run by the owner.
-- **Automatic actions are a selling point** ([positioning 6.13](../../positioning/2026-11-05-egypt-order-operations-layer.md): every automatic action writes a snapshot and can be undone in one step; confirmations are revoked with a reason, never deleted; 6.12: mapping edits are audited and undoable). An automatic action without a visible, reversible record would be a risk, not a feature.
+- **Automatic actions are a selling point** (positioning 6.13 (kept private): every automatic action writes a snapshot and can be undone in one step; confirmations are revoked with a reason, never deleted; 6.12: mapping edits are audited and undoable). An automatic action without a visible, reversible record would be a risk, not a feature.
 - **More kinds of actors than staff.** Spec 0005's amendment adds partner users to the people who sign in; connectors add carriers and imports; the portal adds customers acting through a signed link; the worker adds scheduled jobs. The log must say which, and a wrong shape must not fit.
 - **Personal data (Law 151).** Orders and customers carry phones, names, and addresses, and the shared redaction list (`packages/config/src/redaction.ts`) already says which keys they are. Before and after values would copy those into a table that, by design, is never deleted. That is the sharpest tension in the feature.
 - **Scale.** The design size is 150,000 orders over about three years (spec 0007 section 11). With several entries per order, a few million rows is normal and years of history must stay fast to filter.
@@ -96,8 +96,8 @@ Option 1 is the smallest design that meets the scope's three promises: every act
 - `docs/specs/0005-staff-sign-in/index.md` (amendment): partner users, the audience aware guard, the sign in events already logged.
 - `docs/specs/0006-core-stock-loop/index.md`: the receipt void used as the tracer thread; the `within` transaction pattern; cost hidden from staff (AC-11).
 - `docs/specs/0007-stack-architecture-operations-layer/index.md`: section 4 (export runs: marked imported, who and when), section 11 (scale), "Database roles and the append only ledgers".
-- `docs/positioning/2026-11-05-egypt-order-operations-layer.md`: 6.12 (mapping edits audited and undoable), 6.13 (automatic actions write a snapshot and can be undone in one step; confirmations revoked with a reason, never deleted).
-- `.claude/skills/postgresql-table-design/` (types, constraints, partitioning thresholds, BRIN for naturally ordered data).
+- private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`: 6.12 (mapping edits audited and undoable), 6.13 (automatic actions write a snapshot and can be undone in one step; confirmations revoked with a reason, never deleted).
+- private `.claude/skills/postgresql-table-design/` (types, constraints, partitioning thresholds, BRIN for naturally ordered data).
 
 **Practices and standards**:
 - Append only audit logs written in the same transaction as the change.

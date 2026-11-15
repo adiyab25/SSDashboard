@@ -139,7 +139,7 @@ Shopify's named quantity states (available, committed, incoming, damaged, qualit
 
 ### Context
 
-On 2026-11-05 the product became the order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, and consignment showroom partners (`docs/positioning/2026-11-05-egypt-order-operations-layer.md`). The owner kept the built code and asked each foundation spec to be amended (spec 0007, Shape A). Scope feature 4 lists what the model must now hold, and spec 0007 binds several answers: a tenant id on every row defaulting from a database setting (section 7), order number unique per store and carrier accounts with an optional store binding (sections 1 and 7, from domain review B1), a sync state on every linked record (B2), a location owner type read through one policy service (section 8), one operating day function (section 10), 10,000 SKUs designed and 50,000 tested (section 11), and a list of append only tables. Two forces sharpen every choice. First, no install runs the current migrations yet (confirmed by Igris for spec 0007 open question 1), so breaking changes cost one rebuild now and a migration path per client later. Second, the reference brand's own console (reference brand notes, section 7) shows what goes wrong without these rules: four phone formats for one customer, return rates that counted cancellations, costs "pending" for months, and numbers that contradicted each other until read models were rewritten.
+On 2026-11-05 the product became the order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, and consignment showroom partners (private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`). The owner kept the built code and asked each foundation spec to be amended (spec 0007, Shape A). Scope feature 4 lists what the model must now hold, and spec 0007 binds several answers: a tenant id on every row defaulting from a database setting (section 7), order number unique per store and carrier accounts with an optional store binding (sections 1 and 7, from domain review B1), a sync state on every linked record (B2), a location owner type read through one policy service (section 8), one operating day function (section 10), 10,000 SKUs designed and 50,000 tested (section 11), and a list of append only tables. Two forces sharpen every choice. First, no install runs the current migrations yet (confirmed by Igris for spec 0007 open question 1), so breaking changes cost one rebuild now and a migration path per client later. Second, the reference brand's own console (reference brand notes, section 7) shows what goes wrong without these rules: four phone formats for one customer, return rates that counted cancellations, costs "pending" for months, and numbers that contradicted each other until read models were rewritten.
 
 ### Options considered, per load bearing decision
 
@@ -223,7 +223,7 @@ On 2026-11-05 the product became the order operations and warehouse back office 
 
 ### Fix pass of 2026-11-05: the five blockers
 
-The domain review (`docs/reviews/domain-data-model.md`) found five places where money moves in a shape the tables did not expect; the gate review accepted it in full, with round 2 rulings on B1 and B5, and the owner answered three brand questions. Each decision below names the options weighed.
+The domain review (private `docs/reviews/domain-data-model.md`) found five places where money moves in a shape the tables did not expect; the gate review accepted it in full, with round 2 rulings on B1 and B5, and the owner answered three brand questions. Each decision below names the options weighed.
 
 **B1. Where credit came from.**
 - *A funding on every entry, allocation of prepayment and credit to lines, payout only from a matching funding (chosen; decided, owner question 13)*. Pros: credit that was never cash (a retention bonus, goodwill) can be spent but never leave as cash; "refund the way they paid" is defined for a pooled balance; card money goes back to the card; the arithmetic stays exact because shares follow the discount allocation rule. Cons: one return can post several entries (one per funding), grouped by `posting_id`; the credit service must sum per funding.
@@ -271,10 +271,10 @@ These are engineering calls, made by recommendation; the business rules are in i
 ### References (amendment)
 
 **Project sources**:
-- `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1 to 6.5, 6.10, 6.13 to 6.15, 7.1 to 7.5, 12, 13
-- `docs/positioning/2026-11-05-reference-brand-notes.md` sections 2, 3, 7
+- private `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1 to 6.5, 6.10, 6.13 to 6.15, 7.1 to 7.5, 12, 13
+- private `docs/positioning/2026-11-05-reference-brand-notes.md` sections 2, 3, 7
 - Spec 0007 sections 1, 7, 8, 10, 11, *Database roles and the append only ledgers*, *Carried from the domain review*
-- `docs/reviews/domain-stack.md` (B1, B2, m4, n1)
+- private `docs/reviews/domain-stack.md` (B1, B2, m4, n1)
 - `docs/scope/foundations.md` feature 4; `docs/scope/confirmation-to-cash.md` and `docs/scope/exchange-loop.md` for the features that build on this model
 - `packages/db/src/schema/*`, `packages/db/migrations/0001_core_data_model.sql`, `packages/db/AGENTS.md`, `apps/api/src/inventory/AGENTS.md`
 - The reference brand's `supabase/migrations/20261015120000_style_costs_and_cost_rules.sql` and `src/lib/format.ts` (`normalizePhoneEG`), read only

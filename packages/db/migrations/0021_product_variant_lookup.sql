@@ -1,0 +1,1 @@
+CREATE INDEX "connection_external_ids_product_variants_idx" ON "connection_external_ids" USING btree ("connection_id",("state"->>'productId')) WHERE "connection_external_ids"."entity" = 'variant';

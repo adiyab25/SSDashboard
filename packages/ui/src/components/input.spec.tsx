@@ -10,6 +10,13 @@ describe('Input', () => {
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveClass('h-control');
   });
 
+  it('takes the field fill role, which is the card colour on a card in light only', () => {
+    render(<Input aria-label="Name" />);
+
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveClass('bg-field');
+    expect(screen.getByRole('textbox', { name: 'Name' })).not.toHaveClass('bg-background');
+  });
+
   it('has no axe violations', async () => {
     const { container } = render(<Input aria-label="Name" />);
 

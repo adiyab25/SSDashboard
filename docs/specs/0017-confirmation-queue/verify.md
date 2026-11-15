@@ -1,6 +1,6 @@
 # Verify: confirmation queue · spec 0017 · written 2026-11-12
 
-_Steps derived from spec 0017 acceptance criteria and its Value sourcing table, revised the same day for the [domain review](../../reviews/domain-confirmation-queue.md) and spec 0018's final "carrier record stale" contract. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones add theirs. Nothing is ticked: the spec is Assumed._
+_Steps derived from spec 0017 acceptance criteria and its Value sourcing table, revised the same day for the domain review (kept private) and spec 0018's final "carrier record stale" contract. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 first; later milestones add theirs. Nothing is ticked: the spec is Assumed._
 
 ## UI / manual
 

@@ -100,8 +100,8 @@ export function SkuEditDialog({ skuId, onClose, onDeleted }: Props) {
               </Alert>
             ) : (
               <div aria-hidden className="grid gap-3">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-control w-full" />
+                <Skeleton className="h-control w-full" />
               </div>
             )}
           </>

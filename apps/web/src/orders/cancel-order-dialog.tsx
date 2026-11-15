@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { ApiError } from '@/api/client';
 import { useReturnFocus } from '@/shared/use-return-focus';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import {
   isCancelInShopify,
   isOutOfDate,

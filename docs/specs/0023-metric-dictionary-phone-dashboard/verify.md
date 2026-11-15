@@ -1,6 +1,6 @@
 # Verify: metric dictionary and phone dashboard · spec 0023 · written 2026-11-13
 
-_Steps derived from spec 0023's acceptance criteria and its Value sourcing table, revised the same day for the [domain review](../../reviews/domain-metric-dictionary.md). `/check verify` runs these; `/test` locks the durable ones. Run each on a phone sized window (360 by 800, touch) and at desk width, in Arabic and in English._
+_Steps derived from spec 0023's acceptance criteria and its Value sourcing table, revised the same day for the domain review (kept private). `/check verify` runs these; `/test` locks the durable ones. Run each on a phone sized window (360 by 800, touch) and at desk width, in Arabic and in English._
 
 ## UI / manual
 

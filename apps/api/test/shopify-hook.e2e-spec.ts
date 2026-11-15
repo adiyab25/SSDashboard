@@ -141,7 +141,10 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
         sealed.keyVersion,
         options.health ?? 'ok',
         options.health_reason ?? null,
-        options.config ?? '{"appOwner":"organization","altPhoneAttribute":"alt_phone"}',
+        // The fixtures' COD gateway mapped as a manager would: a new order with an unmapped
+        // gateway is refused (review round 2 M3).
+        options.config ??
+          '{"appOwner":"organization","altPhoneAttribute":"alt_phone","gatewayMethods":{"Cash on Delivery (COD)":"cod"}}',
       ],
     );
     return { id, shopDomain, storeCode, storeId };
@@ -671,10 +674,11 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
       admin_graphql_api_id: 'gid://shopify/Product/7770000000101',
       updated_at: '2026-11-02T09:00:00Z',
     };
-    const reply = await deliver(rotating, 'products/update', product);
+    // A topic no job processes yet (products get a job since task 8), so the row stays received.
+    const reply = await deliver(rotating, 'inventory_levels/update', product);
     expect(reply.status).toBe(200);
     expect((await eventOf(rotating.id, reply.webhookId)).status).toBe('received');
-    const tampered = await deliver(rotating, 'products/update', product, { tamper: true });
+    const tampered = await deliver(rotating, 'inventory_levels/update', product, { tamper: true });
     expect([tampered.status, tampered.text]).toEqual([401, '']);
   });
 
@@ -1112,11 +1116,47 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect(await health(a.id)).toEqual({ health: 'ok', health_reason: null });
   });
 
-  it('records a verified topic milestone 1 does not process, sending no job', async () => {
-    const reply = await deliver(a, 'products/update', {
-      id: 7770000000101,
-      admin_graphql_api_id: 'gid://shopify/Product/7770000000101',
-      title: 'Fixture Basic Tee',
+  it('records a delivery whose admin_graphql_api_id is a gid of another resource ignored no_subject, with no job (security review L5, re-review Minor D)', async () => {
+    const reply = await deliver(a, 'products/delete', {
+      id: 5550000001001,
+      admin_graphql_api_id: 'gid://shopify/Order/5550000001001',
+    });
+    expect(reply.status).toBe(200);
+    const event = await eventOf(a.id, reply.webhookId);
+    expect(event).toMatchObject({
+      status: 'ignored',
+      outcome: 'no_subject',
+      subject_external_id: null,
+    });
+    const processed = await api.owner.pool.query<{ processed_at: Date | null }>(
+      'SELECT processed_at FROM inbound_events WHERE id = $1::uuid',
+      [event.id],
+    );
+    expect(processed.rows[0]?.processed_at).not.toBeNull();
+    expect(
+      await count(`SELECT count(*) AS n FROM pgboss.job WHERE data->>'eventId' = $1`, [event.id]),
+    ).toBe(0);
+
+    // A compliance topic names its customer in its own fields: kept received, never no_subject.
+    const redact = await deliver(a, 'customers/redact', {
+      shop_id: 1,
+      shop_domain: a.shopDomain,
+      customer: { id: 9, email: 'redact@example.test', phone: '+201000000999' },
+    });
+    expect(redact.status).toBe(200);
+    expect(await eventOf(a.id, redact.webhookId)).toMatchObject({
+      status: 'received',
+      outcome: null,
+      subject_external_id: null,
+    });
+  });
+
+  it('records a verified topic no job processes yet, sending no job', async () => {
+    // Products get their job from task 8; inventory levels wait for milestone 3.
+    const reply = await deliver(a, 'inventory_levels/update', {
+      inventory_item_id: 2230000031001,
+      location_id: 4440000000001,
+      available: 3,
       updated_at: '2026-11-02T09:00:00Z',
     });
     expect(reply.status).toBe(200);
@@ -1124,9 +1164,12 @@ describe('the Shopify hook and the inbox (spec 0015 task 7)', { timeout: 300_000
     expect(event).toMatchObject({
       status: 'received',
       payload: {
-        topic: 'products/update',
-        id: 'gid://shopify/Product/7770000000101',
+        topic: 'inventory_levels/update',
+        id: null,
         updatedAt: '2026-11-02T09:00:00.000Z',
+        inventoryItemId: '2230000031001',
+        locationId: '4440000000001',
+        available: 3,
       },
     });
     expect(

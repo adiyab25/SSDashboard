@@ -14,7 +14,7 @@ import { XIcon } from 'lucide-react';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedText } from '@/i18n/use-localized-text';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { EMPTY_FILTERS, isFiltered, type OrderFilters } from './order-filters';
 
 /** Adds or removes one value from a list, keeping the enum's own order. */
@@ -45,7 +45,10 @@ export function OrderFilterBar({
   const set = (patch: Partial<OrderFilters>) => onChange({ ...value, ...patch });
 
   return (
-    <section aria-labelledby={`${id}-title`} className="flex flex-col gap-3 rounded-lg border p-4">
+    <section
+      aria-labelledby={`${id}-title`}
+      className="flex flex-col gap-3 rounded-card gradient-card-edge p-4"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id={`${id}-title`} className="text-base font-semibold">
           {t('orders.filters.title')}
@@ -190,7 +193,7 @@ export function OrderFilterBar({
       </div>
 
       <details>
-        <summary className="w-fit cursor-pointer rounded-sm text-sm font-medium focus-ring coarse:min-h-touch">
+        <summary className="w-fit cursor-pointer rounded-chip text-sm font-medium focus-ring coarse:min-h-touch">
           {t('orders.filters.byState')}
         </summary>
         <div className="mt-3 flex flex-col gap-3">

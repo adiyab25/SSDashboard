@@ -383,6 +383,9 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
       path: () => `/orders/${ids.order}/unpack`,
       body: () => ({}),
     },
+    // Spec 0013 milestone 4 (AC-26): the location manager holds open orders before going online;
+    // an empty body is refused with 422 once the permission passes.
+    'POST /orders/hold-open-orders': { needs: ['catalog.manage'], body: () => ({}) },
     'GET /locations': { needs: ['stock.view'] },
     'POST /locations': {
       needs: ['catalog.manage'],

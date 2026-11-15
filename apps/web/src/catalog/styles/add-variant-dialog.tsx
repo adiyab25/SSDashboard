@@ -38,7 +38,9 @@ import { useLocalizedText } from '@/i18n/use-localized-text';
 import { inventoryKeys } from '@/inventory/inventory-api';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { addVariant, catalogKeys } from '../catalog-api';
-import { barcodeHolder, catalogErrorCode } from '../catalog-error';
+import { barcodeHolder, catalogErrorCode, channelOwnedField } from '../catalog-error';
+import { FromChannelBadge } from '../from-channel-badge';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 /** A style has at most this many options (AC-10). */
 const MAX_OPTIONS = 3;
@@ -73,6 +75,7 @@ const KNOWN = [
   'ARCHIVED',
   'INVALID_INPUT',
   'NOT_FOUND',
+  'FIELD_OWNED_BY_CHANNEL',
 ] as const;
 type Failure = Exclude<(typeof KNOWN)[number], 'SKU_TAKEN' | 'BARCODE_TAKEN'> | 'generic';
 
@@ -89,6 +92,9 @@ interface Props {
  * matches them in either language after normalizing, and a new name adds an option. Each text is
  * sent in the language its script shows (Arabic letters as Arabic, anything else as English). A
  * code or a barcode another SKU holds shows on its field, naming the SKU that holds the barcode.
+ * On a style linked to a sales channel the options are Shopify's (AC-15): the rows show the
+ * style's option names read only and offer only its existing values, with no way to add an
+ * option or a new value (the api answers `FIELD_OWNED_BY_CHANNEL` otherwise).
  */
 export function AddVariantDialog({ style, onClose }: Props) {
   const { t } = useTranslation();
@@ -97,6 +103,8 @@ export function AddVariantDialog({ style, onClose }: Props) {
   const queryClient = useQueryClient();
   const [failure, setFailure] = useState<Failure | null>(null);
   const [holder, setHolder] = useState<string | undefined>();
+  const [ownedField, setOwnedField] = useState(channelOwnedField(undefined));
+  const linked = style.channelLinked;
   const form = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(AddVariantForm),
     mode: 'onTouched',
@@ -104,7 +112,9 @@ export function AddVariantDialog({ style, onClose }: Props) {
       sku: '',
       options:
         style.options.length === 0
-          ? [{ name: '', value: '' }]
+          ? linked
+            ? []
+            : [{ name: '', value: '' }]
           : style.options
               .slice(0, MAX_OPTIONS)
               .map((option) => ({ name: text(option.name, ''), value: '' })),
@@ -143,6 +153,7 @@ export function AddVariantDialog({ style, onClose }: Props) {
         form.setError('barcode', { message: 'taken' }, { shouldFocus: true });
         return;
       }
+      setOwnedField(channelOwnedField(error));
       setFailure(code);
     },
   });
@@ -183,7 +194,11 @@ export function AddVariantDialog({ style, onClose }: Props) {
 
           {failure && (
             <Alert variant="destructive" role="alert">
-              <AlertDescription>{t(`catalog.addVariant.errors.${failure}`)}</AlertDescription>
+              <AlertDescription>
+                {failure === 'FIELD_OWNED_BY_CHANNEL'
+                  ? t(`catalog.channel.owned.${ownedField}`)
+                  : t(`catalog.addVariant.errors.${failure}`)}
+              </AlertDescription>
             </Alert>
           )}
 
@@ -217,9 +232,14 @@ export function AddVariantDialog({ style, onClose }: Props) {
             <fieldset className="flex flex-col gap-3" aria-describedby="add-variant-options-hint">
               <legend className="mb-1 text-sm font-medium">
                 {t('catalog.addVariant.optionsLegend')}
+                {linked && <FromChannelBadge />}
               </legend>
               <p id="add-variant-options-hint" className="text-xs text-muted-foreground">
-                {t('catalog.addVariant.optionsHint')}
+                {linked
+                  ? style.options.length === 0
+                    ? t('catalog.channel.noNewOptions')
+                    : t('catalog.channel.optionsLocked')
+                  : t('catalog.addVariant.optionsHint')}
               </p>
               <datalist id="add-variant-option-names">
                 {style.options.map((option) => (
@@ -241,6 +261,8 @@ export function AddVariantDialog({ style, onClose }: Props) {
                           id={`add-variant-option-name-${index}`}
                           autoComplete="off"
                           list="add-variant-option-names"
+                          readOnly={linked}
+                          className="read-only:bg-muted"
                           aria-invalid={!!rowError}
                           aria-describedby={
                             rowError ? `add-variant-option-error-${index}` : undefined
@@ -252,42 +274,65 @@ export function AddVariantDialog({ style, onClose }: Props) {
                         <FieldLabel htmlFor={`add-variant-option-value-${index}`}>
                           {t('catalog.addVariant.optionValue', { n })}
                         </FieldLabel>
-                        <Input
-                          id={`add-variant-option-value-${index}`}
-                          autoComplete="off"
-                          list={listId}
-                          aria-invalid={!!rowError}
-                          aria-describedby={
-                            rowError ? `add-variant-option-error-${index}` : undefined
-                          }
-                          {...form.register(`options.${index}.value`)}
-                        />
+                        {linked ? (
+                          <select
+                            id={`add-variant-option-value-${index}`}
+                            className={SELECT_CLASS}
+                            aria-invalid={!!rowError}
+                            aria-describedby={
+                              rowError ? `add-variant-option-error-${index}` : undefined
+                            }
+                            {...form.register(`options.${index}.value`)}
+                          >
+                            <option value="" />
+                            {valuesFor(typedNames[index]?.name).map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Input
+                            id={`add-variant-option-value-${index}`}
+                            autoComplete="off"
+                            list={listId}
+                            aria-invalid={!!rowError}
+                            aria-describedby={
+                              rowError ? `add-variant-option-error-${index}` : undefined
+                            }
+                            {...form.register(`options.${index}.value`)}
+                          />
+                        )}
                         <datalist id={listId}>
                           {valuesFor(typedNames[index]?.name).map((value) => (
                             <option key={value} value={value} />
                           ))}
                         </datalist>
                       </Field>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        id={`add-variant-remove-option-${index}`}
-                        aria-label={t('catalog.addVariant.removeOption', { n })}
-                        onClick={() => {
-                          rows.remove(index);
-                          // The pressed button unmounts: move focus to the next Remove (it
-                          // takes this index) or, on the last row, to Add option.
-                          window.requestAnimationFrame(() =>
-                            (
-                              document.getElementById(`add-variant-remove-option-${index}`) ??
-                              document.getElementById('add-variant-add-option')
-                            )?.focus(),
-                          );
-                        }}
-                      >
-                        <XIcon aria-hidden />
-                      </Button>
+                      {linked ? (
+                        <span aria-hidden />
+                      ) : (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          id={`add-variant-remove-option-${index}`}
+                          aria-label={t('catalog.addVariant.removeOption', { n })}
+                          onClick={() => {
+                            rows.remove(index);
+                            // The pressed button unmounts: move focus to the next Remove (it
+                            // takes this index) or, on the last row, to Add option.
+                            window.requestAnimationFrame(() =>
+                              (
+                                document.getElementById(`add-variant-remove-option-${index}`) ??
+                                document.getElementById('add-variant-add-option')
+                              )?.focus(),
+                            );
+                          }}
+                        >
+                          <XIcon aria-hidden />
+                        </Button>
+                      )}
                     </div>
                     {rowError && (
                       <FieldError id={`add-variant-option-error-${index}`}>
@@ -297,7 +342,7 @@ export function AddVariantDialog({ style, onClose }: Props) {
                   </div>
                 );
               })}
-              {rows.fields.length < MAX_OPTIONS && (
+              {!linked && rows.fields.length < MAX_OPTIONS && (
                 <Button
                   type="button"
                   size="sm"

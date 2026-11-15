@@ -15,6 +15,7 @@ import {
   type ChannelActor,
   type ChannelCreateActor,
 } from '../src/orders/intake/order-intake.service.js';
+import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { OrderTransactions, type OrderTransaction } from '../src/orders/order-transactions.js';
 import {
   InvalidOrderInput,
@@ -36,6 +37,7 @@ import {
   type ShopifyOrderContext,
 } from '../src/connectors/shopify/order-mapper.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
+import { stockedOnline } from './order-stock.js';
 import { readShopifyOrder } from './shopify-order-reader.js';
 
 const CREATED = 'order-created-cod/01-order-read.json';
@@ -129,6 +131,13 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
   const run = <T>(work: (tx: OrderTransaction) => Promise<T>) =>
     api.app.get(OrderTransactions).run(work);
   const intake = () => api.app.get(OrderIntake);
+  /** The active reservations of an order, line id to held quantity (spec 0011 `reservationsFor`). */
+  const heldFor = async (orderId: string) =>
+    Object.fromEntries(
+      (await api.app.get(LedgerService).reservationsFor({ sourceType: 'order', sourceId: orderId }))
+        .filter((row) => row.status === 'active')
+        .map((row) => [row.sourceLineId, row.openQuantity]),
+    );
   /** The error a call rejects with (null when it resolves), caught at once so no rejection dangles. */
   const failureOf = (call: Promise<unknown>): Promise<unknown> =>
     call.then(
@@ -376,6 +385,8 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     skuM = await sku('IN-M');
     skuL = await sku('IN-L');
     skuRetired = await sku('IN-OLD');
+    // Spec 0013 milestone 4: an online warehouse with stock, so orders hold and pack.
+    await stockedOnline(api, [skuM, skuL]);
     await owner(`UPDATE product_variants SET archived_at = now() WHERE id = $1::uuid`, [
       skuRetired,
     ]);
@@ -917,6 +928,9 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       );
 
       expect(linked).toMatchObject({ reserved: true });
+      // Spec 0013 milestone 4 (AC-25 b): the linked line now holds its stock.
+      expect((await heldFor(orderId))[linked.lineId]).toBeGreaterThan(0);
+      expect(Object.keys(await heldFor(shipped.orderId))).toEqual([]);
       expect((await detail(orderId)).lines.map((l) => l.variantId)).toEqual([skuM, skuM, null]);
       expect((await orderRow(orderId))?.updated_at).toBe(before?.updated_at);
       expect(edited.filter((e) => e.orderId === orderId)).toEqual([]);
@@ -1044,7 +1058,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     });
   });
 
-  describe('closed order import (AC-14; reservations are milestone 4, the shipment job milestone 5)', () => {
+  describe('closed order import (AC-14, AC-13; the shipment job is milestone 5)', () => {
     it('creates a delivered and reconciled order in its found states: one event per machine, nothing held, no shipment job', async () => {
       // Delivered and reconciled are the app's facts: the fulfilled go live fixture is overridden.
       const { orderId } = await create(
@@ -1086,6 +1100,12 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
         remittedAmount: '455.00',
       });
       expect(jobs.rows[0]?.count).toBe('0');
+      // Spec 0013 milestone 4: an order found past packed takes no reservation.
+      expect(
+        await api.app
+          .get(LedgerService)
+          .reservationsFor({ sourceType: 'order', sourceId: orderId }),
+      ).toEqual([]);
     });
 
     it('imports a fulfilled and a cancelled order in the states Shopify says: shipped with the fulfillment time, cancelled with channel.staff', async () => {
@@ -1125,6 +1145,9 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
 
       expect(await detail(orderId)).toMatchObject({ fulfillmentState: 'new', cashState: 'unpaid' });
       expect((await detail(orderId)).lines.every((x) => x.lineState === 'open')).toBe(true);
+      // Spec 0013 milestone 4: a found new order reserves as usual.
+      const mapped = (await detail(orderId)).lines.filter((x) => x.variantId !== null);
+      expect(Object.keys(await heldFor(orderId)).sort()).toEqual(mapped.map((x) => x.id).sort());
     });
   });
 

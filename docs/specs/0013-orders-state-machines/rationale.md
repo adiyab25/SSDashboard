@@ -112,7 +112,7 @@ The cost of in transaction listeners is accepted deliberately and bounded: spec 
 
 ### Sub decisions from the domain reviews of 2026-11-07
 
-The [orders review](../../reviews/domain-orders.md) accepted the design with one blocker and seven majors; the lead added rulings from the reviews of spec 0011 and spec 0015. Each change and why:
+The orders review (kept private) accepted the design with one blocker and seven majors; the lead added rulings from the reviews of spec 0011 and spec 0015. Each change and why:
 
 **Two locks instead of one (X1, Q-16.4).** The first draft locked edits and cancels at `carrier_delivery_created_at`. The reference brand's own Bosta sync retires deliveries that "never leave Pickup requested", so deliveries exist for orders that never ship, and with the lock a fake order stayed `new` for good, holding stock and cash expected. The money freeze stays at the delivery (the courier was told an amount); the cancel lock moves to pickup, which is what the transition table's from states already say. A carrier row to `cancelled` covers a delivery the carrier terminated before pickup. Runner up: keep the lock and cancel only in Bosta, rejected because the agent who knows the order is fake is in the app, not in Bosta.
 
@@ -158,9 +158,9 @@ The [orders review](../../reviews/domain-orders.md) accepted the design with one
 - [Spec 0007](../0007-stack-architecture-operations-layer/index.md): section 1 (outbound commands, the blocking rule, edit netting, mirror mode), section 7 (order number per store), section 10 (operating day), section 11 (scale), *Carried from the domain review* (B1, B2, m3).
 - [Spec 0008](../0008-roles-as-hats/index.md) (the permission matrix), [spec 0009](../0009-settings-toggles-bundles/index.md) (settings registry, module registry, executing steps, job registry), [spec 0010](../0010-audit-trail/index.md) (actions, reason codes, privacy).
 - [Spec 0011](../0011-stock-ledger-locations/index.md) (the stock transaction, reservations with `unfilled_quantity`, `postCarrierShipment`, the events, `OnlineStockGate`), [spec 0014](../0014-customers-by-phone/index.md) (the `CustomersService` contract), [spec 0015](../0015-shopify-connector/index.md) (the build order, `ChannelsService`, `ConnectorsService`).
-- [Domain review of this spec](../../reviews/domain-orders.md) (X1, M1 to M7, m1 to m9, the eight brand questions), [domain review of spec 0015](../../reviews/domain-shopify-connector.md) (M6, M8, m2, Q-13.5, Q-13.7), and the lead's rulings from the [domain review of spec 0011](../../reviews/domain-stock-ledger.md).
-- [Domain review of the data model](../../reviews/domain-data-model.md) (B2, M5, m1 to m3, build re read D2 to D4) and [domain review of the stack](../../reviews/domain-stack.md) (B2, n1).
-- [Scope, slice 1a](../../scope/confirmation-to-cash.md) (features 13, 16, 18, 19, 21, 22, 24) and the final plan `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1, 6.14, 7.1, 7.2.
+- Domain review of this spec (kept private) (X1, M1 to M7, m1 to m9, the eight brand questions), domain review of spec 0015 (kept private) (M6, M8, m2, Q-13.5, Q-13.7), and the lead's rulings from the domain review of spec 0011 (kept private).
+- Domain review of the data model (kept private) (B2, M5, m1 to m3, build re read D2 to D4) and domain review of the stack (kept private) (B2, n1).
+- [Scope, slice 1a](../../scope/confirmation-to-cash.md) (features 13, 16, 18, 19, 21, 22, 24) and the final plan private `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1, 6.14, 7.1, 7.2.
 - Installed skills: `postgresql-table-design` (partial unique index, index per access path), `nestjs-best-practices`, `drizzle-orm-patterns`, `pg-boss-v12`.
 
 **Practices & standards**

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
+import { FromChannelBadge } from './from-channel-badge';
 import { SkuEditDialog } from './sku-edit-dialog';
 import { SkuHistorySection } from './sku-history-section';
 import { SkuStockSection } from './sku-stock-section';
@@ -51,11 +52,14 @@ export function SkuView({ sku }: { sku: SkuDetail }) {
         </div>
       </div>
 
-      <dl className="grid gap-4 rounded-lg border p-4 text-sm sm:grid-cols-2">
+      <dl className="grid gap-4 rounded-card gradient-card-edge p-4 text-sm sm:grid-cols-2">
         <div className="flex flex-col gap-1">
           <dt className="text-muted-foreground">{t('inventory.skuDetail.price')}</dt>
-          <dd className="font-medium tabular-nums">
-            {sku.price === null ? t('inventory.skuDetail.noPrice') : format.money(sku.price, 2)}
+          <dd className="flex flex-wrap items-center gap-2 font-medium">
+            <span className="tabular-nums">
+              {sku.price === null ? t('inventory.skuDetail.noPrice') : format.money(sku.price, 2)}
+            </span>
+            {sku.channelLinked && <FromChannelBadge />}
           </dd>
         </div>
       </dl>

@@ -119,4 +119,4 @@ Still open (needs a person): ask an Arabic speaker to read the Arabic catalog an
 
 ## Verify run 2026-11-06 (feature close, branch `feat/localization-close`)
 
-Verdict: PASS on AC-1 to AC-23; full record in [the close report](../../reviews/verify-localization-close.md). Every step above is ticked except the Arabic speaker reads (both unticked on purpose). Added tests: an api e2e and a contracts test that a password with Arabic digits stays as typed (AC-18). Findings: 3 minor (raw `ok` and `up` on the Arabic home page, the ASCII only digit rule for passwords, one load flake in `staff.spec.ts`).
+Verdict: PASS on AC-1 to AC-23; full record in the close report (kept private). Every step above is ticked except the Arabic speaker reads (both unticked on purpose). Added tests: an api e2e and a contracts test that a password with Arabic digits stays as typed (AC-18). Findings: 3 minor (raw `ok` and `up` on the Arabic home page, the ASCII only digit rule for passwords, one load flake in `staff.spec.ts`).

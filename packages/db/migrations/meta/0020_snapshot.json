@@ -1,5 +1,5 @@
 {
-  "id": "cde3d878-c643-4ecc-8667-afb85efb77c6",
+  "id": "6f39c9be-c56b-4401-af9d-c9c5a5e110bf",
   "prevId": "eda064f2-383b-47aa-a065-c58553bb8b89",
   "version": "7",
   "dialect": "postgresql",
@@ -1236,6 +1236,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "from_channel": {
+          "name": "from_channel",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -1250,6 +1257,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "barcodes_one_channel_code": {
+          "name": "barcodes_one_channel_code",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "variant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"barcodes\".\"from_channel\"",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1859,6 +1888,12 @@
           "notNull": true,
           "default": "''"
         },
+        "channel_linked_at": {
+          "name": "channel_linked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2109,6 +2144,18 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
+        "channel_linked_at": {
+          "name": "channel_linked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel_name_language": {
+          "name": "channel_name_language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2217,7 +2264,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "products_channel_name_language_known": {
+          "name": "products_channel_name_language_known",
+          "value": "\"products\".\"channel_name_language\" IS NULL OR \"products\".\"channel_name_language\" IN ('en', 'ar')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.seasons": {
@@ -12736,127 +12788,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.task_notes": {
-      "name": "task_notes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "uuidv7()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "current_setting('ssd.tenant_id')::uuid"
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "author_id": {
-          "name": "author_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "task_notes_task_idx": {
-          "name": "task_notes_task_idx",
-          "columns": [
-            {
-              "expression": "task_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "task_notes_author_idx": {
-          "name": "task_notes_author_idx",
-          "columns": [
-            {
-              "expression": "author_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "task_notes_task_id_tasks_id_fk": {
-          "name": "task_notes_task_id_tasks_id_fk",
-          "tableFrom": "task_notes",
-          "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "task_notes_author_id_users_id_fk": {
-          "name": "task_notes_author_id_users_id_fk",
-          "tableFrom": "task_notes",
-          "tableTo": "users",
-          "columnsFrom": [
-            "author_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "task_notes_note_length": {
-          "name": "task_notes_note_length",
-          "value": "char_length(\"task_notes\".\"note\") BETWEEN 1 AND 1000"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.tasks": {
       "name": "tasks",
       "schema": "",
@@ -12934,24 +12865,6 @@
         },
         "dedupe_key": {
           "name": "dedupe_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subject_key": {
-          "name": "subject_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "contact_channel": {
-          "name": "contact_channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "external_ref": {
-          "name": "external_ref",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -13065,94 +12978,6 @@
           ],
           "isUnique": false,
           "where": "\"tasks\".\"status\" = 'open' AND \"tasks\".\"owner_user_id\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "tasks_dedupe_key_idx": {
-          "name": "tasks_dedupe_key_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "dedupe_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"tasks\".\"dedupe_key\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "tasks_open_due_idx": {
-          "name": "tasks_open_due_idx",
-          "columns": [
-            {
-              "expression": "due_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"tasks\".\"status\" = 'open'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "tasks_open_subject_idx": {
-          "name": "tasks_open_subject_idx",
-          "columns": [
-            {
-              "expression": "type",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "subject_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"tasks\".\"status\" = 'open'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "tasks_external_ref_idx": {
-          "name": "tasks_external_ref_idx",
-          "columns": [
-            {
-              "expression": "external_ref",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"tasks\".\"external_ref\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -13287,26 +13112,6 @@
         "tasks_owner_hat_internal": {
           "name": "tasks_owner_hat_internal",
           "value": "\"tasks\".\"owner_hat\" IS NULL OR \"tasks\".\"owner_hat\" IN ('support', 'operations', 'warehouse', 'manager')"
-        },
-        "tasks_owner_hat_set": {
-          "name": "tasks_owner_hat_set",
-          "value": "\"tasks\".\"owner_hat\" IS NOT NULL"
-        },
-        "tasks_note_length": {
-          "name": "tasks_note_length",
-          "value": "\"tasks\".\"note\" IS NULL OR char_length(\"tasks\".\"note\") BETWEEN 1 AND 1000"
-        },
-        "tasks_subject_key_shape": {
-          "name": "tasks_subject_key_shape",
-          "value": "\"tasks\".\"subject_key\" IS NULL OR \"tasks\".\"subject_key\" ~ '^[a-z0-9:_.-]{1,120}$'"
-        },
-        "tasks_contact_channel_known": {
-          "name": "tasks_contact_channel_known",
-          "value": "\"tasks\".\"contact_channel\" IS NULL OR \"tasks\".\"contact_channel\" IN ('whatsapp', 'call', 'instagram', 'facebook', 'portal')"
-        },
-        "tasks_external_ref_shape": {
-          "name": "tasks_external_ref_shape",
-          "value": "\"tasks\".\"external_ref\" IS NULL OR \"tasks\".\"external_ref\" ~ '^[A-Za-z0-9-]{1,40}$'"
         },
         "tasks_has_owner": {
           "name": "tasks_has_owner",
@@ -14083,11 +13888,7 @@
         "settlement_period",
         "outbound_command",
         "party",
-        "location",
-        "connection",
-        "inbound_event",
-        "variant",
-        "install"
+        "location"
       ]
     },
     "public.task_status": {

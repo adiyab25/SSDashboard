@@ -70,8 +70,8 @@ Two smaller calls. Gifted orders and exchange replacements are counted on their 
 ## References
 
 **Project sources**:
-- Final plan, `docs/positioning/2026-11-05-egypt-order-operations-layer.md`, sections 6.14, 6.15, 7.6.
-- reference brand notes, `docs/positioning/2026-11-05-reference-brand-notes.md`, items 5, 8, 9, 11 and section 7.
+- Final plan, private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`, sections 6.14, 6.15, 7.6.
+- reference brand notes, private `docs/positioning/2026-11-05-reference-brand-notes.md`, items 5, 8, 9, 11 and section 7.
 - Spec 0007 section 3 (what confirmed means) and carried rows M3, M4, m3.
 - Spec 0002 orders child (the derived outcome, gifted and exchange replacement types).
 - Spec 0003 owner answer 2 and `packages/ui/DESIGN.md` (phone first dashboard, provisional values).

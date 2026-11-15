@@ -106,8 +106,8 @@ Same account. Operations downloads a `per_transaction` sheet for 25 October to 2
 - [Spec 0007](../0007-stack-architecture-operations-layer/index.md), section 3: what confirmed means for the report.
 - [Spec 0020](../0020-settlement-bosta-reconciliation/index.md): AC-9, AC-11, AC-21, AC-22, AC-31 to AC-34, AC-37, *Later than slice 1a*.
 - [Spec 0010](../0010-audit-trail/index.md): AC-10 and AC-14, the undo registry.
-- [reference brand notes](../../positioning/2026-11-05-reference-brand-notes.md), section 2, item 5: confirmed ranges as a gate.
-- [Domain review](../../reviews/domain-period-close.md).
+- reference brand notes (kept private), section 2, item 5: confirmed ranges as a gate.
+- Domain review (kept private).
 
 **Practices and standards**:
 - Period close in accounting: a closed period is not posted to; before posting a correction reopens it, after posting it is booked in the open period with a reference, and the close is evidenced.

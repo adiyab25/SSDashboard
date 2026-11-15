@@ -1,7 +1,7 @@
 # 0016. Tasks and My work: one task primitive every process opens, and one inbox per person
 
 **Date**: 2026-11-12
-**Status**: In Progress (milestone 1 built on `feat/tasks-my-work`; ratified by the owner on 2026-11-13, [owner answers](../../reviews/owner-answers-2026-11-13.md): every owner question as recommended; written by the architect without the owner and revised the same day for the [domain review](../../reviews/domain-tasks-my-work.md), accept with changes, B1, M1 to M7, and m1 to m7 folded in with the lead's rulings, see *Domain review applied*; `/develop` advances the status as feature 17 is built)
+**Status**: In Progress (milestone 1 built on `feat/tasks-my-work`; ratified by the owner on 2026-11-13, owner answers of 2026-11-13 (kept private): every owner question as recommended; written by the architect without the owner and revised the same day for the domain review (kept private), accept with changes, B1, M1 to M7, and m1 to m7 folded in with the lead's rulings, see *Domain review applied*; `/develop` advances the status as feature 17 is built)
 **Feature**: [scope feature 17, Tasks & My work inbox](../../scope/confirmation-to-cash.md) (slice 1a, Core, Beta)
 **Depends on**: the `tasks` table as migrated by the feature 4 baseline ([spec 0002 customers, credit, and tasks child](../0002-core-data-model/0002-customers-credit-tasks.md), `packages/db/src/schema/tasks.ts`); hats and permissions ([spec 0008](../0008-roles-as-hats/index.md), `packages/contracts/src/access.ts`: `tasks.work`, `tasks.assign`, `InternalHat`); the module registry, the settings registry, and the manager task port ([spec 0009](../0009-settings-toggles-bundles/index.md), `apps/api/src/platform/modules/capability-hooks.ts`); the audit trail ([spec 0010](../0010-audit-trail/index.md)); in transaction domain events (`apps/api/src/platform/events/domain-events.ts`, built by [spec 0013](../0013-orders-state-machines/index.md)); the outbound and inbox events of [spec 0015](../0015-shopify-connector/index.md) (`apps/api/src/connectors/connectors.events.ts`).
 **Parallel seam**: scope feature 18 (confirmation queue, [spec 0017](../0017-confirmation-queue/index.md)) opens its callback and reconfirm tasks through *Interface for other modules* below and reads the working hours setting defined here. Feature 22 (settlement) is designed at the same time; see *Decision on audit item 8*.
@@ -44,7 +44,7 @@ A task is one small row: what kind of work it is (its type), which record it is 
 
 The `tasks` core module owns `tasks` and the new `task_notes`, is the only writer of both, and is loaded in the api and the worker (outbound and inbox events are published in the worker). Other modules open and close tasks only through `TasksService` inside their own transaction, or by publishing a past tense event the tasks module listens to. A type is a row of `TASK_TYPES`; there is no runtime registration of types. My work is one screen that polls once a minute; there are no per task notifications in slice 1a, with one exception carried to feature 25 (owner question 6). The `platform` module owns the brand wide working hours setting this spec defines.
 
-**Implementation skills**: `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) for the delta; `nestjs-best-practices` and `drizzle-orm-patterns` (installed skills dirs) for the service and queries; `shadcn` and `tanstack-query` for the screen.
+**Implementation skills**: `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) for the delta; `nestjs-best-practices` and `drizzle-orm-patterns` (installed skills dirs) for the service and queries; `shadcn` and `tanstack-query` for the screen.
 
 ### Amendments to spec 0002 (customers, credit, and tasks child)
 
@@ -496,7 +496,7 @@ Tracer Bullet: milestone 1 runs one real thread (a failed write back) from the e
 
 ## Open owner questions
 
-Answered by the owner on 2026-11-13 ([owner answers](../../reviews/owner-answers-2026-11-13.md)): every recommendation below is ratified. Question 8 is settled by spec 0017's Q-18.1 answer (both send modes): the 10 minute budget stands for every store, because under either mode a confirmation edit must reach Shopify before the order is packed, and under `app_sync_at_creation` the Bosta side is spec 0017's checklist and spec 0018's stale check, not this budget.
+Answered by the owner on 2026-11-13 (owner answers of 2026-11-13 (kept private)): every recommendation below is ratified. Question 8 is settled by spec 0017's Q-18.1 answer (both send modes): the 10 minute budget stands for every store, because under either mode a confirmation edit must reach Shopify before the order is packed, and under `app_sync_at_creation` the Bosta side is spec 0017's checklist and spec 0018's stale check, not this budget.
 
 1. **Support cases in feature 17 (audit item 7)?** Recommended: yes, the six case types of AC-10 with a required follow up time, notes, escalation to the owner (M4), no outcome that drops money (M5), a duplicate check and the customer view (M7), and the damaged or missing type (m3); no case table. Alternatives: a separate support cases feature later (the agent keeps a spreadsheet during the pilot, which the pilot's "no spreadsheet" week forbids); or only one generic `case.other` type.
 2. **Where does the manual refund record live (audit item 8)?** Recommended: in the `credit` module as a thin slice of feature 35 in slice 1a, built to *What the credit slice must provide*; feature 17 contributes `refund.manual_payout`, and `refund_needed` with `refund.unrecorded_payout` until the slice lands. Alternative: feature 22 owns it (lane D; the task contract is the same, but it ties InstaPay and bank refunds to the carrier statement, which the domain review also advises against).
@@ -509,7 +509,7 @@ Answered by the owner on 2026-11-13 ([owner answers](../../reviews/owner-answers
 
 ## Domain review applied
 
-[Domain review of spec 0016](../../reviews/domain-tasks-my-work.md), verdict accept with changes, applied on 2026-11-12 with the lead's rulings.
+Domain review of spec 0016 (kept private), verdict accept with changes, applied on 2026-11-12 with the lead's rulings.
 
 | Finding | How it was closed |
 |---|---|

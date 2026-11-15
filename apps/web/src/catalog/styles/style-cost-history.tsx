@@ -106,7 +106,7 @@ export function StyleCostHistory({ styleId }: { styleId: string }) {
           </AlertDescription>
         </Alert>
       ) : rows.length === 0 ? (
-        <p className="rounded-lg border px-3 py-10 text-center text-sm text-muted-foreground">
+        <p className="rounded-card gradient-card-edge px-3 py-10 text-center text-sm text-muted-foreground">
           {t('catalog.cost.history.empty')}
         </p>
       ) : (
@@ -116,7 +116,7 @@ export function StyleCostHistory({ styleId }: { styleId: string }) {
             columns={columns}
             rows={rows}
             getRowKey={(row) => row.id}
-            className="sm:overflow-hidden sm:rounded-lg sm:border"
+            className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
           />
           {query.isFetchNextPageError && (
             <Alert variant="destructive" role="alert">

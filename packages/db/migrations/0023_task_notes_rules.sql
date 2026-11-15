@@ -1,5 +1,5 @@
 -- Hand written (spec 0016, milestone 1): what Drizzle cannot express for the `task_notes` table of
--- 0020_tasks_delta.sql. Edited by hand, never generated.
+-- 0022_tasks_delta.sql. Edited by hand, never generated.
 
 -- A note is write once (spec 0016 AC-11): the application role cannot UPDATE, DELETE, or TRUNCATE
 -- it, and the trigger is the second guard for every role.

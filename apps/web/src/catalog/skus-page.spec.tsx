@@ -58,6 +58,8 @@ const detail = (n: number) => ({
   status: 'active' as const,
   updatedAt: '2026-11-03T10:00:00.123456Z',
   barcodes: [],
+  channelLinked: false,
+  channelNameLanguage: null,
 });
 
 afterEach(() => {
@@ -85,6 +87,17 @@ describe('SkusPage (AC-13)', () => {
       { q: '', status: 'active' },
       undefined,
       expect.anything(),
+    );
+  });
+
+  it('pins the classes that drop the cell padding on desktop, English and Arabic (AC-20; the Playwright density test proves the 40px height)', async () => {
+    api.listSkus.mockResolvedValue({ items: [sku(1)], nextCursor: null });
+    renderWithQuery(<SkusPage />);
+
+    const table = await screen.findByRole('table', { name: 'SKUs' });
+    expect(table.closest('[data-slot="collapsing-table"]')).toHaveClass(
+      'sm:[&_td]:py-0',
+      'sm:[&_td:lang(ar)]:py-0',
     );
   });
 

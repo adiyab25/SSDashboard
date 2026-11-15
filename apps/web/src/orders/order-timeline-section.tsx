@@ -27,7 +27,7 @@ export function OrderTimelineSection({ events }: { events: readonly OrderEventVi
       <h2 id="order-timeline-title" className="text-base font-semibold">
         {t('orders.timeline.title')}
       </h2>
-      <ol className="flex flex-col divide-y rounded-lg border">
+      <ol className="flex flex-col divide-y rounded-card gradient-card-edge">
         {events.map((event) => (
           <li key={event.id} className="flex flex-col gap-0.5 px-4 py-2 text-sm">
             <span className="flex flex-wrap items-baseline justify-between gap-2">

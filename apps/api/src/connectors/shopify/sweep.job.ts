@@ -56,6 +56,16 @@ export const SWEEP_RETRIES_PER_DAY = 3;
 export const SWEEP_RETRY_SPACING_HOURS = 1;
 
 /**
+ * The sweep retries a failed order only within this many operating days of the first failure of
+ * its current failure run (the oldest `failed` event of the order with no other status after it),
+ * the first failure's day counting as day 1 (lead decision, review round 2 M1). After that the
+ * order is left `failed`: the freshness line still counts it, a newer Shopify update (a webhook,
+ * or the sweep seeing a newer `updatedAt`) reads it again, and the inbox purge drops the row after
+ * 180 days. Without the horizon each retry would make a fresh failed row and never end.
+ */
+export const SWEEP_RETRY_DAYS = 7;
+
+/**
  * A `received` event with no attempt yet is sent its job again after this long (its webhook job
  * was lost, the connection was paused, or its keys were refused): a queued job ahead of it would
  * have run by then.
@@ -75,7 +85,7 @@ const RESEND_LIMIT = 200;
 /** The topic a sweep's order row carries, so the one inbox path reads it back (AC-7). */
 export const SWEEP_ORDER_TOPIC = 'orders/updated';
 
-/** The topic a sweep's or backfill's product row carries, recorded for spec 0015 task 8. */
+/** The topic a sweep's or backfill's product row carries, read back by the one product path (task 8). */
 export const SWEEP_PRODUCT_TOPIC = 'products/update';
 
 /**
@@ -163,13 +173,13 @@ function countOf(counts: Record<string, unknown>, key: string): number {
  * - `sweep` reads the objects updated since the watermark minus 10 minutes, 250 a page, oldest
  *   change first, selecting ids and update times only. Each one newer than the version the app last
  *   applied (and not already waiting in the inbox at that version) becomes an inbox row
- *   (`source = 'sweep'`, dedupe `sweep:<gid>:<updatedAt>`): an order row gets its inbox job
- *   (priority 20), which reads it back through the one mapper; a product row is recorded
- *   `received` with no job until spec 0015 task 8. A chunk ends after 60 seconds or 3,000 points
+ *   (`source = 'sweep'`, dedupe `sweep:<gid>:<updatedAt>`) with its inbox job (priority 20),
+ *   which reads the order or product back through the one mapper (products: task 8). A chunk ends after 60 seconds or 3,000 points
  *   (`ConnectorBudget`): the run turns `partial` with its page cursor and the next job continues
  *   it. When the last page is read the orders sweep also adds a retry row
- *   (`sweep-retry:<gid>:<updatedAt>:<attempt>`) for each order whose latest event is `failed`, at
- *   most 3 a day per order by the operating day (`ssd_operating_day`, in SQL), and sends again the
+ *   (`sweep-retry:<operating day>:<attempt>:<failed event id>`) for each order whose latest event is `failed`, at
+ *   most 3 a day per order by the operating day (`ssd_operating_day`, in SQL) for 7 operating days
+ *   from the first failure (`SWEEP_RETRY_DAYS`), and sends again the
  *   job of every event left `received` with no job (see `RESEND_AFTER_MINUTES`); then the run
  *   succeeds, the watermark moves to the newest `updatedAt` seen (never back), and for orders
  *   `last_sweep_at` moves and `SWEEP_LATE` clears.
@@ -397,7 +407,7 @@ export class SweepJob {
 
   /**
    * Records one page in one transaction: every object newer than its mapping's applied version and
-   * not already `received` at that version becomes an inbox row; an order row gets its job.
+   * not already `received` at that version becomes an inbox row with its inbox job.
    * Answers how many rows were added.
    */
   private async record(
@@ -438,7 +448,7 @@ export class SweepJob {
         const eventId = inserted.rows[0]?.id;
         if (!eventId) continue;
         added += 1;
-        if (kind === 'orders') await this.sendInbox(tx, connectionId, eventId);
+        await this.sendInbox(tx, connectionId, eventId);
       }
       return added;
     });
@@ -447,11 +457,14 @@ export class SweepJob {
   /**
    * The end of an orders sweep (AC-8): a retry row for each order whose latest event is `failed`
    * (at most `SWEEP_RETRIES_PER_DAY` a day per order by the operating day, `ssd_operating_day` in
-   * SQL; the n-th waits `SWEEP_RETRY_SPACING_HOURS` times n after the previous attempt), each with
+   * SQL; the n-th waits `SWEEP_RETRY_SPACING_HOURS` times n after the previous attempt), and only
+   * within `SWEEP_RETRY_DAYS` operating days of the first failure of the order's current failure
+   * run, each with
    * its inbox job; then the job of every event left `received` with no job sent again
    * (`RESEND_AFTER_MINUTES`, `RESEND_RETRIED_AFTER_HOURS`), at most one resend per event an hour.
    * The resend scan filters on the processed subject types first, so the partial index on
-   * (connection, subject type, received at) skips product, inventory, and bulk rows cheaply.
+   * (connection, subject type, received at) skips inventory and bulk rows cheaply; product rows
+   * (task 8) are resent too, which also picks up the ones recorded before task 8 gave them a job.
    * Answers the counts.
    */
   private async retryAndResend(
@@ -459,12 +472,15 @@ export class SweepJob {
   ): Promise<{ readonly retried: number; readonly resent: number }> {
     const retried = await this.connection.db.transaction(async (tx) => {
       const { rows } = await tx.execute<{
+        id: string;
         gid: string;
         version: string;
+        day: string;
         attempt: number;
         due: boolean;
       }>(sql`
-        SELECT f.subject_external_id AS gid,
+        SELECT f.id, f.subject_external_id AS gid,
+               ssd_operating_day(now())::text AS day,
                to_char(coalesce(f.subject_version, f.received_at) AT TIME ZONE 'UTC',
                        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS version,
                (SELECT count(*)::int FROM inbound_events r
@@ -487,11 +503,25 @@ export class SweepJob {
             SELECT 1 FROM inbound_events l
             WHERE l.connection_id = f.connection_id AND l.subject_type = 'order'
               AND l.subject_external_id = f.subject_external_id
-              AND (l.received_at, l.id) > (f.received_at, f.id))`);
+              AND (l.received_at, l.id) > (f.received_at, f.id))
+          -- Review round 2 M1: only within SWEEP_RETRY_DAYS operating days of the run's first failure.
+          AND ssd_operating_day(now()) - ssd_operating_day((
+            SELECT min(e.received_at) FROM inbound_events e
+            WHERE e.connection_id = f.connection_id AND e.subject_type = 'order'
+              AND e.subject_external_id = f.subject_external_id AND e.status = 'failed'
+              AND NOT EXISTS (
+                SELECT 1 FROM inbound_events n
+                WHERE n.connection_id = e.connection_id AND n.subject_type = 'order'
+                  AND n.subject_external_id = e.subject_external_id AND n.status <> 'failed'
+                  AND (n.received_at, n.id) > (e.received_at, e.id)))) < ${SWEEP_RETRY_DAYS}`);
       let added = 0;
       for (const row of rows) {
         if (row.attempt > SWEEP_RETRIES_PER_DAY || !row.due) continue;
-        const dedupe = `sweep-retry:${row.gid}:${row.version}:${row.attempt}`;
+        // The operating day is in the key (code review): `attempt` restarts at 1 each day, so a key
+        // without it would make the next day's first retry a dedupe no-op. The failed event's id
+        // stands for the order and its version, so the key is at most 61 characters (the column
+        // allows 128), whatever the gid.
+        const dedupe = `sweep-retry:${row.day}:${row.attempt}:${row.id}`;
         const payload = { topic: SWEEP_ORDER_TOPIC, id: row.gid, updatedAt: row.version };
         const inserted = await tx.execute<{ id: string }>(sql`
           INSERT INTO inbound_events (connection_id, source, topic, dedupe_key, subject_type,

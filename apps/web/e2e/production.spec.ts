@@ -85,6 +85,6 @@ test.describe('production build', () => {
     });
 
     expect([...hosts].filter((host) => /fonts\.(googleapis|gstatic)\.com/.test(host))).toEqual([]);
-    expect(fonts.some((family) => /Inter/.test(family))).toBe(true);
+    expect(fonts.some((family) => /Geist/.test(family))).toBe(true);
   });
 });

@@ -55,22 +55,22 @@ export function SkuStockSection({ skuId }: { skuId: string }) {
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('inventory.skuDetail.stockTable')} aria-busy={query.isPending}>
-            <TableHeader className="bg-muted">
-              <TableRow className="h-row-header hover:bg-muted">
-                <TableHead scope="col" className="px-3 text-start font-medium">
+            <TableHeader>
+              <TableRow className="h-row-header">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.skuDetail.stockColumns.location')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-end font-medium">
+                <TableHead scope="col" className="px-3 text-end">
                   {t('inventory.skuDetail.stockColumns.onHand')}
                 </TableHead>
                 {cost && (
                   <>
-                    <TableHead scope="col" className="px-3 text-end font-medium">
+                    <TableHead scope="col" className="px-3 text-end">
                       {t('inventory.skuDetail.stockColumns.avgCost')}
                     </TableHead>
-                    <TableHead scope="col" className="px-3 text-end font-medium">
+                    <TableHead scope="col" className="px-3 text-end">
                       {t('inventory.skuDetail.stockColumns.value')}
                     </TableHead>
                   </>
@@ -96,7 +96,7 @@ export function SkuStockSection({ skuId }: { skuId: string }) {
                 </TableRow>
               )}
               {stock?.locations.map((row) => (
-                <TableRow key={row.location.id} className="h-row hover:bg-muted">
+                <TableRow key={row.location.id} className="h-row">
                   <TableCell className="px-3">
                     {text(row.location.name, row.location.code)}
                   </TableCell>

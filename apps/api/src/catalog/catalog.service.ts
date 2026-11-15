@@ -47,7 +47,9 @@ export type CatalogErrorCode =
   | 'OptionCombinationTaken'
   | 'BarcodeTaken'
   // Spec 0012 milestone 3: a cost record from before today's operating day without a reason.
-  | 'ReasonRequired';
+  | 'ReasonRequired'
+  // Spec 0012 milestone 4 (AC-15): a person changing a field a sales channel owns.
+  | 'FieldOwnedByChannel';
 
 /**
  * What an answer names beside its code: the ids a bulk assign did not find (`missingIds`), or
@@ -56,6 +58,8 @@ export type CatalogErrorCode =
 export interface CatalogErrorDetails {
   missingIds?: string[];
   skuCode?: string;
+  /** The channel owned field a person tried to change: `price`, `name.en`, or `name.ar`. */
+  field?: string;
 }
 
 /** A catalog rule the caller broke; the controller maps `code` to an HTTP answer. */
@@ -71,6 +75,28 @@ export class CatalogError extends Error {
   ) {
     super(message);
     this.name = 'CatalogError';
+  }
+}
+
+/**
+ * Refuses a person's name edit that changes the language slot a sales channel writes (spec 0012,
+ * AC-15, field ownership): `channelNameLanguage` is the linked style's slot, null when the style
+ * is not linked (then nothing is refused). Texts compare after trimming, an empty one as absent,
+ * so resending the stored name passes. Pure; throws `FieldOwnedByChannel`.
+ */
+export function refuseChannelNameChange(
+  channelNameLanguage: 'en' | 'ar' | null,
+  stored: LocalizedText,
+  next: LocalizedText,
+): void {
+  if (!channelNameLanguage) return;
+  const text = (value: string | undefined) => value?.trim() || null;
+  if (text(stored[channelNameLanguage]) !== text(next[channelNameLanguage])) {
+    throw new CatalogError(
+      'FieldOwnedByChannel',
+      `The ${channelNameLanguage === 'ar' ? 'Arabic' : 'English'} name comes from Shopify`,
+      { field: `name.${channelNameLanguage}` },
+    );
   }
 }
 
@@ -108,6 +134,8 @@ function toDetail(row: SkuRow, barcodes: SkuBarcode[]): SkuDetail {
     status: row.archived ? 'archived' : 'active',
     updatedAt: row.updated_at,
     barcodes,
+    channelLinked: row.channel_linked,
+    channelNameLanguage: row.channel_name_language,
   };
 }
 
@@ -235,10 +263,13 @@ export class CatalogService {
 
   /**
    * Edits a SKU's name (on its product) and price (AC-2). The stale check compares the variant's
-   * stored `updated_at` to the microsecond string the caller read; a mismatch is `Stale`.
+   * stored `updated_at` to the microsecond string the caller read; a mismatch is `Stale`. A new
+   * price on a channel linked variant, or a name that changes a linked style's channel language,
+   * is `FieldOwnedByChannel` (spec 0012, AC-15); resending the stored value passes.
    */
   async updateSku(id: string, input: z.output<typeof UpdateSkuRequest>): Promise<SkuDetail> {
     return catalogTransaction(this.connection.db, async (tx) => {
+      await this.refuseChannelOwned(tx, id, input);
       const sets: SQL[] = [sql`updated_at = now()`];
       if (input.price !== undefined) sets.push(sql`price = ${input.price}`);
       const updated = await this.touchVariant(tx, id, input.updatedAt, sets);
@@ -437,6 +468,49 @@ export class CatalogService {
     throw new CatalogError('NotFound', 'SKU not found');
   }
 
+  /**
+   * The AC-15 check of a SKU edit: locks the variant's style and then the variant
+   * (`FOR NO KEY UPDATE`, style row first, the search triggers' order) so a channel sync of the
+   * same style waits, then checks the stale value first (`Stale` wins over the channel rule,
+   * review nit), then refuses a price that differs from the stored one on a linked variant and a
+   * name that changes the linked style's channel language. An unknown id passes here and is
+   * `NotFound` in the update.
+   */
+  private async refuseChannelOwned(
+    tx: Executor,
+    id: string,
+    input: z.output<typeof UpdateSkuRequest>,
+  ): Promise<void> {
+    if (input.price === undefined && !input.name) return;
+    const styleId = (
+      await tx.execute<{ product_id: string }>(sql`
+        SELECT product_id FROM product_variants WHERE id = ${id}`)
+    ).rows[0]?.product_id;
+    if (!styleId) return;
+    const style = (
+      await tx.execute<{ name: LocalizedText; language: 'en' | 'ar' | null }>(sql`
+        SELECT name,
+               CASE WHEN channel_linked_at IS NOT NULL THEN channel_name_language END AS language
+        FROM products WHERE id = ${styleId} FOR NO KEY UPDATE`)
+    ).rows[0];
+    const variant = (
+      await tx.execute<{ linked: boolean; same_price: boolean; fresh: boolean }>(sql`
+        SELECT channel_linked_at IS NOT NULL AS linked,
+               price IS NOT DISTINCT FROM ${input.price ?? null}::numeric AS same_price,
+               to_char(updated_at AT TIME ZONE 'UTC', ${ISO_UTC}) = ${input.updatedAt} AS fresh
+        FROM product_variants WHERE id = ${id} FOR NO KEY UPDATE`)
+    ).rows[0];
+    if (variant && !variant.fresh) {
+      throw new CatalogError('Stale', 'Someone else changed this SKU. Reload and try again.');
+    }
+    if (variant?.linked && input.price !== undefined && !variant.same_price) {
+      throw new CatalogError('FieldOwnedByChannel', 'The price of this SKU comes from Shopify', {
+        field: 'price',
+      });
+    }
+    if (style && input.name) refuseChannelNameChange(style.language, style.name, input.name);
+  }
+
   private async mustFind(executor: Executor, id: string): Promise<SkuDetail> {
     const detail = await this.findSku(executor, id);
     if (!detail) throw new CatalogError('NotFound', 'SKU not found');
@@ -451,7 +525,8 @@ export class CatalogService {
     const row = rows[0];
     if (!row) return null;
     const barcodes = await executor.execute<SkuBarcode>(sql`
-      SELECT id, code FROM barcodes WHERE variant_id = ${id} ORDER BY code COLLATE "C"`);
+      SELECT id, code, from_channel AS "fromChannel" FROM barcodes
+      WHERE variant_id = ${id} ORDER BY code COLLATE "C"`);
     return toDetail(row, barcodes.rows);
   }
 }

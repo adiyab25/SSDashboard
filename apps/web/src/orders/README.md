@@ -26,11 +26,11 @@ pnpm --filter @ssdashboard/web exec vitest run src/orders
 pnpm --filter @ssdashboard/web test:e2e e2e/orders.spec.ts e2e/orders-edit.spec.ts --project=desktop --project=mobile
 ```
 
-The e2e needs the api and Postgres; each test seeds its own signed in person and SKU.
+The e2e needs the api and Postgres; each test seeds its own signed in person and SKU. The journey that packs makes a stocked warehouse the online location first (`stockedOnline` in `e2e/order-stock.ts`) under the cross worker online flag lock, because a pack of a short line answers `LINE_SHORT`.
 
 ## Governing spec
 
-- [0013 Orders and their state machines](../../../../docs/specs/0013-orders-state-machines/index.md) (milestone 1, task 7: AC-2, AC-3, AC-4, AC-5, AC-20, AC-23; milestone 2, task 11: AC-7 to AC-12)
+- [0013 Orders and their state machines](../../../../docs/specs/0013-orders-state-machines/index.md) (milestone 1, task 7: AC-2, AC-3, AC-4, AC-5, AC-20, AC-23; milestone 2, task 11: AC-7 to AC-12; milestone 4, task 13: the short flag, filter, and mark and `LINE_SHORT`, AC-4, AC-5, AC-7, AC-13)
 - [0008 Roles as hats](../../../../docs/specs/0008-roles-as-hats/index.md)
 - [0003 Design system and UI foundation](../../../../docs/specs/0003-design-system-ui-foundation/index.md)
 
@@ -41,4 +41,4 @@ The e2e needs the api and Postgres; each test seeds its own signed in person and
 - **Only what changed is sent.** The edit dialog compares each ship to field, the shipping charge, and each line action with the order it was opened on and sends the difference as one edit; a form with no change says so instead of calling the api. Every action sends the `updatedAt` the page showed; a stale answer closes the dialog, refetches, and says the order changed.
 - **"Edit in Shopify" is learned from the api, not guessed.** `OrderDetail` carries no store kind, and the app may edit a Shopify order while write back is available, so the buttons stay until the api answers `EDIT_IN_SHOPIFY` or `CANCEL_IN_SHOPIFY`; the page then swaps that button for a calm note (kept until the page is left).
 - **A gifted order's lines and shipping** show only to a holder of `orders.gift` (without it the dialog says so and keeps the ship to block), and a gifted line is sent with an equal discount.
-- The write back command detail comes from `OrderDetail.writeBackCommands`; the short mark's source arrives with milestone 4.
+- The write back command detail comes from `OrderDetail.writeBackCommands`; the short mark comes from `OrderDetail.lines[].shortQuantity` and the list flag and filter from `OrderListItem.short` and `short=true` (milestone 4, AC-13). A refused pack (409 `LINE_SHORT`) shows its own sentence from [order-write-errors.ts](order-write-errors.ts).

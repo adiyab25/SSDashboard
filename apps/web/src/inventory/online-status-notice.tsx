@@ -40,7 +40,7 @@ export function OnlineStatusNotice({ linkToGate }: { linkToGate: boolean }) {
 
   return (
     <section aria-label={t('inventory.onlineGate.noticeLabel')}>
-      <Alert>
+      <Alert variant="warning">
         <TriangleAlertIcon aria-hidden />
         <AlertDescription className="flex flex-wrap items-center gap-3">
           {t('inventory.onlineGate.notice')}

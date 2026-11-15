@@ -272,6 +272,11 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       return key;
     }
 
+    /** The line fields that name a reservation as its own document line (security review L4). */
+    function own(held: { id: string; sourceLineId: string }) {
+      return { reservationId: held.id, sourceLineId: held.sourceLineId };
+    }
+
     function reservation(key: { variantId: string; locationId: string }, quantity: number) {
       return h.ledger.reserve({
         ...key,
@@ -287,10 +292,33 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       const held = await reservation(key, 8);
 
       await rejects(h.ledger.post(posting([{ ...key, quantity: -3 }])), 'InsufficientStock');
-      await h.ledger.post(posting([{ ...key, quantity: -3, reservationId: held.id }]));
+      await h.ledger.post(
+        posting([{ ...key, quantity: -3, ...own(held) }], { sourceId: held.sourceId }),
+      );
 
       const [row] = await h.ledger.getAvailable({ variantId: key.variantId });
       expect(row).toMatchObject({ onHand: 7, reserved: 5, available: 2 });
+    });
+
+    it('refuses a posting that names the reservation of another document line (security review L4)', async () => {
+      const key = await stocked(10);
+      const held = await reservation(key, 4);
+
+      // Another document, and the right document with another line: neither consumes the hold.
+      await rejects(
+        h.ledger.post(posting([{ ...key, quantity: -2, ...own(held) }])),
+        'ReservationMismatch',
+      );
+      await rejects(
+        h.ledger.post(
+          posting([{ ...key, quantity: -2, reservationId: held.id, sourceLineId: randomUUID() }], {
+            sourceId: held.sourceId,
+          }),
+        ),
+        'ReservationMismatch',
+      );
+      const [row] = await h.ledger.getAvailable({ variantId: key.variantId });
+      expect(row).toMatchObject({ onHand: 10, reserved: 4 });
     });
 
     it('rejects a reservation larger than available', async () => {
@@ -337,7 +365,7 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       const held = await reservation(key, 2);
 
       const shipment = await h.ledger.post(
-        posting([{ ...key, quantity: -2, reservationId: held.id }]),
+        posting([{ ...key, quantity: -2, ...own(held) }], { sourceId: held.sourceId }),
       );
       await h.ledger.reverse({
         postedBy: null,
@@ -375,7 +403,9 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
 
       await rejects(
         h.ledger.post(
-          posting([{ variantId, locationId, lotId: lotB, quantity: -2, reservationId: held.id }]),
+          posting([{ variantId, locationId, lotId: lotB, quantity: -2, ...own(held) }], {
+            sourceId: held.sourceId,
+          }),
         ),
         'ReservationMismatch',
       );
@@ -386,7 +416,9 @@ describe('inventory ledger: tracking and reservations', { timeout: 60_000 }, () 
       const held = await reservation(key, 2);
 
       await rejects(
-        h.ledger.post(posting([{ ...key, quantity: -3, reservationId: held.id }])),
+        h.ledger.post(
+          posting([{ ...key, quantity: -3, ...own(held) }], { sourceId: held.sourceId }),
+        ),
         'ReservationMismatch',
       );
     });

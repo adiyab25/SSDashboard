@@ -1,4 +1,5 @@
 import {
+  HoldOpenOrdersResult,
   LocationDetail,
   OnlineGateView,
   OnlineStatusResponse,
@@ -15,6 +16,7 @@ import {
   type CreateLocationRequest,
   type CreateProductRequest,
   type CreateStockReceiptRequest,
+  type HoldOpenOrdersBody,
   type MakeLocationOnlineRequest,
   type OnlineGateAction,
   type ChangeSkuCodeRequest,
@@ -248,6 +250,34 @@ export const makeLocationOnline = (id: string, body: MakeLocationOnlineRequest) 
 export const stopOnlineStock = (reason: string) =>
   apiRequest('POST', '/api/locations/online/stop', StopOnlineResponse, { body: { reason } });
 
-/** Runs the route a failed gate check points to; the answer is ignored, the gate is read again. */
-export const runGateAction = (action: Pick<OnlineGateAction, 'method' | 'path'>) =>
-  apiRequest(action.method, action.path, noContent, { body: {} });
+/** The route the orders module's `orders.open_orders_held` check points to (spec 0013 AC-26). */
+export const HOLD_OPEN_ORDERS_PATH = '/api/orders/hold-open-orders';
+
+/**
+ * What a gate action answered: `held` carries the counts of `hold-open-orders` for the dialog to
+ * show; `done` is any other action, whose answer the dialog does not read.
+ */
+export type GateActionResult = { kind: 'held'; result: HoldOpenOrdersResult } | { kind: 'done' };
+
+/**
+ * Runs the route a failed gate check points to, for the candidate `locationId`; the dialog reads
+ * the gate again afterwards. A route the web knows gets its own body and has its answer parsed
+ * with the contract schema: `hold-open-orders` takes `{ locationId }` (a repeat holds nothing
+ * twice, so the busy retry is safe). Any other route keeps the empty body and an unread answer.
+ * It must never send a body a route has not declared.
+ */
+export async function runGateAction(
+  action: Pick<OnlineGateAction, 'method' | 'path'>,
+  locationId: string,
+): Promise<GateActionResult> {
+  if (action.method === 'POST' && action.path === HOLD_OPEN_ORDERS_PATH) {
+    const result = await withBusyRetry(() =>
+      apiRequest('POST', HOLD_OPEN_ORDERS_PATH, HoldOpenOrdersResult, {
+        body: { locationId } satisfies HoldOpenOrdersBody,
+      }),
+    );
+    return { kind: 'held', result };
+  }
+  await apiRequest(action.method, action.path, noContent, { body: {} });
+  return { kind: 'done' };
+}

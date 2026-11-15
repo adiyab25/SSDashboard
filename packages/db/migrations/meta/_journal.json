@@ -145,15 +145,29 @@
     {
       "idx": 20,
       "version": "7",
-      "when": 1794598183950,
-      "tag": "0020_tasks_delta",
+      "when": 1794485334556,
+      "tag": "0020_catalog_channel_link",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
-      "when": 1794598194031,
-      "tag": "0021_task_notes_rules",
+      "when": 1794488832072,
+      "tag": "0021_product_variant_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794767533936,
+      "tag": "0022_tasks_delta",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794767541946,
+      "tag": "0023_task_notes_rules",
       "breakpoints": true
     }
   ]

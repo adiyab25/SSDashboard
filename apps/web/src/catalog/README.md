@@ -9,12 +9,14 @@ The SKU list at `/skus` (columns, the "Name, SKU or barcode" search, season and 
 - List parts: [sku-filter-bar.tsx](sku-filter-bar.tsx), [sku-filter-select.tsx](sku-filter-select.tsx), [sku-name-cell.tsx](sku-name-cell.tsx)
 - Detail part: [sku-style-block.tsx](sku-style-block.tsx) (style linked to `/styles/[id]`, season, group, options, barcodes; read only)
 - Shared by the catalog screens: [catalog-api.ts](catalog-api.ts) (style, season, group, and barcode calls and query keys), [catalog-error.ts](catalog-error.ts), [use-grouping-choices.ts](use-grouping-choices.ts) (the active seasons and groups for pickers and filters), and the seasons and product groups list and dialog [grouping-list-view.tsx](grouping-list-view.tsx), [grouping-dialog.tsx](grouping-dialog.tsx), [grouping-errors.ts](grouping-errors.ts)
+- Channel label: [from-channel-badge.tsx](from-channel-badge.tsx), the "From Shopify" badge beside every field a sales channel owns while its style is linked (spec 0012, AC-15, AC-18)
 - Dialogs: [new-sku-dialog.tsx](new-sku-dialog.tsx), [sku-edit-dialog.tsx](sku-edit-dialog.tsx)
 - Routes: `src/app/(backoffice)/skus/page.tsx` and `src/app/(backoffice)/skus/[id]/page.tsx`
 
 ## Decisions in code
 
 - The season and group filters offer the active rows of `GET /api/seasons` and `GET /api/product-groups` (`useGroupingChoices`), loaded only once the person may read the catalog; an archived season or group leaves the filters (spec 0012, AC-6).
+- A linked SKU shows its price, style name, option values, and channel barcode read only with "From Shopify"; in the edit dialog the price and the name in `channelNameLanguage` are `readOnly` inputs (still read by screen readers), the other name language stays editable, and a 409 `FIELD_OWNED_BY_CHANNEL` is worded by its body `field` (`catalog.channel.owned.*`, `channelOwnedField` in `catalog-error.ts`).
 - After every catalog write a screen refreshes with `refetchAfterWrite` (`src/api/refetch-after-write.ts`), not a plain invalidation.
 
 ## Never touches

@@ -207,18 +207,6 @@ const toRepoPath = (path: string) => relative(REPO_ROOT, path).split(sep).join('
  */
 const KNOWN_BREACHES: readonly { file: string; table: string; count: number; why: string }[] = [
   {
-    file: 'apps/api/src/inventory/ledger/ledger.service.ts',
-    table: 'product_variants',
-    count: 2,
-    why: 'loadMaster and lockForArchive lock SKU rows FOR SHARE / FOR UPDATE inside the posting transaction (spec 0006 allowed it); needs a catalog locking service',
-  },
-  {
-    file: 'apps/api/src/inventory/ledger/reconciliation.service.ts',
-    table: 'product_variants',
-    count: 2,
-    why: 'the serial check JOINs product_variants to find serial tracked SKUs, and the rebuild locks the SKU row FOR SHARE like loadMaster; needs catalog services for both',
-  },
-  {
     file: 'apps/api/src/database/pg-error.spec.ts',
     table: 'users',
     count: 1,

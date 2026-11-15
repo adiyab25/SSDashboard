@@ -105,7 +105,7 @@ The decision record for the amendment in [index.md](index.md). The original text
 
 ### Context
 
-Spec 0007 chose Shape A: keep this spec and its built code, and amend it ([0007 build plan](../0007-stack-architecture-operations-layer/index.md)). The positioning moved the product to clothing brands behind Shopify and Bosta, with a back office, a partner surface and a public returns portal on separate hostnames ([0007 section 2](../0007-stack-architecture-operations-layer/index.md), [positioning section 6.6](../../positioning/2026-11-05-egypt-order-operations-layer.md)). Three forces reach sign in. A public host now sits one DNS name away from a host that holds a session cookie, so the cookie scope is a security control and no longer a detail. A second kind of person (a partner user, bound to one partner account) must sign in through the pages and limits already built and reviewed. And every table gets a tenant id, with roles becoming hats that one person can hold several of, so a live session must have a defined behavior when a person's hats change. The 2026-11-04 review found no blockers and its fixes are in, so the amendment does not reopen sign in itself ([review](../../reviews/2026-11-04-feat-staff-sign-in.md)).
+Spec 0007 chose Shape A: keep this spec and its built code, and amend it ([0007 build plan](../0007-stack-architecture-operations-layer/index.md)). The positioning moved the product to clothing brands behind Shopify and Bosta, with a back office, a partner surface and a public returns portal on separate hostnames ([0007 section 2](../0007-stack-architecture-operations-layer/index.md), positioning section 6.6 (kept private)). Three forces reach sign in. A public host now sits one DNS name away from a host that holds a session cookie, so the cookie scope is a security control and no longer a detail. A second kind of person (a partner user, bound to one partner account) must sign in through the pages and limits already built and reviewed. And every table gets a tenant id, with roles becoming hats that one person can hold several of, so a live session must have a defined behavior when a person's hats change. The 2026-11-04 review found no blockers and its fixes are in, so the amendment does not reopen sign in itself (review (kept private)).
 
 ### Options considered
 
@@ -144,8 +144,8 @@ Keep what was built and reviewed, and change only what the new layout forces. Th
 
 **Project sources** (verifiable, in this repo):
 - [Spec 0007](../0007-stack-architecture-operations-layer/index.md): section 2 (audiences, origin wall, partner sign in), section 7 (tenant id), the Module map, Configuration, and the Carried table row m8.
-- [Positioning, section 6.6](../../positioning/2026-11-05-egypt-order-operations-layer.md): roles are hats, teams optional.
-- [Review of 2026-11-04](../../reviews/2026-11-04-feat-staff-sign-in.md): settled findings 1 to 7, deferred finding 8.
+- Positioning, section 6.6 (kept private): roles are hats, teams optional.
+- Review of 2026-11-04 (kept private): settled findings 1 to 7, deferred finding 8.
 - `apps/api/src/auth/auth.factory.ts` (cookie caching off, `useSecureCookies`, `ipAddress` header), `apps/api/src/platform/audience/` (the audience guard), `apps/api/src/auth/AGENTS.md` (the guard still demands a staff session), `packages/db/src/schema/auth.ts`.
 - `deploy/Caddyfile`: the single forwarded client address and `trusted_proxies`.
 - Installed `better-auth` 1.7.15, `dist/cookies/index.mjs`: cookie name prefix, default `path`, `defaultCookieAttributes`, `crossSubDomainCookies`.

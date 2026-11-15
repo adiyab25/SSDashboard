@@ -8,7 +8,10 @@ import {
   ChannelOrderSnapshot,
   GiftReasonCode,
   ImportFirstStates,
+  InvalidAmountError,
+  LineAmounts,
   Money,
+  mulDivRound,
   ReasonCode,
   type GoLiveFirstStates,
   type OrderPaymentMethod,
@@ -95,7 +98,17 @@ export const ShopifyOrder = z.object({
   paymentGatewayNames: z.array(z.string()),
   totalPriceSet: MoneyBag,
   currentTotalPriceSet: MoneyBag,
-  totalShippingPriceSet: MoneyBag,
+  /**
+   * Whether the order's line prices include tax (`Order.taxesIncluded`, `2026-10`). Compared with
+   * the `prices_include_vat` setting before an order is created (`assertShopifyTotal`).
+   */
+  taxesIncluded: z.boolean(),
+  /**
+   * The shipping charge after discounts and refunds, tax included when `taxesIncluded` is true
+   * (`Order.currentShippingPriceSet`, `2026-10`): the shipping the customer is charged now, so a
+   * free shipping code leaves 0 (code review B1).
+   */
+  currentShippingPriceSet: MoneyBag,
   discountCodes: z.array(z.string()),
   discountApplications: z.object({
     nodes: z.array(
@@ -136,6 +149,8 @@ export const ShopifyOrder = z.object({
         id: StorableShopifyId,
         title: z.string(),
         variantTitle: z.string().nullable(),
+        /** Units ordered, refunded and removed ones included: the quantity `discountAllocations` covers. */
+        quantity: z.number().int(),
         currentQuantity: z.number().int(),
         /** Selected for the fulfillment stock out of task 9a (carry-over D5); not read here. */
         unfulfilledQuantity: z.number().int(),
@@ -185,7 +200,10 @@ export type ShopifyOrderMappingErrorCode =
   | 'BAD_TAX_RATE'
   | 'BAD_REPLACEMENT_NUMBER'
   | 'CONTRACT_REFUSED'
-  | 'MAPPING_STATE_UNREADABLE';
+  | 'MAPPING_STATE_UNREADABLE'
+  | 'GATEWAY_UNMAPPED'
+  | 'TAX_MODE_MISMATCH'
+  | 'TOTAL_MISMATCH';
 
 const ERROR_TEXT: Readonly<Record<ShopifyOrderMappingErrorCode, string>> = {
   ORDER_UNREADABLE: 'The Shopify order read back does not have the expected shape',
@@ -202,12 +220,20 @@ const ERROR_TEXT: Readonly<Record<ShopifyOrderMappingErrorCode, string>> = {
   CONTRACT_REFUSED: 'The mapped order does not satisfy the channel order contract',
   MAPPING_STATE_UNREADABLE:
     'The stored state of the order mapping does not have the expected shape',
+  GATEWAY_UNMAPPED:
+    'A successful Shopify payment is on a gateway the connection does not map to a payment method',
+  TAX_MODE_MISMATCH:
+    'The Shopify order says whether prices include tax differently from the prices include VAT setting',
+  TOTAL_MISMATCH: "The order total the app computes differs from the Shopify order's current total",
 };
 
 /**
  * A typed mapping error (never an error string). The message is fixed text per code plus, for
- * `ORDER_UNREADABLE` and `CONTRACT_REFUSED`, the field paths that failed (`lines.0.title`), never
- * a value: a caller may log `code`, `paths`, and the message safely (Law 151).
+ * `ORDER_UNREADABLE` and `CONTRACT_REFUSED`, the field paths that failed (`lines.0.title`), and
+ * for `GATEWAY_UNMAPPED` the paths of the payments on an unmapped gateway
+ * (`transactions.0.gateway`) and for a negative payment `BAD_AMOUNT` its path
+ * (`transactions.0.amountSet`), never a value: a caller may log `code`, `paths`, and the message
+ * safely (Law 151).
  */
 export class ShopifyOrderMappingError extends Error {
   /** The field paths that failed, keys and indices only. */
@@ -356,7 +382,18 @@ function centsOf(amount: string): bigint {
   return sign ? -cents : cents;
 }
 
-const textOfCents = (cents: bigint): string => Money.fromCents(cents).toString();
+/**
+ * Cents as `numeric(14,2)` text. An amount out of `Money`'s range fails the read as `BAD_AMOUNT`
+ * (security review low): never an `InvalidAmountError` that the inbox job would retry forever.
+ */
+function textOfCents(cents: bigint): string {
+  try {
+    return Money.fromCents(cents).toString();
+  } catch (error) {
+    if (error instanceof InvalidAmountError) throw new ShopifyOrderMappingError('BAD_AMOUNT');
+    throw error;
+  }
+}
 
 const amountOf = (bag: z.infer<typeof MoneyBag>): bigint => centsOf(bag.shopMoney.amount);
 
@@ -369,7 +406,7 @@ const CONTROL_KEEPING_BREAKS = /(?![\n\t])[\p{Cc}؜‎‏‪-‮⁦-⁩]/gu;
  * A typed text with control and direction characters stripped, trimmed, cut to `max` UTF-16
  * units (never splitting a surrogate pair), and null when nothing is left.
  */
-function cleanText(
+export function cleanText(
   value: string | null | undefined,
   max: number,
   keepBreaks = false,
@@ -456,15 +493,32 @@ interface ShopifyPayment {
   prepaidAmount: string;
   prepaidMethod: OrderPaymentMethod | null;
   unmappedGateways: string[];
+  /**
+   * The paths (`transactions.<i>.gateway`) of the successful `SALE`, `CAPTURE`, and `REFUND`
+   * transactions counted above whose gateway `config.gatewayMethods` does not map (or that name
+   * no gateway). Their amounts are in `prepaidAmount` as method `gateway`, which is a guess: a
+   * "mark as paid" `manual` sale on a COD order would make it prepaid and the courier would
+   * collect nothing (audit A2). A new order with any is refused (`GATEWAY_UNMAPPED`), and a
+   * rederive with any is skipped.
+   */
+  unmappedPaid: string[];
+  /**
+   * The paths (`paymentGatewayNames.<i>`) of the order's gateway names `config.gatewayMethods` does
+   * not map, whatever their transactions (an authorization or a pending sale included). A new order
+   * with any is refused too (`GATEWAY_UNMAPPED`, review round 2 M3): an unmapped card gateway with
+   * only an authorization would otherwise make the order `cod` and the courier collect from a
+   * customer who also pays by card.
+   */
+  unmappedNames: string[];
 }
 
 /**
  * The payment method, prepayment, and unmapped gateway names. Prepaid: successful `SALE` and
  * `CAPTURE` transactions on gateways not mapped to `cod`, net of successful `REFUND`s on them,
- * with the method of the first such sale (`gateway` when its gateway is unmapped); 0 and null when
- * nothing is left. A "mark as paid" `manual` sale on a cod order is on a gateway mapped to `cod`,
- * so the order stays cod with nothing prepaid. The method: the first gateway name that maps; with
- * none, `cod` when no successful sale counted, else `gateway`.
+ * with the method of the first such sale (`gateway` when its gateway is unmapped, listed in
+ * `unmappedPaid`); 0 and null when nothing is left. A "mark as paid" `manual` sale on a cod order
+ * is on a gateway mapped to `cod`, so the order stays cod with nothing prepaid. The method: the
+ * first gateway name that maps; with none, `cod` when no successful sale counted, else `gateway`.
  */
 function paymentOf(
   order: ShopifyOrder,
@@ -481,10 +535,17 @@ function paymentOf(
   let prepaid = 0n;
   let prepaidMethod: OrderPaymentMethod | null = null;
   let sold = false;
-  for (const transaction of order.transactions) {
+  const unmappedPaid: string[] = [];
+  for (const [index, transaction] of order.transactions.entries()) {
     if (transaction.status !== 'SUCCESS') continue;
     const method = methodOf(transaction.gateway);
     if (method === 'cod') continue;
+    const counted = CREATION_KINDS.includes(transaction.kind);
+    // A negative payment or refund would move the prepayment the wrong way (security review low).
+    if (counted && amountOf(transaction.amountSet) < 0n) {
+      throw new ShopifyOrderMappingError('BAD_AMOUNT', [`transactions.${index}.amountSet`]);
+    }
+    if (counted && method === undefined) unmappedPaid.push(`transactions.${index}.gateway`);
     if (transaction.kind === 'SALE' || transaction.kind === 'CAPTURE') {
       prepaid += amountOf(transaction.amountSet);
       prepaidMethod ??= method ?? 'gateway';
@@ -504,25 +565,54 @@ function paymentOf(
         }),
     ),
   ];
+  const unmappedNames = order.paymentGatewayNames.flatMap((name, index) =>
+    methodOf(name) === undefined ? [`paymentGatewayNames.${index}`] : [],
+  );
   const named = order.paymentGatewayNames
     .map(methodOf)
     .find((method): method is OrderPaymentMethod => method !== undefined);
   const paymentMethod = named ?? (sold ? 'gateway' : 'cod');
   return prepaid > 0n && prepaidMethod !== null
-    ? { paymentMethod, prepaidAmount: textOfCents(prepaid), prepaidMethod, unmappedGateways }
-    : { paymentMethod, prepaidAmount: '0.00', prepaidMethod: null, unmappedGateways };
+    ? {
+        paymentMethod,
+        prepaidAmount: textOfCents(prepaid),
+        prepaidMethod,
+        unmappedGateways,
+        unmappedPaid,
+        unmappedNames,
+      }
+    : {
+        paymentMethod,
+        prepaidAmount: '0.00',
+        prepaidMethod: null,
+        unmappedGateways,
+        unmappedPaid,
+        unmappedNames,
+      };
+}
+
+/**
+ * The paths a new order is refused `GATEWAY_UNMAPPED` for (audit A2, review round 2 M3, fail
+ * closed): every counted payment on an unmapped gateway and every unmapped gateway name. Paths
+ * only, never a name.
+ */
+function creationRefusalOf(payment: ShopifyPayment): string[] {
+  return [...payment.unmappedPaid, ...payment.unmappedNames];
 }
 
 /**
  * The payment of an order as a new order would get it (Value sourcing, `paymentMethod`,
  * `prepaidAmount`, `prepaidMethod`), for `OrderIntake.rederivePaymentMethod` after a gateway
- * mapping change (spec 0013 AC-25 c). Throws `TRANSACTIONS_TRUNCATED` on a full transaction page.
+ * mapping change (spec 0013 AC-25 c). Throws `TRANSACTIONS_TRUNCATED` on a full transaction page,
+ * and `GATEWAY_UNMAPPED` (the transaction paths only) when a successful payment is on a gateway
+ * `config.gatewayMethods` does not map, as `mapShopifyOrder` does: it never guesses a prepayment.
  */
 export function shopifyPaymentOf(
   order: ShopifyOrder,
   context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
 ): RederivePaymentMethodInput {
-  const { paymentMethod, prepaidAmount, prepaidMethod } = paymentOf(order, context);
+  const { paymentMethod, prepaidAmount, prepaidMethod, unmappedPaid } = paymentOf(order, context);
+  if (unmappedPaid.length > 0) throw new ShopifyOrderMappingError('GATEWAY_UNMAPPED', unmappedPaid);
   return { paymentMethod, prepaidAmount, prepaidMethod };
 }
 
@@ -603,23 +693,27 @@ export interface ShopifyCreationFacts {
  * and D10a, spec 0013 AC-25 c): the creation rules of `paymentOf` with the current
  * `config.gatewayMethods`, over the gateway keys the order had at creation and only the
  * transactions recorded then (its sales, captures, and the refunds that already existed). A
- * gateway, a sale (a "mark as paid" `manual` sale), or a refund added later never counts. Throws
+ * gateway, a sale (a "mark as paid" `manual` sale), or a refund added later never counts. Null
+ * when one of those creation payments is on a gateway the config no longer maps (a mapping
+ * removed after creation): the order keeps the payment it has rather than a guessed prepayment
+ * (audit A2), and the next read after the gateway is mapped again rederives. Throws
  * `TRANSACTIONS_TRUNCATED` on a full transaction page.
  */
 export function creationPaymentOf(
   order: ShopifyOrder,
   context: Pick<ShopifyOrderContext, 'gatewayMethods'>,
   facts: ShopifyCreationFacts,
-): RederivePaymentMethodInput {
+): RederivePaymentMethodInput | null {
   if (order.transactions.length >= ORDER_READ_TRANSACTIONS_PAGE) {
     throw new ShopifyOrderMappingError('TRANSACTIONS_TRUNCATED');
   }
   const ids = new Set(facts.transactionIds);
   const transactions = order.transactions.filter((transaction) => ids.has(transaction.id));
-  return shopifyPaymentOf(
+  const { paymentMethod, prepaidAmount, prepaidMethod, unmappedPaid } = paymentOf(
     { ...order, paymentGatewayNames: [...facts.gatewayNames], transactions },
     context,
   );
+  return unmappedPaid.length > 0 ? null : { paymentMethod, prepaidAmount, prepaidMethod };
 }
 
 /**
@@ -703,6 +797,27 @@ function taxRateOf(
 }
 
 /**
+ * A line's discount for `quantity` of its units (code review B2). `discountAllocations` covers
+ * every unit ordered, refunded and removed ones included (`LineItem.discountAllocations` on
+ * `2026-10`), so the sum is prorated to the units kept: sum x kept / `quantity`, in exact cents,
+ * rounded half away from zero once (`mulDivRound`). With an even split (every fixture, and any
+ * discount that divides by the quantity) this is exactly what Shopify takes off the current
+ * total; where Shopify spreads an odd piastre differently the total check refuses the order
+ * (`TOTAL_MISMATCH`) rather than guess. All units kept is the whole sum.
+ */
+function discountForQuantity(
+  line: Pick<ShopifyOrder['lineItems']['nodes'][number], 'quantity' | 'discountAllocations'>,
+  quantity: number,
+): bigint {
+  const sum = line.discountAllocations.reduce(
+    (total, allocation) => total + amountOf(allocation.allocatedAmountSet),
+    0n,
+  );
+  if (quantity === line.quantity || line.quantity <= 0) return sum;
+  return mulDivRound(sum, BigInt(quantity), BigInt(line.quantity));
+}
+
+/**
  * The lines with a current quantity above 0 (or, given `held`, exactly the held line items at the
  * held quantities) and the ones whose variant has no mapping. Line items in `excluded` (the ones a
  * replacement order already holds) are never lines of this order.
@@ -726,10 +841,7 @@ function linesOf(
       if (variantId === null) {
         unmappedLines.push({ channelLineId: line.id, variantGid: line.variant?.id ?? null });
       }
-      const discount = line.discountAllocations.reduce(
-        (sum, allocation) => sum + amountOf(allocation.allocatedAmountSet),
-        0n,
-      );
+      const discount = discountForQuantity(line, quantityOf(line));
       return {
         channelLineId: line.id,
         variantId,
@@ -806,7 +918,7 @@ function sharedOf(
       type: gift.type,
       giftReasonCode: gift.giftReasonCode,
       paymentMethod: payment.paymentMethod,
-      shippingChargedAmount: textOfCents(amountOf(order.totalShippingPriceSet)),
+      shippingChargedAmount: textOfCents(amountOf(order.currentShippingPriceSet)),
       discountCode: discount.discountCode,
       customerNote: cleanText(order.note, 2000, true),
       channelCustomer: order.customer
@@ -870,7 +982,8 @@ export function cancelReasonCodeOf(order: ShopifyOrder): string | null {
  * with `nothing_to_collect` and its reason code; fulfilled (an active fulfillment) is `shipped`
  * with the first active fulfillment's time and the first cash rule of spec 0002 on Shopify's
  * current total: `unpaid` while the total is above the prepayment, else `prepaid`, else
- * `nothing_to_collect`. Null for an open order.
+ * `nothing_to_collect`. Null for an open order. Throws `GATEWAY_UNMAPPED` for an unmapped gateway
+ * name or a payment on one, as `mapShopifyOrder` does (code review m2, review round 2 M3).
  */
 export function foundStatesOf(
   order: ShopifyOrder,
@@ -886,7 +999,11 @@ export function foundStatesOf(
   }
   const first = firstActiveFulfillmentOf(order);
   if (first === null) return null;
-  const prepaid = centsOf(paymentOf(order, context).prepaidAmount);
+  const payment = paymentOf(order, context);
+  // As `mapShopifyOrder`: an unmapped gateway is never read into found states (review m2, M3).
+  const refused = creationRefusalOf(payment);
+  if (refused.length > 0) throw new ShopifyOrderMappingError('GATEWAY_UNMAPPED', refused);
+  const prepaid = centsOf(payment.prepaidAmount);
   const total = amountOf(order.currentTotalPriceSet);
   const cash = total > prepaid ? 'unpaid' : prepaid > 0n ? 'prepaid' : 'nothing_to_collect';
   return ImportFirstStates.parse({
@@ -906,13 +1023,25 @@ const GO_LIVE_STATES: GoLiveFirstStates = {
  * context, `channelOrderRef` the order gid, `orderNumber` its name, `placedAt` its creation time,
  * every other field by *Value sourcing*. Placed before `goLiveAt`, an open order gets the go live
  * state (actor `system_job`) and a closed one its found states (actor `import`). A test order is
- * mapped and flagged `test_order`, for the job to ignore. Throws `ShopifyOrderMappingError`.
+ * mapped and flagged `test_order`, for the job to ignore. Throws `ShopifyOrderMappingError`,
+ * `GATEWAY_UNMAPPED` among others (audit A2, review round 2 M3, fail closed): an order with any
+ * gateway name, or any successful sale, capture, or refund (a refund alone too), on a gateway
+ * `config.gatewayMethods` does not map is not created, so no payment is guessed either way. The
+ * inbox event fails with that code and the freshness line counts it (`failedOrderEvents`); the
+ * orders sweep reads it again up to 3 times per operating day for 7 operating days from the first
+ * failure (`SWEEP_RETRY_DAYS`), after which it stays `failed` until a newer Shopify update of the
+ * order reads it again, and the inbox purge drops a failed row after 180 days. No route writes
+ * `config.gatewayMethods` yet:
+ * mapping a gateway today needs a direct change of the connection config until spec 0015 task 16
+ * ships the mapping route.
  */
 export function mapShopifyOrder(
   order: ShopifyOrder,
   context: ShopifyOrderContext,
 ): ShopifyOrderMapping {
   const { payment, fields, notes } = sharedOf(order, context);
+  const refused = creationRefusalOf(payment);
+  if (refused.length > 0) throw new ShopifyOrderMappingError('GATEWAY_UNMAPPED', refused);
   const beforeGoLive =
     context.goLiveAt !== null && Date.parse(order.createdAt) < Date.parse(context.goLiveAt);
   const found = beforeGoLive ? foundStatesOf(order, context) : null;
@@ -932,6 +1061,53 @@ export function mapShopifyOrder(
     'CONTRACT_REFUSED',
   );
   return { input, actor: found ? 'import' : 'system_job', ...notes };
+}
+
+/**
+ * Checks, before a new order is created, that the app will charge what Shopify charged (audit
+ * A3): when a line carries a positive Shopify tax rate, the order's `taxesIncluded` must agree
+ * with the `prices_include_vat` setting the intake prices with (else `TAX_MODE_MISMATCH`; an order
+ * with no tax charged may report either, review round 2 M2, and a shipping tax alone is caught by
+ * the total, since the intake takes the shipping as charged), and the total the intake will compute (each line's gross
+ * by `LineAmounts.compute`, the one line rule, plus the shipping charge) must equal Shopify's
+ * `currentTotalPriceSet` to the piastre (else `TOTAL_MISMATCH`, also for a line the rule refuses,
+ * such as a discount above the line). Exact bigint cents, no tolerance: with prices that include
+ * tax a line's gross is its price less its discount, with no rounding at all. A cancelled order is
+ * not checked: nothing is collected on it and its current total is 0 once Shopify refunds it.
+ * Never pass it a replacement order or a snapshot: their lines are part of another total. Throws
+ * `ShopifyOrderMappingError` with no amount in its message (amounts are not personal data, but
+ * nothing here needs them in a log).
+ */
+export function assertShopifyTotal(
+  order: ShopifyOrder,
+  input: Pick<ChannelOrderInput, 'lines' | 'shippingChargedAmount'>,
+  pricesIncludeVat: boolean,
+): void {
+  if (order.cancelledAt !== null) return;
+  const taxed = order.lineItems.nodes.some((line) =>
+    line.taxLines.some((tax) => (tax.ratePercentage ?? (tax.rate ?? 0) * 100) > 0),
+  );
+  if (taxed && order.taxesIncluded !== pricesIncludeVat) {
+    throw new ShopifyOrderMappingError('TAX_MODE_MISMATCH');
+  }
+  let total = Money.of(input.shippingChargedAmount).cents;
+  try {
+    for (const line of input.lines) {
+      total += LineAmounts.compute({
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        discount: line.discountAmount,
+        taxRate: line.taxRate,
+        pricesIncludeVat,
+      }).gross.cents;
+    }
+  } catch (error) {
+    if (error instanceof InvalidAmountError) throw new ShopifyOrderMappingError('TOTAL_MISMATCH');
+    throw error;
+  }
+  if (total !== amountOf(order.currentTotalPriceSet)) {
+    throw new ShopifyOrderMappingError('TOTAL_MISMATCH');
+  }
 }
 
 /**

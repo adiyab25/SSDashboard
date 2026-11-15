@@ -21,7 +21,7 @@
     "url": "https://fixture-store.myshopify.com/admin/api/2026-10/graphql.json",
     "operationName": "BulkOperationRunQuery",
     "variables": {
-      "query": "{\n  products {\n    edges {\n      node {\n        id\n        updatedAt\n        variants {\n          edges {\n            node {\n              id\n              inventoryItem {\n                id\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}"
+      "query": "{\n  products {\n    edges {\n      node {\n        id\n        handle\n        title\n        productType\n        vendor\n        tags\n        status\n        isGiftCard\n        updatedAt\n        options(first: 3) {\n          name\n          position\n          values\n        }\n        variants {\n          edges {\n            node {\n              id\n              sku\n              price\n              compareAtPrice\n              barcode\n              selectedOptions {\n                name\n                value\n              }\n              inventoryItem {\n                id\n                tracked\n                requiresShipping\n                measurement {\n                  weight {\n                    unit\n                    value\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}"
     }
   },
   "response": {

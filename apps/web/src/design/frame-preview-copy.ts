@@ -4,7 +4,7 @@ import type { CoreLanguage } from '@ssdashboard/i18n';
 export const SAMPLE_BRAND_ACCENT = '#0A7C39';
 
 /** A mid ochre that fails both foregrounds, to show the neutral fallback (DESIGN.md worked examples). */
-export const REJECTED_BRAND_ACCENT = '#A9780B';
+export const REJECTED_BRAND_ACCENT = '#997311';
 
 /** A sample logo: a white leaf shape, as an inline SVG data URI so the preview needs no file. */
 export const SAMPLE_LOGO_URL = `data:image/svg+xml,${encodeURIComponent(

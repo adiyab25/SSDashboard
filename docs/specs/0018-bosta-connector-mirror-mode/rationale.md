@@ -6,7 +6,7 @@ The decision record for [index.md](index.md). `/develop` reads index.md; this fi
 
 Most of an Egyptian clothing brand's cash sits with Bosta between the courier's pickup and Bosta's remittance. In mirror mode the brand's own Bosta Shopify app creates every delivery, so the app has to learn each parcel's state, fees, and cash cycle from Bosta without ever writing to it ([spec 0007](../0007-stack-architecture-operations-layer/index.md) section 1, *Carrier abstraction*). Slice 1a's acceptance needs one real month of Bosta settlement matched line by line ([scope](../../scope/confirmation-to-cash.md)), which is only possible if every delivery's fees and cash cycle are recorded as Bosta itself reports them.
 
-Bosta's API makes this awkward. Webhooks fire on state changes only, carry no signature and no event id, and are registered by a person in Bosta's dashboard. The list endpoint returns ten rows a page with no fees, no exception reasons, and no "updated since" filter. Fees, the cash cycle, and attempt reasons appear only on the single delivery read, and Bosta answers 429 after about sixty quick single reads. The cash cycle appears days or weeks after delivery with no webhook at all ([domain review M1](../../reviews/domain-stack.md)).
+Bosta's API makes this awkward. Webhooks fire on state changes only, carry no signature and no event id, and are registered by a person in Bosta's dashboard. The list endpoint returns ten rows a page with no fees, no exception reasons, and no "updated since" filter. Fees, the cash cycle, and attempt reasons appear only on the single delivery read, and Bosta answers 429 after about sixty quick single reads. The cash cycle appears days or weeks after delivery with no webhook at all (domain review M1 (kept private)).
 
 Two more forces come from the confirmation queue. The brand's Bosta app may create a delivery as soon as the Shopify order arrives (auto sync), before an agent confirms it. A size change at confirmation then changes what the customer owes while Bosta still holds the old COD, and in mirror mode the app cannot fix Bosta (the independent audit of 2026-11-11, section 4 item 9, from the copy the lead supplied; not in the repo). Spec 0013 freezes an order's money at the first carrier fact, which, read literally, would forbid that edit altogether.
 
@@ -136,7 +136,7 @@ The official API reference (a client rendered page) could not be read, so the of
 
 ## Domain review
 
-[domain-bosta-mirror](../../reviews/domain-bosta-mirror.md), 2026-11-12: accept with changes (1 blocker, 8 majors, 9 minors, owner questions Q-19.7 to Q-19.9). Folded in the same day; every finding below is applied unless the row says otherwise.
+domain-bosta-mirror (kept private), 2026-11-12: accept with changes (1 blocker, 8 majors, 9 minors, owner questions Q-19.7 to Q-19.9). Folded in the same day; every finding below is applied unless the row says otherwise.
 
 | Finding | How it was closed |
 |---|---|
@@ -169,17 +169,17 @@ Later the same day, spec 0019's remaining requests, also additive: `opensTask` o
 
 ## Owner answers of 2026-11-13
 
-The owner ratified every recommendation of this spec ([owner answers](../../reviews/owner-answers-2026-11-13.md)). Two answers made to sibling specs change it. Spec 0017's Q-18.1 (both send modes, per brand) is carried as connection config (AC-32) rather than a settings row, because it describes one Bosta account's Shopify app, and an install with one account per store may run the two modes side by side; the mode changes only whether a route before confirmation opens a task and how long `cancel_in_bosta` waits, so the mirror itself stays one design. Spec 0019's Q-21.13 (support Bosta's Exchange now) makes a type 30 delivery the forward delivery of the exchange replacement (AC-33). The link prefers the replacement's own order number as the business reference and falls back to the original's number when exactly one open replacement exists, because brands type the order number they know; anything else waits for a person. The refused exchange and the item count of a type 30 are marked unverified until a recording.
+The owner ratified every recommendation of this spec (owner answers of 2026-11-13 (kept private)). Two answers made to sibling specs change it. Spec 0017's Q-18.1 (both send modes, per brand) is carried as connection config (AC-32) rather than a settings row, because it describes one Bosta account's Shopify app, and an install with one account per store may run the two modes side by side; the mode changes only whether a route before confirmation opens a task and how long `cancel_in_bosta` waits, so the mirror itself stays one design. Spec 0019's Q-21.13 (support Bosta's Exchange now) makes a type 30 delivery the forward delivery of the exchange replacement (AC-33). The link prefers the replacement's own order number as the business reference and falls back to the original's number when exactly one open replacement exists, because brands type the order number they know; anything else waits for a person. The refused exchange and the item count of a type 30 are marked unverified until a recording.
 
 ## References
 
 **Project sources**:
 - `AGENTS.md` (modules, two database roles, Law 151, audiences, one schema per shape)
-- [Spec 0007](../0007-stack-architecture-operations-layer/index.md) section 1 and *Carried from the domain review* (B1, B2, M1, M2, M3); [domain-stack review](../../reviews/domain-stack.md) (M1, M2, M5, n2)
+- [Spec 0007](../0007-stack-architecture-operations-layer/index.md) section 1 and *Carried from the domain review* (B1, B2, M1, M2, M3); domain-stack review (kept private) (M1, M2, M5, n2)
 - [Spec 0015](../0015-shopify-connector/index.md) (the inbox, hints read back through one mapper, sweeps, fixtures, the connection screen)
 - [Spec 0013](../0013-orders-state-machines/index.md) (AC-8, AC-15, AC-16, AC-17, AC-24)
 - [Spec 0009](../0009-settings-toggles-bundles/index.md) (AC-18, AC-27 to AC-29, the module registry)
-- [Spec 0002 orders child](../0002-core-data-model/0002-orders.md) and [settlement child](../0002-core-data-model/0002-settlement.md); [domain-data-model review](../../reviews/domain-data-model.md) n1
+- [Spec 0002 orders child](../0002-core-data-model/0002-orders.md) and [settlement child](../0002-core-data-model/0002-settlement.md); domain-data-model review (kept private) n1
 - `apps/api/src/connectors/README.md`, `packages/db/src/schema/connectors.ts`, `packages/db/src/table-ownership.ts`
 
 **Practices and standards**:

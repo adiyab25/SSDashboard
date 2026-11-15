@@ -20,7 +20,7 @@ export interface HashedLine {
  * different hash is a conflict.
  */
 export interface HashedRequest {
-  operation: 'post' | 'reverse';
+  operation: 'post' | 'reverse' | 'carrier';
   sourceType: string;
   sourceId: string;
   reversesGroupId: string | null;

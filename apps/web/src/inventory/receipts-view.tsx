@@ -125,15 +125,15 @@ export function ReceiptsView({ enabled }: { enabled: boolean }) {
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="relative overflow-hidden rounded-lg border">
+        <div className="relative overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('inventory.receipts.tableLabel')} aria-busy={loading}>
-            <TableHeader className="sticky top-0 bg-muted">
-              <TableRow className="h-row-header hover:bg-muted">
+            <TableHeader className="sticky top-0">
+              <TableRow className="h-row-header">
                 {COLUMNS.map((column) => (
                   <TableHead
                     key={column}
                     scope="col"
-                    className={`px-3 font-medium ${column === 'lines' ? 'text-end' : 'text-start'}`}
+                    className={`px-3 ${column === 'lines' ? 'text-end' : 'text-start'}`}
                   >
                     {t(`inventory.receipts.columns.${column}`)}
                   </TableHead>
@@ -167,7 +167,7 @@ export function ReceiptsView({ enabled }: { enabled: boolean }) {
                             </p>
                           </div>
                           {canReceive && (
-                            <Button asChild size="sm">
+                            <Button asChild size="sm" variant="secondary">
                               <Link href="/stock-receipts/new">
                                 {t('inventory.receipts.receive')}
                               </Link>
@@ -181,11 +181,11 @@ export function ReceiptsView({ enabled }: { enabled: boolean }) {
               )}
               {!loading &&
                 rows.map((row) => (
-                  <TableRow key={row.id} className="h-row hover:bg-muted">
+                  <TableRow key={row.id} className="h-row">
                     <TableCell className="px-3">
                       <Link
                         href={`/stock-receipts/${row.id}`}
-                        className="rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+                        className="rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
                       >
                         <LtrText>{row.number}</LtrText>
                       </Link>

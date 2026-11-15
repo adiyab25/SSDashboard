@@ -11,7 +11,7 @@ Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner dec
 - [x] Design it (spec): `/architect stock ledger & locations`
 - [ ] Build it: `/develop stock ledger & locations`
   - [x] The gated online location and the online stock read
-  - [ ] Reservations, waiting demand, carrier shipments, and catalog locks
+  - [x] Reservations, waiting demand, carrier shipments, and catalog locks
   - [ ] Partners, owner type screens, and showroom moves
   - [ ] Adjustments, adjustment requests, and the receipt cost rule
   - [ ] Discrepancies a manager can act on, and the scale budgets
@@ -19,7 +19,7 @@ Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner dec
 - [ ] Test it: `/test stock ledger & locations`
 - [ ] Review it (fresh model): `/check review stock ledger & locations`
 - [ ] Document it: `/document stock ledger & locations`
-Spec [0011](../specs/0011-stock-ledger-locations/index.md) (Accepted 2026-11-07; domain review [domain-stock-ledger](../reviews/domain-stock-ledger.md): accept with changes, folded in)
+Spec [0011](../specs/0011-stock-ledger-locations/index.md) (Accepted 2026-11-07; domain review (private): accept with changes, folded in)
 
 ### 12. Catalog, styles & variants
 Products as the brand thinks of them: style, season, product group, and variants by size and color, mostly arriving from Shopify, searchable at warehouse scale.
@@ -29,7 +29,7 @@ Products as the brand thinks of them: style, season, product group, and variants
   - [x] Arabic and English search through every layer
   - [x] Seasons, product groups, and styles
   - [x] Inherited cost, visible and recordable
-  - [ ] The channel upsert contract
+  - [x] The channel upsert contract
 - [ ] Verify it: `/check verify catalog, styles & variants`
 - [ ] Test it: `/test catalog, styles & variants`
 Spec [0012](../specs/0012-catalog-styles-variants/index.md) (Accepted 2026-11-07)
@@ -42,7 +42,7 @@ Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out fr
 - [x] Design it (spec): `/architect shopify connector`
 - [ ] Build it: `/develop shopify connector`
   - [ ] Recorded fixtures and one order through a signed webhook (tasks 2 to 7 built 2026-11-08 on synthetic fixtures: one order through a signed webhook works; task 1, recording from a Shopify development store, waits for the store)
-  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08) (tasks 9 to 12 built: orders in full and customer webhooks 2026-11-08, edit netting, exchange by edit, and the sync jobs 2026-11-09; task 8 products waits for spec 0012's catalog sync and task 9a for spec 0013's stock out)
+  - [ ] Catalog, orders in full, go live, backfill, the sweep, and stock out from Shopify fulfillment (owner ruling 2026-11-08) (tasks 9 to 12 built: orders in full and customer webhooks 2026-11-08, edit netting, exchange by edit, and the sync jobs 2026-11-09; task 8 products built 2026-11-12 on synthetic fixtures; task 9a waits for spec 0013's stock out)
   - [ ] The outbound door and the stock push
   - [ ] The connection screen, health, and the runbook
   - [ ] Stock out from Shopify fulfillment, the Warehouse only stock out source (spec 0015 task; owner ruling 2026-11-08)
@@ -52,7 +52,7 @@ Also from spec 0009 (owner rulings 2026-11-08): this feature builds stock out fr
 - [ ] Test it: `/test shopify connector`
 - [ ] Review it (fresh model): `/check review shopify connector`
 - [ ] Document it: `/document shopify connector`
-Spec [0015](../specs/0015-shopify-connector/index.md) (Accepted 2026-11-07; domain review [domain-shopify-connector](../reviews/domain-shopify-connector.md): accept with changes, folded in)
+Spec [0015](../specs/0015-shopify-connector/index.md) (Accepted 2026-11-07; domain review (private): accept with changes, folded in)
 
 ### 14. Customers by phone
 One customer record keyed on a normalized Egyptian phone number, holding many phones and channel ids, with merge as routine daily work and one timeline per customer.
@@ -80,13 +80,13 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
   - [x] One manual order through every layer
   - [x] Editing, confirming, cancelling, packing, and the hold
   - [x] The channel intake contract for feature 13
-  - [ ] Stock: holds at creation, short lines, and carrier shipments
+  - [x] Stock: holds at creation, short lines, and carrier shipments
   - [ ] Carrier and cash moves, the shipment posting, and scale
 - [ ] Verify it: `/check verify orders & their state machines`
 - [ ] Test it: `/test orders & their state machines`
 - [ ] Review it (fresh model): `/check review orders & their state machines`
 - [ ] Document it: `/document orders & their state machines`
-Spec [0013](../specs/0013-orders-state-machines/index.md) (Accepted 2026-11-07; domain review [domain-orders](../reviews/domain-orders.md): accept with changes, folded in)
+Spec [0013](../specs/0013-orders-state-machines/index.md) (Accepted 2026-11-07; domain review (private): accept with changes, folded in)
 
 ### 17. Tasks & My work inbox
 One task primitive (type, linked record, owner, due time, outcome code) that every process creates as it moves, and one inbox that shows each person their work.
@@ -98,13 +98,13 @@ Also from spec 0016 (independent audit of 2026-11-11, section 4, items 7 and 8):
   - [ ] The full service, working hours, and the interface for feature 18
   - [ ] Every existing producer
   - [ ] Support cases, money owed, notes, and the phone pass
-Spec [0016](../specs/0016-tasks-my-work-inbox/index.md) (Proposed, ratified by the owner 2026-11-13 with every recommendation; domain review [domain-tasks-my-work](../reviews/domain-tasks-my-work.md): accept with changes, folded in)
+Spec [0016](../specs/0016-tasks-my-work-inbox/index.md) (Proposed, ratified by the owner 2026-11-13 with every recommendation; domain review (private): accept with changes, folded in)
 
 ### 18. Confirmation queue · GA
 Where support confirms every order before it ships: oldest first, grouped by phone, with a WhatsApp deep link, outcome codes, callbacks, address zones, and edits written back to Shopify.
 **Done when:** an agent opens WhatsApp with a prefilled message or calls, records one outcome (confirmed, no answer with an automatic callback, call back at a time, cancelled with reason, duplicate, fake); three no answers close the order; duplicates merge in one tap and cancel on Shopify with a reason; the address is fixed into the carrier's governorate, city, and zone with suggestions from past orders; size changes and added pieces write back to Shopify; confirmed orders move on to fulfillment.
-The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
-Also from spec 0017: the app serves both ways a brand reaches Bosta, set per Bosta connection (owner decision Q-18.1, 2026-11-13): sending by hand after confirmation, where the queue writes a confirmed and a held tag to Shopify and the brand sends only from the Shopify view "confirmed and not held"; or Bosta's app syncing every order at creation, where the card shows the Bosta parcel, every edit comes with an "also change it in Bosta" checklist, the check at confirmation catches a missed one, and the warehouse's pick list is the gate. A confirmation edit after Bosta created the delivery reconfirms only after the delivery is fixed, while feature 19 owns the Bosta side ("carrier record stale", audit item 9). Usually there is no deposit: Bosta's fee is paid on every parcel and the refusal reason decides who bears it (feature 21); the shipping deposit is an optional path off the pilot's way (Q-18.3). The pilot acceptance includes one deliberately failed write back, or for an app sync brand one deliberately stale record, caught by the warehouse before pickup ([stack review](../reviews/domain-stack.md) n1).
+The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal (domain review, build re-read 2026-11-06, private, D2).
+Also from spec 0017: the app serves both ways a brand reaches Bosta, set per Bosta connection (owner decision Q-18.1, 2026-11-13): sending by hand after confirmation, where the queue writes a confirmed and a held tag to Shopify and the brand sends only from the Shopify view "confirmed and not held"; or Bosta's app syncing every order at creation, where the card shows the Bosta parcel, every edit comes with an "also change it in Bosta" checklist, the check at confirmation catches a missed one, and the warehouse's pick list is the gate. A confirmation edit after Bosta created the delivery reconfirms only after the delivery is fixed, while feature 19 owns the Bosta side ("carrier record stale", audit item 9). Usually there is no deposit: Bosta's fee is paid on every parcel and the refusal reason decides who bears it (feature 21); the shipping deposit is an optional path off the pilot's way (Q-18.3). The pilot acceptance includes one deliberately failed write back, or for an app sync brand one deliberately stale record, caught by the warehouse before pickup (stack review, private, n1).
 - [x] Design it (spec): `/architect confirmation queue`
 - [ ] Build it: `/develop confirmation queue`
   - [ ] One order confirmed through the queue, the way the desk works
@@ -116,7 +116,7 @@ Also from spec 0017: the app serves both ways a brand reaches Bosta, set per Bos
 - [ ] Test it: `/test confirmation queue`
 - [ ] Review it (fresh model): `/check review confirmation queue`
 - [ ] Document it: `/document confirmation queue`
-Spec [0017](../specs/0017-confirmation-queue/index.md) (Proposed, ratified by the owner 2026-11-13; Q-18.1 and Q-18.3 changed the design; domain review [domain-confirmation-queue](../reviews/domain-confirmation-queue.md): accept with changes, folded in)
+Spec [0017](../specs/0017-confirmation-queue/index.md) (Proposed, ratified by the owner 2026-11-13; Q-18.1 and Q-18.3 changed the design; domain review (private): accept with changes, folded in)
 
 ### 19. Bosta connector, mirror mode · GA
 Read the deliveries the carrier's own Shopify app created, with their states, fees, and cash cycles, without executing anything.
@@ -150,12 +150,12 @@ Also from spec 0021: one scan box reads a handheld scanner by physical key, so a
 - [ ] Test it: `/test barcode scanning`
 - [ ] Review it (fresh model): `/check review barcode scanning`
 - [ ] Document it: `/document barcode scanning`
-Spec [0021](../specs/0021-barcode-scanning/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-barcode-scanning](../reviews/domain-barcode-scanning.md); owner decisions Q-20.1 to Q-20.7 answered, Q-20.2 by the owner: a printed barcode per variant)
+Spec [0021](../specs/0021-barcode-scanning/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review (private); owner decisions Q-20.1 to Q-20.7 answered, Q-20.2 by the owner: a printed barcode per variant)
 
 ### 21. Delivery failures & returned to origin · GA
 What happens when the door does not go as planned: failed attempts, returned to origin, partial delivery, and a refusal with a request for another size.
 **Done when:** a failed attempt schedules the next try; a returned to origin piece is restocked by scan (or by tap until feature 20 lands) and both shipping legs post against the order and its campaign; a partial delivery splits the order into delivered and returned lines with the partial cash amount; the returned to origin rate shows by governorate, product, and carrier; every order ends with an outcome.
-The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal ([domain review, build re-read 2026-11-06](../reviews/domain-data-model.md#build-re-read-2026-11-06), D2).
+The spec must answer the prepaid share of a piece that never reaches the customer, and what a shipping deposit is for on a refusal (domain review, build re-read 2026-11-06, private, D2).
 Also from spec 0019: restock is by tap until feature 20 brings the scan; customer return pickups come back through the same returned parcels; a failed delivery's reason decides who bears Bosta's fee (the brand for a wrong item or size, damaged or not as shown, or a wrong price or COD; Bosta through a claim when late or it never reached her; otherwise the customer, who is flagged and pays only any FlexShip fee taken at the door); a Bosta Exchange (type 30) is the replacement order's forward delivery, taking the new piece out and bringing the old piece back on one parcel with the price difference collected at the door (owner decision Q-21.13, 2026-11-13: feature 34 work pulled forward, about two builder weeks, milestone 6); the warehouse marks each order packed in the app; a lost or damaged parcel opens a claim that settlement matches to Bosta's compensation; an order handed to another courier is followed by hand; the warehouse packs from a pick list that shows the holds.
 - [x] Design it (spec): `/architect delivery failures & returned to origin`
 - [ ] Build it: `/develop delivery failures & returned to origin`
@@ -186,7 +186,7 @@ Also from spec 0020: the per delivery cash cycles lead and Bosta's sheet adds th
 - [ ] Test it: `/test settlement & bosta reconciliation`
 - [ ] Review it (fresh model): `/check review settlement & bosta reconciliation`
 - [ ] Document it: `/document settlement & bosta reconciliation`
-Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews [domain-settlement-reconciliation](../reviews/domain-settlement-reconciliation.md) and [second pass](../reviews/domain-settlement-reconciliation-r2.md); ratified by the owner 2026-11-13 with every recommendation)
+Spec [0020](../specs/0020-settlement-bosta-reconciliation/index.md) (Proposed 2026-11-12, revised the same day for its domain reviews and second pass (both private); ratified by the owner 2026-11-13 with every recommendation)
 
 ### 23. Period close with evidence · GA
 Confirmed data is the only data reports, settlements, and exports use. A channel's date range is confirmed by a person after review, or automatically when the evidence matches exactly.
@@ -203,7 +203,7 @@ Also from spec 0022: a close check of plain conditions (every line settled, ever
 - [ ] Test it: `/test period close with evidence`
 - [ ] Review it (fresh model): `/check review period close with evidence`
 - [ ] Document it: `/document period close with evidence`
-Spec [0022](../specs/0022-period-close-evidence/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review [domain-period-close](../reviews/domain-period-close.md) and the own records request of specs 0023 and 0024; owner decisions Q-23.1 to Q-23.10 answered, Q-23.10 by the owner: the period length is a per brand setting, monthly by default)
+Spec [0022](../specs/0022-period-close-evidence/index.md) (Proposed 2026-11-13, ratified by the owner the same day; revised the same day for its domain review (private) and the own records request of specs 0023 and 0024; owner decisions Q-23.1 to Q-23.10 answered, Q-23.10 by the owner: the period length is a per brand setting, monthly by default)
 
 ### 24. Metric dictionary & phone dashboard
 Every figure defined once in the model, and the owner's first dashboard designed for a phone in Arabic.

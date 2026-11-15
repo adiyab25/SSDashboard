@@ -3,6 +3,8 @@ import {
   CancelOrderBody,
   CreateGiftedOrderBody,
   CreateManualOrderBody,
+  HoldOpenOrdersBody,
+  HoldOpenOrdersResult,
   OrderEditBody,
   OrderListQuery,
   OrderMoveBody,
@@ -209,5 +211,21 @@ describe('CancelOrderBody and OrderMoveBody', () => {
   it('carries only the token on a move', () => {
     expect(OrderMoveBody.safeParse({ expectedUpdatedAt: at }).success).toBe(true);
     expect(OrderMoveBody.safeParse({ expectedUpdatedAt: at, extra: 1 }).success).toBe(false);
+  });
+});
+
+describe('HoldOpenOrdersBody and HoldOpenOrdersResult (AC-26)', () => {
+  it('takes exactly one location id', () => {
+    expect(HoldOpenOrdersBody.parse({ locationId: id })).toEqual({ locationId: id });
+    expect(HoldOpenOrdersBody.safeParse({}).success).toBe(false);
+    expect(HoldOpenOrdersBody.safeParse({ locationId: 'x' }).success).toBe(false);
+    expect(HoldOpenOrdersBody.safeParse({ locationId: id, extra: 1 }).success).toBe(false);
+  });
+
+  it('answers three whole counts, never negative', () => {
+    const result = { linesHeld: 2, linesShort: 1, linesLeft: 0 };
+    expect(HoldOpenOrdersResult.parse(result)).toEqual(result);
+    expect(HoldOpenOrdersResult.safeParse({ ...result, linesLeft: -1 }).success).toBe(false);
+    expect(HoldOpenOrdersResult.safeParse({ linesHeld: 1 }).success).toBe(false);
   });
 });

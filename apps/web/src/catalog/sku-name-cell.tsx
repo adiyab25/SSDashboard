@@ -14,9 +14,9 @@ export function SkuNameCell({ sku }: { sku: SkuSummary }) {
   const values = sku.options.map((option) => text(option.value, '')).filter(Boolean);
   return (
     <span className="flex min-w-0 flex-col">
-      <span>{text(sku.name, sku.code)}</span>
+      <span className="rtl:leading-5">{text(sku.name, sku.code)}</span>
       {values.length > 0 && (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground rtl:leading-4">
           {values.join(t('shell.modules.listSeparator'))}
         </span>
       )}

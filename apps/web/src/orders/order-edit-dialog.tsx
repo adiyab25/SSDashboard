@@ -30,7 +30,7 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation } from '@tanstack/react-query';
-import { LoaderCircleIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { InfoIcon, LoaderCircleIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -39,7 +39,7 @@ import { ApiError } from '@/api/client';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { useReturnFocus } from '@/shared/use-return-focus';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import {
   buildEditBody,
   MAX_OPERATIONS,
@@ -445,7 +445,8 @@ export function OrderEditDialog({
               )}
             </section>
           ) : (
-            <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+            <p className="flex items-start gap-2 rounded-control border border-border-strong p-3 text-sm text-muted-foreground">
+              <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
               {t('orders.edit.giftLinesNeedPermission')}
             </p>
           )}

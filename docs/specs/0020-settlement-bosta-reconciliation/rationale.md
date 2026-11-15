@@ -121,7 +121,7 @@ The period totals then show COD collected 4,800.00 on both sides (T1, T2, T6), c
 
 ## Domain review
 
-The domain review [domain-settlement-reconciliation](../../reviews/domain-settlement-reconciliation.md) (2026-11-12) found the first draft not ready to accept. Every finding was folded in on 2026-11-12, with the lead's rulings on B1, B2, B3, M1, M2, M8, M10, Q-22.8 to Q-22.11, and the names of spec 0019's revision (`refusal_fee`, `short_collection`, `CarrierClaims.overdueCompensation`).
+The domain review domain-settlement-reconciliation (kept private) (2026-11-12) found the first draft not ready to accept. Every finding was folded in on 2026-11-12, with the lead's rulings on B1, B2, B3, M1, M2, M8, M10, Q-22.8 to Q-22.11, and the names of spec 0019's revision (`refusal_fee`, `short_collection`, `CarrierClaims.overdueCompensation`).
 
 | # | Severity | How it was closed |
 |---|---|---|
@@ -152,7 +152,7 @@ The domain review [domain-settlement-reconciliation](../../reviews/domain-settle
 
 ## Domain review, second pass
 
-The second pass [domain-settlement-reconciliation-r2](../../reviews/domain-settlement-reconciliation-r2.md) (2026-11-12) found the revision ready to accept once N1 to N4 change. Every finding was folded in on 2026-11-12 with the lead's rulings on N1 to N8 and the slice 1a trim. Before it, spec 0019's landed M9 (collection recorded at 45, only the delivered move held) replaced the first revision's `awaiting_partial_split` reason and its second fixture.
+The second pass domain-settlement-reconciliation-r2 (kept private) (2026-11-12) found the revision ready to accept once N1 to N4 change. Every finding was folded in on 2026-11-12 with the lead's rulings on N1 to N8 and the slice 1a trim. Before it, spec 0019's landed M9 (collection recorded at 45, only the delivered move held) replaced the first revision's `awaiting_partial_split` reason and its second fixture.
 
 | # | Severity | How it was closed |
 |---|---|---|
@@ -183,7 +183,7 @@ The second pass [domain-settlement-reconciliation-r2](../../reviews/domain-settl
 
 ## References
 
-**Project sources**: `AGENTS.md`; specs 0002, 0007, 0009, 0013, 0018, 0019; spec 0016 on branch `docs/tasks-and-confirmation-queue`; `packages/db/src/schema/settlement.ts`; `packages/db/migrations/0002_baseline_rules.sql`; `packages/contracts/src/settlement/`; `docs/reviews/domain-data-model.md` (M3, M8); `docs/reviews/security-data-model.md` (S11); the lead's relay of spec 0019's domain review findings M9 and X1 (2026-11-12).
+**Project sources**: `AGENTS.md`; specs 0002, 0007, 0009, 0013, 0018, 0019; spec 0016 on branch `docs/tasks-and-confirmation-queue`; `packages/db/src/schema/settlement.ts`; `packages/db/migrations/0002_baseline_rules.sql`; `packages/contracts/src/settlement/`; private `docs/reviews/domain-data-model.md` (M3, M8); private `docs/reviews/security-data-model.md` (S11); the lead's relay of spec 0019's domain review findings M9 and X1 (2026-11-12).
 
 **Practices and standards**: append only ledgers corrected by new rows; events as hints with read back; idempotent imports keyed by content checksum; exact decimal money; Law 151 data minimisation (read only the mapped columns).
 

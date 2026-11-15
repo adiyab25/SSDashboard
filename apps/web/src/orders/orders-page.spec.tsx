@@ -122,6 +122,18 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
     expect(screen.getByRole('link', { name: 'New order' })).toHaveAttribute('href', '/orders/new');
   });
 
+  it('draws Search as a secondary button so New order is the only main action', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockResolvedValue({ items: [order(1)], nextCursor: null });
+    renderWithQuery(<OrdersPage />);
+
+    await screen.findByRole('table', { name: 'Orders' });
+    expect(screen.getByRole('button', { name: 'Search' })).toHaveAttribute(
+      'data-variant',
+      'secondary',
+    );
+  });
+
   it('says more is available and loads the next page by cursor', async () => {
     api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
     api.listOrders
@@ -157,6 +169,37 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('link', { name: 'ESS/#1002' })).toBeVisible();
     expect(api.listOrders).toHaveBeenLastCalledWith(expect.anything(), 'next-1', expect.anything());
+  });
+
+  it('narrows the list to orders with a short line, and shows the short flag on each (AC-4, AC-13)', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockImplementation((filters: { short: boolean }) =>
+      Promise.resolve({
+        items: filters.short ? [order(1, { short: true })] : [order(1, { short: true }), order(2)],
+        nextCursor: null,
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithQuery(<OrdersPage />);
+    const table = await screen.findByRole('table', { name: 'Orders' });
+    expect(within(table).getByRole('link', { name: 'ESS/#1002' })).toBeVisible();
+    expect(within(table).getAllByText('Short of stock')).toHaveLength(1);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Short of stock' }));
+
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ESS/#1002' })).toBeNull());
+    const narrowed = screen.getByRole('table', { name: 'Orders' });
+    expect(within(narrowed).getByRole('link', { name: 'ESS/#1001' })).toBeVisible();
+    expect(within(narrowed).getByText('Short of stock')).toBeVisible();
+    expect(api.listOrders).toHaveBeenLastCalledWith(
+      expect.objectContaining({ short: true }),
+      undefined,
+      expect.anything(),
+    );
+    expect(queryOf({ ...EMPTY_FILTERS, short: true }, undefined)).toEqual({
+      short: true,
+      limit: 50,
+    });
   });
 
   it('puts the typed search in the filters sent to the api, never in the address', async () => {

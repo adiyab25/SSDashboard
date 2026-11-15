@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useAccess } from '@/access/use-access';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
+import { FromChannelBadge } from '../from-channel-badge';
 import { AddVariantDialog } from './add-variant-dialog';
 import { RecordCostDialog } from './record-cost-dialog';
 import { StyleCostHistory } from './style-cost-history';
@@ -71,7 +72,7 @@ export function StyleView({
       cell: (variant: StyleVariant) => (
         <Link
           href={`/skus/${variant.id}`}
-          className="rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+          className="rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
         >
           <LtrText>{variant.code}</LtrText>
         </Link>
@@ -86,12 +87,16 @@ export function StyleView({
       id: 'price',
       header: t('catalog.style.columns.price'),
       align: 'end' as const,
-      cell: (variant: StyleVariant) =>
-        variant.price === null ? (
-          <span className="text-muted-foreground">{t('catalog.style.noPrice')}</span>
-        ) : (
-          format.money(variant.price, 2)
-        ),
+      cell: (variant: StyleVariant) => (
+        <span className="inline-flex flex-wrap items-center justify-end gap-2">
+          {variant.price === null ? (
+            <span className="text-muted-foreground">{t('catalog.style.noPrice')}</span>
+          ) : (
+            format.money(variant.price, 2)
+          )}
+          {variant.channelLinked && <FromChannelBadge />}
+        </span>
+      ),
     },
     ...(canSeeCost
       ? [
@@ -112,8 +117,9 @@ export function StyleView({
         ) : (
           <ul className="flex flex-wrap justify-end gap-x-3 gap-y-1 sm:justify-start">
             {variant.barcodes.map((barcode) => (
-              <li key={barcode.id}>
+              <li key={barcode.id} className="flex items-center gap-2">
                 <LtrText>{barcode.code}</LtrText>
+                {barcode.fromChannel && <FromChannelBadge />}
               </li>
             ))}
           </ul>
@@ -196,12 +202,28 @@ export function StyleView({
 
       <section
         aria-labelledby="style-facts-title"
-        className="flex flex-col gap-3 rounded-lg border p-4 text-sm"
+        className="flex flex-col gap-3 rounded-card gradient-card-edge p-4 text-sm"
       >
         <h2 id="style-facts-title" className="font-medium">
           {t('catalog.style.factsTitle')}
         </h2>
         <dl className="grid gap-4 sm:grid-cols-2">
+          {style.channelNameLanguage && (
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <dt className="text-muted-foreground">
+                {t(`catalog.channel.nameIn.${style.channelNameLanguage}`)}
+              </dt>
+              <dd className="flex flex-wrap items-center gap-2 font-medium">
+                <span
+                  lang={style.channelNameLanguage}
+                  dir={style.channelNameLanguage === 'ar' ? 'rtl' : 'ltr'}
+                >
+                  {style.name[style.channelNameLanguage] ?? ''}
+                </span>
+                <FromChannelBadge />
+              </dd>
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <dt className="text-muted-foreground">{t('catalog.style.season')}</dt>
             <dd className="font-medium">
@@ -218,11 +240,17 @@ export function StyleView({
           </div>
           <div className="flex flex-col gap-1">
             <dt className="text-muted-foreground">{t('catalog.style.productType')}</dt>
-            <dd className="font-medium">{style.productType ?? t('catalog.style.notSet')}</dd>
+            <dd className="flex flex-wrap items-center gap-2 font-medium">
+              {style.productType ?? t('catalog.style.notSet')}
+              {style.channelLinked && <FromChannelBadge />}
+            </dd>
           </div>
           <div className="flex flex-col gap-1">
             <dt className="text-muted-foreground">{t('catalog.style.brand')}</dt>
-            <dd className="font-medium">{style.brand ?? t('catalog.style.notSet')}</dd>
+            <dd className="flex flex-wrap items-center gap-2 font-medium">
+              {style.brand ?? t('catalog.style.notSet')}
+              {style.channelLinked && <FromChannelBadge />}
+            </dd>
           </div>
           <div className="flex flex-col gap-1 sm:col-span-2">
             <dt className="text-muted-foreground">{t('catalog.style.tags')}</dt>
@@ -230,13 +258,16 @@ export function StyleView({
               {style.tags.length === 0 ? (
                 <span className="font-medium">{t('catalog.style.noTags')}</span>
               ) : (
-                <ul className="flex flex-wrap gap-1.5">
-                  {style.tags.map((tag) => (
-                    <li key={tag}>
-                      <Badge variant="secondary">{tag}</Badge>
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ul className="flex flex-wrap gap-1.5">
+                    {style.tags.map((tag) => (
+                      <li key={tag}>
+                        <Badge variant="secondary">{tag}</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                  {style.channelLinked && <FromChannelBadge />}
+                </div>
               )}
             </dd>
           </div>
@@ -252,13 +283,16 @@ export function StyleView({
       </section>
 
       <section aria-labelledby="style-options-title" className="flex flex-col gap-3">
-        <h2 id="style-options-title" className="text-base font-semibold">
-          {t('catalog.style.optionsTitle')}
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="style-options-title" className="text-base font-semibold">
+            {t('catalog.style.optionsTitle')}
+          </h2>
+          {style.channelLinked && style.options.length > 0 && <FromChannelBadge />}
+        </div>
         {style.options.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('catalog.style.noOptions')}</p>
         ) : (
-          <dl className="grid gap-3 rounded-lg border p-4 text-sm sm:grid-cols-3">
+          <dl className="grid gap-3 rounded-card gradient-card-edge p-4 text-sm sm:grid-cols-3">
             {style.options.map((option) => (
               <div key={option.id} className="flex flex-col gap-1">
                 <dt className="text-muted-foreground">
@@ -283,7 +317,7 @@ export function StyleView({
           {t('catalog.style.variantsTitle')}
         </h2>
         {style.variants.length === 0 ? (
-          <p className="rounded-lg border px-3 py-10 text-center text-sm text-muted-foreground">
+          <p className="rounded-card gradient-card-edge px-3 py-10 text-center text-sm text-muted-foreground">
             {t('catalog.style.noVariants')}
           </p>
         ) : (
@@ -292,7 +326,7 @@ export function StyleView({
             columns={columns}
             rows={style.variants}
             getRowKey={(variant) => variant.id}
-            className="sm:overflow-hidden sm:rounded-lg sm:border"
+            className="sm:overflow-hidden sm:rounded-card sm:gradient-card-edge"
           />
         )}
       </section>
