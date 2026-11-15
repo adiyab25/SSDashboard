@@ -6,7 +6,7 @@ import {
   SyncRunListResponse,
   SyncRunStarted,
 } from '@ssdashboard/contracts';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ENV } from '../src/config/config.module.js';
 import { loadEnv } from '../src/config/env.js';
 import { ConnectionSecrets } from '../src/connectors/connections/connection-secrets.js';
@@ -192,6 +192,34 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
   const operatingDay = async (): Promise<string> =>
     (await api.owner.pool.query<{ day: string }>(`SELECT ssd_operating_day(now())::text AS day`))
       .rows[0]?.day as string;
+
+  /**
+   * Pins where now falls in the operating day: moves the day's start (the cutoff hour) so now is
+   * `hoursIn` whole hours, plus the minutes past the hour, into today, and returns the restore.
+   * The sweep counts retries per operating day by the database's real now(), which the test clock
+   * does not move, so a test that plants history hours back must pin it (CI run 43644216582 ran
+   * nine minutes after Cairo midnight and saw yesterday's retries as another day's).
+   */
+  const pinOperatingDay = async (hoursIn: number): Promise<() => Promise<void>> => {
+    const { rows } = await api.owner.pool.query<{ hour: number; cutoff: unknown }>(
+      `SELECT extract(hour FROM now() AT TIME ZONE coalesce(
+                (SELECT value #>> '{}' FROM settings WHERE key = 'timezone'), 'Africa/Cairo'))::int AS hour,
+              (SELECT value FROM settings WHERE key = 'operating_day_cutoff_hour') AS cutoff`,
+    );
+    const { hour, cutoff } = rows[0] as { hour: number; cutoff: unknown };
+    const write = (value: unknown) =>
+      value === null || value === undefined
+        ? api.owner.pool.query(`DELETE FROM settings WHERE key = 'operating_day_cutoff_hour'`)
+        : api.owner.pool.query(
+            `INSERT INTO settings (key, value) VALUES ('operating_day_cutoff_hour', $1::jsonb)
+             ON CONFLICT (tenant_id, key) DO UPDATE SET value = EXCLUDED.value`,
+            [JSON.stringify(value)],
+          );
+    await write((hour - hoursIn + 24) % 24);
+    return async () => {
+      await write(cutoff);
+    };
+  };
 
   const runsOf = async (c: Planted, kind: string) =>
     (
@@ -762,6 +790,13 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
   });
 
   describe('sweeps (AC-8, AC-18)', () => {
+    // The operating day pin of the test that set one (`pinOperatingDay`), undone after it.
+    let restoreDay: (() => Promise<void>) | undefined;
+    afterEach(async () => {
+      await restoreDay?.();
+      restoreDay = undefined;
+    });
+
     it('applies an order changed at 10:00 with no webhook through the 10:05 sweep, well before 10:15', async () => {
       clock.at = new Date('2026-11-05T10:05:00Z');
       const c = await plant({
@@ -841,6 +876,8 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
     });
 
     it('adds a sweep retry row for an order whose latest event failed, at most 3 a day, and sends a stranded received event again (AC-8)', async () => {
+      // Its planted history goes back 200 minutes and must all be today's (CI run 43644216582).
+      restoreDay = await pinOperatingDay(6);
       clock.at = new Date('2026-11-05T12:05:00Z');
       const c = await plant({
         goLiveAt: '2026-11-01T00:00:00Z',
@@ -972,6 +1009,52 @@ describe('Shopify sweeps, backfill, and checks (spec 0015 task 12)', { timeout: 
       );
       expect(rows).toEqual([{ dedupe_key: `sweep-retry:${await operatingDay()}:1:${lastFailed}` }]);
       expect(rows[0]?.dedupe_key.length).toBeLessThanOrEqual(128);
+    });
+
+    it('starts a new day of 3 retries at the operating day boundary: just after it, the retries of the day before no longer count (CI run 43644216582)', async () => {
+      // Now is under an hour into today, so retries made 90 minutes ago were yesterday's.
+      restoreDay = await pinOperatingDay(0);
+      clock.at = new Date('2026-11-05T12:05:00Z');
+      const c = await plant({
+        goLiveAt: '2026-11-01T00:00:00Z',
+        ordersSweptThrough: '2026-11-05T12:00:00Z',
+        lastSweepMinutesAgo: 5,
+      });
+      const value = gid(1063);
+      await inboxRow(c, { gidValue: value, status: 'failed', minutesAgo: 200 });
+      let lastFailed = '';
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        lastFailed = await inboxRow(c, {
+          gidValue: value,
+          status: 'failed',
+          source: 'sweep',
+          dedupe: `sweep-retry:yesterday:${attempt}:${randomUUID()}`,
+          minutesAgo: 93 - attempt,
+        });
+      }
+      const yesterday = await api.owner.pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM inbound_events
+         WHERE connection_id = $1::uuid AND subject_external_id = $2
+           AND ssd_operating_day(received_at) = ssd_operating_day(now()) - 1`,
+        [c.id, value],
+      );
+      expect(Number(yesterday.rows[0]?.n)).toBe(4);
+      useShopifyScenarios('sweep-retry-and-resend');
+      const jobs = worker.get(JobSender);
+      const spy = vi.spyOn(jobs, 'sendIn').mockResolvedValue('recorded');
+      try {
+        await worker.get(SweepJob).sweep('orders', { connectionId: c.id });
+      } finally {
+        spy.mockRestore();
+      }
+
+      const { rows } = await api.owner.pool.query<{ dedupe_key: string }>(
+        `SELECT dedupe_key FROM inbound_events
+         WHERE connection_id = $1::uuid AND subject_external_id = $2
+           AND ssd_operating_day(received_at) = ssd_operating_day(now())`,
+        [c.id, value],
+      );
+      expect(rows).toEqual([{ dedupe_key: `sweep-retry:${await operatingDay()}:1:${lastFailed}` }]);
     });
 
     it('retries a failed order on the 7th operating day of its failure run and never on the 8th (review round 2 M1, SWEEP_RETRY_DAYS)', async () => {
