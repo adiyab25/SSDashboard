@@ -160,7 +160,7 @@ The orders review (kept private) accepted the design with one blocker and seven 
 - [Spec 0011](../0011-stock-ledger-locations/index.md) (the stock transaction, reservations with `unfilled_quantity`, `postCarrierShipment`, the events, `OnlineStockGate`), [spec 0014](../0014-customers-by-phone/index.md) (the `CustomersService` contract), [spec 0015](../0015-shopify-connector/index.md) (the build order, `ChannelsService`, `ConnectorsService`).
 - Domain review of this spec (kept private) (X1, M1 to M7, m1 to m9, the eight brand questions), domain review of spec 0015 (kept private) (M6, M8, m2, Q-13.5, Q-13.7), and the lead's rulings from the domain review of spec 0011 (kept private).
 - Domain review of the data model (kept private) (B2, M5, m1 to m3, build re read D2 to D4) and domain review of the stack (kept private) (B2, n1).
-- [Scope, slice 1a](../../scope/confirmation-to-cash.md) (features 13, 16, 18, 19, 21, 22, 24) and the final plan `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1, 6.14, 7.1, 7.2.
+- [Scope, slice 1a](../../scope/confirmation-to-cash.md) (features 13, 16, 18, 19, 21, 22, 24) and the final plan private `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 6.1, 6.14, 7.1, 7.2.
 - Installed skills: `postgresql-table-design` (partial unique index, index per access path), `nestjs-best-practices`, `drizzle-orm-patterns`, `pg-boss-v12`.
 
 **Practices & standards**

@@ -3,12 +3,20 @@
 // Two rules over `git ls-files`:
 //   1. no tracked path starts with a private folder (internal reviews, positioning, research, hand-overs,
 //      PR drafts, and the vendored agent skills and agents);
-//   2. no tracked text file or path contains a blocked word, matched as a whole word (the lowercased
-//      text split on /[a-z0-9]+/), so a longer word that merely contains a blocked one never matches.
+//   2. no tracked text file or path contains a blocked word, matched as a whole word: camelCase and
+//      PascalCase boundaries are split first (fooBarWord -> foo, bar, word), then the lowercased text is
+//      split on runs of Unicode letters and digits, so a longer word that merely contains a blocked
+//      one never matches.
 // The blocked words are stored only as SHA-256 digests of the lowercase word, so this file does not
 // publish what it blocks. Never add a plain word here, to a comment, or to a test.
 //
-// Out of scope: untracked and ignored files, binary files (any file with a NUL byte), and git history.
+// Blocked words are Latin script today. No Arabic script word is blocked yet: the tokenizer already
+// reads Unicode letters, so the owner can add the digest of a lowercase Arabic word to BLOCKED_DIGESTS.
+//
+// Out of scope: untracked and ignored files, real binary files (a NUL byte, unless the file starts with
+// a UTF-16 byte order mark, which is decoded and scanned), and git history. Not caught: a blocked word
+// joined to other letters without a case change (for example all lowercase compounds), or split by
+// punctuation or spaces; digests can only match whole tokens.
 //
 // Usage: node check-private-content.mjs [<repo root>]   (default: the current directory)
 import { spawnSync } from 'node:child_process';
@@ -44,13 +52,16 @@ const digest = (word) => createHash('sha256').update(word).digest('hex');
 /**
  * The lines of a text that hold a blocked word.
  *
- * @param {string} text The content (LF or CRLF); matching is case insensitive and on whole words.
+ * @param {string} text The content (LF or CRLF); matching is case insensitive and on whole tokens (camelCase split, Unicode letters and digits).
  * @returns {{ line: number }[]} One entry per line with a blocked word; the word itself is never returned.
  */
 export function blockedWordHits(text) {
   const hits = [];
   text.split(/\r?\n/).forEach((content, index) => {
-    const words = content.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+    const split = content
+      .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
+      .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, '$1 $2');
+    const words = split.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
     if (words.some((word) => BLOCKED_DIGESTS.has(digest(word)))) hits.push({ line: index + 1 });
   });
   return hits;
@@ -63,7 +74,23 @@ export function blockedWordHits(text) {
  * @returns {string | undefined} The folder, or undefined.
  */
 export function privateFolderOf(path) {
-  return PRIVATE_FOLDERS.find((folder) => path.startsWith(folder));
+  const lower = path.toLowerCase();
+  return PRIVATE_FOLDERS.find((folder) => lower.startsWith(folder));
+}
+
+/**
+ * The text of a tracked file, or undefined for a real binary file.
+ *
+ * @param {Buffer} buffer The file content.
+ * @returns {string | undefined} UTF-8 text, a decoded UTF-16 text (byte order mark), or undefined when binary.
+ */
+export function textOf(buffer) {
+  if (buffer[0] === 0xff && buffer[1] === 0xfe) return buffer.subarray(2).toString('utf16le');
+  if (buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return Buffer.from(buffer.subarray(2)).swap16().toString('utf16le');
+  }
+  if (buffer.includes(0)) return undefined;
+  return buffer.toString('utf8');
 }
 
 /**
@@ -85,11 +112,13 @@ export function privateContentProblems(root) {
     let buffer;
     try {
       buffer = readFileSync(join(root, file));
-    } catch {
-      continue; // deleted in the work tree but still indexed
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue; // deleted in the work tree but still indexed
+      throw error;
     }
-    if (buffer.includes(0)) continue;
-    for (const hit of blockedWordHits(buffer.toString('utf8'))) {
+    const text = textOf(buffer);
+    if (text === undefined) continue;
+    for (const hit of blockedWordHits(text)) {
       problems.push({ file, line: hit.line, reason: 'blocked word' });
     }
   }

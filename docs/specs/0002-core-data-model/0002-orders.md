@@ -1,6 +1,6 @@
 # 0002 child: stores, channels, and orders with two state machines
 
-Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-18** to **AC-23** and **AC-35**. Sources: final plan sections 6.1, 6.14, 7.1, 7.2 (`docs/positioning/2026-11-05-egypt-order-operations-layer.md`); spec 0007 section 1 (connections, stores, outbound commands) and section 7 (order number per store); carried B1 and B2; the domain review `docs/reviews/domain-data-model.md` (B1, B2, M1, M3 to M5, M9, m1 to m4, m6, m7, m10, m11) and the gate review's fixes 1 to 5.
+Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-18** to **AC-23** and **AC-35**. Sources: final plan sections 6.1, 6.14, 7.1, 7.2 (private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`); spec 0007 section 1 (connections, stores, outbound commands) and section 7 (order number per store); carried B1 and B2; the domain review private `docs/reviews/domain-data-model.md` (B1, B2, M1, M3 to M5, M9, m1 to m4, m6, m7, m10, m11) and the gate review's fixes 1 to 5.
 
 ## Summary
 

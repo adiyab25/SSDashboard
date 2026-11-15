@@ -34,7 +34,7 @@ pnpm db:generate                              # New SQL migration from the Drizz
 
 Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md` (plus `rationale.md`, `verify.md`). Decisions inside one module are ADRs in `docs/adr/NNNN-title.md` (copy `0000-template.md`, list it in `docs/adr/README.md`, link it from the module README).
 
-Reviews (`docs/reviews/`), hand-overs (`docs/handover/`), positioning (`docs/positioning/`), and research (`docs/research/`) are written to those folders on the owner's machine and are gitignored: never commit them, the repo is public.
+Reviews (`docs/reviews/`), hand-overs (`docs/handover/`), positioning (`docs/positioning/`), research (`docs/research/`), PR notes (`docs/pr/`), and the skills and agents (`.claude/skills/`, `.claude/agents/`) are private: they are written to those folders on the owner's machine and are gitignored. Never commit them, the repo is public.
 
 ## Rules
 
@@ -85,7 +85,7 @@ A grep beats the graph for one lookup ("where is X defined"). The graphs are not
 
 ## Agent skills
 
-Project wide skills here; stack specific ones are listed in each workspace doc. The skills are not committed (`.claude/skills/` and `.claude/agents/` are gitignored). Each one is installed locally from its source, pinned in [`skills-lock.json`](skills-lock.json) where it is listed there.
+Project wide skills here; stack specific ones are listed in each workspace doc. The skills are not committed (the private `.claude/skills/` and `.claude/agents/` folders are gitignored). Each one is installed locally from its source, pinned in [`skills-lock.json`](skills-lock.json) where it is listed there.
 - `turborepo` (vercel/turborepo, install locally): task pipelines, caching, package boundaries
 - `pnpm` (antfu/skills, install locally): workspaces, catalogs, `allowBuilds`
 - `multi-stage-dockerfile` (github/awesome-copilot, install locally): the `deploy/` Dockerfiles

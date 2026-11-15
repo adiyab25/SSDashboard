@@ -93,10 +93,10 @@ Adjustments, the request path, the found check, and the receipt cost rule close 
 **Project sources**:
 
 - `docs/scope/confirmation-to-cash.md` feature 11; `docs/scope/index.md` planning notes (pilot window, 10,000 SKUs designed and 50,000 tested, team of about four); `docs/scope/exchange-loop.md` feature 38 and `docs/scope/consignment-and-accounting.md` feature 41 (the slices pulled forward).
-- `docs/reviews/domain-stock-ledger.md` (B1, M1 to M8, m1 to m8, Q-11.6 to Q-11.8, brand questions 1 to 7).
+- private `docs/reviews/domain-stock-ledger.md` (B1, M1 to M8, m1 to m8, Q-11.6 to Q-11.8, brand questions 1 to 7).
 - Spec 0002 `index.md` (AC-1 to AC-14, Key invariants, Value sourcing) and `0002-catalog-locations.md` (A13 owner type policy, A14 source types, A15 scale); `0002-tenancy-platform.md` (A6 domain events).
 - Spec 0006 `index.md` (`within`, receipt idempotency, `lockForArchive`, the accepted rebuild after archive edge).
-- Spec 0007 section 1 (echo suppression, who owns stock), sections 6 and 7 (restore and exit package), section 8 (owner type policy), section 11 (scale), carried m2 and m4; `docs/reviews/domain-stack.md` m2, m4.
+- Spec 0007 section 1 (echo suppression, who owns stock), sections 6 and 7 (restore and exit package), section 8 (owner type policy), section 11 (scale), carried m2 and m4; private `docs/reviews/domain-stack.md` m2, m4.
 - Spec 0008 permission matrix (`stock.view`, `stock.receive`, `stock.correct`, `catalog.manage`, `partners.manage`, `cost.view`); spec 0009 module registry and AC-24; spec 0010 Actions table and AC-11; spec 0013 Q-16.2, AC-13, AC-15, AC-18 (`DomainEvents`), and its contract table.
 - Code: `apps/api/src/inventory/ledger/ledger.service.ts`, `ledger/locks.ts`, `ledger/costing.ts`, `ledger/reconciliation.service.ts`, `locations/locations.service.ts`, `locations/location-policy.service.ts`, `packages/db/src/schema/inventory.ts`, `packages/db/src/schema/locations.ts`, `packages/db/src/schema/parties.ts`, `packages/contracts/src/locations.ts`, `packages/contracts/src/stock-receipts.ts`, `apps/api/src/partners/partner-accounts.service.ts`, `apps/api/src/audit/` (`AuditUndoRegistry`, the registry pattern), `apps/api/src/module-boundary.spec.ts`.
 - Installed skill `postgresql-table-design` (partial unique indexes, indexes on the access paths actually queried, foreign key indexes).

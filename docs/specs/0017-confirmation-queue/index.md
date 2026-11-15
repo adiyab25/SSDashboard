@@ -105,7 +105,7 @@ _Metrics, security, and screens_
 
 Runner up: the queue as a list of `confirmation.call` tasks with attempts counted from closed tasks (the counting rule of spec 0002's tasks section), rejected because it makes first sale depend on spec 0016 being built first, cannot show an order that has no task yet, and loses the outcome history whenever a task is cancelled or rescheduled.
 
-**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, `.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, private `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) · `nextjs-app-router-patterns` (`wshobson/agents`, private `.claude/skills/nextjs-app-router-patterns/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, private `.claude/skills/playwright-best-practices/`)
 
 ## Rationale
 

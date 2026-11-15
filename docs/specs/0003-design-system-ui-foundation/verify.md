@@ -1,4 +1,4 @@
-# Verify: Design system & UI foundation · spec 0003 · updated 2026-11-06 (QA close run on Daftar, report: docs/reviews/verify-design-system-close.md)
+# Verify: Design system & UI foundation · spec 0003 · updated 2026-11-06 (QA close run on Daftar, report: private `docs/reviews/verify-design-system-close.md`)
 _Steps derived from spec 0003 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones._
 
 Local setup: `docker compose -f deploy/compose.dev.yaml up -d`, `pnpm db:migrate`, then `pnpm dev` (web on 3000, api on 3001). If those ports are taken, run the api with `PORT=<api port>` and the web with `API_INTERNAL_URL=http://127.0.0.1:<api port> next dev --port <web port>`, and open the web on `localhost` (Next dev blocks its scripts for `127.0.0.1`).

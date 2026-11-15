@@ -96,8 +96,8 @@ Option 1 is the smallest design that meets the scope's three promises: every act
 - `docs/specs/0005-staff-sign-in/index.md` (amendment): partner users, the audience aware guard, the sign in events already logged.
 - `docs/specs/0006-core-stock-loop/index.md`: the receipt void used as the tracer thread; the `within` transaction pattern; cost hidden from staff (AC-11).
 - `docs/specs/0007-stack-architecture-operations-layer/index.md`: section 4 (export runs: marked imported, who and when), section 11 (scale), "Database roles and the append only ledgers".
-- `docs/positioning/2026-11-05-egypt-order-operations-layer.md`: 6.12 (mapping edits audited and undoable), 6.13 (automatic actions write a snapshot and can be undone in one step; confirmations revoked with a reason, never deleted).
-- `.claude/skills/postgresql-table-design/` (types, constraints, partitioning thresholds, BRIN for naturally ordered data).
+- private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`: 6.12 (mapping edits audited and undoable), 6.13 (automatic actions write a snapshot and can be undone in one step; confirmations revoked with a reason, never deleted).
+- private `.claude/skills/postgresql-table-design/` (types, constraints, partitioning thresholds, BRIN for naturally ordered data).
 
 **Practices and standards**:
 - Append only audit logs written in the same transaction as the change.

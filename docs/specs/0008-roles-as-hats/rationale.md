@@ -129,7 +129,7 @@ The personal data guarantee is enforced twice and in the api: statically (no ext
 - [Spec 0007](../0007-stack-architecture-operations-layer/index.md): section 2 (audiences, partner bound to one account), section 7 (one database per tenant), Carried M9
 - Final plan (kept private): sections 2, 6.6, 6.8, 7
 - Scope features 8, 17, 41, 42, 49 ([foundations](../../scope/foundations.md), [confirmation to cash](../../scope/confirmation-to-cash.md), [consignment and accounting](../../scope/consignment-and-accounting.md), [Meta and WhatsApp](../../scope/meta-and-whatsapp.md))
-- Installed skills: `organization-best-practices`, `better-auth-best-practices`, `better-auth-security-best-practices` (`.claude/skills/`)
+- Installed skills: `organization-best-practices`, `better-auth-best-practices`, `better-auth-security-best-practices` (private `.claude/skills/`)
 
 **Practices & standards**:
 - Deny by default with a build time check per route

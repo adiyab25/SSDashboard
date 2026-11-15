@@ -63,7 +63,7 @@ Every morning at a fixed Cairo time (06:00 by default) a job in the worker reads
 
 Rendering lives with the figures (reporting), sending lives with every other outside call (connectors), and the failure path is the one the app already has for Shopify write backs (spec 0015 AC-24), so a failed report behaves like a failed sync: retried, visible, a task, and repeated in the next report. Runner up: sending by email through the `mail` module as the main channel, rejected because the owner reads the chat group, not email (reference brand notes 9), and spec 0007's gate decision 6 already chose Telegram first; email stays as the last failure path.
 
-**Implementation skills**: `pg-boss-v12` (`.claude/skills/pg-boss-v12/`) · `nestjs-best-practices` (`.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`.claude/skills/nextjs-app-router-patterns/`) · `postgresql-table-design` (`.claude/skills/postgresql-table-design/`)
+**Implementation skills**: `pg-boss-v12` (private `.claude/skills/pg-boss-v12/`) · `nestjs-best-practices` (private `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (private `.claude/skills/nextjs-app-router-patterns/`) · `postgresql-table-design` (private `.claude/skills/postgresql-table-design/`)
 
 ## Rationale
 

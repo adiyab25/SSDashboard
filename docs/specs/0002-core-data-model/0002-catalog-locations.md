@@ -1,6 +1,6 @@
 # 0002 child: styles and cost, locations with an owner type, ledger changes, and scale
 
-Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-29** to **AC-32** and **AC-36**. Sources: final plan sections 6.5 and 6.10 (`docs/positioning/2026-11-05-egypt-order-operations-layer.md`); spec 0007 sections 8 and 11 and carried m4; reference brand notes section 2 item 10 (cost per style and season, rules with "not set"), and the reference repo's `supabase/migrations/20261015120000_style_costs_and_cost_rules.sql` (read only); the domain review `docs/reviews/domain-data-model.md` (B5) and the gate review's round 2 ruling on it.
+Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-29** to **AC-32** and **AC-36**. Sources: final plan sections 6.5 and 6.10 (private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`); spec 0007 sections 8 and 11 and carried m4; reference brand notes section 2 item 10 (cost per style and season, rules with "not set"), and the reference repo's `supabase/migrations/20261015120000_style_costs_and_cost_rules.sql` (read only); the domain review private `docs/reviews/domain-data-model.md` (B5) and the gate review's round 2 ruling on it.
 
 ## Summary
 

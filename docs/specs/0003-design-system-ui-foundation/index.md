@@ -234,7 +234,7 @@ Build the design system as a shared `@ssdashboard/ui` workspace package initiali
 
 > Amended 2026-11-06 (Daftar built): Vega and RTL stay as initialised, but the zinc base is replaced by the Daftar tokens in `packages/ui/src/styles/globals.css` (see the Color, Radius, Density, and Fonts rows and the paragraphs below).
 
-**Implementation skills**: `shadcn` (`shadcn-ui/ui`, `.claude/skills/shadcn/`) · `tailwind-4-docs` (`lombiq/tailwind-agent-skills`, `.claude/skills/tailwind-4-docs/`) · `design-md` (`.claude/skills/design-md/`) · `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `vercel-react-best-practices` (`.claude/skills/vercel-react-best-practices/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `turborepo` (`vercel/turborepo`, `.claude/skills/turborepo/`) · `pnpm` (`antfu/skills`, `.claude/skills/pnpm/`)
+**Implementation skills**: `shadcn` (`shadcn-ui/ui`, private `.claude/skills/shadcn/`) · `tailwind-4-docs` (`lombiq/tailwind-agent-skills`, private `.claude/skills/tailwind-4-docs/`) · `design-md` (private `.claude/skills/design-md/`) · `nextjs-app-router-patterns` (`wshobson/agents`, private `.claude/skills/nextjs-app-router-patterns/`) · `vercel-react-best-practices` (private `.claude/skills/vercel-react-best-practices/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`) · `turborepo` (`vercel/turborepo`, private `.claude/skills/turborepo/`) · `pnpm` (`antfu/skills`, private `.claude/skills/pnpm/`)
 
 ## Rationale
 

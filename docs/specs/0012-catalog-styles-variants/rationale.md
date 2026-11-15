@@ -93,8 +93,8 @@ For Shopify, matching by the ids the connector mapped and then by SKU code follo
 - Spec 0008 permission matrix and route mapping; spec 0009 settings registry (AC-1, AC-2); spec 0010 registry, record types, and `AuditService.record` (AC-10, AC-11, AC-19).
 - Built code: `packages/db/src/schema/catalog.ts`, `apps/api/src/catalog/catalog.service.ts`, `cost.service.ts`, `packages/contracts/src/catalog.ts`, `packages/contracts/src/audit/audit-record-types.ts`, `apps/api/src/module-boundary.spec.ts` (`KNOWN_BREACHES`).
 - `packages/db/AGENTS.md` (tenant id in unique keys, custom migrations for triggers, schema qualified functions, no per row advisory locks).
-- Reference brand, read only: `src/lib/cogs/name-match.ts` (`normalizeName`), `supabase/migrations/20260916010000_001_foundation.sql` (products by style, variants by SKU), `20260925120000_product_attributes.sql` (style level model and colour); `docs/positioning/2026-11-05-reference-brand-notes.md` items 2, 4, 10.
-- Installed skill `postgresql-table-design` (`.claude/skills/postgresql-table-design/`): index every foreign key, partial unique indexes, GIN for containment and trigram search.
+- Reference brand, read only: `src/lib/cogs/name-match.ts` (`normalizeName`), `supabase/migrations/20260916010000_001_foundation.sql` (products by style, variants by SKU), `20260925120000_product_attributes.sql` (style level model and colour); private `docs/positioning/2026-11-05-reference-brand-notes.md` items 2, 4, 10.
+- Installed skill `postgresql-table-design` (private `.claude/skills/postgresql-table-design/`): index every foreign key, partial unique indexes, GIN for containment and trigram search.
 
 **Practices & standards**
 - `pg_trgm` trigram indexes for substring search; a pattern needs at least one trigram to use the index.

@@ -10,13 +10,13 @@ The stack stays: TypeScript, a NestJS api and worker, a Next.js web app, Postgre
 
 Spec 0001 is **superseded**, not amended: its technology choices are confirmed on the evidence, but its hosting topology, role names, module map, and scale target no longer fit, and it describes files the rebuild may change. This spec restates everything kept, so a reader needs only this one.
 
-Wave 3 keeps the current code and amends it (Shape A), as the owner ruled on 2026-11-05 ("do what you recommend"); Shape B stays below as the record of what was weighed. This revision also closes the domain review (`docs/reviews/domain-stack.md`): its two blockers are fixed in sections 1 and 7, and every other finding is applied here or carried by name into the feature that owns it (`## Carried from the domain review`).
+Wave 3 keeps the current code and amends it (Shape A), as the owner ruled on 2026-11-05 ("do what you recommend"); Shape B stays below as the record of what was weighed. This revision also closes the domain review (private `docs/reviews/domain-stack.md`): its two blockers are fixed in sections 1 and 7, and every other finding is applied here or carried by name into the feature that owns it (`## Carried from the domain review`).
 
 ## Verdict on spec 0001
 
 | Part of 0001 | Verdict | Why |
 |---|---|---|
-| Language, runtime, frameworks, database, ORM, auth, job queue, UI kit, monorepo tooling | **Confirmed** | Built, reviewed with no blockers, and tested on main (`docs/reviews/2026-11-03-feat-data-model.md`, `docs/reviews/2026-11-04-feat-staff-sign-in.md`); none of the new forces (connectors, three audiences, Egyptian hosting) needs another language or framework. See [rationale.md](rationale.md). |
+| Language, runtime, frameworks, database, ORM, auth, job queue, UI kit, monorepo tooling | **Confirmed** | Built, reviewed with no blockers, and tested on main (private `docs/reviews/2026-11-03-feat-data-model.md`, private `docs/reviews/2026-11-04-feat-staff-sign-in.md`); none of the new forces (connectors, three audiences, Egyptian hosting) needs another language or framework. See [rationale.md](rationale.md). |
 | One Compose stack per client, PostgreSQL inside every stack, one Caddy per stack | **Replaced** | The final plan hosts many stacks per host with one PostgreSQL server and a database per client (final plan section 5). See *Hosting* below. |
 | Fixed role names `ssdashboard` and `ssdashboard_app` | **Replaced** | PostgreSQL roles are global to the server, and every new database grants `CONNECT` to `PUBLIC` by default, so fixed names on a shared server would let one client's app role reach another client's database. See *Database roles*. |
 | OpenAPI document plus generated client, with a CI freshness check | **Replaced** | It never landed: the web calls `/api` with `fetch` and parses with the contract schemas (`packages/contracts/AGENTS.md`, `apps/web/src/api/client.ts`). The shared Zod contracts already give one schema per shape. OpenAPI returns with the public API (parked). |
@@ -53,11 +53,11 @@ This is a decision spec. Its requirements are the forces the architecture must s
 - **Cloudflare Turnstile** on the portal lookup, as the reference brand already runs it on Egyptian customers; the privacy notice (feature 30) names it.
 - **Migration baseline**: reset to one baseline inside the feature 4 build, before the pilot brand's first import, provided no install runs the current migrations (a fact Igris confirms).
 
-**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `pg-boss-v12` (`sncollective/snc-platform`, `.claude/skills/pg-boss-v12/`) · `tl-pg-boss` (`toddlevy/tl-agent-skills`, `.claude/skills/tl-pg-boss/`) · `better-auth-best-practices`, `better-auth-security-best-practices`, `organization-best-practices` (`better-auth/skills`, `.claude/skills/<name>/`) · `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `turborepo` (`vercel/turborepo`, `.claude/skills/turborepo/`) · `pnpm` (`antfu/skills`, `.claude/skills/pnpm/`) · `multi-stage-dockerfile` (`github/awesome-copilot`, `.claude/skills/multi-stage-dockerfile/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, `.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, private `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) · `pg-boss-v12` (`sncollective/snc-platform`, private `.claude/skills/pg-boss-v12/`) · `tl-pg-boss` (`toddlevy/tl-agent-skills`, private `.claude/skills/tl-pg-boss/`) · `better-auth-best-practices`, `better-auth-security-best-practices`, `organization-best-practices` (`better-auth/skills`, private `.claude/skills/<name>/`) · `nextjs-app-router-patterns` (`wshobson/agents`, private `.claude/skills/nextjs-app-router-patterns/`) · `turborepo` (`vercel/turborepo`, private `.claude/skills/turborepo/`) · `pnpm` (`antfu/skills`, private `.claude/skills/pnpm/`) · `multi-stage-dockerfile` (`github/awesome-copilot`, private `.claude/skills/multi-stage-dockerfile/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, private `.claude/skills/playwright-best-practices/`)
 
 ## Decisions at the gate
 
-The owner's answers, 2026-11-05, to the nine "Questions for the owner" in `docs/reviews/domain-stack.md`. Items 5 to 9 are the **recommended default, accepted by the owner without override**.
+The owner's answers, 2026-11-05, to the nine "Questions for the owner" in private `docs/reviews/domain-stack.md`. Items 5 to 9 are the **recommended default, accepted by the owner without override**.
 
 | # | Question | Decision (owner, 2026-11-05) | Where it lands |
 |---|---|---|---|
@@ -248,7 +248,7 @@ One image. Each module declares its bundle (`core`, `warehouse`, `operations`) a
 - Per client roles on the shared server: `ssd_<client>_owner` (owns the schema, used only by `migrate`), `ssd_<client>_app` (api and worker), `ssd_<client>_backup` (read only, used only by `ops`). Each client database gets `REVOKE CONNECT ON DATABASE ... FROM PUBLIC` and `CONNECT` only for its own three roles. The server superuser is used only by the host bootstrap that creates a client's database and roles.
 - The app role has only `INSERT` and `SELECT` on append only tables: stock movements and groups, customer credit entries, settlement lines, audit entries, and export runs except their status columns (feature 4 lists them); a trigger rejects `UPDATE`, `DELETE`, and `TRUNCATE` as a second guard (kept from spec 0002).
 - Compose gives each service an explicit environment list, never the whole `.env` (kept from 0001).
-- The `migrate` entry point applies Drizzle migrations and the pg-boss schema under an advisory lock; a pg-boss upgrade is treated as a migration, because pg-boss migrates its schema on start (`.claude/skills/pg-boss-v12/SKILL.md`).
+- The `migrate` entry point applies Drizzle migrations and the pg-boss schema under an advisory lock; a pg-boss upgrade is treated as a migration, because pg-boss migrates its schema on start (private `.claude/skills/pg-boss-v12/SKILL.md`).
 
 ### Configuration (new names, proposed)
 
@@ -339,7 +339,7 @@ Read only pass over main (identical to `feat/rebuild` apart from three docs comm
 
 ## Carried from the domain review
 
-Findings from `docs/reviews/domain-stack.md` not fully closed in this spec become named requirements of the feature that owns them. Blockers B1 and B2 are fixed here (sections 7 and 1). Applied here as well: M2, M3, M8, m1, m2, m6, m7, M10 (Conventions), and the architectural half of the others.
+Findings from private `docs/reviews/domain-stack.md` not fully closed in this spec become named requirements of the feature that owns them. Blockers B1 and B2 are fixed here (sections 7 and 1). Applied here as well: M2, M3, M8, m1, m2, m6, m7, M10 (Conventions), and the architectural half of the others.
 
 | Finding | Requirement carried | Owning scope feature |
 |---|---|---|
@@ -373,13 +373,13 @@ The wave 3 scaffold, in two shapes. Both use the Tracer Bullet approach (prove e
 ### Shape A: keep and amend
 
 1. **Baseline and audience seams.** Rename `apps/web/src/app/(app)` to `(backoffice)`; add `(portal)` and `(partner)` route groups with their own minimal layouts; add the `@Audience` decorator and deny by default guard in the api and annotate every existing controller. **Done when** `pnpm build && pnpm typecheck && pnpm test && pnpm test:e2e` pass, and the controller audience test fails when one annotation is removed.
-2. **Docs tree and templates.** Create `docs/adr/` with `0000-template.md`, `docs/research/`, `docs/templates/module-readme.md`, `.github/pull_request_template.md`; write a README for every api module, web feature folder, and package; add the README, route group, folder name, and docs link scripts. **Done when** `pnpm lint` runs those scripts and passes, and each script fails on a planted bad case.
+2. **Docs tree and templates.** Create `docs/adr/` with `0000-template.md`, private `docs/research/`, `docs/templates/module-readme.md`, `.github/pull_request_template.md`; write a README for every api module, web feature folder, and package; add the README, route group, folder name, and docs link scripts. **Done when** `pnpm lint` runs those scripts and passes, and each script fails on a planted bad case.
 3. **TSDoc, naming, and redaction rules.** Add `eslint-plugin-jsdoc`, `eslint-plugin-tsdoc`, `eslint-plugin-unicorn` (`filename-case` only), and `react/no-multi-comp` to `packages/config/eslint`; add the undocumented export fixture; backfill TSDoc on every existing export; add the personal data redaction list and its test to the logger. **Done when** `pnpm lint` passes on the whole repo, the fixture check fails if the rule is switched off, and the redaction test fails if the list is emptied.
 4. **Git checks and CI images.** Add `.husky/commit-msg`; add CI jobs for branch name, commit subjects, and building the `app` and `web` images without pushing. **Done when** a PR from a `feat/` branch shows every job green, and a commit subject `wip` is rejected by the hook and by CI.
 
 **Cost**: four milestones, about two sessions. Afterwards the foundation specs (features 4 to 8) are written as amendments; features 6 and 7 shrink to their deltas.
 
-**Keep list, Shape A**: everything in the rebuild plan's keep list (git history, `docs/positioning/**`, `docs/specs/0001-stack-architecture/**`, `.claude/skills/**`, `.claude/agents/impeccable-*`, `.claude/settings*.json`, `.github/workflows/**`, `packages/config`, `.husky/`, lint and format config, `AGENTS.md` until `/audit`), **plus** `apps/**`, `packages/db`, `packages/contracts`, `packages/ui`, `extensions/**`, `deploy/**` (reshaped later by features 3 and 26), `docs/specs/0002` to `0006` (status lines updated), `docs/reviews/**`, `docs/runbooks/**`. **Removed**: nothing in wave 3. The migration baseline reset, if the owner confirms no install exists, happens inside the feature 4 build, recorded as an ADR.
+**Keep list, Shape A**: everything in the rebuild plan's keep list (git history, private `docs/positioning/**`, `docs/specs/0001-stack-architecture/**`, private `.claude/skills/**`, private `.claude/agents/impeccable-*`, `.claude/settings*.json`, `.github/workflows/**`, `packages/config`, `.husky/`, lint and format config, `AGENTS.md` until `/audit`), **plus** `apps/**`, `packages/db`, `packages/contracts`, `packages/ui`, `extensions/**`, `deploy/**` (reshaped later by features 3 and 26), `docs/specs/0002` to `0006` (status lines updated), private `docs/reviews/**`, `docs/runbooks/**`. **Removed**: nothing in wave 3. The migration baseline reset, if the owner confirms no install exists, happens inside the feature 4 build, recorded as an ADR.
 
 ### Shape B: replace
 
@@ -390,7 +390,7 @@ The wave 3 scaffold, in two shapes. Both use the Tracer Bullet approach (prove e
 
 **Cost**: four milestones, about two sessions, **then** rebuilding what Shape A keeps: the data model and ledger, design system, localization, staff sign in, and the stock screens took about 50 build tasks (0002: 12, 0003: 5, 0004: 6, 0005: 9, 0006: 18) and two GA reviews over five working days (2026-10-31 to 2026-11-04). Reusing the old specs as input, an estimated 12 to 16 milestones across features 4 to 8 before slice 1a can start, against an estimated 6 to 9 amendment milestones in Shape A. These are estimates, not measurements.
 
-**Keep list, Shape B**: the rebuild plan's keep list as written (TypeScript is kept, so `.github/workflows/**`, `packages/config`, `.husky/`, and lint and format config stay), plus `docs/reviews/**` and `docs/specs/0002` to `0006` as history with superseded status lines. **Removed**: `apps/**`, `packages/db`, `packages/contracts`, `packages/ui` (rebuilt by feature 5), `deploy/**` (rebuilt by features 3 and 26), `extensions/**` (the loader is rebuilt), `docs/runbooks/staff-sign-in.md` (describes removed code), and root files that name removed paths (`turbo.json` env list, `.env.example`), which the skeleton rewrites.
+**Keep list, Shape B**: the rebuild plan's keep list as written (TypeScript is kept, so `.github/workflows/**`, `packages/config`, `.husky/`, and lint and format config stay), plus private `docs/reviews/**` and `docs/specs/0002` to `0006` as history with superseded status lines. **Removed**: `apps/**`, `packages/db`, `packages/contracts`, `packages/ui` (rebuilt by feature 5), `deploy/**` (rebuilt by features 3 and 26), `extensions/**` (the loader is rebuilt), `docs/runbooks/staff-sign-in.md` (describes removed code), and root files that name removed paths (`turbo.json` env list, `.env.example`), which the skeleton rewrites.
 
 **Owner decision (2026-11-05): Shape A, keep and amend**, as recommended. The recommendation stands as the record of why: The stack is confirmed, so the existing code is already on it; the hardest GA code (ledger concurrency, sign in hardening) is reviewed with no blockers; the new positioning's changes are mostly new tables beside it; and with no install yet, even the breaking ones (tenant id, owner types, customers out of parties) cost one baseline migration, not a migration path. Shape B's real gain, shedding the old warehouse ERP framing, is bought in Shape A by the amendment list above at a fraction of the cost. Shape B would have bought a codebase with no inherited assumptions for roughly a week of rebuild, which the pilot window cannot spare (domain review, "Shape A versus Shape B").
 
@@ -428,13 +428,13 @@ Decided by the owner on 2026-11-05 and recorded under `## Decision` and `## Deci
 ## Follow-up
 
 - [ ] Igris: in `docs/scope/foundations.md` line 3, "once spec 0002 is approved" is now false (it is spec 0007, and the wipe is not settled); outside this task's scope.
-- [ ] Igris: `docs/positioning/2026-11-05-rebuild-plan.md` section 2 and section 3 task 3 describe the wipe; the owner chose Shape A, so nothing is wiped in wave 3.
+- [ ] Igris: private `docs/positioning/2026-11-05-rebuild-plan.md` section 2 and section 3 task 3 describe the wipe; the owner chose Shape A, so nothing is wiped in wave 3.
 - [ ] Spec 0002 to 0006 status lines follow Shape A (see *What happens to the spec files*).
 - [ ] `AGENTS.md` lines now false once this is approved: "Deploy: two images (`app`, `web`) + Postgres + Caddy as one Docker Compose stack per client" (hosting moves to a shared server), "the web calls the generated client" and "the generated client freshness check" (never built; replaced), "Full decision: spec 0001". `/audit` rewrites these after the scaffold.
 - [ ] Before slice 1a, research: whether Bosta signs the webhook body beyond the custom header; its city and zone list (final plan question 5); when the Bosta Shopify app creates a delivery (order creation or fulfillment); whether an address can change after pickup creation (final plan question 4). Write the missing connector skills (Shopify Admin GraphQL, Bosta, Meta Conversions API, WhatsApp Cloud API) before wave 8, as the rebuild plan notes.
 - [ ] Feature 3 picks the S3 compatible store and mail catcher; feature 26 measures idle and peak memory per client stack and sizes hosts.
 - [ ] Igris: scope feature 1's third milestone label in `docs/scope/foundations.md` reads "TSDoc and naming lint rules"; it now also carries the log redaction rule (M10).
-- [x] Domain review (wave 2b) of sections 1 to 6: `docs/reviews/domain-stack.md`, approve with changes; blockers B1 and B2 addressed in this revision; re-review on 2026-11-05 approves with 0 open blockers (new minors n1 to n3 and owner question q10 recorded there).
+- [x] Domain review (wave 2b) of sections 1 to 6: private `docs/reviews/domain-stack.md`, approve with changes; blockers B1 and B2 addressed in this revision; re-review on 2026-11-05 approves with 0 open blockers (new minors n1 to n3 and owner question q10 recorded there).
 
 ## Rationale
 

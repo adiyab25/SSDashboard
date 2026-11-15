@@ -37,7 +37,7 @@ Each item says what it adds or which original part it replaces. The detail lives
 - **A14 Ledger changes** (replaces the original `source_type` list; keeps every costing rule, so opening stock needs a cost and restocks post at the shipment's cost). [Catalog child](0002-catalog-locations.md#stock-ledger-changes).
 - **A15 Scale at 50,000 SKUs** (replaces AC-14's 100,000 SKU load and its test). [Catalog child](0002-catalog-locations.md#scale-suite-replaces-the-original-ac-14-load).
 
-**Fix pass of 2026-11-05.** The domain review (`docs/reviews/domain-data-model.md`: 5 blockers, 10 majors, 12 minors), the gate review's six fixes and its round 2 rulings, and the owner's answers are applied in the children; `rationale.md` records the blocker decisions and the review map below says where each finding landed.
+**Fix pass of 2026-11-05.** The domain review (private `docs/reviews/domain-data-model.md`: 5 blockers, 10 majors, 12 minors), the gate review's six fixes and its round 2 rulings, and the owner's answers are applied in the children; `rationale.md` records the blocker decisions and the review map below says where each finding landed.
 
 ### What this feature builds, and what it leaves to the owning feature
 
@@ -93,7 +93,7 @@ This feature migrates every ★ table in the children with all its checks, index
 
 ### Domain review map (fix pass of 2026-11-05)
 
-Where each finding of `docs/reviews/domain-data-model.md` landed. "Carried" means a named requirement of a later feature, listed again under `## Follow-up`.
+Where each finding of private `docs/reviews/domain-data-model.md` landed. "Carried" means a named requirement of a later feature, listed again under `## Follow-up`.
 
 | Finding | Where it is fixed or carried |
 |---|---|
@@ -186,7 +186,7 @@ Stock truth lives in immutable `stock_movements` (one signed row per place, grou
 
 **Amendment 2026-11-05**: this decision stands unchanged; the amendment adds the model around the ledger (see `## Amendment 2026-11-05`).
 
-**Implementation skills**: `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`)
+**Implementation skills**: `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, private `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`)
 
 ## Rationale
 
@@ -537,7 +537,7 @@ Amendment 2026-11-05 (current feature numbers):
 - [x] Lost parcels have their own fulfillment state, `lost` (fix pass); feature 19 maps Bosta's lost states to it (below).
 - [x] Done by spec 0012 milestone 1 (2026-11-08): `products_search_trgm_idx` and `product_variants_sku_trgm_idx` are dropped; `product_variants.search_text` (kept by triggers from `ssd_search_normalize`) and `product_variants_search_trgm_idx` serve the name branch, which the scale suite asserts. Was: Feature 12: replace the trigram expression index on products with the Arabic normalization function. The scale suite (milestone 5) found the SKU name branch of `buildSkuListSql` scanning `products` because its `ILIKE` on `name->>'en'` and `name->>'ar'` does not match the indexed expression; fast at 5,000 styles, so feature 12 makes the query and the index use one expression and asserts the trigram index in the scale plan.
   > Amended 2026-11-07 by spec 0012: taken by [spec 0012](../0012-catalog-styles-variants/index.md) AC-1 to AC-5 (one normalized `search_text` column per variant).
-- [ ] Feature 26: set per client `APP_DB_ROLE` and `REVOKE CONNECT, TEMP ... FROM PUBLIC` in the host bootstrap; refuse an app role that already exists on a first run unless the host bootstrap made it; send the app role password pre hashed; run `migrate` after every restore (since the feature 4 close it re-asserts a missing `ssd.tenant_id` from the `install` row and `ssd.app_role` from the `pgboss` schema owner, `migrate.e2e-spec.ts`) and prove that run book step on a real restore (`docs/reviews/security-data-model-m1-m2.md`, M2, N1, N3, N5). Once the baseline exists, `migrate` refuses rather than defaulting `ssd.app_role` when neither the setting nor the `pgboss` owner names a role and `APP_DB_ROLE` is unset (security review S13).
+- [ ] Feature 26: set per client `APP_DB_ROLE` and `REVOKE CONNECT, TEMP ... FROM PUBLIC` in the host bootstrap; refuse an app role that already exists on a first run unless the host bootstrap made it; send the app role password pre hashed; run `migrate` after every restore (since the feature 4 close it re-asserts a missing `ssd.tenant_id` from the `install` row and `ssd.app_role` from the `pgboss` schema owner, `migrate.e2e-spec.ts`) and prove that run book step on a real restore (private `docs/reviews/security-data-model-m1-m2.md`, M2, N1, N3, N5). Once the baseline exists, `migrate` refuses rather than defaulting `ssd.app_role` when neither the setting nor the `pgboss` owner names a role and `APP_DB_ROLE` is unset (security review S13).
 - [ ] Feature 26: one baseline migration holds about 1,400 locks until it commits (measured 2026-11-06), so on the shared host PostgreSQL stagger client migrations or raise `max_locks_per_transaction`; the db e2e suite caps its workers at 3 for the same reason (`packages/db/vitest.config.e2e.ts`).
 - [ ] Features 35 and 43: the full order to refund to settlement run per owner type (spec 0007 section 8), on top of this feature's three way policy test.
 - [x] ~~Feature 59: decide whether opening stock booked with `cost_unknown` is revalued when its cost arrives.~~ Void after the fix pass: opening stock always carries a cost (B5); the current feature 59 carry is in the fix pass block below.

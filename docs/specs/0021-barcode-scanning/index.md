@@ -58,7 +58,7 @@ The warehouse finds a variant and moves stock by scanning, with a handheld scann
 
 **Chosen option**: Option B in [rationale.md](rationale.md): one scan box component that reads a wedge scanner by physical key, takes phone keyboard input from the field's input events, and opens the camera with the browser's own detector or a self hosted WebAssembly fallback; one small catalog resolve call; and a returns station on spec 0019's receive call that answers every real table moment (no tag, another bag's piece, extra pieces, damaged or doubtful pieces, lost saves) without a new stock path.
 
-**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `shadcn` (`.claude/skills/shadcn/`) · `playwright-best-practices` (`.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`wshobson/agents`, private `.claude/skills/nextjs-app-router-patterns/`) · `shadcn` (private `.claude/skills/shadcn/`) · `playwright-best-practices` (private `.claude/skills/playwright-best-practices/`)
 
 **Decided by the architect** (expertise, not owner questions; runner up in brackets):
 - Read wedge keystrokes by `KeyboardEvent.code`, not `key`, because handheld scanners send US key positions and Egyptian computers and phones often have the Arabic layout on; fall back to the field's input events when `code` is empty, as a phone's on screen keyboard sends [a table mapping Arabic letters back to Latin: Shift states and the two character `لا` key make it lossy].

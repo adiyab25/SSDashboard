@@ -86,7 +86,7 @@ This feature has no screens or HTTP endpoints, so every step runs against Postgr
 - AC-14 … scale step
 
 ## Amendment 2026-11-05 checks
-_Verified 2026-11-06 (PASS, see `docs/reviews/verify-data-model.md`). Derived from AC-15 to AC-36 (as revised by the fix pass of 2026-11-05) and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
+_Verified 2026-11-06 (PASS, see private `docs/reviews/verify-data-model.md`). Derived from AC-15 to AC-36 (as revised by the fix pass of 2026-11-05) and the Value sourcing tables of the five child specs. Run against a dev database recreated from the baseline (drop the volume, then `pnpm bootstrap`)._
 
 ### Commands
 - [x] `pnpm db:migrate` on an empty database → `Migrations applied.` from the three baseline files (`0000_baseline_extensions.sql`, `0001_baseline_tables.sql`, `0002_baseline_rules.sql`); regenerating with `pnpm db:generate` changes only `0001`; a second run applies nothing; `SELECT * FROM install` → one row whose `id` equals `current_setting('ssd.tenant_id')`; `SHOW ssd.app_role` in a new session → `ssdashboard_app` → AC-16
@@ -95,7 +95,7 @@ _Verified 2026-11-06 (PASS, see `docs/reviews/verify-data-model.md`). Derived fr
 - [x] `pnpm test` → all pass, including the phone, transition, outcome, line split, credit arithmetic, settlement state, ownership map, module boundary, owner type boundary, cost lookup, and redaction tests → AC-19 to AC-22, AC-24, AC-25, AC-27, AC-29, AC-30, AC-32, AC-34
 - [x] `pnpm build && pnpm --filter @ssdashboard/api test:e2e` → all pass, including `location-owner-types.e2e-spec.ts` and the amended ledger suites → AC-29, AC-31
 - [x] `pnpm test:e2e` → every pre existing api and Playwright test passes unchanged on the baseline → AC-16
-  > Caveat: in a worktree whose ports are not 3000 and 3001, set `E2E_WEB_PORT`, `E2E_API_PORT`, and `E2E_PROD_PORT`; the Playwright config then starts both servers itself (F4 of `docs/reviews/verify-data-model.md`). Two Playwright specs are known flaky and pass on rerun (F5).
+  > Caveat: in a worktree whose ports are not 3000 and 3001, set `E2E_WEB_PORT`, `E2E_API_PORT`, and `E2E_PROD_PORT`; the Playwright config then starts both servers itself (F4 of private `docs/reviews/verify-data-model.md`). Two Playwright specs are known flaky and pass on rerun (F5).
 - [x] `pnpm build && pnpm --filter @ssdashboard/api test:scale` → every p95 under its budget (the audit entry budgets of spec 0010 included); record the measured values below → AC-36
   > Caveat: the single line `ledger.post` budget (50 ms) failed once at 59.9 ms while other checkouts loaded the shared server and passed at 17.5 ms the next run; the CI `scale` job on its own PostgreSQL is the reference (F2). Not rerun in the 2026-11-06 re-verify.
   > Measured 2026-11-06 on the shared dev PostgreSQL 18 (Windows, Docker), two consecutive runs of `test:scale`, p95 in ms over 60 timed runs after 20 warm ups, each read's plan asserted to use the named index. The spec 0010 audit entry budgets wait for feature 10 (`it.todo` in the file). The budgets stay as specified: every row is far under its budget on a quiet server; the single line `ledger.post` (real commits) reached 54 ms and 205 ms in two earlier runs only while other checkouts loaded the same server, so the CI `scale` job on its own PostgreSQL service is the reference run. Seed: 233 to 306 s.

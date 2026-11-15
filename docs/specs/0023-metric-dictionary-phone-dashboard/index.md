@@ -64,7 +64,7 @@ Every number the owner sees is defined once, in one typed list (the metric dicti
 
 The metric dictionary is data in `packages/contracts/src/reporting/` (keys, family, gross or net, basis, data class, permissions, source, exclusions, cuts, drill filters, label keys); `apps/api/src/reporting/` has one `MetricReader` with one small reader per area that calls the owning module's exported read, applies the state rule from feature 23's confirmed day read, and returns `MetricValue`s; the Today page and the report pages are client components that call `/api/reporting/*` and draw the existing dashboard parts of `@ssdashboard/ui`. Runner up: a reporting owned projection (one fact row per order and day built from domain events), rejected because specs 0019 and 0020 already keep their own projections for exactly these figures, and a second copy would drift from them, which is the failure the real brand lived through (insights section 7, "Numbers contradicted each other").
 
-**Implementation skills**: `nestjs-best-practices` (`.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`.claude/skills/nextjs-app-router-patterns/`) · `tanstack-query` (`.claude/skills/tanstack-query/`) · `shadcn` (`.claude/skills/shadcn/`) · `playwright-best-practices` (`.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (private `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (private `.claude/skills/nextjs-app-router-patterns/`) · `tanstack-query` (private `.claude/skills/tanstack-query/`) · `shadcn` (private `.claude/skills/shadcn/`) · `playwright-best-practices` (private `.claude/skills/playwright-best-practices/`)
 
 ## Rationale
 

@@ -1,6 +1,6 @@
 # 0002 child: the settlement primitive
 
-Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-25**. Sources: final plan sections 6.2, 6.13, 7.4, 7.5 (`docs/positioning/2026-11-05-egypt-order-operations-layer.md`); spec 0007 section 1 (carrier accounts, the store carried onto every settlement line) and section 3 (third party money confirmed only after period close); reference brand notes section 2 (confirmed ranges, revoked with a reason, never deleted); the domain review `docs/reviews/domain-data-model.md` (B3, B4, M3, M6 to M8, m12).
+Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-25**. Sources: final plan sections 6.2, 6.13, 7.4, 7.5 (private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`); spec 0007 section 1 (carrier accounts, the store carried onto every settlement line) and section 3 (third party money confirmed only after period close); reference brand notes section 2 (confirmed ranges, revoked with a reason, never deleted); the domain review private `docs/reviews/domain-data-model.md` (B3, B4, M3, M6 to M8, m12).
 
 ## Summary
 

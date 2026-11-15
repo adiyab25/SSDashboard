@@ -65,7 +65,7 @@ A customer is one normalized Egyptian phone number, however the number was typed
 
 Runner up: Option 3, a timeline provider registry that each module fills from `onModuleInit` (like `AuditUndoRegistry`). Rejected for now because the leaf module gives the same freedom from cycles with plain imports that the type checker and the module wall can see; reconsider when more than four modules add entry kinds.
 
-**Implementation skills**: `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, `.claude/skills/drizzle-orm-patterns/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, `.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, private `.claude/skills/drizzle-orm-patterns/`) · `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`) · `nextjs-app-router-patterns` (`wshobson/agents`, private `.claude/skills/nextjs-app-router-patterns/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, private `.claude/skills/playwright-best-practices/`)
 
 ### Owner decisions taken as recommended
 

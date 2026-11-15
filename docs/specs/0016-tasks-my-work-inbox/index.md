@@ -44,7 +44,7 @@ A task is one small row: what kind of work it is (its type), which record it is 
 
 The `tasks` core module owns `tasks` and the new `task_notes`, is the only writer of both, and is loaded in the api and the worker (outbound and inbox events are published in the worker). Other modules open and close tasks only through `TasksService` inside their own transaction, or by publishing a past tense event the tasks module listens to. A type is a row of `TASK_TYPES`; there is no runtime registration of types. My work is one screen that polls once a minute; there are no per task notifications in slice 1a, with one exception carried to feature 25 (owner question 6). The `platform` module owns the brand wide working hours setting this spec defines.
 
-**Implementation skills**: `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) for the delta; `nestjs-best-practices` and `drizzle-orm-patterns` (installed skills dirs) for the service and queries; `shadcn` and `tanstack-query` for the screen.
+**Implementation skills**: `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) for the delta; `nestjs-best-practices` and `drizzle-orm-patterns` (installed skills dirs) for the service and queries; `shadcn` and `tanstack-query` for the screen.
 
 ### Amendments to spec 0002 (customers, credit, and tasks child)
 

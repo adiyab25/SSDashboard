@@ -4,7 +4,7 @@ Decision record for [index.md](index.md). `/develop` builds from the index; this
 
 ## Context
 
-SSDashboard was repositioned on 2026-11-05 from a warehouse ERP for one ecommerce business to the order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, consignment showroom partners, and Meta ads (final plan, `docs/positioning/2026-11-05-egypt-order-operations-layer.md`). The owner approved a rebuild and chose to re decide the stack rather than inherit spec 0001 (rebuild plan section 1).
+SSDashboard was repositioned on 2026-11-05 from a warehouse ERP for one ecommerce business to the order operations and warehouse back office for Egyptian clothing brands behind Shopify, Bosta cash on delivery, consignment showroom partners, and Meta ads (final plan, private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`). The owner approved a rebuild and chose to re decide the stack rather than inherit spec 0001 (rebuild plan section 1).
 
 The forces that shape the decision:
 
@@ -37,7 +37,7 @@ Same languages, frameworks, database, ORM, auth, and queue; a new architecture s
 
 ### Option 3: Next.js only, full stack
 
-Business logic in Next.js route handlers and server code, a script based worker and a migrate container beside it, PostgreSQL directly. This is the shape the reference console runs today (Next.js 16 with self hosted Supabase PostgreSQL; production runs `migrate`, `app`, and `worker`, per its `README.md` and `docker-compose.prod.yml`).
+Business logic in Next.js route handlers and server code, a script based worker and a migrate container beside it, PostgreSQL directly. This is the shape the reference console runs today (Next.js 16 with self hosted Supabase PostgreSQL; production runs `migrate`, `app`, and `worker`, per its README and production compose file).
 
 **Pros**: one framework; one fewer image; a real Egyptian brand runs on it.
 **Cons**: still three processes, so it saves less than it seems; ledgers and state machines would live in code that moves with every Next major (Next 16 renamed Middleware to Proxy, `apps/web/node_modules/next/dist/docs/01-app/01-getting-started/16-proxy.md`), and `apps/web/AGENTS.md` already warns this Next version breaks assumptions; no dependency injection or module walls, so the audience and module boundaries become conventions; the worker must import domain code from the web app; the reviewed NestJS ledger and auth code is thrown away.
@@ -78,7 +78,7 @@ Database, auth, storage, and generated APIs from the platform, logic in row poli
 
 **Why the build plan has two shapes.** The owner reopened whether wave 3 wipes the code and asked for both shapes with a recommendation. Shape A was recommended because the stack is confirmed and the code is on it, the domain review reached the same view from the pilot calendar, and the owner chose it on 2026-11-05 ("do what you recommend"). Shape B stays in the index as the record of what was weighed.
 
-**Revision after the domain review (2026-11-05).** `docs/reviews/domain-stack.md` (Fable) found two blockers: order numbers unique per brand instead of per store (fixed in index section 7), and an outbound pattern with no failure path while mirror mode depends on the Shopify write back landing first (fixed in index section 1 with a sync state, `OutboundCommandFailed`, a task, and a blocking rule before packing). Its Bosta facts come from the reference repo, read again for this revision: the dashboard registered webhook with one custom header, a webhook after every state change but none on creation, the dedupe key, and the 429 incident at about 60 back to back single delivery reads (`src/app/api/webhooks/bosta/route.ts`, `src/lib/webhooks/verify.ts`, `src/lib/bosta/sync.ts` in the reference console). The hosting findings come from `docs/research/0001-egypt-hosting-options.md`: no Egyptian provider confirms S3 compatible storage, so object storage is self run on each host and backups go to a second Egyptian provider.
+**Revision after the domain review (2026-11-05).** private `docs/reviews/domain-stack.md` (Fable) found two blockers: order numbers unique per brand instead of per store (fixed in index section 7), and an outbound pattern with no failure path while mirror mode depends on the Shopify write back landing first (fixed in index section 1 with a sync state, `OutboundCommandFailed`, a task, and a blocking rule before packing). Its Bosta facts come from the reference repo, read again for this revision: the dashboard registered webhook with one custom header, a webhook after every state change but none on creation, the dedupe key, and the 429 incident at about 60 back to back single delivery reads (in the reference console's Bosta webhook and sync code). The hosting findings come from private `docs/research/0001-egypt-hosting-options.md`: no Egyptian provider confirms S3 compatible storage, so object storage is self run on each host and backups go to a second Egyptian provider.
 
 **Deviations from the architect skill.** This ran as a sub agent with no interview: every question the skill would ask was decided by recommendation, and the ones only the owner can answer are in `## Open questions`. The skill keeps build plans out of stack decision specs; this spec carries one because the brief and the project's documentation standard (rebuild plan section 4) require a `## Build plan` of 2 to 5 milestones per spec, and scope feature 1 includes the scaffold. The cross check by another model was not run; the domain review in wave 2b serves that role.
 
@@ -87,19 +87,19 @@ Database, auth, storage, and generated APIs from the platform, logic in row poli
 ### From the existing build (main, read only)
 
 - Versions pinned: Node 26 (`.nvmrc`), pnpm 12.16.1 (`package.json`), Next.js 16.4.3, React 19.3.0, NestJS 12.3.2, Better Auth 1.7.15, pg-boss 12.38.0, Drizzle ORM 0.45.4, Zod 4.6.7, TypeScript 6.0.3, Turborepo 2.11.10, Vitest 4.1.12, Playwright 1.64.1, i18next 26.7.1 (`pnpm-lock.yaml`).
-- Reviews with no blockers: `docs/reviews/2026-11-03-feat-data-model.md` (one major: the owner password reached app containers; fixed with per service env lists), `docs/reviews/2026-11-04-feat-staff-sign-in.md` (approve with fixes).
+- Reviews with no blockers: private `docs/reviews/2026-11-03-feat-data-model.md` (one major: the owner password reached app containers; fixed with per service env lists), private `docs/reviews/2026-11-04-feat-staff-sign-in.md` (approve with fixes).
 - The OpenAPI client was never built: `packages/contracts/AGENTS.md` ("Until the OpenAPI client lands, the web calls `/api` with `fetch`"), `apps/web/src/api/client.ts`.
 - No tenant column anywhere in `packages/db/src` or `apps/api/src`.
 - Locations today: `location_type` enum (`warehouse`, `showroom`, `transit`, `virtual`) and `is_sellable` (`packages/db/src/schema/locations.ts`).
 - Scale test: `apps/api/test/scale.e2e-spec.ts` seeds 100,000 SKUs and 1,000,000 movements in about 1m45s (`apps/api/AGENTS.md`).
-- pg-boss migrates its own schema on start (`.claude/skills/pg-boss-v12/SKILL.md`); schedules accept `tz` (`.claude/skills/pg-boss-v12/reference.md`); `send` accepts a `db` option for transactional jobs (`.claude/skills/tl-pg-boss/references/advanced-patterns.md`); Better Auth rate limits can use database storage (`.claude/skills/better-auth-security-best-practices/SKILL.md`).
+- pg-boss migrates its own schema on start (private `.claude/skills/pg-boss-v12/SKILL.md`); schedules accept `tz` (private `.claude/skills/pg-boss-v12/reference.md`); `send` accepts a `db` option for transactional jobs (private `.claude/skills/tl-pg-boss/references/advanced-patterns.md`); Better Auth rate limits can use database storage (private `.claude/skills/better-auth-security-best-practices/SKILL.md`).
 - Size: 381 TypeScript files; 64 commits since 2026-11-01; build tasks per spec: 0002 12, 0003 5, 0004 6, 0005 9, 0006 18.
 
 ### From the reference console (read only)
 
-- Stack and processes: Next.js 16, self hosted Supabase PostgreSQL, `migrate`, `app`, `worker` in production (`<reference-repo>\README.md`, `docker-compose.prod.yml`).
+- Stack and processes: Next.js 16, self hosted Supabase PostgreSQL, `migrate`, `app`, `worker` in production (the reference console's README and production compose file).
 - Export freeze verified by reading workbook cells, not bytes (`scripts/verify-erp-fixtures.mjs`).
-- Portal security checklist, Bosta data shape, and the read only Bosta choice: `docs/positioning/2026-11-05-reference-brand-notes.md` sections 2 and 3.
+- Portal security checklist, Bosta data shape, and the read only Bosta choice: reference brand notes (private) sections 2 and 3.
 
 ### Landscape check (web, 2026-11-05)
 
@@ -117,11 +117,11 @@ Database, auth, storage, and generated APIs from the platform, logic in row poli
 ## References
 
 **Project sources**
-- `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 5, 6, 7, 8, 9, 11, 12, 13, 14
-- `docs/positioning/2026-11-05-rebuild-plan.md` sections 1, 2, 4
-- `docs/positioning/2026-11-05-reference-brand-notes.md` sections 2, 3, 7
-- `docs/positioning/2026-11-05-brand-owner-debate.md` (volume figures, exit package objection)
-- `docs/reviews/domain-stack.md` (domain review of this spec) and `docs/research/0001-egypt-hosting-options.md` (Egypt hosting options)
+- private `docs/positioning/2026-11-05-egypt-order-operations-layer.md` sections 5, 6, 7, 8, 9, 11, 12, 13, 14
+- private `docs/positioning/2026-11-05-rebuild-plan.md` sections 1, 2, 4
+- private `docs/positioning/2026-11-05-reference-brand-notes.md` sections 2, 3, 7
+- private `docs/positioning/2026-11-05-brand-owner-debate.md` (volume figures, exit package objection)
+- private `docs/reviews/domain-stack.md` (domain review of this spec) and private `docs/research/0001-egypt-hosting-options.md` (Egypt hosting options)
 - `docs/specs/0001-stack-architecture/` and specs 0002 to 0006
 - `AGENTS.md`, `apps/api/AGENTS.md`, `apps/web/AGENTS.md`, `apps/api/src/inventory/AGENTS.md`, `packages/contracts/AGENTS.md`
 - Installed skills: `pg-boss-v12`, `tl-pg-boss`, `better-auth-security-best-practices`, `nextjs-app-router-patterns`, `postgresql-table-design`

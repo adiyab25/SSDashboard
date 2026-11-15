@@ -147,7 +147,7 @@ One module, `apps/web/src/i18n/format.ts`, formats numbers, integer quantities, 
 
 Use `i18next` with `react-i18next` for text and plurals, keep the active language in a `ss_lang` cookie read by an inline script before paint, route all number, money, and date output through one `Intl` based module, and deliver extra client languages as JSON files served at runtime so the one shared web image never changes.
 
-**Implementation skills**: `nextjs-app-router-patterns` (`wshobson/agents`, `.claude/skills/nextjs-app-router-patterns/`) · `vercel-react-best-practices` (`.claude/skills/vercel-react-best-practices/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, `.claude/skills/playwright-best-practices/`) · `pnpm` (`antfu/skills`, `.claude/skills/pnpm/`)
+**Implementation skills**: `nextjs-app-router-patterns` (`wshobson/agents`, private `.claude/skills/nextjs-app-router-patterns/`) · `vercel-react-best-practices` (private `.claude/skills/vercel-react-best-practices/`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, private `.claude/skills/playwright-best-practices/`) · `pnpm` (`antfu/skills`, private `.claude/skills/pnpm/`)
 
 ## Feature design
 

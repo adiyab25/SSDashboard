@@ -80,7 +80,7 @@ One image becomes a Warehouse install, an Operations install, or both through th
 
 Module toggles and executing step switches are settings (one table, one cache, one audit path, one screen), and their bundle gate comes from the registry; only the license needs its own two tables. Runner up: a dedicated `module_toggles` table with its own service, rejected because it doubles the read, cache, audit, and screen paths for a boolean per module.
 
-**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, `.claude/skills/nestjs-best-practices/`) · `pg-boss-v12` (`sncollective/snc-platform`, `.claude/skills/pg-boss-v12/`) · `tl-pg-boss` (`toddlevy/tl-agent-skills`, `.claude/skills/tl-pg-boss/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, `.claude/skills/postgresql-table-design/`) · `react-hook-form-zod` (`.claude/skills/react-hook-form-zod/`) and `tanstack-query` (`.claude/skills/tanstack-query/`) for the settings screen (their source repositories are not recorded in any `AGENTS.md`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, `.claude/skills/playwright-best-practices/`)
+**Implementation skills**: `nestjs-best-practices` (`kadajett/agent-nestjs-skills`, private `.claude/skills/nestjs-best-practices/`) · `pg-boss-v12` (`sncollective/snc-platform`, private `.claude/skills/pg-boss-v12/`) · `tl-pg-boss` (`toddlevy/tl-agent-skills`, private `.claude/skills/tl-pg-boss/`) · `drizzle-orm-patterns` (`giuseppe-trisciuoglio/developer-kit`, private `.claude/skills/drizzle-orm-patterns/`) · `postgresql-table-design` (`wshobson/agents`, private `.claude/skills/postgresql-table-design/`) · `react-hook-form-zod` (private `.claude/skills/react-hook-form-zod/`) and `tanstack-query` (private `.claude/skills/tanstack-query/`) for the settings screen (their source repositories are not recorded in any `AGENTS.md`) · `playwright-best-practices` (`currents-dev/playwright-best-practices-skill`, private `.claude/skills/playwright-best-practices/`)
 
 ## Feature design
 
@@ -650,7 +650,7 @@ The owner ratified specs 0016 to 0020 on 2026-11-13 (owner answers of 2026-11-13
 - [x] Feature 54: owner question 7 chose option (b), not (a) (2026-11-08), so its counts do not post a "sold or missing at partner, not settled" difference at partner locations; nothing to build for it here (W2).
 - [ ] Feature 47: provisioning issues the first license with the install's `client_code` and tenant id, and a pilot license with `warehouseExpiresOn` where the contract says so.
 - [ ] Owner, before the first production install: a release adds the production primary and standby public keys to `license-keys.ts` (owner ruling 1).
-- [x] `react-hook-form-zod` and `tanstack-query` conventions are installed under `.claude/skills/` but not listed in `apps/web/AGENTS.md` `## Agent skills`; they belong there (web area only), for `/sync` or `/audit`.
+- [x] `react-hook-form-zod` and `tanstack-query` conventions are installed under private `.claude/skills/` but not listed in `apps/web/AGENTS.md` `## Agent skills`; they belong there (web area only), for `/sync` or `/audit`.
 
 Owed by the wave 1 amendment (2026-11-07) to other documents, routed by the lead; this spec does not edit them:
 

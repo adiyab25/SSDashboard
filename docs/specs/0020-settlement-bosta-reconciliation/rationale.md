@@ -183,7 +183,7 @@ The second pass domain-settlement-reconciliation-r2 (kept private) (2026-11-12) 
 
 ## References
 
-**Project sources**: `AGENTS.md`; specs 0002, 0007, 0009, 0013, 0018, 0019; spec 0016 on branch `docs/tasks-and-confirmation-queue`; `packages/db/src/schema/settlement.ts`; `packages/db/migrations/0002_baseline_rules.sql`; `packages/contracts/src/settlement/`; `docs/reviews/domain-data-model.md` (M3, M8); `docs/reviews/security-data-model.md` (S11); the lead's relay of spec 0019's domain review findings M9 and X1 (2026-11-12).
+**Project sources**: `AGENTS.md`; specs 0002, 0007, 0009, 0013, 0018, 0019; spec 0016 on branch `docs/tasks-and-confirmation-queue`; `packages/db/src/schema/settlement.ts`; `packages/db/migrations/0002_baseline_rules.sql`; `packages/contracts/src/settlement/`; private `docs/reviews/domain-data-model.md` (M3, M8); private `docs/reviews/security-data-model.md` (S11); the lead's relay of spec 0019's domain review findings M9 and X1 (2026-11-12).
 
 **Practices and standards**: append only ledgers corrected by new rows; events as hints with read back; idempotent imports keyed by content checksum; exact decimal money; Law 151 data minimisation (read only the mapped columns).
 

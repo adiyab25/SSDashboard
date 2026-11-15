@@ -1,6 +1,6 @@
 # 0002 child: customers by phone, the customer credit ledger, and tasks
 
-Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-24**, **AC-26**, **AC-27**, **AC-28**. Sources: final plan sections 6.2, 6.3, 6.4, 6.7, 6.9, 7.3 (`docs/positioning/2026-11-05-egypt-order-operations-layer.md`); reference brand notes sections 2 and 7 (customers split by store in four phone formats, cases built as tasks by hand); the domain review `docs/reviews/domain-data-model.md` (B1, M2, M9, m5, m8, m10) and the owner's answers of 2026-11-05 (cashability, customer debt, spending kept credit).
+Part of the [2026-11-05 amendment of spec 0002](index.md#amendment-2026-11-05). Satisfies **AC-24**, **AC-26**, **AC-27**, **AC-28**. Sources: final plan sections 6.2, 6.3, 6.4, 6.7, 6.9, 7.3 (private `docs/positioning/2026-11-05-egypt-order-operations-layer.md`); reference brand notes sections 2 and 7 (customers split by store in four phone formats, cases built as tasks by hand); the domain review private `docs/reviews/domain-data-model.md` (B1, M2, M9, m5, m8, m10) and the owner's answers of 2026-11-05 (cashability, customer debt, spending kept credit).
 
 ## Summary
 
