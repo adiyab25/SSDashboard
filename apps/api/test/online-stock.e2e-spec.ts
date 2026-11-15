@@ -8,7 +8,11 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { OnlineStockGate } from '../src/inventory/online-stock/online-stock-gate.js';
-import { OnlineStockService } from '../src/inventory/online-stock/online-stock.service.js';
+import {
+  ONLINE_FLAG_KEY,
+  ONLINE_FLAG_LOCK,
+  OnlineStockService,
+} from '../src/inventory/online-stock/online-stock.service.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 import { fixtures, posting } from './ledger.js';
 
@@ -27,13 +31,6 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
   let counter = 0;
   /** A fixture check other modules would register: flips between passing and failing. */
   const fixtureCheck = { passes: true };
-  /** When set, the fixture check waits until `expected` moves have reached it. */
-  let latch: {
-    expected: number;
-    arrived: number;
-    release: () => void;
-    opened: Promise<void>;
-  } | null = null;
 
   beforeAll(async () => {
     api = await startInProcessApi();
@@ -42,15 +39,8 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
     online = api.app.get(OnlineStockService);
     api.app.get(OnlineStockGate).register({
       key: 'fixture.orders_held',
-      run: async () => {
-        // A test may hold every move at this point until `expected` moves have arrived, so two
-        // transactions are open at the same time (the unique index race, spec 0011 AC-1).
-        if (latch) {
-          latch.arrived += 1;
-          if (latch.arrived >= latch.expected) latch.release();
-          await latch.opened;
-        }
-        return {
+      run: () =>
+        Promise.resolve({
           label: 'inventory.onlineGate.checks.stockCounted',
           passed: fixtureCheck.passes,
           count: 3,
@@ -59,8 +49,7 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
             path: '/api/orders/hold-open-orders',
             label: 'inventory.onlineGate.checks.stockCounted',
           },
-        };
-      },
+        }),
     });
     cookie = await api.signIn((await api.addPerson(['manager'])).email);
     supportCookie = await api.signIn((await api.addPerson(['support'])).email);
@@ -78,6 +67,21 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
 
   const call = (method: string, path: string, body?: unknown, who = cookie) =>
     api.call(who, method, path, body);
+
+  /** Waits until `count` transactions wait for the online flag lock (spec 0013 review N3). */
+  async function waitForFlagWaiters(count: number): Promise<void> {
+    for (let tries = 0; tries < 200; tries += 1) {
+      const { rows } = await api.owner.pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_locks
+         WHERE locktype = 'advisory' AND NOT granted
+           AND classid = $1::int::oid AND objid = $2::int::oid AND objsubid = 2`,
+        [ONLINE_FLAG_LOCK, ONLINE_FLAG_KEY],
+      );
+      if ((rows[0]?.n ?? 0) >= count) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`Fewer than ${String(count)} moves waited for the online flag lock`);
+  }
 
   /** A warehouse as the owner plants it, optionally with stock confirmed counted. */
   async function warehouse(options: { verified?: boolean } = {}): Promise<string> {
@@ -218,26 +222,32 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
       const first = await warehouse({ verified: true });
       const second = await warehouse({ verified: true });
       const body = { confirmedVariantCount: 0, reason: 'Race' };
-      let release = () => {};
-      const opened = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      // Both moves read "no online location", lock their own row, and wait here until both are
-      // open: the second flag write then waits on the first and meets `locations_one_online`.
-      latch = { expected: 2, arrived: 0, release, opened };
+      // Both moves read "nothing online", then queue on the online flag lock this connection
+      // holds (spec 0013 review N3). Once both wait, it lets go: the first to take the lock
+      // moves the flag, the second finds the flag moved since its read and answers stale.
+      const holder = await api.owner.pool.connect();
+      let replies: { status: number; body: unknown }[] = [];
       try {
-        const replies = await Promise.all([
+        await holder.query('BEGIN');
+        await holder.query('SELECT pg_advisory_xact_lock($1::int, $2::int)', [
+          ONLINE_FLAG_LOCK,
+          ONLINE_FLAG_KEY,
+        ]);
+        const moves = Promise.all([
           call('POST', `/api/locations/${first}/make-online`, body),
           call('POST', `/api/locations/${second}/make-online`, body),
         ]);
-
-        expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
-        expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
-          code: 'ONLINE_GATE_STALE',
-        });
+        await waitForFlagWaiters(2);
+        await holder.query('COMMIT');
+        replies = await moves;
       } finally {
-        latch = null;
+        holder.release();
       }
+
+      expect(replies.map((reply) => reply.status).sort()).toEqual([200, 409]);
+      expect(replies.find((reply) => reply.status === 409)?.body).toMatchObject({
+        code: 'ONLINE_GATE_STALE',
+      });
       const online = await api.owner.pool.query<{ n: number }>(
         'SELECT count(*)::int AS n FROM locations WHERE sellable_online',
       );
@@ -422,8 +432,10 @@ describe('online stock and the online gate', { timeout: 120_000 }, () => {
         (await call('GET', `/api/locations/${id}/online-gate`)).body,
       );
       expect(after.canGoOnline).toBe(true);
+      // The orders module registers its own check at start (spec 0013 AC-26); no order is open here.
       expect(after.checks.map((check) => [check.key, check.passed])).toEqual([
         ['stock_counted', true],
+        ['orders.open_orders_held', true],
         ['fixture.orders_held', true],
       ]);
       expect(await auditActions(id)).toEqual(['location.stock_confirmed']);

@@ -11,7 +11,7 @@ Also from spec 0011: a thin slice of features 38 and 41 comes forward (owner dec
 - [x] Design it (spec): `/architect stock ledger & locations`
 - [ ] Build it: `/develop stock ledger & locations`
   - [x] The gated online location and the online stock read
-  - [ ] Reservations, waiting demand, carrier shipments, and catalog locks
+  - [x] Reservations, waiting demand, carrier shipments, and catalog locks
   - [ ] Partners, owner type screens, and showroom moves
   - [ ] Adjustments, adjustment requests, and the receipt cost rule
   - [ ] Discrepancies a manager can act on, and the scale budgets
@@ -80,7 +80,7 @@ The order at the heart of cash on delivery: a fulfillment state machine, a cash 
   - [x] One manual order through every layer
   - [x] Editing, confirming, cancelling, packing, and the hold
   - [x] The channel intake contract for feature 13
-  - [ ] Stock: holds at creation, short lines, and carrier shipments
+  - [x] Stock: holds at creation, short lines, and carrier shipments
   - [ ] Carrier and cash moves, the shipment posting, and scale
 - [ ] Verify it: `/check verify orders & their state machines`
 - [ ] Test it: `/test orders & their state machines`

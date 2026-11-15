@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createLocation, createSku, receive } from './master-data-api';
-import { pressEnterOn, typeInto, useOnlineFlag } from './online-flag';
+import { firstSortingCode, pressEnterOn, typeInto, useOnlineFlag } from './online-flag';
+import { holdOpenOrdersIfAsked, moveOnlineHoldingOrders } from './order-stock';
 import { expectNoAxeViolations, textFor, useBrowserState, waitForPageHydration } from './support';
 
 // Spec 0011, milestone 1, task 5 (AC-12, AC-16, AC-19, AC-20): the online gate and the Online
@@ -43,8 +44,8 @@ for (const { language, dir } of LANGUAGES) {
       page,
     }) => {
       const t = (key: Parameters<typeof textFor>[1]) => textFor(dir, key);
-      // A code that sorts first, so the row is on the first page of a shared database.
-      const code = `0G${randomUUID().slice(0, 6).toUpperCase()}`;
+      // A code that sorts first, so the row is on the first page and a few Tab presses away.
+      const code = firstSortingCode();
       const location = await createLocation(page.request, code);
       const sku = await createSku(page.request, `E2E-ON-${randomUUID().slice(0, 8)}`);
       await receive(page.request, location.id, sku.id, 4);
@@ -64,7 +65,8 @@ for (const { language, dir } of LANGUAGES) {
       await expect(dialog).toBeVisible();
 
       // The built in check fails until the stock is confirmed counted; the move is blocked.
-      await expect(dialog.getByText(t('inventory.onlineGate.failed'))).toBeVisible();
+      // (Open orders other specs left in the shared database may fail the orders check too.)
+      await expect(dialog.getByText(t('inventory.onlineGate.failed')).first()).toBeVisible();
       const move = dialog.getByRole('button', { name: t('inventory.onlineGate.confirmMove') });
       await expect(move).toBeDisabled();
       await expectNoAxeViolations(page);
@@ -73,11 +75,21 @@ for (const { language, dir } of LANGUAGES) {
         page,
         dialog.getByRole('button', { name: t('inventory.onlineGate.confirmStock') }),
       );
-      await expect(dialog.getByText(t('inventory.onlineGate.passed'))).toBeVisible();
+      await expect(dialog.getByText(t('inventory.onlineGate.passed')).first()).toBeVisible();
+      // The helper text shows beside the untouched reason; tabbing past the field to reach the
+      // orders check's button below marks it touched, and the required message takes its place.
+      await expect(dialog.getByText(t('inventory.onlineGate.reasonHint'))).toBeVisible();
+      // Hold the open orders here when the orders check asks (spec 0013 AC-26), by keyboard.
+      const holdWords = {
+        hold: t('orders.onlineGate.holdOpenOrders'),
+        heldTitle: t('orders.onlineGate.heldTitle'),
+      };
+      const byKeyboard = (button: Locator) => pressEnterOn(page, button);
+      await holdOpenOrdersIfAsked(dialog, holdWords, byKeyboard);
+      await expect(dialog.getByText(t('inventory.onlineGate.failed'))).toHaveCount(0);
       await expect(move).toBeEnabled();
 
-      // A blank reason is refused before anything is sent, with the helper text beside it.
-      await expect(dialog.getByText(t('inventory.onlineGate.reasonHint'))).toBeVisible();
+      // A blank reason is refused before anything is sent.
       await pressEnterOn(page, move);
       await expect(dialog.getByText(t('inventory.onlineGate.reasonRequired'))).toBeVisible();
       await typeInto(
@@ -86,10 +98,10 @@ for (const { language, dir } of LANGUAGES) {
         'Counted by hand',
       );
       await expectNoAxeViolations(page);
-      await pressEnterOn(page, move);
+      // An order a parallel spec placed meanwhile fails the check again: hold, then move again.
+      await moveOnlineHoldingOrders(dialog, move, holdWords, byKeyboard);
 
       // The row now carries the Online stock badge and offers Stop online stock.
-      await expect(dialog).toBeHidden();
       const row = page.getByRole('row', { name: new RegExp(code) });
       await expect(row.getByText(t('inventory.onlineGate.badge'), { exact: true })).toBeVisible();
       await expect(page.getByText(t('inventory.onlineGate.notice'))).toHaveCount(0);
@@ -115,6 +127,9 @@ for (const { language, dir } of LANGUAGES) {
       await expect(stop).toBeHidden();
       await expect(row.getByText(t('inventory.onlineGate.badge'), { exact: true })).toHaveCount(0);
       await expect(page.getByText(t('inventory.onlineGate.notice'))).toBeVisible();
+      // The dialog's overlay fades out after the content hides; until it is gone it covers the
+      // row's buttons, which axe's target size rule counts as too small.
+      await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
       await expectNoAxeViolations(page);
 
       await page.goto('/stock');

@@ -1502,6 +1502,19 @@ export const en = {
   // Spec 0013: the labels of the order states, outcomes, reasons, relations, and attentions. The
   // screens add their own keys beside these.
   orders: {
+    onlineGate: {
+      openOrdersHeld: 'Every open order holds its pieces at this location',
+      holdOpenOrders: 'Hold the open orders here',
+      heldTitle: 'Open orders held here',
+      linesHeld: 'Lines held in full',
+      linesShort: 'Lines held but short of stock',
+      linesLeft: 'Lines still not held here',
+      errors: {
+        LOCATION_NOT_FOUND:
+          'This location cannot hold the open orders: it was removed, archived, or cannot feed online stock.',
+        BUSY: 'Stock is busy right now. Try again in a moment.',
+      },
+    },
     fulfillment: {
       new: 'New',
       confirmed: 'Confirmed',

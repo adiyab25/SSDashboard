@@ -9,8 +9,10 @@ import {
 } from '@ssdashboard/contracts';
 import { APP_ROLE, createDatabase, runMigrations, type DatabaseConnection } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
+import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { SettingsService } from '../src/platform/settings/settings.service.js';
 import {
   createScratchDatabase,
@@ -172,7 +174,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
     );
     expect(perLocation).toMatchObject({ totalOnHand: 10, totalValue: '50.00' });
 
-    expect(await new ReconciliationService(app).reconcile()).toBe(0);
+    expect(await new ReconciliationService(app, new CatalogLocks(app)).reconcile()).toBe(0);
   });
 
   it('replays the same key and body once, and refuses a changed body (AC-6)', async () => {
@@ -500,7 +502,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
       [posted.id],
     );
     expect(rows).toEqual([{ quantity: -10 }]);
-    expect(await new ReconciliationService(app).reconcile()).toBe(0);
+    expect(await new ReconciliationService(app, new CatalogLocks(app)).reconcile()).toBe(0);
   });
 
   it('lets one of two voids at the same moment win (AC-8)', async () => {
@@ -521,7 +523,12 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
     const warehouse = await newLocation('WH-GONE');
     const posted = await receiveOne(warehouse.id, sku.id, 5, '3');
     // Another document takes the stock out (an adjustment through the ledger itself).
-    const ledger = new LedgerService(app, new SettingsService(app));
+    const ledger = new LedgerService(
+      app,
+      new SettingsService(app),
+      new DomainEvents(),
+      new CatalogLocks(app),
+    );
     await ledger.post({
       idempotencyKey: randomUUID(),
       sourceType: 'adjustment',
@@ -555,7 +562,7 @@ describe('core stock loop api', { timeout: 90_000 }, () => {
       totalValue: '60.00',
       avgUnitCost: '6.0000',
     });
-    expect(await new ReconciliationService(app).reconcile()).toBe(0);
+    expect(await new ReconciliationService(app, new CatalogLocks(app)).reconcile()).toBe(0);
   });
 
   it('answers 401 without a session', async () => {

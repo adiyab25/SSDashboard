@@ -24,6 +24,8 @@ Products and their SKUs (variants) for the staff back office: create a product, 
 
 - Its registry row (spec 0009, AC-6, `packages/contracts/src/modules/module-registry.ts`): `catalog`, core, no toggle. Every controller here declares `@RequiresModule('catalog')` (`src/platform/modules/requires-module.spec.ts` fails the build otherwise), so the module gate never answers `MODULE_OFF` for it while the module is core.
 
+- Row locks for stock (spec 0011 AC-18): `CatalogLocks` ([catalog-locks.service.ts](catalog-locks.service.ts)), exported by `CatalogModule`: `lockForShare(tx, variantIds)` and `lockForUpdate(tx, variantIds)` lock SKU rows in id order inside the caller's transaction and answer kind, tracking, and archived; `serialTrackedVariantIds(executor)` lists the serial tracked SKUs. Inventory calls them, so it never reads `product_variants`.
+
 ## Never touches
 
 - Ledger tables (`movement_groups`, `stock_movements`, `movement_serials`, `stock_levels`, `reservations`, `serials`). Stock figures come from the inventory module.

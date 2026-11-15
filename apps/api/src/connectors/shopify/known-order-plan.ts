@@ -81,7 +81,9 @@ export interface KnownOrderPlan {
 /**
  * The rederive of lead decision D10: only when the mapping holds the creation facts, is not
  * locked, and the current config maps a creation gateway to another method; then the creation
- * rules over the creation gateways and transactions only.
+ * rules over the creation gateways and transactions only. Null as well when one of those creation
+ * payments is on a gateway the config no longer maps (`creationPaymentOf`, audit A2): a removed
+ * mapping never turns a payment into a guessed prepayment.
  */
 function rederiveOf(
   order: ShopifyOrder,

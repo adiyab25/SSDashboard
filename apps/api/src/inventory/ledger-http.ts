@@ -63,7 +63,9 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
           { code: 'BUSY', message: 'Stock is busy with another posting. Try again.' },
           HttpStatus.SERVICE_UNAVAILABLE,
         );
+      // A posting named a reservation that is not this line's open one (security review L4).
       case 'ReservationMismatch':
+        return new ConflictException({ code: 'RESERVATION_MISMATCH', message: error.message });
       case 'CannotReverseReversal':
       case 'NotFound':
       case 'DuplicateReservation':
@@ -71,6 +73,7 @@ export function ledgerHttpError(error: unknown, response?: Response): unknown {
       case 'QuantityTooLarge':
       case 'DiscrepancyClosed':
       case 'NotRebuildable':
+      case 'NestedStockTransaction':
         logger.error(`Unmapped ledger error ${error.code}: ${error.message}`);
         return new InternalServerErrorException();
     }

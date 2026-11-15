@@ -117,27 +117,33 @@ describe('OnlineGateDialog (spec 0011 AC-19)', () => {
     expect(within(dialog).getByRole('button', { name: MOVE })).toBeEnabled();
   });
 
-  it('runs the action of a failed check as a button, then reads the gate again', async () => {
-    const failed = {
-      key: 'orders_held',
-      label: 'inventory.onlineGate.stop',
-      passed: false,
-      count: 5,
-      action: {
-        method: 'POST' as const,
-        path: '/api/orders/hold-open-orders',
-        label: 'inventory.onlineGate.actionFailed',
-      },
-    };
+  const held = (passed: boolean) => ({
+    key: 'orders.open_orders_held',
+    label: 'orders.onlineGate.openOrdersHeld',
+    passed,
+    count: passed ? 0 : 5,
+    action: {
+      method: 'POST' as const,
+      path: '/api/orders/hold-open-orders',
+      label: 'orders.onlineGate.holdOpenOrders',
+    },
+  });
+
+  it('holds the open orders for this location, shows the counts, then reads the gate again', async () => {
     api.getOnlineGate
-      .mockResolvedValueOnce(gate({ checks: [counted(true), failed] }))
-      .mockResolvedValue(gate({ checks: [counted(true), { ...failed, passed: true, count: 0 }] }));
-    api.runGateAction.mockResolvedValue(undefined);
+      .mockResolvedValueOnce(gate({ checks: [counted(true), held(false)] }))
+      .mockResolvedValue(gate({ checks: [counted(true), held(true)] }));
+    api.runGateAction.mockResolvedValue({
+      kind: 'held',
+      result: { linesHeld: 3, linesShort: 2, linesLeft: 0 },
+    });
     const { dialog } = await open();
 
-    // The fixture borrows existing message keys: the label is the one the api names.
+    expect(
+      await within(dialog).findByText('Every open order holds its pieces at this location'),
+    ).toBeVisible();
     await userEvent.click(
-      await within(dialog).findByRole('button', { name: 'That fix did not work. Try again.' }),
+      within(dialog).getByRole('button', { name: 'Hold the open orders here' }),
     );
 
     await waitFor(() => expect(api.runGateAction).toHaveBeenCalled());
@@ -145,8 +151,67 @@ describe('OnlineGateDialog (spec 0011 AC-19)', () => {
       method: 'POST',
       path: '/api/orders/hold-open-orders',
     });
+    expect(api.runGateAction.mock.calls[0]?.[1]).toBe(location.id);
+    const result = await within(dialog).findByRole('status', { name: /Open orders held here/ });
+    expect(within(result).getByText('Lines held in full').nextSibling).toHaveTextContent('3');
+    expect(within(result).getByText('Lines held but short of stock').nextSibling).toHaveTextContent(
+      '2',
+    );
+    expect(within(result).getByText('Lines still not held here').nextSibling).toHaveTextContent(
+      '0',
+    );
     await waitFor(() => expect(api.getOnlineGate).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(within(dialog).queryByText('Not passed')).toBeNull());
+    expect(within(dialog).queryByRole('button', { name: 'Hold the open orders here' })).toBeNull();
+  });
+
+  it.each([
+    ['LOCATION_NOT_FOUND', 404, /cannot hold the open orders/],
+    ['BUSY', 503, /Stock is busy right now/],
+    ['generic', 500, /That fix did not work/],
+  ])('says why holding failed on %s and reads the gate again', async (code, status, message) => {
+    api.getOnlineGate.mockResolvedValue(gate({ checks: [counted(true), held(false)] }));
+    api.runGateAction.mockRejectedValue(new ApiError(status, { code }));
+    const { dialog } = await open();
+
+    await userEvent.click(
+      await within(dialog).findByRole('button', { name: 'Hold the open orders here' }),
+    );
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
+    await waitFor(() => expect(api.getOnlineGate).toHaveBeenCalledTimes(2));
+    expect(within(dialog).queryByRole('status', { name: /Open orders held here/ })).toBeNull();
+  });
+
+  it('shows no counts for an action that answers nothing to show', async () => {
+    const other = {
+      key: 'other_check',
+      label: 'inventory.onlineGate.stop',
+      passed: false,
+      count: 1,
+      action: {
+        method: 'PUT' as const,
+        path: '/api/other/fix',
+        label: 'inventory.onlineGate.stop',
+      },
+    };
+    api.getOnlineGate
+      .mockResolvedValueOnce(gate({ checks: [counted(true), other] }))
+      .mockResolvedValue(gate({ checks: [counted(true), { ...other, passed: true }] }));
+    api.runGateAction.mockResolvedValue({ kind: 'done' });
+    const { dialog } = await open();
+
+    // The fixture borrows an existing message key: the label is the one the api names.
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Stop online stock' }));
+
+    await waitFor(() =>
+      expect(api.runGateAction).toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'PUT', path: '/api/other/fix' }),
+        location.id,
+      ),
+    );
+    await waitFor(() => expect(within(dialog).queryByText('Not passed')).toBeNull());
+    expect(within(dialog).queryByRole('status', { name: /Open orders held here/ })).toBeNull();
   });
 
   it('needs a written reason, then sends the variant count it showed', async () => {

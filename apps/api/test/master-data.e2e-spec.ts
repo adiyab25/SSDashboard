@@ -17,12 +17,14 @@ import {
   type DatabaseConnection,
 } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CatalogLocks } from '../src/catalog/catalog-locks.service.js';
 import { CatalogService } from '../src/catalog/catalog.service.js';
 import type { Transaction } from '../src/database/sql.js';
 import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { ledgerTransaction, lockKey } from '../src/inventory/ledger/locks.js';
 import { ReconciliationService } from '../src/inventory/ledger/reconciliation.service.js';
 import { encodeKeyset } from '../src/platform/keyset-cursor.js';
+import { DomainEvents } from '../src/platform/events/domain-events.js';
 import { SettingsService } from '../src/platform/settings/settings.service.js';
 import {
   createScratchDatabase,
@@ -57,8 +59,13 @@ describe('master data api', { timeout: 90_000 }, () => {
     const appUrl = new URL(scratch.url);
     appUrl.searchParams.set('options', `-c role=${APP_ROLE}`);
     app = createDatabase(appUrl.toString(), { max: 8 });
-    ledger = new LedgerService(app, new SettingsService(app));
-    reconciliation = new ReconciliationService(app);
+    ledger = new LedgerService(
+      app,
+      new SettingsService(app),
+      new DomainEvents(),
+      new CatalogLocks(app),
+    );
+    reconciliation = new ReconciliationService(app, new CatalogLocks(app));
     const port = await freePort();
     base = `http://127.0.0.1:${port}`;
     api = start('main.js', {

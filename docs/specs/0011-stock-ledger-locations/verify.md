@@ -1,6 +1,6 @@
 # Verify: stock ledger and locations · spec 0011 · updated 2026-11-09
 
-_Steps derived from spec 0011 acceptance criteria and its Value sourcing table, including the domain review fold of 2026-11-07. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 lines ticked 2026-11-09 (QA /check verify, `online-stock.e2e-spec.ts`, `online-flag-upgrade.e2e-spec.ts`, `e2e/online-stock.spec.ts`, `e2e/online-stock-states.spec.ts`). Each milestone ticks its own lines with the command output or the named passing test._
+_Steps derived from spec 0011 acceptance criteria and its Value sourcing table, including the domain review fold of 2026-11-07. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 lines ticked 2026-11-09, milestone 2 lines 2026-11-11 (`ledger-reservations.e2e-spec.ts`, `ledger-reservations-gaps.e2e-spec.ts`, `module-boundary.spec.ts`, `master-data.e2e-spec.ts`) (QA /check verify, `online-stock.e2e-spec.ts`, `online-flag-upgrade.e2e-spec.ts`, `e2e/online-stock.spec.ts`, `e2e/online-stock-states.spec.ts`). Each milestone ticks its own lines with the command output or the named passing test._
 
 ## UI / manual
 
@@ -22,9 +22,9 @@ _Steps derived from spec 0011 acceptance criteria and its Value sourcing table, 
 ## Commands
 
 - [x] `pnpm build && pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/online-stock.e2e-spec.ts` → online location rules, the gate and its stale check, partner stock never counted, waiting demand subtracted, `NoOnlineLocation`, late commit, paging → AC-1 to AC-4, AC-19, AC-20
-- [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/ledger-reservations.e2e-spec.ts` → both shortage modes, top up, fill oldest first on a restock and on a release, carrier shipment below zero and shortening, events in the same transaction, concurrency, no deadlock, the order thread with a clean reconciliation → AC-5 to AC-7, AC-21, AC-22
+- [x] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/ledger-reservations.e2e-spec.ts` → both shortage modes, top up, fill oldest first on a restock and on a release, carrier shipment below zero and shortening, events in the same transaction, concurrency, no deadlock, the order thread with a clean reconciliation → AC-5 to AC-7, AC-21, AC-22
 - [ ] `pnpm --filter @ssdashboard/api test -- src/inventory` → `ledger-callers.spec.ts` (planted connectors import fails) and `owner-type-boundary.spec.ts` pass → AC-8, AC-12
-- [ ] `pnpm --filter @ssdashboard/api test -- src/module-boundary.spec.ts` and `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts` → no inventory `product_variants` breach; spec 0006 races unchanged → AC-18
+- [x] `pnpm --filter @ssdashboard/api test -- src/module-boundary.spec.ts` and `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/master-data.e2e-spec.ts` → no inventory `product_variants` breach; spec 0006 races unchanged → AC-18
 - [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/stock-transfers.e2e-spec.ts` → numbering, direction by stock role, held stock refused, replay, costs in and out → AC-24, AC-25
 - [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/stock-adjustments.e2e-spec.ts test/stock-receipts.e2e-spec.ts` → one reason, `write_off`, policy location check, cost on the operating day, removal shortening, found check, requests, receipt cost rule → AC-9 to AC-11, AC-23, AC-26 to AC-28
 - [ ] `pnpm --filter @ssdashboard/api exec vitest run --config ./vitest.config.e2e.ts test/stock-discrepancies.e2e-spec.ts` → kind rules, holders, `stock.balance_drift` log, `DISCREPANCY_CLOSED` → AC-14
@@ -39,8 +39,8 @@ _Steps derived from spec 0011 acceptance criteria and its Value sourcing table, 
 
 - [x] `SELECT count(*) FROM locations WHERE sellable_online AND archived_at IS NULL` is never above 1; an owner `UPDATE` making a shop online fails on `locations_online_needs_warehouse` → AC-1
 - [x] A reservation with `quantity` 0 and `unfilled_quantity` 2 is `active`; one with both 0 is refused by the check → AC-5, AC-21
-- [ ] After a restock of 1 with two waiting reservations, only the older one gained 1 and `pushable` is unchanged → AC-21
-- [ ] After `postCarrierShipment` of 1 with 0 on hand in a location that does not allow negative stock, the balance is −1, the movement's group is `order_shipment` with key `order_shipment:<orderId>`, and one `StockOverdrawn` handler call ran in the same transaction → AC-22
+- [x] After a restock of 1 with two waiting reservations, only the older one gained 1 and `pushable` is unchanged → AC-21
+- [x] After `postCarrierShipment` of 1 with 0 on hand in a location that does not allow negative stock, the balance is −1, the movement's group is `order_shipment` with key `order_shipment:<orderId>`, and one `StockOverdrawn` handler call ran in the same transaction → AC-22
 - [ ] A found piece posted at 01:00 Cairo with cutoff 3 takes the cost record in force on the previous day → AC-10
 - [ ] A transfer's group has `source_type = 'transfer_out'`, `source_id` the transfer id, two movements per line with the same `source_line_id`, and the in line's `unit_cost` equals the source balance's average before the posting → AC-25
 - [ ] A receipt line sent with no cost stores `unit_cost` equal to `CostService.costFor` on the receipt's operating day → AC-26

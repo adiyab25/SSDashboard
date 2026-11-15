@@ -282,8 +282,13 @@ export const OrderLineView = z.object({
   creditAppliedAmount: MoneyString,
   lineState: OrderLineState,
   cancelReasonCode: z.string().nullable(),
-  /** The quantity the line is short of its reservation; 0 until stock holds arrive (milestone 4). */
-  shortQuantity: z.number().int(),
+  /**
+   * How many pieces of the line the stock ledger could not hold yet (AC-13, the orders copy of the
+   * reservation's `unfilled_quantity`); above 0 is the page's "short" mark with the missing
+   * quantity. Always 0 for a line with no variant, a line that is no longer open, and every line of
+   * a cancelled order.
+   */
+  shortQuantity: z.number().int().min(0),
   unitCost: UnitCostString.nullable().optional(),
 });
 /** The validated shape of `OrderLineView`. */
@@ -802,3 +807,27 @@ export const RederivePaymentMethodInput = z
   });
 /** The validated shape of `RederivePaymentMethodInput`. */
 export type RederivePaymentMethodInput = z.infer<typeof RederivePaymentMethodInput>;
+
+/**
+ * `POST /api/orders/hold-open-orders` (`catalog.manage`, AC-26): the location that is about to
+ * feed online stock. Every open line with a variant of an order in `new`, `confirmed`, or `packed`
+ * that holds no active reservation there is reserved there, oldest order first.
+ */
+export const HoldOpenOrdersBody = z.strictObject({ locationId: z.uuid() });
+/** The validated shape of `HoldOpenOrdersBody`. */
+export type HoldOpenOrdersBody = z.infer<typeof HoldOpenOrdersBody>;
+
+/**
+ * The answer of `POST /api/orders/hold-open-orders` (AC-26): `linesHeld` lines now held in full at
+ * the location, `linesShort` lines reserved there but short (waiting for stock), and `linesLeft`
+ * lines that still hold no reservation there after the call (an order changed meanwhile; 0 when
+ * the `orders.open_orders_held` check now passes). A repeat holds nothing twice and answers zeros
+ * for the first two.
+ */
+export const HoldOpenOrdersResult = z.strictObject({
+  linesHeld: z.number().int().min(0),
+  linesShort: z.number().int().min(0),
+  linesLeft: z.number().int().min(0),
+});
+/** The validated shape of `HoldOpenOrdersResult`. */
+export type HoldOpenOrdersResult = z.infer<typeof HoldOpenOrdersResult>;

@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { createSku } from './master-data-api';
+import { acquireOnlineFlag, stopOnlineStock } from './online-flag';
+import { shortByText, stockedOnline } from './order-stock';
 import {
   expectNoAxeViolations,
   textFor,
@@ -14,7 +16,10 @@ import {
 // address and replaces a line, confirms, packs, takes it back to confirmed, and cancels it with a
 // reason; every step toasts the order number with its store, the edit history panel shows the
 // edit, and the dialogs pass axe (WCAG 2.2 AA) in English and Arabic (right to left). Each test
-// signs in as its own seeded person.
+// signs in as its own seeded person. Since milestone 4 a pack needs every line held in full, so the
+// journey makes a stocked warehouse the online location (`stockedOnline`, which holds the open
+// orders there) just before it packs, holding the cross worker online flag lock only from there
+// until online stock is stopped right after the unpack.
 
 const LANGUAGES = [
   { dir: 'ltr', name: 'English' },
@@ -38,6 +43,7 @@ for (const { dir, name: languageName } of LANGUAGES) {
   test.describe(`editing and moving an order in ${languageName}`, () => {
     test.use({ storageState: { cookies: [], origins: [] } });
     let manager: SeededAccount | undefined;
+    let releaseOnlineFlag: (() => Promise<void>) | undefined;
 
     test.beforeEach(async ({ page, context, baseURL }) => {
       // The manager hat reads the audit trail and edits orders; the warehouse hat packs.
@@ -45,9 +51,19 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await signInThroughApi(context, manager, baseURL ?? '');
       await useBrowserState(page, { dir });
     });
-    test.afterEach(async () => {
+    test.afterEach(async ({ page }) => {
       const done = manager;
       manager = undefined;
+      const release = releaseOnlineFlag;
+      releaseOnlineFlag = undefined;
+      // Stop online stock while the manager still wears its hats, then let the lock go.
+      if (release) {
+        try {
+          await stopOnlineStock(page.request);
+        } finally {
+          await release();
+        }
+      }
       // A person who changed an order is named by append only audit entries, so that account stays.
       await done?.remove().catch(() => undefined);
     });
@@ -59,21 +75,23 @@ for (const { dir, name: languageName } of LANGUAGES) {
       // A whole order journey with several axe sweeps: a passing run took 22.8 s of the 30 s default in
       // a full parallel run (2026-11-08 trace), so a loaded first attempt crossed it while still
       // progressing. The budget fits the journey; it waits for nothing that may never come.
-      test.setTimeout(60_000);
+      // Waiting for another worker's online flag test comes out of this budget as well.
+      test.setTimeout(150_000);
       const first = `EDT-${randomUUID().slice(0, 8).toUpperCase()}`;
       const second = `EDT-${randomUUID().slice(0, 8).toUpperCase()}`;
-      await createSku(
+      const firstSku = await createSku(
         context.request,
         first,
         { en: `Tee ${first}`, ar: `قميص ${first}` },
         '250.00',
       );
-      await createSku(
+      const secondSku = await createSku(
         context.request,
         second,
         { en: `Tee ${second}`, ar: `قميص ${second}` },
         '270.00',
       );
+
       const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 
       // Enter the order by hand.
@@ -148,13 +166,29 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await actions.getByRole('button', { name: t('orders.actions.confirm') }).click();
       await expect(toast.filter({ hasText: label }).first()).toBeVisible();
       await expect(actions.getByRole('button', { name: t('orders.actions.pack') })).toBeVisible();
+      // Both SKUs on the shelf at a new online location, which holds this order's open line in full
+      // (hold-open-orders), so Pack goes through. The lock is held only while the flag is moved.
+      releaseOnlineFlag = await acquireOnlineFlag();
+      await stockedOnline(context.request, [firstSku.id, secondSku.id]);
       await actions.getByRole('button', { name: t('orders.actions.pack') }).click();
       await expect(actions.getByRole('button', { name: t('orders.actions.unpack') })).toBeVisible();
       await expect(
         page.getByText(t('orders.fulfillment.packed'), { exact: true }).first(),
       ).toBeVisible();
+      // Held in full: no line is marked short, and no refusal was shown.
+      // The mark reads "Short by N"; its first word is the same for every N.
+      const shortWord = shortByText(dir, 3).split(' ')[0] ?? '';
+      await expect(lines.getByText(shortWord)).toHaveCount(0);
+      await expect(page.getByText(t('orders.new.errors.LINE_SHORT'))).toHaveCount(0);
       await actions.getByRole('button', { name: t('orders.actions.unpack') }).click();
       await expect(actions.getByRole('button', { name: t('orders.actions.pack') })).toBeVisible();
+      const release = releaseOnlineFlag;
+      releaseOnlineFlag = undefined;
+      try {
+        await stopOnlineStock(context.request);
+      } finally {
+        await release?.();
+      }
 
       // Cancel with a reason; the reason is required first.
       await actions.getByRole('button', { name: t('orders.actions.cancel') }).click();

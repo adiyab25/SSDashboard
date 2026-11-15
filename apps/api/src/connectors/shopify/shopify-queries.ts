@@ -220,7 +220,8 @@ const ORDER_FIELDS = `
         amount
       }
     }
-    totalShippingPriceSet {
+    taxesIncluded
+    currentShippingPriceSet {
       shopMoney {
         amount
       }
@@ -287,6 +288,7 @@ const ORDER_FIELDS = `
         id
         title
         variantTitle
+        quantity
         currentQuantity
         unfulfilledQuantity
         variant {
@@ -766,7 +768,8 @@ const ORDER_BULK_FIELDS = `
             amount
           }
         }
-        totalShippingPriceSet {
+        taxesIncluded
+        currentShippingPriceSet {
           shopMoney {
             amount
           }
@@ -833,6 +836,7 @@ const ORDER_BULK_FIELDS = `
               id
               title
               variantTitle
+              quantity
               currentQuantity
               unfulfilledQuantity
               variant {

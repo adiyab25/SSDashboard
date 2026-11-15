@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { StockLevel } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
+import { CatalogLocks } from '../../catalog/catalog-locks.service.js';
 import { DATABASE } from '../../database/database.module.js';
+import { pgArray } from '../../database/sql.js';
 import { LedgerError } from './ledger.errors.js';
 import { ledgerTransaction, lockPairs } from './locks.js';
 
@@ -15,7 +17,10 @@ const KEY = 'variant_id, location_id, bin_id, lot_id';
 @Injectable()
 export class ReconciliationService {
   /** Takes the app database connection. */
-  constructor(@Inject(DATABASE) private readonly connection: DatabaseConnection) {}
+  constructor(
+    @Inject(DATABASE) private readonly connection: DatabaseConnection,
+    @Inject(CatalogLocks) private readonly catalog: CatalogLocks,
+  ) {}
 
   /**
    * Compares every balance with its movement sums, reservation totals with on hand, and
@@ -51,7 +56,8 @@ export class ReconciliationService {
           )
           SELECT count(*)::int AS found FROM found`);
 
-        // Reserved stock never exceeds on hand (summed over bins) where stock cannot go negative.
+        // Reserved stock never exceeds on hand (summed over bins, floored at 0: a carrier shipment may
+        // leave on hand below zero, where nothing is held) where stock cannot go negative.
         const reservations = await tx.execute<{ found: number }>(sql`
           WITH reserved AS (
             SELECT variant_id, location_id, lot_id, sum(open_quantity) AS reserved
@@ -62,27 +68,29 @@ export class ReconciliationService {
           ), found AS (
             SELECT NULL::uuid AS stock_level_id, r.variant_id, r.location_id, NULL::uuid AS bin_id,
                    r.lot_id,
-                   jsonb_build_object('maxReserved', coalesce(o.on_hand, 0)) AS expected,
+                   jsonb_build_object('maxReserved', greatest(coalesce(o.on_hand, 0), 0)) AS expected,
                    jsonb_build_object('reserved', r.reserved) AS actual
             FROM reserved r
             JOIN locations l ON l.id = r.location_id AND NOT l.allow_negative
             LEFT JOIN on_hand o
               ON o.variant_id = r.variant_id AND o.location_id = r.location_id
              AND o.lot_id IS NOT DISTINCT FROM r.lot_id
-            WHERE r.reserved > coalesce(o.on_hand, 0)
+            WHERE r.reserved > greatest(coalesce(o.on_hand, 0), 0)
           ), recorded AS (
             ${this.record('reservation')}
           )
           SELECT count(*)::int AS found FROM found`);
 
-        // For serial SKUs, the serials in stock at a place equal its on hand.
+        // For serial SKUs, the serials in stock at a place equal its on hand. Which SKUs are
+        // serial tracked is the catalog's to say (spec 0011 AC-18), read inside this snapshot.
+        const serialVariantIds = await this.catalog.serialTrackedVariantIds(tx);
         const serials = await tx.execute<{ found: number }>(sql`
           WITH counted AS (
             SELECT ${sql.raw(KEY)}, count(*)::int AS in_stock
             FROM serials WHERE status = 'in_stock' GROUP BY 1, 2, 3, 4
           ), levels AS (
             SELECT sl.* FROM stock_levels sl
-            JOIN product_variants v ON v.id = sl.variant_id AND v.tracking = 'serial'
+            WHERE sl.variant_id = ANY(${pgArray(serialVariantIds)}::uuid[])
           ), found AS (
             SELECT lv.id AS stock_level_id,
                    coalesce(lv.variant_id, c.variant_id) AS variant_id,
@@ -150,10 +158,8 @@ export class ReconciliationService {
       // The SKU and location rows FOR SHARE, as `loadMaster` (SKU first, then location), before
       // `lockPairs`: a rebuild joins the archive exclusion, so an archive (row FOR UPDATE in
       // `lockForArchive`) waits for it, and it waits for an archive holding the row.
-      const variant = await tx.execute(
-        sql`SELECT id FROM product_variants WHERE id = ${variantId} FOR SHARE`,
-      );
-      if (!variant.rows.length) throw new LedgerError('NotFound', `SKU ${variantId} not found`);
+      const variant = await this.catalog.lockForShare(tx, [variantId]);
+      if (!variant.has(variantId)) throw new LedgerError('NotFound', `SKU ${variantId} not found`);
       const location = await tx.execute(
         sql`SELECT id FROM locations WHERE id = ${locationId} FOR SHARE`,
       );

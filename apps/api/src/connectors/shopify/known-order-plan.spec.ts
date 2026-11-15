@@ -7,7 +7,7 @@ import {
   firstActiveFulfillmentOf,
   gatewayKeyOf,
   gatewayMappingOf,
-  mapShopifyOrder,
+  mapShopifyOrderSnapshot,
   parseShopifyOrder,
   paymentTransactionIdsOf,
   shopifyPaymentOf,
@@ -465,20 +465,52 @@ describe('planKnownOrder: the payment rederive (lead decision D10, spec 0013 AC-
     ).toBeNull();
   });
 
-  it('derives the payment as a new order would (shopifyPaymentOf)', () => {
-    expect(shopifyPaymentOf(fixture('order-prepaid-gateway/01-order-read.json'), CONTEXT)).toEqual({
+  it('derives the payment as a new order would (shopifyPaymentOf), refusing an unmapped paid gateway (audit A2)', () => {
+    const card = fixture('order-prepaid-gateway/01-order-read.json');
+    const mapped = { ...CONTEXT, gatewayMethods: { 'Fixture Card Gateway': 'gateway' as const } };
+    expect(shopifyPaymentOf(card, mapped)).toEqual({
       paymentMethod: 'gateway',
       prepaidAmount: '860.00',
       prepaidMethod: 'gateway',
     });
+    let error: unknown = null;
+    try {
+      shopifyPaymentOf(card, CONTEXT);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: 'GATEWAY_UNMAPPED', paths: ['transactions.0.gateway'] });
+  });
+
+  it('never rederives a guessed prepayment when a creation gateway mapping is removed (audit A2)', () => {
+    const order = fixture('order-prepaid-gateway/01-order-read.json');
+    const mapped = { ...CONTEXT, gatewayMethods: { 'Fixture Card Gateway': 'instapay' as const } };
+    const state = createdOrderState(order, mapped, [], {
+      unmappedLines: [],
+      unmappedGateways: [],
+      discountCodes: [],
+      flags: [],
+    });
+    expect(state.creationGateways).toEqual({ 'Fixture Card Gateway': 'instapay' });
+    // The manager removes the mapping: the sale is on an unmapped gateway now, so nothing is
+    // rederived (before the fix: prepaid 860.00 on method `gateway`, a guess).
+    expect(planKnownOrder(order, CONTEXT, state).rederive).toBeNull();
+    expect(
+      creationPaymentOf(order, CONTEXT, {
+        gatewayNames: ['Fixture Card Gateway'],
+        transactionIds: state.creationTransactionIds ?? [],
+      }),
+    ).toBeNull();
   });
 
   it('keeps the whole mapping state storable: lone surrogates leave gateway names and discount codes (code review R4, security review N4)', () => {
     const order = structuredClone(fixture('order-created-cod/01-order-read.json'));
     order.paymentGatewayNames = ['Wallet \uD83D', '\uDCB3Card'];
     order.discountCodes = ['SAVE\uD800', 'WELCOME10'];
-    const mapped = mapShopifyOrder(order, CONTEXT);
-    const state = createdOrderState(order, CONTEXT, mapped.input.lines, mapped);
+    // A new order with these names is refused (review round 2 M3); the state a known order's
+    // snapshot keeps must still be storable.
+    const { snapshot, ...notes } = mapShopifyOrderSnapshot(order, CONTEXT);
+    const state = createdOrderState(order, CONTEXT, snapshot.lines, notes);
     const json = JSON.stringify(state);
     expect(json).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
     expect(state.unmappedGateways).toEqual(['Wallet', 'Card']);

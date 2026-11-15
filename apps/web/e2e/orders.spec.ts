@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { createSku } from './master-data-api';
+import { shortByText } from './order-stock';
 import {
   expectNoAxeViolations,
   openShell,
@@ -248,6 +249,82 @@ for (const { dir, name: languageName } of LANGUAGES) {
       await expect(
         page.getByText(t('orders.detail.linkedFromRelation.goodwill_for')),
       ).toBeVisible();
+      await expectNoAxeViolations(page);
+    });
+
+    test('marks a short line on the page and the list, filters by it, and refuses the pack', async ({
+      page,
+      context,
+    }) => {
+      // Spec 0013 milestone 4 (AC-4, AC-5, AC-7, AC-13): a fresh SKU has no stock at any location,
+      // so whichever location is online (or none) its line is short by the whole quantity.
+      test.setTimeout(60_000);
+      const code = `SHT-${randomUUID().slice(0, 8).toUpperCase()}`;
+      await createSku(context.request, code, { en: `Tee ${code}`, ar: `قميص ${code}` }, '250.00');
+      const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+
+      await openNewOrder(page);
+      await fillShipTo(page, `015${digits}`);
+      await pickSku(page, code, t('inventory.receipt.searchSku'));
+      await page.locator('#line-0-quantity').fill('2');
+      await page.getByRole('button', { name: t('orders.new.submit') }).click();
+      const label = await openedOrderLabel(page);
+      await waitForPageHydration(page);
+
+      // The page marks the line with the missing quantity (two pieces: Arabic has its own form).
+      const shortBy = shortByText(dir, 2);
+      const lines = page.getByRole('table', { name: t('orders.lines.title') });
+      await expect(
+        lines.getByRole('row', { name: new RegExp(code) }).getByText(shortBy),
+      ).toBeVisible();
+      await expectNoAxeViolations(page);
+
+      // Confirm goes through; Pack is refused with LINE_SHORT and says why.
+      const actions = page.getByRole('region', { name: t('orders.actions.label') });
+      await actions.getByRole('button', { name: t('orders.actions.confirm') }).click();
+      const pack = actions.getByRole('button', { name: t('orders.actions.pack') });
+      await expect(pack).toBeVisible();
+      await pack.click();
+      await expect(
+        actions.getByRole('alert').getByText(t('orders.new.errors.LINE_SHORT')),
+      ).toBeVisible();
+      await expect(pack).toBeVisible();
+      await expect(actions.getByRole('button', { name: t('orders.actions.unpack') })).toHaveCount(
+        0,
+      );
+      await expect(lines.getByText(shortBy)).toBeVisible();
+      await expectNoAxeViolations(page);
+
+      // The list's short filter: every row it shows carries the short flag, this order included.
+      await page.goto('/orders');
+      await expect(page.getByRole('heading', { level: 1, name: t('orders.title') })).toBeVisible();
+      await waitForPageHydration(page);
+      const table = page.getByRole('table', { name: t('orders.tableLabel') });
+      await expect(table).toBeVisible();
+      const listed = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/orders' &&
+          new URL(response.url()).searchParams.get('short') === 'true',
+      );
+      await page.getByRole('checkbox', { name: t('orders.filters.short') }).check();
+      await listed;
+      const rows = table.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+      const shown = await rows.count();
+      for (let index = 0; index < shown; index += 1) {
+        await expect(
+          rows.nth(index).getByText(t('orders.flags.short'), { exact: true }),
+        ).toBeVisible();
+      }
+      const box = page.getByRole('searchbox', { name: t('orders.search.label') });
+      await box.fill(label.split('/')[1] ?? '');
+      await box.press('Enter');
+      const row = table.getByRole('row', { name: new RegExp(label.replace('/', '\\/')) });
+      await expect(row.getByText(t('orders.flags.short'), { exact: true })).toBeVisible();
+      // Back to the top first: ticking the filter scrolled the page, and filling the search box
+      // then leaves its Search button partly under the sticky top bar, which axe's target size
+      // rule counts as covered on a phone. That is the scroll position, not the page's layout.
+      await page.evaluate(() => window.scrollTo(0, 0));
       await expectNoAxeViolations(page);
     });
 

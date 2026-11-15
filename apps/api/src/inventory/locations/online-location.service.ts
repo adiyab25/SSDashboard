@@ -139,9 +139,13 @@ export class OnlineLocationService {
     const correlationId = this.audit.newCorrelationId();
     try {
       return await ledgerTransaction(this.connection.db, async (tx) => {
+        // What the caller's move starts from, read before waiting for the flag (review N3): a
+        // move that commits meanwhile changes it, and this one answers ONLINE_GATE_STALE below.
+        const seen = await this.onlineStock.onlineLocation(tx);
+        // First of all locks: orders reserving at the online location finish or wait (review M2).
+        await this.onlineStock.lockOnlineFlag(tx);
         const first = await this.rowOf(tx, locationId);
         if (!first) throw new LocationError('NotFound', 'Location not found');
-        const seen = await this.onlineStock.onlineLocation(tx);
         const ids = [...new Set([locationId, seen?.id ?? locationId])].sort();
         await tx.execute(sql`
           SELECT id FROM locations WHERE id = ANY(${pgArray(ids)}::uuid[]) ORDER BY id FOR UPDATE`);
@@ -207,6 +211,7 @@ export class OnlineLocationService {
   async stop(reason: string | undefined, caller: LocationCaller): Promise<StopOnlineResponse> {
     const correlationId = this.audit.newCorrelationId();
     return ledgerTransaction(this.connection.db, async (tx) => {
+      await this.onlineStock.lockOnlineFlag(tx);
       const { rows } = await tx.execute<{ id: string; code: string }>(sql`
         SELECT id, code FROM locations WHERE sellable_online AND archived_at IS NULL FOR UPDATE`);
       const current = rows[0];
