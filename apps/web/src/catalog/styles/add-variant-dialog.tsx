@@ -40,6 +40,7 @@ import { useReturnFocus } from '@/shared/use-return-focus';
 import { addVariant, catalogKeys } from '../catalog-api';
 import { barcodeHolder, catalogErrorCode, channelOwnedField } from '../catalog-error';
 import { FromChannelBadge } from '../from-channel-badge';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 /** A style has at most this many options (AC-10). */
 const MAX_OPTIONS = 3;
@@ -276,7 +277,7 @@ export function AddVariantDialog({ style, onClose }: Props) {
                         {linked ? (
                           <select
                             id={`add-variant-option-value-${index}`}
-                            className="h-control w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30"
+                            className={SELECT_CLASS}
                             aria-invalid={!!rowError}
                             aria-describedby={
                               rowError ? `add-variant-option-error-${index}` : undefined

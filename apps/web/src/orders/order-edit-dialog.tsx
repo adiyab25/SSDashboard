@@ -39,7 +39,7 @@ import { ApiError } from '@/api/client';
 import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { useReturnFocus } from '@/shared/use-return-focus';
-import { SELECT_CLASS } from './order-field-classes';
+import { SELECT_CLASS } from '@/shared/select-class';
 import {
   buildEditBody,
   MAX_OPERATIONS,

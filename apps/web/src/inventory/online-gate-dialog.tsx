@@ -16,7 +16,7 @@ import {
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { Skeleton } from '@ssdashboard/ui/components/skeleton';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { LoaderCircleIcon } from 'lucide-react';
+import { InfoIcon, LoaderCircleIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -222,7 +222,8 @@ export function OnlineGateDialog({
           {view && (
             <>
               {!view.canGoOnline && allPassed && (
-                <Alert role="status">
+                <Alert role="status" className="text-muted-foreground">
+                  <InfoIcon aria-hidden />
                   <AlertDescription>{t('inventory.onlineGate.cannotGoOnline')}</AlertDescription>
                 </Alert>
               )}

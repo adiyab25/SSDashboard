@@ -1,11 +1,12 @@
 # Shared
 
-Small pieces of web code that more than one feature folder needs and that belong to none of them: the focus rule of a dialog that has no Radix trigger, the left to right isolate for codes in joined strings, and the query client wrapper every screen spec renders under.
+Small pieces of web code that more than one feature folder needs and that belong to none of them: the focus rule of a dialog that has no Radix trigger, the left to right isolate for codes in joined strings, the native select look, and the query client wrapper every screen spec renders under.
 
 ## Owns
 
 - `useReturnFocus()`: for a dialog mounted with `open`, remembers the control that had focus when it mounted and hands focus back to it on close (WCAG 2.4.3): [use-return-focus.ts](use-return-focus.ts)
 - `isolateLtr()`: wraps a code in Unicode left to right isolates so it keeps its direction inside a joined right to left sentence; in JSX use `LtrText` instead: [isolate-ltr.ts](isolate-ltr.ts)
+- `SELECT_CLASS`: the class of a native `select` (control height and corners, `input` boundary, `bg-field` fill), used by the orders, receipt, and catalog forms: [select-class.ts](select-class.ts)
 - `renderWithQuery()`: renders a screen under a fresh TanStack Query client that never retries, for component specs: [render-with-query.tsx](render-with-query.tsx)
 
 ## Never touches

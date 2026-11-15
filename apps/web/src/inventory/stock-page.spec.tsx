@@ -237,6 +237,29 @@ describe('StockPage (AC-9, AC-16)', () => {
     expect(within(table).queryByText(/turn on Show rows at zero/)).toBeNull();
   });
 
+  it('draws the empty state Receive stock as a secondary button so the header one is the only main action', async () => {
+    api.listStock.mockResolvedValue(page([]));
+    renderWithQuery(<StockPage />);
+
+    const table = await screen.findByRole('table', { name: 'Stock on hand' });
+    expect(await within(table).findByRole('link', { name: 'Receive stock' })).toHaveAttribute(
+      'data-variant',
+      'secondary',
+    );
+    const header = screen
+      .getAllByRole('link', { name: 'Receive stock' })
+      .filter((link) => !table.contains(link));
+    expect(header).toHaveLength(1);
+    expect(header[0]).toHaveAttribute('data-variant', 'default');
+  });
+
+  it('fills the SKU picker trigger with the field colour like the fields beside it', async () => {
+    api.listStock.mockResolvedValue(page([row(1)]));
+    renderWithQuery(<StockPage />);
+    await screen.findByText('SKU-1');
+    expect(screen.getByRole('combobox', { name: 'Filter by SKU' })).toHaveClass('bg-field');
+  });
+
   it('shows an error with a retry', async () => {
     api.listStock.mockRejectedValueOnce(new Error('boom'));
     api.listStock.mockResolvedValue(page([row(1)]));

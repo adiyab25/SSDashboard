@@ -1,9 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-
-const SELECT =
-  'h-control w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 /**
  * One labelled filter drop down of the SKU list: a native `select`, so the keyboard and screen
@@ -30,7 +28,7 @@ export function SkuFilterSelect({
       </label>
       <select
         id={id}
-        className={SELECT}
+        className={SELECT_CLASS}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

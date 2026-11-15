@@ -161,12 +161,12 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="relative overflow-hidden rounded-lg border">
+        <div className="relative overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('inventory.locations.tableLabel')} aria-busy={loading}>
-            <TableHeader className="sticky top-0 bg-muted">
-              <TableRow className="h-row-header hover:bg-muted">
+            <TableHeader className="sticky top-0">
+              <TableRow className="h-row-header">
                 {COLUMNS.map((column) => (
-                  <TableHead key={column} scope="col" className="px-3 text-start font-medium">
+                  <TableHead key={column} scope="col" className="px-3 text-start">
                     {t(`inventory.locations.columns.${column}`)}
                   </TableHead>
                 ))}
@@ -195,7 +195,7 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
               )}
               {!loading &&
                 rows.map((row) => (
-                  <TableRow key={row.id} className="h-row hover:bg-muted">
+                  <TableRow key={row.id} className="h-row">
                     <TableCell className="px-3 font-medium">
                       <LtrText>{row.code}</LtrText>
                     </TableCell>
@@ -213,7 +213,7 @@ export function LocationsView({ enabled }: { enabled: boolean }) {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="px-3">
+                    <TableCell className="px-3 py-0 [&:lang(ar)]:py-0">
                       <div className="flex flex-wrap gap-1">
                         <Button
                           type="button"

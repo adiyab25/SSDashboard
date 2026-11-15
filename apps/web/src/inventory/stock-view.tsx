@@ -242,16 +242,16 @@ export function StockView({ enabled }: { enabled: boolean }) {
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="relative overflow-hidden rounded-lg border">
+        <div className="relative overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('inventory.stock.tableLabel')} aria-busy={loading}>
-            <TableHeader className="sticky top-0 bg-muted">
+            <TableHeader className="sticky top-0">
               {table.getHeaderGroups().map((group) => (
-                <TableRow key={group.id} className="h-row-header hover:bg-muted">
+                <TableRow key={group.id} className="h-row-header">
                   {group.headers.map((header) => (
                     <TableHead
                       key={header.id}
                       scope="col"
-                      className={`px-3 font-medium ${NUMERIC.has(header.column.id as ColumnId) ? 'text-end' : 'text-start'}`}
+                      className={`px-3 ${NUMERIC.has(header.column.id as ColumnId) ? 'text-end' : 'text-start'}`}
                     >
                       <table.FlexRender header={header} />
                     </TableHead>
@@ -290,7 +290,7 @@ export function StockView({ enabled }: { enabled: boolean }) {
                         </p>
                       </div>
                       {!filtered && access.can('stock.receive') && (
-                        <Button asChild size="sm">
+                        <Button asChild size="sm" variant="secondary">
                           <Link href="/stock-receipts/new">{t('inventory.stock.receive')}</Link>
                         </Button>
                       )}
@@ -300,7 +300,7 @@ export function StockView({ enabled }: { enabled: boolean }) {
               )}
               {!loading &&
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className="h-row hover:bg-muted">
+                  <TableRow key={row.id} className="h-row">
                     {row.getAllCells().map((cell) => (
                       <TableCell
                         key={cell.id}

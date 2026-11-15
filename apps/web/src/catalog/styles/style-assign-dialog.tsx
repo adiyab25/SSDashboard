@@ -23,6 +23,7 @@ import { useReturnFocus } from '@/shared/use-return-focus';
 import { assignStyles, catalogKeys } from '../catalog-api';
 import { catalogErrorCode, missingStyleIds } from '../catalog-error';
 import type { GroupingChoices } from '../use-grouping-choices';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 /** Which field the bulk step sets. */
 export type AssignMode = 'season' | 'group';
@@ -36,8 +37,7 @@ export interface AssignTarget {
 const KNOWN = ['NOT_FOUND', 'ARCHIVED', 'INVALID_INPUT'] as const;
 type Failure = (typeof KNOWN)[number] | 'generic';
 
-const SELECT =
-  'h-control w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring aria-invalid:border-destructive md:text-sm dark:bg-input/30';
+const SELECT_INVALID = `${SELECT_CLASS} aria-invalid:border-destructive`;
 
 /** Props of `StyleAssignDialog`. */
 interface Props {
@@ -164,7 +164,7 @@ export function StyleAssignDialog({ mode, styles, choices, onDone, onMissing, on
             </FieldLabel>
             <select
               id="style-assign-choice"
-              className={SELECT}
+              className={SELECT_INVALID}
               value={value}
               aria-invalid={missingChoice}
               aria-describedby={missingChoice ? 'style-assign-choice-error' : undefined}

@@ -123,6 +123,21 @@ async function openNew(page: Page) {
 
 /** Every text field, native select and field-fill control on the page, with the fill it paints. */
 async function fieldFills(page: Page, scope = 'body') {
+  // A disabled control fades to its field fill; measure once no transition is running.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.effect?.getComputedTiming().iterations !== Infinity &&
+                animation.playState === 'running',
+            ).length,
+      ),
+    )
+    .toBe(0);
   return page.locator(scope).evaluate((root) => {
     const probe = (variable: string) => {
       const element = document.createElement('div');
@@ -137,7 +152,7 @@ async function fieldFills(page: Page, scope = 'body') {
     const pageColor = probe('--background');
     const fields = [
       ...root.querySelectorAll<HTMLElement>(
-        'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea, [class*="bg-field"]',
+        'input:not([type=checkbox]):not([type=radio]):not([type=hidden]), select, textarea, [class*="bg-field"], [role="combobox"]',
       ),
     ].filter((element) => element.getBoundingClientRect().width > 0);
     return {
@@ -314,6 +329,8 @@ test.describe('field colour (AC-8)', () => {
       const form = await fieldFills(page, 'main');
       console.log(`new order ${tag}: ${JSON.stringify(form)}`);
       expectFieldRule(form);
+      // The SKU picker of a line is a combobox trigger that looks like a field: it is measured too.
+      expect(form.fields.some((field) => field.id === 'line-0-sku')).toBe(true);
       if (theme === 'light') {
         // On the cards of the form the fields are the card colour, not the page colour.
         expect(form.fields.some((field) => field.onCard && field.fill === form.cardColor)).toBe(
@@ -373,6 +390,54 @@ test.describe('field colour (AC-8)', () => {
     });
     expect(heights).toEqual({ input: 40, store: 40, channel: 40 });
   });
+});
+
+test.describe('table rows after the global TableCell change (AC-20)', () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
+
+  for (const { dir, tag } of [
+    { dir: 'ltr', tag: 'dark-en' },
+    { dir: 'rtl', tag: 'dark-ar' },
+  ] as const) {
+    test(`orders list and order page rows are at least 40px in ${tag}`, async ({ page }) => {
+      await enter(page, { theme: 'dark', dir });
+      // Only visible data rows: a hidden or empty row (display none, zero height) is not measured.
+      const heightsOf = async () =>
+        page.locator('main table tbody tr').evaluateAll((all) =>
+          all
+            .filter((row) => row.getClientRects().length > 0)
+            .map((row) => Math.round(row.getBoundingClientRect().height * 100) / 100)
+            .filter((height) => height > 0),
+        );
+      const hiddenRows = async () =>
+        page
+          .locator('main table tbody tr')
+          .evaluateAll(
+            (all) => all.filter((row) => row.getBoundingClientRect().height === 0).length,
+          );
+      await openList(page);
+      const hiddenInList = await hiddenRows();
+      const list = await heightsOf();
+      await openOrder(page);
+      console.log(
+        `zero height rows ${tag}: list ${hiddenInList}, order page ${await hiddenRows()}`,
+      );
+      const order = await heightsOf();
+      const summary = (values: number[]) => ({
+        count: values.length,
+        min: Math.min(...values),
+        max: Math.max(...values),
+        at40: values.filter((value) => Math.abs(value - 40) <= 0.5).length,
+        sample: values.slice(0, 8),
+      });
+      console.log(
+        `orders rows ${tag}: list ${JSON.stringify(summary(list))}, order page ${JSON.stringify(summary(order))}`,
+      );
+      expect(list.length, 'the orders list has visible data rows').toBeGreaterThan(0);
+      expect(order.length, 'the order page has visible table rows').toBeGreaterThan(0);
+      for (const height of [...list, ...order]) expect(height).toBeGreaterThanOrEqual(39.5);
+    });
+  }
 });
 
 test.describe('keyboard focus and notices (AC-22)', () => {

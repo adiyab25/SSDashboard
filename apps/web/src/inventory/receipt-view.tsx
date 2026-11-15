@@ -65,7 +65,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
         </div>
       </div>
 
-      <dl className="grid gap-4 rounded-lg border p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="grid gap-4 rounded-card gradient-card-edge p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div className="flex flex-col gap-1">
           <dt className="text-muted-foreground">{t('inventory.receiptDetail.location')}</dt>
           <dd className="font-medium">{text(receipt.location.name, receipt.location.code)}</dd>
@@ -116,28 +116,28 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
         <h2 id="receipt-lines-title" className="text-base font-semibold">
           {t('inventory.receiptDetail.linesTitle')}
         </h2>
-        <div className="relative overflow-hidden rounded-lg border">
+        <div className="relative overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('inventory.receiptDetail.tableLabel')}>
-            <TableHeader className="bg-muted">
-              <TableRow className="h-row-header hover:bg-muted">
-                <TableHead scope="col" className="w-12 px-3 text-end font-medium">
+            <TableHeader>
+              <TableRow className="h-row-header">
+                <TableHead scope="col" className="w-12 px-3 text-end">
                   {t('inventory.receiptDetail.position')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-start font-medium">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.stock.columns.sku')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-start font-medium">
+                <TableHead scope="col" className="px-3 text-start">
                   {t('inventory.stock.columns.name')}
                 </TableHead>
-                <TableHead scope="col" className="px-3 text-end font-medium">
+                <TableHead scope="col" className="px-3 text-end">
                   {t('inventory.receipt.quantity')}
                 </TableHead>
                 {seesCost && (
                   <>
-                    <TableHead scope="col" className="px-3 text-end font-medium">
+                    <TableHead scope="col" className="px-3 text-end">
                       {t('inventory.receipt.unitCost')}
                     </TableHead>
-                    <TableHead scope="col" className="px-3 text-end font-medium">
+                    <TableHead scope="col" className="px-3 text-end">
                       {t('inventory.receipt.lineTotal')}
                     </TableHead>
                   </>
@@ -146,7 +146,7 @@ export function ReceiptView({ receipt }: { receipt: StockReceiptDetail }) {
             </TableHeader>
             <TableBody>
               {receipt.lines.map((line) => (
-                <TableRow key={line.id} className="h-row hover:bg-muted">
+                <TableRow key={line.id} className="h-row">
                   <TableCell className="px-3 text-end tabular-nums text-muted-foreground">
                     {format.quantity(line.position)}
                   </TableCell>

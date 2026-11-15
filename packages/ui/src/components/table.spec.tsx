@@ -43,4 +43,39 @@ describe('Table', () => {
     expect(screen.getByRole('columnheader', { name: 'Code' })).toHaveClass('h-row-header');
     expect(screen.getByRole('row')).toHaveClass('h-row');
   });
+
+  describe('Arabic padding trim', () => {
+    function cellWith(className?: string) {
+      render(
+        <Table aria-label="SKUs">
+          <TableBody>
+            <TableRow>
+              <TableCell className={className}>x</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>,
+      );
+      return screen.getByRole('cell');
+    }
+
+    it('trims to 4px top and bottom when the caller sets no className', () => {
+      expect(cellWith()).toHaveClass('p-2', '[&:lang(ar)]:py-1');
+    });
+
+    it('keeps the trim when the caller only sets horizontal padding', () => {
+      expect(cellWith('px-3')).toHaveClass('[&:lang(ar)]:py-1');
+    });
+
+    it('drops the trim when the caller sets its own vertical padding', () => {
+      expect(cellWith('px-3 py-10')).not.toHaveClass('[&:lang(ar)]:py-1');
+    });
+
+    it('drops the trim for a variant prefixed vertical padding', () => {
+      expect(cellWith('sm:py-0')).not.toHaveClass('[&:lang(ar)]:py-1');
+    });
+
+    it('drops the trim when the caller sets its own Arabic padding', () => {
+      expect(cellWith('px-3 py-0 [&:lang(ar)]:py-0')).not.toHaveClass('[&:lang(ar)]:py-1');
+    });
+  });
 });

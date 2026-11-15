@@ -40,6 +40,7 @@ import { useLocalizedText } from '@/i18n/use-localized-text';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { catalogKeys, listGroupingChoices, recordCost } from '../catalog-api';
 import { catalogErrorCode } from '../catalog-error';
+import { SELECT_CLASS } from '@/shared/select-class';
 
 /** The form, built from the contract's basis and unit cost schemas (spec 0012, AC-13). */
 const RecordCostForm = z.object({
@@ -54,9 +55,6 @@ const RecordCostForm = z.object({
 });
 type FormInput = z.input<typeof RecordCostForm>;
 type FormOutput = z.output<typeof RecordCostForm>;
-
-const SELECT =
-  'h-control w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 
 const KNOWN = ['REASON_REQUIRED', 'INVALID_INPUT', 'NOT_FOUND', 'FORBIDDEN'] as const;
 type Failure = Exclude<(typeof KNOWN)[number], 'REASON_REQUIRED'> | 'generic';
@@ -172,7 +170,11 @@ export function RecordCostDialog({ style, onClose }: { style: StyleDetail; onClo
                 <FieldLabel htmlFor="record-cost-variant">
                   {t('catalog.cost.record.variant')}
                 </FieldLabel>
-                <select id="record-cost-variant" className={SELECT} {...form.register('variantId')}>
+                <select
+                  id="record-cost-variant"
+                  className={SELECT_CLASS}
+                  {...form.register('variantId')}
+                >
                   <option value="">{t('catalog.cost.record.wholeStyle')}</option>
                   {style.variants.map((variant) => (
                     <option key={variant.id} value={variant.id}>
@@ -188,7 +190,7 @@ export function RecordCostDialog({ style, onClose }: { style: StyleDetail; onClo
                 <select
                   key={seasonsReady ? 'ready' : 'loading'}
                   id="record-cost-season"
-                  className={SELECT}
+                  className={SELECT_CLASS}
                   disabled={!seasonsReady}
                   aria-invalid={!!errors.seasonId}
                   aria-describedby={errors.seasonId ? 'record-cost-season-error' : undefined}
@@ -222,7 +224,11 @@ export function RecordCostDialog({ style, onClose }: { style: StyleDetail; onClo
                 <FieldLabel htmlFor="record-cost-basis">
                   {t('catalog.cost.record.basis')}
                 </FieldLabel>
-                <select id="record-cost-basis" className={SELECT} {...form.register('costBasis')}>
+                <select
+                  id="record-cost-basis"
+                  className={SELECT_CLASS}
+                  {...form.register('costBasis')}
+                >
                   {CostBasis.options.map((basis) => (
                     <option key={basis} value={basis}>
                       {t(`catalog.cost.basis.${basis}`)}

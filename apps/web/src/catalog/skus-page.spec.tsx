@@ -90,6 +90,17 @@ describe('SkusPage (AC-13)', () => {
     );
   });
 
+  it('pins the classes that drop the cell padding on desktop, English and Arabic (AC-20; the Playwright density test proves the 40px height)', async () => {
+    api.listSkus.mockResolvedValue({ items: [sku(1)], nextCursor: null });
+    renderWithQuery(<SkusPage />);
+
+    const table = await screen.findByRole('table', { name: 'SKUs' });
+    expect(table.closest('[data-slot="collapsing-table"]')).toHaveClass(
+      'sm:[&_td]:py-0',
+      'sm:[&_td:lang(ar)]:py-0',
+    );
+  });
+
   it('searches with q and switches to the archived filter', async () => {
     api.listSkus.mockResolvedValue({ items: [], nextCursor: null });
     renderWithQuery(<SkusPage />);
