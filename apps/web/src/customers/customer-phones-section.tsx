@@ -25,12 +25,12 @@ export function CustomerPhonesSection({ phones }: { phones: readonly CustomerPho
       <h2 id="customer-phones-title" className="text-base font-semibold">
         {t('customers.profile.phones.title')}
       </h2>
-      <div className="overflow-hidden rounded-lg border">
+      <div className="overflow-hidden rounded-card gradient-card-edge">
         <Table aria-label={t('customers.profile.phones.tableLabel')}>
-          <TableHeader className="bg-muted">
-            <TableRow className="h-row-header hover:bg-muted">
+          <TableHeader>
+            <TableRow className="h-row-header">
               {COLUMNS.map((column) => (
-                <TableHead key={column} scope="col" className="px-3 text-start font-medium">
+                <TableHead key={column} scope="col" className="px-3 text-start">
                   {t(`customers.profile.phones.columns.${column}`)}
                 </TableHead>
               ))}
@@ -38,7 +38,7 @@ export function CustomerPhonesSection({ phones }: { phones: readonly CustomerPho
           </TableHeader>
           <TableBody>
             {phones.map((phone) => (
-              <TableRow key={phone.e164} className="h-row hover:bg-muted">
+              <TableRow key={phone.e164} className="h-row">
                 <TableCell className="px-3">
                   <span className="inline-flex flex-wrap items-center gap-2">
                     <LtrText>{phone.e164}</LtrText>

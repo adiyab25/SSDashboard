@@ -115,7 +115,7 @@ export function MergeCustomerPicker({ slot, enabled, onPick }: Props) {
               onChange={(event) => setTyped(event.target.value)}
             />
           </div>
-          <Button type="submit">
+          <Button type="submit" variant="secondary">
             <SearchIcon aria-hidden data-icon="inline-start" />
             {t('customers.merge.picker.submit')}
           </Button>

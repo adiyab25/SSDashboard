@@ -11,11 +11,17 @@ import {
   TableHeader,
   TableRow,
 } from '@ssdashboard/ui/components/table';
+import { cn } from '@ssdashboard/ui/lib/utils';
 import { tableFeatures, useTable, type ColumnDef } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const features = tableFeatures({});
+
+/** Whether a row shows a reason or warning sentence under its health badge. */
+function hasNote(item: ConnectionListItem): boolean {
+  return Boolean(item.healthReason) || item.healthWarnings.length > 0;
+}
 
 /** The badge look of each health; the word is always shown, so color is never the only signal. */
 const HEALTH_VARIANT: Record<ConnectionHealth, 'secondary' | 'outline' | 'destructive'> = {
@@ -70,7 +76,12 @@ export function ConnectionListTable({ rows }: { rows: readonly ConnectionListIte
         cell: ({ row }) => {
           const { health, healthReason, healthWarnings } = row.original;
           return (
-            <div className="flex min-w-0 flex-col items-start gap-1 py-2">
+            <div
+              className={cn(
+                'flex min-w-0 flex-col items-start gap-1',
+                hasNote(row.original) && 'py-2',
+              )}
+            >
               <Badge variant={HEALTH_VARIANT[health]}>{t(`connections.health.${health}`)}</Badge>
               {healthReason && (
                 <p className="max-w-prose text-sm text-muted-foreground">
@@ -104,13 +115,13 @@ export function ConnectionListTable({ rows }: { rows: readonly ConnectionListIte
   });
 
   return (
-    <div className="relative overflow-hidden rounded-lg border">
+    <div className="relative overflow-hidden rounded-card gradient-card-edge">
       <Table aria-label={t('connections.tableLabel')}>
-        <TableHeader className="bg-muted">
+        <TableHeader>
           {table.getHeaderGroups().map((group) => (
-            <TableRow key={group.id} className="h-row-header hover:bg-muted">
+            <TableRow key={group.id} className="h-row-header">
               {group.headers.map((header) => (
-                <TableHead key={header.id} scope="col" className="px-3 text-start font-medium">
+                <TableHead key={header.id} scope="col" className="px-3 text-start">
                   <table.FlexRender header={header} />
                 </TableHead>
               ))}
@@ -119,7 +130,7 @@ export function ConnectionListTable({ rows }: { rows: readonly ConnectionListIte
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id} className="min-h-row align-top hover:bg-muted">
+            <TableRow key={row.id} className={cn(hasNote(row.original) && 'align-top')}>
               {row.getAllCells().map((cell) => (
                 <TableCell key={cell.id} className="px-3 text-start">
                   <table.FlexRender cell={cell} />

@@ -42,12 +42,12 @@ export function CustomerChannelIdsSection({ ids }: { ids: readonly CustomerChann
       {ids.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('customers.profile.channelIds.empty')}</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-hidden rounded-card gradient-card-edge">
           <Table aria-label={t('customers.profile.channelIds.tableLabel')}>
-            <TableHeader className="bg-muted">
-              <TableRow className="h-row-header hover:bg-muted">
+            <TableHeader>
+              <TableRow className="h-row-header">
                 {COLUMNS.map((column) => (
-                  <TableHead key={column} scope="col" className="px-3 text-start font-medium">
+                  <TableHead key={column} scope="col" className="px-3 text-start">
                     {t(`customers.profile.channelIds.columns.${column}`)}
                   </TableHead>
                 ))}
@@ -55,7 +55,7 @@ export function CustomerChannelIdsSection({ ids }: { ids: readonly CustomerChann
             </TableHeader>
             <TableBody>
               {ids.map((item) => (
-                <TableRow key={item.id} className="h-row hover:bg-muted">
+                <TableRow key={item.id} className="h-row">
                   <TableCell className="px-3">
                     {t(`customers.profile.channelIds.kind.${item.kind}`)}
                   </TableCell>

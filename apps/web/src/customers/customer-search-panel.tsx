@@ -147,7 +147,7 @@ export function CustomerSearchPanel({ enabled }: { enabled: boolean }) {
       )}
 
       {submitted === null && (
-        <div className="flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-card gradient-card-edge px-4 py-10 text-center">
           <UsersRoundIcon aria-hidden className="size-8 text-muted-foreground" />
           <div className="flex flex-col gap-1">
             <p className="font-medium">{t('customers.search.promptTitle')}</p>
@@ -181,7 +181,7 @@ export function CustomerSearchPanel({ enabled }: { enabled: boolean }) {
       {query.data && (
         <>
           {rows.length === 0 ? (
-            <div className="flex flex-col items-center gap-1 rounded-lg border px-4 py-10 text-center">
+            <div className="flex flex-col items-center gap-1 rounded-card gradient-card-edge px-4 py-10 text-center">
               <p className="font-medium">
                 {t(
                   submitted?.kind === 'flagged'

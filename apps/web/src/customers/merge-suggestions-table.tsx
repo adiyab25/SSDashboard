@@ -80,7 +80,7 @@ export function MergeSuggestionsTable({ rows, canMerge, busyIds, errors, onDismi
           return (
             <div className="flex flex-col gap-1">
               <span className="inline-flex flex-wrap items-center gap-2">
-                <Button asChild size="sm">
+                <Button asChild size="sm" variant="secondary">
                   <Link
                     href={mergePageHref(first.id, second.id, row.original.id)}
                     aria-label={t('customers.review.mergeLabel', names)}
@@ -99,7 +99,10 @@ export function MergeSuggestionsTable({ rows, canMerge, busyIds, errors, onDismi
                 </Button>
               </span>
               {failure && (
-                <p role="alert" className="text-xs text-destructive">
+                <p
+                  role="alert"
+                  className="max-w-60 whitespace-normal pb-1 text-xs text-destructive"
+                >
                   {t(failure)}
                 </p>
               )}
@@ -118,13 +121,13 @@ export function MergeSuggestionsTable({ rows, canMerge, busyIds, errors, onDismi
   });
 
   return (
-    <div className="relative overflow-x-auto rounded-lg border">
+    <div className="relative overflow-x-auto rounded-card gradient-card-edge sm:[&_td]:py-0 sm:[&_td:lang(ar)]:py-0">
       <Table aria-label={t('customers.review.tableLabel')}>
-        <TableHeader className="bg-muted">
+        <TableHeader>
           {table.getHeaderGroups().map((group) => (
-            <TableRow key={group.id} className="h-row-header hover:bg-muted">
+            <TableRow key={group.id} className="h-row-header">
               {group.headers.map((header) => (
-                <TableHead key={header.id} scope="col" className="px-3 text-start font-medium">
+                <TableHead key={header.id} scope="col" className="px-3 text-start">
                   <table.FlexRender header={header} />
                 </TableHead>
               ))}
@@ -133,9 +136,9 @@ export function MergeSuggestionsTable({ rows, canMerge, busyIds, errors, onDismi
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id} className="hover:bg-muted">
+            <TableRow key={row.id}>
               {row.getAllCells().map((cell) => (
-                <TableCell key={cell.id} className="px-3 py-2 text-start align-top">
+                <TableCell key={cell.id} className="px-3 text-start">
                   <table.FlexRender cell={cell} />
                 </TableCell>
               ))}

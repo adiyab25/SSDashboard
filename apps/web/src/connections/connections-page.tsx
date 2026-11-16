@@ -71,7 +71,7 @@ export function ConnectionsPage() {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-1 rounded-lg border px-4 py-10 text-center">
+        <div className="flex flex-col items-center gap-1 rounded-card gradient-card-edge px-4 py-10 text-center">
           <p className="font-medium">{t('connections.emptyTitle')}</p>
           <p className="text-sm text-muted-foreground">{t('connections.emptyBody')}</p>
         </div>

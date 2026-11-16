@@ -4,7 +4,7 @@ import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { RadioGroup } from '@ssdashboard/ui/components/radio-group';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeftIcon, ArrowLeftRightIcon, LoaderCircleIcon } from 'lucide-react';
+import { ArrowLeftIcon, ArrowLeftRightIcon, InfoIcon, LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -148,7 +148,7 @@ export function MergeView({ enabled }: { enabled: boolean }) {
             <section
               key={slot}
               aria-labelledby={`merge-slot-${slot}`}
-              className="flex min-w-0 flex-col gap-3 rounded-lg border p-4"
+              className="flex min-w-0 flex-col gap-3 rounded-card gradient-card-edge p-4"
             >
               <h2 id={`merge-slot-${slot}`} className="text-sm font-semibold text-muted-foreground">
                 {t(`customers.merge.slot.${slot}`)}
@@ -176,7 +176,8 @@ export function MergeView({ enabled }: { enabled: boolean }) {
       </RadioGroup>
 
       {same && (
-        <Alert role="alert">
+        <Alert role="alert" className="text-muted-foreground">
+          <InfoIcon aria-hidden />
           <AlertDescription>{t('customers.merge.compare.same')}</AlertDescription>
         </Alert>
       )}

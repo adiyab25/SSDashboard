@@ -14,7 +14,7 @@ export function MergePairCustomer({ customer }: { customer: CustomerBrief }) {
       <span className="inline-flex flex-wrap items-center gap-2">
         <Link
           href={`/customers/${customer.id}`}
-          className="rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+          className="rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
         >
           <bdi dir="auto">{customer.name ?? t('customers.unnamed')}</bdi>
         </Link>

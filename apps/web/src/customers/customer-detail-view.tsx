@@ -3,7 +3,7 @@
 import { Alert, AlertDescription } from '@ssdashboard/ui/components/alert';
 import { Button } from '@ssdashboard/ui/components/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftIcon, GitMergeIcon } from 'lucide-react';
+import { ArrowLeftIcon, GitMergeIcon, InfoIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -105,7 +105,8 @@ export function CustomerDetailView({ enabled }: { enabled: boolean }) {
       </Button>
 
       {(mergedNotice || profile.resolvedFrom) && (
-        <Alert role="status">
+        <Alert role="status" className="text-muted-foreground">
+          <InfoIcon aria-hidden />
           <AlertDescription>{t('customers.profile.merged')}</AlertDescription>
         </Alert>
       )}

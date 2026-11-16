@@ -18,9 +18,9 @@ import { useRef, useState, type FormEvent, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { refetchAfterWrite } from '@/api/refetch-after-write';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { clearCustomerFlag, customerKeys } from './customers-api';
-import { customerSelectClass } from './customer-select-class';
 import { flagErrorKey, type FlagErrorKey } from './flag-error-key';
 
 interface Props {
@@ -95,7 +95,7 @@ export function CustomerClearFlagDialog({ profile, onClose, focusAfterClear }: P
             <FieldLabel htmlFor="unflag-reason">{t('customers.flagging.clear.reason')}</FieldLabel>
             <select
               id="unflag-reason"
-              className={customerSelectClass}
+              className={`${SELECT_CLASS} aria-invalid:border-destructive`}
               value={reason}
               aria-invalid={reasonMissing || undefined}
               aria-describedby={reasonMissing ? 'unflag-reason-error' : undefined}
