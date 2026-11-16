@@ -72,7 +72,7 @@ export function MergeCustomerCard({
   return (
     <section
       aria-labelledby={`merge-card-${slot}`}
-      className="flex min-w-0 flex-col gap-3 rounded-lg border p-4"
+      className="flex min-w-0 flex-col gap-3 rounded-card gradient-card-edge p-4"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2

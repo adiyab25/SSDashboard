@@ -41,7 +41,7 @@ export function CustomerResultsTable({ rows }: { rows: readonly CustomerBrief[] 
         cell: ({ row }) => (
           <Link
             href={`/customers/${row.original.id}`}
-            className="rounded-sm font-medium underline-offset-4 hover:underline focus-ring"
+            className="rounded-chip font-medium underline-offset-4 hover:underline focus-ring"
           >
             <bdi dir="auto">{row.original.name ?? t('customers.unnamed')}</bdi>
           </Link>
@@ -82,16 +82,16 @@ export function CustomerResultsTable({ rows }: { rows: readonly CustomerBrief[] 
   });
 
   return (
-    <div className="relative overflow-hidden rounded-lg border">
+    <div className="relative overflow-hidden rounded-card gradient-card-edge">
       <Table aria-label={t('customers.search.tableLabel')}>
-        <TableHeader className="bg-muted">
+        <TableHeader>
           {table.getHeaderGroups().map((group) => (
-            <TableRow key={group.id} className="h-row-header hover:bg-muted">
+            <TableRow key={group.id} className="h-row-header">
               {group.headers.map((header) => (
                 <TableHead
                   key={header.id}
                   scope="col"
-                  className={`px-3 font-medium ${NUMERIC.has(header.column.id) ? 'text-end' : 'text-start'}`}
+                  className={`px-3 ${NUMERIC.has(header.column.id) ? 'text-end' : 'text-start'}`}
                 >
                   <table.FlexRender header={header} />
                 </TableHead>
@@ -101,7 +101,7 @@ export function CustomerResultsTable({ rows }: { rows: readonly CustomerBrief[] 
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id} className="h-row hover:bg-muted">
+            <TableRow key={row.id} className="h-row">
               {row.getAllCells().map((cell) => (
                 <TableCell
                   key={cell.id}

@@ -111,7 +111,7 @@ export function MergeSuggestionsPanel({ query, canMerge }: Props) {
 
       {query.data &&
         (rows.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
+          <div className="flex flex-col items-center gap-3 rounded-card gradient-card-edge px-4 py-10 text-center">
             <CheckCheckIcon aria-hidden className="size-8 text-muted-foreground" />
             <div className="flex flex-col gap-1">
               <p className="font-medium">{t('customers.review.emptyTitle')}</p>

@@ -86,7 +86,7 @@ export function CustomerTimelineSection({ customerId }: { customerId: string }) 
 
       {query.data &&
         (entries.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-lg border px-4 py-10 text-center">
+          <div className="flex flex-col items-center gap-3 rounded-card gradient-card-edge px-4 py-10 text-center">
             <HistoryIcon aria-hidden className="size-8 text-muted-foreground" />
             <div className="flex flex-col gap-1">
               <p className="font-medium">{t('customers.profile.timeline.emptyTitle')}</p>
@@ -96,7 +96,7 @@ export function CustomerTimelineSection({ customerId }: { customerId: string }) 
             </div>
           </div>
         ) : (
-          <ol ref={listRef} className="flex flex-col divide-y rounded-lg border">
+          <ol ref={listRef} className="flex flex-col divide-y rounded-card gradient-card-edge">
             {entries.map((entry) => (
               <CustomerTimelineEntry
                 key={`${entry.kind}:${entry.id}`}

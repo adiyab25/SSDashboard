@@ -27,9 +27,9 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { refetchAfterWrite } from '@/api/refetch-after-write';
 import { useFormat } from '@/i18n/use-format';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { customerKeys, setCustomerFlag } from './customers-api';
-import { customerSelectClass } from './customer-select-class';
 import { flagErrorKey, type FlagErrorKey } from './flag-error-key';
 
 /** The reasons a person may pick by hand: `suggestion_applied` is kept for the one tap apply of a shown suggestion (AC-13). */
@@ -149,7 +149,7 @@ export function CustomerFlagDialog({ profile, onClose }: Props) {
             <FieldLabel htmlFor="flag-reason">{t('customers.flagging.set.reason')}</FieldLabel>
             <select
               id="flag-reason"
-              className={customerSelectClass}
+              className={SELECT_CLASS}
               value={reason}
               onChange={(event) => {
                 const parsed = CustomerFlagReasonCode.safeParse(event.target.value);

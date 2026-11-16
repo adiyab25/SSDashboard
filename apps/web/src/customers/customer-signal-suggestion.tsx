@@ -81,7 +81,7 @@ export function CustomerSignalSuggestion({
   return (
     <section
       aria-labelledby="customer-signal-title"
-      className="mt-2 flex flex-col gap-2 rounded-lg border bg-muted p-3 text-sm"
+      className="mt-2 flex flex-col gap-2 rounded-card gradient-card-edge p-3 text-sm"
     >
       <h2 id="customer-signal-title" className="font-semibold">
         {t('customers.profile.signal.title')}
