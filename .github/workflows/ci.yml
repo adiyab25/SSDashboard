@@ -19,8 +19,9 @@ concurrency:
 #
 # CI ports: 4900-4949 is reserved for CI only, so a run never collides with the dev servers and
 # databases of a developer machine. The block is web 4900, api 4901,
-# production web 4910, Postgres 4932; the e2e and scale jobs spell these out (the `env` context is not
-# available in job level `env` or `services`, so they cannot be defined once). Keep them in step.
+# production web 4910, Postgres 4932; the e2e database, e2e browser, and scale jobs spell these out
+# (the `env` context is not available in job level `env` or `services`, so they cannot be defined
+# once). Keep them in step.
 # check-reserved-ci-ports.mjs keeps these numbers out of dev facing config.
 
 # Every job only reads the repository; nothing here writes to it, comments, or publishes.
@@ -59,10 +60,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
-  # Decides whether the heavy jobs (images, e2e) are worth running. A run whose every changed file is
-  # documentation (`docs/**` or any `*.md`) skips them; `conventions` and `checks` always run, so the doc
-  # link check in `lint:repo` still guards docs. Anything unclear (manual run, new branch, a base commit
-  # that cannot be found, a diff that fails) counts as "not docs only" and runs everything.
+  # Decides whether the heavy jobs (images, the e2e database and browser jobs) are worth running. A
+  # run whose every changed file is documentation (`docs/**` or any `*.md`) skips them; `conventions`
+  # and `checks` always run, so the doc link check in `lint:repo` still guards docs. Anything unclear
+  # (manual run, new branch, a base commit that cannot be found, a diff that fails) counts as "not docs
+  # only" and runs everything.
   changes:
     name: Which files changed
     if: github.event.action != 'labeled'
@@ -106,7 +108,7 @@ jobs:
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
           if [ "$docs_only" = "true" ]; then
-            echo "Docs only change: the image builds and e2e are skipped." >> "$GITHUB_STEP_SUMMARY"
+            echo "Docs only change: the image builds and the e2e jobs are skipped." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Code or config changed (or unknown): the full run applies." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -150,12 +152,65 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
-  e2e:
-    name: Database and browser e2e
+  # The e2e work is three kinds of job. `e2e-database` runs the two vitest suites (packages/db and
+  # apps/api) once. `e2e-browser` runs the Playwright suite in 3 shards, each on its own runner and
+  # Postgres service (so each shard's global setup seeds its own admin), to keep every job well under
+  # 30 minutes. `e2e` only aggregates them and keeps the name "Database and browser e2e", which the
+  # branch protection on main requires, so the protection is untouched.
+  e2e-database:
+    name: Database e2e
     needs: changes
     if: github.event.action != 'labeled' && needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: ssdashboard
+          POSTGRES_USER: ssdashboard
+          POSTGRES_PASSWORD: ssdashboard
+        ports:
+          - 4932:5432
+        options: >-
+          --health-cmd "pg_isready -U ssdashboard -d ssdashboard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://ssdashboard_app:ssdashboard_app@localhost:4932/ssdashboard
+      MIGRATION_DATABASE_URL: postgres://ssdashboard:ssdashboard@localhost:4932/ssdashboard
+      APP_DB_PASSWORD: ssdashboard_app
+      API_INTERNAL_URL: http://localhost:4901
+      PUBLIC_URL: http://localhost:4900
+      # A public, test only value for this throwaway CI database. Never use it anywhere real.
+      BETTER_AUTH_SECRET: ci-only-public-test-secret-not-for-real-use-0000
+      # A public, test only 32 byte key (64 hex characters) that seals connection credentials in
+      # these tests. Never use it anywhere real.
+      CONNECTOR_SECRET_KEY: ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm db:migrate
+      - run: pnpm --filter @ssdashboard/db test:e2e
+      - run: pnpm --filter @ssdashboard/api test:e2e
+
+  e2e-browser:
+    name: Browser e2e (shard ${{ matrix.shard }} of 3)
+    needs: changes
+    if: github.event.action != 'labeled' && needs.changes.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:18-alpine
@@ -198,10 +253,44 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install Chromium and its system libraries
         run: pnpm --filter @ssdashboard/web exec playwright install --with-deps chromium
+      # The build is what the production project's `next start` and the api web server need.
+      - run: pnpm build
       - run: pnpm db:migrate
-      - run: pnpm test:e2e
+      - run: pnpm --filter @ssdashboard/web exec playwright test --shard=${{ matrix.shard }}/3
 
-  # The spec 0002 scale suite (and the spec 0010 audit load): too long for the default e2e job, so
+  # The one check branch protection requires. A docs only change skips the heavy jobs on purpose and
+  # passes; otherwise every job it depends on must have succeeded (a skipped or cancelled one fails).
+  e2e:
+    name: Database and browser e2e
+    needs: [changes, e2e-database, e2e-browser]
+    if: always() && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the e2e jobs
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          DATABASE_RESULT: ${{ needs.e2e-database.result }}
+          BROWSER_RESULT: ${{ needs.e2e-browser.result }}
+        run: |
+          if [ "$CHANGES_RESULT" = "success" ] && [ "$DOCS_ONLY" = "true" ]; then
+            echo "Docs only change: the e2e jobs were skipped on purpose." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          failed=0
+          for pair in "changes=$CHANGES_RESULT" "e2e-database=$DATABASE_RESULT" "e2e-browser=$BROWSER_RESULT"; do
+            if [ "${pair#*=}" != "success" ]; then
+              echo "Job ${pair%%=*} finished with result: ${pair#*=} (it must be success)." | tee -a "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          done
+          if [ "$failed" = "1" ]; then
+            exit 1
+          fi
+          echo "Database e2e and all 3 browser shards passed." | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The spec 0002 scale suite (and the spec 0010 audit load): too long for the default e2e jobs, so
   # it runs only by hand and on pull requests carrying the `scale` label, never on a timer.
   scale:
     name: Scale suite
