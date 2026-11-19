@@ -202,7 +202,7 @@ export function AuditEntryDialog({
                 <TableBody>
                   {detail.data.changes.map((change) => (
                     <TableRow key={change.field} className="h-row">
-                      <TableHead scope="row" className="px-3 text-start" dir="ltr">
+                      <TableHead scope="row" className="h-row! px-3 text-start" dir="ltr">
                         {change.field}
                       </TableHead>
                       <TableCell className="px-3">{cell(change, 'before')}</TableCell>

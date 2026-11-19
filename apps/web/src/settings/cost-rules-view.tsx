@@ -166,7 +166,7 @@ export function CostRulesView({ enabled, canAdd }: CostRulesViewProps) {
                     const name = words.kindName(kind);
                     return (
                       <TableRow key={kind} className="h-row">
-                        <TableHead scope="row" className="px-3 text-start">
+                        <TableHead scope="row" className="h-row! px-3 text-start">
                           {name}
                         </TableHead>
                         <TableCell className="px-3 text-end tabular-nums">

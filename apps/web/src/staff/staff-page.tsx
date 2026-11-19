@@ -354,12 +354,15 @@ export function StaffPage() {
                     <th
                       key={column}
                       scope="col"
-                      className="table-head-look h-row-header px-3 text-start"
+                      className="table-head-look h-row-header align-middle whitespace-nowrap px-3 text-start"
                     >
                       {t(`staff.columns.${column}`)}
                     </th>
                   ))}
-                  <th scope="col" className="table-head-look h-row-header w-12 px-3 text-start">
+                  <th
+                    scope="col"
+                    className="table-head-look h-row-header align-middle whitespace-nowrap w-12 px-3 text-start"
+                  >
                     <span className="sr-only">{t('staff.columns.actions')}</span>
                   </th>
                 </tr>
