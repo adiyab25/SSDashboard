@@ -45,13 +45,13 @@ Visual language, layout primitives, and base components, shaped with the Impecca
 **Done when:** `design.md` covers type, color, spacing, and components; base components handle focus, keyboard, and right to left; there is a phone first pattern for the manager dashboard and a pattern for in screen help.
 - [x] Design it (spec): `/architect design system & UI foundation`
 - [x] Build it: `/develop design system & UI foundation`
-  - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md`
+  - [x] Direction B (Daftar) in tokens, fonts, and `DESIGN.md` (its look was replaced by Midnight, Silver and Cyan, spec 0025)
   - [x] Status chips, provisional values, the freshness strip, and the floor density scope
   - [x] Portal and partner frames with per brand theming
   - [x] Phone first dashboard pattern and in screen help
 - [x] Verify it: `/check verify design system & UI foundation`
 - [x] Test it: `/test design system & UI foundation`
-Spec [0003](../specs/0003-design-system-ui-foundation/index.md) (amendment of 2026-11-05, Proposed; the owner chose direction B, Daftar, with the floor density scope, 2026-11-05)
+Spec [0003](../specs/0003-design-system-ui-foundation/index.md) (amendment of 2026-11-05, Accepted; the owner chose direction B, Daftar, with the floor density scope, 2026-11-05); the look is amended by spec [0025](../specs/0025-midnight-silver-cyan/index.md) (Midnight, Silver and Cyan, built in seven milestones, accepted 2026-11-19 after the manual verify pass)
 
 ### 6. Localization (Arabic & English)
 Arabic first, English always, everywhere: screens, errors, receipts, exports, and templates.

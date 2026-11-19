@@ -1,7 +1,7 @@
 # 0003. Build the back office design system on shadcn/ui (Radix, Vega, zinc) in a shared `packages/ui`, with the app shell as its first real screen
 
 **Date**: 2026-11-03
-**Status**: Proposed (amendment of 2026-11-05 for scope feature 5; the original decision was accepted and built)
+**Status**: Accepted (amendment of 2026-11-05 for scope feature 5, built; the original decision was accepted and built; its look is replaced by spec 0025, accepted 2026-11-19)
 **Amended by**: [spec 0025](../0025-midnight-silver-cyan/index.md) (2026-11-13), which replaces the look (option B, Daftar: colour, type, corner radius, motion, and the look of base components) with Midnight, Silver and Cyan. The behaviour rules below stay.
 
 ## Summary
