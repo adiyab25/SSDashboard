@@ -1,25 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import {
-  expect,
-  test,
-  type APIRequestContext,
-  type BrowserContext,
-  type Locator,
-  type Page,
-} from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { createDatabase } from '@ssdashboard/db';
-import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
+import { type SeededAccount } from './accounts';
 import { STORAGE_STATE, ownerDatabaseUrl } from './auth';
 import { api, createSku } from './master-data-api';
+import { expectNoAxeViolations, textFor } from './support';
 import {
-  expectNoAxeViolations,
-  textFor,
-  useBrowserState as setBrowserState,
-  type TextDirection,
-  type Theme,
-} from './support';
+  COMBINATIONS,
+  button,
+  enterAsNewManager,
+  measureFields,
+  measureFocusRings,
+  measureNotedTables,
+  openDialogBy,
+  openPath,
+  settleAnimations,
+  shot,
+  walk,
+  type Screen,
+  type Translate,
+} from './look-support';
 
 // Spec 0025 milestone M5 (AC-6, AC-8, AC-20, AC-21, AC-22, decisions 13 and 14): the customers
 // search and review screens, the customer profile with its flag dialogs, the merge screen, and the
@@ -28,24 +28,6 @@ import {
 // picker, the filled and same-customer merge, an invalid form) gets axe in dark and light, English
 // and Arabic. Each test signs in as its own manager so the 30 a minute search throttle is never
 // shared. Set SHOT_DIR to also save screenshots.
-
-const SHOT_DIR = process.env.SHOT_DIR;
-
-async function shot(page: Page, name: string) {
-  if (!SHOT_DIR) return;
-  mkdirSync(SHOT_DIR, { recursive: true });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
-}
-
-const COMBINATIONS = [
-  { theme: 'dark', dir: 'ltr', tag: 'dark-en' },
-  { theme: 'dark', dir: 'rtl', tag: 'dark-ar' },
-  { theme: 'light', dir: 'ltr', tag: 'light-en' },
-  { theme: 'light', dir: 'rtl', tag: 'light-ar' },
-] as const satisfies readonly { theme: Theme; dir: TextDirection; tag: string }[];
-
-type Translate = (key: Parameters<typeof textFor>[1]) => string;
 
 const digits = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 
@@ -235,46 +217,6 @@ test.afterEach(async () => {
       .catch(() => undefined);
 });
 
-/** Signs in as a fresh manager in the language of the direction, and stores the theme and language. */
-async function enter(
-  page: Page,
-  context: BrowserContext,
-  baseURL: string | undefined,
-  state: { theme: Theme; dir: TextDirection },
-) {
-  const account = await seedAccount({
-    hats: ['manager'],
-    language: state.dir === 'rtl' ? 'ar' : 'en',
-  });
-  accounts.push(account);
-  await signInThroughApi(context, account, baseURL ?? '');
-  await setBrowserState(page, state);
-}
-
-/** Opens a path and waits until the page shows its h1, has no busy table or skeleton, and fonts are in. */
-async function openPath(page: Page, path: string) {
-  await page.goto(path);
-  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
-  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-i18n'));
-  await expect(page.locator('main [aria-busy="true"], main [data-slot="skeleton"]')).toHaveCount(0);
-  await page.evaluate(() => document.fonts.ready);
-}
-
-/** Clicks a trigger until its dialog shows (a click before hydration goes nowhere). */
-async function openDialogBy(page: Page, trigger: Locator) {
-  await expect(trigger.first()).toBeVisible();
-  await expect(async () => {
-    if (!(await page.getByRole('dialog').isVisible())) await trigger.first().click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 1500 });
-  }).toPass({ timeout: 20_000 });
-  await page.evaluate(() => document.fonts.ready);
-  await expect(page.getByRole('dialog').locator('[data-slot="skeleton"]')).toHaveCount(0);
-}
-
-function button(page: Page, name: string) {
-  return page.getByRole('button', { name, exact: true });
-}
-
 const POPULATED = {
   items: [
     {
@@ -321,24 +263,6 @@ async function mockPopulatedConnections(page: Page) {
     (route) =>
       route.request().method() === 'GET' ? route.fulfill({ json: POPULATED }) : route.fallback(),
   );
-}
-
-interface Step {
-  tag: string;
-  /** Moves the open page into this state; the scope is where the controls to measure live. */
-  run: (page: Page, dir: TextDirection, t: Translate) => Promise<void>;
-  scope?: string;
-}
-
-interface Screen {
-  tag: string;
-  path: () => string;
-  before?: (page: Page) => Promise<void>;
-  /** Waits for what the screen loads, so no skeleton is measured. */
-  ready: (page: Page, t: Translate) => Promise<void>;
-  steps: Step[];
-  /** How many main (blend) buttons the main area shows in its base state. */
-  blends: number;
 }
 
 const waitRow = async (page: Page, label: string, name: string) => {
@@ -582,173 +506,6 @@ async function openReview(page: Page, t: Translate) {
   }).toPass({ timeout: 20_000 });
 }
 
-/**
- * Visits a screen, calls `onView` on the page and again on each of its states, and answers the
- * failures it collected, so one broken state does not hide the rest.
- */
-async function walk(
-  page: Page,
-  screen: Screen,
-  dir: TextDirection,
-  onView: (view: { name: string; scope: string; base: boolean }) => Promise<void>,
-): Promise<string[]> {
-  const t: Translate = (key) => textFor(dir, key);
-  const failures: string[] = [];
-  const attempt = async (name: string, scope: string, base: boolean) => {
-    try {
-      await onView({ name, scope, base });
-    } catch (error) {
-      failures.push(
-        `${name}: ${(error instanceof Error ? error.message : String(error)).slice(0, 700)}`,
-      );
-    }
-  };
-  const open = async () => {
-    await screen.before?.(page);
-    await openPath(page, screen.path());
-    await screen.ready(page, t);
-  };
-  await open();
-  await attempt(screen.tag, 'main', true);
-  for (const step of screen.steps) {
-    const name = `${screen.tag}-${step.tag}`;
-    try {
-      await step.run(page, dir, t);
-    } catch (error) {
-      failures.push(
-        `${name}: could not reach: ${(error instanceof Error ? error.message : String(error)).slice(0, 300)}`,
-      );
-      await page.unrouteAll({ behavior: 'ignoreErrors' });
-      await open();
-      continue;
-    }
-    await attempt(name, step.scope ?? 'main', false);
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await open();
-  }
-  return failures;
-}
-
-async function settleAnimations(page: Page) {
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          document
-            .getAnimations()
-            .filter(
-              (animation) =>
-                animation.effect?.getComputedTiming().iterations !== Infinity &&
-                animation.playState === 'running',
-            ).length,
-      ),
-    )
-    .toBe(0);
-}
-
-/** Every field in a scope: fill, border, corners, height, and what the page and the card colour are. */
-async function measureFields(page: Page, scope: string) {
-  await settleAnimations(page);
-  return page
-    .locator(scope)
-    .first()
-    .evaluate((root) => {
-      const probe = (variable: string, property: 'backgroundColor' | 'color') => {
-        const element = document.createElement('div');
-        element.style[property] = `var(${variable})`;
-        document.body.append(element);
-        const color = getComputedStyle(element)[property];
-        element.remove();
-        return color;
-      };
-      const dark = document.documentElement.classList.contains('dark');
-      const visible = (element: Element) => element.getBoundingClientRect().width > 0;
-      const idOf = (element: Element) =>
-        element.id || element.tagName.toLowerCase() + ':' + (element.getAttribute('name') ?? '');
-      const fields = [
-        ...root.querySelectorAll<HTMLElement>(
-          'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea, [class*="bg-field"], [role="combobox"]',
-        ),
-      ].filter(visible);
-      return {
-        dark,
-        cardColor: probe('--card', 'backgroundColor'),
-        pageColor: probe('--background', 'backgroundColor'),
-        inputColor: probe('--input', 'color'),
-        errorColor: probe('--destructive', 'color'),
-        fields: fields.map((element) => {
-          const computed = getComputedStyle(element);
-          const kind = element.matches('select')
-            ? 'select'
-            : element.matches('textarea')
-              ? 'textarea'
-              : element.matches('[role="combobox"]')
-                ? 'combobox'
-                : 'input';
-          return {
-            id: idOf(element),
-            kind,
-            fill: computed.backgroundColor,
-            border: computed.borderTopColor,
-            borderWidth: computed.borderTopWidth,
-            radius: computed.borderTopLeftRadius,
-            height: element.offsetHeight,
-            invalid: element.getAttribute('aria-invalid') === 'true',
-            onCard:
-              element.closest(
-                '[data-slot="card"], [data-slot="dialog-content"], .gradient-card-edge',
-              ) !== null,
-          };
-        }),
-        comboboxes: root.querySelectorAll('[role="combobox"]').length,
-      };
-    });
-}
-
-/** Focuses each field in a scope and reads its outline against the `--ring` colour. */
-async function measureFocusRings(page: Page, scope: string) {
-  const handles = await page
-    .locator(scope)
-    .first()
-    .locator(
-      'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role="combobox"]:not([disabled])',
-    )
-    .filter({ visible: true })
-    .elementHandles();
-  const out: {
-    id: string;
-    style: string;
-    width: number;
-    offset: number;
-    color: string;
-    ring: string;
-  }[] = [];
-  for (const handle of handles) {
-    await handle.evaluate((element) => (element as HTMLElement).focus());
-    await settleAnimations(page);
-    out.push(
-      await handle.evaluate((node) => {
-        const element = node as HTMLElement;
-        const probe = document.createElement('div');
-        probe.style.color = 'var(--ring)';
-        document.body.append(probe);
-        const ring = getComputedStyle(probe).color;
-        probe.remove();
-        const computed = getComputedStyle(element);
-        return {
-          id: element.id || element.tagName.toLowerCase(),
-          style: computed.outlineStyle,
-          width: parseFloat(computed.outlineWidth),
-          offset: parseFloat(computed.outlineOffset),
-          color: computed.outlineColor,
-          ring,
-        };
-      }),
-    );
-  }
-  return out;
-}
-
 test.describe('axe on every screen and state (AC-22)', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
 
@@ -760,7 +517,7 @@ test.describe('axe on every screen and state (AC-22)', () => {
         baseURL,
       }) => {
         test.setTimeout(150_000);
-        await enter(page, context, baseURL, { theme, dir });
+        accounts.push(await enterAsNewManager(page, context, baseURL, { theme, dir }));
         const failures = await walk(page, screen, dir, async ({ name }) => {
           await expect(page.locator('h1')).toHaveCount(1);
           await expectNoAxeViolations(page);
@@ -783,7 +540,7 @@ test.describe('field fill, border, corners, height and focus ring (AC-8, AC-20)'
         baseURL,
       }) => {
         test.setTimeout(150_000);
-        await enter(page, context, baseURL, { theme, dir });
+        accounts.push(await enterAsNewManager(page, context, baseURL, { theme, dir }));
         let comboboxes = 0;
         let fieldsSeen = 0;
         const failures = await walk(page, screen, dir, async ({ name, scope }) => {
@@ -865,7 +622,7 @@ test.describe('field fill, border, corners, height and focus ring (AC-8, AC-20)'
       ['ltr', 'dark'],
       ['rtl', 'light'],
     ] as const) {
-      await enter(page, context, baseURL, { theme, dir });
+      accounts.push(await enterAsNewManager(page, context, baseURL, { theme, dir }));
       const t: Translate = (key) => textFor(dir, key);
       await openPath(page, `/customers/${seeded().plain.id}`);
       await openDialogBy(page, button(page, t('customers.profile.flagCard.set')));
@@ -889,7 +646,7 @@ test.describe('one main action per view (AC-13 and the design rule)', () => {
       baseURL,
     }) => {
       test.setTimeout(90_000);
-      await enter(page, context, baseURL, { theme: 'dark', dir: 'ltr' });
+      accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir: 'ltr' }));
       const failures = await walk(page, screen, 'ltr', async ({ name, scope, base }) => {
         const root = page.locator(scope).first();
         const defaults = await root.locator('[data-slot="button"][data-variant="default"]').count();
@@ -915,73 +672,6 @@ test.describe('one main action per view (AC-13 and the design rule)', () => {
     });
   }
 });
-
-interface TableLook {
-  label: string;
-  panel: boolean;
-  radius: string | null;
-  heads: { text: string; height: number; mono: boolean; transform: string; weight: string }[];
-  rows: {
-    text: string;
-    height: number;
-    note: boolean;
-    clipped: boolean;
-    errorVisible: boolean | null;
-    errorDetail: string;
-  }[];
-}
-
-/** Heights and looks of every table in main: headers, body rows, and whether a note or error shows in full. */
-async function measureTables(page: Page): Promise<TableLook[]> {
-  await settleAnimations(page);
-  return page.locator('main table:visible').evaluateAll((all) =>
-    all.map((table) => {
-      const panel = table.closest('[class*="gradient-card-edge"]');
-      const container = table.closest('[data-slot="table-container"]') ?? table.parentElement!;
-      const bounds = container.getBoundingClientRect();
-      return {
-        label: table.getAttribute('aria-label') ?? '',
-        panel: panel !== null,
-        radius: panel ? getComputedStyle(panel).borderTopLeftRadius : null,
-        heads: [...table.querySelectorAll('thead th')].map((th) => {
-          const computed = getComputedStyle(th);
-          return {
-            text: (th.textContent ?? '').trim(),
-            height: th.getBoundingClientRect().height,
-            mono: computed.fontFamily.toLowerCase().includes('mono'),
-            transform: computed.textTransform,
-            weight: computed.fontWeight,
-          };
-        }),
-        rows: [...table.querySelectorAll('tbody tr')].map((row) => {
-          const rect = row.getBoundingClientRect();
-          const error = row.querySelector('[role="alert"]');
-          const noteParagraph = row.querySelector('td p');
-          const errorRect = error?.getBoundingClientRect();
-          return {
-            text: (row.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 50),
-            height: rect.height,
-            note: error !== null || noteParagraph !== null,
-            clipped: [...row.querySelectorAll('td')].some(
-              (cell) => cell.scrollHeight > cell.clientHeight + 1,
-            ),
-            errorDetail: errorRect
-              ? `error ${Math.round(errorRect.top)}-${Math.round(errorRect.bottom)} left ${Math.round(errorRect.left)} right ${Math.round(errorRect.right)} h ${Math.round(errorRect.height)} scroll ${(error as HTMLElement).scrollHeight}/${(error as HTMLElement).clientHeight}; row ${Math.round(rect.top)}-${Math.round(rect.bottom)}; panel ${Math.round(bounds.left)}-${Math.round(bounds.right)}`
-              : '',
-            errorVisible: errorRect
-              ? errorRect.height > 0 &&
-                errorRect.bottom <= rect.bottom + 1 &&
-                errorRect.top >= rect.top - 1 &&
-                (error as HTMLElement).scrollHeight <= (error as HTMLElement).clientHeight + 1 &&
-                errorRect.left >= bounds.left - 1 &&
-                errorRect.right <= bounds.right + 1
-              : null,
-          };
-        }),
-      };
-    }),
-  );
-}
 
 /** The tallest a merge suggestion row may be, in English and Arabic (today 73px and 59px). */
 const MERGE_SUGGESTION_ROW_MAX = 80;
@@ -1009,7 +699,7 @@ test.describe('tables: header 44px, lowercase mono heads, rows 40px (AC-11, AC-2
       const name = view.step ? `${view.screen}-${view.step}` : view.screen;
       test(`${name} tables in ${tag}`, async ({ page, context, baseURL }) => {
         test.setTimeout(90_000);
-        await enter(page, context, baseURL, { theme: 'dark', dir });
+        accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir }));
         const screen = SCREENS.find((entry) => entry.tag === view.screen)!;
         const t: Translate = (key) => textFor(dir, key);
         await screen.before?.(page);
@@ -1017,7 +707,7 @@ test.describe('tables: header 44px, lowercase mono heads, rows 40px (AC-11, AC-2
         await screen.ready(page, t);
         const step = screen.steps.find((entry) => entry.tag === view.step);
         if (step) await step.run(page, dir, t);
-        const looks = await measureTables(page);
+        const looks = await measureNotedTables(page);
         console.log(
           `${name} ${tag}: ${JSON.stringify(looks.map((l) => ({ label: l.label, head: l.heads.map((h) => h.height), rows: l.rows.map((r) => `${Math.round(r.height * 10) / 10}${r.note ? 'n' : ''}`) })))}`,
         );
@@ -1074,7 +764,7 @@ test.describe('tables: header 44px, lowercase mono heads, rows 40px (AC-11, AC-2
     context,
     baseURL,
   }) => {
-    await enter(page, context, baseURL, { theme: 'dark', dir: 'ltr' });
+    accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir: 'ltr' }));
     await mockPopulatedConnections(page);
     await openPath(page, '/connections');
     const table = page.getByRole('table', { name: textFor('ltr', 'connections.tableLabel') });
@@ -1134,7 +824,7 @@ test.describe('info notices are muted with an "i" icon (AC-10, decision 13)', ()
         context,
         baseURL,
       }) => {
-        await enter(page, context, baseURL, { theme, dir });
+        accounts.push(await enterAsNewManager(page, context, baseURL, { theme, dir }));
         await openPath(page, notice.path());
         const alert = page.locator('main [data-slot="alert"]').filter({
           hasText: textFor(dir, notice.text),
@@ -1194,7 +884,7 @@ test.describe('the returner signal panel and the timeline still render (AC-21)',
       baseURL,
     }) => {
       test.setTimeout(90_000);
-      await enter(page, context, baseURL, { theme: 'dark', dir });
+      accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir }));
       const t: Translate = (key) => textFor(dir, key);
       await openPath(page, `/customers/${seeded().signal.id}`);
       const signal = page.getByRole('region', { name: t('customers.profile.signal.title') });
@@ -1249,7 +939,7 @@ test.describe('the returner signal panel and the timeline still render (AC-21)',
     baseURL,
   }) => {
     test.setTimeout(90_000);
-    await enter(page, context, baseURL, { theme: 'dark', dir: 'ltr' });
+    accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir: 'ltr' }));
     const t: Translate = (key) => textFor('ltr', key);
     // Answered in the browser, so the shared signal customer keeps her panel for the other tests.
     let puts = 0;
@@ -1282,7 +972,7 @@ test.describe('the returner signal panel and the timeline still render (AC-21)',
     baseURL,
   }) => {
     test.setTimeout(120_000);
-    await enter(page, context, baseURL, { theme: 'dark', dir: 'ltr' });
+    accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir: 'ltr' }));
     const t: Translate = (key) => textFor('ltr', key);
     // A throwaway customer with two refused orders, so the real write can succeed.
     const tag = randomUUID().slice(0, 6).toUpperCase();
@@ -1371,7 +1061,7 @@ test.describe('no provisional values on these screens (spec 0025 M5 done when)',
     baseURL,
   }) => {
     test.setTimeout(150_000);
-    await enter(page, context, baseURL, { theme: 'dark', dir: 'ltr' });
+    accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir: 'ltr' }));
     const found: string[] = [];
     for (const screen of SCREENS) {
       const failures = await walk(page, screen, 'ltr', async ({ name }) => {
@@ -1411,7 +1101,7 @@ test.describe('one h1 per screen at 1280px', () => {
   }, info) => {
     test.skip(info.project.name !== 'desktop');
     test.setTimeout(120_000);
-    await enter(page, context, baseURL, { theme: 'dark', dir: 'ltr' });
+    accounts.push(await enterAsNewManager(page, context, baseURL, { theme: 'dark', dir: 'ltr' }));
     for (const screen of SCREENS) {
       await screen.before?.(page);
       await openPath(page, screen.path());

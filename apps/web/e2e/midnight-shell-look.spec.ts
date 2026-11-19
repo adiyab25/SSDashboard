@@ -1,21 +1,11 @@
 /* eslint-disable no-empty-pattern -- Playwright needs `({}, info)` to reach testInfo without fixtures. */
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { openShell, seedLocations, textFor, useBrowserState, type TextDirection } from './support';
+import { shot } from './look-support';
 
 // Spec 0025 milestone M2, batch 1 (AC-4, AC-10, AC-11, AC-13, AC-20, AC-22): the back office shell
 // and the sign in screens in the Midnight look, measured by computed style in a real browser. Set
 // SHOT_DIR to also save screenshots. Desktop project; the phone sheet has its own test below.
-
-const SHOT_DIR = process.env.SHOT_DIR;
-
-async function shot(page: Page, name: string) {
-  if (!SHOT_DIR) return;
-  mkdirSync(SHOT_DIR, { recursive: true });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
-}
 
 async function openAuthPage(page: Page, path: string) {
   const hydrated = page.waitForResponse((response) => response.url().endsWith('/api/config'));
