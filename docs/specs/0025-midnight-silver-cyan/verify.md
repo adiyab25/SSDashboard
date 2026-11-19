@@ -33,36 +33,38 @@ Expect to find these key figures: `foreground` on `background` 15.75 dark and 17
 | AC-20 | `pnpm --filter @ssdashboard/web test:e2e -- shell` and `git diff main -- packages/ui/DESIGN.md` on the density section | geometry assertions pass unchanged; no density number changed |
 | AC-21 | `pnpm test` and `pnpm test:e2e` | pass; the pull request lists every test line changed and each one is a colour, font, or class assertion |
 | AC-22 | the axe Playwright specs for each milestone's screens | zero violations in dark and light, left to right and right to left |
-| AC-23 | `pnpm lint` (runs `lint:repo`) and `rg -n "Daftar\|Inter\b\|JetBrains" --glob '!docs/specs/**' --glob '!docs/positioning/**' --glob '!docs/reviews/**' --glob '!docs/handover/**' .` | lint passes; no remaining hit outside history |
+| AC-23 | `pnpm lint` (runs `lint:repo`) and `rg -n "Daftar\|Inter\b\|JetBrains" --glob '!docs/specs/**' --glob '!docs/positioning/**' --glob '!docs/reviews/**' --glob '!docs/handover/**' .` | lint passes; no hit in code or styles; hits in tests that assert the old look is gone, and in history or origin sentences, are allowed |
 
 Whole repository gate at the end of every milestone: `pnpm lint && pnpm typecheck && pnpm test && pnpm format:check`.
 
 ## UI / manual
 
+_Walked 2026-11-19 at the close-out on a fresh database: every item below passed in English and Arabic, each in light and dark, at 1280px, with the portal and partner screens also at 320px (zero axe violations, one `h1` per page, no sideways page scroll, no font host request). The two points the spec did not settle were ruled by the owner the same day and are recorded in AC-20 (the `/orders` stacked order cell) and AC-23 (wording)._
+
 Milestone 1 (`/design`, in development, `pnpm dev`):
 
-- [ ] Open `/design` in dark. The palette shows every role of the dark column, the gradients show each utility, and the contrast section lists every pair with a live number matching the table in index.md → AC-1, AC-2, AC-3
-- [ ] Switch to light from the user menu. Same page, light column. Every text pair on `accent` (`#E9EEF4`) is listed with its live number: foreground 16.58, muted 6.45, cyan link 4.59, confirmed 4.70, owed 4.65, failed 4.99, all at or above 4.5; row hover uses `tint-row` in both themes → AC-5
-- [ ] Look at the status chip row. Each meaning has its own icon, a word, the control fill, a glow on the icon, and no plain dot → AC-6
-- [ ] Look at the button matrix: main button (blend, edge, weight 600), secondary (control fill, gradient edge, both ends visible against page and card), disabled (card fill, muted text, no lift), hover shows a 1px lift and the sheen on the main button, press shrinks slightly → AC-7, AC-18
-- [ ] Focus every control with Tab. The cyan ring is visible on page, card, control fill, sidebar, and `accent` → AC-8, AC-22
-- [ ] Open a select and a menu: 10px corners, 6px rows, 150ms drop. Trigger a toast: inverted colours, Undo when undoable. Trigger an error toast: destructive surface with a destructive border. An info notice has the "i" icon and muted text, no cyan → AC-10, AC-12, AC-18
-- [ ] Segmented control: none is vendored yet, so confirm the `DESIGN.md` rule is there. When one is vendored, select a segment: it gets the `accent` fill and a 1px `input` border → AC-9
-- [ ] Read the page heading: 20px, the blend fill. Switch the system to forced colors (Windows High Contrast): the heading reads in the plain foreground → AC-11
-- [ ] Switch to Arabic and right to left: section label `//` stays correct, table headers read normally, heading letters join (no gaps), digits stay Western, tinted gradients fade from the right edge, Arabic text in a mono styled label is in Noto Sans Arabic → AC-13, AC-15
-- [ ] Turn on "reduce motion" in the operating system: hover and press no longer move anything; no entrance, sheen, or pulse → AC-19
+- [x] Open `/design` in dark. The palette shows every role of the dark column, the gradients show each utility, and the contrast section lists every pair with a live number matching the table in index.md → AC-1, AC-2, AC-3
+- [x] Switch to light from the user menu. Same page, light column. Every text pair on `accent` (`#E9EEF4`) is listed with its live number: foreground 16.58, muted 6.45, cyan link 4.59, confirmed 4.70, owed 4.65, failed 4.99, all at or above 4.5; row hover uses `tint-row` in both themes → AC-5
+- [x] Look at the status chip row. Each meaning has its own icon, a word, the control fill, a glow on the icon, and no plain dot → AC-6
+- [x] Look at the button matrix: main button (blend, edge, weight 600), secondary (control fill, gradient edge, both ends visible against page and card), disabled (card fill, muted text, no lift), hover shows a 1px lift and the sheen on the main button, press shrinks slightly → AC-7, AC-18
+- [x] Focus every control with Tab. The cyan ring is visible on page, card, control fill, sidebar, and `accent` → AC-8, AC-22
+- [x] Open a select and a menu: 10px corners, 6px rows, 150ms drop. Trigger a toast: inverted colours, Undo when undoable. Trigger an error toast: destructive surface with a destructive border. An info notice has the "i" icon and muted text, no cyan → AC-10, AC-12, AC-18
+- [x] Segmented control: none is vendored yet, so confirm the `DESIGN.md` rule is there. When one is vendored, select a segment: it gets the `accent` fill and a 1px `input` border → AC-9
+- [x] Read the page heading: 20px, the blend fill. Switch the system to forced colors (Windows High Contrast): the heading reads in the plain foreground → AC-11
+- [x] Switch to Arabic and right to left: section label `//` stays correct, table headers read normally, heading letters join (no gaps), digits stay Western, tinted gradients fade from the right edge, Arabic text in a mono styled label is in Noto Sans Arabic → AC-13, AC-15
+- [x] Turn on "reduce motion" in the operating system: hover and press no longer move anything; no entrance, sheen, or pulse → AC-19
 - [x] Show the light theme to the owner. Satisfied 2026-11-14: approved with `accent` changed to `#E9EEF4`, written under "Light theme approval" in index.md → AC-17
-- [ ] Open the fonts README: the Geist and Geist Mono rows have the real version from the font `name` table, the `unicode-range`, the weight range, and the licence link; it states whether `tnum` exists → AC-14, AC-16
+- [x] Open the fonts README: the Geist and Geist Mono rows have the real version from the font `name` table, the `unicode-range`, the weight range, and the licence link; it states whether `tnum` exists → AC-14, AC-16
 
 Milestones 2 to 7 (each batch, in dark and light, English and Arabic):
 
-- [ ] M2: sign in, the five `(auth)` screens, then the shell: sidebar current page has the tint and the 2px marker on the start edge (mirrored in Arabic), top bar, location switcher, command palette (Ctrl+K), user menu. Heights match before: top bar 56px, sidebar item 32px → AC-13, AC-20, AC-22
-- [ ] M3: orders list (lowercase mono headers, row hover and selected tint, chips with glow, column order code, who, where, how much, state, cash), order page, new order → AC-6, AC-11, AC-21
-- [ ] M4: stock, three receipts screens, SKUs, styles, product groups, seasons, locations; forms use the field look → AC-8, AC-9, AC-21
-- [ ] M5: customers list, profile, merge, two connections screens; a provisional amount still shows `≈`, the dashed boundary, and the hidden label → AC-21
-- [ ] M6: home, staff, audit, settings, cost rules, account; info notices are muted with the "i" icon → AC-10
-- [ ] M7: portal returns and previews, partner pages and preview; brand accent colours only the logo tile, top rule, and the main portal button; no request to a font host (devtools network panel) → AC-14, AC-22
-- [ ] Each batch: axe shows zero violations on each screen in the four theme and direction combinations; Tab reaches every control with a visible ring; no screen shows a string, route, permission, or table column that differs from before → AC-21, AC-22
+- [x] M2: sign in, the five `(auth)` screens, then the shell: sidebar current page has the tint and the 2px marker on the start edge (mirrored in Arabic), top bar, location switcher, command palette (Ctrl+K), user menu. Heights match before: top bar 56px, sidebar item 32px → AC-13, AC-20, AC-22
+- [x] M3: orders list (lowercase mono headers, row hover and selected tint, chips with glow, column order code, who, where, how much, state, cash), order page, new order → AC-6, AC-11, AC-21
+- [x] M4: stock, three receipts screens, SKUs, styles, product groups, seasons, locations; forms use the field look → AC-8, AC-9, AC-21
+- [x] M5: customers list, profile, merge, two connections screens; a provisional amount still shows `≈`, the dashed boundary, and the hidden label → AC-21
+- [x] M6: home, staff, audit, settings, cost rules, account; info notices are muted with the "i" icon → AC-10
+- [x] M7: portal returns and previews, partner pages and preview; brand accent colours only the logo tile, top rule, and the main portal button; no request to a font host (devtools network panel) → AC-14, AC-22
+- [x] Each batch: axe shows zero violations on each screen in the four theme and direction combinations; Tab reaches every control with a visible ring; no screen shows a string, route, permission, or table column that differs from before → AC-21, AC-22
 
 ## Things that can fail quietly
 
