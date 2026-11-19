@@ -35,7 +35,7 @@ export function OwnerPolicySection({ enabled }: { enabled: boolean }) {
   let body: React.ReactNode;
   if (forbidden) {
     body = (
-      <p className="flex items-center gap-2 rounded-lg border px-4 py-6 text-sm text-muted-foreground">
+      <p className="flex items-center gap-2 rounded-card gradient-card-edge px-4 py-6 text-sm text-muted-foreground">
         <LockKeyholeIcon aria-hidden className="size-4 shrink-0" />
         {t('settings.ownerPolicies.noAccess')}
       </p>
@@ -75,14 +75,14 @@ export function OwnerPolicySection({ enabled }: { enabled: boolean }) {
     );
   } else if (policies.length === 0) {
     body = (
-      <div className="flex flex-col items-center gap-2 rounded-lg border px-4 py-8 text-center">
+      <div className="flex flex-col items-center gap-2 rounded-card gradient-card-edge px-4 py-8 text-center">
         <MapPinOffIcon aria-hidden className="size-6 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">{t('settings.ownerPolicies.empty')}</p>
       </div>
     );
   } else {
     body = (
-      <ul className="divide-y rounded-lg border">
+      <ul className="divide-y rounded-card gradient-card-edge">
         {policies.map((policy) => (
           <OwnerPolicyRow key={policy.ownerType} policy={policy} onEdit={setEditing} />
         ))}

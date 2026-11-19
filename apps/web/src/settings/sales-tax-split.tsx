@@ -44,7 +44,7 @@ export function SalesTaxSplit({ rate, includesVat }: { rate: string; includesVat
   }
 
   return (
-    <div className="flex flex-col gap-1 rounded-lg border p-3 text-sm">
+    <div className="flex flex-col gap-1 rounded-card gradient-card-edge p-3 text-sm">
       <p className="font-medium">{t('settings.dialog.taxSplit.title')}</p>
       <p aria-live="polite" className="text-muted-foreground">
         {body}

@@ -99,7 +99,7 @@ export function LicenseSection({
         <>
           <div className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('settings.license.bundlesHeading')}</h3>
-            <ul className="divide-y rounded-lg border">
+            <ul className="divide-y rounded-card gradient-card-edge">
               <LicenseBundleRow view="core" />
               {summary.bundles.map((view) => (
                 <LicenseBundleRow key={view.bundle} view={view} />

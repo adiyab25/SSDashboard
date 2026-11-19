@@ -16,7 +16,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from '@ssdashboard/ui
 import { Input } from '@ssdashboard/ui/components/input';
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BellIcon, BellOffIcon, HistoryIcon, LoaderCircleIcon } from 'lucide-react';
+import { BellIcon, BellOffIcon, HistoryIcon, InfoIcon, LoaderCircleIcon } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -230,7 +230,8 @@ export function StepOnDialog({
           </dl>
 
           {waitsFor && (
-            <Alert>
+            <Alert className="text-muted-foreground">
+              <InfoIcon aria-hidden />
               <AlertDescription>
                 {t('settings.automations.turnOn.notRunnable')}
                 {waitsFor.reason && ` ${t(REASON_KEYS[waitsFor.reason])}`}
@@ -250,7 +251,8 @@ export function StepOnDialog({
           )}
 
           {entry.warning && (
-            <Alert>
+            <Alert className="text-muted-foreground">
+              <InfoIcon aria-hidden />
               <AlertDescription>{t(entry.warning as MessageKey)}</AlertDescription>
             </Alert>
           )}

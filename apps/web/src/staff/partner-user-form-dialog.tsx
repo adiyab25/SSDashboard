@@ -28,6 +28,7 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { createPartnerUser, getPartnerUser, updatePartnerUser } from './partner-users-api';
 
 type FieldName = 'name' | 'email' | 'account' | 'phone';
@@ -44,9 +45,6 @@ interface Values {
 }
 
 const EMPTY: Values = { name: '', email: '', phone: '', language: '', partnerAccountId: '' };
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30';
 
 interface Props {
   /** The login to edit, or null to add one. */
@@ -325,7 +323,7 @@ export function PartnerUserFormDialog({ editId, accounts, languages, onSaved, on
                 <select
                   ref={accountRef}
                   id="partner-user-account"
-                  className={SELECT}
+                  className={SELECT_CLASS}
                   value={values.partnerAccountId}
                   required
                   aria-required
@@ -375,7 +373,7 @@ export function PartnerUserFormDialog({ editId, accounts, languages, onSaved, on
                 <FieldLabel htmlFor="partner-user-language">{t('staff.form.language')}</FieldLabel>
                 <select
                   id="partner-user-language"
-                  className={SELECT}
+                  className={SELECT_CLASS}
                   value={values.language}
                   disabled={blocked}
                   onChange={(event) => set('language')(event.target.value)}

@@ -55,8 +55,8 @@ export function LicenseLastCheck({ check, recordedCount }: LicenseLastCheckProps
         <p>{t(`settings.license.outcomes.${check.outcome}`)}</p>
       )}
       {check.clockBehind && (
-        <p className="flex items-start gap-2 rounded-md bg-info-surface px-3 py-2 text-foreground">
-          <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-info" />
+        <p className="flex items-start gap-2 rounded-card gradient-card-edge px-3 py-2 text-muted-foreground">
+          <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
           {t('settings.license.clockBehind')}
         </p>
       )}

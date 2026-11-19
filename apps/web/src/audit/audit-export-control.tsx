@@ -115,7 +115,7 @@ export function AuditExportControl({ filter }: { filter: AuditFilter }) {
   return (
     <section
       aria-labelledby="audit-export-title"
-      className="flex flex-col gap-3 rounded-lg border p-4"
+      className="flex flex-col gap-3 rounded-card gradient-card-edge p-4"
     >
       <div className="flex flex-col gap-1">
         <h2 id="audit-export-title" className="text-base font-semibold">

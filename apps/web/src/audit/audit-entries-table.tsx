@@ -45,22 +45,22 @@ export function AuditEntriesTable({
   const text = useEntryText();
 
   return (
-    <div className="relative overflow-x-auto rounded-lg border">
+    <div className="relative overflow-x-auto rounded-card gradient-card-edge">
       <Table
         {...(labelledBy
           ? { 'aria-labelledby': labelledBy }
           : { 'aria-label': t('audit.tableLabel') })}
         aria-busy={loading}
       >
-        <TableHeader className="sticky top-0 bg-muted">
-          <TableRow className="h-row-header hover:bg-muted">
+        <TableHeader className="sticky top-0">
+          <TableRow className="h-row-header">
             {COLUMNS.map((column) => (
-              <TableHead key={column} scope="col" className="px-3 text-start font-medium">
+              <TableHead key={column} scope="col" className="px-3 text-start">
                 {t(`audit.columns.${column}`)}
               </TableHead>
             ))}
             {onOpen && (
-              <TableHead scope="col" className="w-12 px-3 text-start font-medium">
+              <TableHead scope="col" className="w-12 px-3 text-start">
                 <span className="sr-only">{t('audit.row.details')}</span>
               </TableHead>
             )}
@@ -87,7 +87,7 @@ export function AuditEntriesTable({
           )}
           {!loading &&
             rows.map((entry) => (
-              <TableRow key={entry.id} className="h-row hover:bg-muted">
+              <TableRow key={entry.id} className="h-row">
                 <TableCell className="px-3 whitespace-nowrap">
                   <time dateTime={entry.recordedAt}>{format.dateTime(entry.recordedAt)}</time>
                 </TableCell>
@@ -107,7 +107,7 @@ export function AuditEntriesTable({
                   )}
                 </TableCell>
                 {onOpen && (
-                  <TableCell className="px-3">
+                  <TableCell className="px-3 sm:py-0 sm:[&:lang(ar)]:py-0">
                     <Button
                       variant="ghost"
                       size="sm"

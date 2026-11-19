@@ -29,6 +29,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CORE_LANGUAGES, isCoreLanguage } from '@ssdashboard/i18n';
 import type { MessageKey } from '@ssdashboard/i18n';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { startingCostView } from './cost-prefill';
 import { HatsFieldset } from './hats-fieldset';
 import { createStaff, getStaff, updateStaff } from './staff-api';
@@ -56,9 +57,6 @@ const EMPTY: Values = {
   staffCode: '',
   language: '',
 };
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30';
 
 interface Props {
   /** The person to edit, or null to add one. */
@@ -364,7 +362,7 @@ export function StaffFormDialog({ editId, languages, canChangeCost, onSaved, onC
                 <FieldLabel htmlFor="staff-language">{t('staff.form.language')}</FieldLabel>
                 <select
                   id="staff-language"
-                  className={SELECT}
+                  className={SELECT_CLASS}
                   value={values.language}
                   disabled={blocked}
                   onChange={(event) => set('language')(event.target.value)}

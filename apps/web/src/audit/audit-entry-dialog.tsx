@@ -22,7 +22,7 @@ import {
   TableRow,
 } from '@ssdashboard/ui/components/table';
 import { useQuery } from '@tanstack/react-query';
-import { LoaderCircleIcon } from 'lucide-react';
+import { InfoIcon, LoaderCircleIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -125,8 +125,9 @@ export function AuditEntryDialog({
             ref={noticeRef}
             role="status"
             tabIndex={-1}
-            className="rounded-lg border bg-muted px-3 py-2 text-sm outline-none focus-ring"
+            className="flex items-start gap-2 rounded-card gradient-card-edge px-3 py-2 text-sm text-muted-foreground outline-none focus-ring"
           >
+            <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
             {t('audit.undo.undoneNotice')}
           </p>
         )}
@@ -183,25 +184,25 @@ export function AuditEntryDialog({
           ) : detail.data.changes.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t('audit.detail.noChanges')}</p>
           ) : (
-            <div className="rounded-lg border">
+            <div className="rounded-card gradient-card-edge">
               <Table aria-label={t('audit.detail.tableLabel')}>
-                <TableHeader className="bg-muted">
-                  <TableRow className="h-row-header hover:bg-muted">
-                    <TableHead scope="col" className="px-3 text-start font-medium">
+                <TableHeader>
+                  <TableRow className="h-row-header">
+                    <TableHead scope="col" className="px-3 text-start">
                       {t('audit.detail.field')}
                     </TableHead>
-                    <TableHead scope="col" className="px-3 text-start font-medium">
+                    <TableHead scope="col" className="px-3 text-start">
                       {t('audit.detail.before')}
                     </TableHead>
-                    <TableHead scope="col" className="px-3 text-start font-medium">
+                    <TableHead scope="col" className="px-3 text-start">
                       {t('audit.detail.after')}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {detail.data.changes.map((change) => (
-                    <TableRow key={change.field} className="h-row hover:bg-muted">
-                      <TableHead scope="row" className="px-3 text-start font-medium" dir="ltr">
+                    <TableRow key={change.field} className="h-row">
+                      <TableHead scope="row" className="px-3 text-start" dir="ltr">
                         {change.field}
                       </TableHead>
                       <TableCell className="px-3">{cell(change, 'before')}</TableCell>

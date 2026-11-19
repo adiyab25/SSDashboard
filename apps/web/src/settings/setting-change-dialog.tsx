@@ -17,7 +17,7 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { LtrText } from '@ssdashboard/ui/components/ltr-text';
 import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { LoaderCircleIcon } from 'lucide-react';
+import { InfoIcon, LoaderCircleIcon } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -296,7 +296,8 @@ export function SettingChangeDialog({
           )}
 
           {warning && (
-            <Alert>
+            <Alert className="text-muted-foreground">
+              <InfoIcon aria-hidden />
               <AlertDescription>{warning}</AlertDescription>
             </Alert>
           )}

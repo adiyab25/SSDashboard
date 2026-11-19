@@ -27,7 +27,7 @@ interface CostRulesHistoryProps {
 }
 
 /** The header cell classes of the history table (DESIGN.md, data tables). */
-const head = 'px-3 font-medium';
+const head = 'px-3';
 
 /**
  * The history of the per order cost rules (spec 0009, AC-23): every recorded rule, newest first,
@@ -51,10 +51,10 @@ export function CostRulesHistory({
       <h2 id="cost-rules-history" className="text-base font-semibold">
         {t('settings.costRules.historyHeading')}
       </h2>
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto rounded-card gradient-card-edge">
         <Table aria-label={t('settings.costRules.historyTable')}>
-          <TableHeader className="bg-muted">
-            <TableRow className="h-row-header hover:bg-muted">
+          <TableHeader>
+            <TableRow className="h-row-header">
               <TableHead scope="col" className={`${head} text-start`}>
                 {t('settings.costRules.columns.kind')}
               </TableHead>
@@ -84,7 +84,7 @@ export function CostRulesHistory({
               </TableRow>
             ) : (
               rows.map((row) => (
-                <TableRow key={row.id} className="h-row hover:bg-muted">
+                <TableRow key={row.id} className="h-row">
                   <TableCell className="px-3">{words.kindName(row.kind)}</TableCell>
                   <TableCell className="px-3 text-end tabular-nums">
                     {words.rule(

@@ -23,6 +23,7 @@ import { useMe } from '@/auth/use-me';
 import { useFormat } from '@/i18n/use-format';
 import type { MessageKey } from '@ssdashboard/i18n';
 import { loadConfig } from '@/shell/client-config';
+import { SELECT_CLASS } from '@/shared/select-class';
 import {
   disableStaff,
   enableStaff,
@@ -43,8 +44,6 @@ import { StaffHatsDialog } from './staff-hats-dialog';
 import { STAFF_HATS } from './cost-prefill';
 
 const STATUSES: readonly StaffStatus[] = ['invited', 'active', 'disabled'];
-const SELECT =
-  'h-9 min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 const SEARCH_DELAY_MS = 300;
 
 interface Page {
@@ -284,7 +283,7 @@ export function StaffPage() {
             </label>
             <select
               id="staff-status"
-              className={SELECT}
+              className={SELECT_CLASS}
               value={filter.status}
               onChange={(event) =>
                 setFilter((current) => ({
@@ -307,7 +306,7 @@ export function StaffPage() {
             </label>
             <select
               id="staff-hat"
-              className={SELECT}
+              className={SELECT_CLASS}
               value={filter.hat}
               onChange={(event) =>
                 setFilter((current) => ({
@@ -346,25 +345,33 @@ export function StaffPage() {
             // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
             tabIndex={0}
             aria-label={t('staff.columns.table')}
-            className="relative overflow-x-auto rounded-lg border focus-ring"
+            className="relative overflow-x-auto rounded-card gradient-card-edge focus-ring"
           >
             <table className="w-full text-sm" aria-busy={loading}>
-              <thead className="bg-muted text-start">
+              <thead className="bg-muted text-start [&_tr]:border-b [&_tr]:border-border-strong">
                 <tr className="h-row-header">
                   {columns.map((column) => (
-                    <th key={column} scope="col" className="px-3 text-start font-medium">
+                    <th
+                      key={column}
+                      scope="col"
+                      className="table-head-look h-row-header px-3 text-start"
+                    >
                       {t(`staff.columns.${column}`)}
                     </th>
                   ))}
-                  <th scope="col" className="w-12 px-3 text-start font-medium">
+                  <th scope="col" className="table-head-look h-row-header w-12 px-3 text-start">
                     <span className="sr-only">{t('staff.columns.actions')}</span>
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="[&_tr:last-child]:border-0">
                 {loading &&
                   Array.from({ length: 5 }, (_, index) => (
-                    <tr key={index} className="h-row border-t" aria-hidden>
+                    <tr
+                      key={index}
+                      className="h-row border-b transition-colors hover:tint-row"
+                      aria-hidden
+                    >
                       <td colSpan={columns.length + 1} className="px-3">
                         <Skeleton className="h-4 w-full" />
                       </td>

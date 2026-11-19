@@ -24,7 +24,7 @@ export function BackupCodes({ codes }: { codes: readonly string[] }) {
     <div className="flex flex-col gap-3">
       <ul
         aria-label={t('account.twoFactor.codes.label')}
-        className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md bg-muted px-3 py-2 font-mono text-sm select-all"
+        className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-control bg-muted px-3 py-2 font-mono text-sm select-all"
       >
         {codes.map((code) => (
           <li key={code}>
