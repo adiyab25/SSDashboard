@@ -224,6 +224,22 @@ async function mockClockBehind(page: Page) {
   );
 }
 
+/** Answers the cost rules read with no lock date, in the browser only, whatever the database holds. */
+async function mockLockUnset(page: Page) {
+  await page.route(
+    (url) => url.pathname === '/api/platform/cost-rules',
+    async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      const response = await route.fetch();
+      const json = (await response.json()) as Record<string, unknown>;
+      return route.fulfill({
+        response,
+        json: { ...json, lockDate: null, lockDateInvalid: false },
+      });
+    },
+  );
+}
+
 const SCREENS: Screen[] = [
   {
     tag: 'home',
@@ -527,7 +543,7 @@ interface TableLook {
   panel: boolean;
   radius: string | null;
   heads: { text: string; height: number; mono: boolean; transform: string; weight: string }[];
-  rows: { text: string; height: number; hasButton: boolean; cut: string[] }[];
+  rows: { text: string; height: number; hasButton: boolean; cut: string[]; stacked: boolean }[];
   /** The table's panel scrolls sideways (its content is wider than the panel). */
   scrollsSideways: boolean;
 }
@@ -556,6 +572,23 @@ async function measureTables(page: Page, scope: string): Promise<TableLook[]> {
           text: (row.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40),
           height: row.getBoundingClientRect().height,
           hasButton: row.querySelector('button') !== null,
+          // A cell really holds two lines: its text (outside buttons) spans more than one line box,
+          // whether it is two stacked elements or one text that wraps.
+          stacked: [...row.querySelectorAll('td, th')].some((cell) => {
+            const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+            const rects: DOMRect[] = [];
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              if ((node.textContent ?? '').trim() === '') continue;
+              if (node.parentElement?.closest('button') != null) continue;
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              rects.push(range.getBoundingClientRect());
+            }
+            if (rects.length === 0) return false;
+            const top = Math.min(...rects.map((r) => r.top));
+            const bottom = Math.max(...rects.map((r) => r.bottom));
+            return bottom - top > 30;
+          }),
           // Text must never be cut: a cell or element that hides overflow or shows an ellipsis
           // while its content is wider or taller than its box.
           cut: [...row.querySelectorAll('td, th, td *')]
@@ -580,7 +613,7 @@ async function measureTables(page: Page, scope: string): Promise<TableLook[]> {
   );
 }
 
-test.describe('every screen and state in the Midnight look (AC-8, AC-11, AC-13, AC-20, AC-22)', () => {
+test.describe('every screen and state in the Midnight look (AC-8, AC-20, AC-22)', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
 
   for (const { theme, dir, tag } of COMBINATIONS) {
@@ -669,14 +702,14 @@ test.describe('every screen and state in the Midnight look (AC-8, AC-11, AC-13, 
             }
             if (look.scrollsSideways) problems.push(`${label}: the panel scrolls sideways`);
             for (const row of look.rows) {
-              // Owner ruling 2026-11-19 (task 4b): a row may grow to fit a two line cell in exactly
+              // Owner ruling 2026-11-19: a row may grow to fit a two line cell in exactly
               // two places: /audit list rows (record type over number, English and Arabic) and
               // /staff rows on both tabs in Arabic only (name over email). Never truncated, and
               // bounded so a real regression still fails. Every other row is 40px.
               const grows =
                 (screen.tag === 'audit' && name === 'audit') ||
                 (screen.tag === 'staff' && dir === 'rtl' && name !== 'staff-add-staff');
-              if (grows) {
+              if (grows && row.stacked) {
                 if (row.height < GROWN_ROW_MIN || row.height > GROWN_ROW_MAX) {
                   problems.push(
                     `${label}: row "${row.text}" is ${row.height}px, outside ${GROWN_ROW_MIN} to ${GROWN_ROW_MAX}`,
@@ -687,6 +720,7 @@ test.describe('every screen and state in the Midnight look (AC-8, AC-11, AC-13, 
                 }
                 continue;
               }
+              // Any other row (no two line cell) is 40px, even on these screens.
               if (row.height !== 40) {
                 problems.push(
                   `${label}: row "${row.text}" is ${row.height}px${row.hasButton ? ' (holds a button)' : ''}`,
@@ -801,7 +835,8 @@ test.describe('info notices are muted with an "i" icon (AC-10, decision 13)', ()
       expectInfoNotice(`license clock notice ${tag}`, await readNotice(clock));
       await page.unrouteAll({ behavior: 'ignoreErrors' });
 
-      // Cost rules: the "no lock date set" notice.
+      // Cost rules: the "no lock date set" notice (the lock date answer is stubbed).
+      await mockLockUnset(page);
       await openPath(page, '/settings/cost-rules');
       const lock = page
         .locator('main [data-slot="alert"]')

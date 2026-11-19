@@ -400,7 +400,7 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
               )}
               {!loading &&
                 page?.rows.map((row) => (
-                  <tr key={row.id} className="h-row border-t">
+                  <tr key={row.id} className="h-row border-b transition-colors hover:tint-row">
                     <td className="px-3 font-medium">{row.name}</td>
                     <td className="px-3">
                       <LtrText>{row.email}</LtrText>
