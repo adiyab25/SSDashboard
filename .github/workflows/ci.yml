@@ -153,7 +153,7 @@ jobs:
       - run: pnpm test
 
   # The e2e work is three kinds of job. `e2e-database` runs the two vitest suites (packages/db and
-  # apps/api) once. `e2e-browser` runs the Playwright suite in 3 shards, each on its own runner and
+  # apps/api) once. `e2e-browser` runs the Playwright suite in 4 shards, each on its own runner and
   # Postgres service (so each shard's global setup seeds its own admin), to keep every job well under
   # 30 minutes. `e2e` only aggregates them and keeps the name "Database and browser e2e", which the
   # branch protection on main requires, so the protection is untouched.
@@ -202,7 +202,7 @@ jobs:
       - run: pnpm --filter @ssdashboard/api test:e2e
 
   e2e-browser:
-    name: Browser e2e (shard ${{ matrix.shard }} of 3)
+    name: Browser e2e (shard ${{ matrix.shard }} of 4)
     needs: changes
     if: github.event.action != 'labeled' && needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
@@ -210,7 +210,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:18-alpine
@@ -256,7 +256,7 @@ jobs:
       # The build is what the production project's `next start` and the api web server need.
       - run: pnpm build
       - run: pnpm db:migrate
-      - run: pnpm --filter @ssdashboard/web exec playwright test --shard=${{ matrix.shard }}/3
+      - run: pnpm --filter @ssdashboard/web exec playwright test --shard=${{ matrix.shard }}/4
 
   # The one check branch protection requires. A docs only change skips the heavy jobs on purpose and
   # passes; otherwise every job it depends on must have succeeded (a skipped or cancelled one fails).
@@ -288,7 +288,7 @@ jobs:
           if [ "$failed" = "1" ]; then
             exit 1
           fi
-          echo "Database e2e and all 3 browser shards passed." | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Database e2e and all 4 browser shards passed." | tee -a "$GITHUB_STEP_SUMMARY"
 
   # The spec 0002 scale suite (and the spec 0010 audit load): too long for the default e2e jobs, so
   # it runs only by hand and on pull requests carrying the `scale` label, never on a timer.
