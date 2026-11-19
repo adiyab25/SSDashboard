@@ -10,6 +10,8 @@ const buttonVariants = cva(
       variant: {
         default:
           'lift sheen gradient-primary border-primary-edge font-semibold text-primary-foreground disabled:font-medium',
+        brand:
+          'lift bg-brand font-semibold text-brand-foreground hover:bg-brand/90 disabled:font-medium',
         outline:
           'lift border-input bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
         secondary:

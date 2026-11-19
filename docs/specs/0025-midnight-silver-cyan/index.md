@@ -356,6 +356,7 @@ Owner: frontend.
 Owner: frontend.
 
 - Portal returns screens and their previews, the partner pages and their preview.
+- Owner ruling (2026-11-19): `PortalFrame` and `PartnerFrame` stay flat on `bg-background`, with no glow and no grid backdrop. The cyan glow and grid stay on the sign in screens only, so they never compete with a brand's own accent on the portal. The partner bar sits on the page fill like the staff top bar, and its current link gets the current page tint and a 2px cyan mark at its bottom edge. The main portal button is `<Button variant="brand">`: the brand fill with the lift, no primary blend and no sheen.
 - **Done when**: restyled inside `PortalFrame` and `PartnerFrame`; the brand accent still colours only the logo tile, the top rule, and the main portal button (spec 0003 AC-19), and the brand fallback is the new `primary`; one Arabic weight pair loads first in the portal and the portal makes no request to a font host (spec 0003 AC-23, AC-14 here); AC-21 and AC-22 hold at the portal's 320px baseline.
 
 ## Consequences

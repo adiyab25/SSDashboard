@@ -4,13 +4,16 @@ import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { STORAGE_STATE } from './auth';
 import { api, createLocation, createSku, receive } from './master-data-api';
+import { expectNoAxeViolations, textFor, type TextDirection } from './support';
 import {
-  expectNoAxeViolations,
-  textFor,
-  useBrowserState as setBrowserState,
-  type TextDirection,
-  type Theme,
-} from './support';
+  COMBINATIONS,
+  button,
+  enter,
+  openDialogBy,
+  openPath,
+  shot,
+  type Translate,
+} from './look-support';
 
 // Spec 0025 milestone M4 (AC-8, AC-10, AC-11, AC-13, AC-20, AC-21, AC-22): the stock screens and the
 // product catalogue in the Midnight look, measured in a real browser as the e2e admin. One location
@@ -19,22 +22,6 @@ import {
 // Set SHOT_DIR to also save screenshots.
 
 const SHOT_DIR = process.env.SHOT_DIR;
-
-async function shot(page: Page, name: string) {
-  if (!SHOT_DIR) return;
-  mkdirSync(SHOT_DIR, { recursive: true });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
-}
-
-const COMBINATIONS = [
-  { theme: 'dark', dir: 'ltr', tag: 'dark-en' },
-  { theme: 'dark', dir: 'rtl', tag: 'dark-ar' },
-  { theme: 'light', dir: 'ltr', tag: 'light-en' },
-  { theme: 'light', dir: 'rtl', tag: 'light-ar' },
-] as const satisfies readonly { theme: Theme; dir: TextDirection; tag: string }[];
-
-type Translate = (key: Parameters<typeof textFor>[1]) => string;
 
 interface Seed {
   tag: string;
@@ -109,31 +96,6 @@ function seeded(): Seed {
   return seed;
 }
 
-async function enter(page: Page, state: { theme: Theme; dir: TextDirection }) {
-  await setBrowserState(page, state);
-}
-
-/** Opens a path and waits until the page shows its h1, has no busy table or skeleton, and fonts are in. */
-async function openPath(page: Page, path: string) {
-  await page.goto(path);
-  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
-  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-i18n'));
-  await expect(page.locator('main [aria-busy="true"], main [data-slot="skeleton"]')).toHaveCount(0);
-  await page.evaluate(() => document.fonts.ready);
-}
-
-/** Clicks a trigger until its dialog shows (a click before hydration goes nowhere). */
-async function openDialogBy(page: Page, trigger: Locator, prepare?: () => Promise<void>) {
-  await expect(trigger.first()).toBeVisible();
-  await expect(async () => {
-    if (prepare) await prepare();
-    if (!(await page.getByRole('dialog').isVisible())) await trigger.first().click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 1500 });
-  }).toPass({ timeout: 20_000 });
-  await page.evaluate(() => document.fonts.ready);
-  await expect(page.getByRole('dialog').locator('[data-slot="skeleton"]')).toHaveCount(0);
-}
-
 /** The label of a templated string before its `{{code}}` placeholder. */
 function before(dir: TextDirection, key: Parameters<typeof textFor>[1]) {
   return textFor(dir, key).split('{{')[0]!.trim();
@@ -149,10 +111,6 @@ interface Screen {
   tag: string;
   path: () => string;
   dialogs: Dialog[];
-}
-
-function button(page: Page, name: string) {
-  return page.getByRole('button', { name, exact: true });
 }
 
 const newThing: Dialog = {
@@ -366,7 +324,7 @@ async function walk(
 }
 
 /** Every text field, native select, combobox button and field-fill control in a scope, with fill and height. */
-async function measureFields(page: Page, scope: string) {
+async function measureStockFields(page: Page, scope: string) {
   // The stock SKU filter starts disabled until the access check answers and then fades to its field
   // fill; measure what is painted once it is enabled and no transition is still running.
   const filter = page.locator('#stock-sku-filter');
@@ -614,7 +572,7 @@ test.describe('field colour (AC-8) and control height (AC-20)', () => {
         test.setTimeout(150_000);
         await enter(page, { theme, dir });
         const failures = await walk(page, screen, dir, async ({ name, scope, dialog }) => {
-          const result = await measureFields(page, scope);
+          const result = await measureStockFields(page, scope);
           console.log(
             `${name} ${tag}: fields ${result.fields.length}, selects ${JSON.stringify(result.selects)}, inputs ${JSON.stringify(result.inputs)}, combos ${JSON.stringify(result.combos)}`,
           );

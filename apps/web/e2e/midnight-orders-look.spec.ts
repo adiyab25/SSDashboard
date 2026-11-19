@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { seedAccount, signInThroughApi, type SeededAccount } from './accounts';
 import { createSku } from './master-data-api';
@@ -11,30 +9,13 @@ import {
   textFor,
   useBrowserState as setBrowserState,
   waitForPageHydration,
-  type Theme,
-  type TextDirection,
 } from './support';
+import { COMBINATIONS, enterAs, shot } from './look-support';
 
 // Spec 0025 milestone M3 (AC-8, AC-11, AC-21, AC-22): the orders list, the order page and the new
 // order form in the Midnight look, measured in a real browser. Axe runs in dark and light, left to
 // right and right to left, on all three screens including the edit and cancel dialogs. Set SHOT_DIR
 // to also save screenshots. One manager, one SKU and one order are seeded for the file.
-
-const SHOT_DIR = process.env.SHOT_DIR;
-
-async function shot(page: Page, name: string) {
-  if (!SHOT_DIR) return;
-  mkdirSync(SHOT_DIR, { recursive: true });
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
-}
-
-const COMBINATIONS = [
-  { theme: 'dark', dir: 'ltr', tag: 'dark-en' },
-  { theme: 'dark', dir: 'rtl', tag: 'dark-ar' },
-  { theme: 'light', dir: 'ltr', tag: 'light-en' },
-  { theme: 'light', dir: 'rtl', tag: 'light-ar' },
-] as const satisfies readonly { theme: Theme; dir: TextDirection; tag: string }[];
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -91,12 +72,6 @@ async function seedOrder(browser: Browser, baseURL: string, account: SeededAccou
   } finally {
     await context.close();
   }
-}
-
-async function enter(page: Page, state: { theme: Theme; dir: TextDirection }) {
-  if (!manager) throw new Error('no manager');
-  await signInThroughApi(page.context(), manager, test.info().project.use.baseURL ?? '');
-  await setBrowserState(page, state);
 }
 
 async function openList(page: Page) {
@@ -193,7 +168,7 @@ test.describe('axe on the three screens (AC-22)', () => {
       page,
     }) => {
       test.setTimeout(120_000);
-      await enter(page, { theme, dir });
+      await enterAs(page, manager, { theme, dir });
       const t = (key: Parameters<typeof textFor>[1]) => textFor(dir, key);
 
       await openList(page);
@@ -235,7 +210,7 @@ test.describe('the list look (AC-11, AC-13, AC-21)', () => {
   test('column order, chips per row, mono lowercase headers, hover tint, card edge, heading blend', async ({
     page,
   }) => {
-    await enter(page, { theme: 'dark', dir: 'ltr' });
+    await enterAs(page, manager, { theme: 'dark', dir: 'ltr' });
     await openList(page);
     const table = page.getByRole('table', { name: textFor('ltr', 'orders.tableLabel') });
 
@@ -309,7 +284,7 @@ test.describe('the list look (AC-11, AC-13, AC-21)', () => {
   });
 
   test('panels on the order page and new order form carry the card edge', async ({ page }) => {
-    await enter(page, { theme: 'dark', dir: 'ltr' });
+    await enterAs(page, manager, { theme: 'dark', dir: 'ltr' });
     await openOrder(page);
     expect(await page.locator('dl.gradient-card-edge').count()).toBeGreaterThanOrEqual(1);
     await openNew(page);
@@ -322,7 +297,7 @@ test.describe('field colour (AC-8)', () => {
 
   for (const { theme, dir, tag } of COMBINATIONS.filter((c) => c.dir === 'ltr')) {
     test(`fields on the orders screens in ${tag}`, async ({ page }) => {
-      await enter(page, { theme, dir });
+      await enterAs(page, manager, { theme, dir });
       await openList(page);
       expectFieldRule(await fieldFills(page, 'main'));
       await openNew(page);
@@ -377,7 +352,7 @@ test.describe('field colour (AC-8)', () => {
   });
 
   test('a native select is as tall as an Input (40px control height)', async ({ page }) => {
-    await enter(page, { theme: 'dark', dir: 'ltr' });
+    await enterAs(page, manager, { theme: 'dark', dir: 'ltr' });
     await openNew(page);
     const heights = await page.evaluate(() => {
       const height = (selector: string) =>
@@ -400,7 +375,7 @@ test.describe('table rows after the global TableCell change (AC-20)', () => {
     { dir: 'rtl', tag: 'dark-ar' },
   ] as const) {
     test(`orders list and order page rows are at least 40px in ${tag}`, async ({ page }) => {
-      await enter(page, { theme: 'dark', dir });
+      await enterAs(page, manager, { theme: 'dark', dir });
       // Only visible data rows: a hidden or empty row (display none, zero height) is not measured.
       const heightsOf = async () =>
         page.locator('main table tbody tr').evaluateAll((all) =>
@@ -452,7 +427,7 @@ test.describe('keyboard focus and notices (AC-22)', () => {
         page,
       }) => {
         test.setTimeout(120_000);
-        await enter(page, { theme, dir: 'ltr' });
+        await enterAs(page, manager, { theme, dir: 'ltr' });
         if (screen === 'list') await openList(page);
         else if (screen === 'order') await openOrder(page);
         else await openNew(page);
@@ -503,7 +478,7 @@ test.describe('keyboard focus and notices (AC-22)', () => {
   }
 
   test('the in Shopify notice shows an i icon with muted text, not cyan', async ({ page }) => {
-    await enter(page, { theme: 'dark', dir: 'ltr' });
+    await enterAs(page, manager, { theme: 'dark', dir: 'ltr' });
     await page.route('**/api/orders/*/edits', (route) =>
       route.fulfill({ status: 409, json: { code: 'EDIT_IN_SHOPIFY' } }),
     );
@@ -560,7 +535,7 @@ test.describe('phone (AC-22)', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 780 });
-    await enter(page, { theme: 'dark', dir: 'rtl' });
+    await enterAs(page, manager, { theme: 'dark', dir: 'rtl' });
     await openList(page);
     const sideways = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -577,7 +552,7 @@ test.describe('location switcher with long location codes (batch 1 note)', () =>
   test('the popover keeps a code on one line in Arabic', async ({ page }) => {
     const seeded = await seedLocations();
     try {
-      await enter(page, { theme: 'dark', dir: 'rtl' });
+      await enterAs(page, manager, { theme: 'dark', dir: 'rtl' });
       await openShell(page, '/orders');
       await page.getByRole('button', { name: /^(Location|الموقع)/ }).click();
       await expect(

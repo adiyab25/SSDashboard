@@ -53,10 +53,7 @@ export function PortalFramePreview({
         {copy.orderLabel}
         <Input name="order" inputMode="numeric" autoComplete="off" />
       </label>
-      <Button
-        data-testid="brand-button"
-        className="bg-brand text-brand-foreground hover:bg-brand/90"
-      >
+      <Button data-testid="brand-button" variant="brand">
         {copy.action}
       </Button>
     </PortalFrame>

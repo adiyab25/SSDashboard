@@ -1,32 +1,30 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import {
-  expect,
-  test,
-  type APIRequestContext,
-  type BrowserContext,
-  type Locator,
-  type Page,
-} from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import type { AuditEntryView } from '@ssdashboard/contracts';
 import {
-  seedAccount,
   seedPartnerAccount,
   seedPartnerLogin,
-  signInThroughApi,
   type SeededAccount,
   type SeededPartnerAccount,
 } from './accounts';
 import { STORAGE_STATE } from './auth';
 import { api, createLocation, createSku, receive, voidReceipt } from './master-data-api';
+import { expectNoAxeViolations, textFor, type TextDirection } from './support';
 import {
-  expectNoAxeViolations,
-  textFor,
-  useBrowserState as setBrowserState,
-  type TextDirection,
-  type Theme,
-} from './support';
+  COMBINATIONS,
+  button,
+  enterAsNewManager,
+  measureFields,
+  measureFocusRings,
+  measureStackedTables,
+  openDialogBy,
+  openPath,
+  settleAnimations,
+  shot,
+  walk,
+  type Screen,
+  type Translate,
+} from './look-support';
 
 // Spec 0025 milestone M6 (AC-8, AC-10, AC-20, AC-21, AC-22, decisions 13 and 14): home, staff (both
 // tabs), audit, settings, cost rules and the account page in the Midnight look, measured in a real
@@ -34,24 +32,6 @@ import {
 // walks the screen and each dialog or tab that paints different controls, and in each view checks
 // axe, the fields (fill, border, 40px, focus ring), every table (header 44px, rows 40px, card edge)
 // and the main action count. The notices are checked apart. Set SHOT_DIR to also save screenshots.
-
-const SHOT_DIR = process.env.SHOT_DIR;
-
-async function shot(page: Page, name: string) {
-  if (!SHOT_DIR) return;
-  mkdirSync(SHOT_DIR, { recursive: true });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: join(SHOT_DIR, `${name}.png`) });
-}
-
-const COMBINATIONS = [
-  { theme: 'dark', dir: 'ltr', tag: 'dark-en' },
-  { theme: 'dark', dir: 'rtl', tag: 'dark-ar' },
-  { theme: 'light', dir: 'ltr', tag: 'light-en' },
-  { theme: 'light', dir: 'rtl', tag: 'light-ar' },
-] as const satisfies readonly { theme: Theme; dir: TextDirection; tag: string }[];
-
-type Translate = (key: Parameters<typeof textFor>[1]) => string;
 
 interface Seed {
   receiptId: string;
@@ -123,70 +103,11 @@ test.afterEach(async () => {
       .catch(() => undefined);
 });
 
-/** Signs in as a fresh manager with the cost grant, in the language of the direction. */
-async function enter(
-  page: Page,
-  context: BrowserContext,
-  baseURL: string | undefined,
-  state: { theme: Theme; dir: TextDirection },
-) {
-  const account = await seedAccount({
-    hats: ['manager'],
-    grants: ['cost.view'],
-    language: state.dir === 'rtl' ? 'ar' : 'en',
-  });
-  accounts.push(account);
-  await signInThroughApi(context, account, baseURL ?? '');
-  await setBrowserState(page, state);
-}
-
-/** Opens a path and waits until the page shows its h1, has no busy table or skeleton, and fonts are in. */
-async function openPath(page: Page, path: string) {
-  await page.goto(path);
-  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
-  await page.waitForFunction(() => !document.documentElement.hasAttribute('data-i18n'));
-  await expect(page.locator('main [aria-busy="true"], main [data-slot="skeleton"]')).toHaveCount(0);
-  await page.evaluate(() => document.fonts.ready);
-}
-
-/** Clicks a trigger until its dialog shows (a click before hydration goes nowhere). */
-async function openDialogBy(page: Page, trigger: Locator) {
-  await expect(trigger.first()).toBeVisible();
-  await expect(async () => {
-    if (!(await page.getByRole('dialog').isVisible())) await trigger.first().click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 1500 });
-  }).toPass({ timeout: 20_000 });
-  await page.evaluate(() => document.fonts.ready);
-  await expect(page.getByRole('dialog').locator('[data-slot="skeleton"]')).toHaveCount(0);
-}
-
-function button(page: Page, name: string) {
-  return page.getByRole('button', { name, exact: true });
-}
-
 const withName = (dir: TextDirection, key: Parameters<typeof textFor>[1], name: string) =>
   textFor(dir, key).replace('{{name}}', name);
 
 /** The audit list filtered to the seeded receipt, so exactly its entry is the data row. */
 const auditPath = () => `/audit?recordType=stock_receipt&recordId=${seeded().receiptId}`;
-
-interface Step {
-  tag: string;
-  /** Moves the open page into this state; the scope is where the controls to measure live. */
-  run: (page: Page, dir: TextDirection, t: Translate) => Promise<void>;
-  scope?: string;
-}
-
-interface Screen {
-  tag: string;
-  path: () => string;
-  before?: (page: Page) => Promise<void>;
-  /** Waits for what the screen loads, so no skeleton is measured. */
-  ready: (page: Page, t: Translate) => Promise<void>;
-  steps: Step[];
-  /** How many main (default variant) buttons the main area shows in its base state. */
-  blends: number;
-}
 
 /** The tab or dialog scope of a step that only changes what main shows. */
 const MAIN = 'main';
@@ -369,172 +290,6 @@ const SCREENS: Screen[] = [
 ];
 
 /**
- * Visits a screen, calls `onView` on the page and again on each of its states, and answers the
- * failures it collected, so one broken state does not hide the rest.
- */
-async function walk(
-  page: Page,
-  screen: Screen,
-  dir: TextDirection,
-  onView: (view: { name: string; scope: string; base: boolean }) => Promise<void>,
-): Promise<string[]> {
-  const t: Translate = (key) => textFor(dir, key);
-  const failures: string[] = [];
-  const attempt = async (name: string, scope: string, base: boolean) => {
-    try {
-      await onView({ name, scope, base });
-    } catch (error) {
-      failures.push(
-        `${name}: ${(error instanceof Error ? error.message : String(error)).slice(0, 900)}`,
-      );
-    }
-  };
-  const open = async () => {
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await screen.before?.(page);
-    await openPath(page, screen.path());
-    await screen.ready(page, t);
-  };
-  await open();
-  await attempt(screen.tag, MAIN, true);
-  for (const step of screen.steps) {
-    const name = `${screen.tag}-${step.tag}`;
-    try {
-      await step.run(page, dir, t);
-    } catch (error) {
-      failures.push(
-        `${name}: could not reach: ${(error instanceof Error ? error.message : String(error)).slice(0, 300)}`,
-      );
-      await open();
-      continue;
-    }
-    await attempt(name, step.scope ?? MAIN, false);
-    await open();
-  }
-  return failures;
-}
-
-async function settleAnimations(page: Page) {
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          document
-            .getAnimations()
-            .filter(
-              (animation) =>
-                animation.effect?.getComputedTiming().iterations !== Infinity &&
-                animation.playState === 'running',
-            ).length,
-      ),
-    )
-    .toBe(0);
-}
-
-/** Every field in a scope: fill, border, corners, height, and what the page and the card colour are. */
-async function measureFields(page: Page, scope: string) {
-  await settleAnimations(page);
-  return page
-    .locator(scope)
-    .first()
-    .evaluate((root) => {
-      const probe = (variable: string, property: 'backgroundColor' | 'color') => {
-        const element = document.createElement('div');
-        element.style[property] = `var(${variable})`;
-        document.body.append(element);
-        const color = getComputedStyle(element)[property];
-        element.remove();
-        return color;
-      };
-      const dark = document.documentElement.classList.contains('dark');
-      const visible = (element: Element) => element.getBoundingClientRect().width > 0;
-      const idOf = (element: Element) =>
-        element.id || element.tagName.toLowerCase() + ':' + (element.getAttribute('name') ?? '');
-      const fields = [
-        ...root.querySelectorAll<HTMLElement>(
-          'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]), select, textarea, [class*="bg-field"], [role="combobox"]',
-        ),
-      ].filter(visible);
-      return {
-        dark,
-        cardColor: probe('--card', 'backgroundColor'),
-        pageColor: probe('--background', 'backgroundColor'),
-        inputColor: probe('--input', 'color'),
-        errorColor: probe('--destructive', 'color'),
-        fields: fields.map((element) => {
-          const computed = getComputedStyle(element);
-          const kind = element.matches('select')
-            ? 'select'
-            : element.matches('textarea')
-              ? 'textarea'
-              : element.matches('[role="combobox"]')
-                ? 'combobox'
-                : 'input';
-          return {
-            id: idOf(element),
-            kind,
-            fill: computed.backgroundColor,
-            border: computed.borderTopColor,
-            borderWidth: computed.borderTopWidth,
-            radius: computed.borderTopLeftRadius,
-            height: element.offsetHeight,
-            invalid: element.getAttribute('aria-invalid') === 'true',
-            onCard:
-              element.closest(
-                '[data-slot="card"], [data-slot="dialog-content"], .gradient-card-edge',
-              ) !== null,
-          };
-        }),
-        comboboxes: root.querySelectorAll('[role="combobox"]').length,
-      };
-    });
-}
-
-/** Focuses each field in a scope and reads its outline against the `--ring` colour. */
-async function measureFocusRings(page: Page, scope: string) {
-  const handles = await page
-    .locator(scope)
-    .first()
-    .locator(
-      'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role="combobox"]:not([disabled])',
-    )
-    .filter({ visible: true })
-    .elementHandles();
-  const out: {
-    id: string;
-    style: string;
-    width: number;
-    offset: number;
-    color: string;
-    ring: string;
-  }[] = [];
-  for (const handle of handles) {
-    await handle.evaluate((element) => (element as HTMLElement).focus());
-    await settleAnimations(page);
-    out.push(
-      await handle.evaluate((node) => {
-        const element = node as HTMLElement;
-        const probe = document.createElement('div');
-        probe.style.color = 'var(--ring)';
-        document.body.append(probe);
-        const ring = getComputedStyle(probe).color;
-        probe.remove();
-        const computed = getComputedStyle(element);
-        return {
-          id: element.id || element.tagName.toLowerCase(),
-          style: computed.outlineStyle,
-          width: parseFloat(computed.outlineWidth),
-          offset: parseFloat(computed.outlineOffset),
-          color: computed.outlineColor,
-          ring,
-        };
-      }),
-    );
-  }
-  return out;
-}
-
-/**
  * The allowed height range of the two rows that may grow (owner ruling 2026-11-19): /audit list
  * rows (a two line record cell; measured 55px in English, 59.25px in Arabic) and /staff rows in
  * Arabic only, when the name or email cell wraps (in Arabic at 1280px the name, email and
@@ -542,87 +297,6 @@ async function measureFocusRings(page: Page, scope: string) {
  */
 const GROWN_ROW_MIN = 52;
 const GROWN_ROW_MAX = 60;
-
-interface TableLook {
-  label: string;
-  panel: boolean;
-  radius: string | null;
-  heads: { text: string; height: number; mono: boolean; transform: string; weight: string }[];
-  rows: { text: string; height: number; hasButton: boolean; cut: string[]; stacked: boolean }[];
-  /** The table's panel scrolls sideways (its content is wider than the panel). */
-  scrollsSideways: boolean;
-  /** The panel's scrollWidth and clientWidth, for the report. */
-  panelWidths: string;
-}
-
-/** Heights and looks of every table in a scope: headers and body rows. */
-async function measureTables(page: Page, scope: string): Promise<TableLook[]> {
-  await settleAnimations(page);
-  return page.locator(`${scope} table:visible`).evaluateAll((all) =>
-    all.map((table) => {
-      const panel = table.closest('[class*="gradient-card-edge"]');
-      return {
-        label: table.getAttribute('aria-label') ?? '',
-        panel: panel !== null,
-        radius: panel ? getComputedStyle(panel).borderTopLeftRadius : null,
-        heads: [...table.querySelectorAll('thead th')].map((th) => {
-          const computed = getComputedStyle(th);
-          return {
-            text: (th.textContent ?? '').trim(),
-            height: th.getBoundingClientRect().height,
-            mono: computed.fontFamily.toLowerCase().includes('mono'),
-            transform: computed.textTransform,
-            weight: computed.fontWeight,
-          };
-        }),
-        rows: [...table.querySelectorAll('tbody tr')].map((row) => ({
-          text: (row.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40),
-          height: row.getBoundingClientRect().height,
-          hasButton: row.querySelector('button') !== null,
-          // A cell really holds two lines: its text (outside buttons) spans more than one line box,
-          // whether it is two stacked elements or one text that wraps.
-          stacked: [...row.querySelectorAll('td, th')].some((cell) => {
-            const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
-            const rects: DOMRect[] = [];
-            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-              if ((node.textContent ?? '').trim() === '') continue;
-              if (node.parentElement?.closest('button') != null) continue;
-              const range = document.createRange();
-              range.selectNodeContents(node);
-              rects.push(range.getBoundingClientRect());
-            }
-            if (rects.length === 0) return false;
-            const top = Math.min(...rects.map((r) => r.top));
-            const bottom = Math.max(...rects.map((r) => r.bottom));
-            return bottom - top > 30;
-          }),
-          // Text must never be cut: a cell or element that hides overflow or shows an ellipsis
-          // while its content is wider or taller than its box.
-          cut: [...row.querySelectorAll('td, th, td *')]
-            .filter((el) => {
-              const style = getComputedStyle(el);
-              const hides = style.overflowX !== 'visible' || style.overflowY !== 'visible';
-              const ellipsis = style.textOverflow === 'ellipsis';
-              const tooWide = el.scrollWidth > el.clientWidth + 1;
-              const tooTall = el.scrollHeight > el.clientHeight + 1;
-              return (hides || ellipsis) && (tooWide || tooTall);
-            })
-            .map(
-              (el) => `${el.tagName.toLowerCase()} ${(el.textContent ?? '').trim().slice(0, 20)}`,
-            ),
-        })),
-        panelWidths: (() => {
-          const panel = table.closest('[class*="gradient-card-edge"]') ?? table.parentElement!;
-          return `${panel.scrollWidth}/${panel.clientWidth}`;
-        })(),
-        scrollsSideways: (() => {
-          const panel = table.closest('[class*="gradient-card-edge"]') ?? table.parentElement!;
-          return panel.scrollWidth > panel.clientWidth + 1;
-        })(),
-      };
-    }),
-  );
-}
 
 test.describe('every screen and state in the Midnight look (AC-8, AC-20, AC-22)', () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop')); // eslint-disable-line no-empty-pattern
@@ -635,7 +309,15 @@ test.describe('every screen and state in the Midnight look (AC-8, AC-20, AC-22)'
         baseURL,
       }) => {
         test.setTimeout(180_000);
-        await enter(page, context, baseURL, { theme, dir });
+        accounts.push(
+          await enterAsNewManager(
+            page,
+            context,
+            baseURL,
+            { theme, dir },
+            { grants: ['cost.view'] },
+          ),
+        );
         expect(
           await page.evaluate(() => window.innerWidth),
           'the desktop project is 1280px wide',
@@ -695,7 +377,7 @@ test.describe('every screen and state in the Midnight look (AC-8, AC-20, AC-22)'
           ).toEqual([]);
 
           // Tables: header 44px, data rows 40px (rows with a 32px button too), card edge panel.
-          const tables = await measureTables(page, scope);
+          const tables = await measureStackedTables(page, scope);
           const problems: string[] = [];
           for (const look of tables) {
             const label = look.label || 'table';
@@ -818,7 +500,9 @@ test.describe('info notices are muted with an "i" icon (AC-10, decision 13)', ()
       baseURL,
     }) => {
       test.setTimeout(120_000);
-      await enter(page, context, baseURL, { theme, dir });
+      accounts.push(
+        await enterAsNewManager(page, context, baseURL, { theme, dir }, { grants: ['cost.view'] }),
+      );
       const t: Translate = (key) => textFor(dir, key);
 
       // Audit: the entry dialog of an undone entry (the detail answer is stubbed, as audit.spec does).
@@ -870,7 +554,9 @@ test.describe('needs-attention warnings are amber with a triangle (owner ruling 
       baseURL,
     }) => {
       test.setTimeout(90_000);
-      await enter(page, context, baseURL, { theme, dir });
+      accounts.push(
+        await enterAsNewManager(page, context, baseURL, { theme, dir }, { grants: ['cost.view'] }),
+      );
       const t: Translate = (key) => textFor(dir, key);
       await openPath(page, '/settings');
       await openDialogBy(

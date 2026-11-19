@@ -11,6 +11,15 @@ describe('Button', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('draws the brand variant with the brand fill only, no primary blend or sheen', () => {
+    render(<Button variant="brand">Go</Button>);
+
+    const button = screen.getByRole('button', { name: 'Go' });
+    expect(button).toHaveClass('bg-brand', 'text-brand-foreground');
+    expect(button).not.toHaveClass('gradient-primary');
+    expect(button).not.toHaveClass('sheen');
+  });
+
   it('runs its action from the keyboard', async () => {
     const onClick = vi.fn();
     render(<Button onClick={onClick}>Save</Button>);
