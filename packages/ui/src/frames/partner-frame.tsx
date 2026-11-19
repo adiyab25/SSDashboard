@@ -36,10 +36,11 @@ type PartnerFrameProps = {
 /**
  * The consignment partner frame (AC-18): a top bar with the brand logo and the partner's name,
  * a top navigation of plain links (`aria-current="page"` on the current one), and the page's one
- * `main` (id `main-content`) holding the one `h1`. The brand accent colours only the logo tile.
- * On a phone the bar wraps and the navigation scrolls inside itself, so the page never scrolls
- * sideways. It must never hold a sidebar, location switcher, or command palette, import
- * `next/*`, or show cost columns (that is the page's job).
+ * `main` (id `main-content`) holding the one `h1`. The brand accent colours only the logo tile; the
+ * current link gets the cyan current page tint and a 2px cyan mark at its bottom edge. On a phone
+ * the bar wraps and the navigation scrolls inside itself, so the page never scrolls sideways. It
+ * must never hold a sidebar, location switcher, or command palette, import `next/*`, or show
+ * cost columns (that is the page's job).
  */
 export function PartnerFrame({
   brand,
@@ -56,7 +57,7 @@ export function PartnerFrame({
       style={brandStyle(brand.tokens)}
       className="min-h-dvh w-full overflow-x-clip bg-background text-foreground"
     >
-      <header className="border-b bg-card">
+      <header className="border-b bg-background">
         <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           <BrandMark brand={brand} />
           <div className="flex min-w-0 items-center gap-3">
@@ -71,7 +72,7 @@ export function PartnerFrame({
                 <a
                   href={item.href}
                   aria-current={item.current ? 'page' : undefined}
-                  className="focus-ring-inset flex h-11 items-center border-b-2 border-transparent px-3 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground aria-[current=page]:border-foreground aria-[current=page]:font-medium aria-[current=page]:text-foreground"
+                  className="focus-ring-inset transition-ui relative flex h-11 items-center rounded-chip px-3 text-sm whitespace-nowrap text-muted-foreground hover:tint-nav hover:text-foreground aria-[current=page]:gradient-current-page aria-[current=page]:font-medium aria-[current=page]:text-foreground aria-[current=page]:before:absolute aria-[current=page]:before:inset-x-3 aria-[current=page]:before:bottom-0 aria-[current=page]:before:h-0.5 aria-[current=page]:before:rounded-full aria-[current=page]:before:gradient-current-marker aria-[current=page]:before:content-['']"
                 >
                   {item.label}
                 </a>

@@ -21,8 +21,9 @@ type PortalFrameProps = {
  * the `h1`, and the page. It renders the page's one `main` (id `main-content`, so a skip link can
  * target it) and the one `h1`. When `brand.tokens` is set it puts `--brand` and
  * `--brand-foreground` on its root; the accent colours only the tile, the rule, and the main
- * button the app draws with `bg-brand`. It must never hold a sidebar, command palette, or staff
- * navigation, import `next/*`, or let the accent reach status, text, links, or the focus ring.
+ * button the app draws with `<Button variant="brand">`. It must never hold a sidebar, command
+ * palette, or staff navigation, import `next/*`, or let the accent reach status, text, links, or
+ * the focus ring.
  */
 export function PortalFrame({
   brand,

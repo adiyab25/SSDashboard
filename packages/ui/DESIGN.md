@@ -81,7 +81,7 @@ Order and cash state is shown by four roles, each an alias of an existing role s
 
 ### Brand accent (AC-19)
 
-`--brand` and `--brand-foreground` default to `--primary` and `--primary-foreground`. The portal frame overrides them inline from settings after `deriveBrandTokens` accepts the accent (at least 4.5:1). Use `bg-brand text-brand-foreground` only for the logo tile, a 6px top rule, and the main portal button. Never for status, text, the focus ring, or a chip.
+`--brand` and `--brand-foreground` default to `--primary` and `--primary-foreground`. The portal frame overrides them inline from settings after `deriveBrandTokens` accepts the accent (at least 4.5:1). Use `bg-brand text-brand-foreground` only for the logo tile, a 6px top rule, and the main portal button, which is `<Button variant="brand">` (the brand fill with the lift, no primary blend and no sheen, so the blend never paints over the brand colour). Never for status, text, the focus ring, or a chip.
 
 ### Measured contrast
 
@@ -405,7 +405,7 @@ Three frames, one system (AC-18). A frame is a layout plus a few props, not a se
 
 **`PortalFrame`** contains: a 6px `bg-brand` top rule, a header (36px logo tile, brand name, a `languageSwitch` slot), an optional `backLink` slot, the one `h1`, and one centred column (`max-w-88` with `px-4`, so 20rem of content at 320px and never wider). It never contains a sidebar, command palette, staff navigation, or location switcher. It has `overflow-x-clip`, so the frame adds no sideways scroll at 320 to 430px; large inputs and the main button are the page's job.
 
-**`PartnerFrame`** contains: a bar with the logo tile, brand name, the partner's name and an `actions` slot, then a `<nav aria-label>` of plain `<a>` links (`aria-current="page"` on the current one, 44px tall) and the `main` with the one `h1`. On a phone the bar wraps and the navigation scrolls inside itself, so the page does not scroll sideways. It never contains a sidebar, location switcher, or command palette.
+**`PartnerFrame`** contains: a bar with the logo tile, brand name, the partner's name and an `actions` slot, then a `<nav aria-label>` of plain `<a>` links (`aria-current="page"` on the current one, 44px tall; the current link gets the current page tint and a 2px cyan mark at its bottom edge) and the `main` with the one `h1`. On a phone the bar wraps and the navigation scrolls inside itself, so the page does not scroll sideways. It never contains a sidebar, location switcher, or command palette.
 
 Both render exactly one `<main id="main-content" tabindex="-1">` and exactly one `<h1>` (the `title` prop), take all text through props, and use logical sides and role tokens only. They do not suppress the landmark; a page that nests a frame inside another `main` is the page's bug (see integration below).
 
