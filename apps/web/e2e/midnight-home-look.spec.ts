@@ -534,7 +534,12 @@ async function measureFocusRings(page: Page, scope: string) {
   return out;
 }
 
-/** The two line rows' allowed height range (measured today: audit 55 to 55.5px, Arabic staff 56 to 56.5px). */
+/**
+ * The allowed height range of the two rows that may grow (owner ruling 2026-11-19): /audit list
+ * rows (a two line record cell; measured 55px in English, 59.25px in Arabic) and /staff rows in
+ * Arabic only, when the name or email cell wraps (in Arabic at 1280px the name, email and
+ * one-line date cannot all fit on one line; measured 56.5px).
+ */
 const GROWN_ROW_MIN = 52;
 const GROWN_ROW_MAX = 60;
 
@@ -546,6 +551,8 @@ interface TableLook {
   rows: { text: string; height: number; hasButton: boolean; cut: string[]; stacked: boolean }[];
   /** The table's panel scrolls sideways (its content is wider than the panel). */
   scrollsSideways: boolean;
+  /** The panel's scrollWidth and clientWidth, for the report. */
+  panelWidths: string;
 }
 
 /** Heights and looks of every table in a scope: headers and body rows. */
@@ -604,6 +611,10 @@ async function measureTables(page: Page, scope: string): Promise<TableLook[]> {
               (el) => `${el.tagName.toLowerCase()} ${(el.textContent ?? '').trim().slice(0, 20)}`,
             ),
         })),
+        panelWidths: (() => {
+          const panel = table.closest('[class*="gradient-card-edge"]') ?? table.parentElement!;
+          return `${panel.scrollWidth}/${panel.clientWidth}`;
+        })(),
         scrollsSideways: (() => {
           const panel = table.closest('[class*="gradient-card-edge"]') ?? table.parentElement!;
           return panel.scrollWidth > panel.clientWidth + 1;
@@ -702,25 +713,24 @@ test.describe('every screen and state in the Midnight look (AC-8, AC-20, AC-22)'
             }
             if (look.scrollsSideways) problems.push(`${label}: the panel scrolls sideways`);
             for (const row of look.rows) {
-              // Owner ruling 2026-11-19: a row may grow to fit a two line cell in exactly
-              // two places: /audit list rows (record type over number, English and Arabic) and
-              // /staff rows on both tabs in Arabic only (name over email). Never truncated, and
-              // bounded so a real regression still fails. Every other row is 40px.
-              const grows =
+              // Owner ruling 2026-11-19: only /audit list rows (English and Arabic) and /staff rows
+              // on both tabs in Arabic may grow to fit a cell that really wraps, bounded so a real
+              // regression still fails. Every other row is 40px, and so is any row on these screens
+              // whose cells do not wrap. No row ever cuts text.
+              if (row.cut.length > 0) {
+                problems.push(`${label}: row "${row.text}" cuts text: ${row.cut.join(', ')}`);
+              }
+              const mayGrow =
                 (screen.tag === 'audit' && name === 'audit') ||
                 (screen.tag === 'staff' && dir === 'rtl' && name !== 'staff-add-staff');
-              if (grows && row.stacked) {
+              if (mayGrow && row.stacked) {
                 if (row.height < GROWN_ROW_MIN || row.height > GROWN_ROW_MAX) {
                   problems.push(
                     `${label}: row "${row.text}" is ${row.height}px, outside ${GROWN_ROW_MIN} to ${GROWN_ROW_MAX}`,
                   );
                 }
-                if (row.cut.length > 0) {
-                  problems.push(`${label}: row "${row.text}" cuts text: ${row.cut.join(', ')}`);
-                }
                 continue;
               }
-              // Any other row (no two line cell) is 40px, even on these screens.
               if (row.height !== 40) {
                 problems.push(
                   `${label}: row "${row.text}" is ${row.height}px${row.hasButton ? ' (holds a button)' : ''}`,
@@ -729,7 +739,7 @@ test.describe('every screen and state in the Midnight look (AC-8, AC-20, AC-22)'
             }
           }
           console.log(
-            `${name} ${tag}: fields ${result.fields.length}, role=combobox ${result.comboboxes}, tables ${JSON.stringify(tables.map((l) => ({ label: l.label, head: l.heads.map((h) => h.height), rows: l.rows.map((r) => r.height) })))}`,
+            `${name} ${tag}: fields ${result.fields.length}, role=combobox ${result.comboboxes}, tables ${JSON.stringify(tables.map((l) => ({ label: l.label, head: l.heads.map((h) => h.height), rows: l.rows.map((r) => r.height), panel: l.panelWidths })))}`,
           );
           expect(problems, `${name} table problems`).toEqual([]);
 

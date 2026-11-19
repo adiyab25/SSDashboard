@@ -407,7 +407,7 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
                     </td>
                     <td className="px-3">{accountName(row.partnerAccountId)}</td>
                     <td className="px-3">{t(`staff.status.${row.status}`)}</td>
-                    <td className="px-3">
+                    <td className="px-3 whitespace-nowrap">
                       {row.lastSignInAt ? format.dateTime(row.lastSignInAt) : t('staff.never')}
                     </td>
                     <td className="px-3">
