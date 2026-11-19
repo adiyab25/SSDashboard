@@ -24,6 +24,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormat } from '@/i18n/use-format';
 import { useModuleStates } from '@/shell/use-module-states';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { peoplePanelId, peopleTabId } from './people-tabs';
 import { PartnerUserFormDialog } from './partner-user-form-dialog';
 import { PartnerUserMoveDialog } from './partner-user-move-dialog';
@@ -43,8 +44,6 @@ import { StaffConfirmDialog, type ConfirmKind } from './staff-confirm-dialog';
 import { StaffSetupDialog } from './staff-setup-dialog';
 
 const STATUSES: readonly StaffStatus[] = ['invited', 'active', 'disabled'];
-const SELECT =
-  'h-9 min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 const SEARCH_DELAY_MS = 300;
 const COLUMNS = ['name', 'email', 'account', 'status', 'lastSignIn', 'twoFactor'] as const;
 
@@ -280,7 +279,7 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
           </label>
           <select
             id="partner-users-account"
-            className={`${SELECT} max-w-full`}
+            className={`${SELECT_CLASS} max-w-full`}
             value={filter.partnerAccountId}
             onChange={(event) =>
               setFilter((current) => ({ ...current, partnerAccountId: event.target.value }))
@@ -300,7 +299,7 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
           </label>
           <select
             id="partner-users-status"
-            className={SELECT}
+            className={SELECT_CLASS}
             value={filter.status}
             onChange={(event) =>
               setFilter((current) => ({
@@ -354,25 +353,36 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
           tabIndex={0}
           aria-label={t('staff.partners.columns.table')}
-          className="relative overflow-x-auto rounded-lg border focus-ring"
+          className="relative overflow-x-auto rounded-card gradient-card-edge focus-ring"
         >
           <table className="w-full text-sm" aria-busy={loading}>
-            <thead className="bg-muted text-start">
+            <thead className="bg-muted text-start [&_tr]:border-b [&_tr]:border-border-strong">
               <tr className="h-row-header">
                 {COLUMNS.map((column) => (
-                  <th key={column} scope="col" className="px-3 text-start font-medium">
+                  <th
+                    key={column}
+                    scope="col"
+                    className="table-head-look h-row-header align-middle whitespace-nowrap px-3 text-start"
+                  >
                     {t(`staff.partners.columns.${column}`)}
                   </th>
                 ))}
-                <th scope="col" className="w-12 px-3 text-start font-medium">
+                <th
+                  scope="col"
+                  className="table-head-look h-row-header align-middle whitespace-nowrap w-12 px-3 text-start"
+                >
                   <span className="sr-only">{t('staff.partners.columns.actions')}</span>
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&_tr:last-child]:border-0">
               {loading &&
                 Array.from({ length: 5 }, (_, index) => (
-                  <tr key={index} className="h-row border-t" aria-hidden>
+                  <tr
+                    key={index}
+                    className="h-row border-b transition-colors hover:tint-row"
+                    aria-hidden
+                  >
                     <td colSpan={COLUMNS.length + 1} className="px-3">
                       <Skeleton className="h-4 w-full" />
                     </td>
@@ -390,14 +400,14 @@ export function PartnerLoginsTab({ mailEnabled, languages }: Props) {
               )}
               {!loading &&
                 page?.rows.map((row) => (
-                  <tr key={row.id} className="h-row border-t">
+                  <tr key={row.id} className="h-row border-b transition-colors hover:tint-row">
                     <td className="px-3 font-medium">{row.name}</td>
                     <td className="px-3">
                       <LtrText>{row.email}</LtrText>
                     </td>
                     <td className="px-3">{accountName(row.partnerAccountId)}</td>
                     <td className="px-3">{t(`staff.status.${row.status}`)}</td>
-                    <td className="px-3">
+                    <td className="px-3 whitespace-nowrap">
                       {row.lastSignInAt ? format.dateTime(row.lastSignInAt) : t('staff.never')}
                     </td>
                     <td className="px-3">

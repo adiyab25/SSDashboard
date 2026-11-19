@@ -47,7 +47,9 @@ export function TwoFactorSection({ enabled, onChange }: Props) {
             </Button>
           </>
         ) : (
-          <Button onClick={() => setDialog('enable')}>{t('account.twoFactor.enable')}</Button>
+          <Button variant="secondary" onClick={() => setDialog('enable')}>
+            {t('account.twoFactor.enable')}
+          </Button>
         )}
       </div>
 

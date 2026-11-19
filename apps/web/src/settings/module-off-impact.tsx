@@ -98,7 +98,7 @@ export function ModuleOffImpact({
         <section className="flex flex-col gap-1">
           <h3 className="font-semibold">{t('settings.modules.impact.waitingHeading')}</h3>
           <p className="text-muted-foreground">{t('settings.modules.impact.waitingHint')}</p>
-          <ul className="divide-y rounded-md border">
+          <ul className="divide-y rounded-card gradient-card-edge">
             {impact.waitingCommands.map((item) => (
               <li key={item.kind} className="flex justify-between gap-3 px-3 py-1.5">
                 <span>{word('kinds', item.kind)}</span>
@@ -113,7 +113,7 @@ export function ModuleOffImpact({
         <section className="flex flex-col gap-1">
           <h3 className="font-semibold">{t('settings.modules.impact.inFlightHeading')}</h3>
           <p className="text-muted-foreground">{t('settings.modules.impact.inFlightHint')}</p>
-          <ul className="divide-y rounded-md border">
+          <ul className="divide-y rounded-card gradient-card-edge">
             {impact.inFlight.map((item) => (
               <li key={item.area} className="flex justify-between gap-3 px-3 py-1.5">
                 <span>{word('areas', item.area)}</span>
@@ -128,7 +128,7 @@ export function ModuleOffImpact({
         <section className="flex flex-col gap-1">
           <h3 className="font-semibold">{t('settings.modules.impact.partnerHeading')}</h3>
           <p className="text-muted-foreground">{t('settings.modules.impact.partnerHint')}</p>
-          <ul className="divide-y rounded-md border">
+          <ul className="divide-y rounded-card gradient-card-edge">
             {impact.partnerStock.map((partner) => (
               <li key={partner.partnerId} className="flex flex-col gap-0.5 px-3 py-1.5">
                 <span className="font-medium">{partner.partnerName}</span>

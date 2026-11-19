@@ -30,12 +30,12 @@ export function AutomationSection({ entries }: { entries: readonly SettingEntryV
       </h2>
       <p className="text-sm text-muted-foreground">{t('settings.automations.description')}</p>
       {entries.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border px-4 py-8 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-card gradient-card-edge px-4 py-8 text-center">
           <ZapOffIcon aria-hidden className="size-6 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">{t('settings.automations.empty')}</p>
         </div>
       ) : (
-        <ul className="divide-y rounded-lg border">
+        <ul className="divide-y rounded-card gradient-card-edge">
           {entries.map((entry) => (
             <AutomationRow
               key={entry.key}

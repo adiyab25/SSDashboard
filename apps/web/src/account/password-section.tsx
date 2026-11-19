@@ -131,7 +131,7 @@ export function PasswordSection() {
             <PasswordRules id="account-rules" password={next} />
           </Field>
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={pending} aria-busy={pending}>
+            <Button type="submit" variant="secondary" disabled={pending} aria-busy={pending}>
               {pending && (
                 <LoaderCircleIcon
                   aria-hidden

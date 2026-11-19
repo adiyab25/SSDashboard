@@ -23,7 +23,7 @@ export function SettingSection({ titleKey, entries, onChange }: SettingSectionPr
       <h2 id={headingId} className="text-base font-semibold">
         {t(titleKey)}
       </h2>
-      <ul className="divide-y rounded-lg border">
+      <ul className="divide-y rounded-card gradient-card-edge">
         {entries.map((entry) => (
           <SettingRow key={entry.key} entry={entry} onChange={onChange} />
         ))}

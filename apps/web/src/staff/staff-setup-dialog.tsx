@@ -64,7 +64,7 @@ export function StaffSetupDialog({ setup, reason, name, onClose }: SetupProps) {
             <div className="flex items-center gap-2">
               <code
                 aria-labelledby="temporary-label"
-                className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-base select-all"
+                className="flex-1 rounded-control bg-muted px-3 py-2 font-mono text-base select-all"
               >
                 <LtrText>{setup.temporaryPassword}</LtrText>
               </code>

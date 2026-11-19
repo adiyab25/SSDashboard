@@ -28,14 +28,12 @@ import { useTranslation } from 'react-i18next';
 import type { z } from 'zod';
 import { useReturnFocus } from '@/shared/use-return-focus';
 import { ApiError } from '@/api/client';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { auditKeys, undoAuditEntry } from './audit-api';
 import { useEntryText } from './use-entry-text';
 
 type UndoInput = z.input<typeof AuditUndoRequest>;
 type UndoOutput = z.output<typeof AuditUndoRequest>;
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 
 /** Codes after which sending the same undo again can never work, so the button stays off. */
 const FINAL_CODES = new Set(['ENTRY_NOT_FOUND', 'NOT_UNDOABLE', 'ALREADY_UNDONE', 'FORBIDDEN']);
@@ -198,7 +196,7 @@ export function AuditUndoDialog({
             {codes ? (
               <select
                 id="undo-reason"
-                className={SELECT}
+                className={SELECT_CLASS}
                 aria-required
                 aria-invalid={!!problem}
                 aria-describedby={problem ? 'undo-reason-error' : undefined}

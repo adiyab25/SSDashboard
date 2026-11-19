@@ -27,7 +27,7 @@ export function LicenseRecordedList({ licenses }: LicenseRecordedListProps) {
   }
 
   return (
-    <ul className="divide-y rounded-lg border">
+    <ul className="divide-y rounded-card gradient-card-edge">
       {licenses.map((license) => (
         <li key={license.id} className="flex flex-col gap-1 px-4 py-3 text-sm">
           <p className="font-medium">

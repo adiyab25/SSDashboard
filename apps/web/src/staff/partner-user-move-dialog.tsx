@@ -18,13 +18,11 @@ import { Textarea } from '@ssdashboard/ui/components/textarea';
 import { LoaderCircleIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { getPartnerUser, movePartnerUser } from './partner-users-api';
 
 /** The longest reason the api keeps (spec 0008, AC-13). */
 const REASON_MAX = 500;
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30';
 
 /** The refusals the dialog explains in its own words; anything else is the generic message. */
 const KNOWN_ERRORS = new Set(['STALE_RECORD', 'UNKNOWN_PARTNER_ACCOUNT', 'NOT_FOUND', 'FORBIDDEN']);
@@ -207,7 +205,7 @@ export function PartnerUserMoveDialog({
                   <select
                     ref={accountRef}
                     id="partner-move-account"
-                    className={SELECT}
+                    className={SELECT_CLASS}
                     value={accountId}
                     required
                     aria-required

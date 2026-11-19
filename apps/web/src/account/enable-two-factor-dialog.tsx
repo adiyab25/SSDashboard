@@ -161,7 +161,7 @@ export function EnableTwoFactorDialog({ onEnabled, onClose }: EnableProps) {
                 fgColor="#000000"
                 role="img"
                 aria-label={t('account.twoFactor.enableDialog.qrLabel')}
-                className="rounded-md"
+                className="rounded-control"
               />
               <div className="flex flex-col items-center gap-1 text-sm">
                 <span id="setup-key-label" className="text-muted-foreground">

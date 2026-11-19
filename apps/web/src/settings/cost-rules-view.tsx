@@ -39,7 +39,7 @@ interface CostRulesViewProps {
 }
 
 /** The header cell classes of the rules tables (DESIGN.md, data tables). */
-const head = 'px-3 font-medium';
+const head = 'px-3';
 
 /**
  * The Cost rules page body (spec 0009, AC-23, AC-25): the one `<h1>`, the lock date in words
@@ -117,7 +117,7 @@ export function CostRulesView({ enabled, canAdd }: CostRulesViewProps) {
               <AlertDescription>{t('settings.costRules.lockInvalid')}</AlertDescription>
             </Alert>
           ) : first.lockDate === null ? (
-            <Alert>
+            <Alert className="text-muted-foreground">
               <InfoIcon aria-hidden />
               <AlertDescription>{t('settings.costRules.lockUnset')}</AlertDescription>
             </Alert>
@@ -138,10 +138,10 @@ export function CostRulesView({ enabled, canAdd }: CostRulesViewProps) {
                 {!canAdd && ` ${t('settings.costRules.addNeedsSettings')}`}
               </p>
             </div>
-            <div className="overflow-x-auto rounded-lg border">
+            <div className="overflow-x-auto rounded-card gradient-card-edge sm:[&_td]:py-0 sm:[&_td:lang(ar)]:py-0">
               <Table aria-label={t('settings.costRules.currentTable')}>
-                <TableHeader className="bg-muted">
-                  <TableRow className="h-row-header hover:bg-muted">
+                <TableHeader>
+                  <TableRow className="h-row-header">
                     <TableHead scope="col" className={`${head} text-start`}>
                       {t('settings.costRules.columns.kind')}
                     </TableHead>
@@ -165,8 +165,8 @@ export function CostRulesView({ enabled, canAdd }: CostRulesViewProps) {
                   {first.current.map(({ kind, rule, row }) => {
                     const name = words.kindName(kind);
                     return (
-                      <TableRow key={kind} className="h-row hover:bg-muted">
-                        <TableHead scope="row" className="px-3 text-start font-medium">
+                      <TableRow key={kind} className="h-row">
+                        <TableHead scope="row" className="h-row! px-3 text-start">
                           {name}
                         </TableHead>
                         <TableCell className="px-3 text-end tabular-nums">

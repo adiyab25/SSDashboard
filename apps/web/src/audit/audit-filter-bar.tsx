@@ -7,6 +7,7 @@ import { Input } from '@ssdashboard/ui/components/input';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SELECT_CLASS } from '@/shared/select-class';
 import { auditKeys, listPeople, type AuditFilter } from './audit-api';
 import {
   FILTER_NAMES,
@@ -15,9 +16,6 @@ import {
   type FilterProblems,
 } from './audit-filter';
 import { useEntryText } from './use-entry-text';
-
-const SELECT =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-2 text-base shadow-xs outline-none focus-ring md:text-sm dark:bg-input/30';
 
 const RECORD_TYPES = Object.keys(AUDIT_RECORD_TYPES) as (keyof typeof AUDIT_RECORD_TYPES)[];
 
@@ -141,7 +139,7 @@ export function AuditFilterBar({
           <FieldLabel htmlFor={FIELD_IDS.actorUserId}>{t('audit.filters.person')}</FieldLabel>
           <select
             id={FIELD_IDS.actorUserId}
-            className={SELECT}
+            className={SELECT_CLASS}
             value={draft.actorUserId ?? ''}
             onChange={(event) => set('actorUserId')(event.target.value)}
             {...invalid('actorUserId')}
@@ -172,7 +170,7 @@ export function AuditFilterBar({
           <FieldLabel htmlFor={FIELD_IDS.recordType}>{t('audit.filters.recordType')}</FieldLabel>
           <select
             id={FIELD_IDS.recordType}
-            className={SELECT}
+            className={SELECT_CLASS}
             value={draft.recordType ?? ''}
             onChange={(event) => set('recordType')(event.target.value)}
             {...invalid('recordType')}
@@ -205,7 +203,7 @@ export function AuditFilterBar({
           <FieldLabel htmlFor={FIELD_IDS.action}>{t('audit.filters.action')}</FieldLabel>
           <select
             id={FIELD_IDS.action}
-            className={SELECT}
+            className={SELECT_CLASS}
             value={draft.action ?? ''}
             onChange={(event) => set('action')(event.target.value)}
             {...invalid('action')}

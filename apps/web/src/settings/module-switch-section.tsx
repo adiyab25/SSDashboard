@@ -30,7 +30,7 @@ export function ModuleSwitchSection({ entries }: { entries: readonly SettingEntr
         {t('settings.sections.modules')}
       </h3>
       <p className="text-sm text-muted-foreground">{t('settings.modules.description')}</p>
-      <ul aria-labelledby={headingId} className="divide-y rounded-lg border">
+      <ul aria-labelledby={headingId} className="divide-y rounded-card gradient-card-edge">
         {entries.map((entry) => {
           const key = moduleKeyOfToggle(entry.key);
           return (
