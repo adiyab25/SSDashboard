@@ -8,6 +8,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  smallint,
   text,
   timestamp,
   unique,
@@ -46,6 +47,16 @@ const stateOfMachine = (machine: AnyPgColumn, state: AnyPgColumn): SQL =>
         WHEN 'fulfillment' THEN pg_input_is_valid(${state}, 'public.order_fulfillment_state')
         WHEN 'cash' THEN pg_input_is_valid(${state}, 'public.order_cash_state')
       END`;
+
+/**
+ * Which source asked for the current stock out generation's shipment posting (spec 0013 AC-27):
+ * the carrier's `shipped` fact, a Shopify fulfillment, or feature 33's pick, pack and ship.
+ */
+export const stockOutSource = pgEnum('stock_out_source', [
+  'carrier_shipped',
+  'shopify_fulfillment',
+  'pick_pack_ship',
+]);
 
 /** A sale, the replacement of an exchange, or a gift (total 0). */
 export const orderType = pgEnum('order_type', ['sale', 'exchange_replacement', 'gifted']);
@@ -210,6 +221,15 @@ export const orders = pgTable(
     channelOrderRef: text('channel_order_ref'),
     /** The note the customer typed at checkout. Personal data, never logged. */
     customerNote: text('customer_note'),
+    /**
+     * The generation of the order's shipment posting key (spec 0013 AC-24, AC-27):
+     * `order_shipment:<id>` for 1, `order_shipment:<id>:<n>` from 2. A reversal moves it on.
+     */
+    stockOutGeneration: smallint('stock_out_generation').notNull().default(1),
+    /** Which source asked for the current generation's posting; set with `stockOutRequestedAt`. */
+    stockOutSource: stockOutSource('stock_out_source'),
+    /** When the current generation's stock out was requested (the time the pieces left). */
+    stockOutRequestedAt: timestamp('stock_out_requested_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -285,6 +305,11 @@ export const orders = pgTable(
     check('orders_cancel_reason_code_shape', reasonCodeShape(t.cancelReasonCode)),
     check('orders_refused_reason_code_shape', reasonCodeShape(t.refusedReasonCode)),
     check('orders_gift_reason_code_shape', reasonCodeShape(t.giftReasonCode)),
+    check('orders_stock_out_generation_positive', sql`${t.stockOutGeneration} >= 1`),
+    check(
+      'orders_stock_out_request_pair',
+      sql`(${t.stockOutSource} IS NULL) = (${t.stockOutRequestedAt} IS NULL)`,
+    ),
     // A store's order list, newest first.
     index('orders_store_placed_idx').on(
       t.storeId,
@@ -382,6 +407,15 @@ export const orderLines = pgTable(
     channelLineId: text('channel_line_id'),
     /** The orders module's copy of the line's unfilled reservation quantity; 0 once the line leaves `open`. */
     shortQuantity: integer('short_quantity').notNull().default(0),
+    /**
+     * What the current stock out generation's posting takes out for the line (spec 0013 AC-24,
+     * AC-27 a); null while no stock out is requested. Below `quantity` marks the rest not shipped.
+     */
+    stockOutQuantity: integer('stock_out_quantity'),
+    /** Pieces that left the ledger and are expected back (AC-27); never above `stockOutQuantity`. */
+    awaitingRestockQuantity: integer('awaiting_restock_quantity').notNull().default(0),
+    /** Since when pieces await restock; set exactly while `awaitingRestockQuantity` is above 0. */
+    awaitingRestockSince: timestamp('awaiting_restock_since', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -402,6 +436,22 @@ export const orderLines = pgTable(
       sql`${t.shortQuantity} >= 0 AND ${t.shortQuantity} <= ${t.quantity}`,
     ),
     check('order_lines_quantity_positive', sql`${t.quantity} > 0`),
+    check(
+      'order_lines_stock_out_within_quantity',
+      sql`${t.stockOutQuantity} IS NULL OR (${t.stockOutQuantity} >= 0 AND ${t.stockOutQuantity} <= ${t.quantity})`,
+    ),
+    check(
+      'order_lines_awaiting_within_stock_out',
+      sql`${t.awaitingRestockQuantity} >= 0 AND ${t.awaitingRestockQuantity} <= coalesce(${t.stockOutQuantity}, 0)`,
+    ),
+    check(
+      'order_lines_awaiting_since_pair',
+      sql`(${t.awaitingRestockQuantity} = 0) = (${t.awaitingRestockSince} IS NULL)`,
+    ),
+    // The awaiting restock list, oldest first per variant (AC-27 e, g).
+    index('order_lines_awaiting_restock_idx')
+      .on(t.variantId, t.awaitingRestockSince)
+      .where(sql`${t.awaitingRestockQuantity} > 0`),
     check(
       'order_lines_amounts_not_negative',
       sql`${t.unitPrice} >= 0 AND ${t.discountAmount} >= 0 AND ${t.netAmount} >= 0

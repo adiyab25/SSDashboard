@@ -25,6 +25,7 @@ import {
   WriteBackOpen,
 } from '../orders.errors.js';
 import { LinesReturnedToOrigin, OrderAttentionRaised, OrderCancelled } from '../orders.events.js';
+import { ShipmentJobs } from '../shipment/shipment-jobs.js';
 import { OrderStock } from '../stock/order-stock.js';
 import { lockLinkTarget, lockOrderForChange, type LockedOrder } from '../writer/locked-order.js';
 import { OrderWriter, type NewEventRow, type OrderColumnChanges } from '../writer/order-writer.js';
@@ -158,6 +159,7 @@ export class OrderTransitions {
     private readonly events: DomainEvents,
     private readonly stock: OrderStock,
     private readonly audit: AuditService,
+    private readonly shipments: ShipmentJobs,
   ) {}
 
   /**
@@ -183,7 +185,8 @@ export class OrderTransitions {
       columns: { fulfillmentState: 'confirmed', confirmedAt: 'now', confirmedBy: actor.userId },
       events: [fulfillmentEvent(order, 'confirmed', actor, null)],
     });
-    await this.stock.topUp(tx, orderId, false);
+    // Once a stock out is requested no path reserves the order's lines again (AC-13, AC-27).
+    if (order.stockOutSource === null) await this.stock.topUp(tx, orderId, false);
   }
 
   /**
@@ -311,6 +314,12 @@ export class OrderTransitions {
       events,
     });
     await this.stock.afterCancel(tx, orderId);
+    // Every cancel before a carrier `shipped` fact (a cancel is only ever before one) asks the
+    // after cancel job about the current generation, unconditionally (AC-27 b).
+    await this.shipments.enqueueAfterCancel(tx, orderId, order.stockOutGeneration, {
+      origin: originOf(actor),
+      reasonCode: input.reasonCode,
+    });
 
     if (order.fulfillmentState === 'packed') {
       await this.events.publish(
@@ -359,7 +368,8 @@ export class OrderTransitions {
       actor: 'person',
     });
     if (open.length > 0) throw new WriteBackOpen();
-    await this.stock.topUp(tx, orderId, true);
+    // Once a stock out is requested: no top up and no `LINE_SHORT` (AC-13, AC-27).
+    if (order.stockOutSource === null) await this.stock.topUp(tx, orderId, true);
     await this.writer.applyChange(tx, orderId, {
       columns: { fulfillmentState: 'packed' },
       events: [fulfillmentEvent(order, 'packed', actor, null)],
@@ -456,7 +466,9 @@ export class OrderTransitions {
    * gets the table's `InvalidTransition` (a person may record `lost` with a reason). A malformed
    * fact throws `InvalidOrderInput` for every actor; a `cancelled` fact from anyone but the
    * carrier throws `InvalidTransition` (a person cancels with `cancel`). Never refused for stock:
-   * the shipment posting, its job, and the stock out request are task 15's and are not here.
+   * on `shipped` it records the stock out request and enqueues the `orders.post_shipment` job in
+   * the same transaction (task 15, AC-24), which books the posting after the move commits; the
+   * carrier's `cancelled` enqueues the after cancel job like every cancel (AC-27 b).
    */
   async recordShipmentFact(
     tx: OrderTransaction,
@@ -538,6 +550,7 @@ export class OrderTransitions {
       ...(order.carrierDeliveryCreated ? {} : { carrierDeliveryCreatedAt: fact.occurredAt }),
     };
     await this.writer.applyChange(tx, orderId, { columns, moveLines: moves, events });
+    if (fact.to === 'shipped') await this.afterShipped(tx, order, fact);
 
     for (const task of tasks) {
       await this.events.publish(
@@ -877,6 +890,34 @@ export class OrderTransitions {
         }),
       ],
     });
+  }
+
+  /**
+   * The stock side of a carrier `shipped` fact (AC-15, AC-24), in the fact's transaction: when no
+   * stock out is requested yet, records the request (`carrier_shipped`, each open line's full
+   * quantity, at the fact's time) and enqueues the shipment posting job for the current
+   * generation; when one is recorded (a Shopify fulfillment came first) it enqueues nothing new.
+   * A late `shipped` on a cancelled order (`cancelled` to `shipped`) also closes the order's
+   * awaiting restock quantities with no movement: the posting stands and the courier has the
+   * pieces. Never refused for stock: the posting runs in the job after the move commits.
+   */
+  private async afterShipped(
+    tx: OrderTransaction,
+    order: LockedOrder,
+    fact: ShipmentFact,
+  ): Promise<void> {
+    if (order.fulfillmentState === 'cancelled') {
+      await this.writer.closeAwaitingRestock(tx, order.id);
+    }
+    if (order.stockOutSource !== null) return;
+    const requested = await this.writer.requestStockOut(tx, order.id, {
+      source: 'carrier_shipped',
+      at: fact.occurredAt,
+      lines: order.lines
+        .filter((line) => line.lineState === 'open')
+        .map((line) => ({ lineId: line.id, quantity: line.quantity })),
+    });
+    if (requested) await this.shipments.enqueuePost(tx, order.id, order.stockOutGeneration);
   }
 
   /** Writes `order.collection_recorded_manually` for a person's cash entry (AC-11); others write none. */

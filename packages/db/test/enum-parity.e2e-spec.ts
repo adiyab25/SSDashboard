@@ -49,6 +49,7 @@ import {
   SettlementPeriodActorType,
   SettlementPeriodState,
   SettlementStatementKind,
+  StockOutSource,
   StockReceiptStatus,
   SyncRunKind,
   SyncRunStatus,
@@ -92,6 +93,8 @@ describe('every database enum with a Zod twin matches its contract', () => {
     ['order_line_state', OrderLineState.options],
     ['order_actor_type', OrderActorType.options],
     ['order_machine', OrderMachine.options],
+    // Spec 0013 task 15 (AC-27): which source asked for an order's shipment posting.
+    ['stock_out_source', StockOutSource.options],
     ['customer_phone_kind', PhoneKind.options],
     ['customer_risk_flag', CustomerRiskFlag.options],
     ['customer_risk_flag_source', CustomerRiskFlagSource.options],

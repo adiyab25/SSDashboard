@@ -1622,6 +1622,7 @@ export const en = {
       reservation_shortened: 'Stock held for this order was taken',
       shipped_with_unmapped_lines: 'Shipped with a line that had no product',
       shipment_not_posted: 'The shipment was not booked in stock',
+      returned_pieces_to_receive: 'Pieces that left stock are expected back',
     },
     title: 'Orders',
     description:
@@ -2832,6 +2833,7 @@ export const en = {
       mailSend: 'Sending email',
       connectorsShopifySync: 'Reading orders and products from Shopify',
       connectorsInbox: 'Clearing old Shopify inbox rows and sync runs',
+      ordersShipmentPosting: 'Booking shipped orders out of stock',
     },
   },
   // The connections screens of spec 0015 (AC-1, AC-2, AC-27): the list and the Shopify connect

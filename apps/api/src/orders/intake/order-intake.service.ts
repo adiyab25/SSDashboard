@@ -952,7 +952,10 @@ export class OrderIntake {
     if (!(await this.writer.setLineVariant(tx, orderId, line.id, variantId))) {
       throw new LineAlreadyMapped();
     }
-    const holding = EDITABLE_STATES.includes(order.fulfillmentState);
+    // Once a stock out is requested no path reserves the order's lines again (AC-13, AC-27): the
+    // posting under the order's key was booked, or will be, without this line.
+    const holding =
+      EDITABLE_STATES.includes(order.fulfillmentState) && order.stockOutSource === null;
     if (holding && line.lineState === 'open') {
       await this.stock.afterLink(tx, orderId, line.id);
       return { lineId: line.id, reserved: true };

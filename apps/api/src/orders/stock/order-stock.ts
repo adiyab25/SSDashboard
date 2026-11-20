@@ -293,7 +293,8 @@ export class OrderStock implements OnModuleInit {
     const { rows: holding } = await tx.execute<{ id: string; packed: boolean }>(sql`
       SELECT id, fulfillment_state = 'packed' AS packed FROM orders
       WHERE id = ANY(${pgArray(orderIds)}::uuid[])
-        AND fulfillment_state IN ('new', 'confirmed', 'packed')`);
+        AND fulfillment_state IN ('new', 'confirmed', 'packed')
+        AND stock_out_requested_at IS NULL`);
     const holdingIds = new Map(holding.map((row) => [row.id, row.packed]));
     const wanted = new Set(batch.map((line) => line.id));
     const open: StockLine[] = [];
@@ -497,7 +498,8 @@ export class OrderStock implements OnModuleInit {
   }
 
   /**
-   * The open reservable lines of holding orders that hold no active reservation at `locationId`
+   * The open reservable lines of holding orders whose stock out is not requested (AC-26, AC-27:
+   * the gate check and the hold skip such an order) that hold no active reservation at `locationId`
    * nor at the online location `onlineId` (spec 0011 AC-19), a held line of a `packed` order
    * excepted (it counts as held anywhere, review N1), oldest order first (`placed_at`,
    * `id`, then line position). Reads only, through `executor`: one read of the lines, one of the
@@ -520,6 +522,7 @@ export class OrderStock implements OnModuleInit {
              o.fulfillment_state = 'packed' AS packed
       FROM order_lines l JOIN orders o ON o.id = l.order_id
       WHERE o.fulfillment_state IN ('new', 'confirmed', 'packed')
+        AND o.stock_out_requested_at IS NULL
         AND l.line_state = 'open' AND l.variant_id IS NOT NULL
       ORDER BY o.placed_at, o.id, l.position, l.id`);
     const candidates = await this.reservable(

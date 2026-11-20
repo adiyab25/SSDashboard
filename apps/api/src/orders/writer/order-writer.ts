@@ -10,6 +10,7 @@ import {
   type OrderType,
   type OrderPaymentMethod,
   type SplittableLine,
+  type StockOutSource,
 } from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
 import { pgArray, pgConstraint, type Transaction } from '../../database/sql.js';
@@ -531,14 +532,18 @@ export class OrderWriter {
       INSERT INTO order_lines (order_id, position, variant_id, title, quantity, unit_price,
                                discount_amount, net_amount, tax_rate, tax_amount, gross_amount,
                                prepaid_amount, credit_applied_amount, unit_cost, line_state,
-                               split_from_line_id, channel_line_id)
+                               split_from_line_id, channel_line_id, stock_out_quantity)
       SELECT l.order_id,
              (SELECT max(position) + 1 FROM order_lines WHERE order_id = ${orderId}::uuid),
              l.variant_id, l.title, ${r.quantity}::int, l.unit_price,
              ${r.discountAmount}::numeric, ${r.netAmount}::numeric, l.tax_rate,
              ${r.taxAmount}::numeric, ${r.grossAmount}::numeric, ${r.prepaidAmount}::numeric,
              ${r.creditAppliedAmount}::numeric, l.unit_cost, 'returned_to_origin', l.id,
-             l.channel_line_id
+             l.channel_line_id,
+             -- A requested stock out follows the split: the delivered row keeps up to its quantity.
+             CASE WHEN l.stock_out_quantity IS NULL THEN NULL
+                  ELSE LEAST(GREATEST(l.stock_out_quantity - ${d.quantity}::int, 0), ${r.quantity}::int)
+             END
       FROM order_lines l
       WHERE l.id = ${split.lineId}::uuid AND l.order_id = ${orderId}::uuid AND l.line_state = 'open'
       RETURNING id`);
@@ -549,6 +554,7 @@ export class OrderWriter {
           net_amount = ${d.netAmount}::numeric, tax_amount = ${d.taxAmount}::numeric,
           gross_amount = ${d.grossAmount}::numeric, prepaid_amount = ${d.prepaidAmount}::numeric,
           credit_applied_amount = ${d.creditAppliedAmount}::numeric, line_state = 'delivered',
+          stock_out_quantity = LEAST(stock_out_quantity, ${d.quantity}::int),
           short_quantity = 0, updated_at = clock_timestamp()
       WHERE id = ${split.lineId}::uuid AND order_id = ${orderId}::uuid`);
     return id;
@@ -688,6 +694,129 @@ export class OrderWriter {
                     AND o.fulfillment_state IN ('new', 'confirmed', 'packed'))
       RETURNING id`);
     return rows.length > 0;
+  }
+
+  /**
+   * Records the stock out request of the order's current generation (spec 0013 AC-27 a), once:
+   * `stock_out_source` and `stock_out_requested_at` on the order, and each named line's
+   * `stock_out_quantity`, only while no request is recorded. No event, no audit entry, and
+   * `orders.updated_at` kept (no state machine moves). The caller holds the order row lock and
+   * names only lines of the order. Answers whether it recorded the request.
+   */
+  async requestStockOut(
+    tx: OrderTransaction,
+    orderId: string,
+    request: {
+      source: StockOutSource;
+      at: Date;
+      lines: readonly { lineId: string; quantity: number }[];
+    },
+  ): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE orders
+      SET stock_out_source = ${request.source}::stock_out_source,
+          stock_out_requested_at = ${iso(request.at)}::timestamptz
+      WHERE id = ${orderId}::uuid AND stock_out_requested_at IS NULL
+      RETURNING id`);
+    if (rows.length === 0) return false;
+    if (request.lines.length > 0) {
+      await tx.execute(sql`
+        UPDATE order_lines l
+        SET stock_out_quantity = LEAST(GREATEST(w.quantity, 0), l.quantity),
+            updated_at = clock_timestamp()
+        FROM unnest(${pgArray(request.lines.map((line) => line.lineId))}::uuid[],
+                    ${pgArray(request.lines.map((line) => line.quantity))}::int[]) AS w(id, quantity)
+        WHERE l.id = w.id AND l.order_id = ${orderId}::uuid`);
+    }
+    return true;
+  }
+
+  /**
+   * Writes the `unit_cost` the shipment posting gave each line (spec 0013 AC-15, Value sourcing:
+   * once, from null), to the line and to any split row of it whose cost is still null. Runs in
+   * the posting's own `within` (the ledger's transaction, through the one sanctioned adapter), so
+   * it takes no order row lock: it locks only the line rows it writes, after the ledger's locks
+   * (a deadlock with an order write is broken by the ledger's single retry). No event,
+   * `orders.updated_at` kept.
+   */
+  async setUnitCosts(
+    tx: OrderTransaction,
+    orderId: string,
+    costs: ReadonlyMap<string, string>,
+  ): Promise<void> {
+    if (costs.size === 0) return;
+    const lineIds = [...costs.keys()];
+    await tx.execute(sql`
+      UPDATE order_lines l
+      SET unit_cost = w.cost, updated_at = clock_timestamp()
+      FROM unnest(${pgArray(lineIds)}::uuid[],
+                  ${pgArray(lineIds.map((id) => costs.get(id) ?? '0'))}::numeric[]) AS w(id, cost)
+      WHERE l.order_id = ${orderId}::uuid AND l.unit_cost IS NULL
+        AND (l.id = w.id OR l.split_from_line_id = w.id)`);
+  }
+
+  /**
+   * Puts each named line's posted `stock_out_quantity` on `awaiting_restock_quantity`, since now
+   * (spec 0013 *After a cancel* row 5), for lines not already awaiting. The caller holds the order
+   * row lock. No event, `orders.updated_at` kept. Answers the lines it put on the list.
+   */
+  async awaitRestock(
+    tx: OrderTransaction,
+    orderId: string,
+    lineIds: readonly string[],
+  ): Promise<string[]> {
+    if (lineIds.length === 0) return [];
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE order_lines
+      SET awaiting_restock_quantity = stock_out_quantity, awaiting_restock_since = now(),
+          updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid AND id = ANY(${pgArray(lineIds)}::uuid[])
+        AND stock_out_quantity > 0 AND awaiting_restock_quantity = 0
+      RETURNING id`);
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Closes every awaiting restock quantity of the order with no movement (spec 0013 AC-15: a late
+   * carrier `shipped` on a cancelled order; the posting stands and the courier has the pieces).
+   * The caller holds the order row lock. No event, `orders.updated_at` kept. Answers how many
+   * lines it closed.
+   */
+  async closeAwaitingRestock(tx: OrderTransaction, orderId: string): Promise<number> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE order_lines
+      SET awaiting_restock_quantity = 0, awaiting_restock_since = NULL,
+          updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid AND awaiting_restock_quantity > 0
+      RETURNING id`);
+    return rows.length;
+  }
+
+  /**
+   * Moves the order from stock out generation `from` to `from + 1` and clears the request and the
+   * lines' `stock_out_quantity` (spec 0013 *After a cancel* row 4, after its reversal), only while
+   * the order is still at `from`; a line still awaiting restock keeps its quantity (the cap of what
+   * may come back). Runs in the reversal's own `within` (the ledger's transaction), so the row
+   * lock it takes comes after the ledger's locks. No event, `orders.updated_at` kept. Answers
+   * whether it moved the order.
+   */
+  async advanceStockOutGeneration(
+    tx: OrderTransaction,
+    orderId: string,
+    from: number,
+  ): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE orders
+      SET stock_out_generation = ${from + 1}::smallint, stock_out_source = NULL,
+          stock_out_requested_at = NULL
+      WHERE id = ${orderId}::uuid AND stock_out_generation = ${from}::smallint
+      RETURNING id`);
+    if (rows.length === 0) return false;
+    await tx.execute(sql`
+      UPDATE order_lines SET stock_out_quantity = NULL, updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid AND stock_out_quantity IS NOT NULL
+        AND awaiting_restock_quantity = 0`);
+    return true;
   }
 
   /** Locks an order row `FOR UPDATE` and answers whether it exists. Every write path calls it first. */

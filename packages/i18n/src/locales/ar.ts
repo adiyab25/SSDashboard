@@ -1644,6 +1644,7 @@ export const ar: Catalog = {
       reservation_shortened: 'أُخذ المخزون المحجوز لهذا الطلب',
       shipped_with_unmapped_lines: 'شُحن مع بند بلا منتج',
       shipment_not_posted: 'لم يُسجَّل الشحن في المخزون',
+      returned_pieces_to_receive: 'قطع خرجت من المخزون ومنتظر رجوعها',
     },
     title: 'الطلبات',
     description: 'كل طلبات كل المتاجر من الأحدث إلى الأقدم. افتح طلبًا لترى بنوده وأمواله وسجله.',
@@ -2847,6 +2848,7 @@ export const ar: Catalog = {
       mailSend: 'إرسال البريد الإلكتروني',
       connectorsShopifySync: 'قراءة الطلبات والمنتجات من Shopify',
       connectorsInbox: 'حذف سجلات صندوق Shopify وعمليات المزامنة القديمة',
+      ordersShipmentPosting: 'تسجيل الطلبات المشحونة خارج المخزون',
     },
   },
   // شاشات الربط في المواصفة 0015 (AC-1 وAC-2 وAC-27): القائمة ونموذج ربط متجر Shopify. السبب جملة

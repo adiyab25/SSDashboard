@@ -13,6 +13,8 @@ import { OrderIntake } from './intake/order-intake.service.js';
 import { OrderMovesController } from './moves/order-moves.controller.js';
 import { OrderTransactions } from './order-transactions.js';
 import { OrderQueries } from './reading/order-query.service.js';
+import { ShipmentJobs } from './shipment/shipment-jobs.js';
+import { ShipmentPosting } from './shipment/shipment-posting.js';
 import { OrderTaskLink } from './reading/order-task-link.js';
 import { OrdersController } from './reading/orders.controller.js';
 import { OrderStockController } from './stock/order-stock.controller.js';
@@ -31,7 +33,9 @@ import { OrderWriter } from './writer/order-writer.js';
  * confirm, cancel, pack, and unpack (`OrderTransitions`), the write back projection, feature 13's
  * channel intake, and stock (`OrderStock` with spec 0011's reservations, the short lines
  * projection, the `orders.open_orders_held` gate check, and `hold-open-orders`); milestone 5 adds
- * the carrier and cash moves on `OrderTransitions` (the shipment posting job follows). It reads stores, channels, customers, SKUs, staff names,
+ * the carrier and cash moves on `OrderTransitions` and the stock side of the carrier facts
+ * (`ShipmentJobs` sends the `orders.post_shipment` jobs, `ShipmentPosting` does their work, run in
+ * the worker by `OrdersWorkerModule`). It reads stores, channels, customers, SKUs, staff names,
  * outbound commands, and stock only through their owners' services.
  */
 @Module({
@@ -58,7 +62,16 @@ import { OrderWriter } from './writer/order-writer.js';
     WriteBackProjection,
     ShortLinesProjection,
     OrderTaskLink,
+    ShipmentJobs,
+    ShipmentPosting,
   ],
-  exports: [OrderTransactions, OrderIntake, OrderEditing, OrderTransitions, OrderQueries],
+  exports: [
+    OrderTransactions,
+    OrderIntake,
+    OrderEditing,
+    OrderTransitions,
+    OrderQueries,
+    ShipmentPosting,
+  ],
 })
 export class OrdersModule {}

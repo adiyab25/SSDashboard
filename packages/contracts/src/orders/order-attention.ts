@@ -19,6 +19,8 @@ export const OrderAttentionKind = z.enum([
   'reservation_shortened',
   'shipped_with_unmapped_lines',
   'shipment_not_posted',
+  // Spec 0013 AC-27 (b, d): pieces that left stock and are expected back on the shelf.
+  'returned_pieces_to_receive',
 ]);
 /** One attention kind. */
 export type OrderAttentionKind = z.infer<typeof OrderAttentionKind>;

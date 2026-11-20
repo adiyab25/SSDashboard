@@ -93,3 +93,12 @@ export const ORDER_COLLECTION_REASONS = [
 
 /** The reason codes of `order.payment_method_rederived`. */
 export const ORDER_PAYMENT_METHOD_REDERIVED_REASONS = ['gateway_mapping_changed'] as const;
+
+/**
+ * Which source asked for an order's current stock out generation (spec 0013 AC-24, AC-27): the
+ * carrier's `shipped` fact, a Shopify fulfillment (spec 0015), or feature 33's pick, pack and ship.
+ * Matches the `stock_out_source` enum. Every source asks for the same one shipment posting.
+ */
+export const StockOutSource = z.enum(['carrier_shipped', 'shopify_fulfillment', 'pick_pack_ship']);
+/** One stock out source. */
+export type StockOutSource = z.infer<typeof StockOutSource>;
