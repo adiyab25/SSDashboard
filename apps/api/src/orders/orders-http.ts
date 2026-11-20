@@ -114,6 +114,12 @@ export function ordersHttpError(error: unknown, response?: Response): unknown {
       return new ConflictException({ code: 'LINE_SHORT', message: error.message });
     case 'LocationNotFound':
       return new NotFoundException({ code: 'LOCATION_NOT_FOUND', message: error.message });
+    case 'NothingAwaiting':
+      return new ConflictException({ code: 'NOTHING_AWAITING', message: error.message });
+    case 'NoLinesDiffer':
+      return new ConflictException({ code: 'NO_LINES_DIFFER', message: error.message });
+    case 'StockOutAlreadyRequested':
+      return new ConflictException({ code: 'ALREADY_REQUESTED', message: error.message });
     case 'OrderStoreMissing':
       logger.error('An order names a store that does not exist');
       return new InternalServerErrorException();

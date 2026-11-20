@@ -17,6 +17,7 @@ import { ShipmentJobs } from './shipment/shipment-jobs.js';
 import { ShipmentPosting } from './shipment/shipment-posting.js';
 import { OrderTaskLink } from './reading/order-task-link.js';
 import { OrdersController } from './reading/orders.controller.js';
+import { AwaitingRestockController } from './stock/awaiting-restock.controller.js';
 import { OrderStockController } from './stock/order-stock.controller.js';
 import { OrderStock } from './stock/order-stock.js';
 import { ShortLinesProjection } from './stock/short-lines.projection.js';
@@ -35,7 +36,11 @@ import { OrderWriter } from './writer/order-writer.js';
  * projection, the `orders.open_orders_held` gate check, and `hold-open-orders`); milestone 5 adds
  * the carrier and cash moves on `OrderTransitions` and the stock side of the carrier facts
  * (`ShipmentJobs` sends the `orders.post_shipment` jobs, `ShipmentPosting` does their work, run in
- * the worker by `OrdersWorkerModule`). It reads stores, channels, customers, SKUs, staff names,
+ * the worker by `OrdersWorkerModule`), and task 15's Shopify half: `recordChannelStockOut` and
+ * `recordChannelFulfillmentCancelled` on `OrderTransitions`, and on `OrderStock` (exported for
+ * features 13, 20, and 21) `recordChannelReturn`, `restockAwaiting`, `closeAwaiting`,
+ * `postChannelFulfillment`, and `pendingFor`, with the awaiting restock routes
+ * (`AwaitingRestockController`). It reads stores, channels, customers, SKUs, staff names,
  * outbound commands, and stock only through their owners' services.
  */
 @Module({
@@ -50,7 +55,12 @@ import { OrderWriter } from './writer/order-writer.js';
     StaffDirectoryModule,
     TasksModule,
   ],
-  controllers: [OrdersController, OrderMovesController, OrderStockController],
+  controllers: [
+    OrdersController,
+    OrderMovesController,
+    OrderStockController,
+    AwaitingRestockController,
+  ],
   providers: [
     OrderTransactions,
     OrderWriter,
@@ -71,6 +81,7 @@ import { OrderWriter } from './writer/order-writer.js';
     OrderEditing,
     OrderTransitions,
     OrderQueries,
+    OrderStock,
     ShipmentPosting,
   ],
 })

@@ -1623,6 +1623,37 @@ export const en = {
       shipped_with_unmapped_lines: 'Shipped with a line that had no product',
       shipment_not_posted: 'The shipment was not booked in stock',
       returned_pieces_to_receive: 'Pieces that left stock are expected back',
+      fulfilled_lines_differ: 'Shopify fulfilled other quantities than the order holds',
+      awaiting_restock_overdue: 'Pieces have been expected back for 10 days',
+      awaiting_restock_close_requested: 'Asked to close pieces that never came back',
+      fulfillment_partial_stale: 'Partly fulfilled in Shopify for 3 days',
+    },
+    // Spec 0013 AC-27: the stock out block, the awaiting restock list, and their errors.
+    stockOut: {
+      reasons: {
+        close: {
+          lost_by_carrier: 'Lost by the courier',
+          damaged_not_resold: 'Damaged, not for sale',
+          customer_kept: 'The customer kept it',
+          other: 'Other',
+        },
+        post: {
+          shopify_fulfilled_less: 'Shopify fulfilled less than the order',
+          other: 'Other',
+        },
+      },
+      errors: {
+        NOTHING_AWAITING: 'Fewer pieces of this line are expected back than that.',
+        IDEMPOTENCY_CONFLICT:
+          'This action was already sent with other details. Reload the page and try again.',
+        STALE_RECORD:
+          'This order changed while you were working. The page now shows the latest version; check it and try again.',
+        NO_LINES_DIFFER:
+          'Shopify fulfilled exactly what the order holds, so there is nothing to post here.',
+        ALREADY_REQUESTED: 'This order has already left stock.',
+        PERIOD_LOCKED: 'The stock period is locked, so pieces cannot be put back on the shelf now.',
+        FORBIDDEN: 'You do not have permission to do this.',
+      },
     },
     title: 'Orders',
     description:
@@ -2217,6 +2248,11 @@ export const en = {
       orderPartialDeliverySplit: 'Partial delivery recorded',
       orderCollectionRecordedManually: 'Cash collection entered by hand',
       orderPaymentMethodRederived: 'Order payment method corrected',
+      orderAwaitingRestockClosed: 'Pieces expected back closed',
+      orderAwaitingRestockCloseRequested: 'Closing pieces expected back requested',
+      orderAwaitingRestocked: 'Pieces expected back put on the shelf',
+      orderChannelFulfillmentPosted: 'What Shopify fulfilled posted out of stock',
+      orderCarrierDeliveryCleared: 'Order unlocked after its Shopify fulfillment was cancelled',
       taskClosed: 'Task closed',
       connectionCreated: 'Shopify store connected',
       connectionBackfillStarted: 'Shopify backfill started',

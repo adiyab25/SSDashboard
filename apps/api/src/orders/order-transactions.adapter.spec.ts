@@ -23,10 +23,12 @@ const NAMES_THE_ADAPTER = /\borderTransactionFromLedger\b/;
 
 /**
  * The files that may use the adapter (review m4, security L2): the reservation event handlers and
- * the milestone 5 shipment posting file (a posting's and a reversal's `within`).
+ * the milestone 5 shipment posting file (a posting's and a reversal's `within`), and the restock
+ * posting of awaiting pieces (`OrderStock.restockAwaiting`'s `within`, spec 0013 AC-27 e).
  */
 const ADAPTER_USERS = [
   'orders/shipment/shipment-posting.ts',
+  'orders/stock/order-stock.ts',
   'orders/stock/short-lines.projection.ts',
 ];
 

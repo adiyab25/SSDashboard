@@ -48,7 +48,23 @@ describe('planShipment', () => {
       ],
       unmapped: [],
       unlocated: [],
+      partial: [],
     });
+  });
+
+  it('marks a held line posted for less than its quantity as partial, so its rest is released', () => {
+    const plan = planShipment(
+      [
+        { id: LINE_A, variantId: SKU_M, quantity: 2, lineQuantity: 3 },
+        { id: LINE_B, variantId: SKU_M, quantity: 1, lineQuantity: 2 },
+      ],
+      [{ sourceLineId: LINE_A, reservationId: RESERVATION, locationId: SHELF }],
+      skus,
+      ONLINE,
+    );
+
+    expect(plan.partial).toEqual([LINE_A]);
+    expect(plan.post.map((line) => line.quantity)).toEqual([2, 1]);
   });
 
   it('reports an unmapped line, an unlocated line, and leaves out a SKU that holds no stock', () => {
@@ -64,7 +80,7 @@ describe('planShipment', () => {
       null,
     );
 
-    expect(plan).toEqual({ post: [], unmapped: [LINE_A], unlocated: [LINE_B] });
+    expect(plan).toEqual({ post: [], unmapped: [LINE_A], unlocated: [LINE_B], partial: [] });
   });
 });
 

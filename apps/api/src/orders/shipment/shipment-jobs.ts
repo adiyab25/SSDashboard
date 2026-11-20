@@ -35,4 +35,14 @@ export class ShipmentJobs {
     const data: PostShipmentJobData = { kind: 'after_cancel', orderId, generation, ...cancel };
     await this.jobs.sendIn(tx, POST_SHIPMENT_QUEUE, data, orderGroup(orderId));
   }
+
+  /** Asks the fulfillment reversal of generation `generation` (AC-27 c: every fulfillment cancelled). */
+  async enqueueFulfillmentReversal(
+    tx: OrderTransaction,
+    orderId: string,
+    generation: number,
+  ): Promise<void> {
+    const data: PostShipmentJobData = { kind: 'fulfillment_reversal', orderId, generation };
+    await this.jobs.sendIn(tx, POST_SHIPMENT_QUEUE, data, orderGroup(orderId));
+  }
 }

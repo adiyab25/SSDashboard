@@ -13,6 +13,7 @@ import {
   type CreateManualOrderBody,
   type OrderPaymentMethod,
   type RederivePaymentMethodInput,
+  type RelatedOrderInput,
 } from '@ssdashboard/contracts';
 import { sql } from '@ssdashboard/db';
 import { AuditService, type JsonObject } from '../../audit/audit.service.js';
@@ -21,6 +22,8 @@ import { ChannelsService, type ChannelKind } from '../../channels/channels.servi
 import { ConnectorsService } from '../../connectors/connectors.service.js';
 import { CustomersService } from '../../customers/customers.service.js';
 import { DomainEvents } from '../../platform/events/domain-events.js';
+import { ModuleRegistry } from '../../platform/modules/module-registry.js';
+import { ModuleStateService } from '../../platform/modules/module-state.service.js';
 import { NumberingService } from '../../platform/numbering.service.js';
 import { SettingsService } from '../../platform/settings/settings.service.js';
 import { auditActorOf, type OrderActor } from '../order-actor.js';
@@ -69,6 +72,9 @@ import { assertFoundAmounts, planFirstStates } from './channel-first-states.js';
 import { diffChannelSnapshot } from './channel-snapshot.js';
 import { assertNotReopened, planRelatedOrder } from './related-order.js';
 import { parseChannelPhones, parsePhones } from './ship-to.js';
+
+/** The carrier's new shipments capability (feature 19), whose facts move an order past `packed`. */
+const CARRIER_SHIPMENTS_CAPABILITY = 'connectors.bosta.new_shipments';
 
 /** The channel kinds a manual order may arrive on (spec 0013 AC-1). */
 const MANUAL_CHANNEL_KINDS: readonly ChannelKind[] = ['manual', 'whatsapp', 'instagram'];
@@ -176,7 +182,21 @@ export class OrderIntake {
     private readonly connectors: ConnectorsService,
     private readonly transitions: OrderTransitions,
     private readonly stock: OrderStock,
+    private readonly registry: ModuleRegistry,
+    private readonly moduleState: ModuleStateService,
   ) {}
+
+  /**
+   * Whether the carrier's new shipments (`connectors.bosta.new_shipments`, feature 19) are runnable,
+   * read only for a `replacement_for` link (AC-23, amended 2026-11-08): while they are not, an
+   * original whose stock out is requested may be replaced. A capability the registry does not hold
+   * yet (feature 19 is not built) is not runnable.
+   */
+  private async carrierFactsRunnable(link: RelatedOrderInput | null | undefined): Promise<boolean> {
+    if (link?.relation !== 'replacement_for') return true;
+    if (!this.registry.capability(CARRIER_SHIPMENTS_CAPABILITY)) return false;
+    return this.moduleState.isRunnable(CARRIER_SHIPMENTS_CAPABILITY);
+  }
 
   /**
    * Creates a sale, gifted, reopened, or replacement order entered by a person (AC-1, AC-2,
@@ -225,7 +245,12 @@ export class OrderIntake {
     const phones = parsePhones(body.shipTo.phone, body.shipTo.phoneAlt);
     const placedAt = await this.transactionNow(tx);
     // The linked order's row lock comes first (spec 0013, Key invariants), then the customer locks.
-    const plan = await planRelatedOrder(tx, body.relatedOrder, gifted ? 'gifted' : 'sale');
+    const plan = await planRelatedOrder(
+      tx,
+      body.relatedOrder,
+      gifted ? 'gifted' : 'sale',
+      await this.carrierFactsRunnable(body.relatedOrder),
+    );
     const customer = await this.customers.findOrCreate(tx, {
       phone: phones.main,
       channelCustomer: null,
@@ -523,7 +548,12 @@ export class OrderIntake {
     const channelCustomer = await this.boundChannelCustomer(tx, input.channelCustomer, store.id);
 
     // The linked order's row lock comes first (spec 0013, Key invariants), then the customer locks.
-    const plan = await planRelatedOrder(tx, input.relatedOrder, input.type);
+    const plan = await planRelatedOrder(
+      tx,
+      input.relatedOrder,
+      input.type,
+      await this.carrierFactsRunnable(input.relatedOrder),
+    );
     const customer = await this.customers.findOrCreate(tx, {
       phone: phones.main,
       channelCustomer,

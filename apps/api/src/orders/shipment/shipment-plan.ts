@@ -15,6 +15,8 @@ export interface StockOutLine {
   variantId: string | null;
   /** The line's `stock_out_quantity`, above 0. */
   quantity: number;
+  /** The line's own quantity; above `quantity` when only part of it is posted (AC-27 a). */
+  lineQuantity?: number;
 }
 
 /** A line's active reservation, as the ledger answers it. */
@@ -37,6 +39,11 @@ export interface ShipmentPlan {
   unmapped: string[];
   /** Lines with no reservation and no online location: skipped, raising `shipment_not_posted`. */
   unlocated: string[];
+  /**
+   * Posted lines whose reservation is named and that post less than their quantity ("Post what
+   * Shopify fulfilled", AC-27 a): the rest of their reservation is released in the posting.
+   */
+  partial: string[];
 }
 
 /**
@@ -54,7 +61,7 @@ export function planShipment(
   onlineLocationId: string | null,
 ): ShipmentPlan {
   const heldBy = new Map(reservations.map((held) => [held.sourceLineId.toLowerCase(), held]));
-  const plan: ShipmentPlan = { post: [], unmapped: [], unlocated: [] };
+  const plan: ShipmentPlan = { post: [], unmapped: [], unlocated: [], partial: [] };
   for (const line of lines) {
     if (line.quantity <= 0) continue;
     if (line.variantId === null) {
@@ -75,6 +82,9 @@ export function planShipment(
       quantity: line.quantity,
       ...(held ? { reservationId: held.reservationId } : {}),
     });
+    if (held && line.lineQuantity !== undefined && line.quantity < line.lineQuantity) {
+      plan.partial.push(line.id);
+    }
   }
   return plan;
 }

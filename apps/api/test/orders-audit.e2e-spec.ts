@@ -91,7 +91,7 @@ describe('orders audit', { timeout: 120_000 }, () => {
     expect(allText).not.toContain('+2010099988');
   });
 
-  it('registers the five order codes on the order record type', () => {
+  it('registers the order codes on the order record type, task 15 five included', () => {
     const codes = Object.keys(AUDIT_ACTIONS).filter((code) => code.startsWith('order.'));
 
     expect(codes).toEqual([
@@ -100,7 +100,17 @@ describe('orders audit', { timeout: 120_000 }, () => {
       'order.partial_delivery_split',
       'order.collection_recorded_manually',
       'order.payment_method_rederived',
+      // Spec 0013 task 15 (AC-27), proven in orders-stock-out.e2e-spec.ts.
+      'order.awaiting_restock_closed',
+      'order.awaiting_restock_close_requested',
+      'order.awaiting_restocked',
+      'order.channel_fulfillment_posted',
+      'order.carrier_delivery_cleared',
     ]);
+    const types = Object.entries(AUDIT_ACTIONS)
+      .filter(([code]) => code.startsWith('order.'))
+      .map(([, action]) => action.recordType);
+    expect(new Set(types)).toEqual(new Set(['order']));
   });
 
   it('writes one order.edited entry per edit with the ship to values redacted and listed as personal', async () => {

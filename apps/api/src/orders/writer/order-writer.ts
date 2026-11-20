@@ -819,6 +819,84 @@ export class OrderWriter {
     return true;
   }
 
+  /**
+   * Adds returned pieces to each named line's `awaiting_restock_quantity` (spec 0013 AC-27 d: a
+   * Shopify refund or return of an order that left stock through a Shopify fulfillment), capped
+   * at what the line's posting took out (`stock_out_quantity`), since now when nothing awaited.
+   * The caller holds the order row lock. No event, `orders.updated_at` kept. Answers each line it
+   * raised with the quantity it added.
+   */
+  async awaitReturn(
+    tx: OrderTransaction,
+    orderId: string,
+    lines: readonly { lineId: string; quantity: number }[],
+  ): Promise<{ lineId: string; added: number }[]> {
+    if (lines.length === 0) return [];
+    const { rows } = await tx.execute<{ id: string; added: number }>(sql`
+      WITH wanted AS (
+        SELECT w.id, sum(w.quantity)::int AS quantity
+        FROM unnest(${pgArray(lines.map((line) => line.lineId))}::uuid[],
+                    ${pgArray(lines.map((line) => line.quantity))}::int[]) AS w(id, quantity)
+        GROUP BY w.id
+      ), before AS (
+        SELECT l.id, l.awaiting_restock_quantity AS was,
+               LEAST(l.awaiting_restock_quantity + GREATEST(wanted.quantity, 0),
+                     coalesce(l.stock_out_quantity, 0)) AS now_awaiting
+        FROM order_lines l JOIN wanted ON wanted.id = l.id
+        WHERE l.order_id = ${orderId}::uuid
+      )
+      UPDATE order_lines l
+      SET awaiting_restock_quantity = before.now_awaiting,
+          awaiting_restock_since = CASE WHEN before.was = 0 THEN now() ELSE l.awaiting_restock_since END,
+          updated_at = clock_timestamp()
+      FROM before
+      WHERE l.id = before.id AND before.now_awaiting > before.was
+      RETURNING l.id, (before.now_awaiting - before.was)::int AS added`);
+    return rows.map((row) => ({ lineId: row.id, added: row.added }));
+  }
+
+  /**
+   * Lowers one line's `awaiting_restock_quantity` by `quantity` with a conditional update (spec
+   * 0013 AC-27 e, f: `awaiting_restock_quantity >= quantity`), clearing `awaiting_restock_since`
+   * when nothing is left. Runs in a restock posting's `within` (the line row lock comes after the
+   * ledger's locks) or in a close's order transaction. No event, `orders.updated_at` kept. Answers
+   * the quantity before and after, or null when no row matched (the caller throws
+   * `NothingAwaiting`).
+   */
+  async lowerAwaitingRestock(
+    tx: OrderTransaction,
+    orderId: string,
+    lineId: string,
+    quantity: number,
+  ): Promise<{ before: number; after: number } | null> {
+    const { rows } = await tx.execute<{ after: number }>(sql`
+      UPDATE order_lines
+      SET awaiting_restock_quantity = awaiting_restock_quantity - ${quantity}::int,
+          awaiting_restock_since = CASE WHEN awaiting_restock_quantity - ${quantity}::int = 0
+                                        THEN NULL ELSE awaiting_restock_since END,
+          updated_at = clock_timestamp()
+      WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid
+        AND ${quantity}::int > 0 AND awaiting_restock_quantity >= ${quantity}::int
+      RETURNING awaiting_restock_quantity AS after`);
+    const row = rows[0];
+    return row ? { before: row.after + quantity, after: row.after } : null;
+  }
+
+  /**
+   * Clears `carrier_delivery_created_at` (spec 0013 AC-27 c: every Shopify fulfillment of an order
+   * with no carrier delivery was cancelled), so the order is back to before its first fulfillment
+   * and an edit applies again: the one exception to the money freeze, accepted by the owner on
+   * 2026-11-08. The caller holds the order row lock and writes `order.carrier_delivery_cleared`.
+   * No event, `orders.updated_at` kept. Answers whether it cleared it.
+   */
+  async clearCarrierDelivery(tx: OrderTransaction, orderId: string): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE orders SET carrier_delivery_created_at = NULL
+      WHERE id = ${orderId}::uuid AND carrier_delivery_created_at IS NOT NULL
+      RETURNING id`);
+    return rows.length > 0;
+  }
+
   /** Locks an order row `FOR UPDATE` and answers whether it exists. Every write path calls it first. */
   async lockOrder(tx: OrderTransaction, orderId: string): Promise<boolean> {
     const { rows } = await tx.execute<{ id: string }>(

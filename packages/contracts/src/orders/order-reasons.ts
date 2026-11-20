@@ -102,3 +102,50 @@ export const ORDER_PAYMENT_METHOD_REDERIVED_REASONS = ['gateway_mapping_changed'
 export const StockOutSource = z.enum(['carrier_shipped', 'shopify_fulfillment', 'pick_pack_ship']);
 /** One stock out source. */
 export type StockOutSource = z.infer<typeof StockOutSource>;
+
+/**
+ * Why pieces that left stock and were expected back are closed without coming back (spec 0013
+ * AC-27 f): the carrier lost them, they came back too damaged to sell, or the customer kept them.
+ * Closing posts no movement (the pieces already left the ledger); reporting counts a closed
+ * quantity as a loss with this code at the line's `unit_cost` (spec 0013 Follow-up, R-S6).
+ */
+export const AwaitingRestockCloseReason = z.enum([
+  'lost_by_carrier',
+  'damaged_not_resold',
+  'customer_kept',
+  'other',
+]);
+/** One awaiting restock close reason. */
+export type AwaitingRestockCloseReason = z.infer<typeof AwaitingRestockCloseReason>;
+
+/** The reason codes of `order.awaiting_restock_closed` and `order.awaiting_restock_close_requested`. */
+export const ORDER_AWAITING_RESTOCK_CLOSE_REASONS = AwaitingRestockCloseReason.options;
+
+/**
+ * How a piece awaiting restock came back on the shelf (spec 0013 AC-27 e): the "Received on the
+ * shelf" action on the order page, or a scan (feature 20). The reason codes of
+ * `order.awaiting_restocked`.
+ */
+export const AwaitingRestockedReason = z.enum(['received_on_shelf', 'scanned']);
+/** One awaiting restocked reason. */
+export type AwaitingRestockedReason = z.infer<typeof AwaitingRestockedReason>;
+
+/** The reason codes of `order.awaiting_restocked`. */
+export const ORDER_AWAITING_RESTOCKED_REASONS = AwaitingRestockedReason.options;
+
+/**
+ * Why a person posts what Shopify fulfilled instead of the order's open lines (spec 0013 AC-27 a,
+ * "Post what Shopify fulfilled"). The reason codes of `order.channel_fulfillment_posted`.
+ */
+export const ChannelFulfillmentPostReason = z.enum(['shopify_fulfilled_less', 'other']);
+/** One channel fulfillment post reason. */
+export type ChannelFulfillmentPostReason = z.infer<typeof ChannelFulfillmentPostReason>;
+
+/** The reason codes of `order.channel_fulfillment_posted`. */
+export const ORDER_CHANNEL_FULFILLMENT_POSTED_REASONS = ChannelFulfillmentPostReason.options;
+
+/**
+ * The reason code of `order.carrier_delivery_cleared` (spec 0013 AC-27 c): every Shopify
+ * fulfillment of an order with no carrier delivery was cancelled, so the money freeze is lifted.
+ */
+export const ORDER_CARRIER_DELIVERY_CLEARED_REASONS = ['channel_fulfillment_cancelled'] as const;

@@ -20,6 +20,7 @@ import {
 import { OrderAttentionRaised } from '../orders.events.js';
 import { OrderWriter } from '../writer/order-writer.js';
 import {
+  AWAITING_RESTOCK_OVERDUE_DAYS,
   POST_SHIPMENT_RETRY,
   PostShipmentJobData,
   cancelReversalKey,
@@ -35,6 +36,9 @@ import {
 /** The reason code of the after cancel reversal (the *After a cancel* table, row 4). */
 export const CANCELLED_BEFORE_PICKUP_REASON = 'order_cancelled_before_pickup';
 
+/** The reason code of the fulfillment reversal (spec 0013 AC-27 c). */
+export const FULFILLMENT_CANCELLED_REASON = 'channel_fulfillment_cancelled';
+
 /** The `source_type` of a `shipment_not_posted` attention raised by a failed job. */
 const JOB_SOURCE = 'order_shipment_job';
 
@@ -48,7 +52,9 @@ export interface JobAttempt {
 export type ShipmentJobOutcome =
   | { posted: true; groupId: string; lines: number }
   | { posted: false; why: string }
-  | { afterCancel: string; row: number };
+  | { afterCancel: string; row: number }
+  | { reversed: boolean; why?: string }
+  | { overdue: number };
 
 /** The order facts a job reads as it starts, without a lock. */
 interface OrderStockOut extends Record<string, unknown> {
@@ -79,6 +85,13 @@ interface OrderStockOut extends Record<string, unknown> {
  * that moves the order to generation `n + 1` in its `within`, or the posted quantities put on the
  * awaiting restock list with `returned_pieces_to_receive`.
  *
+ * `fulfillmentReversal` reverses generation `n`'s posting under
+ * `order_shipment_fulfillment_reversal:<orderId>:<n>` (reason `channel_fulfillment_cancelled`,
+ * AC-27 c) and changes nothing on the order (`recordChannelFulfillmentCancelled` already moved it
+ * to `n + 1`); nothing posted, or already reversed, does nothing. `awaitingRestockOverdue` (the
+ * daily schedule) raises `awaiting_restock_overdue` once for each line whose pieces have awaited
+ * restock for 10 operating days (AC-27 g).
+ *
  * It writes order rows only through `OrderWriter`, movements only through `LedgerService`, opens
  * order units only with `OrderTransactions.run`, and logs by order id only.
  */
@@ -107,6 +120,10 @@ export class ShipmentPosting {
         return this.post(data.data, attempt);
       case 'after_cancel':
         return this.afterCancel(data.data);
+      case 'fulfillment_reversal':
+        return this.fulfillmentReversal(data.data);
+      case 'awaiting_restock_overdue':
+        return this.awaitingRestockOverdue();
     }
   }
 
@@ -144,6 +161,14 @@ export class ShipmentPosting {
           within: async (stockTx, result) => {
             const tx = orderTransactionFromLedger(stockTx);
             await this.writer.setUnitCosts(tx, orderId, unitCostsOf(result.movements));
+            // A line posted for less than its quantity ("Post what Shopify fulfilled", AC-27 a)
+            // keeps the rest of its reservation open: release it, on the posting's own keys.
+            if (plan.partial.length > 0) {
+              await this.ledger.releaseLines(stockTx, {
+                sourceType: 'order',
+                sourceLineIds: plan.partial,
+              });
+            }
             await this.raiseLeftOut(tx, orderId, plan);
           },
         },
@@ -253,14 +278,68 @@ export class ShipmentPosting {
     }
   }
 
+  /**
+   * Reverses generation `generation`'s posting because every Shopify fulfillment of the order was
+   * cancelled (AC-27 c), under its own key and reason, so a racing after cancel reversal of the
+   * same generation meets `AlreadyReversed` (a group is reversed at most once). It changes nothing
+   * on the order: `recordChannelFulfillmentCancelled` already moved it to the next generation.
+   */
+  async fulfillmentReversal(data: {
+    orderId: string;
+    generation: number;
+  }): Promise<ShipmentJobOutcome> {
+    const posting = await this.ledger.postingFor(carrierShipmentKey(data.orderId, data.generation));
+    if (!posting) return { reversed: false, why: 'NOTHING_POSTED' };
+    try {
+      await this.ledger.reverse({
+        groupId: posting.groupId,
+        idempotencyKey: fulfillmentReversalKey(data.orderId, data.generation),
+        postedBy: null,
+        reasonCode: FULFILLMENT_CANCELLED_REASON,
+      });
+    } catch (error) {
+      if (error instanceof LedgerError && error.code === 'AlreadyReversed') {
+        return { reversed: false, why: 'ALREADY_REVERSED' };
+      }
+      throw error;
+    }
+    return { reversed: true };
+  }
+
+  /**
+   * The daily awaiting restock check (AC-27 g): raises `awaiting_restock_overdue` (source
+   * `order_line`, the line id) for each line whose pieces started awaiting restock exactly 10
+   * operating days before today's operating day (`ssd_operating_day`), so a line is raised once,
+   * on the day it crosses the limit, all in one unit. Answers how many it raised.
+   */
+  async awaitingRestockOverdue(): Promise<ShipmentJobOutcome> {
+    const { rows } = await this.connection.db.execute<{ id: string; order_id: string }>(sql`
+      SELECT id, order_id FROM order_lines
+      WHERE awaiting_restock_quantity > 0
+        AND ssd_operating_day(awaiting_restock_since)
+            = ssd_operating_day(now()) - ${AWAITING_RESTOCK_OVERDUE_DAYS}::int
+      ORDER BY awaiting_restock_since, id`);
+    if (rows.length === 0) return { overdue: 0 };
+    await this.transactions.run(async (tx) => {
+      for (const row of rows) {
+        await this.events.publish(
+          tx,
+          new OrderAttentionRaised(row.order_id, 'awaiting_restock_overdue', 'order_line', row.id),
+        );
+      }
+    });
+    return { overdue: rows.length };
+  }
+
   /** The stock out lines, reservations, SKU kinds, and online location, planned into a posting. */
   private async planOf(orderId: string): Promise<ShipmentPlan> {
     const { rows } = await this.connection.db.execute<{
       id: string;
       variant_id: string | null;
+      quantity: number;
       stock_out_quantity: number;
     }>(sql`
-      SELECT id, variant_id, stock_out_quantity FROM order_lines
+      SELECT id, variant_id, quantity, stock_out_quantity FROM order_lines
       WHERE order_id = ${orderId}::uuid AND stock_out_quantity > 0
       ORDER BY position, id`);
     const variantIds = rows.flatMap((row) => (row.variant_id === null ? [] : [row.variant_id]));
@@ -274,6 +353,7 @@ export class ShipmentPosting {
         id: row.id,
         variantId: row.variant_id,
         quantity: row.stock_out_quantity,
+        lineQuantity: row.quantity,
       })),
       reservations.filter((held) => held.status === 'active'),
       skus,

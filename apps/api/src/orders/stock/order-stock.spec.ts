@@ -1,12 +1,17 @@
 import type { DatabaseConnection } from '@ssdashboard/db';
 import { describe, expect, it, vi } from 'vitest';
+import type { AuditService } from '../../audit/audit.service.js';
 import type { CatalogLocks } from '../../catalog/catalog-locks.service.js';
 import type { CatalogService, StockableSku } from '../../catalog/catalog.service.js';
+import type { ChannelsService } from '../../channels/channels.service.js';
 import type { LedgerService } from '../../inventory/ledger/ledger.service.js';
 import type { OnlineStockGate } from '../../inventory/online-stock/online-stock-gate.js';
 import type { OnlineStockService } from '../../inventory/online-stock/online-stock.service.js';
+import type { DomainEvents } from '../../platform/events/domain-events.js';
+import type { TasksService } from '../../tasks/tasks.service.js';
 import { orderTransactionFromLedger, type OrderTransactions } from '../order-transactions.js';
 import { LineShort } from '../orders.errors.js';
+import type { ShipmentJobs } from '../shipment/shipment-jobs.js';
 import type { OrderWriter } from '../writer/order-writer.js';
 import { OPEN_ORDERS_HELD_CHECK, OrderStock, chunksOf, holdBatchesOf } from './order-stock.js';
 
@@ -94,6 +99,12 @@ function stockWith(fixture: Fixture = {}) {
     locks as unknown as CatalogLocks,
     writer as unknown as OrderWriter,
     {} as OrderTransactions,
+    // The stock out services (AC-27): unused by the reservation paths tested here.
+    {} as AuditService,
+    {} as ChannelsService,
+    {} as DomainEvents,
+    {} as ShipmentJobs,
+    {} as TasksService,
   );
   return { stock, tx, ledger, writer, gate, locks, onlineStock, catalog };
 }

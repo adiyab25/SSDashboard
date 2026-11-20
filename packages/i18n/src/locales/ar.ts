@@ -1645,6 +1645,36 @@ export const ar: Catalog = {
       shipped_with_unmapped_lines: 'شُحن مع بند بلا منتج',
       shipment_not_posted: 'لم يُسجَّل الشحن في المخزون',
       returned_pieces_to_receive: 'قطع خرجت من المخزون ومنتظر رجوعها',
+      fulfilled_lines_differ: 'شوبيفاي نفّذ كميات غير التي في الطلب',
+      awaiting_restock_overdue: 'قطع منتظر رجوعها منذ 10 أيام',
+      awaiting_restock_close_requested: 'طلب إغلاق قطع لم ترجع',
+      fulfillment_partial_stale: 'منفّذ جزئيًا في شوبيفاي منذ 3 أيام',
+    },
+    // Spec 0013 AC-27: the stock out block, the awaiting restock list, and their errors.
+    stockOut: {
+      reasons: {
+        close: {
+          lost_by_carrier: 'فقدها المندوب',
+          damaged_not_resold: 'تالفة ولا تُباع',
+          customer_kept: 'احتفظت بها العميلة',
+          other: 'أخرى',
+        },
+        post: {
+          shopify_fulfilled_less: 'شوبيفاي نفّذ أقل من الطلب',
+          other: 'أخرى',
+        },
+      },
+      errors: {
+        NOTHING_AWAITING: 'عدد القطع المنتظر رجوعها من هذا البند أقل من ذلك.',
+        IDEMPOTENCY_CONFLICT:
+          'أُرسل هذا الإجراء من قبل ببيانات أخرى. أعد تحميل الصفحة وحاول مرة أخرى.',
+        STALE_RECORD:
+          'تغيّر هذا الطلب أثناء عملك. الصفحة تعرض الآن أحدث نسخة؛ راجعها وحاول مرة أخرى.',
+        NO_LINES_DIFFER: 'نفّذ شوبيفاي ما في الطلب تمامًا، فلا يوجد ما يُسجَّل هنا.',
+        ALREADY_REQUESTED: 'خرج هذا الطلب من المخزون بالفعل.',
+        PERIOD_LOCKED: 'فترة المخزون مقفلة، فلا يمكن إرجاع القطع إلى الرف الآن.',
+        FORBIDDEN: 'ليست لديك صلاحية لهذا الإجراء.',
+      },
     },
     title: 'الطلبات',
     description: 'كل طلبات كل المتاجر من الأحدث إلى الأقدم. افتح طلبًا لترى بنوده وأمواله وسجله.',
@@ -2250,6 +2280,11 @@ export const ar: Catalog = {
       orderPartialDeliverySplit: 'تسجيل تسليم جزئي',
       orderCollectionRecordedManually: 'إدخال تحصيل نقدي يدويًا',
       orderPaymentMethodRederived: 'تصحيح طريقة دفع الطلب',
+      orderAwaitingRestockClosed: 'إغلاق قطع منتظر رجوعها',
+      orderAwaitingRestockCloseRequested: 'طلب إغلاق قطع منتظر رجوعها',
+      orderAwaitingRestocked: 'إرجاع قطع منتظرة إلى الرف',
+      orderChannelFulfillmentPosted: 'تسجيل ما نفّذه شوبيفاي كخروج من المخزون',
+      orderCarrierDeliveryCleared: 'فتح الطلب بعد إلغاء تنفيذه في شوبيفاي',
       taskClosed: 'إغلاق مهمة',
       connectionCreated: 'ربط متجر Shopify',
       connectionBackfillStarted: 'بدء استيراد بيانات Shopify السابقة',

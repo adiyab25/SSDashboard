@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   InvalidTransition,
@@ -7,6 +8,7 @@ import {
   codDue,
   nextState,
   orderLabelOf,
+  systemJobActor,
   type CashState,
   type OrderTaskKind,
 } from '@ssdashboard/contracts';
@@ -26,7 +28,13 @@ import {
 } from '../orders.errors.js';
 import { LinesReturnedToOrigin, OrderAttentionRaised, OrderCancelled } from '../orders.events.js';
 import { ShipmentJobs } from '../shipment/shipment-jobs.js';
+import {
+  carrierShippedFactExists,
+  fulfilledLinesDiffer,
+  type ChannelFulfilledLine,
+} from '../stock/channel-fulfillment.js';
 import { OrderStock } from '../stock/order-stock.js';
+import { TasksService } from '../../tasks/tasks.service.js';
 import { lockLinkTarget, lockOrderForChange, type LockedOrder } from '../writer/locked-order.js';
 import { OrderWriter, type NewEventRow, type OrderColumnChanges } from '../writer/order-writer.js';
 import {
@@ -126,6 +134,31 @@ export interface SettlementChange {
   sourceId: string;
 }
 
+/** A Shopify fulfillment's stock out for `recordChannelStockOut` (spec 0013 AC-15, AC-27 a). */
+export interface ChannelStockOut {
+  /** When Shopify fulfilled the order: the stock out request's time. */
+  at: Date;
+  source: { type: 'shopify_fulfillment'; id: string };
+  /** The quantity Shopify fulfilled, per Shopify line item. */
+  fulfilledLines: readonly ChannelFulfilledLine[];
+}
+
+/** What `recordChannelStockOut` answers. */
+export type ChannelStockOutResult =
+  | { requested: true }
+  | { requested: false; why: 'lines_differ' | 'already_requested' | 'cancelled' };
+
+/** Every Shopify fulfillment of the order was cancelled (spec 0013 AC-27 c). */
+export interface ChannelFulfillmentCancelled {
+  at: Date;
+  source: { type: string; id: string };
+}
+
+/** The dedupe key of an order attention's task (spec 0016 AC-9), which orders closes as `cleared`. */
+export function attentionTaskKey(kind: string, orderId: string): string {
+  return `order_attention:${kind}:${orderId}`;
+}
+
 /** The system job named on the automatic `unpaid` to `nothing_to_collect` move after a cancel. */
 const NOTHING_TO_COLLECT_JOB = 'orders.nothing_to_collect';
 
@@ -160,6 +193,7 @@ export class OrderTransitions {
     private readonly stock: OrderStock,
     private readonly audit: AuditService,
     private readonly shipments: ShipmentJobs,
+    private readonly tasks: TasksService,
   ) {}
 
   /**
@@ -443,6 +477,102 @@ export class OrderTransitions {
           fact.source.id,
         ),
       );
+    }
+    return { applied: true };
+  }
+
+  /**
+   * A Shopify fulfillment took the order's pieces (spec 0013 AC-15, AC-27 a, spec 0015 AC-28),
+   * called by feature 13 inside its unit of work. Moves no state and writes no event. Under the
+   * order row lock: a cancelled order answers `cancelled` and a recorded request (any source,
+   * the carrier's included) answers `already_requested`, each changing nothing. When Shopify's
+   * fulfilled quantities differ from the order's open lines it requests nothing, raises
+   * `fulfilled_lines_differ` for the warehouse (source the fulfillment), and answers
+   * `lines_differ`; else it records the request (`shopify_fulfillment`, each open line's quantity,
+   * at the fulfillment's time) and enqueues the shipment posting job of the current generation.
+   */
+  async recordChannelStockOut(
+    tx: OrderTransaction,
+    orderId: string,
+    stockOut: ChannelStockOut,
+    _actor: OrderActor,
+  ): Promise<ChannelStockOutResult> {
+    const order = await lockOrderForChange(tx, orderId);
+    if (order.fulfillmentState === 'cancelled') return { requested: false, why: 'cancelled' };
+    if (order.stockOutSource !== null) return { requested: false, why: 'already_requested' };
+    if (fulfilledLinesDiffer(order.lines, stockOut.fulfilledLines)) {
+      await this.events.publish(
+        tx,
+        new OrderAttentionRaised(
+          orderId,
+          'fulfilled_lines_differ',
+          stockOut.source.type,
+          stockOut.source.id,
+        ),
+      );
+      return { requested: false, why: 'lines_differ' };
+    }
+    const requested = await this.writer.requestStockOut(tx, orderId, {
+      source: 'shopify_fulfillment',
+      at: stockOut.at,
+      lines: order.lines
+        .filter((line) => line.lineState === 'open')
+        .map((line) => ({ lineId: line.id, quantity: line.quantity })),
+    });
+    if (!requested) return { requested: false, why: 'already_requested' };
+    await this.shipments.enqueuePost(tx, orderId, order.stockOutGeneration);
+    return { requested: true };
+  }
+
+  /**
+   * Every Shopify fulfillment of the order was cancelled before any carrier `shipped` fact (spec
+   * 0013 AC-27 c), called by feature 13 inside its unit of work. Moves no state. Under the order
+   * row lock: a carrier `shipped` fact answers `{ applied: false, why: 'after_pickup' }`. Else, when
+   * the order has no carrier delivery from feature 19 (no `shipments` row; that table arrives with
+   * feature 19, so today none has one) and the freeze is set, it clears `carrier_delivery_created_at`
+   * with `order.carrier_delivery_cleared` (actor `system_job`, reason
+   * `channel_fulfillment_cancelled`), so a size swap arrives as a normal edit. When a stock out is
+   * requested for generation `n`, it enqueues the fulfillment reversal job for `n`, closes any
+   * awaiting restock quantities (the reversal brings those pieces back, so none comes back twice),
+   * moves the order to generation `n + 1` with the request and the lines' `stock_out_quantity`
+   * cleared, and reserves the open lines again while the order is `new`, `confirmed`, or `packed`
+   * (they read short until the reversal posts and fills waiting demand).
+   */
+  async recordChannelFulfillmentCancelled(
+    tx: OrderTransaction,
+    orderId: string,
+    cancelled: ChannelFulfillmentCancelled,
+    actor: OrderActor,
+  ): Promise<{ applied: true } | { applied: false; why: 'after_pickup' }> {
+    const order = await lockOrderForChange(tx, orderId);
+    if (carrierShippedFactExists(order)) return { applied: false, why: 'after_pickup' };
+    if (order.carrierDeliveryCreated && (await this.writer.clearCarrierDelivery(tx, orderId))) {
+      const [store] = await this.channels.stores([order.storeId], tx);
+      if (!store) throw new OrderStoreMissing();
+      const auditActor =
+        actor.type === 'system_job'
+          ? auditActorOf(actor)
+          : systemJobActor('orders.channel_fulfillment_cancelled', randomUUID());
+      await this.audit.record(tx, {
+        actor: auditActor,
+        action: 'order.carrier_delivery_cleared',
+        record: {
+          type: 'order',
+          id: orderId,
+          label: orderLabelOf({ storeCode: store.code, orderNumber: order.orderNumber }),
+        },
+        before: { carrierDeliveryCreated: true, source: cancelled.source.type },
+        after: { carrierDeliveryCreated: false },
+        reason: 'channel_fulfillment_cancelled',
+        correlationId: this.audit.newCorrelationId(auditActor),
+      });
+    }
+    if (order.stockOutSource !== null) {
+      const generation = order.stockOutGeneration;
+      await this.shipments.enqueueFulfillmentReversal(tx, orderId, generation);
+      await this.writer.closeAwaitingRestock(tx, orderId);
+      await this.writer.advanceStockOutGeneration(tx, orderId, generation);
+      if (order.fulfillmentState !== 'cancelled') await this.stock.topUp(tx, orderId, false);
     }
     return { applied: true };
   }
@@ -899,7 +1029,8 @@ export class OrderTransitions {
    * generation; when one is recorded (a Shopify fulfillment came first) it enqueues nothing new.
    * A late `shipped` on a cancelled order (`cancelled` to `shipped`) also closes the order's
    * awaiting restock quantities with no movement: the posting stands and the courier has the
-   * pieces. Never refused for stock: the posting runs in the job after the move commits.
+   * pieces. A request it records closes the `fulfilled_lines_differ` attention's task. Never
+   * refused for stock: the posting runs in the job after the move commits.
    */
   private async afterShipped(
     tx: OrderTransaction,
@@ -917,7 +1048,19 @@ export class OrderTransitions {
         .filter((line) => line.lineState === 'open')
         .map((line) => ({ lineId: line.id, quantity: line.quantity })),
     });
-    if (requested) await this.shipments.enqueuePost(tx, order.id, order.stockOutGeneration);
+    if (!requested) return;
+    await this.shipments.enqueuePost(tx, order.id, order.stockOutGeneration);
+    // The courier's pickup is the truth: a `fulfilled_lines_differ` attention is closed in the
+    // same transaction (AC-15, decided 2026-11-08; spec 0016's `cleared` outcome).
+    await this.closeAttention(tx, 'fulfilled_lines_differ', order.id);
+  }
+
+  /** Closes the open task of an order attention as `cleared` (spec 0016 AC-9); none open is fine. */
+  private async closeAttention(tx: OrderTransaction, kind: string, orderId: string): Promise<void> {
+    await this.tasks.closeByKey(tx, attentionTaskKey(kind, orderId), {
+      outcome: 'cleared',
+      by: { kind: 'system_job' },
+    });
   }
 
   /** Writes `order.collection_recorded_manually` for a person's cash entry (AC-11); others write none. */

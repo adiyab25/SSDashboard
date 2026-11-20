@@ -21,6 +21,14 @@ export const OrderAttentionKind = z.enum([
   'shipment_not_posted',
   // Spec 0013 AC-27 (b, d): pieces that left stock and are expected back on the shelf.
   'returned_pieces_to_receive',
+  // Spec 0013 AC-27 (a): Shopify fulfilled other quantities than the order's open lines (warehouse).
+  'fulfilled_lines_differ',
+  // Spec 0013 AC-27 (g): a line has awaited restock for 10 operating days (warehouse).
+  'awaiting_restock_overdue',
+  // Spec 0013 AC-27 (f): a warehouse hat asks a manager to close pieces that never came back.
+  'awaiting_restock_close_requested',
+  // Spec 0015 AC-28: an order stayed partly fulfilled in Shopify for 3 operating days (warehouse).
+  'fulfillment_partial_stale',
 ]);
 /** One attention kind. */
 export type OrderAttentionKind = z.infer<typeof OrderAttentionKind>;

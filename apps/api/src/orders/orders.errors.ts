@@ -32,7 +32,10 @@ export type OrdersErrorCode =
   | 'LineAlreadyMapped'
   | 'PaymentMethodLocked'
   | 'LineShort'
-  | 'LocationNotFound';
+  | 'LocationNotFound'
+  | 'NothingAwaiting'
+  | 'NoLinesDiffer'
+  | 'StockOutAlreadyRequested';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -354,5 +357,35 @@ export class LocationNotFound extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('LocationNotFound', 'No active location that can feed online stock has that id');
+  }
+}
+
+/**
+ * A restock or a close asked for more pieces of a line than await restock (spec 0013 AC-27 e, f):
+ * the conditional update matched no row, so the posting (if any) rolls back.
+ */
+export class NothingAwaiting extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('NothingAwaiting', 'Fewer pieces of this line await restock than that');
+  }
+}
+
+/**
+ * "Post what Shopify fulfilled" found no Shopify quantities that differ from the order's open lines
+ * (spec 0013 AC-27 a): there is nothing to post through this action.
+ */
+export class NoLinesDiffer extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('NoLinesDiffer', 'Shopify fulfilled no quantities that differ from the order');
+  }
+}
+
+/** The order's stock out is already requested for its current generation (spec 0013 AC-27 a). */
+export class StockOutAlreadyRequested extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('StockOutAlreadyRequested', 'The order has already left stock');
   }
 }
