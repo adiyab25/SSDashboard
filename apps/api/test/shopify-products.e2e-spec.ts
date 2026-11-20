@@ -492,6 +492,21 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
           '2026-11-10T08:30:00Z',
         ),
       ).toMatchObject({ status: 'processed', outcome: null });
+      // The inbox job closes the product event in its own unit and only then links the waiting
+      // order lines (`InboxJob.applyProduct` -> `ProductSync.linkWaitingOrders`), so `arrive`
+      // can return first. Wait for the link unit to commit (it drops `unmappedLines` in the same
+      // transaction as both links) before counting calls, so the spy window cannot race it.
+      await eventually(
+        async () => {
+          const { rows } = await api.owner.pool.query<{ waiting: boolean }>(
+            `SELECT state ? 'unmappedLines' AS waiting FROM connection_external_ids
+             WHERE connection_id = $1::uuid AND entity = 'order' AND external_id = $2`,
+            [c.id, gid],
+          );
+          return rows[0] && !rows[0].waiting ? true : undefined;
+        },
+        { timeoutMs: 60_000, what: 'the late links of the waiting order to commit' },
+      );
       expect(link).toHaveBeenCalledTimes(2);
       expect(edit).not.toHaveBeenCalled();
     } finally {
@@ -636,7 +651,12 @@ describe('Shopify products (spec 0015 task 8)', { timeout: 300_000 }, () => {
     const c = await plant();
     useShopifyScenarios('product-three-variants');
     await arrive(c, 'products/create', LINEN, '2026-11-10T09:00:00Z');
-    const started = new Date().toISOString();
+    // The database's clock, not this process's: `removed_at` below is the database's `now()`, and a
+    // database on another clock (a container, WSL) a few ms behind would make the removal look older
+    // than the run's start.
+    const started = (
+      await api.owner.pool.query<{ at: Date }>(`SELECT clock_timestamp() AS at`)
+    ).rows[0]?.at.toISOString() as string;
     await api.owner.pool.query(
       `UPDATE connection_external_ids SET removed_at = now()
        WHERE connection_id = $1::uuid AND entity IN ('product', 'variant')`,
