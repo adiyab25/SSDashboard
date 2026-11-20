@@ -1,4 +1,5 @@
 import {
+  carrierActor,
   personActor,
   systemJobActor,
   type AuditActor,
@@ -26,7 +27,11 @@ export function actorIdOf(actor: OrderActor): string | null {
   return actor.type === 'person' ? actor.userId : null;
 }
 
-/** The spec 0010 audit actor of a person or a system job; a carrier or an import writes no audit entry here. */
+/**
+ * The spec 0010 audit actor of a person, a system job, or a carrier (the carrier's connection id
+ * names it: the partial delivery split a carrier reports writes `order.partial_delivery_split`,
+ * spec 0013 AC-16). An import writes no audit entry here and throws.
+ */
 export function auditActorOf(actor: OrderActor): AuditActor {
   switch (actor.type) {
     case 'person':
@@ -34,9 +39,10 @@ export function auditActorOf(actor: OrderActor): AuditActor {
     case 'system_job':
       return systemJobActor(actor.job, actor.jobId);
     case 'carrier':
+      return carrierActor(actor.connectionId);
     case 'import':
       throw new Error(
-        `An order audit entry is written for a person or a system job, not a ${actor.type}`,
+        `An order audit entry is written for a person, a system job, or a carrier, not an ${actor.type}`,
       );
   }
 }

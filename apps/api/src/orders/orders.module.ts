@@ -30,8 +30,8 @@ import { OrderWriter } from './writer/order-writer.js';
  * reopened, and replacement order, the list and search, the order page, editing (`OrderEditing`),
  * confirm, cancel, pack, and unpack (`OrderTransitions`), the write back projection, feature 13's
  * channel intake, and stock (`OrderStock` with spec 0011's reservations, the short lines
- * projection, the `orders.open_orders_held` gate check, and `hold-open-orders`); the carrier and
- * cash moves follow in milestone 5. It reads stores, channels, customers, SKUs, staff names,
+ * projection, the `orders.open_orders_held` gate check, and `hold-open-orders`); milestone 5 adds
+ * the carrier and cash moves on `OrderTransitions` (the shipment posting job follows). It reads stores, channels, customers, SKUs, staff names,
  * outbound commands, and stock only through their owners' services.
  */
 @Module({

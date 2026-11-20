@@ -92,3 +92,17 @@ export class OrderCancelled {
     readonly carrierDeliveryExisted: boolean,
   ) {}
 }
+
+/**
+ * Lines came back to the brand or were lost on the way (spec 0013 AC-15, AC-16): a carrier
+ * `returned_to_origin` or `lost` fact, or the returned rows of a partial delivery. Feature 21
+ * restocks by scan from it and feature 28 releases the credit of those lines. Ids only.
+ */
+export class LinesReturnedToOrigin {
+  /** Takes the order, the lines that moved, and the state they moved to. */
+  constructor(
+    readonly orderId: string,
+    readonly lineIds: readonly string[],
+    readonly to: 'returned_to_origin' | 'lost',
+  ) {}
+}

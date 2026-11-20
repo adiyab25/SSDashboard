@@ -114,6 +114,70 @@ describe('OrderWriter.applyChange: the money freeze (spec 0013 AC-8, security M1
     ).rejects.toThrow(OrderLocked);
   });
 
+  const splitRows = {
+    lineId: LINE,
+    delivered: {
+      quantity: 2,
+      grossAmount: '1600.00',
+      netAmount: '1403.51',
+      taxAmount: '196.49',
+      discountAmount: '0.00',
+      prepaidAmount: '0.00',
+      creditAppliedAmount: '0.00',
+    },
+    returned: {
+      quantity: 1,
+      grossAmount: '800.00',
+      netAmount: '701.75',
+      taxAmount: '98.25',
+      discountAmount: '0.00',
+      prepaidAmount: '0.00',
+      creditAppliedAmount: '0.00',
+    },
+  };
+
+  it('refuses a line split of a frozen order without the split allowance', async () => {
+    const { tx, calls } = scripted([[{ frozen: true }]]);
+
+    await expect(
+      writer().applyChange(tx, ORDER, { columns: {}, splitLines: [splitRows] }),
+    ).rejects.toThrow(OrderLocked);
+    expect(calls()).toBe(1);
+  });
+
+  it('splits with the allowance: inserts the returned row, then updates the original', async () => {
+    const { tx, calls } = scripted([
+      [{ frozen: true }],
+      [{ id: 'returned-row' }],
+      [],
+      [row('partially_delivered', 'kept')],
+    ]);
+
+    const applied = await writer().applyChange(tx, ORDER, {
+      columns: { fulfillmentState: 'partially_delivered' },
+      splitLines: [splitRows],
+      freezeAllowance: 'partial_delivery_split',
+    });
+
+    expect(applied.splitLineIds).toEqual(['returned-row']);
+    expect(calls()).toBe(4);
+  });
+
+  it('lets a carrier fact move the lines of a frozen order (a state move, not money)', async () => {
+    const { tx, calls } = scripted([
+      [{ frozen: true }],
+      [],
+      [row('returned_to_origin', 'failed_delivery')],
+    ]);
+
+    await writer().applyChange(tx, ORDER, {
+      columns: { fulfillmentState: 'returned_to_origin', codDueAmount: '0.00' },
+      moveLines: [{ lineId: LINE, to: 'returned_to_origin' }],
+    });
+
+    expect(calls()).toBe(3);
+  });
+
   it('still lets a frozen order move its state and its amount due (a cancel before pickup)', async () => {
     const { tx, calls } = scripted([
       [{ frozen: true }],

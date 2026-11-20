@@ -9,6 +9,7 @@ import {
   type OrderRelation,
   type OrderType,
   type OrderPaymentMethod,
+  type SplittableLine,
 } from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
 import { pgArray, pgConstraint, type Transaction } from '../../database/sql.js';
@@ -157,6 +158,12 @@ export interface OrderColumnChanges {
   relatedOrderId?: string;
   relatedOrderRelation?: OrderRelation;
   carrierDeliveryCreatedAt?: Date;
+  /** The refusal reason a carrier `refused` fact carries (the table check requires it). */
+  refusedReasonCode?: string;
+  /** The collected total a cash collection or its reversal leaves (AC-17). */
+  codCollectedAmount?: string;
+  /** The remitted amount a settlement match or its revoke leaves (AC-17). */
+  remittedAmount?: string;
   shipToName?: string;
   shipToPhone?: string | null;
   contactPhoneRaw?: string | null;
@@ -195,6 +202,9 @@ const ORDER_COLUMNS: Record<keyof OrderColumnChanges, readonly [column: string, 
   relatedOrderId: ['related_order_id', 'uuid'],
   relatedOrderRelation: ['related_order_relation', 'order_relation'],
   carrierDeliveryCreatedAt: ['carrier_delivery_created_at', 'timestamptz'],
+  refusedReasonCode: ['refused_reason_code', 'text'],
+  codCollectedAmount: ['cod_collected_amount', 'numeric'],
+  remittedAmount: ['remitted_amount', 'numeric'],
   shipToName: ['ship_to_name', 'text'],
   shipToPhone: ['ship_to_phone', 'text'],
   contactPhoneRaw: ['contact_phone_raw', 'text'],
@@ -217,13 +227,28 @@ export interface OrderChange {
   lineShares?: ReadonlyMap<string, { prepaidAmount: string; creditAppliedAmount: string }>;
   /** New lines, inserted after the cancels. */
   addLines?: readonly NewLineRow[];
+  /**
+   * Open lines moved whole by a carrier fact or a partial delivery (spec 0013 AC-15, AC-16):
+   * `delivered`, `returned_to_origin`, or `lost`. A state move, not a money move, so the freeze
+   * allows it; each moved line's `short_quantity` becomes 0 (AC-13: 0 once the line leaves `open`).
+   */
+  moveLines?: readonly { lineId: string; to: 'delivered' | 'returned_to_origin' | 'lost' }[];
+  /**
+   * Open lines a partial delivery splits (AC-16, spec 0002 "Partial delivery splits lines"): the
+   * original keeps the delivered quantity and money and becomes `delivered`; a new row at the next
+   * position takes the returned quantity and money, `returned_to_origin`, `split_from_line_id`
+   * the original, and copies its variant, title, unit price, tax rate, unit cost, and channel line
+   * id. Needs `freezeAllowance: 'partial_delivery_split'` (the split lines carry the original's
+   * shares, so the frozen figures never move).
+   */
+  splitLines?: readonly { lineId: string; delivered: SplittableLine; returned: SplittableLine }[];
   /** The event rows of every state column this change moves, in order. */
   events?: readonly NewEventRow[];
   /**
    * The one exception to the rule that line changes are money moves under the freeze: the partial
-   * delivery split of milestone 5 (`recordPartialDelivery`, AC-16) splits lines of a frozen order
-   * and passes `'partial_delivery_split'`, which lets it cancel and add lines and rewrite their
-   * shares. The split keeps each line's share sum: the split rows together carry exactly the
+   * delivery split (`recordPartialDelivery`, AC-16) splits lines of a frozen order and passes
+   * `'partial_delivery_split'`, which lets `splitLines` (and any line change of the same call)
+   * through. The split keeps each line's share sum: the split rows together carry exactly the
    * prepaid and credit shares of the line they came from, so the frozen order totals and
    * `cod_expected_amount` never move. A frozen column stays refused with it. No other caller
    * passes it.
@@ -256,7 +281,10 @@ const NO_SHARES: ReadonlyMap<string, { prepaidAmount: string; creditAppliedAmoun
 
 /** What `applyChange` answers: the ids it made. */
 export interface AppliedChange {
+  /** The ids of `addLines`, in order. */
   lineIds: string[];
+  /** The ids of the returned rows `splitLines` made, in order. */
+  splitLineIds: string[];
   eventIds: string[];
 }
 
@@ -349,7 +377,8 @@ export class OrderWriter {
     const movesLines =
       (change.lineShares?.size ?? 0) > 0 ||
       (change.cancelLines?.length ?? 0) > 0 ||
-      (change.addLines?.length ?? 0) > 0;
+      (change.addLines?.length ?? 0) > 0 ||
+      (change.splitLines?.length ?? 0) > 0;
     const movesMoney =
       FROZEN_COLUMNS.some((key) => change.columns[key] !== undefined) ||
       (movesLines && change.freezeAllowance !== 'partial_delivery_split');
@@ -374,6 +403,17 @@ export class OrderWriter {
     const lineIds: string[] = [];
     for (const line of change.addLines ?? [])
       lineIds.push(await this.insertLine(tx, orderId, line));
+    for (const move of change.moveLines ?? []) {
+      await tx.execute(sql`
+        UPDATE order_lines
+        SET line_state = ${move.to}::order_line_state, short_quantity = 0,
+            updated_at = clock_timestamp()
+        WHERE id = ${move.lineId}::uuid AND order_id = ${orderId}::uuid AND line_state = 'open'`);
+    }
+    const splitLineIds: string[] = [];
+    for (const split of change.splitLines ?? []) {
+      splitLineIds.push(await this.splitLine(tx, orderId, split));
+    }
     const sets: SQL[] = [sql`updated_at = clock_timestamp()`];
     for (const key of Object.keys(change.columns) as (keyof OrderColumnChanges)[]) {
       const value = change.columns[key];
@@ -402,7 +442,7 @@ export class OrderWriter {
         UPDATE orders SET outcome = ${outcome}::order_outcome WHERE id = ${orderId}::uuid`);
     }
     const eventIds = await this.insertEvents(tx, orderId, change.events ?? []);
-    return { lineIds, eventIds };
+    return { lineIds, splitLineIds, eventIds };
   }
 
   /**
@@ -472,6 +512,46 @@ export class OrderWriter {
       WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND variant_id IS NULL
       RETURNING id`);
     return rows.length > 0;
+  }
+
+  /**
+   * Splits one open line of a locked order (see {@link OrderChange.splitLines}): inserts the
+   * returned row at the order's next position, copying the original's fixed columns, then updates
+   * the original to the delivered quantity and money. Answers the new row's id; throws when the
+   * line is not an open line of the order (the caller planned from the locked lines, so this is
+   * a fault, never a refusal).
+   */
+  private async splitLine(
+    tx: OrderTransaction,
+    orderId: string,
+    split: { lineId: string; delivered: SplittableLine; returned: SplittableLine },
+  ): Promise<string> {
+    const { returned: r, delivered: d } = split;
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO order_lines (order_id, position, variant_id, title, quantity, unit_price,
+                               discount_amount, net_amount, tax_rate, tax_amount, gross_amount,
+                               prepaid_amount, credit_applied_amount, unit_cost, line_state,
+                               split_from_line_id, channel_line_id)
+      SELECT l.order_id,
+             (SELECT max(position) + 1 FROM order_lines WHERE order_id = ${orderId}::uuid),
+             l.variant_id, l.title, ${r.quantity}::int, l.unit_price,
+             ${r.discountAmount}::numeric, ${r.netAmount}::numeric, l.tax_rate,
+             ${r.taxAmount}::numeric, ${r.grossAmount}::numeric, ${r.prepaidAmount}::numeric,
+             ${r.creditAppliedAmount}::numeric, l.unit_cost, 'returned_to_origin', l.id,
+             l.channel_line_id
+      FROM order_lines l
+      WHERE l.id = ${split.lineId}::uuid AND l.order_id = ${orderId}::uuid AND l.line_state = 'open'
+      RETURNING id`);
+    const id = requireId(rows);
+    await tx.execute(sql`
+      UPDATE order_lines
+      SET quantity = ${d.quantity}::int, discount_amount = ${d.discountAmount}::numeric,
+          net_amount = ${d.netAmount}::numeric, tax_amount = ${d.taxAmount}::numeric,
+          gross_amount = ${d.grossAmount}::numeric, prepaid_amount = ${d.prepaidAmount}::numeric,
+          credit_applied_amount = ${d.creditAppliedAmount}::numeric, line_state = 'delivered',
+          short_quantity = 0, updated_at = clock_timestamp()
+      WHERE id = ${split.lineId}::uuid AND order_id = ${orderId}::uuid`);
+    return id;
   }
 
   private async insertLine(
