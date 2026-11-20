@@ -33,3 +33,8 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - react-i18next@17.1.12
+
+# GHSA-67mh-4wv8-2f99: drizzle-kit's legacy @esbuild-kit loader pins esbuild 0.18, whose dev server is
+# flagged (patched in 0.25.0). Drop this once drizzle-kit stops depending on @esbuild-kit.
+overrides:
+  "@esbuild-kit/core-utils>esbuild": ">=0.25.0 <0.26"
