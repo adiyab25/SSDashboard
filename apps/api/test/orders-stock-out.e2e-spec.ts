@@ -1323,6 +1323,18 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       expect((await orderOf(id)).stock_out_generation).toBe(2);
     });
 
+    it('the fulfillment reversal job skips an order whose generation is not above n, and books nothing', async () => {
+      const id = await postedShopifyOrder();
+      const generation = (await orderOf(id)).stock_out_generation;
+
+      expect(await posting().fulfillmentReversal({ orderId: id, generation })).toEqual({
+        reversed: false,
+        why: 'NOT_MOVED_ON',
+      });
+      expect(await groupsOf(id)).toHaveLength(1);
+      expect((await orderOf(id)).stock_out_generation).toBe(generation);
+    });
+
     it('a partial delivery that would leave fewer posted pieces than await is refused with a typed error', async () => {
       const id = await postedShopifyOrder();
       await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 2 }]);

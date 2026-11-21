@@ -5,6 +5,9 @@ import { ApiError } from '@/api/client';
 /** The api codes that have their own sentence in `orders.stockOut.errors`. */
 const LABELLED_CODES: ReadonlySet<string> = new Set([
   'NOTHING_AWAITING',
+  'CLOSE_ALREADY_REQUESTED',
+  'ALREADY_REQUESTED',
+  'NO_LINES_DIFFER',
   'IDEMPOTENCY_CONFLICT',
   'STALE_RECORD',
   'PERIOD_LOCKED',

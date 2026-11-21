@@ -328,6 +328,11 @@ describe('Closing pieces that never come back (AC-27 f)', () => {
       409,
       'This order changed while you were working. The page now shows the latest version; check it and try again.',
     ],
+    [
+      'CLOSE_ALREADY_REQUESTED',
+      409,
+      'A request to close pieces of this line is already waiting for a manager.',
+    ],
   ])('keeps the dialog open and says what went wrong on %s', async (code, status, sentence) => {
     api.closeAwaitingRestock.mockRejectedValue(new ApiError(status, { code }));
     renderWithQuery(<OrderStockOutBlock order={awaitingOrder()} />);
