@@ -854,21 +854,30 @@ export class OrderWriter {
 
   /**
    * Records that a Shopify refund or return (`<source type>:<source id>`) was applied to the
-   * order's awaiting restock list (spec 0013 AC-27 d, amended 2026-11-21), once. The caller holds
-   * the order row lock. No event, `orders.updated_at` kept. Answers false when the source was
-   * already recorded (a repeated report, which must add nothing).
+   * order's awaiting restock list (spec 0013 AC-27 d, amended 2026-11-21), once, while the order
+   * keeps fewer than `max` sources (code re-review N5). The caller holds the order row lock. No
+   * event, `orders.updated_at` kept. Answers `recorded`, `already` when the source was already
+   * recorded (a repeated report, which must add nothing), or `full` when the order holds `max`.
    */
   async recordChannelReturnSource(
     tx: OrderTransaction,
     orderId: string,
     source: string,
-  ): Promise<boolean> {
-    const { rows } = await tx.execute<{ id: string }>(sql`
+    max: number,
+  ): Promise<'recorded' | 'already' | 'full'> {
+    const { rows } = await tx.execute<{ seen: boolean; count: number }>(sql`
+      SELECT ${source}::text = ANY(channel_return_source_ids) AS seen,
+             cardinality(channel_return_source_ids) AS count
+      FROM orders WHERE id = ${orderId}::uuid`);
+    const current = rows[0];
+    if (!current) throw new OrderNotFound();
+    if (current.seen) return 'already';
+    if (current.count >= max) return 'full';
+    await tx.execute(sql`
       UPDATE orders
       SET channel_return_source_ids = array_append(channel_return_source_ids, ${source}::text)
-      WHERE id = ${orderId}::uuid AND NOT (${source}::text = ANY(channel_return_source_ids))
-      RETURNING id`);
-    return rows.length > 0;
+      WHERE id = ${orderId}::uuid`);
+    return 'recorded';
   }
 
   /**

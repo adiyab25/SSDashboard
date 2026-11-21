@@ -129,6 +129,9 @@ export function ordersHttpError(error: unknown, response?: Response): unknown {
     // In process only (feature 19's partial delivery); mapped so a later route answers a stable code.
     case 'PiecesAwaitingRestock':
       return new ConflictException({ code: 'PIECES_AWAITING_RESTOCK', message: error.message });
+    // In process only (feature 13's refunds and returns).
+    case 'ChannelReturnSourceRefused':
+      return unprocessable('CHANNEL_RETURN_SOURCE_REFUSED', error.message);
     case 'OrderStoreMissing':
       logger.error('An order names a store that does not exist');
       return new InternalServerErrorException();

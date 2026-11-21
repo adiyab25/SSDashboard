@@ -7,6 +7,7 @@ import {
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import type { Job } from 'pg-boss';
+import { z } from 'zod';
 import { CatalogService } from '../../catalog/catalog.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { LedgerError } from '../../inventory/ledger/ledger.errors.js';
@@ -44,6 +45,12 @@ export const FULFILLMENT_CANCELLED_REASON = 'channel_fulfillment_cancelled';
 
 /** The `source_type` of a `shipment_not_posted` attention raised by a failed job. */
 const JOB_SOURCE = 'order_shipment_job';
+
+/** The order a job names, read from data that failed `PostShipmentJobData`. */
+const OrderOfJob = z.object({ orderId: z.uuid() });
+
+/** What `bookBack` did: booked, nothing left to book, or the generation was already booked back. */
+type BookBack = 'booked' | 'nothing_left' | 'already_reversed';
 
 /** Which attempt of a job is running: the pg-boss job id and its retry count (0 first). */
 export interface JobAttempt {
@@ -115,7 +122,10 @@ interface OrderStockOut extends Record<string, unknown> {
  * (owner ruling 2026-11-21): with none handled they reverse the whole group (`ledger.reverse`),
  * else they post the rest through `ledger.post` (source `order_shipment`, inbound at each
  * movement's own location and unit cost) and raise `reversal_after_restock` for the warehouse in
- * the same transaction, also when nothing is left to book back. `awaitingRestockOverdue` (the
+ * the same transaction. When nothing is left to book back nothing is posted: the fulfillment
+ * reversal answers `NOTHING_LEFT` (its attention was raised once by
+ * `recordChannelFulfillmentCancelled`) and row 4 raises it with its generation move. Data that
+ * does not parse raises `shipment_not_posted` for the order it names. `awaitingRestockOverdue` (the
  * daily schedule) raises `awaiting_restock_overdue` once per awaiting spell for each line awaiting
  * restock for 10 operating days or more (AC-27 g), so a missed day is caught up.
  *
@@ -143,6 +153,9 @@ export class ShipmentPosting {
     if (!data.success) {
       // Ids and codes only: the job's data is never printed (security review low).
       this.logger.warn(`Skipped an orders.post_shipment job with invalid data: job=${job.id}`);
+      // Never silent (code re-review N4): an order job that cannot run asks someone to look.
+      const order = OrderOfJob.safeParse(job.data);
+      if (order.success) await this.raise(order.data.orderId, JOB_SOURCE, job.id);
       return { skipped: 'INVALID_JOB_DATA' };
     }
     const attempt = { jobId: job.id, retryCount: job.retryCount };
@@ -270,8 +283,9 @@ export class ShipmentPosting {
       case 'reverse': {
         if (!posting) return { afterCancel: 'nothing', row: 1 };
         const planned = await handledQuantitiesOf(this.connection.db, orderId, false);
+        let booked: BookBack;
         try {
-          await this.bookBack(orderId, posting, {
+          booked = await this.bookBack(orderId, generation, posting, {
             idempotencyKey: cancelReversalKey(orderId, generation),
             reasonCode: CANCELLED_BEFORE_PICKUP_REASON,
             handled: planned,
@@ -297,6 +311,8 @@ export class ShipmentPosting {
                 throw new PostingAborted('MOVED_ON');
               }
             },
+            // The generation moves in the same unit, so a rerun meets row 1 and raises nothing.
+            raiseWhenNothingLeft: true,
           });
         } catch (error) {
           if (error instanceof PostingAborted) return { afterCancel: 'nothing', row: 3 };
@@ -305,7 +321,11 @@ export class ShipmentPosting {
           }
           throw error;
         }
-        return { afterCancel: 'reversed', row: decision.row };
+        if (booked === 'already_reversed') return { afterCancel: 'nothing', row: 2 };
+        return {
+          afterCancel: booked === 'booked' ? 'reversed' : 'nothing_left',
+          row: decision.row,
+        };
       }
       case 'await_restock': {
         const posted = [
@@ -340,10 +360,16 @@ export class ShipmentPosting {
   }
 
   /**
-   * Reverses generation `generation`'s posting because every Shopify fulfillment of the order was
-   * cancelled (AC-27 c), under its own key and reason, so a racing after cancel reversal of the
-   * same generation meets `AlreadyReversed` (a group is reversed at most once). It changes nothing
-   * on the order: `recordChannelFulfillmentCancelled` already moved it to the next generation.
+   * Books generation `generation`'s posting back because every Shopify fulfillment of the order
+   * was cancelled (AC-27 c), under its own key and reason, less the pieces already restocked or
+   * closed (`handled`). It changes nothing on the order: `recordChannelFulfillmentCancelled`
+   * already moved it to the next generation. The after cancel book back of the same generation
+   * cannot also run: that one acts only while the order is still on `generation` under the order
+   * lock, this one only once it is past it, and `bookBack` refuses when either reversal key of the
+   * generation is already used (a partial `ledger.post` never marks the group reversed, so the
+   * ledger's `AlreadyReversed` alone would not stop a second one). When every piece was restocked
+   * or closed nothing is booked and it answers `NOTHING_LEFT`; `recordChannelFulfillmentCancelled`
+   * already raised `reversal_after_restock` for that case in its own transaction, once.
    */
   async fulfillmentReversal(data: {
     orderId: string;
@@ -358,19 +384,15 @@ export class ShipmentPosting {
     if (order.stock_out_generation <= generation) return { reversed: false, why: 'NOT_MOVED_ON' };
     const posting = await this.ledger.postingFor(carrierShipmentKey(orderId, generation));
     if (!posting) return { reversed: false, why: 'NOTHING_POSTED' };
-    const key = fulfillmentReversalKey(orderId, generation);
-    if (
-      (await this.ledger.postingFor(key)) !== null ||
-      (await this.ledger.postingFor(cancelReversalKey(orderId, generation))) !== null
-    ) {
-      return { reversed: false, why: 'ALREADY_REVERSED' };
-    }
+    let booked: BookBack;
     try {
-      await this.bookBack(orderId, posting, {
-        idempotencyKey: key,
+      booked = await this.bookBack(orderId, generation, posting, {
+        idempotencyKey: fulfillmentReversalKey(orderId, generation),
         reasonCode: FULFILLMENT_CANCELLED_REASON,
         handled: data.handled ?? [],
         within: () => Promise.resolve(),
+        // Raised by `recordChannelFulfillmentCancelled`, in the transaction that read the counts.
+        raiseWhenNothingLeft: false,
       });
     } catch (error) {
       if (error instanceof LedgerError && error.code === 'AlreadyReversed') {
@@ -378,30 +400,50 @@ export class ShipmentPosting {
       }
       throw error;
     }
-    return { reversed: true };
+    switch (booked) {
+      case 'booked':
+        return { reversed: true };
+      case 'nothing_left':
+        return { reversed: false, why: 'NOTHING_LEFT' };
+      case 'already_reversed':
+        return { reversed: false, why: 'ALREADY_REVERSED' };
+    }
   }
 
   /**
-   * Books a shipment posting back, less the pieces already restocked or closed (owner ruling
-   * 2026-11-21), under `idempotencyKey`, running `within` in the same transaction. With nothing
-   * handled it reverses the whole group (`ledger.reverse`, so a second reversal of the group meets
-   * `AlreadyReversed`). Otherwise it posts the rest (`counterPostingLines`) through `ledger.post`
-   * as an inbound `order_shipment` at each movement's own location, bin, lot, and unit cost, or,
-   * when nothing is left, runs `within` in an order unit of its own; either way it raises
-   * `reversal_after_restock` (source the order) in that transaction so the warehouse checks the
-   * shelf. The callers keep the two reversal keys of one generation exclusive: each acts only
-   * under the generation checks of the order lock.
+   * Books generation `generation`'s shipment posting back, less the pieces already restocked or
+   * closed (owner ruling 2026-11-21), under `idempotencyKey`, running `within` in the same
+   * transaction. It answers `already_reversed` and books nothing when either reversal key of the
+   * generation (`order_shipment_reversal`, `order_shipment_fulfillment_reversal`) is already used:
+   * the one place the rule "a generation is booked back at most once" lives, because a partial
+   * `ledger.post` never marks the group reversed (code re-review N2). Exclusion under concurrency
+   * comes from the callers' generation checks under the order lock (row 4 acts only while the
+   * order is on the generation, the fulfillment reversal only once it is past it). With nothing
+   * handled it reverses the whole group (`ledger.reverse`). Otherwise it posts the rest
+   * (`counterPostingLines`) through `ledger.post` as an inbound `order_shipment` at each
+   * movement's own location, bin, lot, and unit cost and raises `reversal_after_restock` (source
+   * the order) in that transaction, so the warehouse checks the shelf; when nothing is left it
+   * books nothing and answers `nothing_left`, running `within` (and raising the attention when
+   * `raiseWhenNothingLeft`) in an order unit of its own.
    */
   private async bookBack(
     orderId: string,
+    generation: number,
     posting: PostingResult,
     input: {
       idempotencyKey: string;
       reasonCode: string;
       handled: readonly HandledPieces[];
       within: (tx: OrderTransaction) => Promise<void>;
+      raiseWhenNothingLeft: boolean;
     },
-  ): Promise<void> {
+  ): Promise<BookBack> {
+    if (
+      (await this.ledger.postingFor(cancelReversalKey(orderId, generation))) !== null ||
+      (await this.ledger.postingFor(fulfillmentReversalKey(orderId, generation))) !== null
+    ) {
+      return 'already_reversed';
+    }
     if (input.handled.length === 0) {
       await this.ledger.reverse(
         {
@@ -412,7 +454,7 @@ export class ShipmentPosting {
         },
         { within: (stockTx) => input.within(orderTransactionFromLedger(stockTx)) },
       );
-      return;
+      return 'booked';
     }
     const raise = async (tx: OrderTransaction): Promise<void> => {
       await input.within(tx);
@@ -423,8 +465,8 @@ export class ShipmentPosting {
     };
     const lines = counterPostingLines(posting.movements, input.handled, input.reasonCode);
     if (lines.length === 0) {
-      await this.transactions.run(raise);
-      return;
+      await this.transactions.run(input.raiseWhenNothingLeft ? raise : input.within);
+      return 'nothing_left';
     }
     await this.ledger.post(
       {
@@ -436,6 +478,7 @@ export class ShipmentPosting {
       },
       { within: (stockTx) => raise(orderTransactionFromLedger(stockTx)) },
     );
+    return 'booked';
   }
 
   /**

@@ -13,6 +13,7 @@ import { OrderIntake, type ChannelActor } from '../src/orders/intake/order-intak
 import type { OrderActor } from '../src/orders/order-actor.js';
 import { OrderTransactions, type OrderTransaction } from '../src/orders/order-transactions.js';
 import {
+  ChannelReturnSourceRefused,
   NoLinesDiffer,
   PiecesAwaitingRestock,
   StockAlreadyLeft,
@@ -1163,7 +1164,7 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       });
     });
 
-    it('everything restocked or closed, then a fulfillment cancel: nothing booked back, the attention raised', async () => {
+    it('everything restocked or closed, then a fulfillment cancel: nothing booked back, NOTHING_LEFT, the attention raised once; a later restock never books at the old generation', async () => {
       const id = await postedShopifyOrder();
       await channelReturn(id, [
         { channelLineId: 'gid-m', quantity: 2 },
@@ -1183,11 +1184,43 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
         [1, 0, 0, 1],
       ]);
 
+      const raised = () => attentionsOf(id).filter((kind) => kind === 'reversal_after_restock');
       await fulfillmentCancelled(id);
-      expect(await runJobs(id, 'fulfillment_reversal')).toEqual([{ reversed: true }]);
+      // Raised once, by the fulfillment cancel that read the counts.
+      expect(raised()).toHaveLength(1);
+      expect(await runJobs(id, 'fulfillment_reversal')).toEqual([
+        { reversed: false, why: 'NOTHING_LEFT' },
+      ]);
+      // A rerun (a lost completion) books nothing and raises nothing more.
+      expect(await runJobs(id, 'fulfillment_reversal')).toEqual([
+        { reversed: false, why: 'NOTHING_LEFT' },
+      ]);
+      expect(raised()).toHaveLength(1);
       expect(await groupsOf(id)).toHaveLength(1);
       expect(await netOf(id, skuM)).toBe(0);
-      expect(attentionsOf(id)).toContain('reversal_after_restock');
+      // The closed L piece never came back: it stays out.
+      expect(await netOf(id, skuL)).toBe(-1);
+
+      // Code re-review N1: Shopify fulfills again (generation 2) and its posting has not run yet; a
+      // return puts 2 on the awaiting list. Generation 1 has no reversal group, yet a restock must
+      // never book at generation 1's location: nothing of generation 2 left the shelf.
+      expect(await shopifyFulfilled(id)).toEqual({ requested: true });
+      expect(await orderOf(id)).toMatchObject({ stock_out_generation: 2 });
+      expect(await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 2 }])).toMatchObject({
+        applied: true,
+      });
+      const early = await restockRoute(id, m?.id as string, 2);
+      expect(early.status).toBe(409);
+      expect((early.body as { code: string }).code).toBe('NOTHING_AWAITING');
+      expect(await netOf(id, skuM)).toBe(0);
+
+      // Once generation 2 posts, the same restock books back at its location: still no phantom.
+      expect(await runJobs(id, 'post')).toEqual(
+        expect.arrayContaining([expect.objectContaining({ posted: true })]),
+      );
+      expect(await netOf(id, skuM)).toBe(-2);
+      expect((await restockRoute(id, m?.id as string, 2)).status).toBe(200);
+      expect(await netOf(id, skuM)).toBe(0);
     });
 
     it('row 4 after a restock books back only the rest, raises reversal_after_restock, and moves on', async () => {
@@ -1359,7 +1392,7 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       expect(await linesOf(id)).toHaveLength(2);
     });
 
-    it('a restock key reused with another quantity or person answers 409 IDEMPOTENCY_CONFLICT; the same request replays', async () => {
+    it('a restock key reused with another quantity answers 409 IDEMPOTENCY_CONFLICT; another person never gets a replay; the same request replays', async () => {
       const id = await postedShopifyOrder();
       await cancelFromChannel(id);
       await runJobs(id, 'after_cancel');
@@ -1371,15 +1404,133 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       const otherQuantity = await restockRoute(id, lineId, 2, key);
       expect(otherQuantity.status).toBe(409);
       expect((otherQuantity.body as { code: string }).code).toBe('IDEMPOTENCY_CONFLICT');
-      const someoneElse = await api.signIn((await api.addPerson(['warehouse'])).email);
-      const otherPerson = await restockRoute(id, lineId, 1, key, someoneElse);
-      expect(otherPerson.status).toBe(409);
-      expect((otherPerson.body as { code: string }).code).toBe('IDEMPOTENCY_CONFLICT');
       const replay = await restockRoute(id, lineId, 1, key);
       expect(replay.status, JSON.stringify(replay.body)).toBe(200);
-
       expect(await groupsOf(id, 'returned_to_origin_restock')).toHaveLength(1);
-      expect((await counters(id))[0]).toEqual([2, 1, 1, 0]);
+
+      // The person is in the ledger key (security re-review): the same client key from someone
+      // else is a request of its own. It books its own piece while one still awaits...
+      const someoneElse = await api.signIn((await api.addPerson(['warehouse'])).email);
+      const otherPerson = await restockRoute(id, lineId, 1, key, someoneElse);
+      expect(otherPerson.status, JSON.stringify(otherPerson.body)).toBe(200);
+      const groups = await groupsOf(id, 'returned_to_origin_restock');
+      expect(groups).toHaveLength(2);
+      expect(new Set(groups.map((group) => group.idempotency_key)).size).toBe(2);
+      expect((await counters(id))[0]).toEqual([2, 0, 2, 0]);
+      // ...and with nothing left awaiting it is refused, never answered with the first one's 200.
+      const third = await api.signIn((await api.addPerson(['warehouse'])).email);
+      const late = await restockRoute(id, lineId, 1, key, third);
+      expect(late.status).toBe(409);
+      expect((late.body as { code: string }).code).toBe('NOTHING_AWAITING');
+      expect(await groupsOf(id, 'returned_to_origin_restock')).toHaveLength(2);
+    });
+
+    it('row 4 with a restock committing between its plan and its lock retries and books the right remainder (re-review N3 a)', async () => {
+      const id = await postedShopifyOrder();
+      await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 2 }]);
+      const [m] = await linesOf(id);
+      expect((await restockRoute(id, m?.id as string, 1)).status).toBe(200);
+      await report(id, fact('cancelled', 'carrier.terminated_before_pickup'));
+      const [queued] = (await jobsOf(id)).filter((row) => row.data.kind === 'after_cancel');
+      const service = ledger();
+      const post = service.post.bind(service);
+      const spy = vi.spyOn(service, 'post').mockImplementationOnce(async (input, options) => {
+        // The second piece is put back after the job planned 1 restocked (its restock posts
+        // through the real `post`: the stub is used once).
+        expect((await restockRoute(id, m?.id as string, 1)).status).toBe(200);
+        return post(input, options);
+      });
+      try {
+        await expect(
+          posting().run({ id: queued?.id as string, data: queued?.data ?? {}, retryCount: 0 }),
+        ).rejects.toThrow('The restocked or closed pieces changed while the job planned');
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await groupsOf(id)).toHaveLength(1);
+      expect(await orderOf(id)).toMatchObject({ stock_out_generation: 1 });
+
+      // pg-boss retries: a fresh plan books back only the L piece (both M pieces are on the shelf).
+      expect(
+        await posting().run({ id: queued?.id as string, data: queued?.data ?? {}, retryCount: 1 }),
+      ).toEqual({ afterCancel: 'reversed', row: 4 });
+      const groups = await groupsOf(id);
+      expect(groups.map((group) => group.idempotency_key)).toEqual([
+        carrierShipmentKey(id),
+        cancelReversalKey(id, 1),
+      ]);
+      expect(
+        (await movementsOf(groups[1]?.id as string)).map((row) => [
+          row.source_line_id,
+          row.quantity,
+        ]),
+      ).toEqual([[(await linesOf(id))[1]?.id, 1]]);
+      expect(await netOf(id, skuM)).toBe(0);
+      expect(await netOf(id, skuL)).toBe(0);
+    });
+
+    it('a return of 1 of 2, then a cancel: row 5 raises the awaiting quantity to 2 (re-review N3 b)', async () => {
+      const id = await postedShopifyOrder();
+      await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }]);
+      expect(await counters(id)).toEqual([
+        [2, 1, 0, 0],
+        [1, 0, 0, 0],
+      ]);
+      await cancelFromChannel(id);
+      expect(await runJobs(id, 'after_cancel')).toEqual([
+        { afterCancel: 'awaiting_restock', row: 5 },
+      ]);
+      expect(await counters(id)).toEqual([
+        [2, 2, 0, 0],
+        [1, 1, 0, 0],
+      ]);
+    });
+
+    it('job data that does not parse is skipped and raises shipment_not_posted for the order it names (re-review N4)', async () => {
+      const id = await postedShopifyOrder();
+      const jobId = randomUUID();
+      expect(
+        await posting().run({
+          id: jobId,
+          data: {
+            kind: 'fulfillment_reversal',
+            orderId: id,
+            generation: 1,
+            handled: [{ lineId: 'not-a-uuid', quantity: 0 }],
+          },
+          retryCount: 0,
+        }),
+      ).toEqual({ skipped: 'INVALID_JOB_DATA' });
+      expect(
+        attentions.filter(
+          (a) =>
+            a.orderId === id &&
+            a.kind === 'shipment_not_posted' &&
+            a.sourceType === 'order_shipment_job' &&
+            a.sourceId === jobId,
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('a refund id over 100 characters, or a 201st source on one order, is refused with a typed error (re-review N5)', async () => {
+      const id = await postedShopifyOrder();
+      await expect(
+        channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }], 'x'.repeat(101)),
+      ).rejects.toThrow(ChannelReturnSourceRefused);
+      await owner(
+        `UPDATE orders SET channel_return_source_ids =
+           ARRAY(SELECT 'shopify_refund:planted-' || n FROM generate_series(1, 200) AS n)
+         WHERE id = $1::uuid`,
+        [id],
+      );
+      await expect(channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }])).rejects.toThrow(
+        ChannelReturnSourceRefused,
+      );
+      // A source already kept still answers as a repeat.
+      expect(
+        await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }], 'planted-7'),
+      ).toEqual({ applied: false, why: 'already_applied' });
+      expect((await counters(id))[0]).toEqual([2, 0, 0, 0]);
     });
 
     it('a second close request while one is open answers 409 CLOSE_ALREADY_REQUESTED; a manager close settles it', async () => {

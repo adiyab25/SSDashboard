@@ -39,7 +39,8 @@ export type OrdersErrorCode =
   | 'StockAlreadyLeft'
   | 'CloseAlreadyRequested'
   | 'RestockKeyConflict'
-  | 'PiecesAwaitingRestock';
+  | 'PiecesAwaitingRestock'
+  | 'ChannelReturnSourceRefused';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -424,6 +425,17 @@ export class RestockKeyConflict extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('RestockKeyConflict', 'This key was already used for another restock');
+  }
+}
+
+/**
+ * A Shopify refund or return id that is empty or longer than 100 characters, or one more than the
+ * 200 an order keeps for the dedupe of `recordChannelReturn` (code re-review N5).
+ */
+export class ChannelReturnSourceRefused extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('ChannelReturnSourceRefused', 'This refund or return cannot be recorded on the order');
   }
 }
 

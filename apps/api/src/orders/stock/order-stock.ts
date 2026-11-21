@@ -20,7 +20,6 @@ import { DomainEvents } from '../../platform/events/domain-events.js';
 import { TasksService } from '../../tasks/tasks.service.js';
 import { auditActorOf, type OrderActor } from '../order-actor.js';
 import { OrderAttentionRaised, attentionTaskKey } from '../orders.events.js';
-import { cancelReversalKey, fulfillmentReversalKey } from '../shipment/post-shipment.queue.js';
 import { ShipmentJobs } from '../shipment/shipment-jobs.js';
 import { lockOrderForChange } from '../writer/locked-order.js';
 import { returnedQuantitiesOf, type ChannelFulfilledLine } from './channel-fulfillment.js';
@@ -38,6 +37,7 @@ import {
   type OrderTransaction,
 } from '../order-transactions.js';
 import {
+  ChannelReturnSourceRefused,
   CloseAlreadyRequested,
   LineShort,
   LocationNotFound,
@@ -65,6 +65,12 @@ export const HOLD_OPEN_ORDERS_PATH = '/api/orders/hold-open-orders';
 
 /** The reservation source type of every order line (spec 0013 Write paths). */
 const SOURCE_TYPE = 'order';
+
+/** The longest Shopify refund or return id `recordChannelReturn` keeps (code re-review N5). */
+export const CHANNEL_RETURN_SOURCE_ID_MAX = 100;
+
+/** The most refunds and returns one order keeps for the dedupe (code re-review N5). */
+export const CHANNEL_RETURN_SOURCES_MAX = 200;
 
 /** The most lines one `reserveLines` or `releaseLines` call takes, and one hold batch holds. */
 export const STOCK_BATCH_LINES = 200;
@@ -312,7 +318,9 @@ export class OrderStock implements OnModuleInit {
    * them to restock, and raises `returned_pieces_to_receive` (source the refund or return, or
    * `shopify_refund_no_restock` when not marked). Each line takes at most its posted pieces not
    * yet awaiting, restocked, or closed, and a refund or return already applied (by its source type
-   * and id) adds nothing and answers `already_applied` (owner ruling 2026-11-21). Returns of an
+   * and id) adds nothing and answers `already_applied` (owner ruling 2026-11-21). A source id
+   * that is empty or longer than 100 characters, or a 201st source on one order, is refused with
+   * `ChannelReturnSourceRefused` (code re-review N5). Returns of an
    * order that left stock otherwise stay with features 21, 34, and 35 (`not_shopify_stock_out`).
    * Moves no state and posts nothing.
    */
@@ -328,10 +336,18 @@ export class OrderStock implements OnModuleInit {
     if (orders[0]?.stock_out_source !== 'shopify_fulfillment') {
       return { applied: false, why: 'not_shopify_stock_out' };
     }
-    const source = `${back.source.type}:${back.source.id}`;
-    if (!(await this.writer.recordChannelReturnSource(tx, orderId, source))) {
-      return { applied: false, why: 'already_applied' };
+    if (back.source.id.length === 0 || back.source.id.length > CHANNEL_RETURN_SOURCE_ID_MAX) {
+      throw new ChannelReturnSourceRefused();
     }
+    const source = `${back.source.type}:${back.source.id}`;
+    const recorded = await this.writer.recordChannelReturnSource(
+      tx,
+      orderId,
+      source,
+      CHANNEL_RETURN_SOURCES_MAX,
+    );
+    if (recorded === 'full') throw new ChannelReturnSourceRefused();
+    if (recorded === 'already') return { applied: false, why: 'already_applied' };
     const { rows } = await tx.execute<{
       id: string;
       channel_line_id: string | null;
@@ -371,7 +387,8 @@ export class OrderStock implements OnModuleInit {
   /**
    * Puts `quantity` awaiting pieces of a line back on the shelf (spec 0013 AC-27 e): the "Received
    * on the shelf" action, feature 20's scan, and feature 21 call it; none posts on its own. A
-   * replay of `order_restock:<orderId>:<lineId>:<idempotencyKey>` answers the stored posting before
+   * replay of `order_restock:<orderId>:<lineId>:<userId>:<idempotencyKey>` (the actor type in place
+   * of the user id for a system caller) answers the stored posting before
    * any awaiting check when it is the very same request (one movement of this line and quantity,
    * posted by the same person), and `RestockKeyConflict` (409 `IDEMPOTENCY_CONFLICT`) otherwise
    * (security review M). Otherwise it posts the quantity back with the ledger's `post` (source
@@ -391,7 +408,10 @@ export class OrderStock implements OnModuleInit {
     actor: OrderActor,
     how: AwaitingRestockedReason = 'received_on_shelf',
   ): Promise<RestockResult> {
-    const key = `order_restock:${orderId}:${lineId}:${idempotencyKey}`.toLowerCase();
+    // The person is part of the key (security re-review): another person's request with the same
+    // client key is a request of its own, never a replay of this one.
+    const by = actor.type === 'person' ? actor.userId : actor.type;
+    const key = `order_restock:${orderId}:${lineId}:${by}:${idempotencyKey}`.toLowerCase();
     const postedBy = actor.type === 'person' ? actor.userId : null;
     const replay = await this.ledger.postingFor(key);
     if (replay) {
@@ -710,8 +730,12 @@ export class OrderStock implements OnModuleInit {
 
   /**
    * Where the line left from and at what cost (AC-27 e): its movement (by its id, or the line it
-   * was split from) in the latest unreversed `order_shipment` posting of the order, generation
-   * `generation` down to 1. Reads only; null when no such posting moved the line.
+   * was split from) in the order's `order_shipment` posting of generation `generation`, the
+   * order's current one, only. A line's awaiting pieces can only come from that posting, because
+   * every move to a new generation brings the awaiting, restocked, and closed counters to 0; an
+   * earlier generation's posting is never read, so a generation booked back with nothing left (no
+   * reversal group under its key) can never pass for a standing posting (code re-review N1). Reads
+   * only; null when the current generation has no posting yet or it did not move the line.
    */
   private async postedFrom(
     orderId: string,
@@ -719,19 +743,11 @@ export class OrderStock implements OnModuleInit {
     generation: number,
   ): Promise<PostedFrom | null> {
     const wanted = new Set(lineIds.flatMap((id) => (id === null ? [] : [id.toLowerCase()])));
-    for (let n = generation; n >= 1; n -= 1) {
-      const posting = await this.ledger.postingFor(carrierShipmentKey(orderId, n));
-      if (!posting) continue;
-      const reversed =
-        (await this.ledger.postingFor(cancelReversalKey(orderId, n))) !== null ||
-        (await this.ledger.postingFor(fulfillmentReversalKey(orderId, n))) !== null;
-      if (reversed) continue;
-      const movement = posting.movements.find(
-        (m) => m.sourceLineId !== null && wanted.has(m.sourceLineId.toLowerCase()),
-      );
-      if (movement) return { locationId: movement.locationId, unitCost: movement.unitCost };
-    }
-    return null;
+    const posting = await this.ledger.postingFor(carrierShipmentKey(orderId, generation));
+    const movement = posting?.movements.find(
+      (m) => m.sourceLineId !== null && m.quantity < 0 && wanted.has(m.sourceLineId.toLowerCase()),
+    );
+    return movement ? { locationId: movement.locationId, unitCost: movement.unitCost } : null;
   }
 
   /**

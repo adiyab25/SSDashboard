@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import {
   InvalidTransition,
   Money,
+  carrierShipmentKey,
   ORDER_COLLECTION_REASONS,
   ORDER_PARTIAL_DELIVERY_REASONS,
   codDue,
@@ -34,7 +35,10 @@ import {
   OrderCancelled,
   attentionTaskKey,
 } from '../orders.events.js';
+import { LedgerService } from '../../inventory/ledger/ledger.service.js';
 import { handledQuantitiesOf } from '../shipment/handled-pieces.js';
+import { counterPostingLines } from '../shipment/shipment-plan.js';
+import { FULFILLMENT_CANCELLED_REASON } from '../shipment/shipment-posting.js';
 import { ShipmentJobs } from '../shipment/shipment-jobs.js';
 import {
   carrierShippedFactExists,
@@ -200,6 +204,7 @@ export class OrderTransitions {
     private readonly audit: AuditService,
     private readonly shipments: ShipmentJobs,
     private readonly tasks: TasksService,
+    private readonly ledger: LedgerService,
   ) {}
 
   /**
@@ -544,7 +549,8 @@ export class OrderTransitions {
    * requested for generation `n`, it locks the order's lines, reads each line's pieces already
    * restocked or closed, and enqueues the fulfillment reversal job for `n` with them (the job books
    * back only the rest, and raises `reversal_after_restock` when any were; owner ruling
-   * 2026-11-21); then it moves the order to generation `n + 1` with the request cleared and every
+   * 2026-11-21; when every posted piece was restocked or closed the job books nothing and the
+   * attention is raised here instead, once); then it moves the order to generation `n + 1` with the request cleared and every
    * line's stock out counters at 0 (the awaiting pieces are among those the reversal brings back,
    * so none comes back twice), and reserves the open lines again while the order is `new`,
    * `confirmed`, or `packed` (they read short until the reversal posts and fills waiting demand).
@@ -584,6 +590,20 @@ export class OrderTransitions {
       // then finds nothing awaiting and rolls back), so the counts read here are final for `n`.
       const handled = await handledQuantitiesOf(tx, orderId, true);
       await this.shipments.enqueueFulfillmentReversal(tx, orderId, generation, handled);
+      // Every posted piece was restocked or closed: the job books nothing, so the warehouse hears
+      // of it here, once, in the transaction that read the counts (code re-review N1). Once the
+      // generation moves below, generation `n` can never be posted any more.
+      const posting = await this.ledger.postingFor(carrierShipmentKey(orderId, generation));
+      if (
+        posting !== null &&
+        handled.length > 0 &&
+        counterPostingLines(posting.movements, handled, FULFILLMENT_CANCELLED_REASON).length === 0
+      ) {
+        await this.events.publish(
+          tx,
+          new OrderAttentionRaised(orderId, 'reversal_after_restock', 'order', orderId),
+        );
+      }
       await this.writer.advanceStockOutGeneration(tx, orderId, generation);
       if (order.fulfillmentState !== 'cancelled') await this.stock.topUp(tx, orderId, false);
     }
