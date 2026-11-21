@@ -239,5 +239,72 @@ for (const { dir, name: languageName } of LANGUAGES) {
         lineA.getByRole('button', { name: labelPrefix('orders.stockOut.restockLabel') }),
       ).toBeVisible();
     });
+
+    test('offers no Pack on an order Shopify fulfilled, while Confirm still works', async ({
+      page,
+    }, testInfo) => {
+      test.setTimeout(120_000);
+      const order = await seedPeople(page, ['manager']);
+      await useBrowserState(page, { dir });
+
+      await page.goto(`/orders/${order.id}`);
+      await waitForPageHydration(page);
+      const actions = page.getByRole('region', { name: t('orders.actions.label') });
+      const confirm = actions.getByRole('button', { name: t('orders.actions.confirm') });
+      await expect(confirm).toBeVisible();
+      await expect(actions.getByRole('button', { name: t('orders.actions.pack') })).toHaveCount(0);
+
+      // Confirm still works; the order is then Confirmed, and Pack is still not offered.
+      await confirm.click();
+      await expect(confirm).toHaveCount(0);
+      await expect(actions.getByRole('button', { name: t('orders.actions.pack') })).toHaveCount(0);
+      await expect(actions.getByRole('button', { name: t('orders.actions.unpack') })).toHaveCount(
+        0,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`awaiting-restock-no-pack-${language}.png`),
+        fullPage: true,
+      });
+    });
+
+    test('says a close request is already open on the second request, axe clean', async ({
+      page,
+    }, testInfo) => {
+      test.setTimeout(120_000);
+      const order = await seedPeople(page, ['warehouse']);
+      await useBrowserState(page, { dir });
+
+      await page.goto(`/orders/${order.id}`);
+      await waitForPageHydration(page);
+      const block = page.getByRole('region', { name: t('orders.stockOut.title') });
+      const lineA = block.getByRole('listitem').filter({ hasText: order.codes[0] });
+      await expect(lineA).toBeVisible();
+      const requestButton = lineA.getByRole('button', {
+        name: labelPrefix('orders.stockOut.requestCloseLabel'),
+      });
+
+      // The first request is accepted and the dialog closes.
+      await requestButton.click();
+      const dialog = page.getByRole('dialog', { name: t('orders.stockOut.requestTitle') });
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel(t('orders.stockOut.reason')).selectOption('damaged_not_resold');
+      await dialog.getByRole('button', { name: t('orders.stockOut.submitRequest') }).click();
+      await expect(dialog).toHaveCount(0);
+
+      // The second one for the same line: the dialog stays open with the catalog sentence.
+      await requestButton.click();
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel(t('orders.stockOut.reason')).selectOption('damaged_not_resold');
+      await dialog.getByRole('button', { name: t('orders.stockOut.submitRequest') }).click();
+      const message = t('orders.stockOut.errors.CLOSE_ALREADY_REQUESTED');
+      await expect(dialog.getByText(message)).toBeVisible();
+      await expect(dialog.getByText(t('orders.actions.generic'))).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+      await expectNoAxeViolations(page);
+      await page.screenshot({
+        path: testInfo.outputPath(`awaiting-restock-close-already-requested-${language}.png`),
+        fullPage: true,
+      });
+    });
   });
 }
