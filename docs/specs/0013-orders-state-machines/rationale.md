@@ -130,6 +130,8 @@ The orders review (kept private) accepted the design with one blocker and seven 
 
 **Carrier shipments never wait on stock (the lead's ruling with spec 0011).** `postCarrierShipment` books what the carrier took even when the books disagree, and the disagreement becomes a task. The shipment stays a job after the move commits, so a slow posting never holds the carrier sync's transaction.
 
+**A carrier `shipped` always enqueues the posting job (owner ruling, 2026-11-21).** AC-15 first said a carrier `shipped` enqueues nothing new when a Shopify fulfillment had already recorded the stock out request. That left a gap: the Shopify fulfillment records the request, the order is cancelled before `orders.post_shipment` runs (the job skips a cancelled order), and a late carrier `shipped` arrives; the pieces left with the courier and were never posted. Now every carrier `shipped` enqueues the post job for the order's current stock out generation, while the request itself is still recorded once. The job reads `ledger.postingFor(key)` first, so it never posts twice, and the ledger's idempotency key backs that up under a race. Rejected: (a) re-enqueue only on `cancelled` to `shipped`, because the same gap exists whenever the first job run was skipped or lost for any reason and the job is already idempotent, so a narrower trigger buys nothing and adds a branch; (b) raise an attention for a person to post by hand, because the courier's pickup is the truth and a person adds delay and error to a fact the system already knows; (c) accept the gap, because stock would stay on the books for pieces that left the building.
+
 **Three small calls for the Shopify connector.** A go live import enters old orders as `confirmed` without a fake confirmation path (Q-13.7); `linkChannelLineVariant` maps a line that arrived before its product without counting an edit (its M8); `rederivePaymentMethod` fixes a payment method a gateway mapping got wrong while nothing has moved (its M6), which needs three new cash rows limited to one reason.
 
 ### Evidence: what is built and what this spec uses
@@ -148,6 +150,14 @@ The orders review (kept private) accepted the design with one blocker and seven 
 | Ship to keys in the redaction list | `packages/config/src/redaction.ts` | audit and log privacy |
 | `outbound_commands` and its open index | `packages/db/src/schema/connectors.ts` | the packed guard and the hold, through feature 13's service |
 | Keyset cursor | `apps/api/src/platform/keyset-cursor.ts` | the list |
+
+### Sub decisions from the milestone 5 reviews (2026-11-21)
+
+**Restock cap (owner ruling 1).** The code review found that the order kept no count of awaiting pieces already restocked or closed, so a full reversal after a restock, or a second return report, put pieces on the ledger twice. Chosen: two counters per line (`restocked_quantity`, `closed_quantity`), a cap on every addition to the awaiting list, a source id dedupe on `recordChannelReturn`, and partial counter postings for the two reversals with a `reversal_after_restock` attention so a person checks the shelf. Rejected: (a) *post the rest without an attention*, because a reversal that follows a restock means the shelf and the books may already disagree, and silence hides it; (b) *refuse and flag*, because Shopify's cancel is a fact and cannot be refused (the carrier facts rule of AC-24), and a refused reversal leaves the books wrong until someone acts.
+
+**Pack after stock out (owner ruling 2, QA-2).** Pieces that already left cannot be packed. Chosen: Confirm stays (the confirmation call still matters for cash on delivery), Pack is refused with 409 `STOCK_ALREADY_LEFT` and not offered. Rejected: (a) *keep both*, because a pack on an order whose stock is out invites a second pick of pieces that are not on the shelf; (b) *hide both*, because a cash on delivery order still needs its confirmation call.
+
+**Smaller rules, same review.** Each guards a check made outside the lock and acted on inside it: row 4 and the post job re check the generation (and the cancelled state) under the order lock; the fulfillment reversal job skips unless the generation is above `n`; a reused restock key with different content is a conflict, not a replay; one open close request per line; the overdue check raises every qualifying line once per awaiting spell, so a line is not missed when the job did not run on its tenth day.
 
 ## References
 

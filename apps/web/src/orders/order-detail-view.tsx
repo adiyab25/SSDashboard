@@ -24,6 +24,7 @@ import { OrderLinesSection } from './order-lines-section';
 import { OrderMoneySection } from './order-money-section';
 import { OrderNumber } from './order-number';
 import { OrderReasonText } from './order-reason-text';
+import { OrderStockOutBlock } from './order-stock-out-block';
 import { OrderShipToSection } from './order-ship-to-section';
 import { OrderTimelineSection } from './order-timeline-section';
 import { getOrder, orderKeys } from './orders-api';
@@ -286,6 +287,7 @@ export function OrderDetailView({ enabled }: { enabled: boolean }) {
 
       <OrderShipToSection shipTo={order.shipTo} customerNote={order.customerNote} />
       <OrderLinesSection lines={order.lines} />
+      <OrderStockOutBlock order={order} />
       <OrderMoneySection money={order.money} />
       <OrderTimelineSection events={order.events} />
       {access.can('audit.read') && <RecordHistoryPanel recordType="order" recordId={order.id} />}

@@ -401,6 +401,33 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
               CASE WHEN l.state = 'cancelled' THEN 'customer_cancelled' END
        FROM l JOIN product_variants v ON v.sku = ${sku(`1 + (l.n * 31 + l.j * 17) % ${variants}`)}`,
     );
+    // Spec 0013 task 16: the order list filters read flags the plain seed leaves at their defaults.
+    // Each flag lands on a small, real looking share, picked by a hash of the row id so the same
+    // seed always plants the same rows: a write back hold on 3 orders in 100 (1 in 5 of them
+    // failed), a second ship to phone on 2 in 100, an exchange replacement on 1 in 200, a short
+    // line on 1 line in 5 of the open orders, and pieces awaiting restock on 1 line in 25 of the
+    // returned, refused, and cancelled orders.
+    await step(
+      'order flags',
+      `UPDATE orders SET
+         write_back_state = (CASE WHEN abs(hashtext(id::text)) % 100 < 3
+                                  THEN CASE WHEN abs(hashtext(id::text)) % 15 = 0 THEN 'failed' ELSE 'waiting' END
+                                  ELSE 'none' END)::order_write_back_state,
+         ship_to_phone_alt = CASE WHEN abs(hashtext(id::text || 'alt')) % 100 < 2
+           THEN ${phone(`1 + abs(hashtext(id::text)) % ${customers}`, SECOND_PHONE)} END;
+       WITH pick AS (SELECT id, lag(id) OVER (ORDER BY placed_at, id) AS previous_id FROM orders)
+       UPDATE orders o SET type = 'exchange_replacement', original_order_id = pick.previous_id
+       FROM pick
+       WHERE pick.id = o.id AND pick.previous_id IS NOT NULL AND abs(hashtext(o.id::text || 'xr')) % 200 = 0;
+       UPDATE order_lines l SET short_quantity = 1
+       FROM orders o
+       WHERE o.id = l.order_id AND o.fulfillment_state = 'new' AND abs(hashtext(l.id::text)) % 5 = 0;
+       UPDATE order_lines l SET stock_out_quantity = l.quantity, awaiting_restock_quantity = 1,
+         awaiting_restock_since = o.placed_at + interval '3 days'
+       FROM orders o
+       WHERE o.id = l.order_id AND o.fulfillment_state IN ('returned_to_origin', 'refused', 'cancelled')
+         AND abs(hashtext(l.id::text)) % 25 = 0`,
+    );
     // Security review S1: recorded_at on order events belongs to the database, which stamps the
     // moment of the insert. The seed plants a history spread over three years, so it turns the
     // stamp off as the owner for this one insert and always turns it back on.
@@ -497,6 +524,8 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
                                       WHEN 0 THEN 'unmatched' WHEN 1 THEN 'unmatched'
                                       WHEN 2 THEN 'accounted' ELSE 'matched' END AS result) r`,
     );
+    // Spec 0016 AC-26: a task always names its hat (`tasks_owner_hat_set`); a person owned one names
+    // the hat she acts under as well.
     await step(
       'tasks',
       `WITH u AS (SELECT array_agg(id ORDER BY email) AS a FROM users WHERE email LIKE 'scale-user-%'),
@@ -511,7 +540,7 @@ export async function seedScale(owner: DatabaseConnection, seed: ScaleSeed): Pro
                           outcome_code, dedupe_key, created_by_type, closed_at, closed_by, created_at)
        SELECT 'confirmation.call', 'order', uuidv7(),
               CASE WHEN t.n % 2 = 0 THEN u.a[1 + (t.n / 2) % ${USERS}] END,
-              CASE WHEN t.n % 2 = 1 THEN (ARRAY[${HATS.map((hat) => `'${hat}'`).join(', ')}])[1 + (t.n / 2) % ${HATS.length}] END,
+              (ARRAY[${HATS.map((hat) => `'${hat}'`).join(', ')}])[1 + (t.n / 2) % ${HATS.length}],
               t.created + interval '1 day', t.status::task_status,
               CASE WHEN t.status = 'done' THEN 'confirmed' END,
               'scale_task:' || t.n, 'system_job',

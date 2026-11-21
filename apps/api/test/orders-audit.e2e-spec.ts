@@ -9,22 +9,26 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { OrderIntake } from '../src/orders/intake/order-intake.service.js';
 import { OrderTransactions } from '../src/orders/order-transactions.js';
+import { OrderTransitions } from '../src/orders/transitions/order-transitions.service.js';
 import { startInProcessApi, type InProcessApi } from './in-process-api.js';
 
 // Spec 0013 AC-11 and the Audit table: the orders audit entries and their privacy. Milestone 1
 // proves `order.created_manually`, milestone 2 `order.edited`, and milestone 3
-// `order.payment_method_rederived`; the other two codes are written by the moves of milestone 5
-// and are listed as todo until then, so this file stays the one proof the registry names.
+// `order.payment_method_rederived`, and milestone 5 (task 14) `order.partial_delivery_split` and
+// `order.collection_recorded_manually`, so this file stays the one proof the registry names.
 describe('orders audit', { timeout: 120_000 }, () => {
   let api: InProcessApi;
   let support = '';
+  let supportId = '';
   let variant = '';
   let mainStore = '';
   let manualChannel = '';
 
   beforeAll(async () => {
     api = await startInProcessApi();
-    support = await api.signIn((await api.addPerson(['support'])).email);
+    const supportPerson = await api.addPerson(['support']);
+    supportId = supportPerson.id;
+    support = await api.signIn(supportPerson.email);
     const manager = await api.signIn((await api.addPerson(['manager'])).email);
     mainStore = (
       await api.owner.pool.query<{ id: string }>(`SELECT id FROM stores WHERE code = 'MAIN'`)
@@ -87,7 +91,7 @@ describe('orders audit', { timeout: 120_000 }, () => {
     expect(allText).not.toContain('+2010099988');
   });
 
-  it('registers the five order codes on the order record type', () => {
+  it('registers the order codes on the order record type, task 15 five included', () => {
     const codes = Object.keys(AUDIT_ACTIONS).filter((code) => code.startsWith('order.'));
 
     expect(codes).toEqual([
@@ -96,7 +100,17 @@ describe('orders audit', { timeout: 120_000 }, () => {
       'order.partial_delivery_split',
       'order.collection_recorded_manually',
       'order.payment_method_rederived',
+      // Spec 0013 task 15 (AC-27), proven in orders-stock-out.e2e-spec.ts.
+      'order.awaiting_restock_closed',
+      'order.awaiting_restock_close_requested',
+      'order.awaiting_restocked',
+      'order.channel_fulfillment_posted',
+      'order.carrier_delivery_cleared',
     ]);
+    const types = Object.entries(AUDIT_ACTIONS)
+      .filter(([code]) => code.startsWith('order.'))
+      .map(([, action]) => action.recordType);
+    expect(new Set(types)).toEqual(new Set(['order']));
   });
 
   it('writes one order.edited entry per edit with the ship to values redacted and listed as personal', async () => {
@@ -312,7 +326,154 @@ describe('orders audit', { timeout: 120_000 }, () => {
     for (const text of Object.values(sentinel)) expect(allText).not.toContain(text);
   });
 
-  // Written by the moves that follow (spec 0013 milestone 5).
-  it.todo('order.partial_delivery_split (milestone 5)');
-  it.todo('order.collection_recorded_manually (milestone 5)');
+  /** A COD order of three pieces the courier picked up, with sentinel ship to values. */
+  const shippedOrder = async (sentinel: Record<string, string>) => {
+    const reply = await api.call(support, 'POST', '/api/orders', {
+      clientRef: randomUUID(),
+      storeId: mainStore,
+      channelId: manualChannel,
+      shipTo: { name: sentinel.name, phone: sentinel.phone, address: sentinel.address },
+      lines: [{ variantId: variant, quantity: 3, unitPrice: '100.00' }],
+      shippingChargedAmount: '20.00',
+      paymentMethod: 'cod',
+    });
+    const made = CreatedOrder.parse(reply.body);
+    const moves = api.app.get(OrderTransitions);
+    await api.app.get(OrderTransactions).run(async (tx) => {
+      await moves.confirm(tx, made.id, { type: 'person', userId: supportId, hat: 'support' });
+      await moves.recordShipmentFact(
+        tx,
+        made.id,
+        { to: 'shipped', occurredAt: new Date(), source: { type: 'test', id: randomUUID() } },
+        { type: 'carrier', connectionId: randomUUID() },
+      );
+    });
+    return made;
+  };
+
+  it('writes one order.partial_delivery_split entry with the split lines and no personal data', async () => {
+    const sentinel = {
+      name: 'Sentinel Split Name',
+      phone: '01009998811',
+      address: '33 Sentinel Split Road',
+    };
+    const made = await shippedOrder(sentinel);
+    const { rows: lines } = await api.owner.pool.query<{ id: string }>(
+      `SELECT id FROM order_lines WHERE order_id = $1::uuid`,
+      [made.id],
+    );
+    const lineId = lines[0]?.id as string;
+
+    await api.app.get(OrderTransactions).run((tx) =>
+      api.app.get(OrderTransitions).recordPartialDelivery(
+        tx,
+        made.id,
+        {
+          lines: [{ lineId, deliveredQuantity: 2 }],
+          occurredAt: new Date(),
+          source: { type: 'courier_note', id: randomUUID() },
+          reasonCode: 'courier_note',
+        },
+        { type: 'person', userId: supportId, hat: 'support' },
+      ),
+    );
+    const { rows } = await api.owner.pool.query(
+      `SELECT action, record_label, reason, actor_kind, before, after
+       FROM audit_entries WHERE record_id = $1::uuid AND action = 'order.partial_delivery_split'`,
+      [made.id],
+    );
+    const everything = await api.owner.pool.query<{ text: string }>(
+      `SELECT row_to_json(a)::text AS text FROM audit_entries a`,
+    );
+    const allText = everything.rows.map((r) => r.text).join('\n');
+
+    expect(rows).toEqual([
+      {
+        action: 'order.partial_delivery_split',
+        record_label: `MAIN/${made.orderNumber}`,
+        reason: 'courier_note',
+        actor_kind: 'person',
+        before: {
+          codDueAmount: '320.00',
+          lines: [{ lineId, quantity: 3, grossAmount: '300.00', lineState: 'open' }],
+        },
+        after: {
+          codDueAmount: '220.00',
+          deliveredAmount: '200.00',
+          lines: [
+            { lineId, quantity: 2, grossAmount: '200.00', lineState: 'delivered' },
+            {
+              lineId: expect.any(String) as string,
+              splitFromLineId: lineId,
+              quantity: 1,
+              grossAmount: '100.00',
+              lineState: 'returned_to_origin',
+            },
+          ],
+        },
+      },
+    ]);
+    for (const text of Object.values(sentinel)) expect(allText).not.toContain(text);
+  });
+
+  it('writes one order.collection_recorded_manually entry per cash entry by hand, with its reason', async () => {
+    const sentinel = {
+      name: 'Sentinel Cash Name',
+      phone: '01009998822',
+      address: '44 Sentinel Cash Road',
+    };
+    const made = await shippedOrder(sentinel);
+    const person = { type: 'person' as const, userId: supportId, hat: 'support' };
+    const source = { type: 'courier_note', id: randomUUID() };
+
+    await api.app.get(OrderTransactions).run(async (tx) => {
+      const moves = api.app.get(OrderTransitions);
+      await moves.recordShipmentFact(
+        tx,
+        made.id,
+        { to: 'delivered', occurredAt: new Date(), source },
+        { type: 'carrier', connectionId: randomUUID() },
+      );
+      await moves.recordCollection(
+        tx,
+        made.id,
+        { amount: '320.00', occurredAt: new Date(), source, reasonCode: 'carrier_missing_report' },
+        person,
+      );
+      await moves.reverseCollection(
+        tx,
+        made.id,
+        { occurredAt: new Date(), source, reasonCode: 'correction' },
+        person,
+      );
+    });
+    const { rows } = await api.owner.pool.query(
+      `SELECT record_label, reason, actor_kind, before, after
+       FROM audit_entries WHERE record_id = $1::uuid AND action = 'order.collection_recorded_manually'
+       ORDER BY recorded_at, id`,
+      [made.id],
+    );
+    const everything = await api.owner.pool.query<{ text: string }>(
+      `SELECT row_to_json(a)::text AS text FROM audit_entries a`,
+    );
+    const allText = everything.rows.map((r) => r.text).join('\n');
+
+    expect(rows).toEqual([
+      {
+        record_label: `MAIN/${made.orderNumber}`,
+        reason: 'carrier_missing_report',
+        actor_kind: 'person',
+        before: { cashState: 'unpaid', codCollectedAmount: '0.00' },
+        after: { cashState: 'collected_by_carrier', codCollectedAmount: '320.00' },
+      },
+      {
+        record_label: `MAIN/${made.orderNumber}`,
+        reason: 'correction',
+        actor_kind: 'person',
+        before: { cashState: 'collected_by_carrier', codCollectedAmount: '320.00' },
+        after: { cashState: 'unpaid', codCollectedAmount: '0.00' },
+      },
+    ]);
+    for (const text of Object.values(sentinel)) expect(allText).not.toContain(text);
+  });
 });

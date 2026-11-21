@@ -38,6 +38,11 @@ type Needs = readonly Permission[] | 'any_hat' | 'open';
  */
 interface Fixture {
   needs: Needs;
+  /**
+   * An `@AnyHat()` route that checks its permissions in the handler (spec 0013's close route):
+   * a person holding none of these gets 403 `FORBIDDEN` from the handler.
+   */
+  handlerNeedsOneOf?: readonly Permission[];
   path?: () => string;
   body?: () => unknown;
   headers?: () => Record<string, string>;
@@ -386,6 +391,20 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
     // Spec 0013 milestone 4 (AC-26): the location manager holds open orders before going online;
     // an empty body is refused with 422 once the permission passes.
     'POST /orders/hold-open-orders': { needs: ['catalog.manage'], body: () => ({}) },
+    // Spec 0013 task 15 (AC-27 e, f): the awaiting restock routes. An empty body is refused with
+    // 422 once the permission passes; the close route is `@AnyHat()` and checks `stock.correct`
+    // or `stock.receive` in the handler, before the body, so a hat with neither gets 403.
+    'POST /orders/:id/lines/:lineId/restock': {
+      needs: ['stock.receive'],
+      path: () => `/orders/${ids.order}/lines/${randomUUID()}/restock`,
+      body: () => ({}),
+    },
+    'POST /orders/:id/lines/:lineId/close-awaiting-restock': {
+      needs: 'any_hat',
+      handlerNeedsOneOf: ['stock.correct', 'stock.receive'],
+      path: () => `/orders/${ids.order}/lines/${randomUUID()}/close-awaiting-restock`,
+      body: () => ({}),
+    },
     'GET /locations': { needs: ['stock.view'] },
     'POST /locations': {
       needs: ['catalog.manage'],
@@ -949,6 +968,11 @@ describe('the route sweep (spec 0008, AC-5, AC-6, AC-8)', { timeout: 300_000 }, 
           else if (
             typeof fixture.needs !== 'string' &&
             !fixture.needs.every((permission) => persona.permissions.has(permission))
+          ) {
+            denied = 'FORBIDDEN';
+          } else if (
+            fixture.handlerNeedsOneOf !== undefined &&
+            !fixture.handlerNeedsOneOf.some((permission) => persona.permissions.has(permission))
           ) {
             denied = 'FORBIDDEN';
           }

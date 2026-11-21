@@ -6,7 +6,8 @@ import { defineModule, type ModuleDefinition } from './module-definition.js';
  * code from specs 0015, 0014, and 0013; `connectors` lands as the stand-in module of spec 0013
  * milestone 2 with the outbound command reads, and gains `connectors.shopify.sync` with spec 0015
  * task 6's connect job) and
- * the five core job capabilities. A module or capability row lands only with the code that does
+ * the eight core job capabilities (`orders.shipment_posting` with spec 0013 task 15's shipment
+ * posting job). A module or capability row lands only with the code that does
  * its work (the `connectors` capabilities with spec 0015, `consignment`, the orders capabilities,
  * and the Operations and Warehouse capabilities arrive with their features, exactly as the spec's
  * table names them). The api reads it through `ModuleRegistry`,
@@ -188,7 +189,18 @@ export const MODULE_REGISTRY: readonly ModuleDefinition[] = Object.freeze([
     requires: [],
     label: 'modules.orders.label',
     description: 'modules.orders.description',
-    capabilities: [],
+    capabilities: [
+      // Spec 0013 task 15: owns the `orders.post_shipment` queue (the shipment posting and the
+      // after cancel jobs, one at a time per order). Core, so it never stops; `windDown: none`.
+      {
+        key: 'orders.shipment_posting',
+        bundle: 'core',
+        kind: 'write',
+        windDown: 'none',
+        workOf: [],
+        label: 'modules.capabilities.ordersShipmentPosting',
+      },
+    ],
   }),
   defineModule({
     key: 'tasks',

@@ -25,7 +25,7 @@ function toggled<T extends string>(all: readonly T[], current: readonly T[], val
 const CHECK_LABEL = 'inline-flex items-center gap-2 text-sm coarse:min-h-touch';
 
 /**
- * The filters of the order list (spec 0013, AC-4): store and channel (once they load), type, outcome, the fulfillment and cash states (several), hold, short lines, the
+ * The filters of the order list (spec 0013, AC-4): store and channel (once they load), type, outcome, the fulfillment and cash states (several), hold, short lines, awaiting restock (oldest first, AC-27 g), the
  * operating day range, and the customer filter that arrives from the customer page. Every change
  * applies at once; the search box and its text live in the list view, not here.
  */
@@ -189,6 +189,15 @@ export function OrderFilterBar({
             onChange={(event) => set({ short: event.target.checked })}
           />
           {t('orders.filters.short')}
+        </label>
+        <label className={CHECK_LABEL}>
+          <input
+            type="checkbox"
+            className="size-4 accent-primary"
+            checked={value.awaitingRestock}
+            onChange={(event) => set({ awaitingRestock: event.target.checked })}
+          />
+          {t('orders.filters.awaitingRestock')}
         </label>
       </div>
 

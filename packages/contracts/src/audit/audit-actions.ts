@@ -1,5 +1,9 @@
 import type { MessageKey } from '@ssdashboard/i18n';
 import {
+  ORDER_AWAITING_RESTOCK_CLOSE_REASONS,
+  ORDER_AWAITING_RESTOCKED_REASONS,
+  ORDER_CARRIER_DELIVERY_CLEARED_REASONS,
+  ORDER_CHANNEL_FULFILLMENT_POSTED_REASONS,
   ORDER_COLLECTION_REASONS,
   ORDER_CREATED_MANUALLY_REASONS,
   ORDER_EDITED_REASONS,
@@ -79,6 +83,9 @@ export interface AuditActionDefinition {
 
 /** The proof test of the orders actions (spec 0013). */
 const ORDERS_PROOF = 'apps/api/test/orders-audit.e2e-spec.ts';
+
+/** The proof test of the orders stock out actions (spec 0013 task 15, AC-27). */
+const ORDERS_STOCK_OUT_PROOF = 'apps/api/test/orders-stock-out.e2e-spec.ts';
 
 /** The proof test of the customers actions (spec 0014). */
 const CUSTOMERS_PROOF = 'apps/api/test/customers-audit.e2e-spec.ts';
@@ -378,6 +385,58 @@ export const AUDIT_ACTIONS = {
     reasonCodes: ORDER_PAYMENT_METHOD_REDERIVED_REASONS,
     label: 'audit.actions.orderPaymentMethodRederived',
     proof: ORDERS_PROOF,
+  },
+  // Spec 0013 AC-27 (task 15): the awaiting restock list and the Shopify fulfillment stock out.
+  // `before` and `after` hold line ids and quantities only.
+  'order.awaiting_restock_closed': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_AWAITING_RESTOCK_CLOSE_REASONS,
+    label: 'audit.actions.orderAwaitingRestockClosed',
+    proof: ORDERS_STOCK_OUT_PROOF,
+  },
+  'order.awaiting_restock_close_requested': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_AWAITING_RESTOCK_CLOSE_REASONS,
+    label: 'audit.actions.orderAwaitingRestockCloseRequested',
+    proof: ORDERS_STOCK_OUT_PROOF,
+  },
+  'order.awaiting_restocked': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'optional',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_AWAITING_RESTOCKED_REASONS,
+    label: 'audit.actions.orderAwaitingRestocked',
+    proof: ORDERS_STOCK_OUT_PROOF,
+  },
+  'order.channel_fulfillment_posted': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'required',
+    automatic: false,
+    undoable: false,
+    reasonCodes: ORDER_CHANNEL_FULFILLMENT_POSTED_REASONS,
+    label: 'audit.actions.orderChannelFulfillmentPosted',
+    proof: ORDERS_STOCK_OUT_PROOF,
+  },
+  'order.carrier_delivery_cleared': {
+    module: 'orders',
+    recordType: 'order',
+    reason: 'required',
+    automatic: true,
+    undoable: false,
+    reasonCodes: ORDER_CARRIER_DELIVERY_CLEARED_REASONS,
+    label: 'audit.actions.orderCarrierDeliveryCleared',
+    proof: ORDERS_STOCK_OUT_PROOF,
   },
   // Spec 0016 AC-13: a task closed by a person or by the system (the actor says which). The record
   // id is `tasks.id`, there is no label, `after` holds the status and the outcome code, and the

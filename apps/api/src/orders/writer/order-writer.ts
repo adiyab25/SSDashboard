@@ -9,13 +9,20 @@ import {
   type OrderRelation,
   type OrderType,
   type OrderPaymentMethod,
+  type SplittableLine,
+  type StockOutSource,
 } from '@ssdashboard/contracts';
 import { sql, type SQL } from '@ssdashboard/db';
 import { pgArray, pgConstraint, type Transaction } from '../../database/sql.js';
 import { DomainEvents } from '../../platform/events/domain-events.js';
 import { actorIdOf, actorTypeOf, type OrderActor } from '../order-actor.js';
 import type { OrderTransaction } from '../order-transactions.js';
-import { OrderLocked, OrderNotFound, OrderNumberTaken } from '../orders.errors.js';
+import {
+  OrderLocked,
+  OrderNotFound,
+  OrderNumberTaken,
+  PiecesAwaitingRestock,
+} from '../orders.errors.js';
 import { OrderStateChanged } from '../orders.events.js';
 
 /** The campaign columns of an order: a new manual order sets two, a reopened one copies all. */
@@ -157,6 +164,12 @@ export interface OrderColumnChanges {
   relatedOrderId?: string;
   relatedOrderRelation?: OrderRelation;
   carrierDeliveryCreatedAt?: Date;
+  /** The refusal reason a carrier `refused` fact carries (the table check requires it). */
+  refusedReasonCode?: string;
+  /** The collected total a cash collection or its reversal leaves (AC-17). */
+  codCollectedAmount?: string;
+  /** The remitted amount a settlement match or its revoke leaves (AC-17). */
+  remittedAmount?: string;
   shipToName?: string;
   shipToPhone?: string | null;
   contactPhoneRaw?: string | null;
@@ -195,6 +208,9 @@ const ORDER_COLUMNS: Record<keyof OrderColumnChanges, readonly [column: string, 
   relatedOrderId: ['related_order_id', 'uuid'],
   relatedOrderRelation: ['related_order_relation', 'order_relation'],
   carrierDeliveryCreatedAt: ['carrier_delivery_created_at', 'timestamptz'],
+  refusedReasonCode: ['refused_reason_code', 'text'],
+  codCollectedAmount: ['cod_collected_amount', 'numeric'],
+  remittedAmount: ['remitted_amount', 'numeric'],
   shipToName: ['ship_to_name', 'text'],
   shipToPhone: ['ship_to_phone', 'text'],
   contactPhoneRaw: ['contact_phone_raw', 'text'],
@@ -217,13 +233,28 @@ export interface OrderChange {
   lineShares?: ReadonlyMap<string, { prepaidAmount: string; creditAppliedAmount: string }>;
   /** New lines, inserted after the cancels. */
   addLines?: readonly NewLineRow[];
+  /**
+   * Open lines moved whole by a carrier fact or a partial delivery (spec 0013 AC-15, AC-16):
+   * `delivered`, `returned_to_origin`, or `lost`. A state move, not a money move, so the freeze
+   * allows it; each moved line's `short_quantity` becomes 0 (AC-13: 0 once the line leaves `open`).
+   */
+  moveLines?: readonly { lineId: string; to: 'delivered' | 'returned_to_origin' | 'lost' }[];
+  /**
+   * Open lines a partial delivery splits (AC-16, spec 0002 "Partial delivery splits lines"): the
+   * original keeps the delivered quantity and money and becomes `delivered`; a new row at the next
+   * position takes the returned quantity and money, `returned_to_origin`, `split_from_line_id`
+   * the original, and copies its variant, title, unit price, tax rate, unit cost, and channel line
+   * id. Needs `freezeAllowance: 'partial_delivery_split'` (the split lines carry the original's
+   * shares, so the frozen figures never move).
+   */
+  splitLines?: readonly { lineId: string; delivered: SplittableLine; returned: SplittableLine }[];
   /** The event rows of every state column this change moves, in order. */
   events?: readonly NewEventRow[];
   /**
    * The one exception to the rule that line changes are money moves under the freeze: the partial
-   * delivery split of milestone 5 (`recordPartialDelivery`, AC-16) splits lines of a frozen order
-   * and passes `'partial_delivery_split'`, which lets it cancel and add lines and rewrite their
-   * shares. The split keeps each line's share sum: the split rows together carry exactly the
+   * delivery split (`recordPartialDelivery`, AC-16) splits lines of a frozen order and passes
+   * `'partial_delivery_split'`, which lets `splitLines` (and any line change of the same call)
+   * through. The split keeps each line's share sum: the split rows together carry exactly the
    * prepaid and credit shares of the line they came from, so the frozen order totals and
    * `cod_expected_amount` never move. A frozen column stays refused with it. No other caller
    * passes it.
@@ -256,7 +287,10 @@ const NO_SHARES: ReadonlyMap<string, { prepaidAmount: string; creditAppliedAmoun
 
 /** What `applyChange` answers: the ids it made. */
 export interface AppliedChange {
+  /** The ids of `addLines`, in order. */
   lineIds: string[];
+  /** The ids of the returned rows `splitLines` made, in order. */
+  splitLineIds: string[];
   eventIds: string[];
 }
 
@@ -349,7 +383,8 @@ export class OrderWriter {
     const movesLines =
       (change.lineShares?.size ?? 0) > 0 ||
       (change.cancelLines?.length ?? 0) > 0 ||
-      (change.addLines?.length ?? 0) > 0;
+      (change.addLines?.length ?? 0) > 0 ||
+      (change.splitLines?.length ?? 0) > 0;
     const movesMoney =
       FROZEN_COLUMNS.some((key) => change.columns[key] !== undefined) ||
       (movesLines && change.freezeAllowance !== 'partial_delivery_split');
@@ -374,6 +409,17 @@ export class OrderWriter {
     const lineIds: string[] = [];
     for (const line of change.addLines ?? [])
       lineIds.push(await this.insertLine(tx, orderId, line));
+    for (const move of change.moveLines ?? []) {
+      await tx.execute(sql`
+        UPDATE order_lines
+        SET line_state = ${move.to}::order_line_state, short_quantity = 0,
+            updated_at = clock_timestamp()
+        WHERE id = ${move.lineId}::uuid AND order_id = ${orderId}::uuid AND line_state = 'open'`);
+    }
+    const splitLineIds: string[] = [];
+    for (const split of change.splitLines ?? []) {
+      splitLineIds.push(await this.splitLine(tx, orderId, split));
+    }
     const sets: SQL[] = [sql`updated_at = clock_timestamp()`];
     for (const key of Object.keys(change.columns) as (keyof OrderColumnChanges)[]) {
       const value = change.columns[key];
@@ -402,7 +448,7 @@ export class OrderWriter {
         UPDATE orders SET outcome = ${outcome}::order_outcome WHERE id = ${orderId}::uuid`);
     }
     const eventIds = await this.insertEvents(tx, orderId, change.events ?? []);
-    return { lineIds, eventIds };
+    return { lineIds, splitLineIds, eventIds };
   }
 
   /**
@@ -472,6 +518,63 @@ export class OrderWriter {
       WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND variant_id IS NULL
       RETURNING id`);
     return rows.length > 0;
+  }
+
+  /**
+   * Splits one open line of a locked order (see {@link OrderChange.splitLines}): inserts the
+   * returned row at the order's next position, copying the original's fixed columns, then updates
+   * the original to the delivered quantity and money. Answers the new row's id; throws when the
+   * line is not an open line of the order (the caller planned from the locked lines, so this is
+   * a fault, never a refusal), and `PiecesAwaitingRestock` when the delivered row would keep fewer
+   * posted pieces than its awaiting, restocked, and closed pieces together (the throw rolls the
+   * caller's unit back).
+   */
+  private async splitLine(
+    tx: OrderTransaction,
+    orderId: string,
+    split: { lineId: string; delivered: SplittableLine; returned: SplittableLine },
+  ): Promise<string> {
+    const { returned: r, delivered: d } = split;
+    // The delivered row keeps at most its quantity posted: refuse, before the split is written,
+    // a split that would leave fewer posted pieces than await, were restocked, or were closed
+    // (code review minor 2: never a raw CHECK refusal a carrier sync retries for ever).
+    const { rows: held } = await tx.execute<{ refused: boolean }>(sql`
+      SELECT stock_out_quantity IS NOT NULL
+             AND LEAST(stock_out_quantity, ${d.quantity}::int)
+                 < awaiting_restock_quantity + restocked_quantity + closed_quantity AS refused
+      FROM order_lines WHERE id = ${split.lineId}::uuid AND order_id = ${orderId}::uuid
+      FOR UPDATE`);
+    if (held[0]?.refused === true) throw new PiecesAwaitingRestock();
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO order_lines (order_id, position, variant_id, title, quantity, unit_price,
+                               discount_amount, net_amount, tax_rate, tax_amount, gross_amount,
+                               prepaid_amount, credit_applied_amount, unit_cost, line_state,
+                               split_from_line_id, channel_line_id, stock_out_quantity)
+      SELECT l.order_id,
+             (SELECT max(position) + 1 FROM order_lines WHERE order_id = ${orderId}::uuid),
+             l.variant_id, l.title, ${r.quantity}::int, l.unit_price,
+             ${r.discountAmount}::numeric, ${r.netAmount}::numeric, l.tax_rate,
+             ${r.taxAmount}::numeric, ${r.grossAmount}::numeric, ${r.prepaidAmount}::numeric,
+             ${r.creditAppliedAmount}::numeric, l.unit_cost, 'returned_to_origin', l.id,
+             l.channel_line_id,
+             -- A requested stock out follows the split: the delivered row keeps up to its quantity.
+             CASE WHEN l.stock_out_quantity IS NULL THEN NULL
+                  ELSE LEAST(GREATEST(l.stock_out_quantity - ${d.quantity}::int, 0), ${r.quantity}::int)
+             END
+      FROM order_lines l
+      WHERE l.id = ${split.lineId}::uuid AND l.order_id = ${orderId}::uuid AND l.line_state = 'open'
+      RETURNING id`);
+    const id = requireId(rows);
+    await tx.execute(sql`
+      UPDATE order_lines
+      SET quantity = ${d.quantity}::int, discount_amount = ${d.discountAmount}::numeric,
+          net_amount = ${d.netAmount}::numeric, tax_amount = ${d.taxAmount}::numeric,
+          gross_amount = ${d.grossAmount}::numeric, prepaid_amount = ${d.prepaidAmount}::numeric,
+          credit_applied_amount = ${d.creditAppliedAmount}::numeric, line_state = 'delivered',
+          stock_out_quantity = LEAST(stock_out_quantity, ${d.quantity}::int),
+          short_quantity = 0, updated_at = clock_timestamp()
+      WHERE id = ${split.lineId}::uuid AND order_id = ${orderId}::uuid`);
+    return id;
   }
 
   private async insertLine(
@@ -606,6 +709,316 @@ export class OrderWriter {
       WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid AND line_state = 'open'
         AND EXISTS (SELECT 1 FROM orders o WHERE o.id = ${orderId}::uuid
                     AND o.fulfillment_state IN ('new', 'confirmed', 'packed'))
+      RETURNING id`);
+    return rows.length > 0;
+  }
+
+  /**
+   * Records the stock out request of the order's current generation (spec 0013 AC-27 a), once:
+   * `stock_out_source` and `stock_out_requested_at` on the order, and each named line's
+   * `stock_out_quantity`, only while no request is recorded. No event, no audit entry, and
+   * `orders.updated_at` kept (no state machine moves). The caller holds the order row lock and
+   * names only lines of the order. Answers whether it recorded the request.
+   */
+  async requestStockOut(
+    tx: OrderTransaction,
+    orderId: string,
+    request: {
+      source: StockOutSource;
+      at: Date;
+      lines: readonly { lineId: string; quantity: number }[];
+    },
+  ): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE orders
+      SET stock_out_source = ${request.source}::stock_out_source,
+          stock_out_requested_at = ${iso(request.at)}::timestamptz
+      WHERE id = ${orderId}::uuid AND stock_out_requested_at IS NULL
+      RETURNING id`);
+    if (rows.length === 0) return false;
+    if (request.lines.length > 0) {
+      await tx.execute(sql`
+        UPDATE order_lines l
+        SET stock_out_quantity = LEAST(GREATEST(w.quantity, 0), l.quantity),
+            updated_at = clock_timestamp()
+        FROM unnest(${pgArray(request.lines.map((line) => line.lineId))}::uuid[],
+                    ${pgArray(request.lines.map((line) => line.quantity))}::int[]) AS w(id, quantity)
+        WHERE l.id = w.id AND l.order_id = ${orderId}::uuid`);
+    }
+    return true;
+  }
+
+  /**
+   * Writes the `unit_cost` the shipment posting gave each line (spec 0013 AC-15, Value sourcing:
+   * once, from null), to the line and to any split row of it whose cost is still null. Runs in
+   * the posting's own `within` (the ledger's transaction, through the one sanctioned adapter), so
+   * it takes no order row lock: it locks only the line rows it writes, after the ledger's locks
+   * (a deadlock with an order write is broken by the ledger's single retry). No event,
+   * `orders.updated_at` kept.
+   */
+  async setUnitCosts(
+    tx: OrderTransaction,
+    orderId: string,
+    costs: ReadonlyMap<string, string>,
+  ): Promise<void> {
+    if (costs.size === 0) return;
+    const lineIds = [...costs.keys()];
+    await tx.execute(sql`
+      UPDATE order_lines l
+      SET unit_cost = w.cost, updated_at = clock_timestamp()
+      FROM unnest(${pgArray(lineIds)}::uuid[],
+                  ${pgArray(lineIds.map((id) => costs.get(id) ?? '0'))}::numeric[]) AS w(id, cost)
+      WHERE l.order_id = ${orderId}::uuid AND l.unit_cost IS NULL
+        AND (l.id = w.id OR l.split_from_line_id = w.id)`);
+  }
+
+  /**
+   * Puts each named line's posted pieces not yet restocked, closed, or awaiting on
+   * `awaiting_restock_quantity` (spec 0013 *After a cancel* row 5, owner ruling 2026-11-21: the
+   * line then awaits `stock_out_quantity - restocked_quantity - closed_quantity`), since now when
+   * nothing awaited. A line with no room is left alone, so a rerun of the job adds nothing. The
+   * caller holds the order row lock. No event, `orders.updated_at` kept. Answers the lines it
+   * raised.
+   */
+  async awaitRestock(
+    tx: OrderTransaction,
+    orderId: string,
+    lineIds: readonly string[],
+  ): Promise<string[]> {
+    if (lineIds.length === 0) return [];
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE order_lines
+      SET awaiting_restock_quantity = stock_out_quantity - restocked_quantity - closed_quantity,
+          awaiting_restock_since = CASE WHEN awaiting_restock_quantity = 0 THEN now()
+                                        ELSE awaiting_restock_since END,
+          updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid AND id = ANY(${pgArray(lineIds)}::uuid[])
+        AND stock_out_quantity > 0
+        AND stock_out_quantity - restocked_quantity - closed_quantity > awaiting_restock_quantity
+      RETURNING id`);
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Closes every awaiting restock quantity of the order with no movement (spec 0013 AC-15: a late
+   * carrier `shipped` on a cancelled order; the posting stands and the courier has the pieces):
+   * the awaiting pieces move to `closed_quantity` and the awaiting spell ends (its overdue mark
+   * and any close request with it). The caller holds the order row lock. No event,
+   * `orders.updated_at` kept. Answers how many lines it closed.
+   */
+  async closeAwaitingRestock(tx: OrderTransaction, orderId: string): Promise<number> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE order_lines
+      SET closed_quantity = closed_quantity + awaiting_restock_quantity,
+          awaiting_restock_quantity = 0, awaiting_restock_since = NULL,
+          awaiting_restock_overdue_raised_at = NULL, awaiting_restock_close_requested_at = NULL,
+          updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid AND awaiting_restock_quantity > 0
+      RETURNING id`);
+    return rows.length;
+  }
+
+  /**
+   * Moves the order from stock out generation `from` to `from + 1` and clears the request (spec
+   * 0013 *After a cancel* row 4 after its counter posting, and AC-27 c), only while the order is
+   * still at `from`. Every line starts the new generation clean: `stock_out_quantity` null and
+   * the awaiting, restocked, and closed counters at 0 with no awaiting spell (owner ruling
+   * 2026-11-21), because the reversal of generation `from` already booked back every piece not
+   * restocked or closed, the awaiting ones included. Runs in the row 4 counter posting's `within`
+   * (the ledger's transaction, after the caller locked the order) or in
+   * `recordChannelFulfillmentCancelled`'s order transaction. No event, `orders.updated_at` kept.
+   * Answers whether it moved the order.
+   */
+  async advanceStockOutGeneration(
+    tx: OrderTransaction,
+    orderId: string,
+    from: number,
+  ): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE orders
+      SET stock_out_generation = ${from + 1}::smallint, stock_out_source = NULL,
+          stock_out_requested_at = NULL
+      WHERE id = ${orderId}::uuid AND stock_out_generation = ${from}::smallint
+      RETURNING id`);
+    if (rows.length === 0) return false;
+    await tx.execute(sql`
+      UPDATE order_lines
+      SET stock_out_quantity = NULL, awaiting_restock_quantity = 0, awaiting_restock_since = NULL,
+          restocked_quantity = 0, closed_quantity = 0, awaiting_restock_overdue_raised_at = NULL,
+          awaiting_restock_close_requested_at = NULL, updated_at = clock_timestamp()
+      WHERE order_id = ${orderId}::uuid
+        AND (stock_out_quantity IS NOT NULL OR awaiting_restock_quantity > 0
+             OR restocked_quantity > 0 OR closed_quantity > 0)`);
+    return true;
+  }
+
+  /**
+   * Records that a Shopify refund or return (`<source type>:<source id>`) was applied to the
+   * order's awaiting restock list (spec 0013 AC-27 d, amended 2026-11-21), once, while the order
+   * keeps fewer than `max` sources (code re-review N5). The caller holds the order row lock. No
+   * event, `orders.updated_at` kept. Answers `recorded`, `already` when the source was already
+   * recorded (a repeated report, which must add nothing), or `full` when the order holds `max`.
+   */
+  async recordChannelReturnSource(
+    tx: OrderTransaction,
+    orderId: string,
+    source: string,
+    max: number,
+  ): Promise<'recorded' | 'already' | 'full'> {
+    const { rows } = await tx.execute<{ seen: boolean; count: number }>(sql`
+      SELECT ${source}::text = ANY(channel_return_source_ids) AS seen,
+             cardinality(channel_return_source_ids) AS count
+      FROM orders WHERE id = ${orderId}::uuid`);
+    const current = rows[0];
+    if (!current) throw new OrderNotFound();
+    if (current.seen) return 'already';
+    if (current.count >= max) return 'full';
+    await tx.execute(sql`
+      UPDATE orders
+      SET channel_return_source_ids = array_append(channel_return_source_ids, ${source}::text)
+      WHERE id = ${orderId}::uuid`);
+    return 'recorded';
+  }
+
+  /**
+   * Marks a close request open on one line (spec 0013 AC-27 f, amended 2026-11-21: one open
+   * request per line) while at least `quantity` pieces await. The caller holds the order row lock.
+   * No event, `orders.updated_at` kept. Answers the awaiting quantity, `'open'` when a request is
+   * already open, or null when fewer pieces await.
+   */
+  async requestAwaitingClose(
+    tx: OrderTransaction,
+    orderId: string,
+    lineId: string,
+    quantity: number,
+  ): Promise<number | 'open' | null> {
+    const { rows } = await tx.execute<{ awaiting: number; requested: boolean }>(sql`
+      SELECT awaiting_restock_quantity AS awaiting,
+             awaiting_restock_close_requested_at IS NOT NULL AS requested
+      FROM order_lines WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid FOR UPDATE`);
+    const line = rows[0];
+    if (!line || quantity <= 0 || line.awaiting < quantity) return null;
+    if (line.requested) return 'open';
+    await tx.execute(sql`
+      UPDATE order_lines
+      SET awaiting_restock_close_requested_at = now(), updated_at = clock_timestamp()
+      WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid`);
+    return line.awaiting;
+  }
+
+  /**
+   * Marks every line awaiting restock for `days` operating days or more whose awaiting spell was
+   * not raised yet (spec 0013 AC-27 g, amended 2026-11-21), so a day the daily check missed is
+   * caught up and a line is raised once per spell. No event, `updated_at` kept. Answers the lines
+   * it marked, oldest awaiting first; the caller raises `awaiting_restock_overdue` for each in the
+   * same transaction.
+   */
+  async markAwaitingRestockOverdue(
+    tx: OrderTransaction,
+    days: number,
+  ): Promise<{ id: string; order_id: string }[]> {
+    const { rows } = await tx.execute<{ id: string; order_id: string; since: Date | string }>(sql`
+      UPDATE order_lines
+      SET awaiting_restock_overdue_raised_at = now()
+      WHERE awaiting_restock_quantity > 0 AND awaiting_restock_overdue_raised_at IS NULL
+        AND ssd_operating_day(awaiting_restock_since) <= ssd_operating_day(now()) - ${days}::int
+      RETURNING id, order_id, awaiting_restock_since AS since`);
+    const at = (since: Date | string): number => new Date(since).getTime();
+    return [...rows]
+      .sort((a, b) => at(a.since) - at(b.since) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((row) => ({ id: row.id, order_id: row.order_id }));
+  }
+
+  /**
+   * Adds returned pieces to each named line's `awaiting_restock_quantity` (spec 0013 AC-27 d: a
+   * Shopify refund or return of an order that left stock through a Shopify fulfillment), capped
+   * so that awaiting, restocked, and closed pieces together never exceed what the line's posting
+   * took out (`stock_out_quantity`), since now when nothing awaited. The caller holds the order
+   * row lock. No event, `orders.updated_at` kept. Answers each line it raised with the quantity
+   * it added.
+   */
+  async awaitReturn(
+    tx: OrderTransaction,
+    orderId: string,
+    lines: readonly { lineId: string; quantity: number }[],
+  ): Promise<{ lineId: string; added: number }[]> {
+    if (lines.length === 0) return [];
+    const { rows } = await tx.execute<{ id: string; added: number }>(sql`
+      WITH wanted AS (
+        SELECT w.id, sum(w.quantity)::int AS quantity
+        FROM unnest(${pgArray(lines.map((line) => line.lineId))}::uuid[],
+                    ${pgArray(lines.map((line) => line.quantity))}::int[]) AS w(id, quantity)
+        GROUP BY w.id
+      ), before AS (
+        SELECT l.id, l.awaiting_restock_quantity AS was,
+               LEAST(l.awaiting_restock_quantity + GREATEST(wanted.quantity, 0),
+                     coalesce(l.stock_out_quantity, 0) - l.restocked_quantity
+                       - l.closed_quantity) AS now_awaiting
+        FROM order_lines l JOIN wanted ON wanted.id = l.id
+        WHERE l.order_id = ${orderId}::uuid
+      )
+      UPDATE order_lines l
+      SET awaiting_restock_quantity = before.now_awaiting,
+          awaiting_restock_since = CASE WHEN before.was = 0 THEN now() ELSE l.awaiting_restock_since END,
+          updated_at = clock_timestamp()
+      FROM before
+      WHERE l.id = before.id AND before.now_awaiting > before.was
+      RETURNING l.id, (before.now_awaiting - before.was)::int AS added`);
+    return rows.map((row) => ({ lineId: row.id, added: row.added }));
+  }
+
+  /**
+   * Moves `quantity` of one line's awaiting pieces to `restocked_quantity` (`into: 'restocked'`)
+   * or `closed_quantity` (`into: 'closed'`) with a conditional update (spec 0013 AC-27 e, f:
+   * `awaiting_restock_quantity >= quantity`). When nothing is left the awaiting spell ends:
+   * `awaiting_restock_since`, the overdue mark, and any close request are cleared; a close also
+   * clears the line's close request (the manager decided it). Runs in a restock posting's
+   * `within` (the line row lock comes after the ledger's locks) or in a close's order transaction.
+   * No event, `orders.updated_at` kept. Answers the quantity before and after, or null when no row
+   * matched (the caller throws `NothingAwaiting`).
+   */
+  async lowerAwaitingRestock(
+    tx: OrderTransaction,
+    orderId: string,
+    lineId: string,
+    quantity: number,
+    into: 'restocked' | 'closed',
+  ): Promise<{ before: number; after: number } | null> {
+    const counter =
+      into === 'restocked'
+        ? sql`restocked_quantity = restocked_quantity + ${quantity}::int`
+        : sql`closed_quantity = closed_quantity + ${quantity}::int`;
+    const spellEnds = sql`awaiting_restock_quantity - ${quantity}::int = 0`;
+    const closeRequest =
+      into === 'closed'
+        ? sql`NULL`
+        : sql`CASE WHEN ${spellEnds} THEN NULL ELSE awaiting_restock_close_requested_at END`;
+    const { rows } = await tx.execute<{ after: number }>(sql`
+      UPDATE order_lines
+      SET awaiting_restock_quantity = awaiting_restock_quantity - ${quantity}::int, ${counter},
+          awaiting_restock_since = CASE WHEN ${spellEnds} THEN NULL ELSE awaiting_restock_since END,
+          awaiting_restock_overdue_raised_at = CASE WHEN ${spellEnds} THEN NULL
+                                                    ELSE awaiting_restock_overdue_raised_at END,
+          awaiting_restock_close_requested_at = ${closeRequest},
+          updated_at = clock_timestamp()
+      WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid
+        AND ${quantity}::int > 0 AND awaiting_restock_quantity >= ${quantity}::int
+      RETURNING awaiting_restock_quantity AS after`);
+    const row = rows[0];
+    return row ? { before: row.after + quantity, after: row.after } : null;
+  }
+
+  /**
+   * Clears `carrier_delivery_created_at` (spec 0013 AC-27 c: every Shopify fulfillment of an order
+   * with no carrier delivery was cancelled), so the order is back to before its first fulfillment
+   * and an edit applies again: the one exception to the money freeze, accepted by the owner on
+   * 2026-11-08. The caller holds the order row lock and writes `order.carrier_delivery_cleared`.
+   * No event, `orders.updated_at` kept. Answers whether it cleared it.
+   */
+  async clearCarrierDelivery(tx: OrderTransaction, orderId: string): Promise<boolean> {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      UPDATE orders SET carrier_delivery_created_at = NULL
+      WHERE id = ${orderId}::uuid AND carrier_delivery_created_at IS NOT NULL
       RETURNING id`);
     return rows.length > 0;
   }

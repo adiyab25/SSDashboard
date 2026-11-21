@@ -19,6 +19,7 @@ import { CashChip } from './cash-chip';
 import { FulfillmentChip } from './fulfillment-chip';
 import { OrderFlags } from './order-flags';
 import { OrderNumber } from './order-number';
+import { OrderStockOutNote } from './order-stock-out-note';
 
 const features = tableFeatures({});
 
@@ -55,6 +56,7 @@ export function OrderResultsTable({ rows }: { rows: readonly OrderListItem[] }) 
               {format.dateTime(row.original.placedAt)}
             </span>
             <OrderFlags order={row.original} />
+            <OrderStockOutNote order={row.original} />
           </div>
         ),
       },

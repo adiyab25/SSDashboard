@@ -114,6 +114,24 @@ export function ordersHttpError(error: unknown, response?: Response): unknown {
       return new ConflictException({ code: 'LINE_SHORT', message: error.message });
     case 'LocationNotFound':
       return new NotFoundException({ code: 'LOCATION_NOT_FOUND', message: error.message });
+    case 'NothingAwaiting':
+      return new ConflictException({ code: 'NOTHING_AWAITING', message: error.message });
+    case 'NoLinesDiffer':
+      return new ConflictException({ code: 'NO_LINES_DIFFER', message: error.message });
+    case 'StockOutAlreadyRequested':
+      return new ConflictException({ code: 'ALREADY_REQUESTED', message: error.message });
+    case 'StockAlreadyLeft':
+      return new ConflictException({ code: 'STOCK_ALREADY_LEFT', message: error.message });
+    case 'CloseAlreadyRequested':
+      return new ConflictException({ code: 'CLOSE_ALREADY_REQUESTED', message: error.message });
+    case 'RestockKeyConflict':
+      return new ConflictException({ code: 'IDEMPOTENCY_CONFLICT', message: error.message });
+    // In process only (feature 19's partial delivery); mapped so a later route answers a stable code.
+    case 'PiecesAwaitingRestock':
+      return new ConflictException({ code: 'PIECES_AWAITING_RESTOCK', message: error.message });
+    // In process only (feature 13's refunds and returns).
+    case 'ChannelReturnSourceRefused':
+      return unprocessable('CHANNEL_RETURN_SOURCE_REFUSED', error.message);
     case 'OrderStoreMissing':
       logger.error('An order names a store that does not exist');
       return new InternalServerErrorException();

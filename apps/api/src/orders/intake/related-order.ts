@@ -44,6 +44,7 @@ interface OriginalRow extends Record<string, unknown> {
   id: string;
   customer_id: string | null;
   fulfillment_state: FulfillmentState;
+  stock_out_requested: boolean;
   discount_code: string | null;
   source_captured_from: OrderSourceColumns['capturedFrom'];
   source_campaign_id: string | null;
@@ -63,8 +64,11 @@ interface OriginalRow extends Record<string, unknown> {
  * Reads the original of a link under its row lock and decides how the new order is linked
  * (spec 0013 AC-23, Value sourcing): `reopened_from` needs a `cancelled`, `refused`,
  * `returned_to_origin`, or `lost` original and copies its campaign and discount code;
- * `replacement_for` needs a `refused`, `delivered`, or `partially_delivered` original and makes
- * the new order an `exchange_replacement` (the exchange stays null until feature 34);
+ * `replacement_for` needs a `refused`, `delivered`, or `partially_delivered` original, or, while
+ * the carrier's shipments are not runnable (`carrierFactsRunnable` false), an original whose stock
+ * out is requested, because without carrier facts it never leaves `packed` (amended 2026-11-08,
+ * domain review B3), and makes the new order an `exchange_replacement` (the exchange stays null
+ * until feature 34);
  * `goodwill_for` takes any original. Throws `RelatedOrderUnknown` for an unknown original and
  * `RelatedOrderState` for a state the relation does not accept. Returns null without a link.
  */
@@ -72,10 +76,12 @@ export async function planRelatedOrder(
   tx: OrderTransaction,
   link: RelatedOrderInput | null | undefined,
   ownType: OrderType,
+  carrierFactsRunnable = true,
 ): Promise<RelatedOrderPlan | null> {
   if (!link) return null;
   const { rows } = await tx.execute<OriginalRow>(sql`
-    SELECT id, customer_id, fulfillment_state, discount_code, source_captured_from, source_campaign_id,
+    SELECT id, customer_id, fulfillment_state, stock_out_requested_at IS NOT NULL AS stock_out_requested,
+           discount_code, source_captured_from, source_campaign_id,
            source_adset_id, source_ad_id, source_utm_source, source_utm_medium,
            source_utm_campaign, source_utm_content, source_landing_page, source_referrer,
            source_media_buyer_id, source_influencer_code
@@ -111,7 +117,12 @@ export async function planRelatedOrder(
         },
       };
     case 'replacement_for':
-      if (!REPLACEABLE_STATES.includes(original.fulfillment_state)) throw new RelatedOrderState();
+      if (
+        !REPLACEABLE_STATES.includes(original.fulfillment_state) &&
+        !(original.stock_out_requested && !carrierFactsRunnable)
+      ) {
+        throw new RelatedOrderState();
+      }
       return {
         type: 'exchange_replacement',
         originalOrderId: original.id,

@@ -81,7 +81,7 @@ function changed(key: string, change: (m: ModuleDefinition) => ModuleDefinition)
 
 // Spec 0009, AC-6: the module registry and the rules it keeps.
 describe('the module registry (AC-6)', () => {
-  it('holds the twelve modules of today and the seven core job capabilities', () => {
+  it('holds the twelve modules of today and the eight core job capabilities', () => {
     expect(MODULE_REGISTRY.map((m) => m.key)).toEqual([
       'platform',
       'audit',
@@ -105,6 +105,7 @@ describe('the module registry (AC-6)', () => {
       'mail.send',
       'connectors.shopify.sync',
       'connectors.inbox',
+      'orders.shipment_posting',
     ]);
     for (const module of MODULE_REGISTRY) {
       // Spec 0009's table: `connectors` requires `channels`; every other core module, nothing.

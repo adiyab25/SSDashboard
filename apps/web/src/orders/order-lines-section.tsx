@@ -15,8 +15,8 @@ import { tableFeatures, useTable, type ColumnDef } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '@/i18n/language-provider';
-import type { TextByLanguage } from '@/i18n/localized-text';
 import { useFormat } from '@/i18n/use-format';
+import { lineNameOf } from './order-line-name';
 import { OrderReasonText } from './order-reason-text';
 
 const features = tableFeatures({});
@@ -30,15 +30,6 @@ const NUMERIC: ReadonlySet<string> = new Set([
   'credit',
   'unitCost',
 ]);
-
-/**
- * The line's name in the reader's language from the catalog today, else the stored title (the
- * snapshot at the time of sale) when the line has no variant or the catalog lacks that language.
- */
-function lineNameOf(line: OrderLineView, language: string): string {
-  const name: TextByLanguage | null = line.name;
-  return name?.[language]?.trim() || line.title;
-}
 
 /**
  * The lines of an order (spec 0013, AC-5): SKU code and name, quantity, unit price, discount,
@@ -73,6 +64,13 @@ export function OrderLinesSection({ lines }: { lines: readonly OrderLineView[] }
             {row.original.shortQuantity > 0 && (
               <Badge variant="outline" className="w-fit">
                 {t('orders.lines.short', { count: row.original.shortQuantity })}
+              </Badge>
+            )}
+            {(row.original.awaitingRestockQuantity ?? 0) > 0 && (
+              <Badge variant="outline" className="w-fit">
+                {t('orders.stockOut.awaitingBadge', {
+                  quantity: format.quantity(row.original.awaitingRestockQuantity ?? 0),
+                })}
               </Badge>
             )}
           </span>

@@ -6,13 +6,16 @@ import { LocalizedText } from '../localized-text.js';
 import { Money, MoneyString, TaxRateString, UnitCostString } from '../money.js';
 import { OrderOutcome } from './order-outcome.js';
 import {
+  AwaitingRestockCloseReason,
   CancelReasonCode,
+  ChannelFulfillmentPostReason,
   EditReasonCode,
   GiftReasonCode,
   LineRemovalReasonCode,
   OrderRelation,
   OrderType,
   RelatedOrderRelation,
+  StockOutSource,
 } from './order-reasons.js';
 import {
   CashState,
@@ -219,6 +222,11 @@ export const OrderListQuery = z.strictObject({
   type: OrderType.optional(),
   hold: flagOf,
   short: flagOf,
+  /**
+   * `true`: only orders with a line awaiting restock (spec 0013 AC-27 g), the lines of an order
+   * cancelled with no carrier delivery first, then oldest awaiting first; `false`: none awaiting.
+   */
+  awaitingRestock: flagOf,
   dayFrom: z.iso.date().optional(),
   dayTo: z.iso.date().optional(),
   q: z.string().trim().min(1).max(100).optional(),
@@ -252,6 +260,17 @@ export const OrderListItem = z.object({
   reopened: z.boolean(),
   /** The main phone did not parse and needs fixing. */
   phoneNeedsFix: z.boolean(),
+  /**
+   * Which source asked for the stock out of the order's current generation, and when (spec 0013
+   * AC-27 g: "Left stock: Shopify fulfillment, 14:05"); null while none did. Optional until the
+   * web fixtures carry it; the api always sends it.
+   */
+  stockOutSource: StockOutSource.nullable().optional(),
+  stockOutRequestedAt: Timestamp.nullable().optional(),
+  /** Pieces of the order that left stock and are expected back (AC-27 g), 0 when none. */
+  awaitingRestockQuantity: z.number().int().min(0).optional(),
+  /** Since when the oldest of them awaits (the filter's order); null when none awaits. */
+  awaitingRestockSince: Timestamp.nullable().optional(),
 });
 /** The validated shape of `OrderListItem`. */
 export type OrderListItem = z.infer<typeof OrderListItem>;
@@ -290,9 +309,45 @@ export const OrderLineView = z.object({
    */
   shortQuantity: z.number().int().min(0),
   unitCost: UnitCostString.nullable().optional(),
+  /**
+   * What the current stock out generation's posting takes out for the line (spec 0013 AC-27 a);
+   * below `quantity` marks the rest not shipped; null while no stock out is requested. Optional
+   * until the web fixtures carry it; the api always sends it.
+   */
+  stockOutQuantity: z.number().int().min(0).nullable().optional(),
+  /** Pieces of the line that left stock and are expected back on the shelf (AC-27 b, d). */
+  awaitingRestockQuantity: z.number().int().min(0).optional(),
+  /** Since when they await; null when none does. */
+  awaitingRestockSince: Timestamp.nullable().optional(),
 });
 /** The validated shape of `OrderLineView`. */
 export type OrderLineView = z.infer<typeof OrderLineView>;
+
+/** A stock out posting of an earlier generation that was reversed (spec 0013 AC-27 b, c). */
+export const OrderStockOutReversalView = z.object({
+  generation: z.number().int().min(1),
+  /** `channel_fulfillment_cancelled` (AC-27 c) or `order_cancelled_before_pickup` (*After a cancel* row 4). */
+  reasonCode: z.string(),
+  reversedAt: Timestamp,
+});
+/** The validated shape of `OrderStockOutReversalView`. */
+export type OrderStockOutReversalView = z.infer<typeof OrderStockOutReversalView>;
+
+/**
+ * The stock out block of the order page (spec 0013 AC-5, AC-27 g): the current generation, which
+ * source asked for its posting and when, when the posting was booked (null while the job has not
+ * run or posted nothing), and the reversals of earlier generations. The awaiting restock
+ * quantities are on the lines.
+ */
+export const OrderStockOutView = z.object({
+  generation: z.number().int().min(1),
+  source: StockOutSource.nullable(),
+  requestedAt: Timestamp.nullable(),
+  postedAt: Timestamp.nullable(),
+  reversals: z.array(OrderStockOutReversalView),
+});
+/** The validated shape of `OrderStockOutView`. */
+export type OrderStockOutView = z.infer<typeof OrderStockOutView>;
 
 /** One move of either state machine, with the actor's name when a person made it. */
 export const OrderEventView = z.object({
@@ -426,6 +481,8 @@ export const OrderDetail = z.object({
    * each command's state and reason). The api always sends it, an empty list when none is open.
    */
   writeBackCommands: z.array(OrderWriteBackCommandView),
+  /** The stock out block (AC-27 g). Optional until the web fixtures carry it; the api always sends it. */
+  stockOut: OrderStockOutView.optional(),
   events: z.array(OrderEventView),
   updatedAt: z.string(),
 });
@@ -831,3 +888,39 @@ export const HoldOpenOrdersResult = z.strictObject({
 });
 /** The validated shape of `HoldOpenOrdersResult`. */
 export type HoldOpenOrdersResult = z.infer<typeof HoldOpenOrdersResult>;
+
+/**
+ * `POST /api/orders/:id/lines/:lineId/restock` (`stock.receive`, spec 0013 AC-27 e, "Received on
+ * the shelf"): how many of the line's awaiting pieces are back on the shelf, with an
+ * `Idempotency-Key` uuid header (a repeat of the key moves nothing). Answers the order page.
+ */
+export const RestockAwaitingBody = z.strictObject({
+  quantity: quantityInput({ min: 1, max: 10_000 }),
+});
+/** The validated shape of `RestockAwaitingBody`. */
+export type RestockAwaitingBody = z.infer<typeof RestockAwaitingBody>;
+
+/**
+ * `POST /api/orders/:id/lines/:lineId/close-awaiting-restock` (spec 0013 AC-27 f): closes pieces
+ * that never come back with a reason (`stock.correct`), or, from a warehouse hat holding only
+ * `stock.receive`, asks a manager to close them. Posts no movement. Answers the order page.
+ */
+export const CloseAwaitingRestockBody = z.strictObject({
+  expectedUpdatedAt: ExpectedUpdatedAt,
+  quantity: quantityInput({ min: 1, max: 10_000 }),
+  reasonCode: AwaitingRestockCloseReason,
+});
+/** The validated shape of `CloseAwaitingRestockBody`. */
+export type CloseAwaitingRestockBody = z.infer<typeof CloseAwaitingRestockBody>;
+
+/**
+ * `POST /api/orders/:id/post-channel-fulfillment` (`stock.correct`, spec 0013 AC-27 a, "Post what
+ * Shopify fulfilled"): requests the stock out of exactly the quantities Shopify fulfilled and
+ * releases the reservations of the rest. Answers the order page.
+ */
+export const PostChannelFulfillmentBody = z.strictObject({
+  expectedUpdatedAt: ExpectedUpdatedAt,
+  reasonCode: ChannelFulfillmentPostReason,
+});
+/** The validated shape of `PostChannelFulfillmentBody`. */
+export type PostChannelFulfillmentBody = z.infer<typeof PostChannelFulfillmentBody>;

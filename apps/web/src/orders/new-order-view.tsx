@@ -42,6 +42,7 @@ import { useFormat } from '@/i18n/use-format';
 import { useLocalizedText } from '@/i18n/use-localized-text';
 import { SkuPicker } from '@/inventory/sku-picker';
 import { SELECT_CLASS } from '@/shared/select-class';
+import { newIdempotencyKey } from './new-idempotency-key';
 import { NewOrderSkeleton } from './new-order-skeleton';
 import { createGiftedOrder, createOrder, getOrderOptions, orderKeys } from './orders-api';
 import { RelatedOrderPicker } from './related-order-picker';
@@ -205,7 +206,7 @@ export function NewOrderView() {
   const queryClient = useQueryClient();
   const access = useAccess();
   const canGift = access.can('orders.gift');
-  const [clientRef] = useState(() => crypto.randomUUID());
+  const [clientRef] = useState(() => newIdempotencyKey());
 
   const options = useQuery({
     queryKey: orderKeys.options,

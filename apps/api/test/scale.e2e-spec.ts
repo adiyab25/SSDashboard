@@ -1,12 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import { AuditEntryListQuery, personActor, type SkuListQuery } from '@ssdashboard/contracts';
+import {
+  AuditEntryListQuery,
+  OrderListQuery,
+  personActor,
+  type SkuListQuery,
+} from '@ssdashboard/contracts';
 import { sql, type Database, type DatabaseConnection, type SQL } from '@ssdashboard/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditQueryService } from '../src/audit/audit-query.service.js';
 import { AuditService } from '../src/audit/audit.service.js';
 import { buildSkuListSql, searchWords } from '../src/catalog/search/sku-list-sql.js';
+import { ChannelsService } from '../src/channels/channels.service.js';
+import { CustomersService } from '../src/customers/customers.service.js';
+import { AccessLoader } from '../src/identity/access/access-loader.js';
 import { StaffDirectory } from '../src/identity/staff/staff-directory.js';
 import { buildAvailabilitySql } from '../src/inventory/ledger/ledger.service.js';
+import {
+  encodeAwaitingCursor,
+  listWhere,
+  MICRO_UTC,
+  type ListLookups,
+} from '../src/orders/reading/order-list-sql.js';
+import { OrderQueries } from '../src/orders/reading/order-query.service.js';
 import { encodeKeyset } from '../src/platform/keyset-cursor.js';
 import { ledgerHarness, posting, type LedgerHarness } from './ledger.js';
 import { auditActionSpread, AUDIT_SCALE, seedAuditScale } from './scale-audit-seed.js';
@@ -35,6 +50,10 @@ const BUDGET_CREDIT_BALANCE_MS = 20;
 const BUDGET_CONFIRMATION_QUEUE_MS = 150;
 const BUDGET_ORDERS_LIST_MS = 150;
 const BUDGET_ORDERS_OF_DAY_MS = 150;
+// Spec 0013 AC-4: the order list, the unfiltered first page and each filter alone, and the search.
+const BUDGET_ORDERS_LIST_FILTER_MS = 150;
+// Spec 0013 task 16 (spec 0008 follow up): what the session guard reads on every request.
+const BUDGET_ACCESS_READ_MS = 20;
 const BUDGET_MY_WORK_MS = 150;
 const BUDGET_UNMATCHED_LINES_MS = 150;
 const BUDGET_ORDER_TIMELINE_MS = 50;
@@ -133,6 +152,31 @@ function planUses(plan: string, index: string): boolean {
   return new RegExp(
     `(Index( Only)? Scan( Backward)? using ${index} on|Bitmap Index Scan on ${index}\\b)`,
   ).test(plan);
+}
+
+/**
+ * The connection with its database remembering every statement `execute` is given, so a suite can
+ * EXPLAIN the very statement a service sent. Everything else passes straight through.
+ */
+function recordStatements(
+  connection: DatabaseConnection,
+  onSend: (statement: SQL) => void,
+): DatabaseConnection {
+  const db = new Proxy(connection.db, {
+    get(target, property) {
+      if (property === 'execute') {
+        return (statement: SQL) => {
+          onSend(statement);
+          return target.execute(statement);
+        };
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+  return { ...connection, db };
 }
 
 describe('the data model at scale', { timeout: 3_600_000 }, () => {
@@ -501,16 +545,19 @@ ${plan}`);
       ...cursors.map((row) => [row.placed_at, row.id]),
     ];
 
+    // Both the partial confirmation index and (backward) the fulfillment list index of spec 0013
+    // serve this read; the planner takes either.
+    const read = sqlRead(
+      h.app.pool,
+      'oldest new, 50 rows',
+      [],
+      `SELECT id, store_id, order_number, placed_at FROM orders
+       WHERE fulfillment_state = 'new' AND (placed_at, id) > ($1::timestamptz, $2::uuid)
+       ORDER BY placed_at, id LIMIT 50`,
+      inputs,
+    );
     await checkRow('Confirmation queue page', BUDGET_CONFIRMATION_QUEUE_MS, [
-      sqlRead(
-        h.app.pool,
-        'oldest new, 50 rows',
-        ['orders_confirmation_queue_idx'],
-        `SELECT id, store_id, order_number, placed_at FROM orders
-         WHERE fulfillment_state = 'new' AND (placed_at, id) > ($1::timestamptz, $2::uuid)
-         ORDER BY placed_at, id LIMIT 50`,
-        inputs,
-      ),
+      { ...read, anyOf: ['orders_confirmation_queue_idx', 'orders_fulfillment_placed_idx'] },
     ]);
   });
 
@@ -635,6 +682,325 @@ ${plan}`);
         inputs,
       ),
     ]);
+  });
+
+  // Spec 0013 AC-4 and task 16: the order list at 150,000 orders, the unfiltered first page and each
+  // filter alone, then the search. Every read but the phone search runs through the real
+  // `OrderQueries.list` (the statement, then the store and channel names of the page), and its
+  // EXPLAIN is of the very statement the service sent, caught on the connection. The phone search
+  // cannot: the seeded phones sit outside the numbers `EgyptianPhone` reads (security review S9),
+  // so it runs the real `listWhere` with the lookups the service would resolve, in the shape of the
+  // service's plain statement.
+  describe('the orders list and search (spec 0013 AC-4, 150 ms budget)', () => {
+    const MICRO = MICRO_UTC;
+    let sent: SQL | undefined;
+    let service: OrderQueries;
+    let customers: CustomersService;
+    let sample: {
+      store_id: string;
+      channel_id: string;
+      customer_id: string;
+      day: string;
+      cursor: string;
+      id: string;
+      order_number: string;
+      /** The cursor after an order awaiting restock (its own three part keyset). */
+      awaiting_cursor: string;
+    }[] = [];
+
+    beforeAll(async () => {
+      // The connection `OrderQueries` reads through: the application role's, remembering the one
+      // statement `list` sends. The other services of the class are not used by `list`.
+      const recording = recordStatements(h.app, (statement) => {
+        sent = statement;
+      });
+      const unused = null as never;
+      customers = new CustomersService(h.app, unused);
+      service = new OrderQueries(
+        recording,
+        new ChannelsService(h.app),
+        customers,
+        unused,
+        unused,
+        unused,
+        unused,
+        unused,
+      );
+      const plain = await rows<Omit<(typeof sample)[number], 'awaiting_cursor'>>(`
+        SELECT store_id, channel_id, customer_id, operating_day::text AS day, id, order_number,
+               to_char(placed_at AT TIME ZONE 'UTC', ${MICRO}) AS cursor
+        FROM orders ORDER BY random() LIMIT ${INPUTS}`);
+      const awaiting = await rows<{ id: string; rank: number; since: string }>(`
+        SELECT o.id, CASE WHEN o.fulfillment_state = 'cancelled' THEN 0 ELSE 1 END AS rank,
+               to_char(min(l.awaiting_restock_since) AT TIME ZONE 'UTC', ${MICRO}) AS since
+        FROM orders o JOIN order_lines l ON l.order_id = o.id AND l.awaiting_restock_quantity > 0
+        GROUP BY o.id ORDER BY random() LIMIT ${INPUTS}`);
+      sample = plain.map((row, n) => {
+        const after = pick(awaiting, n);
+        return {
+          ...row,
+          awaiting_cursor: encodeAwaitingCursor({
+            rank: after.rank === 0 ? 0 : 1,
+            since: after.since,
+            id: after.id,
+          }),
+        };
+      });
+    });
+
+    const pick = <T>(items: readonly T[], n: number): T => items[n % items.length] as T;
+
+    /** One read of the list route: the queries cycle over the inputs, the plan is the sent statement's. */
+    function listRead(
+      label: string,
+      queries: (row: (typeof sample)[number]) => Record<string, unknown>,
+      indexes: string[],
+      options: { anyOf?: string[]; shows?: RegExp } = {},
+    ): Read {
+      const queryOf = (n: number) => OrderListQuery.parse(queries(pick(sample, n)));
+      return {
+        label,
+        indexes,
+        ...options,
+        async explain(n) {
+          await service.list(queryOf(n));
+          const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
+            sql`EXPLAIN (COSTS OFF) ${sent as SQL}`,
+          );
+          return plan.map((row) => row['QUERY PLAN']).join('\n');
+        },
+        run: (n) => service.list(queryOf(n)),
+      };
+    }
+
+    /** The first page and the page after a random cursor of one filter. */
+    const pages = (
+      filter: (row: (typeof sample)[number]) => Record<string, unknown>,
+      indexes: string[],
+      options: { anyOf?: string[]; shows?: RegExp } = {},
+    ): Read[] => [
+      listRead('first page', filter, indexes, options),
+      listRead(
+        'next page',
+        (row) => ({ ...filter(row), cursor: encodeKeyset([row.cursor, row.id]) }),
+        indexes,
+        options,
+      ),
+    ];
+
+    it('plants every flag the filters read on a share of the orders', async () => {
+      const [flags] = await rows<Record<string, number>>(`
+        SELECT count(*) FILTER (WHERE write_back_state <> 'none')::int AS holds,
+               count(*) FILTER (WHERE write_back_state = 'failed')::int AS failed_holds,
+               count(*) FILTER (WHERE ship_to_phone_alt IS NOT NULL)::int AS second_phones,
+               count(*) FILTER (WHERE type = 'exchange_replacement')::int AS replacements,
+               (SELECT count(DISTINCT order_id) FROM order_lines WHERE short_quantity > 0)::int AS short_orders,
+               (SELECT count(DISTINCT order_id) FROM order_lines WHERE awaiting_restock_quantity > 0)::int AS awaiting_orders
+        FROM orders`);
+      report(table([flags ?? {}]));
+      expect(flags?.holds).toBeGreaterThan(3000);
+      expect(flags?.failed_holds).toBeGreaterThan(100);
+      expect(flags?.second_phones).toBeGreaterThan(2000);
+      expect(flags?.replacements).toBeGreaterThan(500);
+      expect(flags?.short_orders).toBeGreaterThan(100);
+      expect(flags?.awaiting_orders).toBeGreaterThan(500);
+    });
+
+    it('pages the unfiltered list', async () => {
+      await checkRow(
+        'Orders list: unfiltered',
+        BUDGET_ORDERS_LIST_FILTER_MS,
+        pages(() => ({}), ['orders_placed_idx']),
+      );
+    });
+
+    it('pages one store', async () => {
+      await checkRow(
+        'Orders list: store',
+        BUDGET_ORDERS_LIST_FILTER_MS,
+        pages((row) => ({ storeId: row.store_id }), ['orders_store_placed_idx']),
+      );
+    });
+
+    it('pages one channel', async () => {
+      await checkRow(
+        'Orders list: channel',
+        BUDGET_ORDERS_LIST_FILTER_MS,
+        pages((row) => ({ channelId: row.channel_id }), [], {
+          anyOf: ['orders_channel_idx', 'orders_placed_idx'],
+        }),
+      );
+    });
+
+    it("pages one customer's orders, every id of a merged customer", async () => {
+      await checkRow(
+        'Orders list: customer',
+        BUDGET_ORDERS_LIST_FILTER_MS,
+        pages((row) => ({ customerId: row.customer_id }), ['orders_customer_idx']),
+      );
+    });
+
+    it('pages several fulfillment states, a common one and a rare one', async () => {
+      await checkRow('Orders list: fulfillment', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages(() => ({ fulfillment: ['delivered', 'new'] }), [], {
+          anyOf: ['orders_fulfillment_placed_idx', 'orders_placed_idx'],
+        }),
+        ...pages(() => ({ fulfillment: ['refused', 'returned_to_origin'] }), [], {
+          anyOf: ['orders_fulfillment_placed_idx', 'orders_placed_idx'],
+        }),
+      ]);
+    });
+
+    it('pages several cash states', async () => {
+      await checkRow('Orders list: cash', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages(() => ({ cash: ['unpaid', 'prepaid'] }), [], {
+          anyOf: ['orders_placed_idx', 'orders_open_cash_idx'],
+        }),
+        ...pages(() => ({ cash: ['remitted'] }), [], {
+          anyOf: ['orders_placed_idx', 'orders_open_cash_idx'],
+        }),
+      ]);
+    });
+
+    it('pages one outcome', async () => {
+      await checkRow('Orders list: outcome', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages(() => ({ outcome: 'kept' }), [], { anyOf: ['orders_placed_idx'] }),
+        ...pages(() => ({ outcome: 'failed_delivery' }), [], { anyOf: ['orders_placed_idx'] }),
+      ]);
+    });
+
+    it('pages one type, the common and the rare', async () => {
+      await checkRow('Orders list: type', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages(() => ({ type: 'sale' }), [], { anyOf: ['orders_placed_idx'] }),
+        ...pages(() => ({ type: 'exchange_replacement' }), [], { anyOf: ['orders_placed_idx'] }),
+      ]);
+    });
+
+    it('pages the orders on hold and the orders not on hold', async () => {
+      await checkRow('Orders list: hold', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages(() => ({ hold: true }), [], {
+          anyOf: ['orders_write_back_idx', 'orders_placed_idx'],
+        }),
+        ...pages(() => ({ hold: false }), [], { anyOf: ['orders_placed_idx'] }),
+      ]);
+    });
+
+    it('pages the orders with a short line and the orders without one', async () => {
+      await checkRow('Orders list: short lines', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages(() => ({ short: true }), ['order_lines_short_idx']),
+        ...pages(() => ({ short: false }), [], { anyOf: ['orders_placed_idx'] }),
+      ]);
+    });
+
+    it('pages the orders awaiting restock and the orders not awaiting', async () => {
+      await checkRow('Orders list: awaiting restock', BUDGET_ORDERS_LIST_FILTER_MS, [
+        listRead('first page', () => ({ awaitingRestock: true }), []),
+        listRead(
+          'next page',
+          (row) => ({ awaitingRestock: true, cursor: row.awaiting_cursor }),
+          [],
+        ),
+        ...pages(() => ({ awaitingRestock: false }), [], { anyOf: ['orders_placed_idx'] }),
+      ]);
+    });
+
+    it('pages an operating day range, a day and a month', async () => {
+      const dayOf = (row: (typeof sample)[number]) => row.day;
+      await checkRow('Orders list: operating day range', BUDGET_ORDERS_LIST_FILTER_MS, [
+        ...pages((row) => ({ dayFrom: dayOf(row), dayTo: dayOf(row) }), [], {
+          anyOf: ['orders_operating_day_store_idx', 'orders_placed_idx'],
+        }),
+        ...pages((row) => ({ dayFrom: dayOf(row) }), [], {
+          anyOf: ['orders_operating_day_store_idx', 'orders_placed_idx'],
+        }),
+      ]);
+    });
+
+    // Spec 0008 follow up: the session guard reads the person's holdings on every request, so the
+    // order list route pays it each time. The real `AccessLoader` on a person with two hats and a
+    // grant, and the plan of the statement it sent.
+    it("reads the person's access, the per request read of the list route", async () => {
+      await rows(`
+        INSERT INTO hat_assignments (user_id, hat)
+        SELECT id, h FROM users CROSS JOIN (VALUES ('support'), ('manager')) AS t(h)
+        WHERE email LIKE 'scale-user-%';
+        INSERT INTO permission_grants (user_id, permission)
+        SELECT id, 'cost.view' FROM users WHERE email LIKE 'scale-user-%'`);
+      const people = await rows<{ id: string }>(
+        `SELECT id FROM users WHERE email LIKE 'scale-user-%' ORDER BY email`,
+      );
+      let loaded: SQL | undefined;
+      const loader = new AccessLoader(
+        recordStatements(h.app, (statement) => {
+          loaded = statement;
+        }),
+      );
+      const person = (n: number) => pick(people, n).id;
+      await checkRow('Access read per request', BUDGET_ACCESS_READ_MS, [
+        {
+          label: 'hats and grants',
+          // Both tables hold a few dozen rows, so the planner reads them in full: no index to assert.
+          indexes: [],
+          async explain(n) {
+            await loader.load(person(n));
+            const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
+              sql`EXPLAIN (COSTS OFF) ${loaded as SQL}`,
+            );
+            return plan.map((row) => row['QUERY PLAN']).join('\n');
+          },
+          run: (n) => loader.load(person(n)),
+        },
+      ]);
+    });
+
+    it('searches an order number in every store', async () => {
+      await checkRow('Orders search: order number', BUDGET_ORDERS_LIST_FILTER_MS, [
+        listRead('number', (row) => ({ q: row.order_number.slice(1) }), [
+          'orders_order_number_idx',
+        ]),
+      ]);
+    });
+
+    it('searches a phone: the ship to phone, the second phone, and the customer, with two ids', async () => {
+      const phones = await rows<{ phone: string; kind: string }>(`
+        (SELECT ship_to_phone AS phone, 'main' AS kind FROM orders ORDER BY random() LIMIT ${INPUTS})
+        UNION ALL
+        (SELECT ship_to_phone_alt, 'second' FROM orders WHERE ship_to_phone_alt IS NOT NULL
+          ORDER BY random() LIMIT ${INPUTS})`);
+      const lookups: ListLookups[] = [];
+      for (const { phone } of phones) {
+        const customerId = await customers.findByPhone({ e164: phone, kind: 'mobile' });
+        lookups.push({
+          customerIds: null,
+          phone,
+          phoneCustomerIds: customerId ? await customers.idsOf(customerId) : [],
+        });
+      }
+      const query = OrderListQuery.parse({ q: '01001234567' });
+      const statement = (n: number) => {
+        const where = listWhere(query, pick(lookups, n));
+        return sql`SELECT o.id, o.order_number, o.placed_at, o.total_amount FROM orders o ${where}
+          ORDER BY o.placed_at DESC NULLS FIRST, o.id DESC NULLS FIRST LIMIT 51`;
+      };
+      await checkRow('Orders search: phone', BUDGET_ORDERS_LIST_FILTER_MS, [
+        {
+          label: 'phone',
+          indexes: [],
+          anyOf: [
+            'orders_ship_to_phone_idx',
+            'orders_customer_idx',
+            'orders_ship_to_phone_alt_idx',
+          ],
+          async explain(n) {
+            const { rows: plan } = await h.app.db.execute<{ 'QUERY PLAN': string }>(
+              sql`EXPLAIN (COSTS OFF) ${statement(n)}`,
+            );
+            return plan.map((row) => row['QUERY PLAN']).join('\n');
+          },
+          run: (n) => h.app.db.execute(statement(n)),
+        },
+      ]);
+    });
   });
 
   describe('the audit trail at 5,000,000 entries (spec 0010 AC-17)', () => {

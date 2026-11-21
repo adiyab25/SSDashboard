@@ -4,6 +4,7 @@ import type {
   OrderLineState,
   OrderRelation,
   OrderType,
+  StockOutSource,
 } from '@ssdashboard/contracts';
 import { sql } from '@ssdashboard/db';
 import type { PlanLine, PlanOrder } from '../editing/edit-plan.js';
@@ -33,6 +34,10 @@ export interface LockedOrder extends PlanOrder {
   linesGrossAmount: string;
   /** The note the customer typed at checkout. Personal data, never logged. */
   customerNote: string | null;
+  /** The generation of the order's shipment posting key (spec 0013 AC-24, AC-27). */
+  stockOutGeneration: number;
+  /** Which source asked for the current generation's stock out; null while none did (AC-27). */
+  stockOutSource: StockOutSource | null;
   /** False when the caller's `expectedUpdatedAt` does not match `updated_at`. */
   fresh: boolean;
 }
@@ -75,6 +80,8 @@ interface LockedRow extends Record<string, unknown> {
   ship_to_city_code: string | null;
   ship_to_zone_code: string | null;
   customer_note: string | null;
+  stock_out_generation: number;
+  stock_out_source: StockOutSource | null;
   fresh: boolean;
 }
 
@@ -122,6 +129,7 @@ export async function lockOrderForChange(
            exchange_consumed_amount, ship_to_name, ship_to_phone, ship_to_phone_alt,
            contact_phone_raw, ship_to_address, courier_note, ship_to_area_list,
            ship_to_governorate_code, ship_to_city_code, ship_to_zone_code, customer_note,
+           stock_out_generation, stock_out_source,
            ${fresh} AS fresh
     FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`);
   const row = rows[0];
@@ -197,6 +205,8 @@ export async function lockOrderForChange(
       area,
     },
     customerNote: row.customer_note,
+    stockOutGeneration: row.stock_out_generation,
+    stockOutSource: row.stock_out_source,
     lines,
     fresh: row.fresh,
   };

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { carrierShipmentKey } from '@ssdashboard/contracts';
 import type {
   CashState,
   FulfillmentState,
@@ -13,6 +14,7 @@ import type {
   OrderPaymentMethod,
   OrderRelation,
   OrderType,
+  StockOutSource,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
 import { CatalogService } from '../../catalog/catalog.service.js';
@@ -22,10 +24,23 @@ import { CustomersService } from '../../customers/customers.service.js';
 import { DATABASE } from '../../database/database.module.js';
 import { pgArray, type Executor } from '../../database/sql.js';
 import { StaffDirectory } from '../../identity/staff/staff-directory.js';
+import { LedgerService } from '../../inventory/ledger/ledger.service.js';
 import { decodeTimeIdKeyset, encodeKeyset } from '../../platform/keyset-cursor.js';
 import { SettingsService } from '../../platform/settings/settings.service.js';
 import { OrderNotFound } from '../orders.errors.js';
-import { listWhere, MICRO_UTC, phoneOfSearch, type ListLookups } from './order-list-sql.js';
+import { cancelReversalKey, fulfillmentReversalKey } from '../shipment/post-shipment.queue.js';
+import {
+  CANCELLED_BEFORE_PICKUP_REASON,
+  FULFILLMENT_CANCELLED_REASON,
+} from '../shipment/shipment-posting.js';
+import {
+  awaitingOrder,
+  encodeAwaitingCursor,
+  listWhere,
+  MICRO_UTC,
+  phoneOfSearch,
+  type ListLookups,
+} from './order-list-sql.js';
 
 const MICRO = sql.raw(MICRO_UTC);
 
@@ -134,6 +149,11 @@ interface ListRow extends Record<string, unknown> {
   short: boolean;
   reopened: boolean;
   phone_needs_fix: boolean;
+  stock_out_source: StockOutSource | null;
+  stock_out_requested_at: string | null;
+  awaiting_restock_quantity: number;
+  awaiting_since: string | null;
+  awaiting_rank: number;
 }
 
 interface DetailRow extends Record<string, unknown> {
@@ -186,6 +206,9 @@ interface DetailRow extends Record<string, unknown> {
   cod_due_amount: string;
   cod_collected_amount: string;
   remitted_amount: string;
+  stock_out_generation: number;
+  stock_out_source: StockOutSource | null;
+  stock_out_requested_at: string | null;
   updated_at: string;
 }
 
@@ -204,6 +227,9 @@ interface LineRow extends Record<string, unknown> {
   cancel_reason_code: string | null;
   short_quantity: number;
   unit_cost: string | null;
+  stock_out_quantity: number | null;
+  awaiting_restock_quantity: number;
+  awaiting_restock_since: string | null;
 }
 
 interface EventRow extends Record<string, unknown> {
@@ -240,6 +266,7 @@ export class OrderQueries {
     private readonly staff: StaffDirectory,
     private readonly settings: SettingsService,
     private readonly connectors: ConnectorsService,
+    private readonly ledger: LedgerService,
   ) {}
 
   /** What the new order form offers: internal stores, manual channels, gift reasons, tax settings. */
@@ -286,18 +313,38 @@ export class OrderQueries {
       return { items: [], nextCursor: null };
     }
     const where = listWhere(query, lookups);
-    const { rows } = await db.execute<ListRow & { placed_key: string }>(sql`
-      SELECT o.id, o.store_id, o.order_number, to_char(o.placed_at AT TIME ZONE 'UTC', ${MICRO}) AS placed_at,
-             to_char(o.placed_at AT TIME ZONE 'UTC', ${MICRO}) AS placed_key,
-             o.ship_to_name, o.channel_id, o.total_amount, o.cod_due_amount, o.fulfillment_state,
-             o.cash_state, o.outcome, o.type, o.gift_reason_code,
-             o.write_back_state <> 'none' AS hold,
-             EXISTS (SELECT 1 FROM order_lines l WHERE l.order_id = o.id AND l.short_quantity > 0) AS short,
-             o.related_order_relation = 'reopened_from' AS reopened,
-             (o.contact_phone_raw IS NOT NULL) AS phone_needs_fix
-      FROM orders o ${where}
+    const columns = sql`
+      o.id, o.store_id, o.order_number, to_char(o.placed_at AT TIME ZONE 'UTC', ${MICRO}) AS placed_at,
+      to_char(o.placed_at AT TIME ZONE 'UTC', ${MICRO}) AS placed_key,
+      o.ship_to_name, o.channel_id, o.total_amount, o.cod_due_amount, o.fulfillment_state,
+      o.cash_state, o.outcome, o.type, o.gift_reason_code,
+      o.write_back_state <> 'none' AS hold,
+      EXISTS (SELECT 1 FROM order_lines l WHERE l.order_id = o.id AND l.short_quantity > 0) AS short,
+      o.related_order_relation = 'reopened_from' AS reopened,
+      (o.contact_phone_raw IS NOT NULL) AS phone_needs_fix,
+      o.stock_out_source,
+      to_char(o.stock_out_requested_at AT TIME ZONE 'UTC', ${MICRO}) AS stock_out_requested_at,
+      (SELECT coalesce(sum(a.awaiting_restock_quantity), 0)::int FROM order_lines a
+        WHERE a.order_id = o.id AND a.awaiting_restock_quantity > 0) AS awaiting_restock_quantity,
+      (SELECT min(a.awaiting_restock_since) FROM order_lines a
+        WHERE a.order_id = o.id AND a.awaiting_restock_quantity > 0) AS awaiting_since_at,
+      to_char((SELECT min(a.awaiting_restock_since) FROM order_lines a
+                WHERE a.order_id = o.id AND a.awaiting_restock_quantity > 0) AT TIME ZONE 'UTC',
+              ${MICRO}) AS awaiting_since,
+      CASE WHEN o.fulfillment_state = 'cancelled' THEN 0 ELSE 1 END AS awaiting_rank`;
+    const awaiting = query.awaitingRestock === true ? awaitingOrder(query.cursor) : null;
+    const { rows } = await db.execute<ListRow & { placed_key: string }>(
+      awaiting
+        ? sql`
+      SELECT x.* FROM (SELECT ${columns} FROM orders o ${where}) x
+      ${awaiting.after}
+      ${awaiting.order}
+      LIMIT ${query.limit + 1}`
+        : sql`
+      SELECT ${columns} FROM orders o ${where}
       ORDER BY o.placed_at DESC NULLS FIRST, o.id DESC NULLS FIRST
-      LIMIT ${query.limit + 1}`);
+      LIMIT ${query.limit + 1}`,
+    );
     const page = rows.slice(0, query.limit);
     const stores = new Map(
       (await this.channels.stores([...new Set(page.map((row) => row.store_id))])).map((s) => [
@@ -332,9 +379,13 @@ export class OrderQueries {
         short: row.short,
         reopened: row.reopened === true,
         phoneNeedsFix: row.phone_needs_fix,
+        stockOutSource: row.stock_out_source,
+        stockOutRequestedAt: row.stock_out_requested_at,
+        awaitingRestockQuantity: row.awaiting_restock_quantity,
+        awaitingRestockSince: row.awaiting_since,
       })),
       nextCursor:
-        rows.length > query.limit && last ? encodeKeyset([last.placed_key, last.id]) : null,
+        rows.length > query.limit && last ? this.cursorAfter(last, awaiting !== null) : null,
     };
   }
 
@@ -361,7 +412,9 @@ export class OrderQueries {
              ship_to_city_code, ship_to_zone_code, courier_note, customer_note, lines_gross_amount,
              shipping_charged_amount, shipping_tax_amount, total_amount, payment_method,
              prepaid_amount, prepaid_method, credit_applied_amount, cod_expected_amount,
-             cod_due_amount, cod_collected_amount, remitted_amount,
+             cod_due_amount, cod_collected_amount, remitted_amount, stock_out_generation,
+             stock_out_source,
+             to_char(stock_out_requested_at AT TIME ZONE 'UTC', ${MICRO}) AS stock_out_requested_at,
              to_char(updated_at AT TIME ZONE 'UTC', ${MICRO}) AS updated_at
       FROM orders WHERE id = ${orderId}::uuid`);
     const order = rows[0];
@@ -370,7 +423,8 @@ export class OrderQueries {
     const lineRows = await executor.execute<LineRow>(sql`
       SELECT id, position, variant_id, title, quantity, unit_price, discount_amount, gross_amount,
              prepaid_amount, credit_applied_amount, line_state, cancel_reason_code,
-             short_quantity, unit_cost
+             short_quantity, unit_cost, stock_out_quantity, awaiting_restock_quantity,
+             to_char(awaiting_restock_since AT TIME ZONE 'UTC', ${MICRO}) AS awaiting_restock_since
       FROM order_lines WHERE order_id = ${orderId}::uuid ORDER BY position`);
     const eventRows = await executor.execute<EventRow>(sql`
       SELECT id, machine, from_state, to_state, amount, actor_type, actor_id, reason_code,
@@ -390,6 +444,7 @@ export class OrderQueries {
     const related = linkedId ? await this.relatedView(executor, linkedId, order) : null;
     const linkedFrom = await this.linkedFrom(executor, orderId);
     const commands = await this.connectors.syncStateFor('order', orderId, executor);
+    const stockOut = await this.stockOutOf(order);
     const area =
       order.ship_to_area_list &&
       order.ship_to_governorate_code &&
@@ -460,6 +515,9 @@ export class OrderQueries {
         cancelReasonCode: line.cancel_reason_code,
         shortQuantity: line.short_quantity,
         unitCost: line.unit_cost,
+        stockOutQuantity: line.stock_out_quantity,
+        awaitingRestockQuantity: line.awaiting_restock_quantity,
+        awaitingRestockSince: line.awaiting_restock_since,
       })),
       money: {
         linesGrossAmount: order.lines_gross_amount,
@@ -482,6 +540,7 @@ export class OrderQueries {
         failureReason: command.failureReason,
         queuedAt: command.queuedAt,
       })),
+      stockOut,
       events: eventRows.rows.map((event) => ({
         id: event.id,
         machine: event.machine,
@@ -495,6 +554,45 @@ export class OrderQueries {
       })),
       updatedAt: order.updated_at,
     };
+  }
+
+  /**
+   * The stock out block of the order page (spec 0013 AC-5, AC-27 g): the current generation, its
+   * source and request time, when its posting was booked (`ledger.postingFor`), and each earlier
+   * generation's reversal (either reversal key). Reads the ledger only through `postingFor`.
+   */
+  private async stockOutOf(order: DetailRow): Promise<NonNullable<OrderDetail['stockOut']>> {
+    const id = order.id;
+    const generation = order.stock_out_generation;
+    const posting = await this.ledger.postingFor(carrierShipmentKey(id, generation));
+    const reversals: NonNullable<OrderDetail['stockOut']>['reversals'] = [];
+    for (let n = 1; n < generation; n += 1) {
+      const byFulfillment = await this.ledger.postingFor(fulfillmentReversalKey(id, n));
+      const reversal = byFulfillment ?? (await this.ledger.postingFor(cancelReversalKey(id, n)));
+      if (!reversal) continue;
+      reversals.push({
+        generation: n,
+        reasonCode: byFulfillment ? FULFILLMENT_CANCELLED_REASON : CANCELLED_BEFORE_PICKUP_REASON,
+        reversedAt: reversal.recordedAt,
+      });
+    }
+    return {
+      generation,
+      source: order.stock_out_source,
+      requestedAt: order.stock_out_requested_at,
+      postedAt: posting?.recordedAt ?? null,
+      reversals,
+    };
+  }
+
+  /** The cursor after the last row of a page: (placed, id), or the awaiting filter's own key. */
+  private cursorAfter(row: ListRow & { placed_key: string }, awaiting: boolean): string {
+    if (!awaiting || row.awaiting_since === null) return encodeKeyset([row.placed_key, row.id]);
+    return encodeAwaitingCursor({
+      rank: row.awaiting_rank === 0 ? 0 : 1,
+      since: row.awaiting_since,
+      id: row.id,
+    });
   }
 
   /** Ids, store, number, type, both states, outcome, and amounts of each known order; never a ship to field. */

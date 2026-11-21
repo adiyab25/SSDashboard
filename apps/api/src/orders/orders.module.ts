@@ -13,8 +13,11 @@ import { OrderIntake } from './intake/order-intake.service.js';
 import { OrderMovesController } from './moves/order-moves.controller.js';
 import { OrderTransactions } from './order-transactions.js';
 import { OrderQueries } from './reading/order-query.service.js';
+import { ShipmentJobs } from './shipment/shipment-jobs.js';
+import { ShipmentPosting } from './shipment/shipment-posting.js';
 import { OrderTaskLink } from './reading/order-task-link.js';
 import { OrdersController } from './reading/orders.controller.js';
+import { AwaitingRestockController } from './stock/awaiting-restock.controller.js';
 import { OrderStockController } from './stock/order-stock.controller.js';
 import { OrderStock } from './stock/order-stock.js';
 import { ShortLinesProjection } from './stock/short-lines.projection.js';
@@ -30,8 +33,14 @@ import { OrderWriter } from './writer/order-writer.js';
  * reopened, and replacement order, the list and search, the order page, editing (`OrderEditing`),
  * confirm, cancel, pack, and unpack (`OrderTransitions`), the write back projection, feature 13's
  * channel intake, and stock (`OrderStock` with spec 0011's reservations, the short lines
- * projection, the `orders.open_orders_held` gate check, and `hold-open-orders`); the carrier and
- * cash moves follow in milestone 5. It reads stores, channels, customers, SKUs, staff names,
+ * projection, the `orders.open_orders_held` gate check, and `hold-open-orders`); milestone 5 adds
+ * the carrier and cash moves on `OrderTransitions` and the stock side of the carrier facts
+ * (`ShipmentJobs` sends the `orders.post_shipment` jobs, `ShipmentPosting` does their work, run in
+ * the worker by `OrdersWorkerModule`), and task 15's Shopify half: `recordChannelStockOut` and
+ * `recordChannelFulfillmentCancelled` on `OrderTransitions`, and on `OrderStock` (exported for
+ * features 13, 20, and 21) `recordChannelReturn`, `restockAwaiting`, `closeAwaiting`,
+ * `postChannelFulfillment`, and `pendingFor`, with the awaiting restock routes
+ * (`AwaitingRestockController`). It reads stores, channels, customers, SKUs, staff names,
  * outbound commands, and stock only through their owners' services.
  */
 @Module({
@@ -46,7 +55,12 @@ import { OrderWriter } from './writer/order-writer.js';
     StaffDirectoryModule,
     TasksModule,
   ],
-  controllers: [OrdersController, OrderMovesController, OrderStockController],
+  controllers: [
+    OrdersController,
+    OrderMovesController,
+    OrderStockController,
+    AwaitingRestockController,
+  ],
   providers: [
     OrderTransactions,
     OrderWriter,
@@ -58,7 +72,17 @@ import { OrderWriter } from './writer/order-writer.js';
     WriteBackProjection,
     ShortLinesProjection,
     OrderTaskLink,
+    ShipmentJobs,
+    ShipmentPosting,
   ],
-  exports: [OrderTransactions, OrderIntake, OrderEditing, OrderTransitions, OrderQueries],
+  exports: [
+    OrderTransactions,
+    OrderIntake,
+    OrderEditing,
+    OrderTransitions,
+    OrderQueries,
+    OrderStock,
+    ShipmentPosting,
+  ],
 })
 export class OrdersModule {}

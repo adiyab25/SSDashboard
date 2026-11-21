@@ -32,7 +32,15 @@ export type OrdersErrorCode =
   | 'LineAlreadyMapped'
   | 'PaymentMethodLocked'
   | 'LineShort'
-  | 'LocationNotFound';
+  | 'LocationNotFound'
+  | 'NothingAwaiting'
+  | 'NoLinesDiffer'
+  | 'StockOutAlreadyRequested'
+  | 'StockAlreadyLeft'
+  | 'CloseAlreadyRequested'
+  | 'RestockKeyConflict'
+  | 'PiecesAwaitingRestock'
+  | 'ChannelReturnSourceRefused';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -354,5 +362,94 @@ export class LocationNotFound extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('LocationNotFound', 'No active location that can feed online stock has that id');
+  }
+}
+
+/**
+ * A restock or a close asked for more pieces of a line than await restock (spec 0013 AC-27 e, f):
+ * the conditional update matched no row, so the posting (if any) rolls back.
+ */
+export class NothingAwaiting extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('NothingAwaiting', 'Fewer pieces of this line await restock than that');
+  }
+}
+
+/**
+ * "Post what Shopify fulfilled" found no Shopify quantities that differ from the order's open lines
+ * (spec 0013 AC-27 a): there is nothing to post through this action.
+ */
+export class NoLinesDiffer extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('NoLinesDiffer', 'Shopify fulfilled no quantities that differ from the order');
+  }
+}
+
+/** The order's stock out is already requested for its current generation (spec 0013 AC-27 a). */
+export class StockOutAlreadyRequested extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('StockOutAlreadyRequested', 'The order has already left stock');
+  }
+}
+
+/**
+ * Packing refused: the order's stock out is already requested, so its pieces already left the
+ * shelf (spec 0013 AC-7, AC-13, owner ruling 2026-11-21, QA-2). Confirm stays allowed.
+ */
+export class StockAlreadyLeft extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('StockAlreadyLeft', 'The stock of this order has already left, so it cannot be packed');
+  }
+}
+
+/**
+ * A close request for a line that already has an open one (spec 0013 AC-27 f, amended
+ * 2026-11-21): a manager decides the open request first.
+ */
+export class CloseAlreadyRequested extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('CloseAlreadyRequested', 'A close request for this line is already open');
+  }
+}
+
+/**
+ * A restock key already used for another quantity, line, or person (spec 0013 AC-27 e, security
+ * review M): a replay answers only for the very same request.
+ */
+export class RestockKeyConflict extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('RestockKeyConflict', 'This key was already used for another restock');
+  }
+}
+
+/**
+ * A Shopify refund or return id that is empty or longer than 100 characters, or one more than the
+ * 200 an order keeps for the dedupe of `recordChannelReturn` (code re-review N5).
+ */
+export class ChannelReturnSourceRefused extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('ChannelReturnSourceRefused', 'This refund or return cannot be recorded on the order');
+  }
+}
+
+/**
+ * A partial delivery would leave a line's posted quantity below the pieces that await restock,
+ * were restocked, or were closed (spec 0013 AC-16, AC-27, code review minor 2): refused before
+ * anything is written, so a carrier sync never retries a raw database refusal.
+ */
+export class PiecesAwaitingRestock extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super(
+      'PiecesAwaitingRestock',
+      'More pieces of this line were returned or closed than the delivery leaves posted',
+    );
   }
 }

@@ -1058,7 +1058,7 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
     });
   });
 
-  describe('closed order import (AC-14, AC-13; the shipment job is milestone 5)', () => {
+  describe('closed order import (AC-14, AC-13, AC-24: no shipment job)', () => {
     it('creates a delivered and reconciled order in its found states: one event per machine, nothing held, no shipment job', async () => {
       // Delivered and reconciled are the app's facts: the fulfilled go live fixture is overridden.
       const { orderId } = await create(
@@ -1073,8 +1073,11 @@ describe('orders, milestone 3: the channel intake contract', { timeout: 240_000 
       );
       const page = await detail(orderId);
       const events = await eventsOf(orderId);
+      // Other orders of this suite are cancelled or shipped and have jobs of their own.
       const jobs = await owner<{ count: string }>(
-        `SELECT count(*)::text AS count FROM pgboss.job WHERE name = 'orders.post_shipment'`,
+        `SELECT count(*)::text AS count FROM pgboss.job
+         WHERE name = 'orders.post_shipment' AND data->>'orderId' = $1`,
+        [orderId],
       );
 
       expect(events).toEqual([

@@ -45,6 +45,14 @@ export class OrderStateChanged {
   ) {}
 }
 
+/**
+ * The dedupe key of an order attention's task (spec 0016 AC-9), which orders closes as `cleared`.
+ * The one place the key is built, so a raiser and a closer never drift (code review nit 2).
+ */
+export function attentionTaskKey(kind: OrderAttentionKind, orderId: string): string {
+  return `order_attention:${kind}:${orderId}`;
+}
+
 /** The orders module asks someone to look at an order (feature 17 opens one task per kind and order). */
 export class OrderAttentionRaised {
   /** Takes the order, the kind, and where it came from. */
@@ -90,5 +98,19 @@ export class OrderCancelled {
     readonly reasonCode: string,
     readonly duplicateOfOrderId: string | null,
     readonly carrierDeliveryExisted: boolean,
+  ) {}
+}
+
+/**
+ * Lines came back to the brand or were lost on the way (spec 0013 AC-15, AC-16): a carrier
+ * `returned_to_origin` or `lost` fact, or the returned rows of a partial delivery. Feature 21
+ * restocks by scan from it and feature 28 releases the credit of those lines. Ids only.
+ */
+export class LinesReturnedToOrigin {
+  /** Takes the order, the lines that moved, and the state they moved to. */
+  constructor(
+    readonly orderId: string,
+    readonly lineIds: readonly string[],
+    readonly to: 'returned_to_origin' | 'lost',
   ) {}
 }

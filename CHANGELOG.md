@@ -17,12 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET` and `PUT /api/inventory/owner-policies`, with `policy.changed` audited and the four consistency rules as api checks (PR #48, spec 0009 AC-24).
 - `GET` and `POST /api/platform/cost-rules`, with `cost_rule.recorded` and `cost_rule.recorded_in_locked_period` audited (PR #48, spec 0009 AC-23).
 - Settings screens at `/settings` and `/settings/cost-rules` in the back office (PR #48, spec 0009 AC-25).
+- Carrier and cash moves on orders (spec 0013 AC-15 to AC-17, in `apps/api/src/orders/transitions/carrier-moves.ts`): a carrier fact moves the open lines and the cash, a partial delivery splits a line, and collections, deposit remittance, reconciliation, and exchanges are recorded with a reason and an audit entry. They run in process with no route yet; feature 19 will call them.
+- Shipment posting for orders (spec 0013 AC-24, AC-27 b): a carrier shipped fact or a Shopify stock out takes the order's pieces out of the stock ledger once per generation through the `orders.post_shipment` job. A retry never posts twice, and a cancel before pickup books the pieces back once.
+- Shopify stock out and awaiting restock on orders (spec 0013 AC-27 b to g): the stock out block, the Awaiting restock filter, `POST /api/orders/:id/lines/:lineId/restock`, `POST /api/orders/:id/lines/:lineId/close-awaiting-restock`, and a daily overdue check at 06:00. The Shopify inbox calls wait on spec 0015 task 9a.
 
 ### Changed
 - Every api controller now declares exactly one module or capability gate. `channels`, `customers`, and `orders` are core modules with their own registry rows (PR #40).
 - Every background job runs on the `JobRegistry`, and every job handler asks `ModuleStateService.isRunnable` before it does work (PR #40, spec 0009 AC-10).
 - Migration `0011_owner_policy_editing` adds the `locked_terms_changed_at` column and four CHECK constraints to `location_owner_policies`. Migration `0012_owner_policy_grant` grants the app role column level UPDATE on the eight policy columns and the three bookkeeping columns, and nothing else (PR #48).
 - `unarchive` of a location whose locked owner terms changed after it was archived answers 409 `OWNER_POLICY_CHANGED_SINCE_ARCHIVE` (PR #48, spec 0009 AC-24).
+- Migrations `0024_orders_stock_out` and `0025_orders_restock_cap` add the stock out and restock columns, their checks, and one index (expand only, no data moved). Pack answers 409 `STOCK_ALREADY_LEFT` once a stock out is requested, and a line's Short mark clears once its stock has left.
 
 ### Security
 - `inventory_lock_date` and `document_prefixes` are registered with `onInvalid: 'refuse'`. A damaged stored value stops the ledger and numbering work with 409 `LOCK_DATE_UNREADABLE` or `DOCUMENT_PREFIXES_UNREADABLE` instead of running without its guard (PR #37, spec 0009 AC-2).
