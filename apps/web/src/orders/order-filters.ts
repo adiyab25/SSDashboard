@@ -21,6 +21,8 @@ export interface OrderFilters {
   type: OrderType | '';
   hold: boolean;
   short: boolean;
+  /** Only orders with pieces that left stock and are expected back, oldest first (AC-27 g). */
+  awaitingRestock: boolean;
   /** Operating days, `YYYY-MM-DD`, inclusive. */
   dayFrom: string;
   dayTo: string;
@@ -39,6 +41,7 @@ export const EMPTY_FILTERS: OrderFilters = {
   type: '',
   hold: false,
   short: false,
+  awaitingRestock: false,
   dayFrom: '',
   dayTo: '',
   q: '',
@@ -66,6 +69,7 @@ export function queryOf(
     ...(filters.type && { type: filters.type }),
     ...(filters.hold && { hold: true }),
     ...(filters.short && { short: true }),
+    ...(filters.awaitingRestock && { awaitingRestock: true }),
     ...(filters.dayFrom && { dayFrom: filters.dayFrom }),
     ...(filters.dayTo && { dayTo: filters.dayTo }),
     ...(filters.q && { q: filters.q }),

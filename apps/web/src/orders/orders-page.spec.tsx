@@ -48,6 +48,10 @@ const order = (n: number, overrides: Partial<OrderListItem> = {}): OrderListItem
   short: false,
   reopened: false,
   phoneNeedsFix: false,
+  stockOutSource: null,
+  stockOutRequestedAt: null,
+  awaitingRestockQuantity: 0,
+  awaitingRestockSince: null,
   ...overrides,
 });
 
@@ -200,6 +204,68 @@ describe('OrdersPage (AC-3, AC-4, AC-20)', () => {
       short: true,
       limit: 50,
     });
+  });
+
+  it('narrows to orders awaiting restock, oldest first as the api sends them, and sends the flag', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockImplementation((filters: { awaitingRestock: boolean }) =>
+      Promise.resolve({
+        items: filters.awaitingRestock
+          ? [
+              order(3, {
+                fulfillmentState: 'new',
+                outcome: 'cancelled_before_shipping',
+                stockOutSource: 'shopify_fulfillment',
+                stockOutRequestedAt: '2026-11-18T12:05:00.000Z',
+                awaitingRestockQuantity: 2,
+                awaitingRestockSince: '2026-11-18T12:05:00.000Z',
+              }),
+            ]
+          : [order(1), order(3)],
+        nextCursor: null,
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithQuery(<OrdersPage />);
+    const table = await screen.findByRole('table', { name: 'Orders' });
+    expect(within(table).getByRole('link', { name: 'ESS/#1001' })).toBeVisible();
+    expect(within(table).queryByText(/^Left stock:/)).toBeNull();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Awaiting restock' }));
+
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ESS/#1001' })).toBeNull());
+    const narrowed = screen.getByRole('table', { name: 'Orders' });
+    expect(within(narrowed).getByText(/^Left stock: Shopify fulfillment, /)).toBeVisible();
+    expect(within(narrowed).getByText(/^Awaiting restock: 2, since /)).toBeVisible();
+    expect(api.listOrders).toHaveBeenLastCalledWith(
+      expect.objectContaining({ awaitingRestock: true }),
+      undefined,
+      expect.anything(),
+    );
+    expect(queryOf({ ...EMPTY_FILTERS, awaitingRestock: true }, undefined)).toEqual({
+      awaitingRestock: true,
+      limit: 50,
+    });
+  });
+
+  it('searches inside the awaiting restock filter by the typed text', async () => {
+    api.getOrderFilterOptions.mockResolvedValue(FILTER_OPTIONS);
+    api.listOrders.mockResolvedValue({ items: [], nextCursor: null });
+    const user = userEvent.setup();
+    renderWithQuery(<OrdersPage />);
+    await screen.findByText('No orders yet');
+
+    await user.click(screen.getByRole('checkbox', { name: 'Awaiting restock' }));
+    await user.type(screen.getByLabelText('Search orders'), '1001');
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() =>
+      expect(api.listOrders).toHaveBeenLastCalledWith(
+        expect.objectContaining({ awaitingRestock: true, q: '1001' }),
+        undefined,
+        expect.anything(),
+      ),
+    );
   });
 
   it('puts the typed search in the filters sent to the api, never in the address', async () => {

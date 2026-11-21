@@ -29,6 +29,9 @@ const line = (overrides: Partial<OrderLineView> = {}): OrderLineView => ({
   lineState: 'open',
   cancelReasonCode: null,
   shortQuantity: 0,
+  stockOutQuantity: null,
+  awaitingRestockQuantity: 0,
+  awaitingRestockSince: null,
   ...overrides,
 });
 

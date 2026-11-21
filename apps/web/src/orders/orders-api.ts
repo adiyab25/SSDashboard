@@ -6,9 +6,11 @@ import {
   OrderOptions,
   type CreateGiftedOrderBody,
   type CancelOrderBody,
+  type CloseAwaitingRestockBody,
   type CreateManualOrderBody,
   type OrderEditBody,
   type OrderMoveBody,
+  type RestockAwaitingBody,
 } from '@ssdashboard/contracts';
 import { apiRequest } from '@/api/client';
 import { queryOf, type OrderFilters } from './order-filters';
@@ -86,3 +88,34 @@ export type OrderMove = 'confirm' | 'pack' | 'unpack';
 /** `POST /api/orders/:id/confirm`, `/pack`, or `/unpack`: `orders.confirm` for the first, `fulfillment.work` for the others. */
 export const moveOrder = (id: string, move: OrderMove, body: OrderMoveBody) =>
   apiRequest('POST', `/api/orders/${encodeURIComponent(id)}/${move}`, OrderDetail, { body });
+
+/**
+ * `POST /api/orders/:id/lines/:lineId/restock` (`stock.receive`, "Received on the shelf"): puts
+ * `body.quantity` awaiting pieces back on the shelf. `idempotencyKey` is one uuid per tap, so a
+ * repeat of the same tap moves nothing twice (spec 0013, AC-27 e).
+ */
+export const restockAwaiting = (
+  id: string,
+  lineId: string,
+  body: RestockAwaitingBody,
+  idempotencyKey: string,
+) =>
+  apiRequest(
+    'POST',
+    `/api/orders/${encodeURIComponent(id)}/lines/${encodeURIComponent(lineId)}/restock`,
+    OrderDetail,
+    { body, headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+
+/**
+ * `POST /api/orders/:id/lines/:lineId/close-awaiting-restock`: closes pieces that never come back
+ * (`stock.correct`), or, for `stock.receive` alone, sends a close request to a manager and leaves
+ * the line as it is (spec 0013, AC-27 f). Answers the order page either way.
+ */
+export const closeAwaitingRestock = (id: string, lineId: string, body: CloseAwaitingRestockBody) =>
+  apiRequest(
+    'POST',
+    `/api/orders/${encodeURIComponent(id)}/lines/${encodeURIComponent(lineId)}/close-awaiting-restock`,
+    OrderDetail,
+    { body },
+  );

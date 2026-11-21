@@ -78,6 +78,9 @@ export const orderDetailOf = (overrides: Partial<OrderDetail> = {}): OrderDetail
       lineState: 'open',
       cancelReasonCode: null,
       shortQuantity: 1,
+      stockOutQuantity: null,
+      awaitingRestockQuantity: 0,
+      awaitingRestockSince: null,
     },
   ],
   money: {
@@ -118,6 +121,7 @@ export const orderDetailOf = (overrides: Partial<OrderDetail> = {}): OrderDetail
       occurredAt: '2026-11-03T11:00:00.000Z',
     },
   ],
+  stockOut: { generation: 1, source: null, requestedAt: null, postedAt: null, reversals: [] },
   updatedAt: '2026-11-03T11:00:00.123456Z',
   ...overrides,
 });
