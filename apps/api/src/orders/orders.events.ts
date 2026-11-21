@@ -45,6 +45,14 @@ export class OrderStateChanged {
   ) {}
 }
 
+/**
+ * The dedupe key of an order attention's task (spec 0016 AC-9), which orders closes as `cleared`.
+ * The one place the key is built, so a raiser and a closer never drift (code review nit 2).
+ */
+export function attentionTaskKey(kind: OrderAttentionKind, orderId: string): string {
+  return `order_attention:${kind}:${orderId}`;
+}
+
 /** The orders module asks someone to look at an order (feature 17 opens one task per kind and order). */
 export class OrderAttentionRaised {
   /** Takes the order, the kind, and where it came from. */

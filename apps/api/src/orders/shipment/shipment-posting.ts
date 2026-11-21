@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   carrierShipmentKey,
   type FulfillmentState,
+  type PostingResult,
   type StockOutSource,
 } from '@ssdashboard/contracts';
 import { sql, type DatabaseConnection } from '@ssdashboard/db';
@@ -19,6 +20,7 @@ import {
 } from '../order-transactions.js';
 import { OrderAttentionRaised } from '../orders.events.js';
 import { OrderWriter } from '../writer/order-writer.js';
+import { handledQuantitiesOf, type HandledPieces } from './handled-pieces.js';
 import {
   AWAITING_RESTOCK_OVERDUE_DAYS,
   POST_SHIPMENT_RETRY,
@@ -27,6 +29,7 @@ import {
   fulfillmentReversalKey,
 } from './post-shipment.queue.js';
 import {
+  counterPostingLines,
   decideAfterCancel,
   planShipment,
   unitCostsOf,
@@ -56,6 +59,17 @@ export type ShipmentJobOutcome =
   | { reversed: boolean; why?: string }
   | { overdue: number };
 
+/**
+ * Stops a posting from inside its `within` when the order moved on while the job ran (code review
+ * major 3, minor 1): the throw rolls the posting back and the job answers `why`. Never leaves this
+ * file.
+ */
+class PostingAborted extends Error {
+  constructor(readonly why: string) {
+    super(`The posting was stopped: ${why}`);
+  }
+}
+
 /** The order facts a job reads as it starts, without a lock. */
 interface OrderStockOut extends Record<string, unknown> {
   fulfillment_state: FulfillmentState;
@@ -81,17 +95,29 @@ interface OrderStockOut extends Record<string, unknown> {
  * `shipment_not_posted`; any other failure is thrown for pg-boss to retry, and the last attempt
  * raises `shipment_not_posted` instead.
  *
- * `afterCancel` decides by the ordered *After a cancel* table (`decideAfterCancel`): nothing, a
- * reversal under `order_shipment_reversal:<orderId>:<n>` (reason `order_cancelled_before_pickup`)
- * that moves the order to generation `n + 1` in its `within`, or the posted quantities put on the
- * awaiting restock list with `returned_pieces_to_receive`.
+ * The posting's `within` first locks the order row (`FOR SHARE`) and checks again that the order
+ * is not cancelled, still on `generation`, and still requested; when it moved on the posting rolls
+ * back and the job answers why (code review minor 1).
  *
- * `fulfillmentReversal` reverses generation `n`'s posting under
+ * `afterCancel` decides by the ordered *After a cancel* table (`decideAfterCancel`): nothing, a
+ * counter posting under `order_shipment_reversal:<orderId>:<n>` (reason
+ * `order_cancelled_before_pickup`, row 4) whose `within` locks the order, checks that it is still
+ * `cancelled` on generation `n` (else the posting rolls back and the job answers row 3's nothing,
+ * code review major 3), and moves it to `n + 1`, or the posted pieces not yet restocked, closed, or
+ * awaiting put on the awaiting restock list with `returned_pieces_to_receive` (row 5; a rerun adds
+ * nothing).
+ *
+ * `fulfillmentReversal` books back generation `n`'s posting under
  * `order_shipment_fulfillment_reversal:<orderId>:<n>` (reason `channel_fulfillment_cancelled`,
  * AC-27 c) and changes nothing on the order (`recordChannelFulfillmentCancelled` already moved it
- * to `n + 1`); nothing posted, or already reversed, does nothing. `awaitingRestockOverdue` (the
- * daily schedule) raises `awaiting_restock_overdue` once for each line whose pieces have awaited
- * restock for 10 operating days (AC-27 g).
+ * to `n + 1`); it skips unless the order is past `n`, and nothing posted, or already reversed by
+ * either key, does nothing. Both reversals book back only the pieces not yet restocked or closed
+ * (owner ruling 2026-11-21): with none handled they reverse the whole group (`ledger.reverse`),
+ * else they post the rest through `ledger.post` (source `order_shipment`, inbound at each
+ * movement's own location and unit cost) and raise `reversal_after_restock` for the warehouse in
+ * the same transaction, also when nothing is left to book back. `awaitingRestockOverdue` (the
+ * daily schedule) raises `awaiting_restock_overdue` once per awaiting spell for each line awaiting
+ * restock for 10 operating days or more (AC-27 g), so a missed day is caught up.
  *
  * It writes order rows only through `OrderWriter`, movements only through `LedgerService`, opens
  * order units only with `OrderTransactions.run`, and logs by order id only.
@@ -114,7 +140,11 @@ export class ShipmentPosting {
   /** Runs one job of the queue by its kind; data that does not parse completes skipped. */
   async run(job: Pick<Job<object>, 'id' | 'data' | 'retryCount'>): Promise<object> {
     const data = PostShipmentJobData.safeParse(job.data);
-    if (!data.success) return { skipped: 'INVALID_JOB_DATA' };
+    if (!data.success) {
+      // Ids and codes only: the job's data is never printed (security review low).
+      this.logger.warn(`Skipped an orders.post_shipment job with invalid data: job=${job.id}`);
+      return { skipped: 'INVALID_JOB_DATA' };
+    }
     const attempt = { jobId: job.id, retryCount: job.retryCount };
     switch (data.data.kind) {
       case 'post':
@@ -161,6 +191,15 @@ export class ShipmentPosting {
         {
           within: async (stockTx, result) => {
             const tx = orderTransactionFromLedger(stockTx);
+            // Again under the order lock: a fulfillment cancel or a cancel may have committed
+            // while the job planned (code review minor 1); the throw rolls the posting back.
+            const current = await this.orderOf(orderId, tx, 'share');
+            if (!current) throw new PostingAborted('ORDER_NOT_FOUND');
+            if (current.fulfillment_state === 'cancelled') throw new PostingAborted('CANCELLED');
+            if (current.stock_out_generation !== generation) {
+              throw new PostingAborted('OLD_GENERATION');
+            }
+            if (current.stock_out_requested_at === null) throw new PostingAborted('NOT_REQUESTED');
             await this.writer.setUnitCosts(tx, orderId, unitCostsOf(result.movements));
             // The posting consumed each posted line's reservation, waiting demand included, and
             // the ledger publishes no `ReservationFilled` for that: its stock has left, so the
@@ -184,6 +223,7 @@ export class ShipmentPosting {
       );
       return { posted: true, groupId: outcome.groupId, lines: plan.post.length };
     } catch (error) {
+      if (error instanceof PostingAborted) return { posted: false, why: error.why };
       if (error instanceof LedgerError && error.code === 'IdempotencyConflict') {
         await this.raise(orderId, 'idempotency_conflict', attempt.jobId);
         return { posted: false, why: 'IDEMPOTENCY_CONFLICT' };
@@ -229,25 +269,37 @@ export class ShipmentPosting {
         return { afterCancel: 'fault', row: decision.row };
       case 'reverse': {
         if (!posting) return { afterCancel: 'nothing', row: 1 };
+        const planned = await handledQuantitiesOf(this.connection.db, orderId, false);
         try {
-          await this.ledger.reverse(
-            {
-              groupId: posting.groupId,
-              idempotencyKey: cancelReversalKey(orderId, generation),
-              postedBy: null,
-              reasonCode: CANCELLED_BEFORE_PICKUP_REASON,
+          await this.bookBack(orderId, posting, {
+            idempotencyKey: cancelReversalKey(orderId, generation),
+            reasonCode: CANCELLED_BEFORE_PICKUP_REASON,
+            handled: planned,
+            within: async (tx) => {
+              // Again under the order lock: a carrier `shipped` (or any move) may have committed
+              // since the decision (code review major 3); then this is row 3's nothing.
+              if (!(await this.writer.lockOrder(tx, orderId))) {
+                throw new PostingAborted('ORDER_NOT_FOUND');
+              }
+              const current = await this.orderOf(orderId, tx);
+              if (
+                current?.fulfillment_state !== 'cancelled' ||
+                current.stock_out_generation !== generation
+              ) {
+                throw new PostingAborted('MOVED_ON');
+              }
+              // The counter posting was planned from these counts: a restock or close since then
+              // needs a fresh plan, so the job fails and is retried.
+              if (!sameHandled(await handledQuantitiesOf(tx, orderId, true), planned)) {
+                throw new Error('The restocked or closed pieces changed while the job planned');
+              }
+              if (!(await this.writer.advanceStockOutGeneration(tx, orderId, generation))) {
+                throw new PostingAborted('MOVED_ON');
+              }
             },
-            {
-              within: async (stockTx) => {
-                await this.writer.advanceStockOutGeneration(
-                  orderTransactionFromLedger(stockTx),
-                  orderId,
-                  generation,
-                );
-              },
-            },
-          );
+          });
         } catch (error) {
+          if (error instanceof PostingAborted) return { afterCancel: 'nothing', row: 3 };
           if (error instanceof LedgerError && error.code === 'AlreadyReversed') {
             return { afterCancel: 'nothing', row: 2 };
           }
@@ -296,15 +348,29 @@ export class ShipmentPosting {
   async fulfillmentReversal(data: {
     orderId: string;
     generation: number;
+    handled?: readonly HandledPieces[];
   }): Promise<ShipmentJobOutcome> {
-    const posting = await this.ledger.postingFor(carrierShipmentKey(data.orderId, data.generation));
+    const { orderId, generation } = data;
+    // Only `recordChannelFulfillmentCancelled` moves the order past `n` before sending this job
+    // (security review low): an order still on `n` was never cancelled in Shopify.
+    const order = await this.orderOf(orderId);
+    if (!order) return { reversed: false, why: 'ORDER_NOT_FOUND' };
+    if (order.stock_out_generation <= generation) return { reversed: false, why: 'NOT_MOVED_ON' };
+    const posting = await this.ledger.postingFor(carrierShipmentKey(orderId, generation));
     if (!posting) return { reversed: false, why: 'NOTHING_POSTED' };
+    const key = fulfillmentReversalKey(orderId, generation);
+    if (
+      (await this.ledger.postingFor(key)) !== null ||
+      (await this.ledger.postingFor(cancelReversalKey(orderId, generation))) !== null
+    ) {
+      return { reversed: false, why: 'ALREADY_REVERSED' };
+    }
     try {
-      await this.ledger.reverse({
-        groupId: posting.groupId,
-        idempotencyKey: fulfillmentReversalKey(data.orderId, data.generation),
-        postedBy: null,
+      await this.bookBack(orderId, posting, {
+        idempotencyKey: key,
         reasonCode: FULFILLMENT_CANCELLED_REASON,
+        handled: data.handled ?? [],
+        within: () => Promise.resolve(),
       });
     } catch (error) {
       if (error instanceof LedgerError && error.code === 'AlreadyReversed') {
@@ -316,28 +382,82 @@ export class ShipmentPosting {
   }
 
   /**
-   * The daily awaiting restock check (AC-27 g): raises `awaiting_restock_overdue` (source
-   * `order_line`, the line id) for each line whose pieces started awaiting restock exactly 10
-   * operating days before today's operating day (`ssd_operating_day`), so a line is raised once,
-   * on the day it crosses the limit, all in one unit. Answers how many it raised.
+   * Books a shipment posting back, less the pieces already restocked or closed (owner ruling
+   * 2026-11-21), under `idempotencyKey`, running `within` in the same transaction. With nothing
+   * handled it reverses the whole group (`ledger.reverse`, so a second reversal of the group meets
+   * `AlreadyReversed`). Otherwise it posts the rest (`counterPostingLines`) through `ledger.post`
+   * as an inbound `order_shipment` at each movement's own location, bin, lot, and unit cost, or,
+   * when nothing is left, runs `within` in an order unit of its own; either way it raises
+   * `reversal_after_restock` (source the order) in that transaction so the warehouse checks the
+   * shelf. The callers keep the two reversal keys of one generation exclusive: each acts only
+   * under the generation checks of the order lock.
+   */
+  private async bookBack(
+    orderId: string,
+    posting: PostingResult,
+    input: {
+      idempotencyKey: string;
+      reasonCode: string;
+      handled: readonly HandledPieces[];
+      within: (tx: OrderTransaction) => Promise<void>;
+    },
+  ): Promise<void> {
+    if (input.handled.length === 0) {
+      await this.ledger.reverse(
+        {
+          groupId: posting.groupId,
+          idempotencyKey: input.idempotencyKey,
+          postedBy: null,
+          reasonCode: input.reasonCode,
+        },
+        { within: (stockTx) => input.within(orderTransactionFromLedger(stockTx)) },
+      );
+      return;
+    }
+    const raise = async (tx: OrderTransaction): Promise<void> => {
+      await input.within(tx);
+      await this.events.publish(
+        tx,
+        new OrderAttentionRaised(orderId, 'reversal_after_restock', 'order', orderId),
+      );
+    };
+    const lines = counterPostingLines(posting.movements, input.handled, input.reasonCode);
+    if (lines.length === 0) {
+      await this.transactions.run(raise);
+      return;
+    }
+    await this.ledger.post(
+      {
+        idempotencyKey: input.idempotencyKey,
+        sourceType: 'order_shipment',
+        sourceId: orderId,
+        postedBy: null,
+        lines,
+      },
+      { within: (stockTx) => raise(orderTransactionFromLedger(stockTx)) },
+    );
+  }
+
+  /**
+   * The daily awaiting restock check (AC-27 g, amended 2026-11-21): raises
+   * `awaiting_restock_overdue` (source `order_line`, the line id) for each line awaiting restock
+   * for 10 operating days or more (`ssd_operating_day`) whose awaiting spell was not raised yet,
+   * marking it raised in the same unit, so a day the schedule missed is caught up and a line is
+   * raised once per spell (the mark clears when its awaiting quantity reaches 0). Answers how many
+   * it raised.
    */
   async awaitingRestockOverdue(): Promise<ShipmentJobOutcome> {
-    const { rows } = await this.connection.db.execute<{ id: string; order_id: string }>(sql`
-      SELECT id, order_id FROM order_lines
-      WHERE awaiting_restock_quantity > 0
-        AND ssd_operating_day(awaiting_restock_since)
-            = ssd_operating_day(now()) - ${AWAITING_RESTOCK_OVERDUE_DAYS}::int
-      ORDER BY awaiting_restock_since, id`);
-    if (rows.length === 0) return { overdue: 0 };
-    await this.transactions.run(async (tx) => {
+    const raised = await this.transactions.run(async (tx) => {
+      const rows = await this.writer.markAwaitingRestockOverdue(tx, AWAITING_RESTOCK_OVERDUE_DAYS);
       for (const row of rows) {
         await this.events.publish(
           tx,
           new OrderAttentionRaised(row.order_id, 'awaiting_restock_overdue', 'order_line', row.id),
         );
       }
+      return rows.length;
     });
-    return { overdue: rows.length };
+    return { overdue: raised };
   }
 
   /** The stock out lines, reservations, SKU kinds, and online location, planned into a posting. */
@@ -400,12 +520,19 @@ export class ShipmentPosting {
     );
   }
 
-  /** The order's state and stock out columns, read without a lock (or in `tx`). */
-  private async orderOf(orderId: string, tx?: OrderTransaction): Promise<OrderStockOut | null> {
+  /**
+   * The order's state and stock out columns, read without a lock (or in `tx`, `FOR SHARE` when
+   * `lock` asks for it).
+   */
+  private async orderOf(
+    orderId: string,
+    tx?: OrderTransaction,
+    lock?: 'share',
+  ): Promise<OrderStockOut | null> {
     const executor = tx ?? this.connection.db;
     const { rows } = await executor.execute<OrderStockOut>(sql`
       SELECT fulfillment_state, stock_out_generation, stock_out_source, stock_out_requested_at
-      FROM orders WHERE id = ${orderId}::uuid`);
+      FROM orders WHERE id = ${orderId}::uuid ${lock === 'share' ? sql`FOR SHARE` : sql``}`);
     const row = rows[0];
     if (!row) return null;
     return {
@@ -414,4 +541,11 @@ export class ShipmentPosting {
         row.stock_out_requested_at === null ? null : new Date(row.stock_out_requested_at),
     };
   }
+}
+
+/** Whether two reads of the handled pieces agree, line by line. */
+function sameHandled(a: readonly HandledPieces[], b: readonly HandledPieces[]): boolean {
+  if (a.length !== b.length) return false;
+  const seen = new Map(a.map((line) => [line.lineId.toLowerCase(), line.quantity]));
+  return b.every((line) => seen.get(line.lineId.toLowerCase()) === line.quantity);
 }

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { JobSender } from '../../platform/jobs/job-sender.js';
 import type { OrderTransaction } from '../order-transactions.js';
+import type { HandledPieces } from './handled-pieces.js';
 import {
   POST_SHIPMENT_QUEUE,
   orderGroup,
@@ -36,13 +37,23 @@ export class ShipmentJobs {
     await this.jobs.sendIn(tx, POST_SHIPMENT_QUEUE, data, orderGroup(orderId));
   }
 
-  /** Asks the fulfillment reversal of generation `generation` (AC-27 c: every fulfillment cancelled). */
+  /**
+   * Asks the fulfillment reversal of generation `generation` (AC-27 c: every fulfillment
+   * cancelled), with the pieces of each line already restocked or closed in that generation, which
+   * the reversal must not book back (owner ruling 2026-11-21).
+   */
   async enqueueFulfillmentReversal(
     tx: OrderTransaction,
     orderId: string,
     generation: number,
+    handled: readonly HandledPieces[],
   ): Promise<void> {
-    const data: PostShipmentJobData = { kind: 'fulfillment_reversal', orderId, generation };
+    const data: PostShipmentJobData = {
+      kind: 'fulfillment_reversal',
+      orderId,
+      generation,
+      handled: handled.map((line) => ({ lineId: line.lineId, quantity: line.quantity })),
+    };
     await this.jobs.sendIn(tx, POST_SHIPMENT_QUEUE, data, orderGroup(orderId));
   }
 }

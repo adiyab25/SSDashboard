@@ -29,6 +29,9 @@ export const OrderAttentionKind = z.enum([
   'awaiting_restock_close_requested',
   // Spec 0015 AC-28: an order stayed partly fulfilled in Shopify for 3 operating days (warehouse).
   'fulfillment_partial_stale',
+  // Spec 0013 AC-27 (c) and row 4 of *After a cancel*, amended 2026-11-21: a reversal booked back
+  // only the pieces not yet restocked or closed, because some were (warehouse checks the shelf).
+  'reversal_after_restock',
 ]);
 /** One attention kind. */
 export type OrderAttentionKind = z.infer<typeof OrderAttentionKind>;

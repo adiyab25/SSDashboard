@@ -10,6 +10,7 @@ import {
   orderLabelOf,
   systemJobActor,
   type CashState,
+  type OrderAttentionKind,
   type OrderTaskKind,
 } from '@ssdashboard/contracts';
 import { AuditService, type JsonObject } from '../../audit/audit.service.js';
@@ -24,9 +25,16 @@ import {
   InvalidOrderInput,
   OrderLocked,
   OrderStoreMissing,
+  StockAlreadyLeft,
   WriteBackOpen,
 } from '../orders.errors.js';
-import { LinesReturnedToOrigin, OrderAttentionRaised, OrderCancelled } from '../orders.events.js';
+import {
+  LinesReturnedToOrigin,
+  OrderAttentionRaised,
+  OrderCancelled,
+  attentionTaskKey,
+} from '../orders.events.js';
+import { handledQuantitiesOf } from '../shipment/handled-pieces.js';
 import { ShipmentJobs } from '../shipment/shipment-jobs.js';
 import {
   carrierShippedFactExists,
@@ -154,10 +162,8 @@ export interface ChannelFulfillmentCancelled {
   source: { type: string; id: string };
 }
 
-/** The dedupe key of an order attention's task (spec 0016 AC-9), which orders closes as `cleared`. */
-export function attentionTaskKey(kind: string, orderId: string): string {
-  return `order_attention:${kind}:${orderId}`;
-}
+/** Re-exported where callers first found it; built in `orders.events.ts`. */
+export { attentionTaskKey };
 
 /** The system job named on the automatic `unpaid` to `nothing_to_collect` move after a cancel. */
 const NOTHING_TO_COLLECT_JOB = 'orders.nothing_to_collect';
@@ -383,8 +389,10 @@ export class OrderTransitions {
   /**
    * `confirmed` to `packed` by a person with `fulfillment.work` (AC-7). Refused with
    * `WriteBackOpen` while `ConnectorsService.openCommandsFor('order', id, tx)` answers any command,
-   * whatever `write_back_state` says (carried B2), and with `LineShort` (409 `LINE_SHORT`) when an
-   * open line is still short after the top up (AC-13, Q-16.5), which rolls the pack back. Throws
+   * whatever `write_back_state` says (carried B2), with `StockAlreadyLeft` (409
+   * `STOCK_ALREADY_LEFT`) once the order's stock out is requested (its pieces already left the
+   * shelf; owner ruling 2026-11-21, QA-2), and with `LineShort` (409 `LINE_SHORT`) when an open
+   * line is still short after the top up (AC-13, Q-16.5), which rolls the pack back. Throws
    * `OrderNotFound`, `OrderStale`, or `InvalidTransition` from any other state.
    */
   async markPacked(
@@ -401,9 +409,10 @@ export class OrderTransitions {
       to: 'packed',
       actor: 'person',
     });
+    // Once a stock out is requested the pieces already left: nothing to pack (QA-2).
+    if (order.stockOutSource !== null) throw new StockAlreadyLeft();
     if (open.length > 0) throw new WriteBackOpen();
-    // Once a stock out is requested: no top up and no `LINE_SHORT` (AC-13, AC-27).
-    if (order.stockOutSource === null) await this.stock.topUp(tx, orderId, true);
+    await this.stock.topUp(tx, orderId, true);
     await this.writer.applyChange(tx, orderId, {
       columns: { fulfillmentState: 'packed' },
       events: [fulfillmentEvent(order, 'packed', actor, null)],
@@ -532,11 +541,13 @@ export class OrderTransitions {
    * feature 19, so today none has one) and the freeze is set, it clears `carrier_delivery_created_at`
    * with `order.carrier_delivery_cleared` (actor `system_job`, reason
    * `channel_fulfillment_cancelled`), so a size swap arrives as a normal edit. When a stock out is
-   * requested for generation `n`, it enqueues the fulfillment reversal job for `n`, closes any
-   * awaiting restock quantities (the reversal brings those pieces back, so none comes back twice),
-   * moves the order to generation `n + 1` with the request and the lines' `stock_out_quantity`
-   * cleared, and reserves the open lines again while the order is `new`, `confirmed`, or `packed`
-   * (they read short until the reversal posts and fills waiting demand).
+   * requested for generation `n`, it locks the order's lines, reads each line's pieces already
+   * restocked or closed, and enqueues the fulfillment reversal job for `n` with them (the job books
+   * back only the rest, and raises `reversal_after_restock` when any were; owner ruling
+   * 2026-11-21); then it moves the order to generation `n + 1` with the request cleared and every
+   * line's stock out counters at 0 (the awaiting pieces are among those the reversal brings back,
+   * so none comes back twice), and reserves the open lines again while the order is `new`,
+   * `confirmed`, or `packed` (they read short until the reversal posts and fills waiting demand).
    */
   async recordChannelFulfillmentCancelled(
     tx: OrderTransaction,
@@ -569,8 +580,10 @@ export class OrderTransitions {
     }
     if (order.stockOutSource !== null) {
       const generation = order.stockOutGeneration;
-      await this.shipments.enqueueFulfillmentReversal(tx, orderId, generation);
-      await this.writer.closeAwaitingRestock(tx, orderId);
+      // The line locks make a restock posting that is still running wait (its conditional update
+      // then finds nothing awaiting and rolls back), so the counts read here are final for `n`.
+      const handled = await handledQuantitiesOf(tx, orderId, true);
+      await this.shipments.enqueueFulfillmentReversal(tx, orderId, generation, handled);
       await this.writer.advanceStockOutGeneration(tx, orderId, generation);
       if (order.fulfillmentState !== 'cancelled') await this.stock.topUp(tx, orderId, false);
     }
@@ -1061,7 +1074,11 @@ export class OrderTransitions {
   }
 
   /** Closes the open task of an order attention as `cleared` (spec 0016 AC-9); none open is fine. */
-  private async closeAttention(tx: OrderTransaction, kind: string, orderId: string): Promise<void> {
+  private async closeAttention(
+    tx: OrderTransaction,
+    kind: OrderAttentionKind,
+    orderId: string,
+  ): Promise<void> {
     await this.tasks.closeByKey(tx, attentionTaskKey(kind, orderId), {
       outcome: 'cleared',
       by: { kind: 'system_job' },

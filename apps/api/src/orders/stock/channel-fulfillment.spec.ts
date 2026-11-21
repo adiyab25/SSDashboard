@@ -63,10 +63,17 @@ describe('fulfilledLinesDiffer (AC-27 a)', () => {
 
 describe('returnedQuantitiesOf (AC-27 d)', () => {
   it('spreads a return over the lines of that Shopify line, capped at what was posted', () => {
+    const none = { restockedQuantity: 0, closedQuantity: 0 };
     const lines = [
-      { id: 'a', channelLineId: 'gid-1', stockOutQuantity: 1, awaitingRestockQuantity: 0 },
-      { id: 'b', channelLineId: 'gid-1', stockOutQuantity: 2, awaitingRestockQuantity: 1 },
-      { id: 'c', channelLineId: 'gid-2', stockOutQuantity: null, awaitingRestockQuantity: 0 },
+      { id: 'a', channelLineId: 'gid-1', stockOutQuantity: 1, awaitingRestockQuantity: 0, ...none },
+      { id: 'b', channelLineId: 'gid-1', stockOutQuantity: 2, awaitingRestockQuantity: 1, ...none },
+      {
+        id: 'c',
+        channelLineId: 'gid-2',
+        stockOutQuantity: null,
+        awaitingRestockQuantity: 0,
+        ...none,
+      },
     ];
 
     expect(
@@ -78,6 +85,45 @@ describe('returnedQuantitiesOf (AC-27 d)', () => {
       { lineId: 'a', quantity: 1 },
       { lineId: 'b', quantity: 1 },
     ]);
+  });
+});
+
+describe('returnedQuantitiesOf after a restock or a close (owner ruling 2026-11-21)', () => {
+  it('leaves no room for pieces already restocked or closed', () => {
+    const lines = [
+      {
+        id: 'a',
+        channelLineId: 'gid-1',
+        stockOutQuantity: 2,
+        awaitingRestockQuantity: 0,
+        restockedQuantity: 2,
+        closedQuantity: 0,
+      },
+      {
+        id: 'b',
+        channelLineId: 'gid-2',
+        stockOutQuantity: 3,
+        awaitingRestockQuantity: 1,
+        restockedQuantity: 1,
+        closedQuantity: 0,
+      },
+      {
+        id: 'c',
+        channelLineId: 'gid-3',
+        stockOutQuantity: 2,
+        awaitingRestockQuantity: 0,
+        restockedQuantity: 0,
+        closedQuantity: 2,
+      },
+    ];
+
+    expect(
+      returnedQuantitiesOf(lines, [
+        { channelLineId: 'gid-1', quantity: 2 },
+        { channelLineId: 'gid-2', quantity: 3 },
+        { channelLineId: 'gid-3', quantity: 1 },
+      ]),
+    ).toEqual([{ lineId: 'b', quantity: 1 }]);
   });
 });
 

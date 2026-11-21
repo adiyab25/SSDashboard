@@ -4,8 +4,10 @@ import {
   type CarrierShipmentLine,
   type FulfillmentState,
   type PostedMovement,
+  type PostingLine,
   type StockOutSource,
 } from '@ssdashboard/contracts';
+import type { HandledPieces } from './handled-pieces.js';
 import type { CancelOrigin } from './post-shipment.queue.js';
 
 /** One order line a stock out request covers: what the shipment job reads (AC-24). */
@@ -178,4 +180,48 @@ export function decideAfterCancel(facts: AfterCancelFacts): AfterCancelDecision 
     case null:
       return { row: 1, then: 'nothing' };
   }
+}
+
+/**
+ * The lines of a partial counter posting of a shipment (spec 0013 AC-27 c and *After a cancel*
+ * row 4, owner ruling 2026-11-21): every outbound movement of the posting booked back at its own
+ * location, bin, lot, and unit cost, less the pieces of its line already restocked or closed
+ * (`handled`, taken from the line's movements in order), each with `reasonCode`. A movement whose
+ * pieces were all handled is left out, so the answer may be empty. Line ids compare without case.
+ * Pure.
+ */
+export function counterPostingLines(
+  movements: readonly Pick<
+    PostedMovement,
+    'variantId' | 'locationId' | 'binId' | 'lotId' | 'quantity' | 'unitCost' | 'sourceLineId'
+  >[],
+  handled: readonly HandledPieces[],
+  reasonCode: string,
+): PostingLine[] {
+  const left = new Map<string, number>();
+  for (const line of handled) {
+    const id = line.lineId.toLowerCase();
+    left.set(id, (left.get(id) ?? 0) + Math.max(line.quantity, 0));
+  }
+  const lines: PostingLine[] = [];
+  for (const movement of movements) {
+    if (movement.quantity >= 0) continue;
+    const out = -movement.quantity;
+    const id = movement.sourceLineId?.toLowerCase() ?? null;
+    const taken = id === null ? 0 : Math.min(left.get(id) ?? 0, out);
+    if (id !== null) left.set(id, (left.get(id) ?? 0) - taken);
+    const back = out - taken;
+    if (back <= 0) continue;
+    lines.push({
+      variantId: movement.variantId,
+      locationId: movement.locationId,
+      ...(movement.binId === null ? {} : { binId: movement.binId }),
+      ...(movement.lotId === null ? {} : { lotId: movement.lotId }),
+      quantity: back,
+      unitCost: movement.unitCost,
+      ...(movement.sourceLineId === null ? {} : { sourceLineId: movement.sourceLineId }),
+      reasonCode,
+    });
+  }
+  return lines;
 }

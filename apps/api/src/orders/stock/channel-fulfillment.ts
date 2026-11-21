@@ -46,8 +46,8 @@ export function fulfilledLinesDiffer(
  * The quantity a channel return puts on each order line's awaiting restock list (spec 0013 AC-27
  * d): each Shopify line's returned quantity is spread over the order lines carrying that channel
  * line id, in position order, each taking at most what it still may await (`stock_out_quantity`
- * less what already awaits). Quantities beyond that are dropped (every return caps at what was
- * posted). Pure.
+ * less what already awaits, was restocked, or was closed; owner ruling 2026-11-21). Quantities
+ * beyond that are dropped (every return caps at what was posted). Pure.
  */
 export function returnedQuantitiesOf(
   lines: readonly {
@@ -55,13 +55,21 @@ export function returnedQuantitiesOf(
     channelLineId: string | null;
     stockOutQuantity: number | null;
     awaitingRestockQuantity: number;
+    restockedQuantity: number;
+    closedQuantity: number;
   }[],
   returned: readonly ChannelFulfilledLine[],
 ): { lineId: string; quantity: number }[] {
   const room = new Map(
     lines.map((line) => [
       line.id,
-      Math.max((line.stockOutQuantity ?? 0) - line.awaitingRestockQuantity, 0),
+      Math.max(
+        (line.stockOutQuantity ?? 0) -
+          line.awaitingRestockQuantity -
+          line.restockedQuantity -
+          line.closedQuantity,
+        0,
+      ),
     ]),
   );
   const out = new Map<string, number>();

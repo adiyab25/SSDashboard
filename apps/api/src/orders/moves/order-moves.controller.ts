@@ -103,7 +103,10 @@ export class OrderMovesController {
     );
   }
 
-  /** `POST /api/orders/:id/pack` (AC-7): `confirmed` to `packed`; 409 `WRITE_BACK_OPEN` while a command is open. */
+  /**
+   * `POST /api/orders/:id/pack` (AC-7): `confirmed` to `packed`; 409 `WRITE_BACK_OPEN` while a
+   * command is open, 409 `STOCK_ALREADY_LEFT` once the stock out is requested.
+   */
   @Permission('fulfillment.work')
   @Post(':id/pack')
   @HttpCode(200)

@@ -19,7 +19,7 @@ import { pgArray, type Executor, type Transaction } from '../../database/sql.js'
 import { DomainEvents } from '../../platform/events/domain-events.js';
 import { TasksService } from '../../tasks/tasks.service.js';
 import { auditActorOf, type OrderActor } from '../order-actor.js';
-import { OrderAttentionRaised } from '../orders.events.js';
+import { OrderAttentionRaised, attentionTaskKey } from '../orders.events.js';
 import { cancelReversalKey, fulfillmentReversalKey } from '../shipment/post-shipment.queue.js';
 import { ShipmentJobs } from '../shipment/shipment-jobs.js';
 import { lockOrderForChange } from '../writer/locked-order.js';
@@ -38,6 +38,7 @@ import {
   type OrderTransaction,
 } from '../order-transactions.js';
 import {
+  CloseAlreadyRequested,
   LineShort,
   LocationNotFound,
   NoLinesDiffer,
@@ -45,6 +46,7 @@ import {
   OrderLocked,
   OrderNotFound,
   OrderStoreMissing,
+  RestockKeyConflict,
   StockOutAlreadyRequested,
 } from '../orders.errors.js';
 import { OrderWriter } from '../writer/order-writer.js';
@@ -82,7 +84,7 @@ export interface ChannelReturn {
 /** What `recordChannelReturn` answers: the lines it put on the awaiting list, and how many. */
 export type ChannelReturnResult =
   | { applied: true; lines: { lineId: string; added: number }[] }
-  | { applied: false; why: 'not_shopify_stock_out' | 'nothing_to_await' };
+  | { applied: false; why: 'not_shopify_stock_out' | 'already_applied' | 'nothing_to_await' };
 
 /** What `restockAwaiting` answers: the restock posting's group, and whether it was a replay. */
 export interface RestockResult {
@@ -306,11 +308,13 @@ export class OrderStock implements OnModuleInit {
   /**
    * A Shopify refund or return of the order (spec 0013 AC-27 d), called by feature 13 inside its
    * unit of work: for an order whose stock out came from a Shopify fulfillment, puts the returned
-   * quantities on the matching lines' `awaiting_restock_quantity` (each capped at what its posting
-   * took out), whether or not Shopify marked them to restock, and raises
-   * `returned_pieces_to_receive` (source the refund or return, or `shopify_refund_no_restock` when
-   * not marked). Returns of an order that left stock otherwise stay with features 21, 34, and 35
-   * (`not_shopify_stock_out`). Moves no state and posts nothing.
+   * quantities on the matching lines' `awaiting_restock_quantity`, whether or not Shopify marked
+   * them to restock, and raises `returned_pieces_to_receive` (source the refund or return, or
+   * `shopify_refund_no_restock` when not marked). Each line takes at most its posted pieces not
+   * yet awaiting, restocked, or closed, and a refund or return already applied (by its source type
+   * and id) adds nothing and answers `already_applied` (owner ruling 2026-11-21). Returns of an
+   * order that left stock otherwise stay with features 21, 34, and 35 (`not_shopify_stock_out`).
+   * Moves no state and posts nothing.
    */
   async recordChannelReturn(
     tx: OrderTransaction,
@@ -324,13 +328,20 @@ export class OrderStock implements OnModuleInit {
     if (orders[0]?.stock_out_source !== 'shopify_fulfillment') {
       return { applied: false, why: 'not_shopify_stock_out' };
     }
+    const source = `${back.source.type}:${back.source.id}`;
+    if (!(await this.writer.recordChannelReturnSource(tx, orderId, source))) {
+      return { applied: false, why: 'already_applied' };
+    }
     const { rows } = await tx.execute<{
       id: string;
       channel_line_id: string | null;
       stock_out_quantity: number | null;
       awaiting_restock_quantity: number;
+      restocked_quantity: number;
+      closed_quantity: number;
     }>(sql`
-      SELECT id, channel_line_id, stock_out_quantity, awaiting_restock_quantity
+      SELECT id, channel_line_id, stock_out_quantity, awaiting_restock_quantity,
+             restocked_quantity, closed_quantity
       FROM order_lines WHERE order_id = ${orderId}::uuid ORDER BY position, id`);
     const wanted = returnedQuantitiesOf(
       rows.map((row) => ({
@@ -338,6 +349,8 @@ export class OrderStock implements OnModuleInit {
         channelLineId: row.channel_line_id,
         stockOutQuantity: row.stock_out_quantity,
         awaitingRestockQuantity: row.awaiting_restock_quantity,
+        restockedQuantity: row.restocked_quantity,
+        closedQuantity: row.closed_quantity,
       })),
       back.lines,
     );
@@ -359,11 +372,13 @@ export class OrderStock implements OnModuleInit {
    * Puts `quantity` awaiting pieces of a line back on the shelf (spec 0013 AC-27 e): the "Received
    * on the shelf" action, feature 20's scan, and feature 21 call it; none posts on its own. A
    * replay of `order_restock:<orderId>:<lineId>:<idempotencyKey>` answers the stored posting before
-   * any awaiting check. Otherwise it posts the quantity back with the ledger's `post` (source
+   * any awaiting check when it is the very same request (one movement of this line and quantity,
+   * posted by the same person), and `RestockKeyConflict` (409 `IDEMPOTENCY_CONFLICT`) otherwise
+   * (security review M). Otherwise it posts the quantity back with the ledger's `post` (source
    * `returned_to_origin_restock` for a cancelled order, `customer_return_restock` otherwise) at the
    * line's `unit_cost` (else the posting's), to the location the line left from in the latest
-   * unreversed `order_shipment` posting, and in the posting's `within` lowers
-   * `awaiting_restock_quantity` with a conditional update (the line lock comes after inventory's
+   * unreversed `order_shipment` posting, and in the posting's `within` moves the pieces from
+   * `awaiting_restock_quantity` to `restocked_quantity` with a conditional update (the line lock comes after inventory's
    * locks) and writes `order.awaiting_restocked`; a row that does not match throws
    * `NothingAwaiting` and rolls the posting back. Never more than awaits. Opens its own ledger
    * transaction: never call it inside another.
@@ -377,8 +392,18 @@ export class OrderStock implements OnModuleInit {
     how: AwaitingRestockedReason = 'received_on_shelf',
   ): Promise<RestockResult> {
     const key = `order_restock:${orderId}:${lineId}:${idempotencyKey}`.toLowerCase();
+    const postedBy = actor.type === 'person' ? actor.userId : null;
     const replay = await this.ledger.postingFor(key);
-    if (replay) return { groupId: replay.groupId, replayed: true };
+    if (replay) {
+      const [movement, ...others] = replay.movements;
+      const same =
+        others.length === 0 &&
+        movement?.sourceLineId?.toLowerCase() === lineId.toLowerCase() &&
+        movement.quantity === quantity &&
+        (replay.postedBy?.toLowerCase() ?? null) === (postedBy?.toLowerCase() ?? null);
+      if (!same) throw new RestockKeyConflict();
+      return { groupId: replay.groupId, replayed: true };
+    }
     const { rows } = await this.connection.db.execute<{
       variant_id: string | null;
       unit_cost: string | null;
@@ -411,7 +436,7 @@ export class OrderStock implements OnModuleInit {
         idempotencyKey: key,
         sourceType: restockSourceOf(line.fulfillment_state),
         sourceId: orderId,
-        postedBy: actor.type === 'person' ? actor.userId : null,
+        postedBy,
         lines: [
           {
             variantId,
@@ -425,7 +450,13 @@ export class OrderStock implements OnModuleInit {
       {
         within: async (stockTx) => {
           const tx = orderTransactionFromLedger(stockTx);
-          const lowered = await this.writer.lowerAwaitingRestock(tx, orderId, lineId, quantity);
+          const lowered = await this.writer.lowerAwaitingRestock(
+            tx,
+            orderId,
+            lineId,
+            quantity,
+            'restocked',
+          );
           if (!lowered) throw new NothingAwaiting();
           const auditActor = auditActorOf(actor);
           await this.audit.record(tx, {
@@ -450,12 +481,14 @@ export class OrderStock implements OnModuleInit {
   /**
    * Closes awaiting pieces that never come back, or asks for it (spec 0013 AC-27 f), in the
    * caller's order transaction, under the order row lock and its concurrency token. With
-   * `mayClose` (a `stock.correct` holder) it lowers `awaiting_restock_quantity` (`NothingAwaiting`
-   * when fewer await) and writes `order.awaiting_restock_closed`; without it (a warehouse hat with
-   * `stock.receive` only) it changes nothing, writes `order.awaiting_restock_close_requested`, and
-   * raises `awaiting_restock_close_requested` for the manager (source the line), the adjustment
-   * request pattern of spec 0011 AC-27. Closing posts no movement: the pieces already left the
-   * ledger.
+   * `mayClose` (a `stock.correct` holder) it moves the pieces from `awaiting_restock_quantity` to
+   * `closed_quantity` (`NothingAwaiting` when fewer await), which also settles any open close
+   * request of the line, and writes `order.awaiting_restock_closed`; without it (a warehouse hat
+   * with `stock.receive` only) it marks a close request open on the line, writes
+   * `order.awaiting_restock_close_requested`, and raises `awaiting_restock_close_requested` for the
+   * manager (source the line), the adjustment request pattern of spec 0011 AC-27. A second request
+   * while one is open is refused with `CloseAlreadyRequested` (409 `CLOSE_ALREADY_REQUESTED`,
+   * security review low). Closing posts no movement: the pieces already left the ledger.
    */
   async closeAwaiting(
     tx: OrderTransaction,
@@ -475,7 +508,13 @@ export class OrderStock implements OnModuleInit {
     };
     const auditActor = auditActorOf(person);
     if (mayClose) {
-      const lowered = await this.writer.lowerAwaitingRestock(tx, orderId, lineId, close.quantity);
+      const lowered = await this.writer.lowerAwaitingRestock(
+        tx,
+        orderId,
+        lineId,
+        close.quantity,
+        'closed',
+      );
       if (!lowered) throw new NothingAwaiting();
       await this.audit.record(tx, {
         actor: auditActor,
@@ -488,11 +527,9 @@ export class OrderStock implements OnModuleInit {
       });
       return;
     }
-    const { rows } = await tx.execute<{ awaiting_restock_quantity: number }>(sql`
-      SELECT awaiting_restock_quantity FROM order_lines
-      WHERE id = ${lineId}::uuid AND order_id = ${orderId}::uuid`);
-    const awaiting = rows[0]?.awaiting_restock_quantity ?? 0;
-    if (awaiting < close.quantity) throw new NothingAwaiting();
+    const awaiting = await this.writer.requestAwaitingClose(tx, orderId, lineId, close.quantity);
+    if (awaiting === null) throw new NothingAwaiting();
+    if (awaiting === 'open') throw new CloseAlreadyRequested();
     await this.audit.record(tx, {
       actor: auditActor,
       action: 'order.awaiting_restock_close_requested',
@@ -592,7 +629,7 @@ export class OrderStock implements OnModuleInit {
       reason: post.reasonCode,
       correlationId: this.audit.newCorrelationId(auditActor),
     });
-    await this.tasks.closeByKey(tx, `order_attention:fulfilled_lines_differ:${orderId}`, {
+    await this.tasks.closeByKey(tx, attentionTaskKey('fulfilled_lines_differ', orderId), {
       outcome: 'cleared',
       by: { kind: 'system_job' },
     });

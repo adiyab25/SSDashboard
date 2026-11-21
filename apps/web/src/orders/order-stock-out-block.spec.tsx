@@ -1,5 +1,6 @@
 import type { OrderDetail } from '@ssdashboard/contracts';
-import { screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
@@ -151,6 +152,34 @@ describe('Received on the shelf (AC-27 e)', () => {
 
     const keys = api.restockAwaiting.mock.calls.map((call) => call[3] as string);
     expect(new Set(keys).size).toBe(2);
+  });
+
+  it('carries the same key on a retry of one tap, and a new key for the next tap', async () => {
+    api.restockAwaiting
+      .mockRejectedValueOnce(new ApiError(503, { code: 'BUSY' }))
+      .mockRejectedValue(new ApiError(503, { code: 'BUSY' }));
+    const client = new QueryClient({
+      defaultOptions: { mutations: { retry: 1, retryDelay: 0 }, queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <OrderStockOutBlock order={awaitingOrder()} />
+      </QueryClientProvider>,
+    );
+    const button = screen.getByRole('button', { name: 'Received on the shelf: Red tee, M' });
+
+    await userEvent.click(button);
+    await waitFor(() => expect(api.restockAwaiting).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(button).toBeEnabled());
+    await userEvent.click(button);
+    await waitFor(() => expect(api.restockAwaiting).toHaveBeenCalledTimes(4));
+
+    const [first, retry, second, secondRetry] = api.restockAwaiting.mock.calls.map(
+      (call) => call[3] as string,
+    );
+    expect(retry).toBe(first);
+    expect(second).not.toBe(first);
+    expect(secondRetry).toBe(second);
   });
 
   it.each([

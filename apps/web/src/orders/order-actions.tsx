@@ -36,7 +36,7 @@ const MOVE_DONE: Record<OrderMove, MessageKey> = {
 
 /**
  * What a person may do with an order from its page (spec 0013, AC-7 to AC-10): Confirm (`new`),
- * Pack and Back to confirmed (`fulfillment.work`), Edit, and Cancel (`orders.confirm`), each shown
+ * Pack (not once the stock out is requested) and Back to confirmed (`fulfillment.work`), Edit, and Cancel (`orders.confirm`), each shown
  * only to a holder of the permission and only in a state where the api would allow it (it still
  * decides: `can` only hides buttons). A move sends the `updatedAt` of the order as it was drawn
  * when the person pressed the button, and the edit and cancel dialogs keep the order they opened
@@ -73,6 +73,8 @@ export function OrderActions({
   const beforePickup = active && BEFORE_PICKUP.has(order.fulfillmentState);
   const canConfirm = access.can('orders.confirm');
   const canWork = access.can('fulfillment.work');
+  // Once the stock out is requested the stock is leaving (or has left): Pack is no longer offered.
+  const stockOutRequested = Boolean(order.stockOut?.source ?? order.stockOut?.requestedAt);
 
   /** Puts focus on the first action left, else on the page heading. */
   function restoreFocus() {
@@ -140,7 +142,7 @@ export function OrderActions({
     },
     {
       id: 'pack',
-      show: canWork && active && order.fulfillmentState === 'confirmed',
+      show: canWork && active && order.fulfillmentState === 'confirmed' && !stockOutRequested,
       label: 'orders.actions.pack',
       icon: PackageCheckIcon,
     },

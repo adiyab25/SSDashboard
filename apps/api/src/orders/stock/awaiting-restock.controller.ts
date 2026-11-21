@@ -57,7 +57,8 @@ const lineIdPipe = (): ParseUUIDPipe =>
  * - `POST /api/orders/:id/lines/:lineId/close-awaiting-restock` (`@AnyHat()`, checked in the
  *   handler through `Access`): a `stock.correct` holder closes pieces that never come back, a
  *   `stock.receive` holder without it asks a manager to (403 `FORBIDDEN` for neither; 409
- *   `NOTHING_AWAITING`, `STALE_RECORD`; 422 `INVALID_BODY`). The permission is checked before
+ *   `NOTHING_AWAITING`, `STALE_RECORD`, `CLOSE_ALREADY_REQUESTED` while a request is open; 422
+ *   `INVALID_BODY`). The permission is checked before
  *   the body is read, so a hat with neither always gets 403.
  *
  * Each answers the order page through the cost serializer, `Cache-Control: no-store`. Logs carry

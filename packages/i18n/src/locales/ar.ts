@@ -1649,6 +1649,7 @@ export const ar: Catalog = {
       awaiting_restock_overdue: 'قطع منتظر رجوعها منذ 10 أيام',
       awaiting_restock_close_requested: 'طلب إغلاق قطع لم ترجع',
       fulfillment_partial_stale: 'منفّذ جزئيًا في شوبيفاي منذ 3 أيام',
+      reversal_after_restock: 'أُعيدت قطع إلى المخزون بعد أن رُجّع أو أُغلق بعضها بالفعل',
     },
     // Spec 0013 AC-27: the stock out block, the awaiting restock list, and their errors.
     stockOut: {
@@ -1718,6 +1719,7 @@ export const ar: Catalog = {
           'تغيّر هذا الطلب أثناء عملك. الصفحة تعرض الآن أحدث نسخة؛ راجعها وحاول مرة أخرى.',
         NO_LINES_DIFFER: 'نفّذ شوبيفاي ما في الطلب تمامًا، فلا يوجد ما يُسجَّل هنا.',
         ALREADY_REQUESTED: 'خرج هذا الطلب من المخزون بالفعل.',
+        CLOSE_ALREADY_REQUESTED: 'يوجد طلب إغلاق لقطع هذا البند ينتظر المدير بالفعل.',
         PERIOD_LOCKED: 'فترة المخزون مقفلة، فلا يمكن إرجاع القطع إلى الرف الآن.',
         FORBIDDEN: 'ليست لديك صلاحية لهذا الإجراء.',
       },
@@ -2051,6 +2053,7 @@ export const ar: Catalog = {
           'يُلغى هذا الطلب في شوبيفاي. ألغِه هناك، وسيقرأ التطبيق الإلغاء من شوبيفاي.',
         WRITE_BACK_OPEN: 'تغيير في هذا الطلب لم يصل إلى قناة البيع بعد. انتظر وصوله قبل التعبئة.',
         LINE_SHORT: 'ينقص مخزون أحد البنود، فلا يمكن تعبئة الطلب بعد.',
+        STOCK_ALREADY_LEFT: 'خرج مخزون هذا الطلب بالفعل، فلا يمكن تعبئته.',
         GIFT_NOT_ALLOWED: 'المدير وحده يغيّر بنود الطلب الهدية أو شحنه.',
         DUPLICATE_TARGET_REQUIRED:
           'اختر الطلب الذي يكرره هذا الطلب. يجب أن يكون طلبًا آخر موجودًا.',

@@ -230,6 +230,14 @@ export const orders = pgTable(
     stockOutSource: stockOutSource('stock_out_source'),
     /** When the current generation's stock out was requested (the time the pieces left). */
     stockOutRequestedAt: timestamp('stock_out_requested_at', { withTimezone: true }),
+    /**
+     * The Shopify refunds and returns already applied to the awaiting restock list, as
+     * `<source type>:<source id>` (spec 0013 AC-27 d): a repeated report adds nothing.
+     */
+    channelReturnSourceIds: text('channel_return_source_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -416,6 +424,24 @@ export const orderLines = pgTable(
     awaitingRestockQuantity: integer('awaiting_restock_quantity').notNull().default(0),
     /** Since when pieces await restock; set exactly while `awaitingRestockQuantity` is above 0. */
     awaitingRestockSince: timestamp('awaiting_restock_since', { withTimezone: true }),
+    /** Posted pieces of the current generation already put back on the shelf (AC-27 a, e). */
+    restockedQuantity: integer('restocked_quantity').notNull().default(0),
+    /** Posted pieces of the current generation closed as never coming back (AC-27 a, f). */
+    closedQuantity: integer('closed_quantity').notNull().default(0),
+    /**
+     * When `awaiting_restock_overdue` was raised for the current awaiting spell (AC-27 g); cleared
+     * when the spell ends (the awaiting quantity reaches 0), so a line is raised once per spell.
+     */
+    awaitingRestockOverdueRaisedAt: timestamp('awaiting_restock_overdue_raised_at', {
+      withTimezone: true,
+    }),
+    /**
+     * When a warehouse hat asked a manager to close awaiting pieces of the line (AC-27 f); cleared
+     * when a manager closes pieces of the line or the awaiting spell ends. One open request per line.
+     */
+    awaitingRestockCloseRequestedAt: timestamp('awaiting_restock_close_requested_at', {
+      withTimezone: true,
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -447,6 +473,23 @@ export const orderLines = pgTable(
     check(
       'order_lines_awaiting_since_pair',
       sql`(${t.awaitingRestockQuantity} = 0) = (${t.awaitingRestockSince} IS NULL)`,
+    ),
+    check(
+      'order_lines_restocked_closed_not_negative',
+      sql`${t.restockedQuantity} >= 0 AND ${t.closedQuantity} >= 0`,
+    ),
+    // Owner ruling 2026-11-21: what awaits, was restocked, and was closed never exceeds what left.
+    check(
+      'order_lines_handled_within_stock_out',
+      sql`${t.awaitingRestockQuantity} + ${t.restockedQuantity} + ${t.closedQuantity} <= coalesce(${t.stockOutQuantity}, 0)`,
+    ),
+    check(
+      'order_lines_overdue_within_spell',
+      sql`${t.awaitingRestockOverdueRaisedAt} IS NULL OR ${t.awaitingRestockSince} IS NOT NULL`,
+    ),
+    check(
+      'order_lines_close_request_within_spell',
+      sql`${t.awaitingRestockCloseRequestedAt} IS NULL OR ${t.awaitingRestockSince} IS NOT NULL`,
     ),
     // The awaiting restock list, oldest first per variant (AC-27 e, g).
     index('order_lines_awaiting_restock_idx')

@@ -45,8 +45,9 @@ export type CancelOrigin = z.infer<typeof CancelOrigin>;
  * - `post`: book generation `generation`'s `order_shipment` (AC-24).
  * - `after_cancel`: decide what a cancel does to generation `generation`'s posting, by the
  *   *After a cancel* table (AC-27 b); `origin` and `reasonCode` are the cancel's.
- * - `fulfillment_reversal`: reverse generation `generation`'s posting because every Shopify
- *   fulfillment of the order was cancelled (AC-27 c).
+ * - `fulfillment_reversal`: book back generation `generation`'s posting because every Shopify
+ *   fulfillment of the order was cancelled (AC-27 c), less `handled`: the pieces of each line
+ *   already restocked or closed in that generation (owner ruling 2026-11-21).
  * - `awaiting_restock_overdue`: the daily check that raises `awaiting_restock_overdue` (AC-27 g).
  */
 export const PostShipmentJobData = z.discriminatedUnion('kind', [
@@ -66,6 +67,11 @@ export const PostShipmentJobData = z.discriminatedUnion('kind', [
     kind: z.literal('fulfillment_reversal'),
     orderId: z.uuid(),
     generation: z.number().int().min(1),
+    // A job sent before 2026-11-21 carries none: nothing was restocked or closed for it.
+    handled: z
+      .array(z.object({ lineId: z.uuid(), quantity: z.number().int().min(1) }))
+      .max(1000)
+      .default([]),
   }),
   z.object({ kind: z.literal('awaiting_restock_overdue') }),
 ]);

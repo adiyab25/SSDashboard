@@ -53,6 +53,56 @@ afterEach(() => {
 
 const buttons = () => screen.queryAllByRole('button').map((button) => button.textContent);
 
+describe('Pack after the stock out is requested (spec 0013, owner ruling)', () => {
+  const stockOut = (source: 'shopify_fulfillment' | null, requestedAt: string | null) => ({
+    generation: 1,
+    source,
+    requestedAt,
+    postedAt: null,
+    reversals: [],
+  });
+
+  it('offers Pack before a stock out and hides it once one is requested', () => {
+    me.current = { id: 'me', hats: ['x'], permissions: ['orders.confirm', 'fulfillment.work'] };
+    const { unmount } = renderWithQuery(
+      <OrderActions order={orderDetailOf({ fulfillmentState: 'confirmed' })} />,
+    );
+    expect(buttons()).toContain('Pack');
+    unmount();
+    renderWithQuery(
+      <OrderActions
+        order={orderDetailOf({
+          fulfillmentState: 'confirmed',
+          stockOut: stockOut('shopify_fulfillment', '2026-11-18T12:05:00.000Z'),
+        })}
+      />,
+    );
+    expect(buttons()).not.toContain('Pack');
+  });
+
+  it('still offers Confirm on a new order whose stock out is requested', () => {
+    renderWithQuery(
+      <OrderActions
+        order={orderDetailOf({
+          fulfillmentState: 'new',
+          stockOut: stockOut('shopify_fulfillment', '2026-11-18T12:05:00.000Z'),
+        })}
+      />,
+    );
+    expect(buttons()).toContain('Confirm');
+  });
+
+  it('says so when the api answers 409 STOCK_ALREADY_LEFT to a stale Pack', async () => {
+    me.current = PACKER;
+    api.moveOrder.mockRejectedValue(new ApiError(409, { code: 'STOCK_ALREADY_LEFT' }));
+    renderWithQuery(<OrderActions order={orderDetailOf({ fulfillmentState: 'confirmed' })} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Pack' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The stock of this order has already been sent out, so it cannot be packed.',
+    );
+  });
+});
+
 describe('OrderActions (AC-7, AC-8, AC-20)', () => {
   it('offers Confirm, Edit, and Cancel on a new order to a holder of orders.confirm', () => {
     renderWithQuery(<OrderActions order={orderDetailOf({ fulfillmentState: 'new' })} />);

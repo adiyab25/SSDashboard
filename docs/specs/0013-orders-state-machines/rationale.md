@@ -151,6 +151,14 @@ The orders review (kept private) accepted the design with one blocker and seven 
 | `outbound_commands` and its open index | `packages/db/src/schema/connectors.ts` | the packed guard and the hold, through feature 13's service |
 | Keyset cursor | `apps/api/src/platform/keyset-cursor.ts` | the list |
 
+### Sub decisions from the milestone 5 reviews (2026-11-21)
+
+**Restock cap (owner ruling 1).** The code review found that the order kept no count of awaiting pieces already restocked or closed, so a full reversal after a restock, or a second return report, put pieces on the ledger twice. Chosen: two counters per line (`restocked_quantity`, `closed_quantity`), a cap on every addition to the awaiting list, a source id dedupe on `recordChannelReturn`, and partial counter postings for the two reversals with a `reversal_after_restock` attention so a person checks the shelf. Rejected: (a) *post the rest without an attention*, because a reversal that follows a restock means the shelf and the books may already disagree, and silence hides it; (b) *refuse and flag*, because Shopify's cancel is a fact and cannot be refused (the carrier facts rule of AC-24), and a refused reversal leaves the books wrong until someone acts.
+
+**Pack after stock out (owner ruling 2, QA-2).** Pieces that already left cannot be packed. Chosen: Confirm stays (the confirmation call still matters for cash on delivery), Pack is refused with 409 `STOCK_ALREADY_LEFT` and not offered. Rejected: (a) *keep both*, because a pack on an order whose stock is out invites a second pick of pieces that are not on the shelf; (b) *hide both*, because a cash on delivery order still needs its confirmation call.
+
+**Smaller rules, same review.** Each guards a check made outside the lock and acted on inside it: row 4 and the post job re check the generation (and the cancelled state) under the order lock; the fulfillment reversal job skips unless the generation is above `n`; a reused restock key with different content is a conflict, not a replay; one open close request per line; the overdue check raises every qualifying line once per awaiting spell, so a line is not missed when the job did not run on its tenth day.
+
 ## References
 
 **Project sources**

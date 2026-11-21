@@ -14,6 +14,7 @@ import { auditKeys } from '@/audit/audit-api';
 import { useLanguage } from '@/i18n/language-provider';
 import { useFormat } from '@/i18n/use-format';
 import { OrderCloseAwaitingDialog } from './order-close-awaiting-dialog';
+import { newIdempotencyKey } from './new-idempotency-key';
 import { lineNameOf } from './order-line-name';
 import { isStockOutOutOfDate, stockOutErrorKey } from './order-stock-out-errors';
 import { orderKeys, restockAwaiting } from './orders-api';
@@ -21,7 +22,7 @@ import { orderKeys, restockAwaiting } from './orders-api';
 /**
  * One line with pieces expected back on the shelf (spec 0013, AC-27 e, f, g): the item, how many
  * await and since when, "Received on the shelf" (one tap, no scanner; `stock.receive`; puts every
- * awaiting piece of the line back, one idempotency key per tap) and "Close" for pieces that never
+ * awaiting piece of the line back, one idempotency key per tap, kept across a retry of that tap) and "Close" for pieces that never
  * come back (a `stock.correct` holder closes them; a holder of `stock.receive` alone sends a
  * request to a manager, and the words say so). `can` only hides buttons; the api decides. After an
  * answer the line may be gone, so `onSettled` moves focus to somewhere that still exists.
@@ -56,9 +57,11 @@ export function OrderAwaitingLine({
     onSettled();
   }
 
+  // The key is made once per tap, in the click handler, and travels as the mutation variable, so
+  // a retry of that tap carries the same key and the api answers it once.
   const restock = useMutation({
-    mutationFn: () =>
-      restockAwaiting(order.id, line.id, { quantity: awaiting }, crypto.randomUUID()),
+    mutationFn: ({ key }: { key: string }) =>
+      restockAwaiting(order.id, line.id, { quantity: awaiting }, key),
     onSuccess: (answer) => {
       accept(answer);
       toast.success(t('orders.stockOut.restocked', { quantity: format.quantity(awaiting), item }));
@@ -95,7 +98,7 @@ export function OrderAwaitingLine({
               disabled={restock.isPending}
               aria-busy={restock.isPending}
               aria-label={t('orders.stockOut.restockLabel', { item })}
-              onClick={() => restock.mutate()}
+              onClick={() => restock.mutate({ key: newIdempotencyKey() })}
             >
               {restock.isPending ? (
                 <LoaderCircleIcon

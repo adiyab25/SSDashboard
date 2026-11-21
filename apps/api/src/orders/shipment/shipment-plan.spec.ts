@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TERMINATED_BEFORE_PICKUP,
+  counterPostingLines,
   decideAfterCancel,
   planShipment,
   unitCostsOf,
@@ -156,5 +157,62 @@ describe('decideAfterCancel', () => {
       row: 1,
       then: 'nothing',
     });
+  });
+});
+
+describe('counterPostingLines (owner ruling 2026-11-21)', () => {
+  const movement = (sourceLineId: string | null, quantity: number) => ({
+    variantId: SKU_M,
+    locationId: SHELF,
+    binId: null,
+    lotId: null,
+    quantity,
+    unitCost: '100.0000',
+    sourceLineId,
+  });
+
+  it('books back every outbound piece at its own location and cost when nothing was handled', () => {
+    expect(
+      counterPostingLines([movement(LINE_A, -2), movement(LINE_B, -1)], [], 'some_reason'),
+    ).toEqual([
+      {
+        variantId: SKU_M,
+        locationId: SHELF,
+        quantity: 2,
+        unitCost: '100.0000',
+        sourceLineId: LINE_A,
+        reasonCode: 'some_reason',
+      },
+      {
+        variantId: SKU_M,
+        locationId: SHELF,
+        quantity: 1,
+        unitCost: '100.0000',
+        sourceLineId: LINE_B,
+        reasonCode: 'some_reason',
+      },
+    ]);
+  });
+
+  it('leaves out the pieces of a line already restocked or closed, across its movements', () => {
+    const lines = counterPostingLines(
+      [movement(LINE_A, -1), movement(LINE_A, -2), movement(LINE_B, -1)],
+      [
+        { lineId: LINE_A.toUpperCase(), quantity: 2 },
+        { lineId: LINE_B, quantity: 1 },
+      ],
+      'some_reason',
+    );
+    expect(lines.map((line) => [line.sourceLineId, line.quantity])).toEqual([[LINE_A, 1]]);
+  });
+
+  it('answers nothing when every piece was handled, and ignores inbound rows', () => {
+    expect(
+      counterPostingLines(
+        [movement(LINE_A, -2), movement(LINE_C, 3)],
+        [{ lineId: LINE_A, quantity: 5 }],
+        'some_reason',
+      ),
+    ).toEqual([]);
   });
 });

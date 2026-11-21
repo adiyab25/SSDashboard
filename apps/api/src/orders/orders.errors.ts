@@ -35,7 +35,11 @@ export type OrdersErrorCode =
   | 'LocationNotFound'
   | 'NothingAwaiting'
   | 'NoLinesDiffer'
-  | 'StockOutAlreadyRequested';
+  | 'StockOutAlreadyRequested'
+  | 'StockAlreadyLeft'
+  | 'CloseAlreadyRequested'
+  | 'RestockKeyConflict'
+  | 'PiecesAwaitingRestock';
 
 /**
  * A typed domain error of the orders module (never an error string). Messages are fixed text and
@@ -387,5 +391,53 @@ export class StockOutAlreadyRequested extends OrdersError {
   /** Builds the error. */
   constructor() {
     super('StockOutAlreadyRequested', 'The order has already left stock');
+  }
+}
+
+/**
+ * Packing refused: the order's stock out is already requested, so its pieces already left the
+ * shelf (spec 0013 AC-7, AC-13, owner ruling 2026-11-21, QA-2). Confirm stays allowed.
+ */
+export class StockAlreadyLeft extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('StockAlreadyLeft', 'The stock of this order has already left, so it cannot be packed');
+  }
+}
+
+/**
+ * A close request for a line that already has an open one (spec 0013 AC-27 f, amended
+ * 2026-11-21): a manager decides the open request first.
+ */
+export class CloseAlreadyRequested extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('CloseAlreadyRequested', 'A close request for this line is already open');
+  }
+}
+
+/**
+ * A restock key already used for another quantity, line, or person (spec 0013 AC-27 e, security
+ * review M): a replay answers only for the very same request.
+ */
+export class RestockKeyConflict extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super('RestockKeyConflict', 'This key was already used for another restock');
+  }
+}
+
+/**
+ * A partial delivery would leave a line's posted quantity below the pieces that await restock,
+ * were restocked, or were closed (spec 0013 AC-16, AC-27, code review minor 2): refused before
+ * anything is written, so a carrier sync never retries a raw database refusal.
+ */
+export class PiecesAwaitingRestock extends OrdersError {
+  /** Builds the error. */
+  constructor() {
+    super(
+      'PiecesAwaitingRestock',
+      'More pieces of this line were returned or closed than the delivery leaves posted',
+    );
   }
 }

@@ -1627,6 +1627,7 @@ export const en = {
       awaiting_restock_overdue: 'Pieces have been expected back for 10 days',
       awaiting_restock_close_requested: 'Asked to close pieces that never came back',
       fulfillment_partial_stale: 'Partly fulfilled in Shopify for 3 days',
+      reversal_after_restock: 'Put back in stock after pieces were already restocked or closed',
     },
     // Spec 0013 AC-27: the stock out block, the awaiting restock list, and their errors.
     stockOut: {
@@ -1698,6 +1699,8 @@ export const en = {
         NO_LINES_DIFFER:
           'Shopify fulfilled exactly what the order holds, so there is nothing to post here.',
         ALREADY_REQUESTED: 'This order has already left stock.',
+        CLOSE_ALREADY_REQUESTED:
+          'A request to close pieces of this line is already waiting for a manager.',
         PERIOD_LOCKED: 'The stock period is locked, so pieces cannot be put back on the shelf now.',
         FORBIDDEN: 'You do not have permission to do this.',
       },
@@ -2025,6 +2028,8 @@ export const en = {
         WRITE_BACK_OPEN:
           'A change to this order has not reached the sales channel yet. Wait for it to sync before packing.',
         LINE_SHORT: 'A line is short of stock, so the order cannot be packed yet.',
+        STOCK_ALREADY_LEFT:
+          'The stock of this order has already been sent out, so it cannot be packed.',
         GIFT_NOT_ALLOWED: 'Only a manager can change the lines or the shipping of a gifted order.',
         DUPLICATE_TARGET_REQUIRED:
           'Choose the order this one duplicates. It must be a different, existing order.',

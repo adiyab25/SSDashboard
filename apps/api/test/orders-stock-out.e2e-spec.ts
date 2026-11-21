@@ -12,7 +12,12 @@ import { LedgerService } from '../src/inventory/ledger/ledger.service.js';
 import { OrderIntake, type ChannelActor } from '../src/orders/intake/order-intake.service.js';
 import type { OrderActor } from '../src/orders/order-actor.js';
 import { OrderTransactions, type OrderTransaction } from '../src/orders/order-transactions.js';
-import { NoLinesDiffer, StockOutAlreadyRequested } from '../src/orders/orders.errors.js';
+import {
+  NoLinesDiffer,
+  PiecesAwaitingRestock,
+  StockAlreadyLeft,
+  StockOutAlreadyRequested,
+} from '../src/orders/orders.errors.js';
 import { OrderAttentionRaised } from '../src/orders/orders.events.js';
 import {
   cancelReversalKey,
@@ -42,6 +47,8 @@ interface LineRow extends Record<string, unknown> {
   awaiting_restock_quantity: number;
   awaiting_restock_since: Date | null;
   short_quantity: number;
+  restocked_quantity: number;
+  closed_quantity: number;
 }
 
 /** An order's stock out columns. */
@@ -214,7 +221,8 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
     (
       await owner<LineRow>(
         `SELECT id, variant_id, quantity, line_state, unit_cost, stock_out_quantity,
-                awaiting_restock_quantity, awaiting_restock_since, short_quantity
+                awaiting_restock_quantity, awaiting_restock_since, short_quantity,
+                restocked_quantity, closed_quantity
          FROM order_lines WHERE order_id = $1::uuid ORDER BY position`,
         [id],
       )
@@ -542,7 +550,7 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       ).rejects.toBeInstanceOf(NoLinesDiffer);
     });
 
-    it('after a stock out no path reserves again: confirm, markPacked, linkChannelLineVariant, the gate, and the hold skip it', async () => {
+    it('after a stock out no path reserves again: confirm, linkChannelLineVariant, the gate, and the hold skip it; markPacked is refused', async () => {
       const id = await channelOrder([
         { channelLineId: 'gid-m', variantId: skuM, quantity: 1 },
         { channelLineId: 'gid-u', variantId: null, quantity: 1 },
@@ -557,7 +565,9 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       expect(await activeHolds(id)).toEqual([]);
 
       await confirm(id);
-      await run((tx) => moves().markPacked(tx, id, person()));
+      await expect(run((tx) => moves().markPacked(tx, id, person()))).rejects.toThrow(
+        StockAlreadyLeft,
+      );
       expect(await activeHolds(id)).toEqual([]);
       expect(
         await run((tx) => intake().linkChannelLineVariant(tx, id, 'gid-u', skuL)),
@@ -698,13 +708,18 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
       });
     });
 
-    it('the fulfillment reversal and the after cancel reversal on one generation: one reversal, the other AlreadyReversed', async () => {
+    it('the fulfillment reversal and the after cancel reversal on one generation: one reversal, the other stops', async () => {
       const first = await postedShopifyOrder();
+      // Security review low: a fulfillment reversal of a generation the order is still on skips.
       expect(await posting().fulfillmentReversal({ orderId: first, generation: 1 })).toEqual({
-        reversed: true,
+        reversed: false,
+        why: 'NOT_MOVED_ON',
       });
+      expect(await fulfillmentCancelled(first)).toEqual({ applied: true });
+      expect(await runJobs(first, 'fulfillment_reversal')).toEqual([{ reversed: true }]);
       await report(first, fact('cancelled', 'carrier.terminated_before_pickup'));
-      expect(await runJobs(first, 'after_cancel')).toEqual([{ afterCancel: 'nothing', row: 2 }]);
+      // The fulfillment cancel moved the order on, so the after cancel job meets row 1.
+      expect(await runJobs(first, 'after_cancel')).toEqual([{ afterCancel: 'nothing', row: 1 }]);
       expect(await groupsOf(first)).toHaveLength(2);
 
       const second = await postedShopifyOrder();
@@ -1052,6 +1067,381 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
         paymentMethod: 'cod',
       });
       expect((refused.body as { code: string }).code).toBe('RELATED_ORDER_STATE');
+    });
+  });
+
+  // The owner's rulings of 2026-11-21 on the milestone 5 code and security reviews: every
+  // sequence the reviewers listed, plus the counters and the once per spell overdue mark.
+  describe('review fixes: the restock cap, the lock re checks, and the refusals (2026-11-21)', () => {
+    const channelReturn = (
+      id: string,
+      lines: { channelLineId: string; quantity: number }[],
+      sourceId: string = randomUUID(),
+      type: 'shopify_refund' | 'shopify_return' = 'shopify_refund',
+    ) =>
+      run((tx) =>
+        stock().recordChannelReturn(tx, id, { lines, source: { type, id: sourceId } }, job()),
+      );
+    const restockRoute = (
+      id: string,
+      lineId: string,
+      quantity: number,
+      key: string = randomUUID(),
+      who: string = warehouse,
+    ) =>
+      api.call(
+        who,
+        'POST',
+        `/api/orders/${id}/lines/${lineId}/restock`,
+        { quantity },
+        { 'Idempotency-Key': key },
+      );
+    /** What the order's postings did to a SKU in total (shipment, restocks, and reversals). */
+    const netOf = async (id: string, variantId: string) =>
+      (
+        await owner<{ net: number }>(
+          `SELECT coalesce(sum(m.quantity), 0)::int AS net
+           FROM stock_movements m JOIN movement_groups g ON g.id = m.group_id
+           WHERE g.source_id = $1::uuid AND m.variant_id = $2::uuid`,
+          [id, variantId],
+        )
+      ).rows[0]?.net;
+    const counters = async (id: string) =>
+      (await linesOf(id)).map((line) => [
+        line.stock_out_quantity,
+        line.awaiting_restock_quantity,
+        line.restocked_quantity,
+        line.closed_quantity,
+      ]);
+
+    it('a restock then a fulfillment cancel books back only the rest and raises reversal_after_restock', async () => {
+      const id = await postedShopifyOrder();
+      expect(await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }])).toMatchObject({
+        applied: true,
+      });
+      const [m, l] = await linesOf(id);
+      const restocked = await restockRoute(id, m?.id as string, 1);
+      expect(restocked.status, JSON.stringify(restocked.body)).toBe(200);
+      expect(await counters(id)).toEqual([
+        [2, 0, 1, 0],
+        [1, 0, 0, 0],
+      ]);
+
+      expect(await fulfillmentCancelled(id)).toEqual({ applied: true });
+      // A new generation starts with every counter at 0.
+      expect(await counters(id)).toEqual([
+        [null, 0, 0, 0],
+        [null, 0, 0, 0],
+      ]);
+      expect(await runJobs(id, 'fulfillment_reversal')).toEqual([{ reversed: true }]);
+      const groups = await groupsOf(id);
+      expect(groups.map((group) => group.idempotency_key)).toEqual([
+        carrierShipmentKey(id),
+        fulfillmentReversalKey(id, 1),
+      ]);
+      // A partial counter posting, not a reversal of the whole group.
+      expect(groups[1]?.reverses_group_id).toBeNull();
+      const back = await movementsOf(groups[1]?.id as string);
+      expect(back).toHaveLength(2);
+      expect(back).toEqual(
+        expect.arrayContaining([
+          { source_line_id: m?.id, quantity: 1, location_id: shelf, unit_cost: '100.0000' },
+          { source_line_id: l?.id, quantity: 1, location_id: shelf, unit_cost: '100.0000' },
+        ]),
+      );
+      // -2 shipped, +1 restocked, +1 booked back: never a phantom piece.
+      expect(await netOf(id, skuM)).toBe(0);
+      expect(await netOf(id, skuL)).toBe(0);
+      expect(attentionsOf(id)).toContain('reversal_after_restock');
+      expect((await detail(id)).stockOut?.reversals).toEqual([
+        expect.objectContaining({ generation: 1, reasonCode: 'channel_fulfillment_cancelled' }),
+      ]);
+      // The job is not run twice: the key stops it.
+      expect(await posting().fulfillmentReversal({ orderId: id, generation: 1 })).toEqual({
+        reversed: false,
+        why: 'ALREADY_REVERSED',
+      });
+    });
+
+    it('everything restocked or closed, then a fulfillment cancel: nothing booked back, the attention raised', async () => {
+      const id = await postedShopifyOrder();
+      await channelReturn(id, [
+        { channelLineId: 'gid-m', quantity: 2 },
+        { channelLineId: 'gid-l', quantity: 1 },
+      ]);
+      const [m, l] = await linesOf(id);
+      expect((await restockRoute(id, m?.id as string, 2)).status).toBe(200);
+      const closed = await api.call(
+        manager,
+        'POST',
+        `/api/orders/${id}/lines/${l?.id as string}/close-awaiting-restock`,
+        { expectedUpdatedAt: (await detail(id)).updatedAt, quantity: 1, reasonCode: 'other' },
+      );
+      expect(closed.status, JSON.stringify(closed.body)).toBe(200);
+      expect(await counters(id)).toEqual([
+        [2, 0, 2, 0],
+        [1, 0, 0, 1],
+      ]);
+
+      await fulfillmentCancelled(id);
+      expect(await runJobs(id, 'fulfillment_reversal')).toEqual([{ reversed: true }]);
+      expect(await groupsOf(id)).toHaveLength(1);
+      expect(await netOf(id, skuM)).toBe(0);
+      expect(attentionsOf(id)).toContain('reversal_after_restock');
+    });
+
+    it('row 4 after a restock books back only the rest, raises reversal_after_restock, and moves on', async () => {
+      const id = await postedShopifyOrder();
+      await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }]);
+      const [m] = await linesOf(id);
+      expect((await restockRoute(id, m?.id as string, 1)).status).toBe(200);
+      await report(id, fact('cancelled', 'carrier.terminated_before_pickup'));
+
+      expect(await runJobs(id, 'after_cancel')).toEqual([{ afterCancel: 'reversed', row: 4 }]);
+      const groups = await groupsOf(id);
+      expect(groups.map((group) => group.idempotency_key)).toEqual([
+        carrierShipmentKey(id),
+        cancelReversalKey(id, 1),
+      ]);
+      expect((await movementsOf(groups[1]?.id as string)).map((row) => row.quantity)).toEqual([
+        1, 1,
+      ]);
+      expect(await netOf(id, skuM)).toBe(0);
+      expect(await netOf(id, skuL)).toBe(0);
+      expect(attentionsOf(id)).toContain('reversal_after_restock');
+      expect(await orderOf(id)).toMatchObject({ stock_out_generation: 2, stock_out_source: null });
+      expect(await counters(id)).toEqual([
+        [null, 0, 0, 0],
+        [null, 0, 0, 0],
+      ]);
+    });
+
+    it('a second return after a restock is capped: nothing more awaits', async () => {
+      const id = await postedShopifyOrder();
+      await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 2 }]);
+      const [m] = await linesOf(id);
+      expect((await restockRoute(id, m?.id as string, 2)).status).toBe(200);
+
+      expect(
+        await channelReturn(
+          id,
+          [{ channelLineId: 'gid-m', quantity: 2 }],
+          randomUUID(),
+          'shopify_return',
+        ),
+      ).toEqual({ applied: false, why: 'nothing_to_await' });
+      expect((await counters(id))[0]).toEqual([2, 0, 2, 0]);
+      expect(await netOf(id, skuM)).toBe(0);
+    });
+
+    it('a repeated refund adds nothing; a return of the same pieces under its own id is capped at what was posted', async () => {
+      const id = await postedShopifyOrder();
+      const refundId = randomUUID();
+      const [m] = await linesOf(id);
+      expect(await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }], refundId)).toEqual({
+        applied: true,
+        lines: [{ lineId: m?.id, added: 1 }],
+      });
+      expect(await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 1 }], refundId)).toEqual({
+        applied: false,
+        why: 'already_applied',
+      });
+      expect((await counters(id))[0]).toEqual([2, 1, 0, 0]);
+
+      expect(
+        await channelReturn(
+          id,
+          [{ channelLineId: 'gid-m', quantity: 2 }],
+          randomUUID(),
+          'shopify_return',
+        ),
+      ).toEqual({ applied: true, lines: [{ lineId: m?.id, added: 1 }] });
+      expect((await counters(id))[0]).toEqual([2, 2, 0, 0]);
+    });
+
+    it('row 5 run again after a restock adds nothing (review minor 4)', async () => {
+      const id = await postedShopifyOrder();
+      await cancelFromChannel(id);
+      expect(await runJobs(id, 'after_cancel')).toEqual([
+        { afterCancel: 'awaiting_restock', row: 5 },
+      ]);
+      const [m] = await linesOf(id);
+      expect((await restockRoute(id, m?.id as string, 2)).status).toBe(200);
+
+      // A lost completion: pg-boss runs the same job again.
+      expect(await runJobs(id, 'after_cancel')).toEqual([{ afterCancel: 'nothing', row: 5 }]);
+      expect(await counters(id)).toEqual([
+        [2, 0, 2, 0],
+        [1, 1, 0, 0],
+      ]);
+    });
+
+    it('a carrier shipped committing while the row 4 job runs: the reversal rolls back (row 3), one posting', async () => {
+      const id = await postedShopifyOrder();
+      await report(id, fact('cancelled', 'carrier.terminated_before_pickup'));
+      const service = ledger();
+      const reverse = service.reverse.bind(service);
+      const spy = vi.spyOn(service, 'reverse').mockImplementationOnce(async (input, options) => {
+        // The courier's late pickup lands between the job's decision and its posting.
+        expect(await report(id, fact('shipped'))).toEqual({ applied: true });
+        return reverse(input, options);
+      });
+      try {
+        expect(await runJobs(id, 'after_cancel')).toEqual([{ afterCancel: 'nothing', row: 3 }]);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await groupsOf(id)).toHaveLength(1);
+      expect(await orderOf(id)).toMatchObject({
+        fulfillment_state: 'shipped',
+        stock_out_generation: 1,
+        stock_out_source: 'shopify_fulfillment',
+      });
+    });
+
+    it('a fulfillment cancel committing while the post job runs: nothing posts, the open lines stay held', async () => {
+      const id = await postedShopifyOrderUnposted();
+      const service = ledger();
+      const post = service.postCarrierShipment.bind(service);
+      const spy = vi
+        .spyOn(service, 'postCarrierShipment')
+        .mockImplementationOnce(async (input, options) => {
+          expect(await fulfillmentCancelled(id)).toEqual({ applied: true });
+          return post(input, options);
+        });
+      try {
+        expect(await runJobs(id, 'post')).toEqual([{ posted: false, why: 'OLD_GENERATION' }]);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await groupsOf(id)).toEqual([]);
+      expect(await runJobs(id, 'fulfillment_reversal')).toEqual([
+        { reversed: false, why: 'NOTHING_POSTED' },
+      ]);
+      // The reservations the fulfillment cancel held again were not consumed by a rolled back post.
+      expect((await activeHolds(id)).map((held) => held.quantity).sort()).toEqual([1, 2]);
+      expect((await orderOf(id)).stock_out_generation).toBe(2);
+    });
+
+    it('a partial delivery that would leave fewer posted pieces than await is refused with a typed error', async () => {
+      const id = await postedShopifyOrder();
+      await channelReturn(id, [{ channelLineId: 'gid-m', quantity: 2 }]);
+      await report(id, fact('shipped'));
+      const [m] = await linesOf(id);
+
+      await expect(
+        run((tx) =>
+          moves().recordPartialDelivery(
+            tx,
+            id,
+            {
+              lines: [{ lineId: m?.id as string, deliveredQuantity: 1 }],
+              occurredAt: new Date(),
+              source: { type: 'carrier_delivery_event', id: randomUUID() },
+            },
+            carrier,
+          ),
+        ),
+      ).rejects.toThrow(PiecesAwaitingRestock);
+      expect((await orderOf(id)).fulfillment_state).toBe('shipped');
+      expect(await linesOf(id)).toHaveLength(2);
+    });
+
+    it('a restock key reused with another quantity or person answers 409 IDEMPOTENCY_CONFLICT; the same request replays', async () => {
+      const id = await postedShopifyOrder();
+      await cancelFromChannel(id);
+      await runJobs(id, 'after_cancel');
+      const [m] = await linesOf(id);
+      const key = randomUUID();
+      const lineId = m?.id as string;
+
+      expect((await restockRoute(id, lineId, 1, key)).status).toBe(200);
+      const otherQuantity = await restockRoute(id, lineId, 2, key);
+      expect(otherQuantity.status).toBe(409);
+      expect((otherQuantity.body as { code: string }).code).toBe('IDEMPOTENCY_CONFLICT');
+      const someoneElse = await api.signIn((await api.addPerson(['warehouse'])).email);
+      const otherPerson = await restockRoute(id, lineId, 1, key, someoneElse);
+      expect(otherPerson.status).toBe(409);
+      expect((otherPerson.body as { code: string }).code).toBe('IDEMPOTENCY_CONFLICT');
+      const replay = await restockRoute(id, lineId, 1, key);
+      expect(replay.status, JSON.stringify(replay.body)).toBe(200);
+
+      expect(await groupsOf(id, 'returned_to_origin_restock')).toHaveLength(1);
+      expect((await counters(id))[0]).toEqual([2, 1, 1, 0]);
+    });
+
+    it('a second close request while one is open answers 409 CLOSE_ALREADY_REQUESTED; a manager close settles it', async () => {
+      const id = await postedShopifyOrder();
+      await cancelFromChannel(id);
+      await runJobs(id, 'after_cancel');
+      const [m] = await linesOf(id);
+      const path = `/api/orders/${id}/lines/${m?.id as string}/close-awaiting-restock`;
+      const ask = async (who: string) =>
+        api.call(who, 'POST', path, {
+          expectedUpdatedAt: (await detail(id)).updatedAt,
+          quantity: 1,
+          reasonCode: 'lost_by_carrier',
+        });
+
+      expect((await ask(warehouse)).status).toBe(200);
+      const again = await ask(warehouse);
+      expect(again.status).toBe(409);
+      expect((again.body as { code: string }).code).toBe('CLOSE_ALREADY_REQUESTED');
+      expect(
+        attentions.filter((a) => a.orderId === id && a.kind === 'awaiting_restock_close_requested'),
+      ).toHaveLength(1);
+
+      expect((await ask(manager)).status).toBe(200);
+      expect((await counters(id))[0]).toEqual([2, 1, 0, 1]);
+      expect((await ask(warehouse)).status).toBe(200);
+    });
+
+    it('Pack is refused with 409 STOCK_ALREADY_LEFT once the stock out is requested; Confirm is allowed', async () => {
+      const id = await channelOrder();
+      expect(await shopifyFulfilled(id)).toEqual({ requested: true });
+
+      const confirmed = await api.call(support, 'POST', `/api/orders/${id}/confirm`, {
+        expectedUpdatedAt: (await detail(id)).updatedAt,
+      });
+      expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+      const packed = await api.call(warehouse, 'POST', `/api/orders/${id}/pack`, {
+        expectedUpdatedAt: (await detail(id)).updatedAt,
+      });
+      expect(packed.status).toBe(409);
+      expect((packed.body as { code: string }).code).toBe('STOCK_ALREADY_LEFT');
+      expect((await orderOf(id)).fulfillment_state).toBe('confirmed');
+    });
+
+    it('the overdue check catches up a missed day and raises a line once per awaiting spell', async () => {
+      const id = await postedShopifyOrder();
+      await cancelFromChannel(id);
+      await runJobs(id, 'after_cancel');
+      const [m, l] = await linesOf(id);
+      const overdue = () =>
+        attentions.filter((a) => a.orderId === id && a.kind === 'awaiting_restock_overdue');
+      const marks = async () =>
+        (
+          await owner<{ raised: boolean }>(
+            `SELECT awaiting_restock_overdue_raised_at IS NOT NULL AS raised
+             FROM order_lines WHERE order_id = $1::uuid ORDER BY position`,
+            [id],
+          )
+        ).rows.map((row) => row.raised);
+      // The schedule did not run on the tenth day: day 12 still raises both lines.
+      await owner(
+        `UPDATE order_lines SET awaiting_restock_since = now() - make_interval(days => 12)
+         WHERE order_id = $1::uuid AND awaiting_restock_quantity > 0`,
+        [id],
+      );
+      await posting().awaitingRestockOverdue();
+      expect(overdue().map((a) => a.sourceId)).toEqual([m?.id, l?.id]);
+      await posting().awaitingRestockOverdue();
+      expect(overdue()).toHaveLength(2);
+      expect(await marks()).toEqual([true, true]);
+
+      // The L line's spell ends when its last piece is back: its mark clears with it.
+      expect((await restockRoute(id, l?.id as string, 1)).status).toBe(200);
+      expect(await marks()).toEqual([true, false]);
     });
   });
 

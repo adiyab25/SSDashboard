@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DomainEvents } from '../../platform/events/domain-events.js';
 import type { OrderTransaction } from '../order-transactions.js';
-import { OrderLocked, OrderNotFound } from '../orders.errors.js';
+import { OrderLocked, OrderNotFound, PiecesAwaitingRestock } from '../orders.errors.js';
 import { OrderWriter, type NewLineRow } from './order-writer.js';
 
 const ORDER = '01937f3a-0000-7000-8000-000000000001';
@@ -148,6 +148,7 @@ describe('OrderWriter.applyChange: the money freeze (spec 0013 AC-8, security M1
   it('splits with the allowance: inserts the returned row, then updates the original', async () => {
     const { tx, calls } = scripted([
       [{ frozen: true }],
+      [{ refused: false }],
       [{ id: 'returned-row' }],
       [],
       [row('partially_delivered', 'kept')],
@@ -160,7 +161,20 @@ describe('OrderWriter.applyChange: the money freeze (spec 0013 AC-8, security M1
     });
 
     expect(applied.splitLineIds).toEqual(['returned-row']);
-    expect(calls()).toBe(4);
+    expect(calls()).toBe(5);
+  });
+
+  it('refuses a split that would leave fewer posted pieces than await or came back (review minor 2)', async () => {
+    const { tx, calls } = scripted([[{ frozen: true }], [{ refused: true }]]);
+
+    await expect(
+      writer().applyChange(tx, ORDER, {
+        columns: { fulfillmentState: 'partially_delivered' },
+        splitLines: [splitRows],
+        freezeAllowance: 'partial_delivery_split',
+      }),
+    ).rejects.toThrow(PiecesAwaitingRestock);
+    expect(calls()).toBe(2);
   });
 
   it('lets a carrier fact move the lines of a frozen order (a state move, not money)', async () => {

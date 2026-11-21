@@ -176,6 +176,13 @@
       "when": 1795205487886,
       "tag": "0024_orders_stock_out",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795229543144,
+      "tag": "0025_orders_restock_cap",
+      "breakpoints": true
     }
   ]
 }
