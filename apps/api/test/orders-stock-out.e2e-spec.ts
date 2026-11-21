@@ -314,7 +314,7 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
   });
 
   describe('one shipment posting per order (AC-24, AC-15)', () => {
-    it('recordChannelStockOut then a carrier shipped: one order_shipment group, nothing new enqueued', async () => {
+    it('recordChannelStockOut posted, then a carrier shipped: the request kept, a second post job stops at ALREADY_POSTED, one group', async () => {
       const id = await postedShopifyOrder();
       expect(await orderOf(id)).toMatchObject({
         stock_out_source: 'shopify_fulfillment',
@@ -324,13 +324,55 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
 
       expect(await report(id, fact('shipped'))).toEqual({ applied: true });
 
-      expect((await jobsOf(id)).map((queued) => queued.data.kind)).toEqual(['post']);
-      // A rerun of the one post job stops at postingFor.
-      expect(await runJobs(id, 'post')).toEqual([{ posted: false, why: 'ALREADY_POSTED' }]);
+      // Every carrier `shipped` enqueues the post job (owner ruling 2026-11-21, option A).
+      const jobs = await jobsOf(id);
+      expect(jobs.map((queued) => queued.data)).toEqual([
+        { kind: 'post', orderId: id, generation: 1, capability: 'orders.shipment_posting' },
+        { kind: 'post', orderId: id, generation: 1, capability: 'orders.shipment_posting' },
+      ]);
+      const second = jobs[1] as JobRow;
+      expect(await posting().run({ id: second.id, data: second.data, retryCount: 0 })).toEqual({
+        posted: false,
+        why: 'ALREADY_POSTED',
+      });
       expect((await groupsOf(id)).map((group) => group.idempotency_key)).toEqual([
         carrierShipmentKey(id),
       ]);
+      // The request is recorded only once: the Shopify one stands.
       expect((await orderOf(id)).stock_out_source).toBe('shopify_fulfillment');
+      expect((await linesOf(id)).map((line) => line.stock_out_quantity)).toEqual([2, 1]);
+    });
+
+    it('a Shopify request, a cancel before its job ran, then a late carrier shipped: exactly one posting', async () => {
+      const id = await postedShopifyOrderUnposted();
+      await cancelFromChannel(id);
+      expect(await runJobs(id, 'post')).toEqual([{ posted: false, why: 'CANCELLED' }]);
+      expect(await runJobs(id, 'after_cancel')).toEqual([{ afterCancel: 'nothing', row: 1 }]);
+      expect(await groupsOf(id)).toEqual([]);
+
+      await report(id, fact('shipped'));
+      expect(await orderOf(id)).toMatchObject({
+        fulfillment_state: 'shipped',
+        stock_out_source: 'shopify_fulfillment',
+        stock_out_generation: 1,
+      });
+      const jobs = await jobsOf(id);
+      expect(jobs.map((queued) => queued.data.kind)).toEqual(['post', 'after_cancel', 'post']);
+      const late = jobs[2] as JobRow;
+      expect(await posting().run({ id: late.id, data: late.data, retryCount: 0 })).toMatchObject({
+        posted: true,
+        lines: 2,
+      });
+      // Every job run again: the posting stands alone.
+      expect(await runJobs(id, 'post')).toEqual([
+        { posted: false, why: 'ALREADY_POSTED' },
+        { posted: false, why: 'ALREADY_POSTED' },
+      ]);
+      const groups = await groupsOf(id);
+      expect(groups.map((group) => group.idempotency_key)).toEqual([carrierShipmentKey(id)]);
+      expect(
+        (await movementsOf(groups[0]?.id as string)).map((movement) => movement.quantity),
+      ).toEqual([-2, -1]);
     });
 
     it('the carrier fact first, then recordChannelStockOut: already requested, still one group', async () => {
@@ -685,7 +727,7 @@ describe('orders, task 15: stock out from Shopify fulfillment', { timeout: 300_0
 
       expect(await fulfillmentCancelled(id)).toEqual({ applied: false, why: 'after_pickup' });
       expect(await orderOf(id)).toEqual(before);
-      expect((await jobsOf(id)).map((queued) => queued.data.kind)).toEqual(['post']);
+      expect((await jobsOf(id)).map((queued) => queued.data.kind)).toEqual(['post', 'post']);
     });
 
     it('a cancel before the post job ran posts nothing', async () => {

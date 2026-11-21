@@ -1025,9 +1025,11 @@ export class OrderTransitions {
   /**
    * The stock side of a carrier `shipped` fact (AC-15, AC-24), in the fact's transaction: when no
    * stock out is requested yet, records the request (`carrier_shipped`, each open line's full
-   * quantity, at the fact's time) and enqueues the shipment posting job for the current
-   * generation; when one is recorded (a Shopify fulfillment came first) it enqueues nothing new.
-   * A late `shipped` on a cancelled order (`cancelled` to `shipped`) also closes the order's
+   * quantity, at the fact's time); then, whether or not a request was already recorded (a
+   * Shopify fulfillment may have come first), it enqueues the shipment posting job for the current
+   * generation, so a Shopify request whose job a cancel made skip is still posted once the courier
+   * picks the parcel up (owner ruling 2026-11-21, option A; the job stops at `postingFor`, so it
+   * never posts twice). The request itself is recorded only once. A late `shipped` on a cancelled order (`cancelled` to `shipped`) also closes the order's
    * awaiting restock quantities with no movement: the posting stands and the courier has the
    * pieces. A request it records closes the `fulfilled_lines_differ` attention's task. Never
    * refused for stock: the posting runs in the job after the move commits.
@@ -1040,16 +1042,19 @@ export class OrderTransitions {
     if (order.fulfillmentState === 'cancelled') {
       await this.writer.closeAwaitingRestock(tx, order.id);
     }
-    if (order.stockOutSource !== null) return;
-    const requested = await this.writer.requestStockOut(tx, order.id, {
-      source: 'carrier_shipped',
-      at: fact.occurredAt,
-      lines: order.lines
-        .filter((line) => line.lineState === 'open')
-        .map((line) => ({ lineId: line.id, quantity: line.quantity })),
-    });
-    if (!requested) return;
+    const requested =
+      order.stockOutSource === null &&
+      (await this.writer.requestStockOut(tx, order.id, {
+        source: 'carrier_shipped',
+        at: fact.occurredAt,
+        lines: order.lines
+          .filter((line) => line.lineState === 'open')
+          .map((line) => ({ lineId: line.id, quantity: line.quantity })),
+      }));
+    // Every carrier `shipped` asks for the current generation's posting (owner ruling
+    // 2026-11-21): a retry of an existing posting stops at `postingFor`.
     await this.shipments.enqueuePost(tx, order.id, order.stockOutGeneration);
+    if (!requested) return;
     // The courier's pickup is the truth: a `fulfilled_lines_differ` attention is closed in the
     // same transaction (AC-15, decided 2026-11-08; spec 0016's `cleared` outcome).
     await this.closeAttention(tx, 'fulfilled_lines_differ', order.id);

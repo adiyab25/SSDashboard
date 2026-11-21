@@ -514,12 +514,14 @@ describe('orders, task 15: the shipment posting job', { timeout: 240_000 }, () =
       expect(awaiting.every((line) => line.awaiting_restock_since !== null)).toBe(true);
       expect(attentionsOf(id)).toContain('returned_pieces_to_receive');
 
-      // The courier picked it up after all: the posting stands, nothing new is posted.
+      // The courier picked it up after all: the posting stands, nothing new is posted (the post
+      // job every carrier shipped enqueues stops at postingFor, owner ruling 2026-11-21).
       await report(id, fact('shipped'));
       const closed = await linesOf(id);
       expect(closed.map((line) => line.awaiting_restock_quantity)).toEqual([0, 0]);
       expect(closed.map((line) => line.awaiting_restock_since)).toEqual([null, null]);
-      expect((await jobsOf(id)).map((job) => job.data.kind)).toEqual(['after_cancel']);
+      expect((await jobsOf(id)).map((job) => job.data.kind)).toEqual(['after_cancel', 'post']);
+      expect(await runJobs(id, 'post')).toEqual([{ posted: false, why: 'ALREADY_POSTED' }]);
       expect(await groupsOf(id)).toHaveLength(1);
       // A replay of the after cancel job finds the order shipped: row 3.
       expect(await runJobs(id, 'after_cancel')).toEqual([{ afterCancel: 'nothing', row: 3 }]);
