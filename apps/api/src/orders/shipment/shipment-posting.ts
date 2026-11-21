@@ -74,8 +74,9 @@ interface OrderStockOut extends Record<string, unknown> {
  * `ledger.postingFor(key)` first and stops when a posting exists (a retry never posts twice), and
  * builds the posting from the order's lines: each mapped line's `stock_out_quantity` at its
  * reservation's location (fulfilling it) or else the online location. In the posting's `within` it
- * writes each line's `unit_cost` (and its split rows') and raises `shipped_with_unmapped_lines` and
- * `shipment_not_posted` for lines it left out. A short line posts all the same (the ledger never
+ * writes each line's `unit_cost` (and its split rows'), brings each posted line's
+ * `short_quantity` to 0, and raises `shipped_with_unmapped_lines` and `shipment_not_posted` for
+ * lines it left out. A short line posts all the same (the ledger never
  * refuses for stock). `IdempotencyConflict` (a real race on the key) posts nothing and raises
  * `shipment_not_posted`; any other failure is thrown for pg-boss to retry, and the last attempt
  * raises `shipment_not_posted` instead.
@@ -161,6 +162,14 @@ export class ShipmentPosting {
           within: async (stockTx, result) => {
             const tx = orderTransactionFromLedger(stockTx);
             await this.writer.setUnitCosts(tx, orderId, unitCostsOf(result.movements));
+            // The posting consumed each posted line's reservation, waiting demand included, and
+            // the ledger publishes no `ReservationFilled` for that: its stock has left, so the
+            // line is no longer short (AC-13: `short_quantity` copies `unfilled_quantity`, now 0).
+            await this.writer.setShortQuantities(
+              tx,
+              orderId,
+              plan.post.map((line) => ({ lineId: line.sourceLineId, shortQuantity: 0 })),
+            );
             // A line posted for less than its quantity ("Post what Shopify fulfilled", AC-27 a)
             // keeps the rest of its reservation open: release it, on the posting's own keys.
             if (plan.partial.length > 0) {
